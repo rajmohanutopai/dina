@@ -249,6 +249,7 @@ export interface CommerceComparisonLifecycle {
  *   - `group_plan`    — the organizer's plan card.
  *   - `quote_request_draft` — a drafted request for quotes; opens the
  *                            Ask for quotes screen.
+ *   - `ucp_comparison` — a UCP search's comparison card.
  * Future kinds (long vault search, peer pairing) extend by adding
  * members and a discriminator branch in `readLifecycle`.
  */
@@ -281,6 +282,22 @@ export interface QuoteRequestDraftLifecycle {
   draft: QuoteRequestDraftWire;
 }
 
+/**
+ * `ucp_comparison` lifecycle metadata (UCP plan §4.2 U1) — a UCP search's
+ * comparison card. A view keyed by the search: Brain gives only the search
+ * id. The card reads from Core the products the owner sees (the merchants'
+ * own titles, cleaned, and their pages) and each shop's PeerLens trust, and
+ * sets the order itself (best-trusted shop first, then cheapest). Nothing
+ * else belongs in `cardSpec` (plan §3.7). Terminal. The renderer re-validates
+ * `cardSpec` as untrusted and reads only the search id from it.
+ */
+export interface UcpComparisonLifecycle {
+  kind: 'ucp_comparison';
+  status: 'ready';
+  searchId: string;
+  cardSpec: Record<string, unknown>;
+}
+
 export type MessageLifecycle =
   | ServiceQueryLifecycle
   | MissingCapabilityLifecycle
@@ -289,7 +306,8 @@ export type MessageLifecycle =
   | ReviewDraftLifecycle
   | CommerceComparisonLifecycle
   | GroupPlanLifecycle
-  | QuoteRequestDraftLifecycle;
+  | QuoteRequestDraftLifecycle
+  | UcpComparisonLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -774,6 +792,9 @@ export function addLifecycleMessage(
     case 'quote_request_draft':
       key = lifecycle.draftId;
       break;
+    case 'ucp_comparison':
+      key = lifecycle.searchId;
+      break;
   }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
@@ -849,6 +870,12 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
     if (typeof lc.draft !== 'object' || lc.draft === null) return null;
     if (!Array.isArray((lc.draft as { lines?: unknown }).lines)) return null;
     return lc as unknown as QuoteRequestDraftLifecycle;
+  }
+  if (lc.kind === 'ucp_comparison') {
+    if (typeof lc.searchId !== 'string' || lc.searchId === '') return null;
+    if (lc.status !== 'ready') return null;
+    if (typeof lc.cardSpec !== 'object' || lc.cardSpec === null) return null;
+    return lc as unknown as UcpComparisonLifecycle;
   }
   return null;
 }

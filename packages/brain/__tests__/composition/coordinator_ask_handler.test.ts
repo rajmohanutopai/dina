@@ -221,6 +221,7 @@ function buildCoord(
   llm: LLMProvider,
   fastPathMs: number,
   appViewClient: BuildAgenticAskPipelineInput['appViewClient'] = fakeAppView(),
+  extra: Partial<BuildAgenticAskPipelineInput> = {},
 ) {
   const { client } = makeFakeCoreClient();
   const pipeline = buildAgenticAskPipeline({
@@ -230,6 +231,7 @@ function buildCoord(
     orchestratorHandle: fakeOrchestrator(),
     coreClient: client,
     cloudConsentGranted: true,
+    ...extra,
   });
   // These tests isolate coordinator→chat lifecycle delivery. Classifier and
   // output-guard parity have dedicated coverage in ask_coordinator.test.ts.
@@ -689,6 +691,145 @@ describe('createCoordinatorAskHandler — commerce comparison card', () => {
       expect(commerceCards()).toHaveLength(1);
     } finally {
       dispose();
+    }
+  });
+});
+
+describe('createCoordinatorAskHandler — UCP comparison card', () => {
+  const ucpCards = () =>
+    getThread(THREAD).filter((m) => readLifecycle(m)?.kind === 'ucp_comparison');
+  // A Core that runs one search with one shop and one product, its text already passed.
+  const ucpClient: BuildAgenticAskPipelineInput['ucpClient'] = {
+    ucpCart: async () => ({ ok: false, status: 503, reason: 'ucp_unavailable' }),
+    ucpCheckout: async () => ({ ok: false, status: 503, reason: 'ucp_unavailable' }),
+    searchUcp: async () => ({
+      ok: true,
+      searchId: 'ucp-search-7',
+      merchants: [
+        { handle: 'm1', origin: 'https://a-shop.example', state: 'ok', products: 1, skipped: 0 },
+      ],
+      provenance: 'derived',
+    }),
+    getUcpSearch: async () => ({
+      search_id: 'ucp-search-7',
+      complete: true,
+      withheld_marker: 'merchant text withheld',
+      products: [
+        {
+          product: {
+            handle: 'p1',
+            merchant: 'm1',
+            price_range: {
+              min: { amount: '450', currency: 'EUR' },
+              max: { amount: '450', currency: 'EUR' },
+            },
+            variants: [],
+          },
+          text: { title: 'Sencha', variants: [] },
+          text_state: 'passed',
+        },
+      ],
+    }),
+    raiseUcpSearchReview: async () => ({ ok: false, status: 409, reason: 'not_needed' }),
+    fetchUcpProducts: async () => ({ ok: false, status: 404, reason: 'unknown_product' }),
+  };
+  const withUcp = { ucpClient, ucpEnabled: () => true };
+  const searchTurn = () =>
+    toolCallResp({ id: 'tc-1', name: 'search_ucp_catalog', arguments: { query: 'sencha' } });
+
+  it('offers search_ucp_merchants only with UCP on and an AppView that has the merchant index', async () => {
+    const offered = async (appView: BuildAgenticAskPipelineInput['appViewClient'], ucp: typeof withUcp) => {
+      let names: string[] = [];
+      const llm = makeScripted();
+      llm.push(answerResp('ok'));
+      const provider: LLMProvider = {
+        ...llm.provider,
+        chat: async (messages, options) => {
+          names = (options?.tools ?? []).map((t) => t.name);
+          return llm.provider.chat(messages, options);
+        },
+      };
+      const { handler, dispose } = createCoordinatorAskHandler({
+        coordinator: buildCoord(provider, 5_000, appView, ucp),
+        requesterDid: REQUESTER,
+      });
+      try {
+        await handler('which shops sell sencha?');
+      } finally {
+        dispose();
+      }
+      return names;
+    };
+    const withIndex = { ...fakeAppView(), searchUcpMerchants: async () => [] };
+    expect(await offered(withIndex, withUcp)).toContain('search_ucp_merchants');
+    expect(await offered(fakeAppView(), withUcp)).not.toContain('search_ucp_merchants');
+    expect(await offered(withIndex, { ucpClient, ucpEnabled: () => false })).not.toContain('search_ucp_merchants');
+  });
+
+  it('posts one card, carrying only the search id, on the fast path', async () => {
+    const llm = makeScripted();
+    llm.push(searchTurn(), answerResp('One shop has sencha at EUR 4.50.'));
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: buildCoord(llm.provider, 5_000, fakeAppView(), withUcp),
+      requesterDid: REQUESTER,
+    });
+    try {
+      expect((await handler('find me sencha')).response).toBe('One shop has sencha at EUR 4.50.');
+      const cards = ucpCards();
+      expect(cards).toHaveLength(1);
+      expect(readLifecycle(cards[0] as (typeof cards)[number])).toMatchObject({
+        kind: 'ucp_comparison',
+        status: 'ready',
+        searchId: 'ucp-search-7',
+        cardSpec: { kind: 'ucp_comparison', search_id: 'ucp-search-7' },
+      });
+    } finally {
+      dispose();
+    }
+  });
+
+  it('posts one card on the deferred path too, and none when UCP is off', async () => {
+    const scripted = makeScripted();
+    scripted.push(searchTurn(), answerResp('Found it.'));
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const slow: LLMProvider = {
+      ...scripted.provider,
+      chat: async (...a) => {
+        await gate;
+        return scripted.provider.chat(...a);
+      },
+    };
+    const { handler, dispose } = createCoordinatorAskHandler({
+      coordinator: buildCoord(slow, 1, fakeAppView(), withUcp),
+      requesterDid: REQUESTER,
+    });
+    try {
+      expect((await handler('find me sencha')).response).toBe('');
+      release();
+      for (let i = 0; i < 10; i++) await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(ucpCards()).toHaveLength(1);
+    } finally {
+      dispose();
+    }
+
+    resetThreads();
+    const off = makeScripted();
+    off.push(searchTurn(), answerResp('I cannot search shops here.'));
+    const second = createCoordinatorAskHandler({
+      coordinator: buildCoord(off.provider, 5_000, fakeAppView(), {
+        ucpClient,
+        ucpEnabled: () => false,
+      }),
+      requesterDid: REQUESTER,
+    });
+    try {
+      await second.handler('find me sencha');
+      expect(ucpCards()).toEqual([]);
+    } finally {
+      second.dispose();
     }
   });
 });

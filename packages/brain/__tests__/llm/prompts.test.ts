@@ -409,6 +409,14 @@ describe('Prompt Registry', () => {
       expect(VAULT_CONTEXT).toMatch(/^- products → search_products .*then recommend_offer/m);
     });
 
+    it('the user’s UCP shops are a shopping source: listed, reached by their tools, searched with the offers when offered, the directory only as shops to add (simulator finding, 2026-10-05)', () => {
+      expect(VAULT_CONTEXT).toMatch(/^- shops — online shops the user allowed in Settings → Shopping \(UCP\)/m);
+      expect(VAULT_CONTEXT).toMatch(/^- shops → search_ucp_catalog .*search_ucp_merchants .*ucp_cart and start_ucp_checkout only when the user asks to buy/m);
+      expect(VAULT_CONTEXT).toMatch(/When search_ucp_catalog is offered, call it too/);
+      expect(VAULT_CONTEXT).toMatch(/search_ucp_merchants is offered, call it to suggest shops the user could add — never as shops Dina may already use/);
+      expect(VAULT_CONTEXT).toMatch(/Dina never pays/);
+    });
+
     it('rule 3 asks PeerLens AND the offers, separates a product from a named store, and hands the decision to the stated preferences', () => {
       expect(VAULT_CONTEXT).toMatch(/ALWAYS call search_peerlens AND search_products \(when it is offered/);
       expect(VAULT_CONTEXT).toMatch(/no reviews does not mean no offers/);
@@ -418,7 +426,7 @@ describe('Prompt Registry', () => {
     });
 
     it('lets the model recommend from search_products offers, never from training data', () => {
-      expect(VAULT_CONTEXT).toMatch(/Only recommend what PeerLens .*, search_products \(offers on the Dina network\) or vault tools actually returned/);
+      expect(VAULT_CONTEXT).toMatch(/Only recommend what PeerLens .*, search_products \(offers on the Dina network\), the user's UCP shops .* or vault tools actually returned/);
       expect(VAULT_CONTEXT).toMatch(/recommend_offer is a commit, not a search, and does not count/);
     });
   });

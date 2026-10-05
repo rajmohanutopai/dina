@@ -342,6 +342,28 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Buying preferences</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* UCP: which online shops Dina may search, and what a search tells them. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/shopping-settings')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Shopping"
+          testID="settings-row-shopping-settings"
+        >
+          <Text style={styles.rowLabel}>Shopping</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
+        {/* UCP §3.17: accounts at shops that Dina may use. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/linked-accounts')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Linked accounts"
+          testID="settings-row-linked-accounts"
+        >
+          <Text style={styles.rowLabel}>Linked accounts</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* §6 — staff grants: scoped, value-capped authority for the shop's
             other hands. */}
         <TouchableOpacity

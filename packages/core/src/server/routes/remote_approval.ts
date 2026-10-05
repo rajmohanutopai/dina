@@ -13,11 +13,13 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import {
   MIRROR_MAX_DETAIL,
   MIRROR_MAX_LABEL,
+  MIRROR_MAX_TTL_SECONDS,
   bounded,
   boundedMultiline,
   hasUnsafeMultilineText,
   hasUnsafeText,
 } from '../../approval/mirror_text';
+import { getDeviceByDID } from '../../devices/registry';
 import { WorkflowTaskState } from '../../workflow/domain';
 import {
   WorkflowConflictError,
@@ -29,9 +31,17 @@ import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 export const REMOTE_APPROVAL_PAYLOAD_TYPE = 'remote_coding_gate_v1';
 export const REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE = 'remote_facade_action_v1';
+/**
+ * A mirrored card whose yes needs a person present here (UCP plan §3.9: a
+ * merchant's payment page). Presence-gated on this node's own route, so the
+ * yes it records is one made in person.
+ */
+export const REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE = 'remote_facade_presence_v1';
+/** The longest link a mirrored card may carry (the hand-off URL's cap). */
+const MAX_LINK_URL_BYTES = 2048;
 export const REMOTE_APPROVAL_API_PREFIX = '/v1/agent/approval-sync/v1';
 
-const MAX_TTL_SECONDS = 15 * 60;
+const MAX_TTL_SECONDS = MIRROR_MAX_TTL_SECONDS;
 const MIN_TTL_SECONDS = 15;
 const MAX_DESCRIPTION = 500;
 const MAX_LABEL = MIRROR_MAX_LABEL;
@@ -49,11 +59,37 @@ interface RemoteApprovalProposal {
   proposal_type?: 'facade_action';
   display_title?: string;
   display_detail?: string;
+  /** Opened here after a yes (https only), shown as its host before the tap. */
+  link_url?: string;
+  /** The yes needs a person present on this node. */
+  presence_required?: true;
 }
 
 interface RemoteApprovalPayload extends RemoteApprovalProposal {
-  type: typeof REMOTE_APPROVAL_PAYLOAD_TYPE | typeof REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE;
+  type:
+    | typeof REMOTE_APPROVAL_PAYLOAD_TYPE
+    | typeof REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE
+    | typeof REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE;
   source_device_did: string;
+  /**
+   * The name the sending device was paired under, from this node's own
+   * registry (never the proposal's words): a card names who sent it, and any
+   * paired device may send one, so no card is labelled by its action alone.
+   */
+  source_device_name?: string;
+}
+
+/** A payload's fields that a replayed proposal must repeat; the device's name may change. */
+function immutablePart(payloadJSON: string): string {
+  try {
+    const { source_device_name: _name, ...rest } = JSON.parse(payloadJSON) as Record<
+      string,
+      unknown
+    >;
+    return JSON.stringify(rest);
+  } catch {
+    return payloadJSON;
+  }
 }
 
 export function registerRemoteApprovalRoutes(router: CoreRouter): void {
@@ -70,27 +106,51 @@ async function createProposal(req: CoreRequest): Promise<CoreResponse> {
 
   const parsed = parseProposal(req.body);
   if ('error' in parsed) return json(400, { error: parsed.error });
+  // A card that opens a link, asks for a person present, or speaks as Dina's own shopping
+  // (UCP plan §3.9) comes only from the owner's server node (paired with the `node` scope)
+  // or an owner device, never from another agent: otherwise an agent could frame a page of
+  // its choosing as Dina's "review and pay".
+  if (
+    req.callerType === 'agent' &&
+    req.agentScope !== 'node' &&
+    (parsed.link_url !== undefined ||
+      parsed.presence_required === true ||
+      parsed.action.startsWith('ucp_') ||
+      parsed.agent_did.startsWith('ucp:'))
+  ) {
+    return json(403, {
+      error: 'access_denied',
+      reason: 'only the owner’s paired node may send this card',
+    });
+  }
   const callerDID = req.callerDID as string;
   const mirrorId = remoteApprovalProposalId(callerDID, parsed.source_task_id);
+  const deviceName = bounded(getDeviceByDID(callerDID)?.deviceName, MAX_LABEL);
   const payload: RemoteApprovalPayload = {
     type:
-      parsed.proposal_type === 'facade_action'
-        ? REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE
-        : REMOTE_APPROVAL_PAYLOAD_TYPE,
+      parsed.presence_required === true
+        ? REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE
+        : parsed.proposal_type === 'facade_action'
+          ? REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE
+          : REMOTE_APPROVAL_PAYLOAD_TYPE,
     source_device_did: callerDID,
     ...parsed,
+    ...(deviceName !== '' && !hasUnsafeText(deviceName) ? { source_device_name: deviceName } : {}),
   };
   const payloadJSON = JSON.stringify(payload);
 
   const existing = service.store().getById(mirrorId);
   if (existing !== null) {
-    if (existing.payload !== payloadJSON) {
+    if (immutablePart(existing.payload) !== immutablePart(payloadJSON)) {
       return json(409, {
         error: 'proposal_conflict',
         reason: 'source task was already proposed with different immutable fields',
       });
     }
-    return json(200, proposalResponse(existing.status, mirrorId, parsed.expires_at, true));
+    return json(
+      200,
+      proposalResponse(existing.status, mirrorId, parsed.expires_at, true, existing.error, payload),
+    );
   }
 
   const pendingForDevice = service
@@ -124,7 +184,10 @@ async function createProposal(req: CoreRequest): Promise<CoreResponse> {
       initialState: WorkflowTaskState.PendingApproval,
       idempotencyKey: `remote-approval:${callerDID}:${parsed.source_task_id}`,
     });
-    return json(201, proposalResponse(task.status, task.id, parsed.expires_at, false));
+    return json(
+      201,
+      proposalResponse(task.status, task.id, parsed.expires_at, false, undefined, payload),
+    );
   } catch (err) {
     if (err instanceof WorkflowConflictError) {
       return json(409, { error: 'proposal_conflict', reason: err.message });
@@ -150,7 +213,10 @@ async function getProposalStatus(req: CoreRequest): Promise<CoreResponse> {
     // Do not reveal whether another device's proposal exists.
     return json(404, { error: 'proposal_not_found' });
   }
-  return json(200, proposalResponse(task.status, task.id, payload.expires_at, false, task.error));
+  return json(
+    200,
+    proposalResponse(task.status, task.id, payload.expires_at, false, task.error, payload),
+  );
 }
 
 async function withdrawProposal(req: CoreRequest): Promise<CoreResponse> {
@@ -231,6 +297,16 @@ function parseProposal(body: unknown): RemoteApprovalProposal | { error: string 
   ) {
     return { error: 'facade action display fields are required and must be safe' };
   }
+  const linkUrl = value.link_url;
+  if (linkUrl !== undefined && !isSafeLink(linkUrl)) return { error: 'link_url must be https' };
+  if (value.presence_required !== undefined && value.presence_required !== true)
+    return { error: 'presence_required is invalid' };
+  // Only a card the phone shows in full (title and detail) may ask for presence or carry a link.
+  if (
+    (linkUrl !== undefined || value.presence_required === true) &&
+    proposalType !== 'facade_action'
+  )
+    return { error: 'link_url and presence_required need a facade_action' };
   if (
     typeof expiresAt !== 'number' ||
     !Number.isInteger(expiresAt) ||
@@ -254,7 +330,21 @@ function parseProposal(body: unknown): RemoteApprovalProposal | { error: string 
           display_detail: displayDetail,
         }
       : {}),
+    ...(typeof linkUrl === 'string' ? { link_url: linkUrl } : {}),
+    ...(value.presence_required === true ? { presence_required: true as const } : {}),
   };
+}
+
+/** An https link a phone may open: no credentials, no control or bidi text, within the cap. */
+function isSafeLink(value: unknown): value is string {
+  if (typeof value !== 'string' || value === '' || hasUnsafeText(value)) return false;
+  if (new TextEncoder().encode(value).length > MAX_LINK_URL_BYTES) return false;
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' && url.username === '' && url.password === '';
+  } catch {
+    return false;
+  }
 }
 
 function proposalDescription(proposal: RemoteApprovalProposal): string {
@@ -275,7 +365,8 @@ function parseStoredPayload(raw: string): RemoteApprovalPayload | null {
   try {
     const value = JSON.parse(raw) as Partial<RemoteApprovalPayload>;
     return (value.type === REMOTE_APPROVAL_PAYLOAD_TYPE ||
-      value.type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE) &&
+      value.type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE ||
+      value.type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE) &&
       typeof value.source_device_did === 'string' &&
       typeof value.source_task_id === 'string' &&
       typeof value.source_payload_hash === 'string' &&
@@ -304,6 +395,7 @@ function proposalResponse(
   expiresAt: number,
   deduped: boolean,
   error?: string,
+  payload?: Pick<RemoteApprovalPayload, 'type' | 'source_payload_hash'>,
 ): Record<string, unknown> {
   let decision: 'pending' | 'approved' | 'denied' | 'expired' = 'pending';
   if (status === WorkflowTaskState.Cancelled) decision = 'denied';
@@ -323,6 +415,13 @@ function proposalResponse(
     decision,
     expires_at: expiresAt,
     deduped,
+    // What the decision binds to: a source reading a mirror back checks it is the one it sent.
+    ...(payload !== undefined ? { source_payload_hash: payload.source_payload_hash } : {}),
+    // A yes to a presence-gated mirror was made in person: this node's route admits it no
+    // other way (`PRESENCE_GATED_PAYLOAD_TYPES`).
+    ...(decision === 'approved' && payload?.type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE
+      ? { presence_verified: true }
+      : {}),
   };
 }
 

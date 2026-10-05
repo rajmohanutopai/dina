@@ -31,6 +31,7 @@ import {
   type BootDegradation,
   type BootServiceInputs,
 } from '../services/boot_service';
+import { startUcp, stopUcp } from '../services/net_socket_wiring';
 
 import type { ProviderType } from '../ai/provider';
 import type { DinaNode , NodeRole } from '../services/bootstrap';
@@ -197,6 +198,10 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
         cachedDegradations = degradations.slice();
         notifyBootedNodeChanged(); // node is now reachable via getBootedNode()
         setState({ node, status: 'ready', error: null, degradations });
+        // UCP (plan §3.5, §3.11, §3.16): the buyer profile, merchant search and its guard,
+        // when enabled, once the node is up; a hook disposed meanwhile stops them again.
+        await startUcp(inputs.did);
+        if (disposed) await stopUcp();
       } catch (e) {
         const err = e instanceof Error ? e : new Error(String(e));
         if (disposed) return;
@@ -219,6 +224,8 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
         const node = ownedNode;
         pendingTeardown = (async () => {
           try {
+            // UCP reads the node's Core and database: it stops first.
+            await stopUcp();
             await node.dispose();
           } finally {
             if (singleton === node) {

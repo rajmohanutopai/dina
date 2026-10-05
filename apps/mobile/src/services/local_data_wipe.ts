@@ -22,6 +22,8 @@
 import { Paths, type Directory, type File } from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
 
+import { installUcpIdentity, setUcpSigningGeneration } from '@dina/core';
+
 import { clearCreditsState } from '../ai/credits';
 import { resetUnlockState } from '../hooks/useUnlock';
 import { shutdownAllPersistence } from '../storage/init';
@@ -30,6 +32,7 @@ import { clearDisplayNameOverride } from './display_name_override';
 import { clearPersistedDid } from './identity_record';
 import { clearIdentitySeeds } from './identity_store';
 import { clearOrphanKeychainState, writeInstallMarker } from './install_marker';
+import { stopUcp } from './net_socket_wiring';
 import { clearAutoPassphrase } from './startup_preferences';
 import { clearWrappedSeed } from './wrapped_seed_store';
 
@@ -45,6 +48,11 @@ import { clearWrappedSeed } from './wrapped_seed_store';
  * recoverable on this same device.
  */
 export async function signOutLocal(): Promise<void> {
+  // UCP stops first: no upload, search or guard claim under an identity being removed.
+  await stopUcp();
+  installUcpIdentity(null);
+  // A wiped node forgets its key ring with its record; a restore adopts the host's.
+  setUcpSigningGeneration(null);
   await clearWrappedSeed();
   await clearIdentitySeeds();
   await clearPersistedDid();
@@ -79,6 +87,11 @@ export async function eraseEverythingLocal(): Promise<void> {
   // wipe so the device ends in a clean state. The most likely cause
   // of failure is "persistence wasn't initialized" (pre-unlock erase
   // is a no-op for the close step).
+  // UCP stops before its database closes (its search store and guard claims read it).
+  await stopUcp();
+  installUcpIdentity(null);
+  // A wiped node forgets its key ring with its record; a restore adopts the host's.
+  setUcpSigningGeneration(null);
   try {
     await shutdownAllPersistence();
   } catch {

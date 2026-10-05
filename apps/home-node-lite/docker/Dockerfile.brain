@@ -42,6 +42,9 @@ COPY packages/protocol/package.json packages/protocol/tsconfig.json packages/pro
 COPY packages/a2a/package.json packages/a2a/tsconfig.json packages/a2a/
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/tsconfig.json packages/commerce-protocol/
 COPY packages/home-node/package.json packages/home-node/tsconfig.json packages/home-node/
+COPY packages/ucp/package.json packages/ucp/tsconfig.json packages/ucp/
+COPY packages/net-policy/package.json packages/net-policy/tsconfig.json packages/net-policy/
+COPY packages/net-socket-node/package.json packages/net-socket-node/tsconfig.json packages/net-socket-node/
 COPY packages/core/package.json packages/core/tsconfig.json packages/core/
 COPY packages/brain/package.json packages/brain/tsconfig.json packages/brain/
 COPY packages/crypto-node/package.json packages/crypto-node/tsconfig.json packages/crypto-node/

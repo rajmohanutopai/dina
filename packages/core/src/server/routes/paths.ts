@@ -246,3 +246,5 @@ export const OWNER_A2A_RUNNERS = '/v1/owner/a2a/runners'; // + /:lane/unbind
 // fencing ceremony.
 export const OWNER_A2A_DIRECTORY_LISTING = '/v1/owner/a2a/directory-listing';
 export const OWNER_A2A_PUBLISHER = '/v1/owner/a2a/publisher'; // + /activate, /deactivate
+// The card key's ring and the owner's rotation (UCP plan §4.8, U7).
+export const OWNER_A2A_CARD_KEY = '/v1/owner/a2a/card-key';

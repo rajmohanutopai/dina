@@ -45,6 +45,7 @@ Measured on 2026-10-02:
 | **AppView ingester, scorer, web; grants service** (built locally) | — | no state of their own | — | Rebuilt from source, if the exact image is kept (§4.3). |
 | **Jetstream** (`jetstream:sha-e027425`, a tag) | none | a short buffer of recent firehose events inside its container (default about a day; phase 1 confirms the setting), lost when the container is recreated | — | Nothing durable to lose. While the container survives, it can replay its buffer to a restored ingester. |
 | **Caddy** | `caddy-data`, `caddy-config` | TLS certificates, their private keys, the ACME account | small | Re-issued automatically once DNS points at the server — which is too late to check a replacement before cutover (§5.6). Backed up for that reason (§4.2). |
+| **UCP profile host** (in `appview-web`, once `UCP_PROFILE_HOST` is set; docs/UCP_IMPLEMENTATION_PLAN.md §3.5) | `postgres-data` (`ucp_profile_labels`), and an **off-host log bucket** apart from every backup layer | each label's binding to its DID, revision, epoch, registered and retired keys, and the profile it serves; the log holds every change to those except the profile | small | **Contained, if the log survives.** A restore from any older capture is caught up from the log, label by label, before a label serves or changes again; profiles come back as each node uploads (daily, or at its next boot). Losing the log as well would let a restore bring back a retired key or reopen a bound label, so the log bucket is versioned, retention-locked, and written with a key that cannot delete. |
 
 ### 1.2 Secrets and access
 
@@ -52,6 +53,7 @@ Measured on 2026-10-02:
 |---|---|---|
 | `PDS_ROTATION_KEY` (the PDS's PLC rotation key), `PDS_JWT_SECRET`, `PDS_ADMIN_PASSWORD`, `POSTGRES_PASSWORD` | **only** `$REMOTE_DIR/deploy/.env` on each server, generated there on first deploy by `generate_secrets`; never synced back | inside each server's disk, so also inside Hetzner backups and snapshots of it — **nowhere off Hetzner** |
 | Grants and app-attestation keys: `OPENROUTER_PROVISIONING_KEY`, `DEVICECHECK_PRIVATE_KEY`, `GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY` and related | `deploy/managed/infra/infra-prod.env` / `infra-test.env` on the operator's laptop (gitignored), written by every deploy into a managed grants block in the server's `deploy/.env` (`sync_grants_env`) | the laptop, and the server |
+| UCP profile host: `UCP_LOG_S3_*` (the log bucket's write-read-list key), `UCP_ACME_DNS_TOKEN` (a Hetzner project that holds only the ACME challenge zone, since a token covers its whole project) | `infra-<env>.env` on the operator's laptop, written by every deploy into a managed `ucp` block in the server's `deploy/.env` (`sync_ucp_env`) | the laptop, and the server |
 | SSH private key for both servers | the operator's laptop | none known |
 
 `generate_secrets` creates new values whenever `deploy/.env` is missing, so

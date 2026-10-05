@@ -27,8 +27,18 @@ import {
   type PublicationAttempt,
   type PublicationRow,
 } from '../../src/a2a';
+import { A2ACardKeyRotation, installA2ACardKeyRotation } from '../../src/a2a/card_key_rotation';
 import { newA2AId } from '../../src/a2a/ids';
+import { installA2ACardConfig } from '../../src/a2a/inbound_card';
 import { isAuthorized } from '../../src/auth/authz';
+import {
+  clearOwnerPresence,
+  installOwnerPresenceVerifier,
+  OWNER_IN_PROCESS_PRINCIPAL,
+  proveOwnerPresence,
+} from '../../src/commerce/owner_presence';
+import { deriveP256SigningKey } from '../../src/crypto';
+import { kvDelete } from '../../src/kv/store';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerA2ARoutes } from '../../src/server/routes/a2a';
 import { clearServiceConfigDurable } from '../../src/service/service_config';
@@ -352,6 +362,8 @@ describe('the owner routes', () => {
     ['POST', '/v1/owner/a2a/directory-listing'],
     ['POST', '/v1/owner/a2a/publisher/activate'],
     ['POST', '/v1/owner/a2a/publisher/deactivate'],
+    ['GET', '/v1/owner/a2a/card-key'],
+    ['POST', '/v1/owner/a2a/card-key'],
   ] as const;
 
   it.each(ROUTES)('%s %s is the owner’s alone: Brain cannot publish, in one process or two', async (method, path) => {
@@ -407,5 +419,50 @@ describe('the owner routes', () => {
     expect((await owner('POST', '/v1/owner/a2a/publisher/deactivate')).status).toBe(200);
     await owner('POST', '/v1/owner/a2a/directory-listing', { enabled: false });
     expect(calls).toEqual(['activate:true', 'deactivate', 'nudge']);
+  });
+
+  it('the card key (UCP plan §4.8): the ring; a rotation needs the owner present; nothing to rotate before the ring is known', async () => {
+    expect((await owner('GET', '/v1/owner/a2a/card-key')).status).toBe(503);
+    await kvDelete('card_key_ring', 'a2a');
+    let doc: Uint8Array | null | 'down' = 'down';
+    const seed = new Uint8Array(32).fill(5);
+    const rotation = new A2ACardKeyRotation({
+      keyAt: (g) => ({ privateKey: deriveP256SigningKey(seed, g).privateKey, generation: g }),
+      publicOrigin: 'https://dina.example.org',
+      document: {
+        readKey: async () => {
+          if (doc === 'down') throw new Error('plc down');
+          return doc;
+        },
+        recordKey: async (k) => {
+          doc = k;
+        },
+      },
+    });
+    installA2ACardKeyRotation(rotation);
+    try {
+      await rotation.start();
+      expect((await owner('GET', '/v1/owner/a2a/card-key')).body).toEqual({ generation: null, next: null, retiring: [] });
+      expect(await owner('POST', '/v1/owner/a2a/card-key', { action: 'rotate' })).toEqual(
+        expect.objectContaining({ status: 409, body: { error: 'card_key_unknown' } }),
+      );
+      doc = null;
+      await rotation.start();
+      expect((await owner('POST', '/v1/owner/a2a/card-key', { action: 'other' })).status).toBe(400);
+      installOwnerPresenceVerifier(async (p) => p === 'right');
+      expect(await owner('POST', '/v1/owner/a2a/card-key', { action: 'rotate' })).toEqual(
+        expect.objectContaining({ status: 403, body: expect.objectContaining({ error: 'no_user_presence' }) }),
+      );
+      expect(rotation.view().next).toBeNull();
+      await proveOwnerPresence('right', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+      expect(await owner('POST', '/v1/owner/a2a/card-key', { action: 'rotate' })).toEqual(
+        expect.objectContaining({ status: 200, body: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] } }),
+      );
+    } finally {
+      installA2ACardKeyRotation(null);
+      installA2ACardConfig(null);
+      installOwnerPresenceVerifier(null);
+      clearOwnerPresence();
+    }
   });
 });

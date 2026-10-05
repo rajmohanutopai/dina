@@ -13,6 +13,12 @@
  */
 
 import { resolve, ResolveParams } from '@/api/xrpc/resolve.js'
+import {
+  getMerchant,
+  GetMerchantParams,
+  searchMerchants,
+  SearchMerchantsParams,
+} from '@/api/xrpc/ucp-merchants.js'
 import { search, SearchParams } from '@/api/xrpc/search.js'
 import { getGraph, GetGraphParams } from '@/api/xrpc/get-graph.js'
 import { getProfile, GetProfileParams } from '@/api/xrpc/get-profile.js'
@@ -84,5 +90,14 @@ export const XRPC_ROUTES: Record<string, XrpcRoute> = {
   'com.dinakernel.a2a.getCard': {
     params: GetCardParams,
     handler: (db: any, params: any) => getCard(db, params),
+  },
+  // The UCP merchant index (UCP plan §3.15): candidates ranked by trust, never vouched for.
+  'com.dinakernel.ucp.searchMerchants': {
+    params: SearchMerchantsParams,
+    handler: (db: any, params: any) => searchMerchants(db, params),
+  },
+  'com.dinakernel.ucp.getMerchant': {
+    params: GetMerchantParams,
+    handler: (db: any, params: any) => getMerchant(db, params),
   },
 }

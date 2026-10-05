@@ -8,6 +8,27 @@
 
 export const MIRROR_MAX_LABEL = 160;
 export const MIRROR_MAX_DETAIL = 4_000;
+/** The longest a mirrored card may live, from when the phone takes it. */
+export const MIRROR_MAX_TTL_SECONDS = 15 * 60;
+
+/** Room for a node's clock to run ahead of the phone's. */
+const MIRROR_CLOCK_MARGIN_SECONDS = 60;
+
+/**
+ * When a card's mirrored copy lapses on the phone: the card's own end, or
+ * fifteen minutes (less a minute's clock margin) after the card was made,
+ * whichever is first. Fixed per card, so every resend of the proposal
+ * carries the same value. A longer card (a held shop search lives an hour
+ * for its approval to be used) is decided on the phone within this window;
+ * past it, the copy lapses and the console still has the card.
+ */
+export function mirrorExpiresAt(task: { created_at: number; expires_at?: number }): number | null {
+  if (typeof task.expires_at !== 'number') return null;
+  return Math.min(
+    task.expires_at,
+    Math.floor(task.created_at / 1000) + MIRROR_MAX_TTL_SECONDS - MIRROR_CLOCK_MARGIN_SECONDS,
+  );
+}
 
 /**
  * Whether a mirrored card's title and detail pass the mirror route's checks. A

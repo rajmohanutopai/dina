@@ -1314,9 +1314,11 @@ export {
   REMOTE_APPROVAL_API_PREFIX,
   REMOTE_APPROVAL_PAYLOAD_TYPE,
   REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE,
+  REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE,
   remoteApprovalProposalId,
 } from './server/routes/remote_approval';
 export { applyOwnerWorkflowDecision } from './server/routes/workflow';
+export { MIRROR_MAX_TTL_SECONDS, mirrorExpiresAt } from './approval/mirror_text';
 export * from './relay/identity_binding';
 // msgbox_ws's isAuthenticated collides with sync/client's; disambiguate
 // by renaming the relay one so both remain reachable from the package
@@ -1519,6 +1521,17 @@ export type {
   OwnerSetupStatus,
 } from './client/owner-setup-client';
 export type { OwnerSetupRouteOptions } from './server/routes/owner_setup';
+// UCP plan §4.2 U1: the owner's merchant settings and the comparison card's search view.
+export { OwnerUcpClient, OwnerUcpHttpError } from './client/owner-ucp-client';
+// UCP plan §3.17: a NAT'd server pulls the callbacks its paired phone caught for it.
+export { UCP_HELD_CALLBACKS_ACK, UCP_HELD_CALLBACKS_PULL } from './server/routes/ucp';
+export type {
+  UcpLinkCallback,
+  UcpLinkOwnerView,
+  UcpLinksOwnerView,
+  UcpLinkStart,
+  UcpSettingsView,
+} from './client/owner-ucp-client';
 export { OwnerPluginsClient, OwnerPluginsHttpError } from './client/owner-plugins-client';
 export type {
   CommercePackBegin,
@@ -1786,6 +1799,21 @@ export type {
   A2AGuardVerdictCode,
   A2AGuardVerdictInput,
   A2AGuardVerdictResult,
+  UcpFetchInput,
+  UcpFetchResult,
+  UcpGuardVerdictInput,
+  UcpGuardVerdictResult,
+  UcpGuardWork,
+  UcpCartCall,
+  UcpCheckoutCall,
+  UcpLineInput,
+  UcpShopResult,
+  UcpSearchInput,
+  UcpSearchMerchant,
+  UcpSearchProduct,
+  UcpSearchResult,
+  UcpSearchReviewResult,
+  UcpSearchView,
   A2AGuardWork,
   OwnerTurnInput,
   A2AOperationStatus,

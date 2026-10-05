@@ -32,6 +32,24 @@ describe('native Dina deep links', () => {
     expect(redirectSystemPath({ path: null, initial: true })).toBeNull();
   });
 
+  it('routes a merchant’s claimed account-link callback to its own screen (UCP plan §3.17)', () => {
+    const label = 'abcdefghijklmnopqrstuvwxyz';
+    expect(
+      redirectSystemPath({
+        path: `https://${label}.ucp.dinakernel.com/oauth/callback?code=c&state=s&iss=https%3A%2F%2Fshop.example`,
+        initial: true,
+      }),
+    ).toBe('/ucp/oauth/callback?code=c&state=s&iss=https%3A%2F%2Fshop.example');
+    // Not a label host, another path, or another host: left as it came.
+    for (const other of [
+      'https://shop.ucp.dinakernel.com/oauth/callback?code=c',
+      `https://${label}.ucp.dinakernel.com/other?code=c`,
+      `https://${label}.ucp.dinakernel.com.evil.example/oauth/callback?code=c`,
+      `https://${label}.ucp.dinakernel.com:8443/oauth/callback?code=c`,
+    ])
+      expect(redirectSystemPath({ path: other, initial: true })).toBe(other);
+  });
+
   it('does not rewrite non-Dina URLs used by other registered flows', () => {
     const callback = 'com.dinakernel.mobile:/oauth/callback?code=abc';
     expect(redirectSystemPath({ path: callback, initial: true })).toBe(callback);

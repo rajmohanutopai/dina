@@ -12,11 +12,11 @@ import { pino } from 'pino';
 import { a2aError, dinaRefusal } from '@dina/a2a';
 
 import { EdgeLimiter } from '../src/edge_limit';
-import { AGENT_CARD_PATH, buildGatewayServer } from '../src/server';
+import { AGENT_CARD_PATH, buildGatewayServer, callbackPage } from '../src/server';
 import { StreamHub } from '../src/stream_hub';
 
 import type { CoreLink, CoreReply } from '../src/core_link';
-import type { GatewayEnvelope } from '@dina/core';
+import type { GatewayEnvelope, UcpWebhookEnvelope } from '@dina/core';
 import type { FastifyInstance } from 'fastify';
 
 /** The opaque client key Core sends with a stream's opening answer. */
@@ -32,6 +32,10 @@ interface Recorded {
 let forwarded: Recorded[];
 let cardCalls: number;
 let coreReply: CoreReply;
+let webhooks: UcpWebhookEnvelope[];
+let webhookReply: CoreReply;
+let callbacks: Readonly<Record<string, string>>[];
+let callbackReply: CoreReply;
 let cardReply: Awaited<ReturnType<CoreLink['card']>>;
 let logLines: string[];
 let clock: number;
@@ -61,6 +65,14 @@ function build(
     async card() {
       cardCalls += 1;
       return cardReply;
+    },
+    async ucpWebhook(envelope) {
+      webhooks.push(envelope);
+      return webhookReply;
+    },
+    async ucpOauthCallback(params) {
+      callbacks.push(params);
+      return callbackReply;
     },
     async claimEvents() {
       return { ok: true, claim: { items: [], closed: [], fenced: [] } };
@@ -101,6 +113,10 @@ beforeEach(() => {
     answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 1, result: { id: 't-1' } } },
   };
   cardReply = { ok: true, card: { name: 'Bus 42' }, jwks: { keys: [{ kid: 'k' }] } };
+  webhooks = [];
+  webhookReply = { ok: true, answer: { status: 200, headers: {}, body: { ucp: { version: '2026-08-25' } } } };
+  callbacks = [];
+  callbackReply = { ok: true, answer: { status: 200, headers: {}, body: { linked: true, merchant_host: 'shop.example' } } };
   app = build();
 });
 
@@ -984,6 +1000,8 @@ describe('the client address behind a proxy', () => {
       core: {
         forward: async () => coreReply,
         card: async () => cardReply,
+        ucpWebhook: async () => ({ ok: false, status: 503 }),
+        ucpOauthCallback: async () => ({ ok: false, status: 503 }),
         claimEvents: async () => ({ ok: true, claim: { items: [], closed: [], fenced: [] } }),
         ackEvents: async (acks) => ({ ok: true, applied: acks.length }),
       },
@@ -1007,5 +1025,130 @@ describe('the client address behind a proxy', () => {
     const forged = await rpc(body, { 'x-forwarded-for': '7.7.7.7, 203.0.113.9' });
     expect(first.statusCode).toBe(200);
     expect(forged.statusCode).toBe(429);
+  });
+});
+
+describe('the UCP OAuth callback (UCP plan §3.17)', () => {
+  const PAGE_HEADERS = {
+    'content-type': 'text/html; charset=utf-8',
+    'cache-control': 'no-store',
+    'referrer-policy': 'no-referrer',
+  };
+
+  it('hands Core the four parameters, nothing else, and shows the owner what happened; the page keeps and loads nothing', async () => {
+    const res = await app.inject({
+      method: 'GET',
+      url: '/ucp/oauth/callback?code=c1&state=s1&iss=https%3A%2F%2Fshop.example%2Fauth&extra=x&code=c2',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers).toMatchObject(PAGE_HEADERS);
+    expect(res.headers['content-security-policy']).toContain("default-src 'none'");
+    expect(res.body).toContain('Your account at shop.example is linked');
+    // A repeated parameter is not a string: dropped, and Core refuses what is missing.
+    expect(callbacks).toEqual([{ state: 's1', iss: 'https://shop.example/auth' }]);
+  });
+
+  it('a refusal, and a Core it cannot reach, both read as not linked; the merchant host is escaped', async () => {
+    callbackReply = { ok: true, answer: { status: 200, headers: {}, body: { linked: false, reason: 'denied' } } };
+    const denied = await app.inject({ method: 'GET', url: '/ucp/oauth/callback?error=access_denied&state=s1' });
+    expect(denied.statusCode).toBe(200);
+    expect(denied.body).toContain('You said no at the shop');
+    expect(callbacks.at(-1)).toEqual({ error: 'access_denied', state: 's1' });
+    // Core did not answer (down, or still finishing a step-up past the wait): nothing is claimed.
+    callbackReply = { ok: false, status: 'unreachable' };
+    const down = await app.inject({ method: 'GET', url: '/ucp/oauth/callback?code=c&state=s' });
+    expect(down.statusCode).toBe(503);
+    expect(down.body).toContain('Dina did not answer in time');
+    expect(down.body).not.toContain('not linked');
+    expect(down.body).not.toContain('Nothing changed');
+    expect(callbackPage({ linked: true, host: '<b>x</b>' })).toContain('&lt;b&gt;x&lt;/b&gt;');
+  });
+
+  it('a second load of the same callback (a reload after a link that worked) does not say "not linked"', async () => {
+    callbackReply = { ok: true, answer: { status: 200, headers: {}, body: { linked: false, reason: 'unknown_state' } } };
+    const again = await app.inject({ method: 'GET', url: '/ucp/oauth/callback?code=c&state=s&iss=x' });
+    expect(again.statusCode).toBe(200);
+    expect(again.body).toContain('This sign-in was already used or has expired');
+    expect(again.body).not.toContain('not linked');
+    expect(again.body).toContain('Linked accounts in Dina shows whether your account is linked.');
+  });
+});
+
+describe('UCP order webhooks (UCP plan §3.13)', () => {
+  const post = (body: Buffer | string, headers: Record<string, string> = {}, url = '/ucp/webhooks/orders') =>
+    app.inject({
+      method: 'POST',
+      url,
+      headers: {
+        'content-type': 'application/json',
+        'ucp-agent': 'profile="https://shop.example/.well-known/ucp"',
+        'webhook-id': 'evt_1',
+        'webhook-timestamp': '1790000000',
+        'content-digest': 'sha-256=:x:',
+        'signature-input': 'sig1=("@method");keyid="k"',
+        signature: 'sig1=:AA==:',
+        authorization: 'Bearer secret',
+        cookie: 'a=b',
+        ...headers,
+      },
+      payload: body,
+    });
+
+  it('forwards the exact bytes and only the webhook’s own headers, and relays Core’s 200', async () => {
+    // Bytes JSON-decoding would not keep (a lone surrogate escape survives as text; raw bytes as bytes).
+    const bytes = Buffer.concat([Buffer.from('{"id":"o","checkout_id":"c","x":"'), Buffer.from([0xc3, 0xa9]), Buffer.from('"}')]);
+    const res = await post(bytes, {}, '/ucp/webhooks/orders?probe=1');
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ ucp: { version: '2026-08-25' } });
+    expect(webhooks).toHaveLength(1);
+    const [sent] = webhooks;
+    expect(Buffer.from(sent?.body_b64 ?? '', 'base64').equals(bytes)).toBe(true);
+    expect(sent?.path).toBe('/ucp/webhooks/orders');
+    expect(sent?.query).toBe('probe=1');
+    expect(Object.keys(sent?.headers ?? {}).sort()).toEqual([
+      'content-digest',
+      'content-type',
+      'signature',
+      'signature-input',
+      'ucp-agent',
+      'webhook-id',
+      'webhook-timestamp',
+    ]);
+  });
+
+  it('takes any content type: the digest covers the bytes, not their label', async () => {
+    const res = await post('{}', { 'content-type': 'text/plain' });
+    expect(res.statusCode).toBe(200);
+    expect(webhooks).toHaveLength(1);
+  });
+
+  it('a body over 512 KiB is refused at the edge, never forwarded', async () => {
+    const res = await post(Buffer.alloc(512 * 1024 + 1, 0x20));
+    expect(res.statusCode).toBe(413);
+    expect(webhooks).toEqual([]);
+  });
+
+  it('Core unreachable, slow or refusing: a 503 the merchant retries; never Core’s own words', async () => {
+    for (const reply of [
+      { ok: false, status: 'unreachable' } as const,
+      { ok: false, status: 503 } as const,
+      { ok: true, answer: { status: 403, headers: {}, body: { error: 'gateway_only' } } } as const,
+    ]) {
+      webhookReply = reply;
+      const res = await post('{}');
+      expect(res.statusCode).toBe(503);
+      expect(res.headers['retry-after']).toBe('30');
+      expect(res.json()).toEqual({ error: 'unavailable' });
+    }
+  });
+
+  it('a flood from one address is limited at the edge', async () => {
+    await app.close();
+    app = build(2);
+    expect((await post('{}')).statusCode).toBe(200);
+    expect((await post('{}')).statusCode).toBe(200);
+    const third = await post('{}');
+    expect(third.statusCode).toBe(429);
+    expect(webhooks).toHaveLength(2);
   });
 });

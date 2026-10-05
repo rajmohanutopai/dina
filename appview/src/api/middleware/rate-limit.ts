@@ -78,6 +78,18 @@ export const PER_METHOD_LIMITS_RPM: Readonly<Record<string, number>> = Object.fr
   // the detail tier.
   'com.dinakernel.a2a.searchAgents': 60,
   'com.dinakernel.a2a.getCard': 120,
+  // UCP plan §3.15: the merchant index, as the A2A directory.
+  'com.dinakernel.ucp.searchMerchants': 60,
+  'com.dinakernel.ucp.getMerchant': 120,
+  // UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5). Many phones can
+  // share one carrier NAT address, so changes and state reads sit at the
+  // detail tier; a merchant platform fetches many people's profiles from a
+  // few addresses, so profile reads and drop-box deliveries sit higher (each
+  // label's drop-box also has its own limit in the host).
+  'ucp.host.change': 120,
+  'ucp.host.state': 120,
+  'ucp.host.profile': 600,
+  'ucp.host.dropbox': 600,
 })
 
 /**

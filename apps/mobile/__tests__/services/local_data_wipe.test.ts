@@ -80,6 +80,13 @@ jest.mock('../../src/hooks/useUnlock', () => ({
   }),
 }));
 
+// UCP (plan §3.11): stopped before anything is cleared or closed.
+jest.mock('../../src/services/net_socket_wiring', () => ({
+  stopUcp: jest.fn(async () => {
+    callLog.push('stopUcp');
+  }),
+}));
+
 jest.mock('../../src/storage/init', () => ({
   shutdownAllPersistence: jest.fn(async () => {
     callLog.push('shutdownAllPersistence');
@@ -87,6 +94,8 @@ jest.mock('../../src/storage/init', () => ({
 }));
 
 import * as Notifications from 'expo-notifications';
+
+import { deriveUcpIdentity, getUcpIdentity, installUcpIdentity } from '@dina/core';
 
 import { resetUnlockState } from '../../src/hooks/useUnlock';
 import { clearDisplayNameOverride } from '../../src/services/display_name_override';
@@ -102,6 +111,7 @@ describe('signOutLocal', () => {
   beforeEach(() => {
     callLog.length = 0;
     jest.clearAllMocks();
+    installUcpIdentity(deriveUcpIdentity(new Uint8Array(32).fill(5), 0));
   });
 
   it('clears wrapped seed + identity keys + persisted DID + display-name override + auto-passphrase cache + resets unlock state', async () => {
@@ -122,6 +132,7 @@ describe('signOutLocal', () => {
   it('runs the clears in deterministic order', async () => {
     await signOutLocal();
     expect(callLog).toEqual([
+      'stopUcp',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
@@ -129,6 +140,8 @@ describe('signOutLocal', () => {
       'clearAutoPassphrase',
       'resetUnlockState',
     ]);
+    // The UCP signing key is gone from memory too.
+    expect(getUcpIdentity()).toBeNull();
   });
 
   it('propagates errors so the UI alert can render the message', async () => {
@@ -176,9 +189,12 @@ describe('eraseEverythingLocal', () => {
     // survive an in-process re-onboard or the next boot erases the new seed
     // as an apparent orphan.
     expect(callLog).toEqual([
+      // UCP stops while its database is still open, and again in the sign-out (a no-op then).
+      'stopUcp',
       'shutdownAllPersistence',
       'cancelAllScheduledNotificationsAsync',
       'clearOrphanKeychainState',
+      'stopUcp',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
@@ -317,9 +333,12 @@ describe('eraseEverythingLocal', () => {
 
     expect(__getDeletedEntries()).toEqual([]);
     expect(callLog).toEqual([
+      // UCP stops while its database is still open, and again in the sign-out (a no-op then).
+      'stopUcp',
       'shutdownAllPersistence',
       'cancelAllScheduledNotificationsAsync',
       'clearOrphanKeychainState',
+      'stopUcp',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',

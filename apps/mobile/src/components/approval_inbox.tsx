@@ -29,6 +29,7 @@ import {
   listPendingApprovals,
   listResolvedApprovals,
   approvePending,
+  declineUcpCard,
   denyPending,
   InboxNotConfiguredError,
   type InboxEntry,
@@ -39,6 +40,7 @@ import { OWNER_DECIDES_ON_THIS_SURFACE } from '../services/inbox_client_resolver
 import { getOwnerCommerceClient } from '../services/owner_commerce_client';
 import { isPresenceRefusal, ownerErrorText } from '../services/owner_errors';
 import { placedOrderRefs, supplierNamesHere } from '../services/supplier_names';
+import { loadWrappedSeed } from '../services/wrapped_seed_store';
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 import { colors, spacing, radius, shadows, textStyles } from '../theme';
 
@@ -58,16 +60,58 @@ const SUPPLIER_CARD_KINDS: ReadonlySet<string> = new Set([
 const unnamedSupplierCard = (e: InboxEntry): boolean =>
   SUPPLIER_CARD_KINDS.has(e.kind) && e.requesterName === undefined && e.requesterDID !== '';
 
+/**
+ * Whether this phone can prove a person is here: it can only with a passphrase (a wrapped
+ * seed). A convenience-mode phone cannot, so a card whose yes needs presence (a checkout
+ * hand-off) is decided on the server node's console instead of failing at a passphrase prompt.
+ */
+function usePresenceProvable(): boolean | null {
+  const [value, setValue] = useState<boolean | null>(null);
+  useEffect(() => {
+    // Read each time a card mounts: a passphrase set since is seen at once.
+    let live = true;
+    void loadWrappedSeed()
+      .then((w) => w !== null)
+      .catch(() => false)
+      .then((v) => {
+        if (live) setValue(v);
+      });
+    return () => {
+      live = false;
+    };
+  }, []);
+  return value;
+}
+
 /** An agent-action card's headline; an A2A mirror says which way the call goes. */
-function intentHeadline(e: Pick<InboxEntry, 'a2aMirror'>): string {
+function intentHeadline(
+  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice'>,
+): string {
+  // Only a failure, a cancellation or a dispute raises one (Silence First).
+  if (e.ucpOrderNotice !== undefined) return 'Your purchase needs a look';
+  if (e.ucpCheckout?.card === 'start') return 'Start a checkout at a merchant';
+  // Opens the merchant's own page; the owner pays there, never through Dina.
+  if (e.ucpCheckout?.card === 'handoff') return 'Review and pay on the merchant’s page';
+  // Opens the merchant's sign-in page here; the app catches its answer for the server node.
+  if (e.ucpCheckout?.card === 'link') return 'Link your account at a merchant';
+  if (e.ucpSearch === 'own') return 'A shop search Dina held';
+  // Sent by a paired device: its own words, named as such (the "via" line says which).
+  if (e.ucpSearch === 'mirrored') return 'A held shop search from a paired device';
   if (e.a2aMirror === 'outbound') return 'Message to an outside agent';
   if (e.a2aMirror === 'inbound') return 'Request from an outside agent';
   return 'Agent action approval';
 }
 
 /** An A2A mirror comes via the owner's server node; every other agent card names the agent. */
-function intentRequesterPrefix(e: Pick<InboxEntry, 'a2aMirror'>): string {
-  return e.a2aMirror !== undefined ? 'via' : 'agent';
+function intentRequesterPrefix(
+  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice'>,
+): string {
+  return e.a2aMirror !== undefined ||
+    e.ucpSearch !== undefined ||
+    e.ucpCheckout !== undefined ||
+    e.ucpOrderNotice !== undefined
+    ? 'via'
+    : 'agent';
 }
 
 /**
@@ -274,6 +318,11 @@ export function useApprovalInbox(): ApprovalInbox {
 
   const confirmAndRun = useCallback(
     async (entry: InboxEntry, verb: 'Approve' | 'Deny', action: () => Promise<unknown>) => {
+      // An order notice's "Seen" grants nothing and changes nothing outside: no confirm.
+      if (entry.ucpOrderNotice !== undefined && verb === 'Approve') {
+        await decide(entry.id, action);
+        return;
+      }
       const namesCapability =
         entry.kind === 'intent_validation' ||
         entry.kind === 'remote_coding_gate' ||
@@ -360,7 +409,12 @@ export function useApprovalInbox(): ApprovalInbox {
             // Already open or init failed — let Core attempt the drain anyway.
           }
         }
-        return approvePending(item.id, item.kind);
+        const decided = await approvePending(item.id, item.kind);
+        // A hand-off's yes (made in person: Core gates it) opens the merchant's page here.
+        const link = item.ucpCheckout?.openUrl;
+        if (link !== undefined && item.ucpCheckout?.linkHost !== '')
+          void Linking.openURL(link).catch(() => undefined);
+        return decided;
       });
     },
     [confirmAndRun],
@@ -380,7 +434,11 @@ export function useApprovalInbox(): ApprovalInbox {
 
   const deny = useCallback(
     (item: InboxEntry): void => {
-      void confirmAndRun(item, 'Deny', () => denyPending(item.id, 'denied_by_operator', item.kind));
+      void confirmAndRun(item, 'Deny', () =>
+        item.ucpSearch !== undefined || item.ucpCheckout !== undefined
+          ? declineUcpCard(item.id)
+          : denyPending(item.id, 'denied_by_operator', item.kind),
+      );
     },
     [confirmAndRun],
   );
@@ -442,6 +500,18 @@ export function ApprovalActionCard({
   onDeny: () => void;
 }): React.JSX.Element {
   const item = entry;
+  const provable = usePresenceProvable();
+  // A hand-off's or a link's yes needs a person present; a phone that cannot prove it (no
+  // passphrase) offers no yes: its own card says to set one, a mirrored hand-off to decide on
+  // the server. A link opens only here, so it always says to set one.
+  const gated = item.ucpCheckout?.card === 'handoff' || item.ucpCheckout?.card === 'link';
+  const approvable = !gated || provable !== false;
+  const presenceNote =
+    item.ucpCheckout?.card === 'link'
+      ? 'Linking needs a passphrase to show you are here, and this phone has none. Set one in Settings, then come back to this card.'
+      : item.ucpCheckout?.source === 'mirrored'
+        ? 'This phone has no passphrase to show you are here. Decide this on your server node’s console, or set a passphrase.'
+        : 'Paying needs a passphrase to show you are here, and this phone has none. Set one in Settings, then come back to this card.';
   const ageSec = Math.floor((Date.now() - item.createdAt) / 1000);
   const age =
     ageSec < 60
@@ -652,26 +722,46 @@ export function ApprovalActionCard({
           {actionError}
         </Text>
       ) : null}
+      {item.ucpOrderNotice?.openUrl !== undefined &&
+      item.ucpOrderNotice.linkHost !== undefined &&
+      item.ucpOrderNotice.linkHost !== '' ? (
+        // The merchant's own order page: where to track it, or return something.
+        <Pressable
+          testID={`approvals-order-open-${item.id}`}
+          accessibilityRole="link"
+          onPress={() => {
+            const url = item.ucpOrderNotice?.openUrl;
+            if (url !== undefined) void Linking.openURL(url).catch(() => undefined);
+          }}
+        >
+          <Text style={styles.intentAction}>
+            {item.ucpOrderNotice.checkout === true ? 'Go to' : 'Track or return at'}{' '}
+            {item.ucpOrderNotice.linkHost}
+          </Text>
+        </Pressable>
+      ) : null}
       {!decidableHere ? (
         <Text style={styles.ownerSurfaceNote} testID={`approvals-owner-surface-${item.id}`}>
           Approve or deny from your phone or Core's owner console.
         </Text>
       ) : (
         <View style={styles.actions}>
-          <Pressable
-            testID={`approvals-deny-${item.id}`}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.button,
-              styles.denyButton,
-              pressed && styles.pressed,
-              busy && styles.disabled,
-            ]}
-            disabled={busy}
-            onPress={onDeny}
-          >
-            <Text style={styles.denyText}>{isCheckoutLink ? 'Dismiss' : 'Deny'}</Text>
-          </Pressable>
+          {item.ucpOrderNotice === undefined ? (
+            <Pressable
+              testID={`approvals-deny-${item.id}`}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.button,
+                styles.denyButton,
+                pressed && styles.pressed,
+                busy && styles.disabled,
+              ]}
+              disabled={busy}
+              onPress={onDeny}
+            >
+              <Text style={styles.denyText}>{isCheckoutLink ? 'Dismiss' : 'Deny'}</Text>
+            </Pressable>
+          ) : null}
           {onAllow24h !== undefined && (
             // PLUGIN_ARCHITECTURE §15.5 — approve this invocation AND let the
             // same scope run silent for 24 hours. Offered only where Core says
@@ -711,26 +801,39 @@ export function ApprovalActionCard({
               <Text style={styles.approveOnceText}>Approve Once</Text>
             </Pressable>
           )}
-          <Pressable
-            testID={`approvals-approve-${item.id}`}
-            accessibilityRole="button"
-            style={({ pressed }) => [
-              styles.button,
-              styles.approveButton,
-              pressed && styles.pressed,
-              busy && styles.disabled,
-            ]}
-            disabled={busy}
-            onPress={() => (supportsSessionScope ? onApprove('session') : onApproveSimple())}
-          >
-            {busy ? (
-              <ActivityIndicator size="small" color={colors.white} />
-            ) : (
-              <Text style={styles.approveText}>
-                {isCheckoutLink ? 'Done' : isPaymentEvidence ? 'Record as paid' : 'Approve'}
-              </Text>
-            )}
-          </Pressable>
+          {!approvable ? (
+            <Text style={styles.riskHint} testID={`approvals-presence-unavailable-${item.id}`}>
+              {presenceNote}
+            </Text>
+          ) : null}
+          {approvable ? (
+            <Pressable
+              testID={`approvals-approve-${item.id}`}
+              accessibilityRole="button"
+              style={({ pressed }) => [
+                styles.button,
+                styles.approveButton,
+                pressed && styles.pressed,
+                busy && styles.disabled,
+              ]}
+              disabled={busy}
+              onPress={() => (supportsSessionScope ? onApprove('session') : onApproveSimple())}
+            >
+              {busy ? (
+                <ActivityIndicator size="small" color={colors.white} />
+              ) : (
+                <Text style={styles.approveText}>
+                  {isCheckoutLink || item.ucpOrderNotice !== undefined
+                    ? item.ucpOrderNotice !== undefined
+                      ? 'Seen'
+                      : 'Done'
+                    : isPaymentEvidence
+                      ? 'Record as paid'
+                      : 'Approve'}
+                </Text>
+              )}
+            </Pressable>
+          ) : null}
         </View>
       )}
     </View>
@@ -809,6 +912,27 @@ export function ResolvedApprovalCard({ entry }: { entry: ResolvedInboxEntry }): 
         </Text>
       </View>
       {executionNote !== null ? <Text style={styles.riskHint}>{executionNote}</Text> : null}
+      {item.outcome === 'approved' &&
+      (item.ucpCheckout?.card === 'handoff' || item.ucpCheckout?.card === 'link') &&
+      item.ucpCheckout.openUrl !== undefined &&
+      item.ucpCheckout.linkHost !== undefined &&
+      item.ucpCheckout.linkHost !== '' ? (
+        // The approved hand-off stays reachable: a tap here is the owner's own act (a browser
+        // would block a page opened after the approval's round trip).
+        <Pressable
+          testID={`approvals-resolved-open-${item.id}`}
+          accessibilityRole="link"
+          onPress={() => {
+            const url = item.ucpCheckout?.openUrl;
+            if (url !== undefined) void Linking.openURL(url).catch(() => undefined);
+          }}
+        >
+          <Text style={styles.intentAction}>
+            Open {item.ucpCheckout.linkHost}’s{' '}
+            {item.ucpCheckout.card === 'link' ? 'sign-in' : 'checkout'}
+          </Text>
+        </Pressable>
+      ) : null}
       {(isIntent || isPlugin) && item.capability !== '' ? (
         <Text
           style={styles.intentAction}

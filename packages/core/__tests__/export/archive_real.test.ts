@@ -25,7 +25,10 @@ import {
   markCommerceRestorePending,
 } from '../../src/commerce/restore_marker';
 import {
+  buildArchivePayload,
+  clearsOnRestore,
   createArchive,
+  encodeArchive,
   importArchive,
   readManifest,
   setArchiveDataSource,
@@ -1407,6 +1410,539 @@ describe('commerce restore fence marker (§16.2)', () => {
     const manifest = await readManifest(archive, PASS);
     const kv = manifest.identity.tables.kv_store ?? [];
     expect(kv.map((r) => r.key)).not.toContain(COMMERCE_RESTORE_PENDING_KEY);
+  });
+
+  it('a conversation’s taint and coverage travel with its chat history (UCP plan §3.16)', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      src.id.execute(
+        'INSERT INTO conversation_taint (session_id, persona, persona_tier, first_read_at) VALUES (?, ?, ?, ?)',
+        ['chat:main', 'health', 'sensitive', 1],
+      );
+      src.id.execute(
+        'INSERT INTO conversation_coverage (session_id, covered_since) VALUES (?, ?)',
+        ['chat:main', 1],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+      setArchiveDataSource(null);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS);
+      expect(
+        dest.id.query('SELECT session_id, persona, persona_tier FROM conversation_taint'),
+      ).toEqual([{ session_id: 'chat:main', persona: 'health', persona_tier: 'sensitive' }]);
+      expect(dest.id.query('SELECT session_id FROM conversation_coverage')).toEqual([
+        { session_id: 'chat:main' },
+      ]);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  it('an archive with chat history but no coverage record (from before UCP) clears coverage, forced or not', () => {
+    const preUcp = { chat_messages: [], contacts: [] };
+    expect(clearsOnRestore('conversation_coverage', preUcp, false)).toBe(true);
+    expect(clearsOnRestore('conversation_coverage', preUcp, true)).toBe(true);
+    // A current archive carries coverage: forced, it replaces it; otherwise it merges.
+    const current = { chat_messages: [], conversation_coverage: [] };
+    expect(clearsOnRestore('conversation_coverage', current, true)).toBe(true);
+    expect(clearsOnRestore('conversation_coverage', current, false)).toBe(false);
+    // No chat history restored: coverage is left as it is.
+    expect(clearsOnRestore('conversation_coverage', { contacts: [] }, true)).toBe(false);
+    // The other rules, unchanged: force clears only what the archive supplies, never kv_store.
+    expect(clearsOnRestore('contacts', preUcp, true)).toBe(true);
+    expect(clearsOnRestore('contacts', preUcp, false)).toBe(false);
+    expect(clearsOnRestore('commerce_order_refs', preUcp, true)).toBe(false);
+    expect(clearsOnRestore('kv_store', { kv_store: [] }, true)).toBe(false);
+  });
+
+  it('a forced restore of a current archive replaces coverage with the archive’s (here none)', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+      setArchiveDataSource(null);
+    }
+    // This build always writes the coverage key, so the forced restore of a current
+    // archive replaces coverage with the archive's (here, none).
+    const dest = freshBundle([]);
+    try {
+      dest.id.execute(
+        'INSERT INTO conversation_coverage (session_id, covered_since) VALUES (?, ?)',
+        ['chat:main', 1],
+      );
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      expect(dest.id.query('SELECT session_id FROM conversation_coverage')).toEqual([]);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  it('an archive written before UCP (chat history, no taint or coverage) leaves every thread uncovered, forced or not', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      src.id.execute(
+        `INSERT INTO chat_messages (id, thread_id, type, content, metadata, sources, timestamp, data_scope)
+         VALUES ('m1', 'main', 'user', 'hi', '{}', '[]', 1, 'user')`,
+      );
+      const payload = await buildArchivePayload(dataSourceFor(src));
+      // What an older build wrote: no key, and no checksum, for the tables it did not have.
+      const absent = new Set(['conversation_taint', 'conversation_coverage']);
+      payload.identity.tables = Object.fromEntries(
+        Object.entries(payload.identity.tables).filter(([table]) => !absent.has(table)),
+      );
+      if (payload.header.checksums !== undefined)
+        payload.header.checksums = Object.fromEntries(
+          Object.entries(payload.header.checksums).filter(
+            ([key]) => !absent.has(key.replace(/^identity:/, '')),
+          ),
+        );
+      archive = await encodeArchive(payload, PASS);
+    } finally {
+      closeBundle(src);
+      setArchiveDataSource(null);
+    }
+    for (const force of [false, true]) {
+      const dest = freshBundle([]);
+      try {
+        dest.id.execute(
+          'INSERT INTO conversation_coverage (session_id, covered_since) VALUES (?, ?)',
+          ['chat:main', 1],
+        );
+        setArchiveDataSource(dataSourceFor(dest));
+        await importArchive(archive, PASS, { force });
+        expect([force, dest.id.query('SELECT session_id FROM conversation_coverage')]).toEqual([
+          force,
+          [],
+        ]);
+        expect(dest.id.query('SELECT thread_id FROM chat_messages')).toEqual([
+          { thread_id: 'main' },
+        ]);
+      } finally {
+        closeBundle(dest);
+        setArchiveDataSource(null);
+      }
+    }
+  });
+
+  it('a forced restore that replaces the chat history forgets what Core kept about the replaced conversations', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+      setArchiveDataSource(null);
+    }
+    const dest = freshBundle([]);
+    try {
+      dest.id.execute(
+        `INSERT INTO chat_messages (id, thread_id, type, content, metadata, sources, timestamp, data_scope)
+         VALUES ('x1', 'main', 'user', 'old thread', '{}', '[]', 1, 'user')`,
+      );
+      const session = 'chat:main';
+      dest.id.execute(
+        `INSERT INTO ucp_handles (session_id, handle, kind, merchant_origin, value, parent, seq, created_at, used_at)
+         VALUES (?, 'p1', 'product', 'https://a.example', 'a1', '', 1, 1, 1)`,
+        [session],
+      );
+      dest.id.execute(
+        `INSERT INTO ucp_handle_counters (session_id, kind, last) VALUES (?, 'product', 1)`,
+        [session],
+      );
+      dest.id.execute(
+        `INSERT INTO ucp_searches (search_id, session_id, query_digest, merchants_json, state, created_at, guard_until)
+         VALUES ('s1', ?, 'd', '[]', 'running', 1, 2)`,
+        [session],
+      );
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      for (const table of ['ucp_handles', 'ucp_handle_counters', 'ucp_searches']) {
+        expect([table, dest.id.query(`SELECT 1 FROM ${table}`)]).toEqual([table, []]);
+      }
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  it('the owner’s shopping settings travel, and a forced restore replaces the target’s', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      src.id.execute(
+        `INSERT INTO ucp_owner_settings (id, settings_json, updated_at) VALUES (1, ?, 1)`,
+        [
+          JSON.stringify({
+            merchants: ['https://a-shop.example'],
+            context: { address_country: 'DE' },
+          }),
+        ],
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+      setArchiveDataSource(null);
+    }
+    const dest = freshBundle([]);
+    try {
+      dest.id.execute(
+        `INSERT INTO ucp_owner_settings (id, settings_json, updated_at) VALUES (1, ?, 2)`,
+        [JSON.stringify({ merchants: ['https://other.example'], context: {} })],
+      );
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS, { force: true });
+      expect(dest.id.query('SELECT settings_json FROM ucp_owner_settings')).toEqual([
+        {
+          settings_json: JSON.stringify({
+            merchants: ['https://a-shop.example'],
+            context: { address_country: 'DE' },
+          }),
+        },
+      ]);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
+  describe('UCP checkout sessions and orders (UCP plan §3.14, U3.5)', () => {
+    const SHOP = 'https://tea.example';
+    function session(
+      a: DatabaseAdapter,
+      id: string,
+      state: string,
+      extra: Record<string, unknown> = {},
+    ): void {
+      const row: Record<string, unknown> = {
+        session_id: id,
+        conversation: 'chat:main',
+        merchant_origin: SHOP,
+        leaf_profile_url: `${SHOP}/.well-known/ucp`,
+        version: '2026-08-25',
+        transport: 'rest',
+        endpoint: `${SHOP}/ucp`,
+        capabilities_hash: 'c',
+        profile_hash: 'p',
+        intent_json: '{}',
+        intent_hash: 'h',
+        review_id: `rv-${id}`,
+        state,
+        created_at: 1,
+        updated_at: 1,
+        ...extra,
+      };
+      const cols = Object.keys(row);
+      a.execute(
+        `INSERT INTO ucp_checkouts (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+        cols.map((c) => row[c]),
+      );
+    }
+    function order(
+      a: DatabaseAdapter,
+      id: string,
+      state: string,
+      extra: Record<string, unknown> = {},
+    ): void {
+      const row: Record<string, unknown> = {
+        merchant_origin: SHOP,
+        order_id: id,
+        checkout_id: 'co',
+        session_id: null,
+        leaf_profile_url: `${SHOP}/.well-known/ucp`,
+        permalink_url: `${SHOP}/orders/${id}`,
+        version: '2026-08-25',
+        transport: 'rest',
+        state,
+        record_json: '{"events":{"e1":{"type":"shipped"}},"adjustments":{}}',
+        last_change_at: 1,
+        next_poll_at: 5,
+        created_at: 1,
+        updated_at: 1,
+        ...extra,
+      };
+      const cols = Object.keys(row);
+      a.execute(
+        `INSERT INTO ucp_orders (${cols.join(', ')}) VALUES (${cols.map(() => '?').join(', ')})`,
+        cols.map((c) => row[c]),
+      );
+    }
+
+    it('travel in their restored form: nothing left able to send, no slot or lease, open orders due at once; live work stays behind', async () => {
+      const src = freshBundle([]);
+      let archive: Uint8Array;
+      try {
+        seedIdentity(src.id);
+        session(src.id, 'open-1', 'open', {
+          merchant_checkout_id: 'co_live',
+          permit_id: 'pm-1',
+          permit_expires_at: 9e12,
+          slot_holder: 'node-x',
+          slot_lease_until: 9e12,
+        });
+        session(src.id, 'handed-1', 'handed_off', {
+          handoff_source: 'continue_url',
+          handed_off_at: 1,
+          watch_next_at: 5,
+          prompted_at: 4,
+        });
+        session(src.id, 'done-1', 'completed', {
+          order_id: 'ord_1',
+          order_permalink_url: `${SHOP}/orders/ord_1`,
+        });
+        order(src.id, 'ord_1', 'open', {
+          lease_holder: 'node-x',
+          lease_until: 9e12,
+          prompted_at: 3,
+          snapshot_json: '{"fulfillment":{"events":[{"tracking_number":"TRK-SECRET-9"}]}}',
+        });
+        order(src.id, 'ord_2', 'not_shared', { next_poll_at: 7 });
+        order(src.id, 'ord_3', 'closed', { close_reason: 'settled', next_poll_at: null });
+        setArchiveDataSource(dataSourceFor(src));
+        archive = await createArchive(PASS);
+      } finally {
+        closeBundle(src);
+        setArchiveDataSource(null);
+      }
+      const manifest = await readManifest(archive, PASS);
+      // The merchant's snapshot (tracking numbers) never goes into a backup (S14).
+      expect(JSON.stringify(manifest.identity.tables)).not.toContain('TRK-SECRET-9');
+      for (const behind of [
+        'ucp_requests',
+        'ucp_carts',
+        'ucp_webhook_inbox',
+        'ucp_webhook_seen',
+        'ucp_searches',
+      ])
+        expect([behind, manifest.identity.tables[behind]]).toEqual([behind, undefined]);
+      const dest = freshBundle([]);
+      try {
+        setArchiveDataSource(dataSourceFor(dest));
+        const before = Date.now();
+        await importArchive(archive, PASS, { force: true });
+        const sessions = new Map(
+          dest.id.query('SELECT * FROM ucp_checkouts').map((r) => [String(r.session_id), r]),
+        );
+        expect(sessions.get('open-1')).toMatchObject({
+          state: 'unknown',
+          permit_id: 'pm-1',
+          permit_void_reason: 'restored',
+          slot_holder: null,
+          slot_lease_until: null,
+        });
+        // Live at backup and held by the merchant: read on the restored node (it may have been
+        // handed off and paid after the backup), through export and import alike.
+        expect(Number(sessions.get('open-1')?.prompted_at)).toBeGreaterThanOrEqual(before);
+        expect(Number(sessions.get('open-1')?.watch_next_at)).toBeGreaterThanOrEqual(before);
+        expect(sessions.get('handed-1')).toMatchObject({
+          state: 'unknown',
+          handoff_source: 'continue_url',
+          watch_next_at: null,
+          prompted_at: null,
+        });
+        expect(sessions.get('done-1')).toMatchObject({ state: 'completed', order_id: 'ord_1' });
+        const orders = new Map(
+          dest.id.query('SELECT * FROM ucp_orders').map((r) => [String(r.order_id), r]),
+        );
+        expect(orders.get('ord_1')).toMatchObject({
+          state: 'open',
+          lease_holder: null,
+          prompted_at: null,
+          snapshot_json: null,
+        });
+        expect(Number(orders.get('ord_1')?.next_poll_at)).toBeGreaterThanOrEqual(before);
+        // A webhook-only order keeps every id it saw, and its close date.
+        expect(orders.get('ord_2')).toMatchObject({ state: 'not_shared', next_poll_at: 7 });
+        expect(String(orders.get('ord_2')?.record_json)).toContain('"e1"');
+        expect(orders.get('ord_3')).toMatchObject({ state: 'closed', close_reason: 'settled' });
+      } finally {
+        closeBundle(dest);
+        setArchiveDataSource(null);
+      }
+    });
+
+    it('a crafted archive is put in the restored form on import: a live session, a lease, and a non-https link do not survive', async () => {
+      const src = freshBundle([]);
+      let archive: Uint8Array;
+      try {
+        seedIdentity(src.id);
+        setArchiveDataSource(dataSourceFor(src));
+        archive = await createArchive(PASS);
+      } finally {
+        closeBundle(src);
+        setArchiveDataSource(null);
+      }
+      const payload = await readManifest(archive, PASS);
+      const base = {
+        conversation: 'chat:main',
+        leaf_profile_url: `${SHOP}/.well-known/ucp`,
+        version: '2026-08-25',
+        transport: 'rest',
+        endpoint: `${SHOP}/ucp`,
+        capabilities_hash: 'c',
+        profile_hash: 'p',
+        intent_json: '{}',
+        intent_hash: 'h',
+        created_at: 1,
+        updated_at: 1,
+        watch_reads: 0,
+        slot_generation: 0,
+      };
+      payload.identity.tables.ucp_checkouts = [
+        {
+          ...base,
+          session_id: 's-live',
+          review_id: 'r1',
+          merchant_origin: SHOP,
+          state: 'open',
+          permit_id: 'pm',
+          permit_expires_at: 9e12,
+          slot_holder: 'evil',
+          slot_lease_until: 9e12,
+        },
+        {
+          ...base,
+          session_id: 's-bad',
+          review_id: 'r2',
+          merchant_origin: 'http://tea.example',
+          state: 'completed',
+        },
+      ];
+      const orderBase = {
+        checkout_id: 'co',
+        leaf_profile_url: `${SHOP}/.well-known/ucp`,
+        version: '2026-08-25',
+        transport: 'rest',
+        record_json: '{}',
+        notices_json: '[]',
+        polls: 0,
+        generation: 0,
+        last_change_at: 1,
+        created_at: 1,
+        updated_at: 1,
+      };
+      payload.identity.tables.ucp_orders = [
+        {
+          ...orderBase,
+          merchant_origin: SHOP,
+          order_id: 'o-ok',
+          permalink_url: `${SHOP}/o`,
+          state: 'open',
+          lease_holder: 'evil',
+          lease_until: 9e12,
+          next_poll_at: 9e12,
+        },
+        {
+          ...orderBase,
+          merchant_origin: SHOP,
+          order_id: 'o-js',
+          permalink_url: 'javascript:alert(1)',
+          state: 'open',
+        },
+        {
+          ...orderBase,
+          merchant_origin: SHOP,
+          order_id: 'o-state',
+          permalink_url: `${SHOP}/o`,
+          state: 'reopened',
+        },
+      ];
+      const dest = freshBundle([]);
+      try {
+        setArchiveDataSource(dataSourceFor(dest));
+        // The crafter computes the checksums as the archive does (sorted keys, SHA-256).
+        const checksum = (rows: Record<string, unknown>[]): string =>
+          Buffer.from(
+            sha256(
+              new TextEncoder().encode(
+                JSON.stringify(
+                  rows.map((r) =>
+                    Object.fromEntries(
+                      Object.keys(r)
+                        .sort()
+                        .map((k) => [k, r[k]]),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ).toString('hex');
+        const sums = (payload.header.checksums ??= {});
+        sums['identity:ucp_checkouts'] = checksum(payload.identity.tables.ucp_checkouts);
+        sums['identity:ucp_orders'] = checksum(payload.identity.tables.ucp_orders);
+        await importArchive(await encodeArchive(payload, PASS), PASS, { force: true });
+        expect(
+          dest.id.query(
+            'SELECT session_id, state, slot_holder, permit_void_reason FROM ucp_checkouts',
+          ),
+        ).toEqual([
+          {
+            session_id: 's-live',
+            state: 'unknown',
+            slot_holder: null,
+            permit_void_reason: 'restored',
+          },
+        ]);
+        const orders = dest.id.query('SELECT order_id, lease_holder, next_poll_at FROM ucp_orders');
+        expect(orders.map((r) => r.order_id)).toEqual(['o-ok']);
+        expect(orders[0]?.lease_holder).toBeNull();
+        expect(Number(orders[0]?.next_poll_at)).toBeLessThan(9e12);
+      } finally {
+        closeBundle(dest);
+        setArchiveDataSource(null);
+      }
+    });
+  });
+
+  it('the UCP publisher record and the A2A card key ring do NOT travel in an archive (UCP plan §3.5, §4.8)', async () => {
+    // The publisher record names THIS installation (instance, epoch, owner controls). Restored
+    // on another device, both would be one installation to the host, and neither would stand
+    // down. The card key ring, from an archive older than a rotation, would bring back a
+    // replaced key; a restored node reads the key in use from its DID document instead.
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      seedIdentity(src.id);
+      for (const [key, value] of [
+        ['ucp:publisher', '{"instance":"x"}'],
+        ['a2a:card_key_ring', '{"active":0,"retiring":[]}'],
+      ])
+        src.id.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+          key,
+          value,
+          1,
+        ]);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const manifest = await readManifest(archive, PASS);
+    const keys = (manifest.identity.tables.kv_store ?? []).map((r) => r.key);
+    expect(keys).not.toContain('ucp:publisher');
+    expect(keys).not.toContain('a2a:card_key_ring');
+    // The rest of the kv store still travels.
+    expect(keys.length).toBeGreaterThan(0);
   });
 });
 

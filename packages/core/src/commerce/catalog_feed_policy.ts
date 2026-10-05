@@ -19,6 +19,8 @@
  * implemented this policy.
  */
 
+import { isBlockedAddress } from '@dina/net-policy';
+
 /** §10.3 caps. Bounded work before any of it is trusted. */
 export const CATALOG_FEED_LIMITS = {
   /** ONE response, compressed. */
@@ -115,48 +117,13 @@ function parseIpLiteral(hostname: string): string | null {
 }
 
 /**
- * Is this address one a catalog fetch must never reach?
- *
- * Called by the fetcher against the address it ACTUALLY connected to, on every
- * hop. Covers loopback, private ranges, link-local (which is where the cloud
- * metadata endpoint lives), carrier-grade NAT, and the IPv6 equivalents
- * including the IPv4-mapped form that otherwise smuggles 127.0.0.1 past an
- * IPv4-only check.
+ * Is this address one a catalog fetch must never reach? The one classifier
+ * every outbound fetch shares (UCP plan §3.3): every range in the IANA IPv4
+ * and IPv6 special-purpose registries, IPv6 only inside global unicast, and
+ * the IPv4 inside mapped, NAT64 and 6to4 forms. Called against the address
+ * actually connected to, on every hop.
  */
-export function isBlockedAddress(address: string): boolean {
-  const value = address.trim().toLowerCase();
-  if (value === '') return true;
-
-  // IPv6, including the ::ffff:a.b.c.d mapped form.
-  if (value.includes(':')) {
-    if (value === '::' || value === '::1') return true;
-    // Unique-local (fc00::/7) and link-local (fe80::/10).
-    if (/^f[cd]/.test(value)) return true;
-    if (/^fe[89ab]/.test(value)) return true;
-    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/.exec(value);
-    if (mapped !== null) return isBlockedAddress(mapped[1]);
-    // An IPv4-mapped address written in hex still resolves to IPv4 space; we
-    // cannot decode every form, so anything else containing ':' that is not
-    // plainly a global unicast address is refused rather than guessed at.
-    return !/^[23][0-9a-f]{3}:/.test(value);
-  }
-
-  const octets = value.split('.').map((part) => Number(part));
-  if (octets.length !== 4 || octets.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) {
-    return true;
-  }
-  const [a, b] = octets as [number, number, number, number];
-  if (a === 0) return true; // "this network"
-  if (a === 10) return true; // private
-  if (a === 127) return true; // loopback
-  if (a === 169 && b === 254) return true; // link-local: cloud metadata
-  if (a === 172 && b >= 16 && b <= 31) return true; // private
-  if (a === 192 && b === 168) return true; // private
-  if (a === 100 && b >= 64 && b <= 127) return true; // carrier-grade NAT
-  if (a === 192 && b === 0) return true; // IETF protocol assignments
-  if (a >= 224) return true; // multicast + reserved + broadcast
-  return false;
-}
+export { isBlockedAddress };
 
 export type RedirectRefusal = 'too_many_redirects' | FeedUrlRefusal;
 

@@ -95,7 +95,7 @@ let seedByte = 1;
 async function pairDevice(
   role: PairedDevice['role'],
   name: string,
-  scope?: 'coding' | 'runner',
+  scope?: 'coding' | 'runner' | 'node',
 ): Promise<PairedDevice> {
   const seed = new Uint8Array(32).fill(seedByte++);
   const { code } = generatePairingCode({ deviceName: name, role, ...(scope ? { scope } : {}) });
@@ -140,6 +140,7 @@ describe('only the owner', () => {
   it.each([
     ['GET', '/status', undefined],
     ['POST', '/coding-agent', {}],
+    ['POST', '/server-node', {}],
     ['POST', '/staff', { device_name: 'till' }],
     ['POST', '/owner-device', { device_name: 'laptop' }],
     ['DELETE', '/staff/x', undefined],
@@ -161,6 +162,7 @@ describe('only the owner', () => {
 describe('minting needs a person present', () => {
   it.each([
     ['/coding-agent', {}],
+    ['/server-node', {}],
     ['/staff', { device_name: 'Clerk phone' }],
     ['/owner-device', { device_name: 'Office laptop' }],
   ] as const)('%s: refused until presence is proven, then minted', async (path, body) => {
@@ -192,6 +194,21 @@ describe('each code pairs exactly what it says', () => {
         scope: 'coding',
       });
     }
+  });
+
+  it('a server node (UCP plan §3.9): its own `node` scope, so it alone may mirror checkout cards', async () => {
+    const res = await owner('POST', '/server-node', { device_name: 'Home server' });
+    expect(res.status).toBe(201);
+    const body = res.body as { setup_code: string; device_name: string };
+    const parsed = parseAgentSetupCode(body.setup_code);
+    expect(getPairingIntent(parsed.code)).toEqual({
+      deviceName: 'Home server',
+      role: 'agent',
+      scope: 'node',
+    });
+    expect((await owner('POST', '/server-node', {})).body).toMatchObject({
+      device_name: 'server node',
+    });
   });
 
   it('a staff phone: the owner names it; the code carries the node’s signing key', async () => {

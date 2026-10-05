@@ -52,6 +52,7 @@ import {
   type CommerceComparisonLifecycle,
   type GroupPlanLifecycle,
   type QuoteRequestDraftLifecycle,
+  type UcpComparisonLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
 import {
@@ -294,6 +295,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       postCommerceCard(targetThread, parsed);
       postGroupPlanCard(targetThread, parsed);
       postQuoteRequestDraftCard(targetThread, parsed);
+      postUcpComparisonCard(targetThread, parsed);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
         const header = formatHeader({ askId, approvalId: tracking.approvalId });
@@ -433,6 +435,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       postCommerceCard(callerThread, answer);
       postGroupPlanCard(callerThread, answer);
       postQuoteRequestDraftCard(callerThread, answer);
+      postUcpComparisonCard(callerThread, answer);
       return {
         response: extractAnswerText(answer),
         sources: reviewSourcesFor(answer),
@@ -691,6 +694,26 @@ function postQuoteRequestDraftCard(threadId: string, answer: unknown): void {
     status: 'ready',
     draftId: `quote_request_draft:${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
     draft,
+  };
+  addLifecycleMessage(threadId, '', lifecycle);
+}
+
+/**
+ * Post a UCP search's comparison card (UCP plan §4.2 U1) when the answer
+ * carries one. The card is a view keyed by the search id: it reads what the
+ * owner sees from Core and PeerLens; Brain gives only the search id.
+ */
+function postUcpComparisonCard(threadId: string, answer: unknown): void {
+  if (typeof answer !== 'object' || answer === null) return;
+  const raw = (answer as Record<string, unknown>).ucpComparison;
+  if (typeof raw !== 'object' || raw === null) return;
+  const searchId = (raw as { search_id?: unknown }).search_id;
+  if (typeof searchId !== 'string' || searchId === '') return;
+  const lifecycle: UcpComparisonLifecycle = {
+    kind: 'ucp_comparison',
+    status: 'ready',
+    searchId,
+    cardSpec: { kind: 'ucp_comparison', search_id: searchId },
   };
   addLifecycleMessage(threadId, '', lifecycle);
 }

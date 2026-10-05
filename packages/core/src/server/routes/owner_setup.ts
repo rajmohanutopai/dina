@@ -41,6 +41,8 @@ export interface OwnerSetupRouteOptions {
 
 /** The coding-agent name when the owner gives none (the console's fixed name). */
 const DEFAULT_AGENT_NAME = 'coding-agent';
+/** The server node's name when the owner gives none. */
+const DEFAULT_NODE_NAME = 'server node';
 
 // Printable, no control characters: the name is shown on owner cards.
 // eslint-disable-next-line no-control-regex
@@ -52,22 +54,25 @@ function answer(status: number, body?: unknown): CoreResponse {
   return body === undefined ? { status, headers: NO_STORE } : { status, body, headers: NO_STORE };
 }
 
-type DeviceKind = 'coding-agent' | 'staff' | 'owner-device';
+type DeviceKind = 'coding-agent' | 'server-node' | 'staff' | 'owner-device';
 
 const KIND_OF: Record<DeviceKind, (d: PairedDevice) => boolean> = {
   'coding-agent': (d) => d.role === 'agent' && d.scope === 'coding',
+  'server-node': (d) => d.role === 'agent' && d.scope === 'node',
   staff: (d) => d.role === 'staff',
   'owner-device': (d) => d.role === 'owner',
 };
 
 const NOT_FOUND: Record<DeviceKind, string> = {
   'coding-agent': 'coding_agent_not_found',
+  'server-node': 'server_node_not_found',
   staff: 'staff_device_not_found',
   'owner-device': 'owner_device_not_found',
 };
 
 const NOT_DURABLE: Record<DeviceKind | 'device', string> = {
   'coding-agent': 'coding_agent_revoke_not_durable',
+  'server-node': 'server_node_revoke_not_durable',
   staff: 'staff_device_revoke_not_durable',
   'owner-device': 'owner_device_revoke_not_durable',
   device: 'device_revoke_not_durable',
@@ -136,6 +141,7 @@ export function registerOwnerSetupRoutes(
       home_did: nodeDID,
       msgbox_url: options.msgboxURL(),
       coding_agents: active.filter(KIND_OF['coding-agent']).map(summary),
+      server_nodes: active.filter(KIND_OF['server-node']).map(summary),
       staff_devices: active.filter(KIND_OF.staff).map(summary),
       owner_devices: active.filter(KIND_OF['owner-device']).map(summary),
       devices: listDevices().map(fullEntry),
@@ -155,6 +161,38 @@ export function registerOwnerSetupRoutes(
         deviceName: name,
         role: 'agent',
         scope: 'coding',
+      });
+      return answer(201, {
+        setup_code: buildAgentSetupCode({
+          msgboxUrl: options.msgboxURL(),
+          homenodeDid: nodeDID,
+          code,
+          deviceName: name,
+        }),
+        device_name: name,
+        expires_at: expiresAt,
+      });
+    } catch {
+      return answer(503, { error: 'Could not create a setup code; retry shortly' });
+    }
+  });
+
+  // The owner's own server node, paired here to mirror its approval cards (UCP plan §3.9:
+  // a checkout's start and hand-off, a held search). Paired as an agent with the `node`
+  // scope: it reaches no coding or runner surface, and it alone may send a card that opens a
+  // link or asks for a person present.
+  router.post(`${OWNER_SETUP_PREFIX}/server-node`, async (req) => {
+    const refused = owner(req) ?? presence(req, 'pairing a server node needs a person present');
+    if (refused !== null) return refused;
+    const name = deviceName(req, DEFAULT_NODE_NAME);
+    if (typeof name !== 'string') return name;
+    const nodeDID = getNodeDID();
+    if (nodeDID === null) return answer(503, { error: 'Home Node identity is not ready' });
+    try {
+      const { code, expiresAt } = generatePairingCode({
+        deviceName: name,
+        role: 'agent',
+        scope: 'node',
       });
       return answer(201, {
         setup_code: buildAgentSetupCode({

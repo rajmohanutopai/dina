@@ -30,6 +30,7 @@ export type DisplayType =
   | 'commerce-comparison'
   | 'group-plan'
   | 'quote-request-draft'
+  | 'ucp-comparison'
   | 'nudge'
   | 'reminder'
   | 'briefing';
@@ -117,6 +118,11 @@ export function toDisplayType(m: ChatMessage): DisplayType {
   if (m.type === 'dina' && lifecycle?.kind === 'quote_request_draft') {
     return 'quote-request-draft';
   }
+  // ucp_comparison card (UCP plan §4.2 U1): a merchant search's results as the
+  // owner sees them, ordered by each shop's PeerLens trust.
+  if (m.type === 'dina' && lifecycle?.kind === 'ucp_comparison') {
+    return 'ucp-comparison';
+  }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
   if (m.type === 'reminder') return 'reminder';
@@ -142,6 +148,8 @@ export function chatRowKind(displayType: DisplayType): string {
       return 'group-plan';
     case 'quote-request-draft':
       return 'quote-request-draft';
+    case 'ucp-comparison':
+      return 'ucp-comparison';
     case 'quarantine-request':
       return 'quarantine';
     case 'ask-approval':

@@ -71,6 +71,8 @@ vi.mock('@/scorer/jobs/cosig-expiry-sweep.js', () => ({
 vi.mock('@/scorer/jobs/subject-orphan-gc.js', () => ({
   subjectOrphanGc: (...args: any[]) => mockSubjectOrphanGc(...args),
 }))
+// The merchant crawler opens a network socket on first use: never in a unit test.
+vi.mock('@/scorer/jobs/ucp-merchant-crawler.js', () => ({ ucpMerchantCrawler: vi.fn() }))
 
 // Mock logger and metrics
 const mockLoggerInfo = vi.fn()
@@ -136,13 +138,14 @@ describe('SS7.1 Scheduler', () => {
     startScheduler(mockDb)
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-SCH-001: all 13 jobs registered"}
-  it('UT-SCH-001: all 13 jobs registered', () => {
+  // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-SCH-001: all 14 jobs registered"}
+  it('UT-SCH-001: all 14 jobs registered', () => {
     // Description: startScheduler called
-    // Expected: 13 cron.schedule calls made (9 baseline + cosig-expiry-sweep
+    // Expected: 14 cron.schedule calls made (9 baseline + cosig-expiry-sweep
     // + subject-orphan-gc + subject-enrich-recompute (TN-ENRICH-006)
-    // + backfill-handles)
-    expect(cronScheduleCalls).toHaveLength(13)
+    // + backfill-handles + ucp-merchant-crawler (UCP plan §3.15))
+    expect(cronScheduleCalls).toHaveLength(14)
+    expect(cronScheduleCalls[13]?.schedule).toBe('20 * * * *')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0264", "section": "01", "sectionName": "General", "title": "UT-SCH-002: refresh-profiles runs every 5 min"}

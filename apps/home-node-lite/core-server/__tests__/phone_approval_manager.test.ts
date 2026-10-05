@@ -17,6 +17,7 @@ jest.mock('../src/approval/phone_approval_msgbox', () => {
 });
 
 import { PhoneApprovalManager } from '../src/approval/phone_approval_manager';
+import { markServerNodePairingNeeded } from '../src/approval/phone_approval_sync';
 
 const setupCode = buildAgentSetupCode({
   msgboxUrl: 'wss://mailbox.example/ws',
@@ -109,6 +110,29 @@ describe('PhoneApprovalManager', () => {
       ['DELETE', '/v1/agent/approval-sync/v1/proposals/remote-approval-mirror'],
       ['DELETE', '/v1/devices/self'],
     ]);
+    await manager.stop();
+  });
+
+  it('a pairing attempt that fails keeps the "re-pair as a Server node" sign; one that succeeds clears it', async () => {
+    const manager = new PhoneApprovalManager(new Uint8Array(32).fill(13), logger);
+    await manager.pair(setupCode);
+    await markServerNodePairingNeeded();
+    expect(manager.status()).toMatchObject({ state: 'active', needsServerNodePairing: true });
+    // Already paired: refused, and nothing changed.
+    await expect(manager.pair(setupCode)).rejects.toThrow();
+    expect(manager.status()).toMatchObject({ needsServerNodePairing: true });
+    await manager.revoke();
+    await manager.pair(setupCode);
+    expect(manager.status().needsServerNodePairing).toBeUndefined();
+    await manager.stop();
+  });
+
+  it('pairing at boot from a configured setup code clears a sign left by a revoked pairing', async () => {
+    await markServerNodePairingNeeded();
+    const manager = new PhoneApprovalManager(new Uint8Array(32).fill(14), logger);
+    await manager.initialize(setupCode);
+    expect(manager.status()).toMatchObject({ state: 'active' });
+    expect(manager.status().needsServerNodePairing).toBeUndefined();
     await manager.stop();
   });
 

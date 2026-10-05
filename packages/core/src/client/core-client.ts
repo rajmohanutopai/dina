@@ -269,6 +269,152 @@ export interface A2AGuardVerdictInput {
 
 export type A2AGuardVerdictResult = { ok: true; state: string } | { ok: false; status: number; reason: string };
 
+/** A line Brain names: a variant handle it saw, and a quantity in the unit's steps. */
+export interface UcpLineInput {
+  variant: string;
+  quantity: number;
+}
+
+/** A cart call (UCP plan §3.7, U2.7). `POST /v1/ucp/cart`. */
+export type UcpCartCall = { releaseSession: string } & (
+  | { op: 'create'; lines: readonly UcpLineInput[] }
+  | { op: 'update'; cartId: string; lines: readonly UcpLineInput[] }
+  | { op: 'cancel' | 'read'; cartId: string }
+);
+
+/** A checkout call (UCP plan §3.7, U2.7). `POST /v1/ucp/checkout`. */
+export type UcpCheckoutCall = { releaseSession: string } & (
+  | { op: 'propose'; lines: readonly UcpLineInput[]; discountCodes?: readonly string[] }
+  | { op: 'view' | 'handoff' | 'cancel'; sessionId: string }
+  | { op: 'choose'; sessionId: string; choice: string; rev: string }
+);
+
+/**
+ * Core's answer to a cart or checkout call: the cart or checkout as Brain may
+ * read it (no merchant words or ids), or a refusal with its reason.
+ */
+export type UcpShopResult =
+  | { ok: true; status: number; body: Record<string, unknown> }
+  | { ok: false; status: number; reason: string; detail?: string };
+
+export interface UcpSearchInput {
+  /** The conversation the search serves (`chat:<thread>` or `ask:<id>`). */
+  releaseSession: string;
+  query: string;
+  /** Merchant origins (`https://host`), each one the owner allows; none means all of them (at most ten). */
+  merchants?: string[];
+  /** An owner-approved `ucp_search_review` card for exactly this search. */
+  reviewId?: string;
+}
+
+/** One merchant's part in a search; `state` is Core's `MerchantOutcome` state. */
+export interface UcpSearchMerchant {
+  handle: string;
+  origin: string;
+  state:
+    | 'ok'
+    | 'unreachable'
+    | 'timed_out'
+    | 'too_large'
+    | 'unavailable'
+    | 'request_invalid'
+    | 'rate_limited'
+    | 'refused'
+    | 'link_required'
+    | 'profile_rejected'
+    | 'merchant_error'
+    | 'error_response'
+    | 'answer_invalid'
+    | 'malformed';
+  products: number;
+  /** Products not used: unreadable, or an id the answer repeats. */
+  skipped: number;
+}
+
+export type UcpSearchResult =
+  | { ok: true; searchId: string; merchants: UcpSearchMerchant[]; provenance: 'quoted' | 'derived' }
+  /**
+   * `needs_review` carries `why`; a used, pending or declined card reads `review_<state>`;
+   * `no_owner_turn` (no live owner turn in the session) and `ucp_not_ready` (sealed node).
+   */
+  | { ok: false; status: number; reason: string; why?: string[]; allowed?: string[] };
+
+export interface UcpFetchInput {
+  releaseSession: string;
+  /** Product handles (`p3`) seen in this conversation; at most ten. */
+  products: string[];
+}
+
+/** Products fetched afresh, kept as a search: read them with `getUcpSearch`. */
+export type UcpFetchResult =
+  | { ok: true; searchId: string; merchants: UcpSearchMerchant[]; missing: string[] }
+  | { ok: false; status: number; reason: string };
+
+export type UcpSearchReviewResult =
+  | { ok: true; reviewId: string; expiresAt: number }
+  | { ok: false; status: number; reason: string; allowed?: string[] };
+
+export interface UcpSearchProduct {
+  product: {
+    handle: string;
+    merchant: string;
+    price_range: {
+      min: { amount: string; currency: string };
+      max: { amount: string; currency: string };
+    };
+    variants: {
+      handle: string;
+      price: { amount: string; currency: string };
+      list_price?: { amount: string; currency: string };
+      unit: string;
+      scale: number;
+      increment: number;
+      available?: boolean;
+    }[];
+  };
+  text: {
+    title: string;
+    description?: string;
+    variants: { handle: string; title: string; unit_text?: string }[];
+  } | null;
+  /**
+   * `passed`: the guard passed the text. `pending`: it is still checking.
+   * `withheld`: it did not pass it, or ran out of time. `unchecked`: past the
+   * guard's caps (20 an answer, 40 a search), so never offered to it.
+   */
+  text_state: 'passed' | 'pending' | 'withheld' | 'unchecked';
+}
+
+export interface UcpSearchView {
+  search_id: string;
+  complete: boolean;
+  products: UcpSearchProduct[];
+  withheld_marker: string;
+}
+
+export interface UcpGuardWork {
+  job_id: string;
+  claim_id: string;
+  claimed_until: number;
+  digest: string;
+  /** The merchant's origin. */
+  merchant: string;
+  /** `{merchant, text}`: the product's text, cut, exactly as it would be released. */
+  content: unknown;
+}
+
+export interface UcpGuardVerdictInput {
+  jobId: string;
+  claimId: string;
+  digest: string;
+  verdict: 'passed' | 'blocked';
+  code: A2AGuardVerdictCode;
+}
+
+export type UcpGuardVerdictResult =
+  | { ok: true; state: 'passed' | 'blocked' }
+  | { ok: false; status: number; reason: string };
+
 export interface OwnerTurnInput {
   /** The conversation, as vault reads name it (`chat:<thread>`). */
   releaseSession: string;
@@ -672,6 +818,38 @@ export interface CoreClient {
 
   /** The digest-bound guard verdict. `POST /v1/a2a/guard/verdict`. */
   submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult>;
+
+  /**
+   * Search merchants (UCP plan §3.11, §3.16). Core checks the query first: one
+   * carrying personal data, or from a conversation that read a private vault,
+   * is refused `needs_review` with its reasons. `POST /v1/ucp/search`.
+   */
+  searchUcp(input: UcpSearchInput): Promise<UcpSearchResult>;
+
+  /** Fetch products by handle afresh from their merchants. `POST /v1/ucp/products`. */
+  fetchUcpProducts(input: UcpFetchInput): Promise<UcpFetchResult>;
+
+  /** A search's products as Brain may read them; null when not this conversation's. `GET /v1/ucp/search/:id`. */
+  getUcpSearch(searchId: string, releaseSession: string): Promise<UcpSearchView | null>;
+
+  /** Ask Core to raise the owner's card for a held search. `POST /v1/ucp/search/review`. */
+  raiseUcpSearchReview(input: Omit<UcpSearchInput, 'reviewId'>): Promise<UcpSearchReviewResult>;
+
+  /** Build, change, cancel or read a cart by handles. `POST /v1/ucp/cart`. */
+  ucpCart(input: UcpCartCall): Promise<UcpShopResult>;
+
+  /**
+   * Propose a checkout (raising the owner's start card), read it, choose a
+   * delivery offer, hand it off (raising the owner's pay card) or cancel it.
+   * `POST /v1/ucp/checkout`.
+   */
+  ucpCheckout(input: UcpCheckoutCall): Promise<UcpShopResult>;
+
+  /** Claim a product's text to judge; null when there is none. `POST /v1/ucp/guard/next`. */
+  claimUcpGuardJob(): Promise<UcpGuardWork | null>;
+
+  /** The digest-bound verdict on a product's text. `POST /v1/ucp/guard/verdict`. */
+  submitUcpGuardVerdict(input: UcpGuardVerdictInput): Promise<UcpGuardVerdictResult>;
 
   /**
    * Record the owner's words at the start of a chat turn, before any model

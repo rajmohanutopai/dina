@@ -69,6 +69,10 @@ describe('11.1 Schema Correctness', () => {
       // The A2A directory (design §8.3): cards, the moderator's gate, account
       // status, the event spool, and the readiness row serving reads.
       'a2a_cards', 'a2a_card_takedowns', 'a2a_account_status', 'a2a_event_spool', 'a2a_directory_state',
+      // The UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5).
+      'ucp_profile_labels',
+      // The UCP merchant index (§3.15).
+      'ucp_merchants',
     ]
 
     const result = await db.execute(sql`

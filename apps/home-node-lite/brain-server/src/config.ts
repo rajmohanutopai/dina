@@ -34,6 +34,11 @@ const RuntimeSchema = z.object({
 const ReasoningSchema = z.object({
   /** Start the co-located Brain's durable always-on reasoning worker. */
   internalBrainEnabled: z.boolean(),
+  /**
+   * UCP shopping (plan §4.2 U1): offer the catalogue tools and run the guard
+   * over merchant text. The same `DINA_UCP_ENABLED` switch turns it on in Core.
+   */
+  ucpEnabled: z.boolean(),
 });
 
 const CoreSchema = z.object({
@@ -147,6 +152,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): BrainServerCon
     },
     reasoning: {
       internalBrainEnabled,
+      ucpEnabled: readBool(env, 'DINA_UCP_ENABLED', false),
     },
     runtime: {
       logLevel: (env.DINA_BRAIN_LOG_LEVEL ?? 'info') as 'info',

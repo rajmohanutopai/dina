@@ -288,6 +288,8 @@ describe('DeliveryPump', () => {
   const core = (): CoreLink => ({
     forward: async () => ({ ok: false, status: 'unreachable' }),
     card: async () => ({ ok: false, status: 'unreachable' }),
+    ucpWebhook: async () => ({ ok: false, status: 'unreachable' }),
+    ucpOauthCallback: async () => ({ ok: false, status: 'unreachable' }),
     claimEvents: async (limit, webhookLimit) => {
       claims.push({ limit, webhookLimit });
       return { ok: true, claim: next.shift() ?? { items: [], closed: [], fenced: [] } };

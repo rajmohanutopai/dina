@@ -51,10 +51,13 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@cfworker/json-schema": "4.1.1",
+    "@dina/a2a": "*",
+    "@dina/commerce-protocol": "*",
+    "@dina/net-policy": "*",
     "@dina/protocol": "*",
     "@dina/test-harness": "*",
-    "@dina/commerce-protocol": "*",
-    "@dina/a2a": "*"
+    "@dina/ucp": "*"
   },
   "devDependencies": {
     "@types/jest": "^29.5.0",

@@ -41,9 +41,19 @@ import {
   type A2ACardConfig,
   type InboundRuntime,
 } from '../../src/a2a';
+import {
+  A2ACardKeyRotation,
+  bootA2ACardKeys,
+  CARD_KEY_OVERLAP_MS,
+  CARD_KEY_SWITCH_WAIT_MS,
+  installA2ACardKeyRotation,
+  startA2ACardKeySchedule,
+  A2A_JWKS_MAX_AGE_SECONDS,
+} from '../../src/a2a/card_key_rotation';
 import { projectionCapability } from '../../src/a2a/inbound_card';
 import { deriveP256SigningKey } from '../../src/crypto';
 import { registerDevice, resetDeviceRegistry } from '../../src/devices/registry';
+import { kvDelete, kvGet } from '../../src/kv/store';
 import { clearPairingState, setNodeDID } from '../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerA2AIngressRoutes } from '../../src/server/routes/a2a_ingress';
@@ -468,5 +478,364 @@ describe('configuration and the gateway route', () => {
     const ok = await get('gateway');
     expect(ok.status).toBe(200);
     expect(Object.keys(ok.body as object).sort()).toEqual(['card', 'jwks']);
+  });
+});
+
+describe('card key rotation (UCP plan §4.8, U7)', () => {
+  const router = new CoreRouter();
+  registerA2AIngressRoutes(router);
+  const fromCore = async () => {
+    const r = await router.handle({
+      method: 'GET',
+      path: '/v1/a2a/card',
+      query: {},
+      headers: {},
+      body: undefined,
+      rawBody: new Uint8Array(),
+      params: {},
+      trustedInProcess: true,
+      callerType: 'gateway',
+      callerDID: 'did:key:gateway',
+    } as CoreRequest);
+    return r;
+  };
+  let now = 1_759_000_000_000;
+  const keyAt = (g: number) => ({ privateKey: deriveP256SigningKey(SEED, g).privateKey, generation: g });
+  const kidOf = (g: number) => cardPublicJwk(keyAt(g)).kid as string;
+  const compressed = (g: number) => deriveP256SigningKey(SEED, g).publicKey;
+  /** The DID document's #a2a_card key: 'down' when it cannot be read or written. */
+  let docKey: Uint8Array | null | 'down' = null;
+  const recorded: number[] = [];
+  const rotation = (withDocument = true) =>
+    new A2ACardKeyRotation({
+      keyAt,
+      publicOrigin: ORIGIN,
+      document: withDocument
+        ? {
+            readKey: async () => {
+              if (docKey === 'down') throw new Error('plc down');
+              return docKey;
+            },
+            recordKey: async (k) => {
+              if (docKey === 'down') throw new Error('plc down');
+              docKey = k;
+              recorded.push(now);
+            },
+          }
+        : null,
+      now: () => now,
+    });
+
+  /** The gateway: keeps Core's card and set for 30 s, serves the set with max-age 30. */
+  class Gateway {
+    private copy: { card: AgentCard; jwks: { keys: JsonObject[] }; at: number } | null = null;
+    async get() {
+      if (this.copy === null || now - this.copy.at >= 30_000) {
+        const r = await fromCore();
+        if (r.status !== 200) throw new Error(`card ${r.status}`);
+        const b = r.body as { card: AgentCard; jwks: { keys: JsonObject[] } };
+        this.copy = { ...b, at: now };
+      }
+      return this.copy;
+    }
+  }
+  /** A remote agent: keeps the set for its full max-age, never refreshes early, verifies the card. */
+  class Client {
+    constructor(
+      private readonly gateway: Gateway,
+      /** A set it already holds (taken earlier), if any. */
+      private set: { keys: JsonObject[]; until: number } | null = null,
+    ) {}
+    async verifies(): Promise<boolean> {
+      const { card, jwks } = await this.gateway.get();
+      if (this.set === null || now >= this.set.until)
+        this.set = { keys: jwks.keys, until: now + A2A_JWKS_MAX_AGE_SECONDS * 1000 };
+      const keys = this.set.keys;
+      const report = await verifyAgentCardSignatures(card as unknown as Record<string, unknown>, ({ header, signingInputs, signature }) => {
+        const jwk = keys.find((k) => k.kid === header.kid);
+        const parsed = jwk === undefined ? null : parsePublicJwk(jwk);
+        return parsed !== null && signingInputs.some((input) => verifyWithJwk(parsed, header.alg, input, signature));
+      });
+      return report.state === 'verified';
+    }
+  }
+  const signer = async (gateway: Gateway) => {
+    const { card } = await gateway.get();
+    const sig = card.signatures?.[0] as { protected: string } | undefined;
+    const decoded = base64urlDecode(sig?.protected ?? '');
+    if (decoded === null) throw new Error('no protected header');
+    const header = JSON.parse(Buffer.from(decoded).toString('utf8')) as { kid: string };
+    return header.kid;
+  };
+
+  beforeEach(async () => {
+    now = 1_759_000_000_000;
+    docKey = null;
+    recorded.length = 0;
+    await kvDelete('card_key_ring', 'a2a');
+  });
+  afterEach(() => installA2ACardKeyRotation(null));
+
+  it('a client that keeps the set its full max-age and never refreshes early verifies the card through the switch and the overlap', async () => {
+    const r = rotation();
+    installA2ACardKeyRotation(r);
+    expect(await r.start()).toBe(true);
+    const gateway = new Gateway();
+    const client = new Client(gateway);
+    expect(await client.verifies()).toBe(true);
+    now += 29_000;
+    await r.rotate();
+    // Listed, not signing; and not counted as served until the gateway takes a set naming it.
+    expect(getA2ACardConfig()?.also?.map((k) => k.generation)).toEqual([1]);
+    expect(r.view().next).toEqual({ generation: 1, signs_from: null });
+    now += 10 * CARD_KEY_SWITCH_WAIT_MS;
+    await r.step();
+    expect(r.view().generation).toBe(0);
+    // The gateway's copy expires and it fetches: the staged key is served from now.
+    expect(await client.verifies()).toBe(true);
+    const served = now;
+    expect(r.view().next).toEqual({ generation: 1, signs_from: served + CARD_KEY_SWITCH_WAIT_MS });
+    for (let t = 0; t < CARD_KEY_SWITCH_WAIT_MS; t += 7_000) {
+      now = served + t;
+      await r.step();
+      expect(r.view().generation).toBe(0);
+      expect(await client.verifies()).toBe(true);
+    }
+    now = served + CARD_KEY_SWITCH_WAIT_MS;
+    await r.step();
+    expect(r.view()).toMatchObject({ generation: 1, next: null, retiring: [{ generation: 0, until: now + CARD_KEY_OVERLAP_MS }] });
+    for (let t = 0; t < 120_000; t += 5_000) {
+      now += 5_000;
+      expect(await client.verifies()).toBe(true);
+    }
+    expect(await signer(gateway)).toBe(kidOf(1));
+    // Past the overlap the old key leaves the set.
+    now += CARD_KEY_OVERLAP_MS;
+    await r.step();
+    now += 30_000;
+    expect((await gateway.get()).jwks.keys.map((k) => k.kid)).toEqual([kidOf(1)]);
+    expect(await client.verifies()).toBe(true);
+  });
+
+  it('the key it switches to survives a restart: the ring is on disk', async () => {
+    const r = rotation();
+    await r.start();
+    await r.rotate();
+    await r.served([kidOf(1)]);
+    now += CARD_KEY_SWITCH_WAIT_MS;
+    await r.step();
+    const again = rotation();
+    expect(await again.start()).toBe(true);
+    expect(getA2ACardConfig()?.key.generation).toBe(1);
+    expect(again.view().retiring.map((x) => x.generation)).toEqual([0]);
+  });
+
+  it('a set without the staged key confirms nothing; a second rotate mid-rotation stages nothing more', async () => {
+    const r = rotation();
+    await r.start();
+    await r.rotate();
+    await r.served([kidOf(0)]);
+    expect(r.view().next?.signs_from).toBeNull();
+    await r.rotate();
+    expect(r.view().next?.generation).toBe(1);
+  });
+
+  it('a node without a ring adopts the generation its DID document names; never an older one', async () => {
+    docKey = compressed(3);
+    const r = rotation();
+    expect(await r.start()).toBe(true);
+    expect(r.view().generation).toBe(3);
+    expect(getA2ACardConfig()?.key.generation).toBe(3);
+    // A rotation from there goes above it.
+    await r.rotate();
+    expect(r.view().next?.generation).toBe(4);
+  });
+
+  it('a document naming a key this seed never made: starts above the range it searched', async () => {
+    docKey = deriveP256SigningKey(new Uint8Array(32).fill(7), 0).publicKey;
+    const r = rotation();
+    await r.start();
+    expect(r.view().generation).toBe(257);
+  });
+
+  it('a node without a ring whose document cannot be read serves no card until it can', async () => {
+    docKey = 'down';
+    installA2ACardConfig(null);
+    const r = rotation();
+    installA2ACardKeyRotation(r);
+    expect(await r.start()).toBe(false);
+    expect(r.ready()).toBe(false);
+    expect(r.view().generation).toBeNull();
+    expect((await fromCore()).status).toBe(503);
+    expect(await kvGet('card_key_ring', 'a2a')).toBeNull();
+    docKey = compressed(2);
+    expect(await r.start()).toBe(true);
+    expect((await fromCore()).status).toBe(200);
+  });
+
+  it('the schedule retries an unreadable document, and wakes for the switch once the gateway is served', async () => {
+    docKey = 'down';
+    const timers: { fn: () => void; at: number }[] = [];
+    const r = rotation();
+    installA2ACardKeyRotation(r);
+    const s = startA2ACardKeySchedule(r, {
+      setTimer: (fn, ms) => {
+        const t = { fn, at: now + ms };
+        timers.push(t);
+        return t;
+      },
+      clearTimer: (h) => {
+        const i = timers.indexOf(h as (typeof timers)[number]);
+        if (i >= 0) timers.splice(i, 1);
+      },
+      now: () => now,
+    });
+    const fire = async () => {
+      timers.sort((a, b) => a.at - b.at);
+      const t = timers.shift();
+      if (t === undefined) throw new Error('nothing scheduled');
+      now = Math.max(now, t.at);
+      t.fn();
+      for (let i = 0; i < 20; i++) await new Promise((res) => setImmediate(res));
+      return t.at;
+    };
+    const first = await fire();
+    expect(r.ready()).toBe(false);
+    docKey = null;
+    expect((await fire()) - first).toBe(60_000);
+    expect(r.ready()).toBe(true);
+    await r.rotate();
+    await fire();
+    // The gateway takes the set naming the new key: the schedule wakes at the switch.
+    await fromCore();
+    await fire();
+    const servedAt = now;
+    const at = await fire();
+    expect(at).toBe(servedAt + CARD_KEY_SWITCH_WAIT_MS);
+    expect(r.view().generation).toBe(1);
+    s.stop();
+  });
+
+  it('the switch records the new key in the DID document first; a failed record holds the switch back', async () => {
+    const r = rotation();
+    await r.start();
+    await r.rotate();
+    await r.served([kidOf(1)]);
+    now += CARD_KEY_SWITCH_WAIT_MS;
+    docKey = 'down';
+    await expect(r.step()).rejects.toThrow('plc down');
+    expect(r.view().generation).toBe(0);
+    expect(getA2ACardConfig()?.key.generation).toBe(0);
+    docKey = compressed(0);
+    await r.step();
+    expect(r.view().generation).toBe(1);
+    expect(Buffer.from(docKey as Uint8Array).equals(Buffer.from(compressed(1)))).toBe(true);
+    expect(recorded).toEqual([now]);
+  });
+
+  it('a restore after a rotation, with the card never listed, adopts the key in use (the switch recorded it)', async () => {
+    const r = rotation();
+    await r.start();
+    await r.rotate();
+    await r.served([kidOf(1)]);
+    now += CARD_KEY_SWITCH_WAIT_MS;
+    await r.step();
+    now += CARD_KEY_OVERLAP_MS;
+    await r.step();
+    await kvDelete('card_key_ring', 'a2a');
+    const restored = rotation();
+    expect(await restored.start()).toBe(true);
+    expect(restored.view()).toEqual({ generation: 1, next: null, retiring: [] });
+  });
+
+  it('a ring behind its DID document (a boot after a crash mid-switch, or a ring kept from before) moves up to it once per boot', async () => {
+    const r = rotation();
+    await r.start();
+    docKey = compressed(2);
+    const again = rotation();
+    expect(await again.load()).toBe(true);
+    expect(again.view().generation).toBe(0);
+    await again.start();
+    expect(again.view().generation).toBe(2);
+    // An unreadable document on a node with a ring keeps the ring.
+    docKey = 'down';
+    const third = rotation();
+    expect(await third.start()).toBe(true);
+    expect(third.view().generation).toBe(2);
+  });
+
+  it('boot loads only the ring on disk: no ring, no network, no card yet', async () => {
+    docKey = 'down';
+    installA2ACardConfig(null);
+    const r = rotation();
+    expect(await r.load()).toBe(false);
+    expect(getA2ACardConfig()).toBeNull();
+  });
+
+  it('a node without a DID document signs with generation 0 and refuses to rotate', async () => {
+    const r = rotation(false);
+    expect(await r.start()).toBe(true);
+    expect(r.view().generation).toBe(0);
+    expect(await r.rotate()).toBe('no_did_document');
+    expect(r.view().next).toBeNull();
+  });
+
+  it('at the edge: a client that took the old set from the gateway just before it fetched the new one verifies the card at the exact switch; a gateway serving the new signature 30 s after would fail it', async () => {
+    const r = rotation();
+    installA2ACardKeyRotation(r);
+    await r.start();
+    const gateway = new Gateway();
+    const early = new Client(gateway);
+    expect(await early.verifies()).toBe(true);
+    const firstCopy = now;
+    await r.rotate();
+    // The worst client: it takes the old set 1 ms before the gateway's copy expires.
+    now = firstCopy + 30_000 - 1;
+    const worst = new Client(gateway);
+    expect(await worst.verifies()).toBe(true);
+    // The gateway fetches again: the staged key is served from here.
+    now = firstCopy + 30_000;
+    expect(await early.verifies()).toBe(true);
+    const switchAt = r.view().next?.signs_from ?? 0;
+    expect(switchAt).toBe(now + CARD_KEY_SWITCH_WAIT_MS);
+    // Control: had the key switched now, a card signed by it reaches a client that still holds the
+    // old set it took 1 ms ago, and is refused.
+    installA2ACardConfig({ key: keyAt(1), also: [keyAt(0)], publicOrigin: ORIGIN });
+    const heldOld = { keys: [cardPublicJwk(keyAt(0)) as JsonObject], until: now - 1 + 30_000 };
+    expect(await new Client(new Gateway(), heldOld).verifies()).toBe(false);
+    // Back to the ring's own config (old key signing, new one listed); at the exact switch the
+    // worst client has refetched and verifies.
+    installA2ACardConfig({ key: keyAt(0), also: [keyAt(1)], publicOrigin: ORIGIN });
+    now = switchAt;
+    await r.step();
+    expect(r.view().generation).toBe(1);
+    expect(await worst.verifies()).toBe(true);
+    expect(await signer(gateway)).toBe(kidOf(1));
+  });
+
+  it('boot with a ring on disk waits on no network, even with the document hanging; without one it reads the document', async () => {
+    const first = rotation();
+    await first.start();
+    let reads = 0;
+    const hanging = new A2ACardKeyRotation({
+      keyAt,
+      publicOrigin: ORIGIN,
+      document: {
+        readKey: () => {
+          reads += 1;
+          return new Promise<never>(() => undefined);
+        },
+        recordKey: () => new Promise<never>(() => undefined),
+      },
+      now: () => now,
+    });
+    installA2ACardConfig(null);
+    expect(await bootA2ACardKeys(hanging)).toBe(true);
+    expect(reads).toBe(0);
+    expect(getA2ACardConfig()?.key.generation).toBe(0);
+    await kvDelete('card_key_ring', 'a2a');
+    docKey = compressed(1);
+    expect(await bootA2ACardKeys(rotation())).toBe(true);
+    expect(getA2ACardConfig()?.key.generation).toBe(1);
   });
 });

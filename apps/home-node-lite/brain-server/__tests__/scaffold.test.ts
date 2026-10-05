@@ -192,6 +192,12 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
       }).reasoning.internalBrainEnabled,
     ).toBe(true);
   });
+
+  it('UCP shopping is off unless DINA_UCP_ENABLED turns it on, as in Core', () => {
+    expect(loadConfig({}).reasoning.ucpEnabled).toBe(false);
+    expect(loadConfig({ DINA_UCP_ENABLED: '1' }).reasoning.ucpEnabled).toBe(true);
+    expect(loadConfig({ DINA_UCP_ENABLED: 'true' }).reasoning.ucpEnabled).toBe(true);
+  });
 });
 
 describe('brain-server — boot (task 5.1)', () => {

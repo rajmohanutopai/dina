@@ -1,0 +1,7 @@
+{
+  "name": "dina-net",
+  "version": "1.0.0",
+  "description": "Dina's pinned HTTP transport (UCP plan §3.4, U6): resolve a name, and run one HTTP/1.1 exchange over TLS to exactly one vetted address, so the phone's outbound fetches can refuse special-use addresses and pin the socket.",
+  "private": true,
+  "main": "index.ts"
+}

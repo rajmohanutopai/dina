@@ -89,7 +89,7 @@ export function registerPairRoutes(router: CoreRouter): void {
     if (body.scope !== undefined) {
       scope = resolveAgentScope(typeof body.scope === 'string' ? body.scope : null);
       if (scope === undefined) {
-        return { status: 400, body: { error: 'scope must be one of: coding, runner' } };
+        return { status: 400, body: { error: 'scope must be one of: coding, runner, node' } };
       }
     }
 

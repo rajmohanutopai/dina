@@ -29,6 +29,8 @@ import Fastify, { type FastifyInstance } from 'fastify';
 
 import {
   A2AGuardWorker,
+  GuardSlots,
+  UcpGuardWorker,
   buildA2AGuardLLMCall,
   AppViewClient,
   StagingDrainScheduler,
@@ -239,6 +241,7 @@ export async function bootServer(
   const schedulers: BrainServerSchedulers = {};
   const compositions: BrainServerCompositions = {};
   let a2aGuard: A2AGuardWorker | null = null;
+  let ucpGuard: UcpGuardWorker | null = null;
   let chatRememberRuntime: ChatRememberRuntimeHandle | undefined;
   // Hoisted so both the staging drain (which builds rememberRuntime
   // from these descriptors) and the askRuntime path further down
@@ -458,7 +461,8 @@ export async function bootServer(
   }
 
   app.addHook('onClose', async () => {
-    await a2aGuard?.stop();
+    // Both at once: each stop fires its signal before waiting, so neither claims during the other's wait.
+    await Promise.all([a2aGuard?.stop(), ucpGuard?.stop()]);
     schedulers.stagingDrain?.stop();
     await schedulers.reasoningBackend?.stop();
     chatRememberRuntime?.dispose();
@@ -538,6 +542,14 @@ export async function bootServer(
         // A2A Lane 1 runs on the server node: the loop may propose messages
         // to remote agents the owner set up; Core mints the consent card.
         a2aClient: liteCoreClient,
+        // UCP (plan §4.2 U1): the catalogue tools, offered only with DINA_UCP_ENABLED,
+        // and the kick that tells the guard worker a search's products are waiting (the
+        // worker is built below, so the kick reads it when called).
+        ucpClient: liteCoreClient,
+        ucpEnabled: () => config.reasoning.ucpEnabled,
+        ucpGuardKick: () => {
+          void ucpGuard?.tick();
+        },
         // Default fastPathMs (3 s). Async overflow is no longer a
         // problem: the SPA's chat_transport.web.ts subscribes to
         // `/api/v1/chat/stream` (SSE) and reflects every server-side
@@ -553,12 +565,28 @@ export async function bootServer(
       // same router (PII-scrubbed egress) and posts digest-bound verdicts. It
       // exists only where a model is configured; without one, results stay
       // held and Core tells the owner why.
+      // UCP (plan §3.11, S19): the guard over merchant text, on the same
+      // model call. The two workers share one limit of 4 calls at a time.
+      // Core answers 503 to its claims when UCP is off there; the worker
+      // logs that once.
+      const guardLLM = buildA2AGuardLLMCall(ask.pipeline.router);
+      const guardSlots = new GuardSlots();
       a2aGuard = new A2AGuardWorker({
         core: clients.core,
-        llm: buildA2AGuardLLMCall(ask.pipeline.router),
+        llm: guardLLM,
+        slots: guardSlots,
         logger: (entry) => logger.info(entry, 'a2a guard'),
       });
       a2aGuard.start();
+      if (config.reasoning.ucpEnabled) {
+        ucpGuard = new UcpGuardWorker({
+          core: clients.core,
+          llm: guardLLM,
+          slots: guardSlots,
+          logger: (entry) => logger.info(entry, 'ucp guard'),
+        });
+        ucpGuard.start();
+      }
       logger.info(
         { providerName: askRuntime.providerName },
         'brain-server ask coordinator configured',

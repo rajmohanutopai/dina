@@ -602,6 +602,8 @@ export function computeReconnectDelay(
 // The production repo-proof verifier (§5.C1) — inject at boot via
 // `setRepoProofVerifier`. Loads ESM-only `@atproto` at runtime.
 export { createA2AHostTransport, type A2AHostTransportOptions } from './a2a_host_transport';
+// The shared Node policy socket (UCP plan §3.3), re-exported so server wiring has one import.
+export { createNodePolicySocket, type NodePolicySocketOptions } from '@dina/net-socket-node';
 export { createRepoProofVerifier } from './repo_proof_verifier';
 export type {
   RepoProofVerifierDeps,

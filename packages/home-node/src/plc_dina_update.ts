@@ -30,7 +30,7 @@
  * `fetch` implementation drives the HTTPS call.
  */
 
-import { A2A_CARD_KEY_FRAGMENT, p256Multikey } from '@dina/a2a';
+import { A2A_CARD_KEY_FRAGMENT, p256FromMultikey, p256Multikey } from '@dina/a2a';
 import { cidForOperation, publicKeyToMultibase, updateDIDPLC } from '@dina/core';
 
 const DEFAULT_PLC_URL = 'https://plc.directory';
@@ -185,6 +185,30 @@ export async function ensureA2ACardKey(opts: EnsureA2ACardKeyOptions): Promise<'
     { plcURL, fetch: fetchFn },
   );
   return 'published';
+}
+
+/**
+ * The card key the node's DID document names as `#a2a_card` now (UCP plan
+ * §4.8, U7): the 33-byte compressed point, or null when it names none (or
+ * names something that is not a P-256 did:key). A restored node adopts the
+ * generation it belongs to. Throws when the audit log cannot be read.
+ */
+export async function currentA2ACardKey(opts: {
+  did: string;
+  plcURL?: string;
+  fetch?: typeof globalThis.fetch;
+}): Promise<Uint8Array | null> {
+  const plcURL = (opts.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
+  const fetchFn = opts.fetch ?? globalThis.fetch;
+  if (typeof fetchFn !== 'function') throw new Error('currentA2ACardKey: no fetch available (pass opts.fetch)');
+  const auditLog = await fetchAuditLog(opts.did, plcURL, fetchFn);
+  const lastEntry = auditLog[auditLog.length - 1];
+  const lastOp =
+    lastEntry !== null && typeof lastEntry === 'object' ? (lastEntry as Record<string, unknown>).operation : undefined;
+  if (lastOp === null || typeof lastOp !== 'object') throw new Error('PLC audit log has no last operation');
+  const named = readStringMap((lastOp as Record<string, unknown>).verificationMethods)[A2A_CARD_KEY_FRAGMENT];
+  if (named === undefined || !named.startsWith('did:key:')) return null;
+  return p256FromMultikey(named.slice('did:key:'.length));
 }
 
 async function fetchAuditLog(

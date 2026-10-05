@@ -46,6 +46,12 @@ function recordingLink(): CoreLink {
     async card() {
       return { ok: false, status: 503 };
     },
+    async ucpWebhook() {
+      return { ok: false, status: 503 };
+    },
+    async ucpOauthCallback() {
+      return { ok: false, status: 503 };
+    },
     async claimEvents() {
       return { ok: true, claim: { items: [], closed: [], fenced: [] } };
     },

@@ -18,8 +18,11 @@ WORKDIR /repo
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/
 COPY packages/a2a/package.json packages/a2a/
+COPY packages/ucp/package.json packages/ucp/
+COPY packages/net-policy/package.json packages/net-policy/
+COPY packages/net-socket-node/package.json packages/net-socket-node/
 COPY appview/package.json appview/
-RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/appview --ignore-scripts
+RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/ucp --workspace @dina/net-policy --workspace @dina/net-socket-node --workspace @dina/appview --ignore-scripts
 
 # The protocol is built FIRST: appview resolves its `compiled` condition, which
 # points at `dist/`. Without this step the import resolves to TypeScript source
@@ -28,6 +31,15 @@ COPY packages/commerce-protocol/ packages/commerce-protocol/
 RUN npm run build --workspace @dina/commerce-protocol
 COPY packages/a2a/ packages/a2a/
 RUN npm run build --workspace @dina/a2a
+# @dina/ucp: the UCP profile host's rules (docs/UCP_IMPLEMENTATION_PLAN.md §3.5).
+COPY packages/ucp/ packages/ucp/
+RUN npm run build --workspace @dina/ucp
+# @dina/net-policy + @dina/net-socket-node: the merchant index fetches merchants' public
+# profiles through the vetted socket (UCP plan §3.3, §3.15).
+COPY packages/net-policy/ packages/net-policy/
+RUN npm run build --workspace @dina/net-policy
+COPY packages/net-socket-node/ packages/net-socket-node/
+RUN npm run build --workspace @dina/net-socket-node
 
 COPY appview/tsconfig.json appview/
 COPY appview/src/ appview/src/
@@ -50,11 +62,17 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/
 COPY packages/a2a/package.json packages/a2a/
+COPY packages/ucp/package.json packages/ucp/
+COPY packages/net-policy/package.json packages/net-policy/
+COPY packages/net-socket-node/package.json packages/net-socket-node/
 COPY appview/package.json appview/
-RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/appview --ignore-scripts
+RUN npm ci --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/ucp --workspace @dina/net-policy --workspace @dina/net-socket-node --workspace @dina/appview --ignore-scripts
 
 COPY packages/commerce-protocol/ packages/commerce-protocol/
 COPY packages/a2a/ packages/a2a/
+COPY packages/ucp/ packages/ucp/
+COPY packages/net-policy/ packages/net-policy/
+COPY packages/net-socket-node/ packages/net-socket-node/
 COPY appview/drizzle.config.ts appview/tsconfig.json appview/
 COPY appview/drizzle/ appview/drizzle/
 COPY appview/src/ appview/src/
@@ -75,13 +93,19 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY packages/commerce-protocol/package.json packages/commerce-protocol/
 COPY packages/a2a/package.json packages/a2a/
+COPY packages/ucp/package.json packages/ucp/
+COPY packages/net-policy/package.json packages/net-policy/
+COPY packages/net-socket-node/package.json packages/net-socket-node/
 COPY appview/package.json appview/
-RUN npm ci --omit=dev --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/appview --ignore-scripts
+RUN npm ci --omit=dev --workspace @dina/commerce-protocol --workspace @dina/a2a --workspace @dina/ucp --workspace @dina/net-policy --workspace @dina/net-socket-node --workspace @dina/appview --ignore-scripts
 
 # The protocol packages' BUILDS only — their source never reaches the runtime image, which
 # is the point of the `compiled` condition.
 COPY --from=builder /repo/packages/commerce-protocol/dist packages/commerce-protocol/dist/
 COPY --from=builder /repo/packages/a2a/dist packages/a2a/dist/
+COPY --from=builder /repo/packages/ucp/dist packages/ucp/dist/
+COPY --from=builder /repo/packages/net-policy/dist packages/net-policy/dist/
+COPY --from=builder /repo/packages/net-socket-node/dist packages/net-socket-node/dist/
 COPY --from=builder /repo/appview/dist appview/dist/
 WORKDIR /repo/appview
 

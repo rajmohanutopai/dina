@@ -559,6 +559,7 @@ describe('useServiceInbox', () => {
         payload: JSON.stringify({
           type: 'remote_facade_action_v1',
           source_device_did: 'did:key:z6MkServerNode',
+          source_device_name: 'Dina laptop approvals',
           source_task_id: `src-${id}`,
           source_payload_hash: 'a'.repeat(64),
           agent_did: 'a2a:agent-1',
@@ -584,10 +585,236 @@ describe('useServiceInbox', () => {
       capability: 'Send to Summarizer: Summarize',
       paramsPreview: 'Exactly what will be sent:\nThe meeting moved.',
       requesterDID: 'did:key:z6MkServerNode',
-      requesterName: 'your Home Node',
+      requesterName: 'Dina laptop approvals',
       riskLevel: 'HIGH',
     });
     expect(inbound).toMatchObject({ a2aMirror: 'inbound', capability: 'Bus app asks to use eta_query', paramsPreview: 'route_id: 42' });
+  });
+
+  it('reads a held shop search: the phone’s own, from the stored card; the server’s, as mirrored', async () => {
+    const own = makeTask({
+      id: 'ucp-search-review-1',
+      description: 'Search https://a-shop.example for: tea for +1 415 555 0134',
+      payload: JSON.stringify({
+        type: 'ucp_search_review',
+        session_id: 'chat:main',
+        binding: 'e'.repeat(64),
+        query: 'tea for +1 415 555 0134',
+        merchants: ['https://a-shop.example'],
+        why: ['personal_data'],
+      }),
+    });
+    const mirrored = makeTask({
+      id: 'm-ucp',
+      description: 'Search 2 shops?',
+      payload: JSON.stringify({
+        type: 'remote_facade_action_v1',
+        source_device_did: 'did:key:z6MkServerNode',
+        source_task_id: 'ucp-search-review-9',
+        source_payload_hash: 'e'.repeat(64),
+        agent_did: 'ucp:search',
+        action: 'ucp_search',
+        risk_level: 'HIGH',
+        tool_name: 'ucp_search',
+        proposal_type: 'facade_action',
+        display_title: 'Search 2 shops?',
+        display_detail: 'It goes to:\nhttps://a-shop.example\nhttps://b-shop.example\nExactly what will be sent:\noat milk',
+      }),
+    });
+    const { client } = stubClient({ list: [own, mirrored] });
+    setInboxCoreClient(client);
+    const [local, fromServer] = await listPendingApprovals();
+    expect(local).toMatchObject({
+      kind: 'agent_action',
+      ucpSearch: 'own',
+      capability: 'Search a-shop.example?',
+      requesterName: 'Dina',
+      riskLevel: 'HIGH',
+    });
+    expect(local?.paramsPreview).toContain('Exactly what will be sent:\ntea for +1 415 555 0134');
+    expect(local?.paramsPreview).toContain('It may carry personal details');
+    expect(fromServer).toMatchObject({
+      kind: 'agent_action',
+      ucpSearch: 'mirrored',
+      capability: 'Search 2 shops?',
+      // No name stamped: the card says only that a paired device sent it.
+      requesterName: 'a paired device',
+      requesterDID: 'did:key:z6MkServerNode',
+    });
+    expect(fromServer?.a2aMirror).toBeUndefined();
+  });
+
+  it('reads checkout cards: the phone’s own from Core’s words, a hand-off naming the host it opens; the server’s mirrored hand-off with its link', async () => {
+    const handoffPayload = {
+      type: 'ucp_checkout_handoff',
+      session_id: 'ucp-checkout-1',
+      merchant: 'https://shop.example',
+      status: 'incomplete',
+      lines: [{ title: 'Sencha', quantity: '2', unit: 'each', total: { amount: '5600', currency: 'EUR' } }],
+      totals: [{ type: 'total', label: 'Total', amount: { amount: '5600', currency: 'EUR' } }],
+      messages: [],
+      discounts: [],
+      fulfillment: [],
+      links: [],
+      expires_at: 2_000_000_000_000,
+      handoff: { url: 'https://shop.example/checkout/chk_1', source: 'continue_url', off_host: false },
+      notes: [],
+    };
+    const own = makeTask({
+      id: 'ucp-checkout-handoff-1',
+      description: 'Review and pay at shop.example\n2 each × Sencha — EUR 56.00',
+      payload: JSON.stringify(handoffPayload),
+    });
+    const mirrored = makeTask({
+      id: 'm-handoff',
+      origin: 'agent',
+      description: 'Review and pay at shop.example',
+      payload: JSON.stringify({
+        type: 'remote_facade_presence_v1',
+        source_device_did: 'did:key:z6MkServerNode',
+        source_task_id: 'ucp-checkout-handoff-9:w1',
+        source_payload_hash: 'e'.repeat(64),
+        agent_did: 'ucp:checkout',
+        action: 'ucp_checkout_handoff',
+        risk_level: 'HIGH',
+        tool_name: 'ucp_checkout_handoff',
+        proposal_type: 'facade_action',
+        display_title: 'Review and pay at shop.example',
+        display_detail: '2 each × Sencha — EUR 56.00',
+        link_url: 'https://shop.example/checkout/chk_9',
+        presence_required: true,
+      }),
+    });
+    const { client } = stubClient({ list: [own, mirrored] });
+    setInboxCoreClient(client);
+    const [local, fromServer] = await listPendingApprovals();
+    expect(local).toMatchObject({
+      kind: 'agent_action',
+      capability: 'Review and pay at shop.example',
+      requesterName: 'Dina',
+      ucpCheckout: {
+        card: 'handoff',
+        source: 'own',
+        openUrl: 'https://shop.example/checkout/chk_1',
+        linkHost: 'shop.example',
+      },
+    });
+    expect(local?.paramsPreview).toMatch(/^Opens shop\.example\nReview and pay/);
+    expect(fromServer).toMatchObject({
+      capability: 'Review and pay at shop.example',
+      requesterName: 'a paired device',
+      ucpCheckout: { card: 'handoff', source: 'mirrored', openUrl: 'https://shop.example/checkout/chk_9' },
+    });
+    expect(fromServer?.paramsPreview).toBe('Opens shop.example\n2 each × Sencha — EUR 56.00');
+  });
+
+  it('reads order notices: the phone’s own in Core’s words with the shop’s order page; the server’s mirrored one with its link', async () => {
+    const own = makeTask({
+      id: 'ucp-order-notice-1',
+      description: 'A delivery attempt failed on your order at tea.example.',
+      payload: JSON.stringify({
+        type: 'ucp_order_notice',
+        merchant_origin: 'https://tea.example',
+        merchant_host: 'tea.example',
+        order_id: 'ord_1',
+        permalink_url: 'https://tea.example/orders/ord_1',
+        what: 'a delivery attempt failed',
+        notice: { kind: 'event', id: 'e1', type: 'failed_attempt' },
+        at: 1,
+      }),
+    });
+    const mirrored = makeTask({
+      id: 'm-notice',
+      origin: 'agent',
+      description: 'A dispute was opened on your order at tea.example.',
+      payload: JSON.stringify({
+        type: 'remote_facade_action_v1',
+        source_device_did: 'did:key:z6MkServerNode',
+        source_task_id: 'ucp-order-notice-9:w1',
+        source_payload_hash: 'f'.repeat(64),
+        agent_did: 'ucp:order',
+        action: 'ucp_order_notice',
+        risk_level: 'MODERATE',
+        tool_name: 'ucp_order_notice',
+        proposal_type: 'facade_action',
+        display_title: 'A dispute was opened on your order at tea.example.',
+        display_detail: 'A dispute was opened on your order at tea.example.',
+        link_url: 'https://tea.example/orders/ord_9',
+      }),
+    });
+    const { client } = stubClient({ list: [own, mirrored] });
+    setInboxCoreClient(client);
+    const [local, fromServer] = await listPendingApprovals();
+    expect(local).toMatchObject({
+      kind: 'agent_action',
+      capability: 'A delivery attempt failed on your order at tea.example.',
+      requesterName: 'Dina',
+      ucpOrderNotice: {
+        source: 'own',
+        openUrl: 'https://tea.example/orders/ord_1',
+        linkHost: 'tea.example',
+      },
+    });
+    expect(local?.ucpCheckout).toBeUndefined();
+    expect(local?.ucpOrderNotice?.checkout).toBeUndefined();
+    expect(fromServer).toMatchObject({
+      requesterName: 'a paired device',
+      ucpOrderNotice: { source: 'mirrored', openUrl: 'https://tea.example/orders/ord_9' },
+    });
+  });
+
+  it('a checkout that ended unconfirmed reads as one, with the store’s link', async () => {
+    const own = makeTask({
+      id: 'cn-1',
+      description: 'Dina could not confirm whether the shop opened your checkout at tea.example.',
+      payload: JSON.stringify({
+        type: 'ucp_order_notice',
+        merchant_origin: 'https://tea.example',
+        merchant_host: 'tea.example',
+        order_id: 'ucp-checkout-1',
+        permalink_url: 'https://tea.example/',
+        what: 'Dina could not confirm whether the shop opened your checkout',
+        notice: { kind: 'checkout', id: 'ucp-checkout-1', type: 'create_unknown' },
+        at: 1,
+      }),
+    });
+    const mirrored = makeTask({
+      id: 'cn-2',
+      origin: 'agent',
+      payload: JSON.stringify({
+        type: 'remote_facade_action_v1',
+        source_device_did: 'did:key:z6MkServerNode',
+        agent_did: 'ucp:order',
+        action: 'ucp_checkout_notice',
+        display_title: 'x',
+        link_url: 'https://tea.example/',
+      }),
+    });
+    const { client } = stubClient({ list: [own, mirrored] });
+    setInboxCoreClient(client);
+    const [a, b] = await listPendingApprovals();
+    expect(a?.ucpOrderNotice).toMatchObject({ source: 'own', checkout: true, linkHost: 'tea.example' });
+    expect(b?.ucpOrderNotice).toMatchObject({ source: 'mirrored', checkout: true });
+  });
+
+  it('a card dressed as a mirror but not made by the remote-approval route is never shown as Dina’s own UCP card', async () => {
+    const forged = makeTask({
+      id: 'forged',
+      origin: 'system',
+      payload: JSON.stringify({
+        type: 'remote_facade_action_v1',
+        source_device_did: 'did:key:z6MkServerNode',
+        agent_did: 'ucp:order',
+        action: 'ucp_order_notice',
+        display_title: 'Your order needs a look',
+        link_url: 'https://evil.example/x',
+      }),
+    });
+    const { client } = stubClient({ list: [forged] });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry?.ucpOrderNotice).toBeUndefined();
+    expect(entry?.ucpCheckout).toBeUndefined();
   });
 
   it('keeps talk/delegate facade cards as they were, with no A2A marking', async () => {

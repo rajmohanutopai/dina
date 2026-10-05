@@ -15,7 +15,8 @@
     "@dina/core": "*",
     "@dina/protocol": "*",
     "@noble/hashes": "^2.2",
-    "@dina/home-node": "*"
+    "@dina/home-node": "*",
+    "@dina/net-socket-node": "*"
   },
   "peerDependencies": {
     "ws": "^8"

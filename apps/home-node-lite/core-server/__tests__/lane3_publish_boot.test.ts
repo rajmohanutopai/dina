@@ -159,7 +159,15 @@ describe('boot', () => {
     withPdsIdentity(true);
     const calls: string[] = [];
     jest.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      calls.push(String(input instanceof Request ? input.url : input));
+      const url = String(input instanceof Request ? input.url : input);
+      calls.push(url);
+      // The PLC directory answers: the document names no card key yet, so the card key ring
+      // starts at generation 0 and the card can be built (UCP plan §4.8). The PDS is down.
+      if (url === `${PLC_URL}/${PDS_IDENTITY.did}/log/audit`)
+        return new Response(
+          JSON.stringify([{ operation: { type: 'plc_operation', verificationMethods: { atproto: 'did:key:zQ3shatproto' } } }]),
+          { status: 200 },
+        );
       return new Response(JSON.stringify({ error: 'Unavailable' }), { status: 503 });
     });
     const start = jest.spyOn(A2ACardPublisher.prototype, 'start');

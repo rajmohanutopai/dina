@@ -10,6 +10,7 @@ Lane 2). It serves:
 | `POST /a2a/v1` | JSON-RPC: every A2A v1.0 method; `SendStreamingMessage` and `SubscribeToTask` answer as Server-Sent Events |
 | `GET`, `POST`, `DELETE /a2a/rest/…` | REST (HTTP+JSON): the same methods at the v1.0 paths (`/message:send`, `/message:stream`, `/tasks`, `/tasks/{id}`, `/tasks/{id}:cancel`, `/tasks/{id}:subscribe`, `/tasks/{id}/pushNotificationConfigs[/{configId}]`, `/extendedAgentCard`); answers are `application/a2a+json`, errors `google.rpc.Status` |
 | `POST /a2a/v1/did-binding` | Binds a client to a DID with the owner's challenge (design §5.1) |
+| `POST /ucp/webhooks/orders` | UCP order webhooks from merchants (docs/UCP_IMPLEMENTATION_PLAN.md §3.13): the exact body, at most 512 KiB, and the webhook's own headers, forwarded for Core to store and verify; Core's 200 is relayed, anything else is a `503` the merchant retries |
 | `GET /healthz` | Liveness |
 
 ## What it does and does not do

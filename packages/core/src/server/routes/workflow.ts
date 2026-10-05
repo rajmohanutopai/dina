@@ -39,12 +39,17 @@ import { getAgentGrantRepository } from '../../agent/grant_repository';
 import { ORDER_CHECKOUT_LINK_TYPE, PAYMENT_EVIDENCE_RECORD_TYPE } from '../../commerce/integration';
 import { INTEGRATION_SETTINGS_PROPOSAL_TYPE } from '../../commerce/integration_settings';
 import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from '../../commerce/negotiation_policy';
-import { ownerPresenceRefusal } from '../../commerce/owner_presence';
+import { ownerPresenceCanBeEstablished, ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getCommerceRuntime } from '../../commerce/runtime';
 import {
   STAFF_ESCALATION_APPROVAL_TYPE,
   STAFF_ESCALATION_KEY_PREFIX,
 } from '../../commerce/staff_escalation';
+import { UCP_CHECKOUT_HANDOFF_TYPE } from '../../commerce/ucp/handoff_card';
+import { UCP_LINK_HANDOFF_TYPE } from '../../commerce/ucp/link_card';
+import { UCP_ORDER_NOTICE_TYPE } from '../../commerce/ucp/order_notice_card';
+import { isUcpTaskNamespace, UCP_SEARCH_REVIEW_TYPE } from '../../commerce/ucp/search_projection';
+import { UCP_CHECKOUT_START_TYPE } from '../../commerce/ucp/start_card';
 import {
   admitSupplierRecords,
   WATERMARK_REFUSAL,
@@ -87,6 +92,11 @@ import {
 
 import { grantSessionApproval, grantVaultReadSessionApproval } from './intent';
 import { makeOwnerGuard } from './owner_guard';
+import {
+  REMOTE_APPROVAL_PAYLOAD_TYPE,
+  REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE,
+  REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE,
+} from './remote_approval';
 
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
@@ -210,7 +220,19 @@ function isInboundExecutionChild(id: string): boolean {
 
 /** The A2A rules for an executor verb on task `id`. */
 function a2aTaskGuard(req: CoreRequest, id: string): CoreResponse | null {
-  return a2aLaneTaskGuard(id) ?? inboundChildBrainGuard(req, id) ?? inboundPinnedChildGuard(req, id, true);
+  return a2aLaneTaskGuard(id) ?? ucpTaskGuard(id) ?? inboundChildBrainGuard(req, id) ?? inboundPinnedChildGuard(req, id, true);
+}
+
+/**
+ * UCP plan §3.16, §3.18: a `ucp-` task (the search review card) is decided by
+ * the owner (approve or cancel) and then moved by Core alone, which uses an
+ * approved card up when the search it was raised for is sent. No caller may
+ * complete, fail or report on one: a used-up or failed card would void the
+ * owner's yes.
+ */
+function ucpTaskGuard(id: string): CoreResponse | null {
+  if (!isUcpTaskNamespace(id)) return null;
+  return j(403, { error: 'ucp_task_reserved', reason: 'UCP tasks are moved by Core only' });
 }
 
 /**
@@ -434,10 +456,19 @@ export async function applyOwnerWorkflowDecision(
   taskId: string,
   decision: 'approve' | 'deny',
   body: Record<string, unknown> | null = null,
+  options: { presenceVerified?: boolean } = {},
 ): Promise<WorkflowTask> {
   const service = getWorkflowService();
   if (service === null) {
     throw new WorkflowValidationError('workflow service not wired', 'service');
+  }
+  // The same presence rule as the route (UCP plan §3.9): a yes to a presence-gated card that
+  // reaches Core another way (a phone's mirrored decision) carries proof that a person was there.
+  if (decision === 'approve' && options.presenceVerified !== true) {
+    const task = service.store().getById(taskId);
+    const type = task === null ? undefined : safeParseBody(task.payload)?.type;
+    const detail = typeof type === 'string' ? PRESENCE_GATED_PAYLOAD_TYPES.get(type) : undefined;
+    if (detail !== undefined) throw new WorkflowValidationError(detail, 'presence');
   }
   return decision === 'approve'
     ? approveTask(taskId, body, service)
@@ -471,12 +502,15 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
   const idempotencyKey = optStrField(body.idempotency_key);
   if (
     idempotencyKey !== undefined &&
-    (idempotencyKey.startsWith(STAFF_ESCALATION_KEY_PREFIX) || isA2ATaskNamespace(idempotencyKey))
+    (idempotencyKey.startsWith(STAFF_ESCALATION_KEY_PREFIX) ||
+      isA2ATaskNamespace(idempotencyKey) ||
+      isUcpTaskNamespace(idempotencyKey))
   ) {
     return j(400, { error: 'reserved_idempotency_key', reason: 'this key namespace is minted by Core' });
   }
-  // Likewise the A2A task ids: Core names the consent card and dispatch child.
-  if (isA2ATaskNamespace(optStrField(body.id))) {
+  // Likewise the A2A and UCP task ids: Core names the consent card, the
+  // dispatch child, and the search review card (UCP plan §3.18).
+  if (isA2ATaskNamespace(optStrField(body.id)) || isUcpTaskNamespace(optStrField(body.id))) {
     return j(400, { error: 'reserved_task_id', reason: 'this id namespace is minted by Core', field: 'id' });
   }
   const input = {
@@ -559,6 +593,21 @@ function redactCardForBrain(payload: string): string {
     const { params: _params, display: _display, ...kept } = parsed as Record<string, unknown>;
     return JSON.stringify({ ...kept, redacted: 'owner_only' });
   }
+  // UCP plan §3.14: an order notice names the merchant, the order and its link; Brain learns
+  // only that one exists.
+  const { agent_did: noticeAgent } = parsed as { agent_did?: unknown };
+  if (card.type === UCP_ORDER_NOTICE_TYPE || isMirroredOrderNotice(card.type, noticeAgent))
+    return JSON.stringify({ type: card.type, redacted: 'owner_only' });
+  // §3.17: a link card names the merchant, and its sign-in page carries the flow's state.
+  if (isUcpLinkCard(card.type, noticeAgent))
+    return JSON.stringify({ type: card.type, redacted: 'owner_only' });
+  // UCP plan §3.7, §3.11: a checkout card is Core's rendering of a merchant's words for the
+  // owner; Brain reads only which session it is.
+  const { agent_did: agentDid } = parsed as { agent_did?: unknown };
+  if (isUcpCheckoutCard(card.type, agentDid)) {
+    const { session_id: sessionId } = parsed as { session_id?: unknown };
+    return JSON.stringify({ type: card.type, session_id: sessionId, redacted: 'owner_only' });
+  }
   if (card.type !== NEGOTIATION_PRICE_APPROVAL_TYPE) return payload;
   const lines = Array.isArray(card.lines)
     ? card.lines.map((line) =>
@@ -578,7 +627,45 @@ function redactCardForBrain(payload: string): string {
 function forCaller(req: CoreRequest, task: WorkflowTask): Record<string, unknown> {
   const out = withPayloadType(task);
   if (req.callerType !== 'brain' || typeof task.payload !== 'string') return out;
-  return { ...out, payload: redactCardForBrain(task.payload) };
+  const redacted = { ...out, payload: redactCardForBrain(task.payload) };
+  // A UCP checkout card's text and result (the merchant's link) are the merchant's words too.
+  const body = safeParseBody(task.payload);
+  // An order notice names a merchant, an order and its link: the owner's, not Brain's. Its
+  // mirror from the owner's server node (§3.9) carries the same words.
+  if (body?.type === UCP_ORDER_NOTICE_TYPE || isMirroredOrderNotice(body?.type, body?.agent_did))
+    return { ...redacted, description: 'An order notice for the owner', result: undefined, result_summary: '' };
+  if (isUcpLinkCard(body?.type, body?.agent_did))
+    return { ...redacted, description: 'A link card for the owner', result: undefined, result_summary: '' };
+  return isUcpCheckoutCard(body?.type, body?.agent_did)
+    ? {
+        ...redacted,
+        description: 'A checkout card for the owner',
+        result: undefined,
+        result_summary: '',
+      }
+    : redacted;
+}
+
+function isMirroredOrderNotice(type: unknown, agentDid: unknown): boolean {
+  return type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE && agentDid === 'ucp:order';
+}
+
+function isUcpCheckoutCard(type: unknown, agentDid?: unknown): boolean {
+  if (type === UCP_CHECKOUT_START_TYPE || type === UCP_CHECKOUT_HANDOFF_TYPE) return true;
+  // The same cards mirrored here from the owner's server node (§3.9): their display text and
+  // link are the merchant's words too.
+  return (
+    (type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE || type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE) &&
+    agentDid === 'ucp:checkout'
+  );
+}
+
+/** §3.17: a link card, here or mirrored from the server node; its page carries the sign-in's state. */
+function isUcpLinkCard(type: unknown, agentDid?: unknown): boolean {
+  return (
+    type === UCP_LINK_HANDOFF_TYPE ||
+    (type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE && agentDid === 'ucp:link')
+  );
 }
 
 /** The same rule for the events feed, whose details can embed a task payload. */
@@ -1430,6 +1517,12 @@ export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map
   [PAYMENT_EVIDENCE_RECORD_TYPE, 'recording a payment needs a person present'],
   [STAFF_ESCALATION_APPROVAL_TYPE, 'approving a clerk above their limit needs a person present'],
   [INTEGRATION_SETTINGS_PROPOSAL_TYPE, 'changing supplier settings needs a person present'],
+  // UCP plan §3.7: a person, not an agent, opens a merchant's payment page.
+  [UCP_CHECKOUT_HANDOFF_TYPE, 'opening a merchant’s payment page needs a person present'],
+  // §3.17: a person, not an agent, signs in at a merchant to link an account.
+  [UCP_LINK_HANDOFF_TYPE, 'linking an account at a merchant needs a person present'],
+  // §3.9: the same card mirrored from a paired server; this node's yes is the one made in person.
+  [REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE, 'this needs a person present'],
 ]);
 
 function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | null {
@@ -1439,6 +1532,10 @@ function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | nu
   const type = task === null ? undefined : safeParseBody(task.payload)?.type;
   const detail = typeof type === 'string' ? PRESENCE_GATED_PAYLOAD_TYPES.get(type) : undefined;
   if (detail === undefined) return null;
+  // A mirror's yes is reported to the server as made in person: a node that cannot tell
+  // never makes one.
+  if (type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE && !ownerPresenceCanBeEstablished())
+    return j(403, { error: 'no_user_presence', detail });
   return ownerPresenceRefusal(req, Date.now(), detail);
 }
 
@@ -1472,6 +1569,19 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   // §7.2 (M2) — "let this outside agent's call run?" An outside client's
   // request is the owner's to approve; Brain may neither mint nor decide it.
   A2A_INBOUND_REVIEW_TYPE,
+  // UCP plan §3.16 — "send this search to these shops?" for a query that
+  // carried personal data or came from a conversation that read a private
+  // vault. Brain asks for it; only Core mints it, only the owner decides it.
+  UCP_SEARCH_REVIEW_TYPE,
+  // UCP plan §3.7 — "start checkout at this merchant?" Its yes mints the permit
+  // every checkout call is checked against: only Core mints it, only the owner decides it.
+  UCP_CHECKOUT_START_TYPE,
+  // §3.7 — "review and pay at this merchant": its yes opens the merchant's payment page.
+  UCP_CHECKOUT_HANDOFF_TYPE,
+  // §3.14 — an order's failure, cancellation or dispute, from Core's own reconciler.
+  UCP_ORDER_NOTICE_TYPE,
+  // §3.17 — "link your account at this merchant?": its yes opens the merchant's sign-in page.
+  UCP_LINK_HANDOFF_TYPE,
 ]);
 
 /**
@@ -1483,7 +1593,16 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
  * owner's yes to it would make Core queue that work. Brain still answers
  * these cards (`/service_approve`), so they are not in the set above.
  */
-export const CORE_CREATED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([SERVICE_QUERY_EXECUTION_TYPE]);
+export const CORE_CREATED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
+  SERVICE_QUERY_EXECUTION_TYPE,
+  // A paired device's mirrored card (a coding gate, an action, one needing a person
+  // present) comes only through `/v1/remote-approval/proposals`, after its caller check
+  // (UCP plan §3.9: a `ucp:` card or a link only from the owner's server node). Made
+  // through this route, it would frame a page of Brain's choosing as Dina's own card.
+  REMOTE_APPROVAL_PAYLOAD_TYPE,
+  REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE,
+  REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE,
+]);
 
 async function runAction(req: CoreRequest, action: TaskAction): Promise<CoreResponse> {
   const service = getWorkflowService();

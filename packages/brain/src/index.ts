@@ -219,8 +219,16 @@ export {
   parseGuardAnswer,
   scanRemoteResult,
   GUARD_VERDICT_MARGIN_MS,
+  GUARD_CALLS_AT_ONCE,
+  GUARD_CALL_GRACE_MS,
+  GuardSlots,
+  StopSignal,
+  scanGuardedData,
+  slotHeldByCalls,
 } from './a2a/guard_worker';
 export type { A2AGuardLLM, A2AGuardWorkerOptions, GuardDecision, GuardScanBudget } from './a2a/guard_worker';
+export { UcpGuardWorker, UCP_GUARD_SYSTEM_PROMPT } from './ucp/guard_worker';
+export type { UcpGuardWorkerOptions } from './ucp/guard_worker';
 export {
   A2A_EVENT_KINDS,
   a2aDeliveryText,

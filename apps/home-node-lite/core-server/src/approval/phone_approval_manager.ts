@@ -4,7 +4,12 @@ import { kvDelete, kvGet, kvSet } from '@dina/core/kv';
 import { SERVICE_INDEX } from '../identity/derivations';
 
 import { PhoneApprovalMsgBoxClient, parsePhoneSetupCode } from './phone_approval_msgbox';
-import { PhoneApprovalSyncWorker, withdrawAllPhoneApprovalMirrors } from './phone_approval_sync';
+import {
+  PhoneApprovalSyncWorker,
+  phoneNeedsServerNodePairing,
+  resetServerNodePairingNeeded,
+  withdrawAllPhoneApprovalMirrors,
+} from './phone_approval_sync';
 
 const TARGET_NAMESPACE = 'phone_approval_sync';
 const TARGET_KEY = 'target';
@@ -21,6 +26,11 @@ export interface PhoneApprovalStatus {
   state: 'unpaired' | 'active' | 'revoking';
   phoneDid?: string;
   deviceDid?: string;
+  /**
+   * The phone takes this server's coding cards but refused its shopping cards: it was paired
+   * with a coding-agent code, not a Server node code (UCP plan §3.9).
+   */
+  needsServerNodePairing?: boolean;
 }
 
 export interface PhoneApprovalLogger {
@@ -71,6 +81,7 @@ export class PhoneApprovalManager {
       state: this.target.state === 'active' ? 'active' : 'revoking',
       phoneDid: this.target.phone_did,
       deviceDid: this.makeClient(this.target).did,
+      ...(phoneNeedsServerNodePairing() ? { needsServerNodePairing: true } : {}),
     };
   }
 
@@ -137,6 +148,9 @@ export class PhoneApprovalManager {
     // Persist active before starting the worker. If this write fails, the
     // durable pairing marker remains and restart performs cleanup.
     await persistTarget(target);
+    // Paired anew: whatever the old pairing lacked is the new one's to show. Cleared before
+    // the worker starts, so a refusal the new pairing meets is never lost to this.
+    await resetServerNodePairingNeeded();
     this.target = target;
     this.client = client;
     this.startWorker(client);

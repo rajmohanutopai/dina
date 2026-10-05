@@ -126,7 +126,7 @@ beforeEach(() => {
     const hit = routes.get(request.url);
     if (hit === undefined) return { ok: false, error: 'dns_failed', sent: false };
     if ('ok' in hit) return hit;
-    return { ok: true, status: hit.status ?? 200, body: hit.body, connectedAddress: '203.0.113.9' };
+    return { ok: true, status: hit.status ?? 200, body: hit.body, connectedAddress: '203.0.114.9' };
   });
 });
 

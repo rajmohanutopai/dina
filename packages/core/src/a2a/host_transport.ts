@@ -11,6 +11,8 @@
 
 import { checkOutboundUrl, type OutboundUrlCheck } from '@dina/a2a';
 
+import type { PolicySocket } from '@dina/net-policy';
+
 
 export type A2ATransportError =
   /** The URL fails Core's policy; nothing was resolved or sent. */
@@ -123,3 +125,41 @@ export async function a2aFetch(request: A2AHttpRequest): Promise<A2AHttpResult> 
     clearTimeout(timer);
   }
 }
+
+/**
+ * A2A's host transport over any policy socket (UCP plan §3.3: one socket for
+ * both lanes): the server builds it over `@dina/net-socket-node`, and the
+ * phone could over its native socket (whether the phone runs A2A's outbound
+ * lane stays A2A plan D6). The behaviour is A2A's own: the URL check, TLS 1.2
+ * or later, JSON answers or the status only, 401/403 bodies discarded, bodies
+ * that must be UTF-8, the `dina-a2a/1` user agent.
+ */
+export function a2aTransportFromPolicySocket(socket: PolicySocket): A2AHostTransport {
+  return async (request: A2AHttpRequest): Promise<A2AHttpResult> => {
+    if (!checkOutboundUrl(request.url).ok) return { ok: false, error: 'url_refused', sent: false };
+    const headers: Record<string, string> = { ...request.headers, 'user-agent': 'dina-a2a/1' };
+    if (request.body !== undefined) headers['content-type'] = request.contentType ?? 'application/json';
+    const result = await socket({
+      method: request.method,
+      url: request.url,
+      headers,
+      ...(request.body !== undefined ? { body: new TextEncoder().encode(request.body) } : {}),
+      accept: request.response === 'status' ? 'status' : 'json',
+      minTls: 'TLSv1.2',
+      readAuthErrorBodies: false,
+      maxResponseBytes: request.maxResponseBytes,
+      timeoutMs: request.timeoutMs,
+    });
+    if (!result.ok) return { ok: false, error: result.error, sent: result.sent };
+    let body = '';
+    if (result.bodyBytes.length > 0) {
+      try {
+        body = new TextDecoder('utf-8', { fatal: true }).decode(result.bodyBytes);
+      } catch {
+        return { ok: false, error: 'bad_encoding', sent: true };
+      }
+    }
+    return { ok: true, status: result.status, body, connectedAddress: result.connectedAddress };
+  };
+}
+

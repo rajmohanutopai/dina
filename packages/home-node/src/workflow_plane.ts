@@ -54,6 +54,7 @@ import {
   setWorkflowService,
   composeWorkflowHooks,
   a2aWorkflowHooks,
+  ucpWorkflowHooks,
   getA2ARuntime,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
@@ -228,6 +229,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
       // A2A Lane 1: mints the permit and dispatch child when the owner approves
       // a consent card (a no-op where Lane 1 is not installed).
       a2aWorkflowHooks(getA2ARuntime),
+      ucpWorkflowHooks(),
     ),
     // A withheld answer is the one bridge outcome with no other trace: no
     // stash, no send, nothing for the sweeper. Without this line an operator

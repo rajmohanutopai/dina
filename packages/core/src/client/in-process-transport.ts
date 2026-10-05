@@ -45,6 +45,18 @@ import {
   WorkflowConflictError,
 } from './core-client';
 import { CoreHttpError } from './http-transport';
+import {
+  parseUcpFetchResponse,
+  parseUcpGuardVerdictResponse,
+  parseUcpSearchResponse,
+  parseUcpSearchReviewResponse,
+  ucpFetchBody,
+  ucpGuardVerdictBody,
+  ucpSearchBody,
+  ucpCartBody,
+  ucpCheckoutBody,
+  parseUcpShopResponse,
+} from './ucp_wire';
 
 import type {
   A2ACallableAgent,
@@ -54,6 +66,18 @@ import type {
   A2AGuardVerdictResult,
   OwnerTurnInput,
   A2AGuardWork,
+  UcpFetchInput,
+  UcpFetchResult,
+  UcpGuardVerdictInput,
+  UcpGuardVerdictResult,
+  UcpCartCall,
+  UcpCheckoutCall,
+  UcpShopResult,
+  UcpGuardWork,
+  UcpSearchInput,
+  UcpSearchResult,
+  UcpSearchReviewResult,
+  UcpSearchView,
   A2AOperationStatus,
   ApproveWorkflowTaskOptions,
   InvokePluginToolInput,
@@ -878,6 +902,56 @@ export class InProcessTransport implements CoreClient {
       blankRequest({ method: 'POST', path: '/v1/a2a/guard/verdict', body: a2aGuardVerdictBody(input) }),
     );
     return parseA2AGuardVerdictResponse(res.status, res.body);
+  }
+
+  async searchUcp(input: UcpSearchInput): Promise<UcpSearchResult> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/search', body: ucpSearchBody(input) }));
+    return parseUcpSearchResponse(res.status, res.body);
+  }
+
+  async getUcpSearch(searchId: string, releaseSession: string): Promise<UcpSearchView | null> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: `/v1/ucp/search/${encodeURIComponent(searchId)}`,
+        query: { release_session: releaseSession },
+      }),
+    );
+    if (res.status === 404) return null;
+    return expectOk<UcpSearchView>(res, 'getUcpSearch()');
+  }
+
+  async fetchUcpProducts(input: UcpFetchInput): Promise<UcpFetchResult> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ucp/products', body: ucpFetchBody(input) }),
+    );
+    return parseUcpFetchResponse(res.status, res.body);
+  }
+
+  async raiseUcpSearchReview(input: Omit<UcpSearchInput, 'reviewId'>): Promise<UcpSearchReviewResult> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/search/review', body: ucpSearchBody(input) }));
+    return parseUcpSearchReviewResponse(res.status, res.body);
+  }
+
+  async ucpCart(input: UcpCartCall): Promise<UcpShopResult> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/cart', body: ucpCartBody(input) }));
+    return parseUcpShopResponse(res.status, res.body);
+  }
+
+  async ucpCheckout(input: UcpCheckoutCall): Promise<UcpShopResult> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/checkout', body: ucpCheckoutBody(input) }));
+    return parseUcpShopResponse(res.status, res.body);
+  }
+
+  async claimUcpGuardJob(): Promise<UcpGuardWork | null> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/guard/next', body: {} }));
+    if (res.status === 204) return null;
+    return expectOk<UcpGuardWork>(res, 'claimUcpGuardJob()');
+  }
+
+  async submitUcpGuardVerdict(input: UcpGuardVerdictInput): Promise<UcpGuardVerdictResult> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/guard/verdict', body: ucpGuardVerdictBody(input) }));
+    return parseUcpGuardVerdictResponse(res.status, res.body);
   }
 
   async recordOwnerTurn(input: OwnerTurnInput): Promise<boolean> {

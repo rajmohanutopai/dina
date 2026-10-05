@@ -1255,6 +1255,30 @@ export default function RootLayout() {
                   }}
                 />
                 <Tabs.Screen
+                  name="shopping-settings"
+                  options={{
+                    title: 'Shopping',
+                    // Reached from Settings; no tab of its own.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="linked-accounts"
+                  options={{
+                    title: 'Linked accounts',
+                    // Reached from Settings and the account-link callback; no tab of its own.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="ucp/oauth/callback"
+                  // A shop sending the owner back after linking an account (UCP plan §3.17),
+                  // reached only through the claimed link — NEVER a tab.
+                  options={{ href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
                   name="chat/[did]"
                   options={{
                     title: 'Talk',

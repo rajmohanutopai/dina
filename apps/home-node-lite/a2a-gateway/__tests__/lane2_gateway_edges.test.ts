@@ -79,6 +79,12 @@ function recordingCore(reply: () => CoreReply, forwarded: { path: string; envelo
     async card() {
       return { ok: false, status: 503 };
     },
+    async ucpWebhook() {
+      return { ok: false, status: 503 };
+    },
+    async ucpOauthCallback() {
+      return { ok: false, status: 503 };
+    },
     async claimEvents() {
       return { ok: true, claim: { items: [], closed: [], fenced: [] } };
     },
@@ -386,6 +392,12 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
       async card() {
         return { ok: false, status: 503 };
       },
+      async ucpWebhook() {
+        return { ok: false, status: 503 };
+      },
+      async ucpOauthCallback() {
+        return { ok: false, status: 503 };
+      },
       async claimEvents() {
         if (given) return { ok: true, claim: { items: [], closed: [], fenced: [] } };
         given = true;
@@ -473,6 +485,12 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
         async card() {
           return { ok: false, status: 503 };
         },
+        async ucpWebhook() {
+          return { ok: false, status: 503 };
+        },
+        async ucpOauthCallback() {
+          return { ok: false, status: 503 };
+        },
         async claimEvents() {
           return { ok: false, status: 503 };
         },
@@ -495,6 +513,12 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
           return { ok: false, status: 503 };
         },
         async card() {
+          return { ok: false, status: 503 };
+        },
+        async ucpWebhook() {
+          return { ok: false, status: 503 };
+        },
+        async ucpOauthCallback() {
           return { ok: false, status: 503 };
         },
         async claimEvents() {

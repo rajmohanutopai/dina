@@ -34,6 +34,7 @@ import { OfferedItemCard, type SupplierTrust } from '../src/components/OfferedIt
 import { OrderProgress, orderStepsReached } from '../src/components/OrderProgress';
 import { PresenceSheet } from '../src/components/PresenceSheet';
 import { safeHttpsUrl } from '../src/components/safe_url';
+import { ShopOrders } from '../src/components/ShopOrders';
 import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import {
   activateBuyerInstall,
@@ -140,6 +141,8 @@ export default function OrdersScreen(): React.ReactElement {
   const [drafts, setDrafts] = useState<OrderDraftSummary[]>([]);
   const [placed, setPlaced] = useState<PlacedOrderDto[]>([]);
   const [placedError, setPlacedError] = useState<string | null>(null);
+  // Shop (UCP) orders load on their own; the empty state waits for none of either kind.
+  const [shopOrderCount, setShopOrderCount] = useState(0);
   // Supplier names for placed orders, as the listing names resolve.
   const [names, setNames] = useState<Map<string, string | null>>(new Map());
   const [loading, setLoading] = useState(true);
@@ -407,11 +410,16 @@ export default function OrdersScreen(): React.ReactElement {
             {placedError}
           </Text>
         )}
-        {!loading && error === null && drafts.length === 0 && placed.length === 0 && (
-          <Text style={styles.empty} testID="orders-empty">
-            No orders yet. Photograph an order sheet or ask suppliers for quotes to start one.
-          </Text>
-        )}
+        {!loading &&
+          error === null &&
+          drafts.length === 0 &&
+          placed.length === 0 &&
+          shopOrderCount === 0 && (
+            <Text style={styles.empty} testID="orders-empty">
+              No orders yet. Photograph an order sheet or ask suppliers for quotes to start one.
+            </Text>
+          )}
+        <ShopOrders onCount={setShopOrderCount} />
         {placed.length > 0 && (
           <Text style={styles.sectionTitle} testID="orders-placed-title">
             Placed orders
