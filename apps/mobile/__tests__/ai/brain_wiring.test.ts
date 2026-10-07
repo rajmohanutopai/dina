@@ -11,8 +11,11 @@
  */
 
 import { resetChatDefaults } from '../../../brain/src/chat/orchestrator';
+import { AISDKAdapter } from '../../../brain/src/llm/adapters/aisdk';
+import { routedProvider } from '../../../brain/src/llm/router_dispatch';
+import { installNameLexicon, NameLexicon } from '../../../brain/src/pii/names';
 import { resetReasoningLLM } from '../../../brain/src/pipeline/chat_reasoning';
-import { registerBrainReasoningLLM } from '../../src/ai/brain_wiring';
+import { makeTimedReasoningLLM, registerBrainReasoningLLM } from '../../src/ai/brain_wiring';
 
 import type { LanguageModel } from 'ai';
 
@@ -76,9 +79,38 @@ function makeMockModel(
   } as unknown as LanguageModel;
 }
 
+const scrubbedOver = (model: LanguageModel) =>
+  routedProvider({
+    llm: new AISDKAdapter({ model, name: 'mock' }),
+    providerName: 'openai',
+    taskType: 'reason',
+  });
+
 beforeEach(() => {
   resetReasoningLLM();
   resetChatDefaults();
+});
+
+describe('the single-shot path goes through the PII router (PII V2 §3, dual review F1)', () => {
+  afterEach(() => installNameLexicon(null));
+
+  it('query and context leave through one token table: names hidden, two emails two tokens, answer restored', async () => {
+    installNameLexicon(new NameLexicon({ fetch: async () => [{ group: 1, names: ['Emma'] }] }));
+    const seen: { system: string | undefined; prompt: string | undefined }[] = [];
+    const model = makeMockModel({
+      onCall: (args) => seen.push({ system: args.system, prompt: args.prompt }),
+      response: 'Write to [EMAIL_2] about [PERSON_1].',
+    });
+    const out = await makeTimedReasoningLLM(scrubbedOver(model))(
+      'Email Emma at emma@example.com',
+      'Her old address was emma.old@example.org',
+    );
+    const sent = JSON.stringify(seen);
+    expect(sent).not.toMatch(/emma/i);
+    expect(seen[0]?.prompt).toBe('Email [PERSON_1] at [EMAIL_1]');
+    expect(seen[0]?.system).toContain('Her old address was [EMAIL_2]');
+    expect(out).toBe('Write to emma.old@example.org about Emma.');
+  });
 });
 
 describe('registerBrainReasoningLLM — Brain orchestrator sees our provider', () => {
@@ -88,7 +120,7 @@ describe('registerBrainReasoningLLM — Brain orchestrator sees our provider', (
       onCall: (args) => seen.push({ system: args.system, prompt: args.prompt }),
       response: 'from mock',
     });
-    registerBrainReasoningLLM('openai', model);
+    registerBrainReasoningLLM('openai', new AISDKAdapter({ model, name: 'mock' }));
 
     // Pull the registered lambda back via the chat_reasoning module —
     // it's private, so we exercise it indirectly by invoking it via
@@ -121,7 +153,6 @@ describe('makeTimedReasoningLLM — abort-signal timeout survives a stalled call
   // because fake timers also intercept the AI SDK's internal
   // setTimeouts, which hangs in cross-realm promise plumbing.
   it('aborts the underlying call when the timeout elapses', async () => {
-     
     const { makeTimedReasoningLLM } =
       require('../../src/ai/brain_wiring') as typeof import('../../src/ai/brain_wiring');
 
@@ -143,7 +174,7 @@ describe('makeTimedReasoningLLM — abort-signal timeout survives a stalled call
     globalThis.setTimeout = ((fn: () => void, _ms: number) =>
       originalSetTimeout(fn, 10)) as typeof globalThis.setTimeout;
     try {
-      const fn = makeTimedReasoningLLM(model);
+      const fn = makeTimedReasoningLLM(scrubbedOver(model));
       await expect(fn('stall me', 'ctx')).rejects.toThrow(/Abort/i);
       expect(capturedSignal).toBeDefined();
       expect(capturedSignal!.aborted).toBe(true);
@@ -153,11 +184,10 @@ describe('makeTimedReasoningLLM — abort-signal timeout survives a stalled call
   });
 
   it('returns the text unchanged on a successful call', async () => {
-     
     const { makeTimedReasoningLLM } =
       require('../../src/ai/brain_wiring') as typeof import('../../src/ai/brain_wiring');
     const model = makeMockModel({ response: 'hello world' });
-    const fn = makeTimedReasoningLLM(model);
+    const fn = makeTimedReasoningLLM(scrubbedOver(model));
     const out = await fn('hi', 'system');
     expect(out).toBe('hello world');
   });

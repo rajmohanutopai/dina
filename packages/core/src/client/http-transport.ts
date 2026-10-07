@@ -28,6 +28,7 @@
 
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
+import { readPiiNameGroups, type PiiNameGroup } from '../pii/names';
 
 import {
   a2aDelegateBody,
@@ -1342,6 +1343,17 @@ export class HttpCoreTransport implements CoreClient {
       'peopleList',
     );
     return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
+  }
+
+  async piiNames(): Promise<PiiNameGroup[]> {
+    const raw = await this.call<{ groups?: unknown }>(
+      'GET',
+      '/v1/pii/names',
+      undefined,
+      undefined,
+      'piiNames',
+    );
+    return readPiiNameGroups(raw.groups);
   }
 
   async peopleFindByName(surface: string): Promise<Person[]> {

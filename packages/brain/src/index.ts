@@ -6,6 +6,9 @@
 export { defaultFetch } from './runtime/fetch';
 export * from './pii/entity_vault';
 export * from './pii/tier2_patterns';
+export * from './pii/names';
+export * from './pii/session';
+export * from './pii/strangers';
 export * from './peerlens/scorer';
 export * from './peerlens/tier_classifier';
 export * from './enrichment/l0_deterministic';

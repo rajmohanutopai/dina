@@ -4,7 +4,7 @@
  *
  * Stays local on device: queries `queryVault` directly (lite stack
  * has Core + Brain + keystore in-process); the LLM call goes via the
- * user's BYOK provider (`createLLMProvider`) — Loyalty Law-clean,
+ * user's BYOK provider (`createScrubbedLLMProvider`, behind the PII router) — Loyalty Law-clean,
  * AppView is never in the path.
  *
  * **Controlled vs uncontrolled.** `enabled: false` short-circuits the
@@ -17,7 +17,7 @@
  * trust write form.
  *
  * **Provider injection.** Tests pass a `llmProvider` to bypass the
- * default `loadActiveProvider`/`createLLMProvider` plumbing without
+ * default `loadActiveProvider`/`createScrubbedLLMProvider` plumbing without
  * having to mock the keychain. Production omits this.
  */
 
@@ -27,7 +27,7 @@ import { queryVault } from '@dina/core';
 
 
 import { loadActiveProvider } from '../../ai/active_provider';
-import { createLLMProvider } from '../../ai/provider';
+import { createScrubbedLLMProvider } from '../../ai/provider';
 import {
   inferComposeContext,
   type ComposeContextResult,
@@ -98,7 +98,7 @@ async function defaultProvider(): Promise<LLMProvider | null> {
     // thinking-model `thought_signature` schema fragility on
     // `gemini-3.1-pro-preview`. Tier mapping is single-sourced from
     // `models.json` via `getProviderTiers`.
-    return await createLLMProvider(active, { tier: 'lite' });
+    return await createScrubbedLLMProvider(active, { tier: 'lite' });
   } catch {
     return null;
   }

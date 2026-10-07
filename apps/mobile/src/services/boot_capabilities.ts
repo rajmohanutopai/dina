@@ -35,8 +35,10 @@ import {
   PDSAccountClient,
   PDSPublisher,
   createGeminiEmbeddingProvider,
+  installNameLexicon,
   makeTier1CapabilityRunner,
   executeToolSearch,
+  NameLexicon,
 } from '@dina/brain';
 import {
   type AgenticAskHandlerOptions,
@@ -106,6 +108,7 @@ import {
   makeWSFactory,
   resolveMsgBoxURL,
 } from './msgbox_wiring';
+import { wireNameDetector } from './name_detector_wiring';
 import {
   getMobilePolicySocket,
   kickUcpGuard,
@@ -384,6 +387,24 @@ export async function buildBootInputs(
   options: BuildBootInputsOptions = {},
 ): Promise<BuiltBootInputs> {
   const { did, signingKeypair } = await resolveIdentity(options.didOverride);
+  // The names Brain hides from a cloud model (docs/PII_ARCHITECTURE_V2.md §5),
+  // read from the in-process Core once the node is up. Before that a fetch
+  // fails and the next model call tries again.
+  installNameLexicon(
+    new NameLexicon({
+      fetch: async () => {
+        // Loaded when called: useNodeBootstrap imports this module.
+        const { getBootedNode } = await import('../hooks/useNodeBootstrap');
+        const node = getBootedNode();
+        if (node === null) throw new Error('node not booted');
+        return node.coreClient.piiNames();
+      },
+      onDegraded: (reason) =>
+        console.warn('[pii] names unavailable; scrubbing with patterns only', reason),
+    }),
+  );
+  // Names of people Dina does not know, found on the device (§7); iPhone only.
+  wireNameDetector();
   // Role priority: explicit caller > EXPO_PUBLIC_DINA_ROLE env > persisted preference.
   // The env override lets bench builds run as `provider` / `both` without
   // tapping through the Service Sharing UI.

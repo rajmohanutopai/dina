@@ -120,10 +120,11 @@ export function createDelegateToAgentTool(opts: DelegateToAgentToolOptions): Age
       // raw PII in either field would leak values like email addresses, phone
       // numbers, IBAN/SSN strings outside the Home Node. Scrub replaces those
       // with stable placeholder tokens (`[EMAIL_1]`, `[PHONE_2]`, …). The
-      // original entities ride on the payload under `_pii_entities` so a
-      // future rehydrate-on-validate flow can restore the value at the
-      // user-approval boundary.
-      const { scrubbed: scrubbedDescription, entities } = scrubPII(description);
+      // token table is NOT kept: the agent receives the whole payload, so any
+      // value in it reaches the agent (docs/PII_ARCHITECTURE_V2.md §9).
+      // Whether an agent should get a real value belongs at an
+      // owner-approved step (docs/CONTEXT_FIREWALL_DESIGN.md).
+      const { scrubbed: scrubbedDescription } = scrubPII(description);
 
       await opts.core.createWorkflowTask({
         id: taskId,
@@ -132,12 +133,10 @@ export function createDelegateToAgentTool(opts: DelegateToAgentToolOptions): Age
         // Deliberately NOT `service_query_execution` — that type is the
         // cross-Home-Node bridge contract. Free-form local-agent tasks use
         // their own type so the response bridge ignores them (no D2D
-        // requester to send a service.response back to). `_pii_entities` is
-        // the rehydration table: never read by the agent.
+        // requester to send a service.response back to).
         payload: JSON.stringify({
           type: 'free_form_task',
           description: scrubbedDescription,
-          _pii_entities: entities,
         }),
         initialState: 'queued',
         // Generous claim/expiry TTL — async delivery means the owner may take

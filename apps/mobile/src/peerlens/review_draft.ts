@@ -36,7 +36,7 @@ import { listPersonas, isPersonaOpen , queryVault } from '@dina/core';
 
 
 import { loadActiveProvider } from '../ai/active_provider';
-import { createLLMProvider } from '../ai/provider';
+import { createScrubbedLLMProvider } from '../ai/provider';
 
 import {
   inferComposeContext,
@@ -306,7 +306,7 @@ async function defaultProvider(): Promise<LLMProvider | null> {
   try {
     const active = await loadActiveProvider();
     if (active === null) return null;
-    return await createLLMProvider(active, { tier: 'lite' });
+    return await createScrubbedLLMProvider(active, { tier: 'lite' });
   } catch {
     return null;
   }

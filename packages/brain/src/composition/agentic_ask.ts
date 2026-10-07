@@ -45,7 +45,7 @@
 import { getMemoryService } from '@dina/core';
 
 import { SMALL_TASK_MAX_TOKENS } from '../constants';
-import { LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
+import { DEFAULT_SENSITIVE_PERSONAS, LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
 import {
@@ -289,7 +289,7 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       // `string[]` field. The config object owns its own copy; callers
       // never see it back, so the mutability difference is purely
       // internal.
-      sensitivePersonas: [...(input.sensitivePersonas ?? ['health', 'financial'])],
+      sensitivePersonas: [...(input.sensitivePersonas ?? DEFAULT_SENSITIVE_PERSONAS)],
       cloudConsentGranted: input.cloudConsentGranted ?? true,
     },
   });

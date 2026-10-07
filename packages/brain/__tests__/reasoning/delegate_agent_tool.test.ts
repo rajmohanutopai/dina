@@ -169,8 +169,8 @@ describe('delegate_to_agent', () => {
   // The agent reads the task `description` and `payload.description` when
   // claiming. Raw PII in either would leak values like email addresses,
   // phone numbers, or SSN strings outside the Home Node. Scrub replaces
-  // them with placeholder tokens; the original entities are stashed under
-  // `_pii_entities` for a future rehydrate-on-validate-approval flow.
+  // them with placeholder tokens, and no token table rides along: the agent
+  // claims the whole stored row, payload included (PII_ARCHITECTURE_V2 §9).
   // ---------------------------------------------------------------------
   describe('PII scrubbing (MT-46)', () => {
     it('scrubs the description before the workflow task is created', async () => {
@@ -190,7 +190,7 @@ describe('delegate_to_agent', () => {
       expect(payload.description).toMatch(/\[EMAIL_/);
     });
 
-    it('stores the original entities under `_pii_entities` for rehydrate-on-approval', async () => {
+    it('keeps no raw values anywhere in the task: no token table rides along', async () => {
       const fake = makeFake();
       const tool = buildTool(fake);
 
@@ -199,10 +199,10 @@ describe('delegate_to_agent', () => {
       });
 
       const payload = JSON.parse(fake.created[0].payload as string);
-      expect(Array.isArray(payload._pii_entities)).toBe(true);
-      const values: string[] = payload._pii_entities.map((e: { value: string }) => e.value);
-      expect(values).toContain('alice@example.com');
-      expect(values.some((v) => v.includes('555'))).toBe(true);
+      expect(payload).not.toHaveProperty('_pii_entities');
+      const row = JSON.stringify(fake.created[0]);
+      expect(row).not.toContain('alice@example.com');
+      expect(row).not.toContain('123-4567');
     });
 
     it('passes through descriptions that have no PII (no entities, identical text)', async () => {
@@ -215,24 +215,19 @@ describe('delegate_to_agent', () => {
       const stored = fake.created[0];
       expect(stored.description).toBe(plain);
       const payload = JSON.parse(stored.payload as string);
-      expect(payload.description).toBe(plain);
-      expect(payload._pii_entities).toEqual([]);
+      expect(payload).toEqual({ type: 'free_form_task', description: plain });
     });
 
-    it('the agent-visible fields contain ONLY scrubbed text — never raw PII', async () => {
+    it('everything the agent claims (the whole stored row) holds only scrubbed text', async () => {
       const fake = makeFake();
       const tool = buildTool(fake);
 
       const secret = 'alice@example.com';
       await tool.execute({ task_description: `Send ${secret} an email` });
 
-      const stored = fake.created[0];
-      const payload = JSON.parse(stored.payload as string);
-      const entities = payload._pii_entities;
-      delete payload._pii_entities;
-      const visibleToAgent = JSON.stringify({ description: stored.description, payload });
-      expect(visibleToAgent).not.toContain(secret);
-      expect(JSON.stringify(entities)).toContain(secret);
+      // The claim route returns the row as stored, payload whole: check it all,
+      // not a hand-picked subset.
+      expect(JSON.stringify(fake.created[0])).not.toContain(secret);
     });
   });
 });

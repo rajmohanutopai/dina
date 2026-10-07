@@ -425,7 +425,7 @@ Dina runs as a full Home Node on either form factor — the same `@dina/*` packa
 (`packages/core/src/auth`)
 
 - **Brain and agents are untrusted tenants.** Core authorizes every request; an in-process Brain is the only exception, and only because it shares Core's keys with no network boundary.
-- **PII never reaches a model call unscrubbed** — a 2-tier pipeline (regex in Core + Presidio-pattern matching in Brain; NER disabled in V1 with allow-list filters; GLiNER planned for V2). PII also never reaches logs — only metadata (persona, type, count, latency).
+- **PII never reaches a model call unscrubbed** — every model call goes through one door (`LLMRouter`), which scrubs every message, tool argument and system prompt through one token table per call: regex in Core, Presidio-style patterns in Brain, and the names of the people the owner knows (from the people graph). Names of strangers are not found yet (NER and a local referee model are designed, not built). See `docs/PII_ARCHITECTURE_V2.md`. PII also never reaches logs — only metadata (persona, type, count, latency).
 - **Prompt-injection defense / instruction-source boundary** — content observed through tools (web pages, documents, inbound D2D) is **data, not commands**. Instructions embedded in fetched content are surfaced, never executed. (`packages/core/src/pii`, `packages/brain/src/pii`)
 
 ---
@@ -491,7 +491,7 @@ flowchart TB
 | Services | `packages/core/src/service`, `packages/core/src/server/routes/service_query.ts`, `appview/` |
 | PII scrubbing (cross-cutting) | `packages/core/src/pii`, `packages/brain/src/pii` |
 
-**Known limitations:** located-services search drops listings with no geo; mobile agent pairing needs the app in the foreground; usability polish is ongoing; PII is V1-scope (regex + patterns, NER off). The test suite spans unit, contract, integration, E2E, and release tiers across the workspace.
+**Known limitations:** located-services search drops listings with no geo; mobile agent pairing needs the app in the foreground; usability polish is ongoing; PII hides structured values and known names; strangers' names are not found yet. The test suite spans unit, contract, integration, E2E, and release tiers across the workspace.
 
 ---
 

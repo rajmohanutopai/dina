@@ -1,0 +1,7 @@
+{
+  "name": "dina-names",
+  "version": "1.0.0",
+  "description": "Finds people's names in text on the device (docs/PII_ARCHITECTURE_V2.md §7): Apple's on-device model where Apple Intelligence is on, NLTagger otherwise. Brain decides what to hide.",
+  "private": true,
+  "main": "index.ts"
+}

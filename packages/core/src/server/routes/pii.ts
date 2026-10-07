@@ -3,7 +3,12 @@
  */
 
 import { isScopeAuthorized } from '../../auth/agent_scope';
+import { listContacts } from '../../contacts/directory';
+import { getPeopleRepository } from '../../people/repository';
+import { buildPiiNameGroups } from '../../pii/names';
 import { scrubPII } from '../../pii/patterns';
+
+import { PII_NAMES } from './paths';
 
 import type { CoreRequest, CoreRouter } from '../router';
 
@@ -16,6 +21,15 @@ function resolveCallerDid(req: CoreRequest): string {
 }
 
 export function registerPIIRoutes(router: CoreRouter): void {
+  // The names Brain hides from a cloud model (docs/PII_ARCHITECTURE_V2.md §5.2):
+  // grouped by person, with no person IDs, DIDs or relationships. Brain-only,
+  // like the rest of `/v1/pii/`. With no people graph wired the list is the
+  // contacts alone.
+  router.get(PII_NAMES, async () => {
+    const people = getPeopleRepository()?.listPeople() ?? [];
+    return { status: 200, body: { groups: buildPiiNameGroups(people, listContacts()) } };
+  });
+
   // Brain's internal scrub surface deliberately omits original values. Brain
   // owns its rehydration mapping through its own runtime; this route should not
   // become an agent shortcut merely because both operations use the same

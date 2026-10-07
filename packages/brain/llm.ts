@@ -31,7 +31,12 @@ export type {
   ProviderStatus,
   ProviderTiers,
 } from './src/llm/provider_config';
-export { LLMRouter, RoutedLLMProvider } from './src/llm/router_dispatch';
+export {
+  DEFAULT_SENSITIVE_PERSONAS,
+  LLMRouter,
+  RoutedLLMProvider,
+  routedProvider,
+} from './src/llm/router_dispatch';
 export type { LLMRouterOptions, RouterChatArgs } from './src/llm/router_dispatch';
 export {
   registerReasoningLLM,

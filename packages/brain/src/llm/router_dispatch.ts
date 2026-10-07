@@ -29,12 +29,11 @@
  * by binding a task_type at construction.
  */
 
-import { CloudConsentError } from '@dina/core';
-import {
-  scrubPII,
-  rehydratePII,
-  type PIIMatch,
-} from '@dina/core';
+import { CloudConsentError, rehydratePII } from '@dina/core';
+
+import { getNameLexicon, type NameLexicon } from '../pii/names';
+import { PII_TOKEN_NOTE, PiiSession } from '../pii/session';
+import { getStrangerNames, type StrangerNames } from '../pii/strangers';
 
 import { getProviderTiers } from './provider_config';
 import {
@@ -64,6 +63,22 @@ export interface LLMRouterOptions {
    */
   providers: Partial<Record<ProviderName, LLMProvider>>;
   config: RouterConfig;
+  /**
+   * The known names to hide (docs/PII_ARCHITECTURE_V2.md §5). Defaults to
+   * the host's installed lexicon; with neither, patterns alone.
+   */
+  names?: NameLexicon;
+  /**
+   * Detection of names Dina does not know (§7). Defaults to the host's
+   * installed one; hosts without a detector have none.
+   */
+  strangers?: StrangerNames;
+  /**
+   * Leave the model to the adapter (send no model id): for a raw adapter
+   * already built with the operator's or owner's choice, which the router's
+   * tier pick would otherwise replace (`routedProvider`).
+   */
+  keepAdapterModel?: boolean;
 }
 
 export interface RouterChatArgs {
@@ -88,8 +103,6 @@ export interface RouterChatArgs {
   modelOverride?: string;
 }
 
-type PIIEntity = PIIMatch & { token: string };
-
 /**
  * Central router. Not an `LLMProvider` itself — it has a different
  * call shape (explicit `taskType`). Wrap it with `RoutedLLMProvider`
@@ -98,10 +111,16 @@ type PIIEntity = PIIMatch & { token: string };
 export class LLMRouter {
   private providers: Partial<Record<ProviderName, LLMProvider>>;
   private config: RouterConfig;
+  private readonly names: NameLexicon | undefined;
+  private readonly strangers: StrangerNames | undefined;
+  private readonly keepAdapterModel: boolean;
 
   constructor(options: LLMRouterOptions) {
     this.providers = options.providers;
     this.config = options.config;
+    this.names = options.names;
+    this.strangers = options.strangers;
+    this.keepAdapterModel = options.keepAdapterModel === true;
   }
 
   /**
@@ -149,19 +168,42 @@ export class LLMRouter {
       );
     }
 
-    const model = this.pickModel(args.taskType, providerName, args.modelOverride);
+    const model = this.keepAdapterModel
+      ? args.modelOverride
+      : this.pickModel(args.taskType, providerName, args.modelOverride);
 
-    // Scrub every message going out to a cloud provider. Keep the
-    // entity map keyed by token so we can rehydrate response text +
-    // tool-call arguments on the return path.
-    const entities: PIIEntity[] = [];
-    const scrubbedMessages = requiresScrubbing
-      ? this.scrubMessages(args.messages, entities)
-      : args.messages;
-    const scrubbedSystemPrompt =
-      requiresScrubbing && args.systemPrompt !== undefined
-        ? this.scrubText(args.systemPrompt, entities)
-        : args.systemPrompt;
+    // Scrub every message, tool argument and the system prompt going out to
+    // a cloud provider through ONE session (docs/PII_ARCHITECTURE_V2.md §3-4),
+    // so a value keeps one token across all of them and every token restores
+    // to exactly one string on the way back.
+    if (!requiresScrubbing) {
+      return provider.chat(args.messages, {
+        model,
+        tools: args.tools,
+        systemPrompt: args.systemPrompt,
+        temperature: args.temperature,
+        maxTokens: args.maxTokens,
+        signal: args.signal,
+        responseSchema: args.responseSchema,
+      });
+    }
+    const lexicon = this.names ?? getNameLexicon();
+    const strangers = this.strangers ?? getStrangerNames();
+    const texts = textsNewestFirst(args);
+    const session = new PiiSession(
+      lexicon !== null && lexicon !== undefined ? await lexicon.current() : undefined,
+      strangers !== null && strangers !== undefined ? await strangers.matcherFor(texts) : undefined,
+    );
+    // Tokens already anywhere in the call are set aside before any is minted.
+    session.reserve(texts);
+    const scrubbedMessages = this.scrubMessages(args.messages, session);
+    let scrubbedSystemPrompt =
+      args.systemPrompt !== undefined ? session.scrub(args.systemPrompt) : undefined;
+    if (session.size > 0)
+      scrubbedSystemPrompt =
+        scrubbedSystemPrompt === undefined || scrubbedSystemPrompt === ''
+          ? PII_TOKEN_NOTE
+          : `${scrubbedSystemPrompt}\n\n${PII_TOKEN_NOTE}`;
 
     const response = await provider.chat(scrubbedMessages, {
       model,
@@ -173,8 +215,10 @@ export class LLMRouter {
       responseSchema: args.responseSchema,
     });
 
-    if (entities.length === 0) return response;
-    return rehydrateResponse(response, entities);
+    if (session.size === 0) return response;
+    const restored = rehydrateResponse(response, session);
+    session.clear();
+    return restored;
   }
 
   // -------------------------------------------------------------------------
@@ -201,8 +245,7 @@ export class LLMRouter {
     //    personas. Matches Python: missing consent throws, caller's
     //    UX layer handles the prompt-the-user flow.
     const providerName = this.config.cloudProviders[0]!;
-    const isSensitive =
-      persona !== undefined && this.config.sensitivePersonas.includes(persona);
+    const isSensitive = persona !== undefined && this.config.sensitivePersonas.includes(persona);
     if (isSensitive && this.config.cloudConsentGranted !== true) {
       throw new CloudConsentError(
         persona!,
@@ -233,32 +276,21 @@ export class LLMRouter {
   // PII scrub / rehydrate helpers
   // -------------------------------------------------------------------------
 
-  private scrubMessages(
-    messages: ChatMessage[],
-    entitySink: PIIEntity[],
-  ): ChatMessage[] {
+  private scrubMessages(messages: ChatMessage[], session: PiiSession): ChatMessage[] {
     return messages.map((m) => {
-      const nextContent = m.content !== '' ? this.scrubText(m.content, entitySink) : '';
+      const nextContent = m.content !== '' ? session.scrub(m.content) : '';
       if (m.toolCalls !== undefined && m.toolCalls.length > 0) {
         return {
           ...m,
           content: nextContent,
           toolCalls: m.toolCalls.map((tc) => ({
             ...tc,
-            arguments: scrubRecord(tc.arguments, entitySink, (text, sink) =>
-              this.scrubText(text, sink),
-            ),
+            arguments: session.scrubDeep(tc.arguments),
           })),
         };
       }
       return { ...m, content: nextContent };
     });
-  }
-
-  private scrubText(text: string, entitySink: PIIEntity[]): string {
-    const { scrubbed, entities } = scrubPII(text);
-    for (const e of entities) entitySink.push(e);
-    return scrubbed;
   }
 }
 
@@ -267,62 +299,53 @@ export class LLMRouter {
 // isolation with no `LLMProvider` instance in hand.
 // ---------------------------------------------------------------------------
 
+/**
+ * Every string a call sends, newest first: the latest messages are the ones
+ * not seen before (history repeats each turn), and the system prompt, mostly
+ * fixed, comes last. Stranger detection spends its time budget in this order.
+ */
+function textsNewestFirst(args: RouterChatArgs): string[] {
+  const out: string[] = [];
+  const strings = (value: unknown): void => {
+    if (typeof value === 'string') out.push(value);
+    else if (Array.isArray(value)) value.forEach(strings);
+    else if (value !== null && typeof value === 'object') Object.values(value).forEach(strings);
+  };
+  for (let i = args.messages.length - 1; i >= 0; i--) {
+    const m = args.messages[i] as ChatMessage;
+    if (m.content !== '') out.push(m.content);
+    for (const tc of m.toolCalls ?? []) strings(tc.arguments);
+  }
+  if (args.systemPrompt !== undefined && args.systemPrompt !== '') out.push(args.systemPrompt);
+  return out;
+}
+
+/**
+ * Restore tokens in a reply's text and every tool-call argument. Takes the
+ * call's session, or (older callers and tests) a token list.
+ */
 export function rehydrateResponse(
   response: ChatResponse,
-  entities: { token: string; value: string }[],
+  table: PiiSession | { token: string; value: string }[],
 ): ChatResponse {
-  const content = response.content === '' ? response.content : rehydratePII(response.content, entities);
+  const restore = (text: string): string =>
+    Array.isArray(table) ? rehydratePII(text, table) : table.rehydrate(text);
+  const content = response.content === '' ? response.content : restore(response.content);
   const toolCalls: ToolCall[] = response.toolCalls.map((tc) => ({
     ...tc,
-    arguments: rehydrateRecord(tc.arguments, entities),
+    arguments: restoreValue(tc.arguments, restore) as Record<string, unknown>,
   }));
   return { ...response, content, toolCalls };
 }
 
-function rehydrateRecord(
-  value: Record<string, unknown>,
-  entities: { token: string; value: string }[],
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value)) {
-    out[k] = rehydrateValue(v, entities);
-  }
-  return out;
-}
-
-function rehydrateValue(
-  value: unknown,
-  entities: { token: string; value: string }[],
-): unknown {
-  if (typeof value === 'string') return rehydratePII(value, entities);
-  if (Array.isArray(value)) return value.map((v) => rehydrateValue(v, entities));
+function restoreValue(value: unknown, restore: (text: string) => string): unknown {
+  if (typeof value === 'string') return restore(value);
+  if (Array.isArray(value)) return value.map((v) => restoreValue(v, restore));
   if (value !== null && typeof value === 'object') {
-    return rehydrateRecord(value as Record<string, unknown>, entities);
-  }
-  return value;
-}
-
-function scrubRecord(
-  value: Record<string, unknown>,
-  sink: PIIEntity[],
-  scrub: (text: string, sink: PIIEntity[]) => string,
-): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
-  for (const [k, v] of Object.entries(value)) {
-    out[k] = scrubValue(v, sink, scrub);
-  }
-  return out;
-}
-
-function scrubValue(
-  value: unknown,
-  sink: PIIEntity[],
-  scrub: (text: string, sink: PIIEntity[]) => string,
-): unknown {
-  if (typeof value === 'string') return scrub(value, sink);
-  if (Array.isArray(value)) return value.map((v) => scrubValue(v, sink, scrub));
-  if (value !== null && typeof value === 'object') {
-    return scrubRecord(value as Record<string, unknown>, sink, scrub);
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>))
+      out[k] = restoreValue(v, restore);
+    return out;
   }
   return value;
 }
@@ -395,4 +418,40 @@ export class RoutedLLMProvider implements LLMProvider {
       ),
     );
   }
+}
+
+/** The ask pipeline's default sensitive personas (agentic_ask.ts); one source for both. */
+export const DEFAULT_SENSITIVE_PERSONAS: readonly string[] = ['health', 'financial'];
+
+/**
+ * A raw model adapter behind the router, as a plain `LLMProvider`: for every
+ * consumer outside the ask pipeline (the remember loop, the capability
+ * runtime, the internal-Brain worker, PeerLens features). Hosts never hand a
+ * consumer the raw adapter (docs/PII_ARCHITECTURE_V2.md §3).
+ */
+export function routedProvider(input: {
+  llm: LLMProvider;
+  providerName: ProviderName;
+  taskType: TaskType;
+  names?: NameLexicon;
+  sensitivePersonas?: readonly string[];
+  cloudConsentGranted?: boolean;
+}): RoutedLLMProvider {
+  const router = new LLMRouter({
+    providers: { [input.providerName]: input.llm },
+    config: {
+      localAvailable: false,
+      cloudProviders: [input.providerName],
+      sensitivePersonas: [...(input.sensitivePersonas ?? DEFAULT_SENSITIVE_PERSONAS)],
+      cloudConsentGranted: input.cloudConsentGranted ?? true,
+    },
+    ...(input.names !== undefined ? { names: input.names } : {}),
+    // The adapter was built with the configured model; keep it.
+    keepAdapterModel: true,
+  });
+  return new RoutedLLMProvider({
+    router,
+    taskType: input.taskType,
+    label: `routed:${input.taskType}:${input.providerName}`,
+  });
 }

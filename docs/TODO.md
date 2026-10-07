@@ -1,4 +1,21 @@
+# Status overview (checked against the code 2026-10-06, main 43001b02)
+
+Each section below now starts with a dated **Status** line. Words used: DONE (the code shows it), PARTIAL, PENDING, OBSOLETE (premise gone), UNCLEAR (needs a device, a live deploy or the owner). Sections that were fully done are moved, word for word, to "Done (moved here 2026-10-06)" at the end. Nothing was deleted.
+
+Most urgent open items:
+1. **No backups.** PDS, AppView database and infra volumes ("Major issue").
+2. **Server privacy and authority.** Native install runs Core and Brain as one OS user, and Brain gets `DINA_VAULT_DIR` (#7, second half). (2026-10-07: the unscrubbed remember loop (#1) and the `delegate_to_agent` leak are fixed; #7's signing half was already fixed; #12 is a design choice.)
+3. **Likely broken on the server.** Brain gets 403 on `/v1/vault/list`, `/v1/vault/subjects`, `/v1/people` (#8).
+4. **Phone identity and data.** Random signing key when the Keychain rows are missing (#3); vault-salt fallback can set every database aside (#4); runtimes installed twice (#2).
+5. **Confirmed bugs.** Booking can confirm without saving; D2D resends mint new ids and the replay cache is in memory; stopped epoch in memory (#6); bare `order_status` (#5); lite tier ignored (#10); commerce gaps; `sent:true` when nothing was sent; located search drops services with no location; reminder card clips long text; in-flight ask lost on restart.
+6. **PeerLens.** Vouch and inbound-edge counts skip the inbound-vouch filter (sybil gap); review dimension vocabulary not used on the write path (launch gate); AppView namespace and suspension gates never switched on; users cannot retract a review.
+
+Needs the owner or a device: the four UCP rows; the merchant-directory deploy; the erased-device linked-service bug; agent setup while the phone sleeps; the slow first request; the guided-demo fix.
+
 # Remaining things in UCP
+
+> **Status (checked against the code 2026-10-06):** all four rows still open. The code is merged (main 43001b02); each row needs the live profile host (DNS wildcard, Hetzner DNS token, S3 bucket) or a real UCP shop. The "commit first" in row 2 is done; only the test-appview deploy remains.
+
 Not done yet:
 
 ┌───────────────────────────────────────────────────────────────────────────┬──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
@@ -15,7 +32,12 @@ Not done yet:
 └───────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 
 # Major issue
+
+> **Status (checked against the code 2026-10-06):** PENDING. Both plans are design only ("Nothing here is built"). No PDS, AppView database or infra volume backup runs today.
+
 Nothing is backed up. Everything should be backed up from PDS to a S3. Otherwise, a single crash and everyones data is lost
+- docs/CATALOG_PHOTOS_PLAN.md
+- docs/DISASTER_RECOVERY_PLAN.md
 
 # Issues found
 Problems I confirmed in the code
@@ -56,6 +78,21 @@ Problems I confirmed in the code
 │ 12  │ On the server, catalog photos go from inside the Core process straight to OpenAI.                                                                       │ core-server/src/image_pipeline.ts:90-110     │
 └─────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┴──────────────────────────────────────────────┘
 
+> **Status (checked against the code 2026-10-06):** per row:
+- #1 DONE (2026-10-07): every server consumer now gets the model behind the router (`routedProvider`); the capability runtime and internal-Brain worker were raw too. Guard test `brain-server/__tests__/pii_one_door.test.ts`. See `docs/PII_ARCHITECTURE_V2.md`.
+- #2 PENDING: both installs remain (`storage/init.ts` ~314-315, 409 and `boot_service.ts` ~482, 515).
+- #3 PENDING: `identity_store.ts` (~95-107) still mints `randomBytes(32)`; `boot_capabilities.ts` (~724-735) pairs it with the stored DID.
+- #4 PENDING: `useUnlock.ts` (~174) still falls back to `wrappedSeed.salt`, then sets the files aside.
+- #5 PENDING: `commerce/buyer_status.ts:531` still sends bare `order_status`; untested.
+- #6 PENDING: `epoch_service.ts` keeps the stop in memory; `establish()` adopts the live record.
+- #7 HALF DONE: Core signs its Brain calls (`createSignedBrainFetch`, commit d8331ab0) and Brain refuses unsigned callers, so the requester DID in the body is now safe. Still open: on a native install `home_node_supervisor.py` starts both as one OS user with one environment (Brain even gets `DINA_VAULT_DIR`), so a compromised Brain could read Core's seed file.
+- #8 PENDING: no authz rule for `/v1/vault/list`, `/v1/vault/subjects`, bare `/v1/people` (`/v1/people/` does not match it).
+- #9 DONE: `routes/workflow.ts` refuses reserved lanes (`reserved_lanes.ts` lists `plugin:`); test `core/__tests__/a2a/lane_reservation.test.ts` (commit d8331ab0).
+- #10 PENDING: `llm/adapters/aisdk.ts:116` still uses `this.model`.
+- #11 PENDING: `boot_service.ts` (~378-386) unchanged.
+- #12 BY DESIGN: `PHOTO_COMMERCE_LANES_DESIGN.md` makes Core the egress broker (owner consent, single-use authorization, bytes re-hashed, EXIF stripped). Record it as a named exception to "Core never calls external APIs" in CLAUDE.md / ARCHITECTURE.md.
+
+
 Problems the readers reported that I didn't check myself
 
 - D2D replay. The replay cache lives only in memory and nothing checks created_time, so an old message could replay after a restart.
@@ -72,30 +109,71 @@ Problems the readers reported that I didn't check myself
 - MsgBox has no global buffer quota.
 - Docker. The Dockerfiles miss two workspace packages, so the build likely fails.
 
+> **Status (checked against the code 2026-10-06):** per item:
+- D2D replay: PENDING. The replay cache is a plain in-memory `Map` (`transport/adversarial.ts`); `receive_pipeline.ts` checks the id only.
+- Duplicate sends: PENDING. `makeOutboxRedeliver` (`home-node/src/send_d2d.ts`) passes no `messageId`, so each try mints a new one.
+- New contacts quarantined: PENDING. `contacts/directory.ts` defaults trust to `unknown`.
+- delegate_to_agent PII: DONE (2026-10-07). The payload no longer carries the token table; the test now checks the whole stored row.
+- Requester DID from the body: DONE in effect. Only signed Core or an owner device can reach the route, and an owner device's DID is replaced by the owner's (`routes/ask.ts` `requesterFor`).
+- Commerce: tenders ignore blocked suppliers PENDING (`routes/commerce.ts` trade/tender never reads `blockedSuppliers`); late quote UNCLEAR (TTL capped at 300 s in `buyer_quote_request.ts`, late handling not traced); delivery note acceptance check PENDING (`trade_ledger.ts` ~405-418); invite teardown PENDING (`invite_service.ts` ~713-718 revokes every grant for the counterparty).
+- AppView gates: PENDING. `setNamespaceGate` / `setPdsSuspensionGate` have no callers outside tests. Sybil/coordination results go to `anomalyEvents`, which no scorer reads.
+- MsgBox global quota: PENDING. Only per-DID `MaxBytesPerDID` (`msgbox/internal/buffer.go`).
+- Docker: DONE. The Dockerfiles now copy every workspace package (d8331ab0, 534b7e24).
+
+
 # Control Plane
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. The doc is a target. Built: the agent gate, grants, A2A gateway, plugin substrate.
+
 AGENT_CONTROL_PLANE.md
 
 # Curator
+
+> **Status (checked against the code 2026-10-06):** PENDING. The doc is a phase-gated design; no curator code exists.
+
 docs/CURATION_SERVICES_ARCHITECTURE.md
 
 # Push Services
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. The pull run plane is wired on both hosts (`wireRunPlaneNode`); push transport is "designed, not yet fully contracted".
+
 INTERACTIVE_SERVICES_ARCHITECTURE.md
 
 #A2A Support
+
+> **Status (checked against the code 2026-10-06):** DONE (mostly). M0-M5 are merged (738e8bf6, d8331ab0). The doc's open seams remain, and a Codex cold audit is still owed.
+
 docs/A2A_GATEWAY_ARCHITECTURE.md
 
 # Plugin
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. `apps/mobile/app/plugins.tsx`, `PluginConsentCard.tsx` and `plugin_install.ts` exist. Still owed: a device run against a live PDS, the plugin SDK, the advisory worker.
+
 UI is pending
 PLUGIN_ARCHITECTURE.md
 
 # Guided demo
+
+> **Status (checked against the code 2026-10-06):** UNCLEAR from the code; needs a look on a device.
+
 Guided demo bottom should show current page changes, not next page
 > Done I think
 
 # Bugs to fix
+
+> **Status (checked against the code 2026-10-06):** pointer to `docs/Bugs.md`, not checked here. Its backup item is the same as "Major issue" above.
+
 Bugs.md
 
 #pending items in claude support
+
+> **Status (checked against the code 2026-10-06):**
+- Reuse of an existing mobile identity and vault: UNCLEAR; the manual path exists.
+- Multi-phone approval routing: PENDING (design mentions only).
+- First-publish handle setup: PENDING. `core-server/src/agent/facades.ts` (~419) still says reinstall with `--pds-handle`.
+- Local-model / direct-provider adapters: PARTIAL. `createProviderReasoningLLM` exists; no local-model adapter.
+- Job polling, broader Brain tasks, isolation / wrapped seed / child keys, downstream gating: too vague to check; same-user isolation is still open (see #7).
+
   Important Follow-Ups
 
   - Automatic reuse of an existing mobile Dina identity and vault data. Manual recovery/archive transfer works today.
@@ -110,23 +188,44 @@ Bugs.md
 
 # First request takes time
 
+> **Status (checked against the code 2026-10-06):** UNCLEAR; needs a timing run.
+
+
 # test-pds is not flippable
+
+> **Status (checked against the code 2026-10-06):** PENDING. `onboarding/handle_pick.tsx` (~69) uses a fixed `resolvePDSHost`; there is no choice.
+
 in the pick your handle page itself, user should be able to choose between test, prod, their own infra. 
 
 # important 
+
+> **Status (checked against the code 2026-10-06):** PENDING. Same as "Major issue": the disaster-recovery plan is not built.
+
 the main systems should have backup etc - database etc should be on Atlas etc
 
 
 # Found a major bug
+
+> **Status (checked against the code 2026-10-06):** UNCLEAR; needs a repro on a device.
+
 I deleted my Dina (erase everythig in device), logges in as a separate user, but I still see one service already linked to me.  I tried to connect to that, it didnt work, so worried that it is not linked via did:plc
 
 # very important - to avoid context leak to external systems like agents, services and reviews
+
+> **Status (checked against the code 2026-10-06):** PENDING. The doc says "Design / plan only. No runtime code."
+
 docs/CONTEXT_FIREWALL_DESIGN.md
 
 # initial agent setup requires phone to be ON
+
+> **Status (checked against the code 2026-10-06):** UNCLEAR; pairing needs the phone awake, so this needs a device run.
+
 if phone is asleep, initial setup fails
 
 # Services not working properly for difficult questions
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. Only a `missing_capability` card exists (`brain/src/chat/thread.ts`, `InlineMissingCapabilityCard.tsx`). No `no_matching_provider`, `missing_required_details` or `provider_unavailable` reasons, and no provider-fit reject.
+
 Book me a seat in the sports center
 returned error
   - AppView semantic ranking quality.
@@ -171,9 +270,15 @@ returned error
 
 
 # Home Node Lite as Local thin client
+
+> **Status (checked against the code 2026-10-06):** the doc is not on main; it lives only on branch `origin/web-thin-client-hold` (commit 7bcb3c5d).
+
 remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
 
 # Bangalore Salon issue
+
+> **Status (checked against the code 2026-10-06):** PENDING. `appview/src/api/xrpc/service-search.ts` still adds `lat IS NOT NULL AND lng IS NOT NULL` when a location is given.
+
   Your query named a city ("bangalore salon"), so Dina's services agent geocoded it and ran a location-scoped provider search (searchServices with lat/lng — see service_tools.ts). But the salon was published with
   no service area (serviceArea/location/geo all null), and a location-scoped service.search excludes services that have no location. So it found zero providers → the "Provider not found / appointment_availability"
   gap card. (A non-located query does find it, which is why my earlier search worked and the publish/ingest are fine.)
@@ -181,6 +286,9 @@ remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
 
 
 # D2D for normal questions
+
+> **Status (checked against the code 2026-10-06):** lanes 1 and 2 as the text says; lane 3 (surface context and draft a reply) PENDING: no such code in brain or mobile.
+
 
   The line that matters: Dina helps her own user answer. She never answers for them, and never replies to the peer on her own. Auto-replying to "what's your view on Oreos?" would break three laws at once —
   Absolute Loyalty (she'd be speaking for you to a third party), Never Replace a Human (two Dinas chatting with no human in the loop is exactly the bot-to-bot dead-internet failure), and it risks leaking your
@@ -206,11 +314,21 @@ remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
   But Dina will only bring in her information only if she thinks it will be valuable in the conversation. Otherwise she wouldnt
 
 # Review Creation
+
+> **Status (checked against the code 2026-10-06):** PENDING. No catalog search, autocomplete or barcode in `apps/mobile/src/peerlens`.
+
   There's no product catalog search / autocomplete / barcode scan — you type the name and paste the ASIN/identifier manually. The "search the existing product and pick it (dedupe by ASIN/UPC/URL)" flow is a known
   TODO (the canonical-identifier dedup note), not built yet. So today it's manual structured entry, not "search Amazon and select." If you want a richer product-pick/dedupe step, that's a separate piece — say the
   word and I can scope it.
 
 # Bug fix
+
+> **Status (checked against the code 2026-10-06):**
+- P1 PENDING: `capability_runtime.ts` (~398) still writes only when the model calls `record_to_vault`; no `auto_on_success` / `fact_template`. The fact builder (`vault_facts.ts`) and `mutation_success_statuses` exist.
+- P2 DONE: `vault_facts.ts` is tracked.
+- P3 PENDING: the "read-only, never mutate" comment at `capability_runtime.ts:14-15` is unchanged.
+- "What Is Fixed" confirmed: `service-settings.tsx` deps, success statuses, deterministic facts.
+
   1. P1: Confirmed bookings can still skip persistence
      packages/brain/src/service/capability_runtime.ts:399 requires record_to_vault intent before committing. If the model returns a valid { status: "confirmed" } without calling the tool, packages/brain/src/
      service/capability_runtime.ts:541 but writes nothing. That can double-book the slot later.
@@ -392,6 +510,9 @@ remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
   Add a generic auto_on_success mutation policy. appointment_book is just the first capability using it.
 
 # Bug Fix
+
+> **Status (checked against the code 2026-10-06):** PENDING. `capability_runtime.ts` registers only `createVaultSearchTool`; the browse / full-content tool options have no `allowedPersonas`; the service runtime still searches in fts5 mode only.
+
   Your owner /ask loop (composition/agentic_ask.ts:269-273) registers four vault-read tools:
 
   ┌───────────────────────────────────────────┬────────────┬─────────────────┐
@@ -428,6 +549,9 @@ remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
   while I'm there?
 
 # Bug Fix
+
+> **Status (checked against the code 2026-10-06):** PENDING. No fix to `InlineReminderCard.tsx`; the demo `\n` workaround is still in `guided_demo/content.ts`.
+
 ⏺ Honest answer: yes, potentially — it's the same card and the same async-post path, not a demo-only thing. I checked the real path:
 
   Real fired reminders go: useReminderFireWatcher (a 30s foreground timer on native, or the brain-server SSE stream on web) → postReminder → postReminderCard → addMessage('reminder', …) → the same 
@@ -448,18 +572,30 @@ remaining items on docs/WEB_THIN_CLIENT_DESIGN.md
 
 
 # Mobile remaining
+
+> **Status (checked against the code 2026-10-06):** pointer to `apps/mobile/docs/MOBILE_FEATURES.md` (last changed 2026-06-02, may be stale); not checked here.
+
 MOBILE_FEATURES.md has currnt vs perfect
 
 # Services
+
+> **Status (checked against the code 2026-10-06):** Tier 1 provider DONE (`brain/src/service/capability_runtime.ts`). People-graph classifier column PENDING (no `circle` column). Tier 2 envelope UNCLEAR (no spec to check against).
+
   - Tier 1 provider: a new feature, post-release by definition.
   - People-graph classifier: additive column via migration — explicitly designed to land on top of day-1 installs.
   - Tier 2 structured envelope: lives in the dina-agent CLI, which releases independently via pip — it never touches the app binary timeline at all.
 
 
 # Bug Relation etc is not perfect
+
+> **Status (checked against the code 2026-10-06):** PENDING. The doc is still "design v2"; slice steps 2-5 (classifier, circle, Relations render, override) are not in code.
+
 docs/PEOPLE_GRAPH_TAXONOMY.md
 
 # Improving Talk/Remember Enrichment
+
+> **Status (checked against the code 2026-10-06):** (a) person-keyed pre-fetch for Ask/Remember PENDING (only Talk does it, `vault_context/subject_recall.ts`); (b) ranking by relevance PENDING (`vault/repository.ts` still orders by `created_at DESC`); (c) write-time linking PARTIAL (links written on both hosts, but extraction is still LLM-led).
+
   That's where I see real improvement room:
      
   1. Read-time recall is deterministic for Talk but LLM-discretionary for Ask/Remember.
@@ -485,9 +621,15 @@ docs/PEOPLE_GRAPH_TAXONOMY.md
 
 
 # CardSpec V2
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. v1 blocks, provenance label, staleness check and plugin card templates exist; the v2 commerce / booking / document / safe-action / decision blocks (§7.3-7.8) do not.
+
 docs/CARD_SPEC_V2_DESIGN.md
 
 # PeerView P1
+
+> **Status (checked against the code 2026-10-06):** (1) dimension vocabulary PARTIAL: the registry and read-side resolver exist, but no write path (mobile form or Brain draft) uses it and the validator still takes any `dimension` string. (2) `getCategorySchema` PENDING.
+
   The key finding: dimension keys are free-form, and reviews are immutable
 
   From record-validator.ts:
@@ -545,6 +687,9 @@ docs/CARD_SPEC_V2_DESIGN.md
 
 
 # PeerView Fixes
+
+> **Status (checked against the code 2026-10-06):** PENDING. No personalized PageRank (the scorer is `peerlens-score.ts` plus 1-hop `friend-boost.ts`). The verify-first gap is real: `refresh-profiles.ts` counts `vouchCount` and `inboundEdgeCount` without the inbound-vouch filter.
+
   TODO: PeerLens V2 — Graph-Rooted Personalized Trust
   
   Status: Design only. NOT blocking release. V1 (shipped) is a defensible web-of-trust; this converts the strongest philosophical claim ("trust is rooted in your map, not a global number") into a true technical
@@ -653,9 +798,19 @@ docs/CARD_SPEC_V2_DESIGN.md
 
 
 # Major architecture review
+
+> **Status (checked against the code 2026-10-06):** pointer to a risk map dated 2026-05-24; its rows need their own check.
+
 go through docs/MOBILE_PROCESS_SCHEMA_REVIEW.md - gives a full picture
 
 # Architecture Review
+
+> **Status (checked against the code 2026-10-06):** per finding:
+- DONE: vault persona sent as a query parameter; `/v1/vault/list` route; subject-link writes end to end; D2D outbox durable (`d2d_outbox`) on both hosts; outbox retry wired; `service-is-discoverable` skips tombstoned and redacted services; `vault_item_subjects` wiring.
+- PARTIAL: Brain direct `@dina/core` imports (reads go through the backend, fallbacks remain in `assembly.ts` and `vault_tool.ts`); send still returns `sent:true` with an `error` when neither delivered nor queued (`d2d/send.ts` ~343-353); capability validation uses the published schema first but the registry is still hard-coded.
+- PENDING: mobile hand-wires the workflow plane (`bootstrap.ts`) instead of `wireWorkflowPlane`; module globals as composition; no per-request AccessContext; AppView service search is ILIKE, not semantic; fixture schema still DID-keyed (`packages/fixtures/schema/identity_001.sql`); no FK from `person_identities` / `person_surfaces` to `people`; no unique primary identity per person.
+- By design: the in-process transport bypass on mobile (now documented in CLAUDE.md).
+
   Findings
 
   - High: Vault writes ignore the requested persona in CoreClient paths.
@@ -737,6 +892,9 @@ go through docs/MOBILE_PROCESS_SCHEMA_REVIEW.md - gives a full picture
 
 # Multi contact
 
+> **Status (checked against the code 2026-10-06):** 1 DONE (`directory.ts` re-syncs projections on update, prunes on block and delete; tests in `directory.test.ts`). 2 PENDING (admission logic still spread over `receive_pipeline.ts`, `service/bypass.ts`, `d2d/gates.ts`). 3 mostly DONE (no single DID → person → preference test). 4 DONE for the requester (`durableRequesterWindow`); the provider window is still in memory.
+
+
   What Is Still Required
 
   1. Complete contact lifecycle sync.
@@ -753,46 +911,20 @@ go through docs/MOBILE_PROCESS_SCHEMA_REVIEW.md - gives a full picture
      windows should be reconstructed from workflow tasks.
 
 
-# Everything through MSGBOX — SHIPPED (2026-04-19)
-
-> ✅ CLI↔Core, D2D, and pair-over-MsgBox all work end-to-end via
-> `wss://test-mailbox.dinakernel.com/ws`. Published as `dina-agent==0.13.0`
-> on PyPI. See `docs/designs/MSGBOX_TRANSPORT.md` § "Shipped" for the
-> interop gotchas (BLAKE2b sealed-box nonce, `CloseRead()` race,
-> permessage-deflate, RPC-bridge-through-middleware) and
-> `docker/openclaw/` for the mobile-ready container stack.
-
-Original note — kept for context:
-
-> ok the next big feature - all ed25519 requests responses go through MSGBOX. It becomes more than just D2D - this becomes the way all connections to homenode happens. This will allow the home node to run without it being a server, because it is pulling the data - not pushing through.
-
-Remaining follow-ups:
-- `/api/v1/ask` async polling path is CLI-only today; document the 202
-  contract for any third-party integrator writing their own client.
-- `docker/openclaw/` needs to be copied/vendored into `dina-mobile` —
-  standalone by design, pins `dina-agent==0.13.0` from PyPI.
-
 #Add an item in PeerLens
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. Dedup by canonical id is built (subject-id v3); `conflict_chooser.ts` exists but no screen uses it, and `resolve.ts` never returns `conflicts`. No fuzzy "did you mean" at write time, no merge of old duplicates.
+
 ⏺ You're right — the current model is weak on dedup precisely because the SubjectRef tuple hash is identity. "Aeron chair" / "aeron chair" / "Herman Miller Aeron" all mint separate subjects, and there's no
   remediation flow once they exist. Two-tier fix worth considering: for subjects with a canonical identifier (URL, DID, UPC/ASIN, YouTube video id) make that the dedup key and ignore the display name; for
   free-text product/place subjects, do a fuzzy-match check at write-time and surface "did you mean one of these?" before allowing a new mint. The "add subject explicitly" UI then falls out naturally as the same
   search-or-create flow, just without the review attached — but the real win is the search-or-create gate, not the standalone entry point.
 
 
-# OpenAPI Issue
-OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
-
-# PeerLens
-  Current publish path is Brain -> PDS directly. It does not go through Core’s trust endpoints.
-  This is wrong
-
-# Information Storage
-  Information related to Alonso is currently not stored against Alonso. It will be better if it is stored thus
-
-# Decision on vault
-An external persons (dependent of their relatioship) health information should go to general vault
-
 # OpenClaw now connect back to Core directly which is wrong
+
+> **Status (checked against the code 2026-10-06):** PENDING. `cli/src/dina_cli/openclaw_hook.py` still posts to `/v1/internal/workflow-tasks/{id}/{action}`, and `docker/openclaw/Dockerfile.base` installs it. The TS Core has no such route, so the hook is dead: remove it or send it through the CLI.
+
 Correct path
   Core ↔ dina CLI ↔ OpenClaw
 
@@ -802,6 +934,9 @@ Correct path
 
 
 # Salt issue
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. Mobile uses a random per-install salt (`vault_salt_store.ts`). The server (`core-server/src/storage/init.ts` ~241-272) uses an all-zero salt by documented choice; low risk, as the note says.
+
 ⏺ The salt is SHA256("dina:salt:general") — deterministic from the persona name. It's the same every time, for every user, for the same persona.
 
   That makes it not useful as a salt. The purpose of a salt in HKDF is to add randomness so that two users with the same seed don't get the same DEK. But here, two users with the same master seed AND the same
@@ -817,21 +952,36 @@ Correct path
 
 
 # Bug
+
+> **Status (checked against the code 2026-10-06):** DONE for the ask loop (`agentic_loop.ts` re-suspends with a new approval; tests in `agentic_loop_suspend_resume.test.ts`, `pattern_a_e2e.test.ts`). The search+email flow itself was not checked.
+
 The combined search+email flow has a gap (nested approval within a task) — that's a real product issue to fix
 
 
 # memory management
+
+> **Status (checked against the code 2026-10-06):** PENDING. `docs/designs/KNOWLEDGE_GRAPH.md` exists; no `kg_*` tables or routes. Only the ToC/salience store and the people graph exist.
+
 docs/designs/KNOWLEDGE_GRAPH.md
 Most important to get this right
 
 # No way to access facts and edit/delete
 
+> **Status (checked against the code 2026-10-06):** PARTIAL. Facts can be listed and deleted (`app/vault/[name].tsx`, `DELETE /v1/vault/item/:id`); they cannot be edited.
+
+
 There should be a mechanism to access each fact and odify / delete it
 
 # Scenarios
+
+> **Status (checked against the code 2026-10-06):** UNCLEAR. There is no `dina-scenarios` folder; `docs/SCENARIOS.md` exists and needs a scenario-by-scenario check.
+
 All the scenarios are in dina-scenarios. We have to get all those working
 
 # Intra-Vault Sensitivity Levels
+
+> **Status (checked against the code 2026-10-06):** PENDING. `vault_items` has no sensitivity column; "guarded" and "sealed" appear nowhere in core or brain.
+
 
 Currently, vault = domain AND sensitivity. Health vault is locked, general vault is open. But real life is more nuanced:
 
@@ -872,18 +1022,17 @@ This applies to all vaults:
 
 # Security
 
+> **Status (checked against the code 2026-10-06):** PARTIAL. The `ownerCapability` secret (`core/src/server/router.ts`) stops a Brain that only claims to be the owner (on mobile it is extra cover, not a hard wall). Telegram is not in the TS product. No test that Brain cannot act as an agent session.
+
+
 Ensure that Brain cannot act as Telegram to send messages
 Ensure that Brain cannot act as a supported session
 Even with a compromised brain, we should not be able to get anything else unless approved
 
-# Contact DB
-
-Every contact, relation etc should be a proper Database entry
-So, when information comes like Sanchos mother is sick, that should get filed under Sancho's information
-Obviously security of others also has to be maintained, so, Idenity.sqlite contains sanchos basic information - but in the finance vaulet etc, we store against sancho as ID
-
-
 # Bugs
+
+> **Status (checked against the code 2026-10-06):** 1 likely OBSOLETE (no TS code sends persona `default`; the log matches the legacy stack). 2 UNCLEAR; needs a repro.
+
 
 1.
   1. D2D received ✓ — message arrived, decrypted
@@ -894,18 +1043,10 @@ Obviously security of others also has to be maintained, so, Idenity.sqlite conta
 2. when i sent 2 days later message it went and created a reminder saying 460 seconds remaining etc
 
 
-# Interaction Architecture Docs
-
-- `docs/interaction/full_interaction_areas.md` — full problem-space inventory of Dina interaction areas
-- `docs/interaction/domains.md` — consolidated user domains, interaction modes, sensitivity, and execution model
-- `docs/interaction/d2d_domains.md` — Dina-to-Dina capability systems and primary pillars
-- `docs/interaction/interaction_topologies.md` — counterparty types, execution paths, and federated execution
-- `docs/interaction/context_resolution.md` — grounding and reference resolution needed before fulfillment
-- `docs/interaction/formatting.md` — canonical response formatting contract across channels and systems
-
-
-
 # Better Reply Architecture
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. Typed `BotResponse` kinds exist (`brain/src/chat/response_types.ts`); `ErrorResponse` still has no code or category. The Telegram points (3-5) are about legacy Python. `formatting.md` exists.
+
 
   1. Handlers still format text — handle_status builds "*Your Dina*\nDID: ..." and passes it as BotResponse(text=...). That's just reply_text with extra steps. A truly clean architecture would have handlers return
    structured data:
@@ -926,11 +1067,10 @@ Obviously security of others also has to be maintained, so, Idenity.sqlite conta
   data.
 
 
-# Dina Task
-
-To ask OpenClaw to do somethings - it is not just validate and ask and reminder. this is Dina telling OpenClaw to do things
-
 # support NIST ID
+
+> **Status (checked against the code 2026-10-06):** A2A agent card DONE (`a2a-gateway/src/server.ts` serves `/.well-known/agent-card.json`). OAuth bearer PARTIAL (the A2A gateway takes a bearer; no general OAuth/OIDC check against outside issuers). Blog post, NIST comment and outreach are not code tasks.
+
 
 be maximally compatible
 
@@ -1070,6 +1210,9 @@ be maximally compatible
 
 # Internal Reminder
 
+> **Status (checked against the code 2026-10-06):** PENDING. No Brain-only reminder kind, no lateness/traffic check, no "tell Sancho" flow (`core/src/reminders/*` holds user reminders only).
+
+
 Brain notices:
   - You have a meeting with Sancho at 3pm
   - It's 2:15pm and you haven't left
@@ -1083,15 +1226,10 @@ You tap Yes → Brain → Core → D2D to Sancho's Dina
 
 For this, there has to be an internal reminder for the Brain to work with
 
-# Auth Issue 1
-also, if I get a grant to read from finance vault, does it mean i can write also in finance vault for that session
-
-  Searched for 1 pattern, read 1 file (ctrl+o to expand)
-
-⏺ Yes — the grant is persona-scoped, not action-scoped. hasActiveGrant only checks persona + session + agent_did. It doesn't distinguish read vs write. So a grant to query the finance persona also lets you store
-  to it within the same session.
-
 # Auth issue 2
+
+> **Status (checked against the code 2026-10-06):** PARTIAL / mostly legacy. The file:line targets are Go. The TS code uses `CallerType` plus `ownerCapability` / `ownerPrincipal`; locked personas are owner-only, as advised; there are no `auth_mode` / `origin` fields.
+
 Auth structure is not perfect
 
 
@@ -1278,7 +1416,17 @@ Auth structure is not perfect
 
 # PII Scrubbing Issue
 
+> **Status (checked against the code 2026-10-06):** empty heading; the design follows.
+
+
 # Dina PII Detection Architecture
+
+> **Status (checked against the code 2026-10-06):** mostly not built. Per part:
+- DONE: Layer 1 tokens `[TYPE_N]` (`core/src/pii/patterns.ts` `scrubPII`); cloud-prompt masking with restore (`brain/src/llm/router_dispatch.ts`), fail-closed when the scrub fails (`cloud_gate.ts`).
+- PARTIAL: Layer 1 recognizers (email, phone, card+Luhn, IP, SSN without SSA rules, India set; no IBAN, URL, driver's licence, passport, ABA, EIN, MBI; no context words); regional sets load all at once (no `region` config); Layer 2 `AllowList` exists in core-server but nothing calls it and no default list ships, no deny-list; one US street regex; per-call entity vault (`brain/src/pii/entity_vault.ts`), not persistent; cloud-only embedding scrub (`safe_embed.ts`); `checkEgress` has no production caller; EU IDs: DE Steuer-ID, FR NIR, NL BSN, SWIFT only; unit tests only, no corpus or metrics.
+- PENDING: Layer 0 field-name detection; Layer 3 NER (names are never detected); confidence banding; Layer 4 adjudicator and quarantine; MEMORY_STORE pseudonyms, AUDIT HMAC, DISPLAY masking; config surface; GDPR erasure/export/residency; EU allow-list and name/address patterns.
+- 2026-10-07: V2.0 built (`docs/PII_ARCHITECTURE_V2.md`): one door to every model, one token table per call (fixes token collisions across messages), and the known names from the people graph. CLAUDE.md and ARCHITECTURE.md corrected.
+
 
 ## Design Philosophy
 
@@ -2004,12 +2152,22 @@ The EU/UK extension is activated through deployment configuration flags:
 
 # Misc
 
+> **Status (checked against the code 2026-10-06):** Persona registry PARTIAL (`brain/src/persona/registry.ts` still hard-codes a set; `loadFromCore` is a stub). The OpenAPI `user_origin` drift concerns only the legacy spec.
+
+
   - Persona Registry + Routing Policy — the big architectural piece. Fixes hardcoded persona names, adds deterministic routing, eliminates the "creatinine classified as general" class of bugs
 
   Tech debt from this session:
   - OpenAPI spec drift — user_origin on staging resolve not in core-api.yaml
 
 # Dina2Dina
+
+> **Status (checked against the code 2026-10-06):** per feature:
+- DONE: 1:1 scheduling (`availability_coordination.ts`); group plans (`group_coordination_service.ts`, b06f9951, da0c067d); unknown senders quarantined (`d2d/quarantine.ts`, accept/block route, `InlineQuarantineCard.tsx`); offline delivery and retry (MsgBox buffer, `transport/outbox.ts`); spam, impersonation, replay and DID-rotation defences (mostly; no trusted-channel check for a claimed "new Dina").
+- PARTIAL: presence/ETA (wire type only; nothing sends `presence.signal`); event handoffs (free text only); constrained Q&A (Contact Services, tiered disclosure; no general preference store); "Coordinating plans" (no `propose_time` card with accept/decline/counter; `coordination.request` is stored, not ephemeral); life updates (receive side works; nothing sends `social.update`); trust exchange (through PeerLens, not D2D); safety alerts (skip the gates, but nothing sends one, no local blocklist, unknown senders still quarantined); per-contact controls (gates built, but the deny list and sharing policy live only in memory and nothing sets them; `useContactDetail.ts` never calls Core); consent between Dinas (service and agent grants only); commerce between Dinas (basics only).
+- PENDING: task handoff between Dinas; vouching by D2D with owner approval (wire types only); explicit data sharing; emergency escalation; digital estate (no Shamir code); dispute flow, policy exchange, relay through a friend; `docs/D2D_SPEC.md` does not exist.
+- The 5-axis model, primitives and "essentials" are design framing, not tasks.
+
 
   1. Presence And Coordination
   Low-risk, high-frequency signals.
@@ -2979,6 +3137,13 @@ Someone not in your contacts sends your Dina a message? It's quarantined — fla
 
 # PeerLens / Pull Economy
 
+> **Status (checked against the code 2026-10-06):** per feature:
+- DONE: publish signed reviews (durable outbox); resolve/search/profile reads (`search_peerlens`); graceful AppView outage; "I need X" discovery with hand-off; provider search; sybil and coordination detection; rating decay; negative trust and warnings; imported review feeds for cold start; alternatives and comparison.
+- PARTIAL: outcome records (go in as plain reviews); vouch write (AppView ingests; no mobile screen); user retract (AppView tombstones work, mobile calls only a test endpoint); no data / sparse / conflicting labels (conflicts deliberately omitted in V1); sponsorship (no boost exists, no disclosure); outcome loop (no post-purchase prompt); bot routing by trust (candidates only); category-scoped trust; abuse reports and seller replies (AppView only, no mobile UI); institutional trust.
+- PENDING: user picks the AppView(s) to trust; privacy of trust queries (AppView sees every query and `requesterDid`).
+- UNCLEAR: an automated "no vault data leaks into public records" test.
+
+
   Pull economy = discovery + trust + handoff + outcome loop.
 
   To honestly say “AppView + PeerLens + New Pull Economy works,” these user scenarios should work end-to-end.
@@ -3389,6 +3554,9 @@ Missing scenario:
 
 
 # AppView Peerlens todo
+
+> **Status (checked against the code 2026-10-06):** PENDING (low priority, as the note says). No NIP-32 code.
+
   The thing you SHOULD take from this (genuinely useful)
 
   There's a real, low-cost win hiding here for the V2 TODO: NIP-32 / the Nostr Reviews NIP is your "be compatible at the edge" opportunity — the A2A-style move. You don't build on it, but if your attestation
@@ -3397,6 +3565,9 @@ Missing scenario:
 
 
 # Deferred
+
+> **Status (checked against the code 2026-10-06):** PENDING. The bypass is still in `core-server/src/appview/wire_publisher.ts` (~354-374).
+
   Deferred item (#188): the HNL publisher's validator bypass
      
   What the code literally does
@@ -3450,6 +3621,9 @@ Missing scenario:
   → fix the two suites → verify green. Want me to take it on now, or leave it parked?
 
 # Locally saved services
+
+> **Status (checked against the code 2026-10-06):** PENDING. No `KnownServiceBinding` or `find_known_service`; routing is prompt-only with no tests for "known service never calls AppView" or "no private names to AppView". `query_service` re-resolves the schema hash before sending but does not retry after a mismatch.
+
 
 Locally saved services need not be called through appview - especially for custom services
 For example custom services like my com.rajschool.homework_services 
@@ -3614,6 +3788,9 @@ but you can ping service and ask
 
 
 # UI Improvements
+
+> **Status (checked against the code 2026-10-06):** Network screen DONE (`app/peerlens/index.tsx` is now a menu). "Find a service" label PARTIAL (sublabel changed only). Globe icon PENDING (kept on purpose, see the comment in `_layout.tsx`). Activity empty state PENDING (`notifications.tsx` still says "No notifications yet").
+
   What I'm not fully happy with (honest):
   - The Network screen reads as "a Services card bolted on top of the old PeerLens screen," because that's literally what it is. Look at screenshot 2: Services card → search bar → a big "Your network is quiet"
   empty state with a lot of dead space. The two modules are stacked, not integrated. It's functional and it's within the spec's "reuse existing code paths" constraint — but a designer would want a follow-up pass
@@ -3723,6 +3900,9 @@ but you can ping service and ask
 
 
 # Future Services
+
+> **Status (checked against the code 2026-10-06):** PARTIAL. public, unlisted and known_only (with grants) exist; "public custom" and provider/place browse do not.
+
    public, public custom, unlisted, known_only
 
   - ⏭️  #4 provider/place browse — logged as future (it's the human-driven surface that lets someone learn a custom NSID)
@@ -3735,11 +3915,17 @@ basically if I want to see a public custom - public is public, no questions. pub
 > unlisted with more detailed auth 
 
 # Pending items
+
+> **Status (checked against the code 2026-10-06):** delete-vault PENDING (Core has `deletePersona`; no mobile UI); reminder snooze DONE (`InlineReminderCard.tsx`, Snooze 1h).
+
 ❯   - Delete-vault affordance (currently no way to remove a vault).
     - Reminder snooze — wire the built-but-hidden snooze into the UI (or remove the API).
 
 
 # Some more comments
+
+> **Status (checked against the code 2026-10-06):** Ask approval durability PARTIAL (grants and approval tasks are durable; the Brain ask registry is in memory, so an in-flight ask is lost on restart). known_only grant lifecycle DONE at unit level (`service_grant_repository.ts`); no restart E2E. Reminder crash-before-persist and full agent-gate coverage UNCLEAR.
+
   The remaining areas are mostly cleaner. But I would still audit/fix a few before release.
 
    Area                   Risk    View
@@ -3835,3 +4021,97 @@ basically if I want to see a public custom - public is public, no questions. pub
   4. Service known-only grants
      Authorization must be grant-based, not contact-based.
 
+
+
+# Done (moved here 2026-10-06)
+
+Sections the 2026-10-06 check found fully done, kept word for word with the evidence.
+
+# Everything through MSGBOX — SHIPPED (2026-04-19)
+
+> **Status (checked against the code 2026-10-06):** Both follow-ups closed: the 202 contract is documented (`docs/designs/MSGBOX_TRANSPORT.md` ~814, `docs/DINA_PLUGIN_DEVELOPER_SURFACE.md`); vendoring is moot now that `apps/mobile` and `docker/openclaw` share one repo.
+
+
+> ✅ CLI↔Core, D2D, and pair-over-MsgBox all work end-to-end via
+> `wss://test-mailbox.dinakernel.com/ws`. Published as `dina-agent==0.13.0`
+> on PyPI. See `docs/designs/MSGBOX_TRANSPORT.md` § "Shipped" for the
+> interop gotchas (BLAKE2b sealed-box nonce, `CloseRead()` race,
+> permessage-deflate, RPC-bridge-through-middleware) and
+> `docker/openclaw/` for the mobile-ready container stack.
+
+Original note — kept for context:
+
+> ok the next big feature - all ed25519 requests responses go through MSGBOX. It becomes more than just D2D - this becomes the way all connections to homenode happens. This will allow the home node to run without it being a server, because it is pulling the data - not pushing through.
+
+Remaining follow-ups:
+- `/api/v1/ask` async polling path is CLI-only today; document the 202
+  contract for any third-party integrator writing their own client.
+- `docker/openclaw/` needs to be copied/vendored into `dina-mobile` —
+  standalone by design, pins `dina-agent==0.13.0` from PyPI.
+
+# OpenAPI Issue
+
+> **Status (checked against the code 2026-10-06):** OBSOLETE: `api/core-api.yaml` is legacy; the hand-written routes in `packages/core/src/server/routes/*` are the contract (CLAUDE.md).
+
+OpenAPI is not fully integrated. Still integration works with hand coded (AI coded) interfaces. While the OpenAPI interface exists, it is not used
+
+# PeerLens
+
+> **Status (checked against the code 2026-10-06):** DONE: publishing runs through Core's job queue (`peerlens_publish_jobs`, `ReviewPublishSupervisor`); mobile uses `review_publish_worker.ts`.
+
+  Current publish path is Brain -> PDS directly. It does not go through Core’s trust endpoints.
+  This is wrong
+
+# Information Storage
+
+> **Status (checked against the code 2026-10-06):** DONE: `vault_item_subjects` links facts to the person.
+
+  Information related to Alonso is currently not stored against Alonso. It will be better if it is stored thus
+
+# Decision on vault
+
+> **Status (checked against the code 2026-10-06):** DONE: `brain/src/routing/domain.ts` routes by the contact's `data_responsibility`.
+
+An external persons (dependent of their relatioship) health information should go to general vault
+
+# Contact DB
+
+> **Status (checked against the code 2026-10-06):** DONE: people graph (`core/src/people/*`), contacts keyed by `personId`, `vault_item_subjects.person_id`.
+
+
+Every contact, relation etc should be a proper Database entry
+So, when information comes like Sanchos mother is sick, that should get filed under Sancho's information
+Obviously security of others also has to be maintained, so, Idenity.sqlite contains sanchos basic information - but in the finance vaulet etc, we store against sancho as ID
+
+
+# Interaction Architecture Docs
+
+> **Status (checked against the code 2026-10-06):** DONE: all six files exist under `docs/interaction/`.
+
+
+- `docs/interaction/full_interaction_areas.md` — full problem-space inventory of Dina interaction areas
+- `docs/interaction/domains.md` — consolidated user domains, interaction modes, sensitivity, and execution model
+- `docs/interaction/d2d_domains.md` — Dina-to-Dina capability systems and primary pillars
+- `docs/interaction/interaction_topologies.md` — counterparty types, execution paths, and federated execution
+- `docs/interaction/context_resolution.md` — grounding and reference resolution needed before fulfillment
+- `docs/interaction/formatting.md` — canonical response formatting contract across channels and systems
+
+
+
+# Dina Task
+
+> **Status (checked against the code 2026-10-06):** DONE: `delegate_to_agent`, workflow tasks and the A2A delegate route.
+
+
+To ask OpenClaw to do somethings - it is not just validate and ask and reminder. this is Dina telling OpenClaw to do things
+
+# Auth Issue 1
+
+> **Status (checked against the code 2026-10-06):** DONE: grants are keyed by mode; a write grant satisfies read, not the reverse (`core/src/agent/access.ts`, `grant_repository.ts`).
+
+also, if I get a grant to read from finance vault, does it mean i can write also in finance vault for that session
+
+  Searched for 1 pattern, read 1 file (ctrl+o to expand)
+
+⏺ Yes — the grant is persona-scoped, not action-scoped. hasActiveGrant only checks persona + session + agent_did. It doesn't distinguish read vs write. So a grant to query the finance persona also lets you store
+  to it within the same session.

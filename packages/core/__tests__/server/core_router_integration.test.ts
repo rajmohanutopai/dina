@@ -693,6 +693,14 @@ describe('CoreRouter integration', () => {
       const resp = await router.handle(signedReq('POST', '/v1/pii/scrub', {}, brain));
       expect(resp.status).toBe(400);
     });
+
+    it('GET /v1/pii/names answers Brain and refuses a paired device (PII V2 §5.2)', async () => {
+      const ok = await router.handle(signedReq('GET', '/v1/pii/names', undefined, brain));
+      expect(ok.status).toBe(200);
+      expect(ok.body).toHaveProperty('groups');
+      const refused = await router.handle(signedReq('GET', '/v1/pii/names', undefined, agent));
+      expect(refused.status).toBe(403);
+    });
   });
 
   // -------------------------------------------------------------------------

@@ -10,6 +10,8 @@ import { clearVaults, storeItem } from '@dina/core';
 import { resetReminderState } from '@dina/core/reminders';
 
 import { buildRememberRuntime } from '../../src/composition/remember_runtime';
+import { routedProvider } from '../../src/llm/router_dispatch';
+import { NameLexicon } from '../../src/pii/names';
 import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
 import type {
@@ -66,6 +68,37 @@ describe('buildRememberRuntime', () => {
     clearVaults();
     resetReasoningProvider();
     setAccessiblePersonas([]);
+  });
+
+  it('behind the router (as the server now wires it), the model never sees a known name or an email, and the reply comes back whole (PII V2 §1.1)', async () => {
+    const seen: string[] = [];
+    const recorder: LLMProvider = {
+      ...scripted([]).provider,
+      async chat(messages, opts?: ChatOptions) {
+        seen.push(JSON.stringify([messages, opts?.systemPrompt ?? '']));
+        return {
+          content: "Saved [PERSON_1]'s new email, [EMAIL_1].",
+          toolCalls: [],
+          model: 'test',
+          usage: { inputTokens: 1, outputTokens: 1 },
+          finishReason: 'end',
+        };
+      },
+    };
+    const names = new NameLexicon({ fetch: async () => [{ group: 1, names: ['Emma'] }] });
+    const { run } = buildRememberRuntime({
+      llm: routedProvider({ llm: recorder, providerName: 'gemini', taskType: 'reason', names }),
+      personas: [{ name: 'general', description: 'everyday notes' }],
+      today: '2026-10-07',
+      timezone: 'UTC',
+    });
+    const result = await run({ memoryText: "Emma's new email is emma.w@example.com" });
+    expect(seen.length).toBeGreaterThan(0);
+    for (const sent of seen) {
+      expect(sent).not.toMatch(/emma/i);
+      expect(sent).toContain('[PERSON_1]');
+    }
+    expect(result.text).toBe("Saved Emma's new email, emma.w@example.com.");
   });
 
   it('renders persona list + today + timezone into the system prompt', async () => {

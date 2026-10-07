@@ -39,6 +39,8 @@ import {
   createCoordinatorAskHandler,
   createInternalBrainExecutor,
   createProviderReasoningLLM,
+  installNameLexicon,
+  NameLexicon,
   resetAskCommandHandler,
   setAccessiblePersonas,
   setAskCommandHandler,
@@ -50,6 +52,7 @@ import {
   vaultReadBackendFromCore,
 } from '@dina/brain';
 import { registerEngagementProvider, collectNotificationBriefingItems } from '@dina/brain/briefing';
+import { routedProvider } from '@dina/brain/llm';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
 import { hydrateNotifications, mergeNotifications } from '@dina/brain/notifications';
 import {
@@ -238,6 +241,29 @@ export async function bootServer(
     clients.core = coreResult.core;
   }
   const configuredLLMRuntime = options.askRuntime ?? buildBrainServerLLMRuntime(config.llm);
+  // The names Brain hides from a cloud model (docs/PII_ARCHITECTURE_V2.md §5),
+  // fetched from Core and kept fresh. Every router on this node reads it.
+  const coreForNames = clients.core;
+  installNameLexicon(
+    coreForNames === undefined
+      ? null
+      : new NameLexicon({
+          fetch: () => coreForNames.piiNames(),
+          onDegraded: (reason) =>
+            logger.warn({ reason }, 'pii names unavailable; scrubbing with patterns only'),
+        }),
+  );
+  // Every consumer outside the ask pipeline gets the model behind the router,
+  // never the raw adapter (§3): the remember loop, the capability runtime and
+  // the internal-Brain worker. The ask pipeline builds its own router.
+  const scrubbedLLM =
+    configuredLLMRuntime === undefined
+      ? undefined
+      : routedProvider({
+          llm: configuredLLMRuntime.llm,
+          providerName: configuredLLMRuntime.providerName,
+          taskType: 'reason',
+        });
   const schedulers: BrainServerSchedulers = {};
   const compositions: BrainServerCompositions = {};
   let a2aGuard: A2AGuardWorker | null = null;
@@ -294,11 +320,6 @@ export async function bootServer(
       reminderListByPersona: (persona) => core.reminderListByPersona(persona),
       reminderListPending: (now) => core.reminderListPending(now),
     });
-
-    // Build the LLM runtime early so the staging drain can use it
-    // for the per-item agentic loop (rememberRuntime below). The
-    // ask coordinator further down reuses the same instance.
-    const llmRuntime = configuredLLMRuntime;
 
     // Mirror Core's persona registry into Brain's `accessiblePersonas`
     // state. Brain runs in a separate Node process from Core in lite,
@@ -365,9 +386,9 @@ export async function bootServer(
       description: PERSONA_DESCRIPTIONS[p.name] ?? '',
     }));
     const rememberRuntime =
-      llmRuntime !== undefined
+      scrubbedLLM !== undefined
         ? buildRememberRuntime({
-            llm: llmRuntime.llm,
+            llm: scrubbedLLM,
             personas: personaDescriptors,
             defaultPersona: 'general',
           })
@@ -650,7 +671,7 @@ export async function bootServer(
   // persona mirror). Core resolves + passes the listing config in the request,
   // so this route needs no Core round-trip.
   registerCapabilityRoutes(app, {
-    getLLM: () => configuredLLMRuntime?.llm ?? null,
+    getLLM: () => scrubbedLLM ?? null,
     // Core client → an APPROVED capability can persist its outcome to the
     // provider's vault (record_to_vault write tool) over Core HTTP.
     ...(clients.core !== undefined ? { core: clients.core } : {}),
@@ -807,7 +828,8 @@ export async function bootServer(
     config.reasoning.internalBrainEnabled &&
     clients.core !== undefined &&
     coreResult.did !== undefined &&
-    configuredLLMRuntime !== undefined
+    configuredLLMRuntime !== undefined &&
+    scrubbedLLM !== undefined
   ) {
     const worker = new ReasoningBackendWorker({
       authority: createCoreClientReasoningAuthority(clients.core),
@@ -815,7 +837,7 @@ export async function bootServer(
       principalDid: coreResult.did,
       execute: createInternalBrainExecutor({
         provider: configuredLLMRuntime.providerName,
-        llm: createProviderReasoningLLM(configuredLLMRuntime.llm),
+        llm: createProviderReasoningLLM(scrubbedLLM),
       }),
       classifyError: classifyInternalBrainError,
     });

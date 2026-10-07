@@ -108,6 +108,7 @@ export const NOTIFICATIONS_RESET = '/v1/notifications/reset';
 // ---------------------------------------------------------------
 
 export const PII_SCRUB = '/v1/pii/scrub';
+export const PII_NAMES = '/v1/pii/names';
 
 // ---------------------------------------------------------------
 // Audit

@@ -2,49 +2,36 @@
  * Bridge between the Settings-side BYOK provider and Brain's chat
  * orchestrator.
  *
- * The live path is `useChatThread → handleChat → reason()` in
- * `packages/brain/src/chat/orchestrator.ts`; it picks up reasoning via
- * `registerReasoningLLM` and picks up its provider label from
- * `setDefaultProvider`. This module is the single call site the Settings
- * screen invokes when the user changes provider, so both hooks fire
+ * The single-shot path is `useChatThread → handleChat → reason()` in
+ * `packages/brain/src/chat/orchestrator.ts`, used when no ask handler is
+ * installed (for example a node that booted with no provider and got a key
+ * later). It picks up reasoning via `registerReasoningLLM` and its provider
+ * label from `setDefaultProvider`. This module is the single call site the
+ * Settings screen invokes when the user changes provider, so both hooks fire
  * together.
  *
- * Safety properties (review findings #6, #11): the registered
- * reasoning function uses belt-and-suspenders scrub/rehydrate behaviour:
+ * Safety (docs/PII_ARCHITECTURE_V2.md §3): the registered function sends the
+ * query and context through the PII router (`createScrubbedLLMProvider`), so
+ * patterns, known names and strangers' names are hidden through one token
+ * table for the call and restored in the answer. `reason()` additionally
+ * scrubs sensitive-persona context with `checkCloudGate` and rehydrates its
+ * own tokens afterwards; the router never reuses a token already in the text.
  *
- *   1. Brain's `reason()` pipeline passes an already-scrubbed context
- *      (via `checkCloudGate`) AND scans the rehydrated answer
- *      (`scanResponse` + `rehydrateResponse`). Those are the
- *      load-bearing safety guards.
- *   2. This lambda adds an extra PII scrub on BOTH the query AND the
- *      context before generateText, then rehydrates on the way back.
- *      `reason()` passes `req.query` unchanged, so without this
- *      second scrub user-supplied PII in the question text would
- *      reach the cloud LLM untokenised — review #11.
- *
- * The rehydrate step restores the user's original values in the text
- * the lambda returns BEFORE `reason()` sees it; `reason()` will then
- * re-rehydrate against its own entity set, but the operation is
- * idempotent — rehydrating a string that no longer has tokens is a
- * no-op.
- *
- * The lambda also carries a 60-second `AbortController` timeout so a
- * stalled cloud request can't hang the chat UI indefinitely.
+ * The function carries a 60-second abort so a stalled cloud request cannot
+ * hang the chat UI.
  */
-
-import { generateText } from 'ai';
 
 import { setDefaultProvider, resetChatDefaults } from '@dina/brain/chat';
 import {
   registerReasoningLLM,
   resetReasoningLLM,
+  routedProvider,
+  type LLMProvider,
 } from '@dina/brain/llm';
-import { scrubPII, rehydratePII } from '@dina/core';
 
-import { createModel } from './provider';
+import { createScrubbedLLMProvider } from './provider';
 
 import type { ProviderType } from './provider';
-import type { LanguageModel } from 'ai';
 
 /** LLM call timeout. Exported so tests can assert on the exact window
  *  instead of hard-coding a magic number. */
@@ -62,8 +49,8 @@ export async function wireBrainChatProvider(provider: ProviderType | null): Prom
     return;
   }
 
-  const model = await createModel(provider);
-  if (model === null) {
+  const llm = await createScrubbedLLMProvider(provider);
+  if (llm === null) {
     // No key stored for this provider — treat as no provider.
     resetReasoningLLM();
     resetChatDefaults();
@@ -71,38 +58,29 @@ export async function wireBrainChatProvider(provider: ProviderType | null): Prom
   }
 
   setDefaultProvider(provider);
-  registerReasoningLLM(makeTimedReasoningLLM(model));
+  registerReasoningLLM(makeTimedReasoningLLM(llm));
 }
 
 /**
- * Build a reasoning-LLM lambda that:
- *   - scrubs PII from the query AND the context before generateText,
- *   - rehydrates PII tokens on the LLM's response,
- *   - applies a 60s AbortController timeout.
+ * A reasoning function over a provider that is already behind the PII
+ * router: the context as system prompt, the query as the user message,
+ * aborted after `LLM_TIMEOUT_MS`.
  *
  * Exported so tests can exercise the exact seam without round-tripping
  * through Brain's full `reason()` pipeline.
  */
 export function makeTimedReasoningLLM(
-  model: LanguageModel,
+  scrubbed: LLMProvider,
 ): (q: string, ctx: string) => Promise<string> {
   return async (query, context) => {
-    const { scrubbed: scrubbedQuery, entities: qEnts } = scrubPII(query);
-    const { scrubbed: scrubbedContext, entities: cEnts } = scrubPII(context);
-    const allEntities = [...qEnts, ...cEnts];
-
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), LLM_TIMEOUT_MS);
     try {
-      const { text } = await generateText({
-        model,
-        system: scrubbedContext,
-        prompt: scrubbedQuery,
-        abortSignal: controller.signal,
+      const response = await scrubbed.chat([{ role: 'user', content: query }], {
+        systemPrompt: context,
+        signal: controller.signal,
       });
-      // Rehydrate ONLY if we actually scrubbed anything — a no-op call
-      // allocates pointlessly otherwise.
-      return allEntities.length > 0 ? rehydratePII(text, allEntities) : text;
+      return response.content;
     } finally {
       clearTimeout(timeoutId);
     }
@@ -110,12 +88,13 @@ export function makeTimedReasoningLLM(
 }
 
 /**
- * Convenience for screens that want to pass the Model handle directly —
- * used in tests that don't want to round-trip through keychain. Goes
- * through the same 60-second timeout wrapper as the keychain path so
- * both entry points share identical runtime behaviour.
+ * Convenience for tests that hold an adapter directly instead of a keychain
+ * key: the adapter goes behind the PII router first, then through the same
+ * 60-second wrapper as the keychain path.
  */
-export function registerBrainReasoningLLM(provider: ProviderType, model: LanguageModel): void {
+export function registerBrainReasoningLLM(provider: ProviderType, llm: LLMProvider): void {
   setDefaultProvider(provider);
-  registerReasoningLLM(makeTimedReasoningLLM(model));
+  registerReasoningLLM(
+    makeTimedReasoningLLM(routedProvider({ llm, providerName: provider, taskType: 'reason' })),
+  );
 }

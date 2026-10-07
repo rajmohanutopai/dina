@@ -105,6 +105,7 @@ import type {
   ExtractionResult,
   ApplyExtractionResponse,
   Person,
+  PiiNameGroup,
   Reminder,
   ReminderCreateInput,
   StoredNotificationItem,
@@ -278,6 +279,8 @@ export class MockCoreClient implements CoreClient {
    *  filter inside `peopleFindByName()` (matches against
    *  `surfaces[*].normalizedSurface`). Empty by default. */
   peopleListResult: Person[] = [];
+  /** Canned name groups for `piiNames()`. Empty by default. */
+  piiNamesResult: PiiNameGroup[] = [];
   /** Per-contact updates — tests assert `{did, preferredFor}` binds fired. */
   readonly contactUpdates: { did: string; updates: UpdateContactParams }[] = [];
   /** Per-category canned result for `findContactsByPreference` — tests
@@ -346,6 +349,7 @@ export class MockCoreClient implements CoreClient {
     this.peopleApplyExtractionResult = undefined;
     this.personasListResult.length = 0;
     this.peopleListResult.length = 0;
+    this.piiNamesResult.length = 0;
     this.reminders.length = 0;
     this.reminderSeq = 0;
   }
@@ -1050,6 +1054,12 @@ export class MockCoreClient implements CoreClient {
 
   async peopleList(): Promise<Person[]> {
     return this.dispatch('peopleList', [], () => [...this.peopleListResult]);
+  }
+
+  async piiNames(): Promise<PiiNameGroup[]> {
+    return this.dispatch('piiNames', [], () =>
+      this.piiNamesResult.map((g) => ({ ...g, names: [...g.names] })),
+    );
   }
 
   async peopleFindByName(surface: string): Promise<Person[]> {

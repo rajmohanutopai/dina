@@ -626,6 +626,7 @@ export { isAadhaarNumber, isGstin, isPan, verhoeffValid, PAN_HOLDER_TYPES } from
 // direct imports; no alias on the public surface.
 export type { PIIMatch } from './pii/patterns';
 export { scrubTier1, rehydrate, scrubProcessRehydrate } from './pii/scrub';
+export { buildPiiNameGroups, readPiiNameGroups, type PiiNameGroup } from './pii/names';
 export { evaluateIntent, isBrainDenied, getDefaultRiskLevel } from './gatekeeper/intent';
 export type { RiskLevel as GatekeeperRiskLevel, IntentDecision } from './gatekeeper/intent';
 export {

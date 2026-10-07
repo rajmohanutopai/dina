@@ -13,6 +13,7 @@ import {
   AISDKAdapter,
   GeminiGenaiAdapter,
   getProviderTiers,
+  routedProvider,
   type LLMProvider,
 } from '@dina/brain/llm';
 
@@ -493,4 +494,19 @@ export async function createLLMProvider(
       return new AISDKAdapter({ model: openrouter.chat(pseudo), name: 'openrouter' });
     }
   }
+}
+
+/**
+ * The provider behind the PII router (docs/PII_ARCHITECTURE_V2.md §3): what
+ * every feature outside boot uses. Text it sends is scrubbed (patterns and
+ * the known names) and the reply restored. `createLLMProvider` itself is for
+ * building the router's backend only; a guard test keeps it that way.
+ */
+export async function createScrubbedLLMProvider(
+  provider: ProviderType,
+  opts: CreateProviderOptions = {},
+): Promise<LLMProvider | null> {
+  const llm = await createLLMProvider(provider, opts);
+  if (llm === null) return null;
+  return routedProvider({ llm, providerName: provider, taskType: 'classify' });
 }

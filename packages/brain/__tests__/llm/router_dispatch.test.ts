@@ -15,7 +15,10 @@ import {
   LLMRouter,
   RoutedLLMProvider,
   rehydrateResponse,
+  routedProvider,
 } from '../../src/llm/router_dispatch';
+import { installNameLexicon, NameLexicon } from '../../src/pii/names';
+import { PII_TOKEN_NOTE } from '../../src/pii/session';
 
 import type {
   ChatMessage,
@@ -133,9 +136,7 @@ describe('LLMRouter', () => {
       });
       await router.chat({
         taskType: 'reason',
-        messages: [
-          { role: 'user', content: 'Email Sarah at sarah@example.com please' },
-        ],
+        messages: [{ role: 'user', content: 'Email Sarah at sarah@example.com please' }],
       });
       const sent = stub.lastMessages()?.[0].content ?? '';
       expect(sent).not.toContain('sarah@example.com');
@@ -189,6 +190,134 @@ describe('LLMRouter', () => {
         messages: [{ role: 'user', content: 'when is sarah@example.com birthday' }],
       });
       expect(response.toolCalls[0]!.arguments.query).toBe('sarah@example.com birthday');
+    });
+
+    const cloudRouter = (provider: LLMProvider, names?: NameLexicon) =>
+      new LLMRouter({
+        providers: { gemini: provider },
+        config: {
+          localAvailable: false,
+          cloudProviders: ['gemini'],
+          sensitivePersonas: [],
+          cloudConsentGranted: true,
+        },
+        ...(names !== undefined ? { names } : {}),
+      });
+
+    it('two values in two messages get two tokens, and a tool call restores each to its own (PII V2 §1.2)', async () => {
+      // The old router numbered each message from 1: both became [EMAIL_1]
+      // and the reply put alice's address where bob's belonged.
+      const stub = makeStubProvider({
+        content: '',
+        toolCalls: [{ id: 'c', name: 'send', arguments: { to: '[EMAIL_2]', cc: '[EMAIL_1]' } }],
+        finishReason: 'tool_use',
+      });
+      const response = await cloudRouter(stub.provider).chat({
+        taskType: 'reason',
+        messages: [
+          { role: 'user', content: 'alice is alice@example.com' },
+          { role: 'user', content: 'bob is bob@example.org; write to bob' },
+        ],
+      });
+      const sent = stub.lastMessages()?.map((m) => m.content) ?? [];
+      expect(sent).toEqual(['alice is [EMAIL_1]', 'bob is [EMAIL_2]; write to bob']);
+      expect(response.toolCalls[0]?.arguments).toEqual({
+        to: 'bob@example.org',
+        cc: 'alice@example.com',
+      });
+    });
+
+    it('hides known names in messages, tool arguments and the system prompt, and restores them', async () => {
+      const stub = makeStubProvider({
+        content: 'Sure. [PERSON_1] turns 7.',
+        toolCalls: [{ id: 'c', name: 'vault_search', arguments: { query: 'PERSON_1 birthday' } }],
+      });
+      const names = new NameLexicon({ fetch: async () => [{ group: 1, names: ['Emma'] }] });
+      const response = await cloudRouter(stub.provider, names).chat({
+        taskType: 'reason',
+        systemPrompt: 'You help the owner. Emma is their daughter.',
+        messages: [
+          { role: 'user', content: "When is Emma's birthday?" },
+          {
+            role: 'assistant',
+            content: '',
+            toolCalls: [{ id: 'p', name: 'vault_search', arguments: { query: 'emma' } }],
+          },
+        ],
+      });
+      const sent = JSON.stringify([stub.lastMessages(), stub.lastOptions()?.systemPrompt]);
+      expect(sent).not.toMatch(/emma/i);
+      expect(stub.lastMessages()?.[0].content).toBe("When is [PERSON_1]'s birthday?");
+      expect(stub.lastOptions()?.systemPrompt).toContain('[PERSON_1] is their daughter');
+      expect(stub.lastOptions()?.systemPrompt).toContain(PII_TOKEN_NOTE);
+      expect(response.content).toBe('Sure. Emma turns 7.');
+      // A bare token the model wrote is restored too.
+      expect(response.toolCalls[0]?.arguments.query).toBe('Emma birthday');
+    });
+
+    it('adds no note when nothing was hidden', async () => {
+      const stub = makeStubProvider();
+      await cloudRouter(stub.provider).chat({
+        taskType: 'reason',
+        systemPrompt: 'Be brief.',
+        messages: [{ role: 'user', content: 'what time is it' }],
+      });
+      expect(stub.lastOptions()?.systemPrompt).toBe('Be brief.');
+    });
+
+    it('reads the installed lexicon when given none', async () => {
+      const stub = makeStubProvider();
+      installNameLexicon(new NameLexicon({ fetch: async () => [{ group: 1, names: ['Sancho'] }] }));
+      try {
+        await cloudRouter(stub.provider).chat({
+          taskType: 'reason',
+          messages: [{ role: 'user', content: 'Sancho is coming' }],
+        });
+        expect(stub.lastMessages()?.[0].content).toBe('[PERSON_1] is coming');
+      } finally {
+        installNameLexicon(null);
+      }
+    });
+
+    it("routedProvider keeps the adapter's own model: no model id is sent unless the caller pins one (dual review F8)", async () => {
+      const stub = makeStubProvider();
+      const routed = routedProvider({
+        llm: stub.provider,
+        providerName: 'gemini',
+        taskType: 'classify',
+      });
+      await routed.chat([{ role: 'user', content: 'hi' }]);
+      expect(stub.lastOptions()?.model).toBeUndefined();
+      await routed.chat([{ role: 'user', content: 'hi' }], { model: 'pinned-model' });
+      expect(stub.lastOptions()?.model).toBe('pinned-model');
+    });
+
+    it('a literal token in a later message never comes back as an earlier value (dual review F2)', async () => {
+      const stub = makeStubProvider({ content: '[EMAIL_1] and [EMAIL_2]' });
+      const res = await cloudRouter(stub.provider).chat({
+        taskType: 'reason',
+        messages: [
+          { role: 'user', content: 'alice is alice@example.com' },
+          { role: 'user', content: 'what does [EMAIL_1] mean?' },
+        ],
+      });
+      expect(stub.lastMessages()?.map((m) => m.content)).toEqual([
+        'alice is [EMAIL_2]',
+        'what does [EMAIL_1] mean?',
+      ]);
+      expect(res.content).toBe('[EMAIL_1] and alice@example.com');
+    });
+
+    it('routedProvider puts a raw adapter behind the same scrub', async () => {
+      const stub = makeStubProvider({ content: 'done for [EMAIL_1]' });
+      const routed = routedProvider({
+        llm: stub.provider,
+        providerName: 'gemini',
+        taskType: 'reason',
+      });
+      const res = await routed.chat([{ role: 'user', content: 'note alice@example.com' }]);
+      expect(stub.lastMessages()?.[0].content).toBe('note [EMAIL_1]');
+      expect(res.content).toBe('done for alice@example.com');
     });
 
     it('passes through when the local path is active (no scrub)', async () => {
@@ -365,15 +494,15 @@ describe('RoutedLLMProvider (LLMProvider adapter)', () => {
       persona: () => currentPersona,
     });
     // First call — persona is general, non-sensitive → passes.
-    await expect(
-      routed.chat([{ role: 'user', content: 'hi' }]),
-    ).resolves.toMatchObject({ content: 'ok' });
+    await expect(routed.chat([{ role: 'user', content: 'hi' }])).resolves.toMatchObject({
+      content: 'ok',
+    });
 
     // Flip the getter; consent gate should now fire.
     currentPersona = 'health';
-    await expect(
-      routed.chat([{ role: 'user', content: 'medical' }]),
-    ).rejects.toBeInstanceOf(CloudConsentError);
+    await expect(routed.chat([{ role: 'user', content: 'medical' }])).rejects.toBeInstanceOf(
+      CloudConsentError,
+    );
   });
 });
 

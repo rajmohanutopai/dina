@@ -120,7 +120,7 @@ legacy/              Reference oracle: go-core/, python-brain/, admin-cli/, bin/
 | Messaging | NaCl `crypto_box_seal` over WS/HTTPS via MsgBox relay | Dina-to-Dina encrypted P2P, offline-buffered |
 | Agents | MCP (Model Context Protocol) | External agent communication (OpenClaw, etc.) |
 | Plugins | Signed manifests: interpreted (data) or runner (out-of-process code, paired as device) | See `docs/PLUGIN_ARCHITECTURE.md`. P0 substrate; install path, dispatch producer, `/ask` routing, the §11 context projector and the §15.6 card-template render wired on both hosts (phone verifier bundle-proven, device run owed) |
-| PII | Regex + Presidio-style deterministic patterns + allow-list; Entity Vault for cloud LLM. NER V2. | Raw data never leaves the Home Node |
+| PII | One door (`LLMRouter`) to every model; one token table per call; regex + Presidio-style patterns + the known names from the people graph (`/v1/pii/names`) + on iPhone, strangers' names found on-device (Apple's model, NLTagger fallback; `modules/dina-names`). No detector on Android/server, no allow-list yet. See `docs/PII_ARCHITECTURE_V2.md`. | Raw data never leaves the Home Node |
 | Embedding | EmbeddingGemma / gemini-embedding-001 (768-dim) | Semantic search vectors |
 
 ## Security Model

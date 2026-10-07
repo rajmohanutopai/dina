@@ -1097,6 +1097,13 @@ export interface CoreClient {
   peopleList(): Promise<Person[]>;
 
   /**
+   * The names Brain hides from a cloud model, grouped by person
+   * (docs/PII_ARCHITECTURE_V2.md §5.2). Throws when Core does not answer,
+   * so the caller can tell "no names" from "no answer".
+   */
+  piiNames(): Promise<PiiNameGroup[]>;
+
+  /**
    * Find every person whose surfaces include `surface` (case-insensitive
    * match against `normalizedSurface`). Returns multiple rows when two
    * contacts share a surface form ("Alex"); the agent can then ask the
@@ -1888,6 +1895,7 @@ export type { Contact };
 
 /** People-graph types crossing the Core HTTP boundary. */
 import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
+import type { PiiNameGroup } from '../pii/names';
 export type { ExtractionResult, ApplyExtractionResponse, Person };
 
 /** Reminder types crossing the Core HTTP boundary. Re-exported so Brain

@@ -27,6 +27,7 @@ import { base64 } from '@scure/base';
 
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
+import { readPiiNameGroups, type PiiNameGroup } from '../pii/names';
 
 import {
   a2aDelegateBody,
@@ -1338,6 +1339,12 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { people?: unknown };
     return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
+  }
+
+  async piiNames(): Promise<PiiNameGroup[]> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/pii/names' }));
+    if (res.status !== 200) throw new Error(`piiNames: core answered ${res.status}`);
+    return readPiiNameGroups((res.body as { groups?: unknown } | null)?.groups);
   }
 
   async peopleFindByName(surface: string): Promise<Person[]> {
