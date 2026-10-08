@@ -171,3 +171,50 @@ function matchesAny(text: string, patterns: RegExp[]): boolean {
   }
   return false;
 }
+
+// ---------------------------------------------------------------
+// Human connection (REAL_LIFE_FIXES §8)
+// ---------------------------------------------------------------
+
+/**
+ * Fixed crisis resources, never model text (Anthropic and OpenAI both drive a
+ * fixed resource UI from a classifier). Kept short and local; findahelpline
+ * (ThroughLine) lists free lines for 170+ countries.
+ */
+export const CRISIS_RESOURCES_TEXT =
+  'If you might harm yourself or you are in danger, please contact your local emergency number now, or a crisis line: ' +
+  'in the US and Canada call or text 988; in the UK and Ireland call Samaritans on 116 123; in India call Tele-MANAS on 14416; ' +
+  'elsewhere, findahelpline.com lists free, confidential lines.';
+
+/** The reply to an acute-risk message: warmth, then the fixed resources. */
+export function crisisReply(names: readonly string[]): string {
+  const someone =
+    names.length > 0 ? ` Could you reach out to ${names[0]} right now, or let me help you message them?` : '';
+  return `I'm really glad you told me, and I'm worried about you. You don't have to carry this alone.${someone} ${CRISIS_RESOURCES_TEXT}`;
+}
+
+/**
+ * The instruction added to the turn for an emotional message: warmth first,
+ * then help toward real people, named from the owner's own contacts. The
+ * names pass through the router's PII scrub like any other text.
+ */
+export function humanConnectionDirective(kind: string, names: readonly string[]): string {
+  const who =
+    names.length > 0
+      ? ` People close to the user who could help: ${names.slice(0, 3).join(', ')}. Name one and offer to draft a message to them.`
+      : ' Suggest one concrete way to reach a friend, family member or professional.';
+  const extra =
+    kind === 'romantic_attachment'
+      ? ' Kindly say you cannot return romantic feelings, without coldness.'
+      : kind === 'grief'
+        ? ' Help them remember and reach the living; never speak as the person who died.'
+        : '';
+  return `This message is about how the user feels (${kind}). Respond with warmth first, briefly; do not claim feelings and do not offer yourself as their main support.${who}${extra} Do not lecture.`;
+}
+
+/** One line pointing to people, appended when the guard removed sentences. */
+export function peoplePointerLine(names: readonly string[]): string {
+  return names.length > 0
+    ? `It might help to talk this through with ${names[0]} — I can draft a message if you like.`
+    : 'It might help to talk this through with someone you trust.';
+}

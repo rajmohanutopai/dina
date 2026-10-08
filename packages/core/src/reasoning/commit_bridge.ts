@@ -11,8 +11,7 @@ import {
   persistConnectedBrainMemoryProposal,
   type PersistConnectedBrainMemoryResult,
 } from '../agent/connected_brain_facades';
-import { resolvePersonaName } from '../persona/names';
-import { isPersonaOpen, personaExists } from '../persona/service';
+import { resolveInstalledPersonaName , isPersonaOpen, personaExists } from '../persona/service';
 import { createReminderDurable } from '../reminders/service';
 
 import type { ReasoningCommitReceipt, ReasoningValidatedProposal } from './broker';
@@ -107,7 +106,7 @@ async function commitReminders(
     typeof input.preferredPersona === 'string' && input.preferredPersona.trim() !== ''
       ? input.preferredPersona
       : 'general';
-  const persona = resolvePersonaName(preferred.trim());
+  const persona = resolveInstalledPersonaName(preferred.trim());
   if (persona === '' || !personaExists(persona)) {
     throw new Error('unknown reminder persona');
   }

@@ -2,8 +2,7 @@
  * Service-candidate ranker — selects the best match from AppView search
  * results for a given capability.
  *
- * AppView's `com.dinakernel.service.search` already returns a ranked list (trust
- * score + proximity), but the requester still has to (a) pick the top match
+ * AppView's `com.dinakernel.service.search` already returns a ranked list, but the requester still has to (a) pick the top match
  * and (b) compute a client-side proximity when the server hasn't (or when
  * the user wants a different tie-break). This module owns that logic so the
  * orchestrator is a thin flow controller.
@@ -78,11 +77,20 @@ export interface RankOptions {
    * already know your own capabilities locally.
    */
   excludeDid?: string;
+  /**
+   * Providers this node has seen go quiet (Core's outcome record,
+   * REAL_LIFE_FIXES §9). They sort after the rest, but at most half of the
+   * candidates are demoted, and a lone candidate never is — the index may be
+   * right and our record stale.
+   */
+  ejected?: ReadonlySet<string>;
 }
 
 /** Per-candidate rank score. Exposed for tests. */
 export interface RankedCandidate {
   profile: ServiceProfile;
+  /** Sorted after the rest because this node saw it go quiet (§9). */
+  demoted?: boolean;
   /** Distance in km if computable, else `undefined`. */
   distanceKm: number | undefined;
   /**
@@ -98,15 +106,18 @@ export interface RankedCandidate {
  * is neither mutated nor re-referenced — callers receive a fresh array of
  * fresh tuples.
  *
+ * Filters: isDiscoverable=true, advertises the requested capability, has a
+ * DID, is not this node.
+ *
  * Sort order (stable):
- *   1. isDiscoverable=true (filter — non-public entries are dropped)
- *   2. advertises the requested capability (filter)
- *   3. distanceKm ASC (undefined last) — only when the viewer supplied
- *      coordinates; otherwise we fall straight to AppView's order.
- *   4. AppView's returned order (preserves trust/relevance ranking
- *      AppView applied — issue #13).
- *   5. service name ASC (case-insensitive) — final deterministic tiebreak.
- *   6. DID ASC — ultimate tiebreaker for identical-named providers.
+ *   1. not demoted before demoted (providers this node saw go quiet, §9;
+ *      at most half of the set, never a lone candidate).
+ *   2. AppView's returned order — the primary signal (trust/relevance the
+ *      server applied; issues #13/#15).
+ *   3. distanceKm ASC (undefined last) — breaks ties within one AppView
+ *      rank, only when the viewer supplied coordinates.
+ *   4. service name ASC (case-insensitive).
+ *   5. DID ASC — ultimate tiebreaker for identical-named providers.
  */
 export function rankCandidates(
   capability: string,
@@ -128,6 +139,20 @@ export function rankCandidates(
       distanceKm: effectiveDistance(profile, options),
       appViewIndex: index,
     });
+  }
+
+  // Demote quiet providers, capped at half the set (rounded down) and taken
+  // in AppView order, so a lone candidate or an all-quiet set is untouched.
+  if (options.ejected !== undefined && options.ejected.size > 0) {
+    const cap = Math.floor(ranked.length / 2);
+    let demoted = 0;
+    for (const c of [...ranked].sort((a, b) => a.appViewIndex - b.appViewIndex)) {
+      if (demoted >= cap) break;
+      if (options.ejected.has(c.profile.did)) {
+        c.demoted = true;
+        demoted += 1;
+      }
+    }
   }
 
   ranked.sort(compareCandidates);
@@ -184,6 +209,7 @@ function isFiniteLocation(loc: Location): boolean {
 }
 
 function compareCandidates(a: RankedCandidate, b: RankedCandidate): number {
+  if ((a.demoted ?? false) !== (b.demoted ?? false)) return a.demoted === true ? 1 : -1;
   // AppView's returned order is the PRIMARY key (issue #15 refinement
   // of #13): the server applied trust/relevance signals we don't have
   // client-side. Distance only breaks ties within a single AppView

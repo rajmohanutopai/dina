@@ -768,3 +768,18 @@ describe('the save refuses what Core would refuse to run or publish (A2A plan §
     }
   });
 });
+
+describe('the published-listing limit (REAL_LIFE_FIXES §14)', () => {
+  it('refuses the 101st published listing, and allows re-saving or unpublishing', async () => {
+    const { MAX_PUBLISHED_LISTINGS } = await import('@dina/protocol');
+    const { setServiceConfigDurable, ListingLimitError } = await import('../../src/service/service_config');
+    for (let i = 0; i < MAX_PUBLISHED_LISTINGS; i++) await setServiceConfigDurable(validConfig, `l${i}`);
+    await expect(setServiceConfigDurable(validConfig, 'one-more')).rejects.toBeInstanceOf(ListingLimitError);
+    // Re-saving a listing that is already published passes.
+    await expect(setServiceConfigDurable({ ...validConfig, name: 'Bus 42b' }, 'l0')).resolves.toBeUndefined();
+    // A friends-only listing is not published, so it does not count.
+    await expect(
+      setServiceConfigDurable({ ...validConfig, isDiscoverable: false, discoverability: 'known_only' } as ServiceConfig, 'private'),
+    ).resolves.toBeUndefined();
+  });
+});

@@ -323,6 +323,14 @@ export interface ChatMessage {
 const threads = new Map<string, ChatMessage[]>();
 
 /**
+ * Threads whose stored history this process has loaded (REAL_LIFE_FIXES
+ * §1.4). Separate from `threads`: a thread can exist in memory (the owner's
+ * new message was just appended) before its older messages are read back
+ * after a restart.
+ */
+const loaded = new Set<string>();
+
+/**
  * Per-thread subscribers. Fire synchronously after each `addMessage`
  * write so UI layers (Chat screen) can re-render when async workflow
  * events land via `addDinaResponse`. Used for issue #2 — the chat
@@ -482,7 +490,10 @@ export async function hydrateThread(
   opts: { force?: boolean } = {},
 ): Promise<number> {
   const repo = getChatMessageRepository();
-  if (repo === null) return 0;
+  if (repo === null) {
+    loaded.add(threadId);
+    return 0;
+  }
   // Default behaviour is a MERGE: pull disk rows in and union them
   // with whatever the in-memory cache already holds. Mobile chat
   // hooks call this on first per-peer mount; if an inbound message
@@ -516,16 +527,16 @@ export async function hydrateThread(
       }
     }
     if (additions.length > 0) {
-      // Merge + sort chronologically (timestamp, then id as
-      // tiebreaker for sub-ms ties) so the chat renders in order.
-      const merged = [...inMemory, ...additions].sort((a, b) => {
-        if (a.timestamp !== b.timestamp) return a.timestamp - b.timestamp;
-        return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-      });
+      // Merge + sort chronologically. Ties (several messages in one ms)
+      // keep stored order: stored rows first, in their stored order, then
+      // in-memory ones. A random-id tiebreak could put a reply before the
+      // question it answers. Array#sort is stable.
+      const merged = [...additions, ...inMemory].sort((a, b) => a.timestamp - b.timestamp);
       threads.set(threadId, merged);
     }
     added = additions.length;
   }
+  loaded.add(threadId);
   // Wake subscribers so any mounted chat hook re-reads the populated
   // thread. Without this, `useSyncExternalStore`-backed views see the
   // stale snapshot — the hydrate populated the map but no notification
@@ -570,6 +581,16 @@ function persistMessage(msg: ChatMessage): void {
   } catch (err) {
     console.warn('[chat] persist failed:', err);
   }
+}
+
+/**
+ * Make sure this process has read `threadId`'s stored history, merging it
+ * with anything already in memory. A no-op once loaded, or with no storage
+ * wired. A failed read throws: callers must not treat it as no history.
+ */
+export async function ensureThreadLoaded(threadId: string): Promise<void> {
+  if (loaded.has(threadId)) return;
+  await hydrateThread(threadId);
 }
 
 /**
@@ -627,6 +648,8 @@ export function listThreads(): string[] {
  */
 export function deleteThread(threadId: string): boolean {
   subscribers.delete(threadId);
+  // Deleted in storage too: there is nothing left to load.
+  loaded.add(threadId);
   const repo = getChatMessageRepository();
   if (repo !== null) {
     try {
@@ -651,6 +674,8 @@ export function deleteThread(threadId: string): boolean {
  */
 export function clearThreadMessages(threadId: string): void {
   threads.set(threadId, []);
+  // Cleared in storage too: there is nothing left to load.
+  loaded.add(threadId);
   const repo = getChatMessageRepository();
   if (repo !== null) {
     try {
@@ -1162,6 +1187,7 @@ export function updateMessageMetadataById(
 
 /** Reset all threads (for testing). */
 export function resetThreads(): void {
+  loaded.clear();
   threads.clear();
   subscribers.clear();
   const repo = getChatMessageRepository();

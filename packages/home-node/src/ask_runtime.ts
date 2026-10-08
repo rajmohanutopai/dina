@@ -238,9 +238,18 @@ export function buildHomeNodeAskRuntime(
     // empty and the pre-fetch silently did nothing).
     const llmCall = buildAskRetrievalPlannerCall(pipeline.router);
     preFlight = async (question, ctx): Promise<PreFlightRetrievalResult | null> => {
+      // Agent/device asks (REAL_LIFE_FIXES §3): no pre-fetch. Every read for
+      // them happens in the loop's vault tools, under Core's ask authority.
+      if (ctx?.askAuthority !== undefined && ctx.askAuthority !== '') return null;
       try {
         const personas = installedPersonas();
-        const plan = await planAskRetrieval(question, { llmCall, personas });
+        const plan = await planAskRetrieval(question, {
+          llmCall,
+          personas,
+          ...(ctx?.recentTurns !== undefined && ctx.recentTurns !== ''
+            ? { recentTurns: ctx.recentTurns }
+            : {}),
+        });
         // F-AGENT-VAULT-GATE round-3: gate the planner's pre-fetch the
         // same way the on-demand vault tool is gated. The coordinator
         // always supplies requesterDid; when it's present we build the

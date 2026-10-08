@@ -24,6 +24,7 @@ function stubDb(
   // The handler chains `.leftJoin(didRedactions).where(...)` (GDPR redaction
   // exclusion); resolve both the joined + unjoined shapes to `rows`.
   const whereStep = { where: async () => rows }
+  ;(whereStep as Record<string, unknown>).leftJoin = () => whereStep // live listings (§14) add joins
   return {
     select: () => ({
       from: () => ({
@@ -188,6 +189,7 @@ describe('searchCapabilities — registry ∩ coverage', () => {
         return [] as Array<{ cap: string }>
       },
     }
+    ;(whereStep as Record<string, unknown>).leftJoin = () => whereStep // live listings (§14) add joins
     const db = {
       select: () => ({
         from: () => ({
@@ -216,6 +218,7 @@ describe('searchCapabilities — registry ∩ coverage', () => {
         return [] as Array<{ cap: string }>
       },
     }
+    ;(whereStep as Record<string, unknown>).leftJoin = () => whereStep // live listings (§14) add joins
     const db = {
       select: () => ({
         from: () => ({

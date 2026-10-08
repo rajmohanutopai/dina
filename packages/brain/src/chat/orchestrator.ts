@@ -23,6 +23,12 @@ import { listRemindersByPersonaRouted } from '../reminders/backend';
 import { executeToolSearch } from '../vault_context/assembly';
 
 import { parseCommand, getAvailableCommands, type ChatIntent } from './command_parser';
+import {
+  installOwnerWordsRememberer,
+  proveOwnerWords,
+  setCurrentOwnerTurn,
+  type RememberChatOutcome,
+} from './owner_turns';
 import { postReminderCard } from './reminder_card';
 import { plainResponse, richResponse, errorResponse, type BotResponse } from './response_types';
 import { addUserMessage, addDinaResponse, addLifecycleMessage } from './thread';
@@ -365,6 +371,28 @@ export interface RememberDrainResult {
    *  was created (external/agent source); `false` means the item just needs
    *  the vault to be unlocked (owner-direct source — no approval gate). */
   pendingNeedsApproval?: boolean;
+  /** Set when Core parked the item because no target vault exists here. */
+  parkedPersona?: string;
+  /** Content-free code for a parked item (e.g. `unknown_persona`). */
+  reason?: string;
+  /** Set when the save failed; a content-free code. */
+  failedReason?: string;
+  /** The item is staged (durable) but the drain did not file it in time. */
+  notYetFiled?: boolean;
+  /** The owner already had this memory (REAL_LIFE_FIXES §2.4). */
+  duplicate?: boolean;
+}
+
+/** Owner-facing words for a content-free failure code. */
+function describeSaveFailure(code: string): string {
+  switch (code) {
+    case 'unknown_persona':
+      return 'there is no vault by that name';
+    case 'storage_error':
+      return 'the vault would not accept it';
+    default:
+      return 'something went wrong while filing it';
+  }
 }
 
 export type RememberDrainHook = (stagingId: string) => Promise<RememberDrainResult>;
@@ -381,7 +409,8 @@ export function resetRememberDrainHook(): void {
   rememberDrainHook = null;
 }
 
-export type RememberCoreClient = Pick<CoreClient, 'stagingIngest'>;
+export type RememberCoreClient = Pick<CoreClient, 'stagingIngest'> &
+  Partial<Pick<CoreClient, 'stagingIngestOwnerWords'>>;
 
 let rememberCoreClient: RememberCoreClient | null = null;
 
@@ -467,9 +496,8 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
   try {
     drainResult = await rememberDrainHook(itemId);
   } catch {
-    // Drain failures shouldn't break the user round-trip — fall back
-    // to a staged ack so the user knows the item was accepted.
-    return plainResponse(`Got it — I'll remember that.`);
+    // Never claim a save that did not happen (REAL_LIFE_FIXES §2.2).
+    return plainResponse(`I couldn't save that right now.`);
   }
 
   const { persona } = drainResult;
@@ -493,7 +521,22 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
         `Stashed for your ${personaName} vault — that vault needs your approval before I can write to it. Open Approvals to review.`,
       );
     }
-    return plainResponse(`Got it — I'll remember that.`);
+    if (drainResult.duplicate === true) {
+      return plainResponse('I already have that stored.');
+    }
+    if (drainResult.parkedPersona !== undefined) {
+      const personaName = formatPersonaDisplayName(drainResult.parkedPersona);
+      return plainResponse(
+        `I couldn't file that yet: ${describeSaveFailure(drainResult.reason ?? 'unknown_persona')} (${personaName}). I've kept it and will file it once a ${personaName} vault is available.`,
+      );
+    }
+    if (drainResult.failedReason !== undefined) {
+      return plainResponse(`I couldn't save that: ${describeSaveFailure(drainResult.failedReason)}.`);
+    }
+    if (drainResult.notYetFiled === true) {
+      return plainResponse(`I've kept that, but filing it is taking longer than usual.`);
+    }
+    return plainResponse(`I couldn't save that right now.`);
   }
 
   const personaName = formatPersonaDisplayName(persona);
@@ -687,16 +730,59 @@ export function setOwnerTurnRecorder(recorder: OwnerTurnRecorder | null): void {
  */
 async function recordOwnerTurn(thread: string, text: string): Promise<void> {
   if (ownerTurnRecorder === null) return;
+  const releaseSession = releaseSessionId('chat', thread);
+  const turnId = `turn-${bytesToHex(randomBytes(12))}`;
   try {
-    await ownerTurnRecorder({
-      releaseSession: releaseSessionId('chat', thread),
-      turnId: `turn-${bytesToHex(randomBytes(12))}`,
-      text,
-    });
+    const recorded = await ownerTurnRecorder({ releaseSession, turnId, text });
+    // Kept for span proofs over this turn (REAL_LIFE_FIXES §0.1 A), only
+    // when Core recorded it: an unrecorded turn cannot be proven anyway.
+    if (recorded) setCurrentOwnerTurn(thread, { releaseSession, turnId, text, at: Date.now() });
   } catch {
     /* unrecorded: the turn's words stay unprovable */
   }
 }
+
+/**
+ * Remember the owner's own words from the current chat turn
+ * (REAL_LIFE_FIXES §2.5). Core verifies the words against the recorded turn
+ * and picks the source; the item then runs the same drain as /remember.
+ */
+async function rememberOwnerWords(thread: string, words: string): Promise<RememberChatOutcome> {
+  const proven = proveOwnerWords(thread, words);
+  if (!proven.ok) return { status: 'failed', personas: [], reason: proven.error };
+  const client = rememberCoreClient;
+  if (client === null || client.stagingIngestOwnerWords === undefined) {
+    return { status: 'failed', personas: [], reason: 'remembering is not available yet' };
+  }
+  let ingested: Awaited<ReturnType<NonNullable<RememberCoreClient['stagingIngestOwnerWords']>>>;
+  try {
+    ingested = await client.stagingIngestOwnerWords(proven.proof);
+  } catch {
+    return { status: 'failed', personas: [], reason: "Core did not accept these as the owner's words" };
+  }
+  if (ingested.duplicate) return { status: 'duplicate', personas: [] };
+  if (rememberDrainHook === null) return { status: 'pending_unlock', personas: [], reason: 'filing shortly' };
+  let r: RememberDrainResult;
+  try {
+    r = await rememberDrainHook(ingested.itemId);
+  } catch {
+    return { status: 'failed', personas: [], reason: 'storage_error' };
+  }
+  if (r.duplicate === true) return { status: 'duplicate', personas: [] };
+  if (r.persona !== null) return { status: 'stored', personas: [r.persona] };
+  if (r.pendingPersona !== undefined) {
+    return {
+      status: r.pendingNeedsApproval === false ? 'pending_unlock' : 'pending_approval',
+      personas: [r.pendingPersona],
+    };
+  }
+  if (r.parkedPersona !== undefined) {
+    return { status: 'parked', personas: [r.parkedPersona], reason: r.reason ?? 'unknown_persona' };
+  }
+  if (r.failedReason !== undefined) return { status: 'failed', personas: [], reason: r.failedReason };
+  return { status: 'pending_unlock', personas: [], reason: 'filing shortly' };
+}
+installOwnerWordsRememberer(rememberOwnerWords);
 
 let askHandler: AskCommandHandler | null = null;
 

@@ -387,7 +387,7 @@ describe('the guard’s LLM call', () => {
       messages: [{ role: 'user', content: 'PROMPT' }],
       systemPrompt: 'SYSTEM',
       temperature: 0,
-      maxTokens: 120,
+      maxTokens: 2048, // SMALL_TASK_MAX_TOKENS: room for a reasoning model
     });
   });
 

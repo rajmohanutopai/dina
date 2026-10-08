@@ -39,6 +39,18 @@ export const FLAG_DEFAULTS = Object.freeze({
    * on, the spool drains, and only then does the directory serve.
    */
   a2a_directory_enabled: false,
+  /**
+   * Live listings (docs/REAL_LIFE_FIXES.md §14): the services kill switch.
+   * While off, service and presence events are not applied; each touched DID
+   * is queued for reconciliation instead, so nothing is lost. On by default.
+   */
+  service_index_enabled: true,
+  /**
+   * Leave expired listings (no renewal for 14 days of unpaused time) out of
+   * service and commerce search. Off by default; turned on by the measured
+   * adoption rule in §14.7. While off, expired listings sort last, labelled.
+   */
+  service_presence_hide_expired: false,
 } as const)
 
 /**

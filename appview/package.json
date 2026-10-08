@@ -20,6 +20,8 @@
     "admin:moderation": "tsx src/admin/peerlens-moderation-cli.ts"
   },
   "dependencies": {
+    "@atproto/identity": "0.5.10",
+    "@atproto/repo": "0.10.12",
     "@dina/a2a": "*",
     "@dina/commerce-protocol": "*",
     "@dina/net-policy": "*",

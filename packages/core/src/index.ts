@@ -586,6 +586,7 @@ export {
   listServiceConfigs,
   setServiceConfig,
   setServiceConfigDurable,
+  ListingLimitError,
   clearServiceConfig,
   hydrateServiceConfig,
   onServiceConfigChanged,
@@ -626,7 +627,14 @@ export { isAadhaarNumber, isGstin, isPan, verhoeffValid, PAN_HOLDER_TYPES } from
 // direct imports; no alias on the public surface.
 export type { PIIMatch } from './pii/patterns';
 export { scrubTier1, rehydrate, scrubProcessRehydrate } from './pii/scrub';
-export { buildPiiNameGroups, readPiiNameGroups, type PiiNameGroup } from './pii/names';
+export {
+  buildPiiNameGroups,
+  piiNamesVersion,
+  readPiiNameGroups,
+  readPiiNamesResult,
+  type PiiNameGroup,
+  type PiiNamesResult,
+} from './pii/names';
 export { evaluateIntent, isBrainDenied, getDefaultRiskLevel } from './gatekeeper/intent';
 export type { RiskLevel as GatekeeperRiskLevel, IntentDecision } from './gatekeeper/intent';
 export {
@@ -1065,6 +1073,8 @@ export {
   openBootPersonas,
   openPersona,
   personaExists,
+  isUnknownPersona,
+  setPersonaTierInMemory,
   resolveInstalledPersonaName,
   resetPersonaState,
   setPersonaDescription,
@@ -1084,7 +1094,7 @@ export {
 export type { PersonaRepository, StoredPersona } from './persona/repository';
 export { DATA_CATEGORIES } from './persona/names';
 export type { DataCategory } from './persona/names';
-export { resolvePersonaName, PERSONA_NAMES } from './persona/names';
+export { PERSONA_NAMES } from './persona/names';
 export type { CanonicalPersona } from './persona/names';
 export * from './vault/lifecycle';
 export * from './vault/tiered_content';
@@ -1333,6 +1343,7 @@ export {
   disconnect as disconnectMsgBox,
   isConnected as isMsgBoxConnected,
   isAuthenticated as isMsgBoxAuthenticated,
+  onAuthenticated as onMsgBoxAuthenticated,
   sendEnvelope,
   completeHandshake,
   resetConnectionState as resetMsgBoxConnectionState,
@@ -1426,6 +1437,9 @@ export type {
   ServiceOfferView,
   ServiceQueryClientRequest,
   ServiceQueryResult,
+  AgentPersonaAccessDecision,
+  OwnerWordsProof,
+  TalkSendResult,
   MemoryToCOptions,
   MemoryToCResult,
   TocEntry,
@@ -1819,3 +1833,19 @@ export type {
   OwnerTurnInput,
   A2AOperationStatus,
 } from './client/core-client';
+
+// Relationship words are roles, not names (REAL_LIFE_FIXES §5.1).
+export {
+  RELATIONSHIP_WORDS,
+  isRelationshipPhrase,
+  parseRelationshipPhrase,
+  type RelationshipPhrase,
+} from './people/relationship_words';
+
+// One vocabulary for preferred-for roles and categories (REAL_LIFE_FIXES §5.3).
+export {
+  PREFERRED_ROLE_TO_CATEGORIES,
+  preferredForKey,
+  normalisePreferredForCategories,
+  normalisePreferredForCategory,
+} from './contacts/preferred_for';

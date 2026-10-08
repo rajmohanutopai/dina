@@ -200,6 +200,66 @@ export function createPersonaGuard(opts: CreatePersonaGuardOptions): AsyncPerson
   };
 }
 
+/** Core's persona-access decisions for one agent/device ask (REAL_LIFE_FIXES §3.2). */
+export interface CoreAccessClient {
+  agentPersonaAccessCheck(
+    askAuthority: string,
+    personas: string[],
+    mode?: 'read' | 'write',
+  ): Promise<Record<string, 'allowed' | 'gated'>>;
+  agentPersonaAccessRequest(
+    askAuthority: string,
+    persona: string,
+    scope: string,
+    mode?: 'read' | 'write',
+  ): Promise<{ decision: 'allowed' | 'approval_required' | 'denied'; taskId?: string }>;
+}
+
+/**
+ * The guard for an agent/device ask: Core decides (REAL_LIFE_FIXES §3.2).
+ * `null` = read now; a task id = one approval card (shared while pending by
+ * this agent + session + persona); a refusal or any failure to get Core's
+ * answer throws, so the read never happens (fail closed).
+ */
+export function createCoreAccessGuard(opts: {
+  coreClient: CoreAccessClient;
+  askAuthority: string;
+  /** What the agent asked; shown on the card for context only. */
+  scope?: string;
+}): AsyncPersonaGuard {
+  return async (persona: string): Promise<string | null> => {
+    const d = await opts.coreClient.agentPersonaAccessRequest(
+      opts.askAuthority,
+      persona,
+      opts.scope ?? '',
+    );
+    if (d.decision === 'allowed') return null;
+    if (d.decision === 'approval_required' && d.taskId !== undefined && d.taskId !== '') {
+      return d.taskId;
+    }
+    throw new Error(`persona "${persona}" is not available to this agent`);
+  };
+}
+
+/**
+ * Core's no-side-effect `check` for an agent/device ask: the personas the
+ * requester may read now. Any failure reads as none (fail closed).
+ */
+export function createCoreAccessCheck(opts: {
+  coreClient: CoreAccessClient;
+  askAuthority: string;
+}): (personas: string[]) => Promise<ReadonlySet<string>> {
+  return async (personas: string[]) => {
+    if (personas.length === 0) return new Set();
+    try {
+      const decisions = await opts.coreClient.agentPersonaAccessCheck(opts.askAuthority, personas);
+      return new Set(personas.filter((p) => decisions[p] === 'allowed'));
+    } catch {
+      return new Set();
+    }
+  };
+}
+
 /**
  * Deterministic approval id for a (askId, persona) pair. Exported so
  * the resumer + UI can derive the same id without round-tripping
@@ -236,9 +296,9 @@ export function personaReadRequiresApproval(persona: string, ctx: PersonaReadCon
   // Owner-on-app: free access to every persona, sensitive tiers included.
   if (ownerDid !== null && ctx.requesterDid === ownerDid) return false;
   const personaState = getPersona(persona);
-  // Unknown persona — the vault tool's accessibility check produces an
-  // empty result; approval would be meaningless.
-  if (personaState === null) return false;
+  // Unknown persona (Brain's mirror is empty, stale or failed): fail closed.
+  // A non-owner caller never reads a persona whose tier Brain cannot see.
+  if (personaState === null) return true;
   // Open tiers — freely accessible.
   if (personaState.tier === 'default' || personaState.tier === 'standard') return false;
   // Active session grant for this (agent, session, persona).

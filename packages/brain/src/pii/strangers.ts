@@ -13,6 +13,8 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { isRelationshipPhrase } from '@dina/core';
+
 import { NameMatcher } from './names';
 
 /** One candidate a detector found: the text as written, and how sure it is (0..1). */
@@ -49,7 +51,11 @@ const CACHE_SIZE = 1_000;
 /** Strangers' groups never collide with the known names' group numbers. */
 const STRANGER_GROUP_BASE = 1_000_000;
 
-/** Never anyone's name, whatever a detector says. Compared in lower case. */
+/**
+ * Never anyone's name, whatever a detector says. Compared in lower case.
+ * Relationship words ("mom", "my boss", "Sancho's mother") are read by the
+ * shared helper in Core (REAL_LIFE_FIXES §5.1), so the lists cannot drift.
+ */
 const NOT_NAMES: ReadonlySet<string> = new Set([
   'i',
   'me',
@@ -83,27 +89,6 @@ const NOT_NAMES: ReadonlySet<string> = new Set([
   'user',
   'owner',
   'dina',
-  'mom',
-  'mum',
-  'mother',
-  'dad',
-  'father',
-  'wife',
-  'husband',
-  'son',
-  'daughter',
-  'brother',
-  'sister',
-  'grandmother',
-  'grandfather',
-  'grandma',
-  'grandpa',
-  'aunt',
-  'uncle',
-  'cousin',
-  'nephew',
-  'niece',
-  'boss',
 ]);
 
 export interface StrangerNamesOptions {
@@ -120,6 +105,7 @@ export function keepCandidate(text: string, c: DetectedName): boolean {
   if (value.length < 2 || !(c.score >= STRANGER_HIDE_SCORE)) return false;
   if (value.includes('[') || value.includes(']')) return false;
   if (NOT_NAMES.has(value.toLowerCase())) return false;
+  if (isRelationshipPhrase(value)) return false;
   return text.includes(value);
 }
 

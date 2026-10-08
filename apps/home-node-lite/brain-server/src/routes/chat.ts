@@ -21,6 +21,7 @@
 
 import {
   handleChat,
+  addMessage,
   deleteThread,
   getThread,
   subscribeToThread,
@@ -235,6 +236,39 @@ export function registerChatRoutes(
         operationId: body.operation_id,
       });
       return reply.status(200).send({ ok: true, message_id: message.id });
+    },
+  );
+
+  // ────────────────────────────────────────────────────────────────
+  // POST /api/v1/chat/quarantine-request — a stranger's message waits in
+  // Core's quarantine (REAL_LIFE_FIXES §6.2). Show the same review card the
+  // phone shows, in `main`; the body stays in Core until the owner decides.
+  // Idempotent by quarantine id.
+  // ────────────────────────────────────────────────────────────────
+  app.post(
+    `${prefix}/chat/quarantine-request`,
+    async (req: FastifyRequest<{ Body: Record<string, unknown> }>, reply: FastifyReply) => {
+      const body = req.body ?? {};
+      const quarantineId = body.quarantine_id;
+      const senderDID = body.sender_did;
+      const messageType = typeof body.message_type === 'string' ? body.message_type.slice(0, 100) : '';
+      if (typeof quarantineId !== 'string' || quarantineId === '' || typeof senderDID !== 'string' || senderDID === '') {
+        return reply.status(400).send({ error: 'quarantine_id and sender_did are required' });
+      }
+      const already = getThread('main').some((m) => {
+        const lc = (m.metadata as { lifecycle?: { kind?: string; quarantineId?: string } } | undefined)?.lifecycle;
+        return lc?.kind === 'quarantine_request' && lc.quarantineId === quarantineId;
+      });
+      if (!already) {
+        addMessage('main', 'dina', "Someone who isn't in your contacts wants to message you.", {
+          metadata: {
+            source: 'd2d',
+            senderDID,
+            lifecycle: { kind: 'quarantine_request', quarantineId, senderDID, messageType },
+          },
+        });
+      }
+      return reply.status(200).send({ ok: true });
     },
   );
 

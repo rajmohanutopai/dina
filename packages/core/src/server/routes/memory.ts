@@ -34,8 +34,11 @@
 import { isTopicKind, type TopicKind } from '../../memory/domain';
 import { getTopicRepository, type TopicRepository } from '../../memory/repository';
 import { getMemoryService, type MemoryService } from '../../memory/service';
+import { listPersonas } from '../../persona/service';
 import { currentDataScope, isGuidedDemoScope } from '../../scope/data_scope';
+import { parseReleaseSession, type ReleaseContext } from '../../vault/release';
 
+import { askAuthorityOf, authorityMayAccess } from './ask_authority_gate';
 import { MEMORY_TOC, MEMORY_TOPIC_TOUCH } from './paths';
 
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
@@ -187,10 +190,32 @@ async function handleToc(
     return jsonError(503, 'memory service not wired');
   }
 
-  const personas = parsePersonaFilter(req.query.persona);
+  let personas = parsePersonaFilter(req.query.persona);
   const limit = clampLimit(parseUnsignedInt(req.query.limit, DEFAULT_TOC_LIMIT));
 
-  const entries = await service.toc(personas, limit);
+  // Agent/device ask (REAL_LIFE_FIXES §3.5): topics only for personas the
+  // requester may read now. Nothing gated reaches the model answering it.
+  const authority = askAuthorityOf(req);
+  if (authority.kind === 'refuse') return authority.response;
+  if (authority.kind === 'ok') {
+    const candidates = personas ?? listPersonas().map((p) => p.name);
+    personas = candidates.filter((p) => authorityMayAccess(authority.authority, p, 'read'));
+    if (personas.length === 0) return { status: 200, body: { entries: [], limit } };
+  }
+
+  // Owner conversation (REAL_LIFE_FIXES §3.5): record the topics released
+  // into it, as the phone does in-process. Brain only.
+  let release: ReleaseContext | undefined;
+  const rawRelease = req.query.release_session;
+  if (rawRelease !== undefined && rawRelease !== '') {
+    const brain = req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+    if (!brain) return jsonError(403, 'release_session_brain_only');
+    const sessionId = parseReleaseSession(rawRelease);
+    if (sessionId === null) return jsonError(400, 'release_session_invalid');
+    release = { sessionId, audience: 'brain' };
+  }
+
+  const entries = await service.toc(personas, limit, release);
 
   return {
     status: 200,

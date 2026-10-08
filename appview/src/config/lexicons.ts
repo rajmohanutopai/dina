@@ -33,6 +33,8 @@ export const TRUST_COLLECTIONS = [
   'com.dinakernel.peerlens.trustPolicy',
   'com.dinakernel.peerlens.notificationPrefs',
   'com.dinakernel.service.profile',
+  // Live listings (docs/REAL_LIFE_FIXES.md §14): a node's daily presence.
+  'com.dinakernel.service.presence',
   CATALOG_POINTER_NSID,
   CATALOG_SNAPSHOT_NSID,
   'com.dinakernel.commerce.relationshipClaim',
@@ -72,6 +74,7 @@ export const COLLECTION_NSID_MAP: Record<string, TrustCollection> = {
   trustPolicy: 'com.dinakernel.peerlens.trustPolicy',
   notificationPrefs: 'com.dinakernel.peerlens.notificationPrefs',
   serviceProfile: 'com.dinakernel.service.profile',
+  servicePresence: 'com.dinakernel.service.presence',
   commerceCatalog: CATALOG_POINTER_NSID,
   commerceCatalogSnapshot: CATALOG_SNAPSHOT_NSID,
   commerceRelationshipClaim: 'com.dinakernel.commerce.relationshipClaim',

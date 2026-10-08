@@ -2,9 +2,13 @@
  * Staging inbox routes — ingest / claim / resolve / fail / extend-lease.
  */
 
+import {
+  isPositiveRememberRequest,
+  verifySpanProof,
+  type SpanProof,
+} from '../../a2a/span_proof';
 import { STAGING_ITEM_TTL_S } from '../../constants';
-import { resolvePersonaName } from '../../persona/names';
-import { validatePersonaName } from '../../persona/service';
+import { isUnknownPersona, resolveInstalledPersonaName , validatePersonaName } from '../../persona/service';
 import {
   ingest,
   claim,
@@ -13,6 +17,7 @@ import {
   fail,
   extendLease,
   getItem,
+  CHAT_AUTO_SOURCE,
   OWNER_DIRECT_SOURCES,
 } from '../../staging/service';
 
@@ -25,9 +30,13 @@ import type { CoreRouter } from '../router';
  */
 const MAX_RESOLVE_PERSONAS = 64;
 
-/** Trim + lowercase + alias-resolve a wire persona name to its canonical form. */
+/**
+ * Trim + lowercase a wire persona name and map it to the vault installed on
+ * this node. An exact installed name always wins; an alias applies only when
+ * its target is installed and the given name is not.
+ */
 function canonicalPersona(raw: string): string {
-  return resolvePersonaName(raw.trim());
+  return resolveInstalledPersonaName(raw.trim());
 }
 
 /**
@@ -66,6 +75,18 @@ function ingestDataViolation(value: unknown, depth = 0): string | null {
     return null;
   }
   return null;
+}
+
+function readSpanProof(body: Record<string, unknown>): SpanProof | null {
+  const rs = body.release_session;
+  const turnId = body.turn_id;
+  const turnText = body.turn_text;
+  const start = body.start;
+  const end = body.end;
+  if (typeof rs !== 'string' || rs === '' || typeof turnId !== 'string' || turnId === '') return null;
+  if (typeof turnText !== 'string' || turnText === '' || turnText.length > 20_000) return null;
+  if (typeof start !== 'number' || typeof end !== 'number') return null;
+  return { releaseSession: rs, turnId, turnText, start, end };
 }
 
 export function registerStagingRoutes(router: CoreRouter): void {
@@ -138,6 +159,36 @@ export function registerStagingRoutes(router: CoreRouter): void {
         duplicate: result.duplicate,
         status: item?.status ?? 'received',
       },
+    };
+  });
+
+  // REAL_LIFE_FIXES §2.5: remember the owner's own words from a chat turn.
+  // Brain proves the words are the owner's (span proof, §0.1 A); Core picks
+  // the source itself: `user_remember` (owner-direct, as /remember) only for
+  // a plain positive request to remember exactly those words, otherwise
+  // `chat_auto`, which needs the owner's approval for a sensitive or locked
+  // vault. Brain-only (`/v1/staging/` authz); never a body-chosen source.
+  router.post('/v1/staging/ingest-owner-words', async (req) => {
+    if (!(req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined))) {
+      return { status: 403, body: { error: 'brain only' } };
+    }
+    const body = (req.body as Record<string, unknown> | undefined) ?? {};
+    const proof = readSpanProof(body);
+    if (proof === null) return { status: 400, body: { error: 'a span proof is required' } };
+    const checked = verifySpanProof(proof, 'remember');
+    if (!checked.ok) return { status: 409, body: { error: 'no_owner_turn', reason: checked.reason } };
+    const source = isPositiveRememberRequest(checked.turnText, checked.span)
+      ? 'user_remember'
+      : CHAT_AUTO_SOURCE;
+    const result = ingest({
+      source,
+      source_id: `chat-${proof.turnId}`,
+      data: { summary: checked.span, type: 'user_memory', body: checked.span, source },
+    });
+    const item = getItem(result.id);
+    return {
+      status: result.duplicate ? 200 : 201,
+      body: { id: result.id, duplicate: result.duplicate, status: item?.status ?? 'received', source },
     };
   });
 
@@ -231,6 +282,12 @@ export function registerStagingRoutes(router: CoreRouter): void {
             stored_personas: resolved.storedPersonas,
             pending_personas: resolved.pendingPersonas,
             failed_personas: resolved.failedPersonas,
+            ...(resolved.unknownPersonas.length > 0
+              ? { unknown_personas: resolved.unknownPersonas }
+              : {}),
+            ...(resolved.duplicatePersonas.length > 0
+              ? { duplicate_personas: resolved.duplicatePersonas }
+              : {}),
           },
         };
       }
@@ -244,9 +301,17 @@ export function registerStagingRoutes(router: CoreRouter): void {
       const invalid = validatePersonaName(persona);
       if (invalid !== null) return { status: 400, body: { error: invalid } };
       const personaOpen = body.persona_open;
+      const unknown = isUnknownPersona(persona);
       resolve(id, persona, personaOpen, data);
       const item = getItem(id);
-      return { status: 200, body: { id, status: item?.status ?? 'unknown' } };
+      return {
+        status: 200,
+        body: {
+          id,
+          status: item?.status ?? 'unknown',
+          ...(unknown ? { unknown_personas: [persona] } : {}),
+        },
+      };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };
     }

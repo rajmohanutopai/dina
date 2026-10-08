@@ -103,6 +103,11 @@ export interface PlanAskRetrievalOptions {
   llmCall: (systemPrompt: string, userPrompt: string) => Promise<string>;
   /** Installed personas — used to render the prompt's persona menu. */
   personas: readonly InstalledPersona[];
+  /**
+   * The last few turns (REAL_LIFE_FIXES §1.3 D). A follow-up such as "and
+   * her teacher?" plans retrieval from what it refers to.
+   */
+  recentTurns?: string;
   /** ISO date string for grounding "today". Defaults to host time. */
   today?: string;
 }
@@ -147,10 +152,14 @@ export async function planAskRetrieval(
 
   const personaMenu = renderPersonaMenu(opts.personas);
   const today = opts.today ?? formatToday();
+  const withContext =
+    opts.recentTurns !== undefined && opts.recentTurns !== ''
+      ? `${opts.recentTurns}\n\nThe question (answer this one):\n${trimmed}`
+      : trimmed;
   const userPrompt = renderPrompt(ASK_RETRIEVAL_PLAN, {
     personas_menu: personaMenu,
     today,
-    question: trimmed,
+    question: withContext,
   });
 
   let raw = '';

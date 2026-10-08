@@ -2706,12 +2706,16 @@ Doing storage convergence or external protocol work before the authority kernel 
 
 ### 30.6 Current implementation anchors
 
+Since 2026-10-08 (`docs/REAL_LIFE_FIXES.md` §3), an agent's `/ask` carries a Core-minted ask authority. Every vault, ToC and persona-list read Brain makes for that ask passes it, and Core gates the read against the agent's grants; an approval grants either that ask only (`ask_id`-bound) or the session, capped at 24 hours. An ask with no session is refused, and Brain does no pre-fetch for agent asks.
+
 These are the principal shipping or in-progress seams against which migration parity should be tested:
 
 | Concern                         | Current source                                                         |
 | ------------------------------- | ---------------------------------------------------------------------- |
 | Agent persona gate              | `packages/core/src/agent/access.ts`                                    |
 | Durable persona grants          | `packages/core/src/agent/grant_repository.ts`                          |
+| Agent ask authority (`aa-…`)    | `packages/core/src/agent/ask_authority.ts`, `server/routes/ask_authority_gate.ts` |
+| Owner-turn span proof           | `packages/core/src/a2a/span_proof.ts`                                  |
 | Caller resolution               | `packages/core/src/auth/caller_type.ts`                                |
 | Route authorization             | `packages/core/src/auth/authz.ts`                                      |
 | Request authentication          | `packages/core/src/auth/middleware.ts`                                 |

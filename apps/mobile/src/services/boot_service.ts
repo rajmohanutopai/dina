@@ -222,6 +222,8 @@ export interface BootServiceInputs {
    * (lazy) publisher so queued reviews retry once the PDS recovers.
    */
   pdsSessionReachable?: boolean;
+  /** True while the app is in the foreground (presence renewal, §14.4 A). */
+  isAppActive?: () => boolean;
   /**
    * Seed config for provider nodes — matches Core's
    * `setServiceConfig` shape. Without it a provider node boots
@@ -837,6 +839,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     appViewClient,
     pdsPublisher: inputs.pdsPublisher,
     pdsSessionReachable: inputs.pdsSessionReachable,
+    ...(inputs.isAppActive !== undefined ? { isAppActive: inputs.isAppActive } : {}),
     workflowRepository,
     serviceConfigRepository,
     reviewPublishRepository,

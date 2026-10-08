@@ -45,10 +45,12 @@ export interface PolicySocketRequest {
   body?: Uint8Array;
   /**
    * What the answer may be: `json` (application/json or a `+json` type),
-   * `json-or-sse` (also text/event-stream, for MCP endpoints), or `status`
-   * (the status only; the body is never read and comes back empty).
+   * `json-or-sse` (also text/event-stream, for MCP endpoints), `car`
+   * (application/vnd.ipld.car: an AT Protocol repository proof, read by
+   * AppView's listing reconciliation), or `status` (the status only; the
+   * body is never read and comes back empty).
    */
-  accept: 'json' | 'json-or-sse' | 'status';
+  accept: 'json' | 'json-or-sse' | 'car' | 'status';
   minTls: 'TLSv1.2' | 'TLSv1.3';
   /** Read 401 and 403 bodies (within the cap) instead of discarding them. */
   readAuthErrorBodies: boolean;
@@ -165,6 +167,7 @@ export function acceptsContentType(
 ): boolean {
   if (accept === 'status') return true;
   const media = (contentType ?? '').split(';')[0]?.trim().toLowerCase() ?? '';
+  if (accept === 'car') return media === 'application/vnd.ipld.car';
   const json = media === 'application/json' || /^application\/[a-z0-9.+-]+\+json$/.test(media);
   return json || (accept === 'json-or-sse' && media === 'text/event-stream');
 }

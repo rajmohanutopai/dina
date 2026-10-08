@@ -42,9 +42,10 @@
  * tryBuildAgenticAsk).
  */
 
-import { getMemoryService } from '@dina/core';
+import { getMemoryService, type CoreClient } from '@dina/core';
 
 import { SMALL_TASK_MAX_TOKENS } from '../constants';
+import { registerAntiHerClassifier } from '../guardian/anti_her_classify';
 import { DEFAULT_SENSITIVE_PERSONAS, LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
@@ -80,7 +81,9 @@ import {
   type ResearchCache,
 } from '../reasoning/product_tools';
 import { createDraftQuoteRequestTool } from '../reasoning/quote_request_tool';
+import { createRememberChatTool } from '../reasoning/remember_chat_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
+import { createSendMessageTool } from '../reasoning/send_message_tool';
 import {
   createGeocodeTool,
   createSearchCapabilitiesTool,
@@ -103,9 +106,17 @@ import {
   createBrowseVaultTool,
   createGetFullContentTool,
   type VaultPersonaGuard,
+  type VaultReleaseScope,
 } from '../reasoning/vault_tool';
+import { vaultReadBackendForAuthority } from '../vault_context/assembly';
 
-import { createPersonaGuard, type VaultApprovalWorkflowClient } from './persona_guard';
+import {
+  createCoreAccessCheck,
+  createCoreAccessGuard,
+  createPersonaGuard,
+  type CoreAccessClient,
+  type VaultApprovalWorkflowClient,
+} from './persona_guard';
 
 import type { LLMProvider } from '../llm/adapters/provider';
 import type { ProviderName, TaskType } from '../llm/router';
@@ -148,7 +159,11 @@ export interface BuildAgenticAskPipelineInput {
     PluginToolCoreClient &
     ProductToolCoreClient &
     CoordinateGroupCoreClient &
-    GroupPlanHandoffCoreClient;
+    GroupPlanHandoffCoreClient &
+    // Agent/device asks (REAL_LIFE_FIXES §3) also need Core's access
+    // decisions and authority-carrying reads; the full CoreClient has them.
+    // A client without them makes every agent ask fail closed.
+    Partial<AgentReadCoreClient>;
   /**
    * Workflow surface for `delegate_to_agent` — narrower than the full
    * `BrainCoreClient` so a host that hasn't paired any agents can omit
@@ -239,7 +254,34 @@ export interface AskToolContext {
   releaseSession?: string;
   /** The chat thread an A2A result returns to; `main` when absent. */
   replyTo?: string;
+  /**
+   * Core's ask authority for an agent/device ask (REAL_LIFE_FIXES §0.1 B).
+   * When set, every vault read carries it and Core decides access; the
+   * owner's own asks never carry one.
+   */
+  askAuthority?: string;
 }
+
+/** What an agent/device ask needs from Core (REAL_LIFE_FIXES §3). */
+export type AgentReadCoreClient = CoreAccessClient &
+  Pick<CoreClient, 'vaultQuery' | 'vaultGet' | 'vaultList' | 'vaultItemsForPerson' | 'memoryToC'>;
+
+function asAgentReadClient(c: Partial<AgentReadCoreClient>): AgentReadCoreClient | null {
+  return typeof c.agentPersonaAccessCheck === 'function' &&
+    typeof c.agentPersonaAccessRequest === 'function' &&
+    typeof c.vaultQuery === 'function' &&
+    typeof c.vaultGet === 'function' &&
+    typeof c.vaultList === 'function' &&
+    typeof c.vaultItemsForPerson === 'function' &&
+    typeof c.memoryToC === 'function'
+    ? (c as AgentReadCoreClient)
+    : null;
+}
+
+/** Agent ask with no Core access surface: refuse every persona (fail closed). */
+const denyAllGuard: VaultPersonaGuard = async (persona: string) => {
+  throw new Error(`persona "${persona}" is not available to this agent`);
+};
 
 /** What the tools of one ask share: the conversation they serve. */
 interface AskToolScope {
@@ -272,6 +314,13 @@ export interface AgenticAskPipeline {
    * ```
    */
   buildToolsForAsk?: (askContext: AskToolContext) => ToolRegistry;
+  /**
+   * The home node's owner DID, when known. An ask from any other requester
+   * must carry Core's ask authority (REAL_LIFE_FIXES §0.1 B).
+   */
+  ownerDid?: string;
+  /** Up to three close contacts' names, closest first (Law 4, §8). */
+  closeContacts?: () => Promise<string[]>;
   router: LLMRouter;
   handlerOptions: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
 }
@@ -306,17 +355,43 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
   // Intent classifier — runs on every /ask before the reasoning loop.
   // Reads the working-memory ToC + emits a routing hint that
   // `formatIntentHintBlock` appends to the system prompt. Fail-open.
-  const intentClassifier = buildIntentClassifier(router);
+  const intentClassifier = buildIntentClassifier(
+    router,
+    typeof input.coreClient.memoryToC === 'function'
+      ? (input.coreClient as Pick<CoreClient, 'memoryToC'>)
+      : null,
+  );
 
   // Guard-scan post-processor (Laws 1 + 4). Strips Anti-Her /
   // unsolicited / fabricated / consensus sentences. Routes through
   // the router under `taskType: 'guard_scan'` → lite tier.
+  // Up to three close contacts, closest ring first (Law 4, REAL_LIFE_FIXES
+  // §8). Read from Core on both hosts; never fails a turn.
+  const contactsCore = input.coreClient as Partial<Pick<CoreClient, 'listContacts'>>;
+  const closeContacts = async (): Promise<string[]> => {
+    if (typeof contactsCore.listContacts !== 'function') return [];
+    const rank = (t: string): number =>
+      t === 'contact_ring1' || t === 'trusted' || t === 'verified' ? 0 : t === 'contact_ring2' ? 1 : 2;
+    const all = await contactsCore.listContacts();
+    return all
+      .filter((c) => c.trustLevel !== 'blocked' && typeof c.displayName === 'string' && c.displayName.trim() !== '')
+      .sort((a, b) => rank(String(a.trustLevel)) - rank(String(b.trustLevel)))
+      .slice(0, 3)
+      .map((c) => c.displayName);
+  };
+
+  // Law 4's model classifier runs on both hosts through the router, so the
+  // message is scrubbed like any other (REAL_LIFE_FIXES §8). Fails open to
+  // the free phrase pass.
+  registerAntiHerClassifier(buildLightweightLLMCall(router, 'classify'));
+
   const guardScanner = createGuardScanner(
     new RoutedLLMProvider({
       router,
       taskType: 'guard_scan',
       label: `routed:guard_scan:${input.providerName}`,
     }),
+    { closeContacts },
   );
 
   // Identity / people-graph extractor — the agentic remember loop's
@@ -351,11 +426,29 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     guard?: VaultPersonaGuard,
     sessionName?: string,
     scope: AskToolScope = {},
+    agentRead: Pick<VaultReleaseScope, 'readBackend' | 'accessCheck'> = {},
+    /** The owner's chat thread, when this is an owner chat turn (never an agent ask). */
+    ownerChatThread?: string,
   ): ToolRegistry => {
     const reg = new ToolRegistry();
+    // REAL_LIFE_FIXES §2.5: the owner's chat can save the owner's own words.
+    if (ownerChatThread !== undefined && ownerChatThread !== '') {
+      reg.register(createRememberChatTool({ thread: ownerChatThread }));
+      // REAL_LIFE_FIXES §7: message a contact on the owner's word.
+      const talkCore = input.coreClient as Partial<Pick<CoreClient, 'talkSend'>>;
+      if (typeof talkCore.talkSend === 'function') {
+        reg.register(
+          createSendMessageTool({
+            thread: ownerChatThread,
+            core: talkCore as Pick<CoreClient, 'talkSend'>,
+          }),
+        );
+      }
+    }
     const vaultOpts = {
       ...(guard ? { personaGuard: guard } : {}),
       ...(scope.releaseSession !== undefined ? { releaseSession: scope.releaseSession } : {}),
+      ...agentRead,
     };
     reg.register(createListPersonasTool(vaultOpts));
     reg.register(createFindPersonTool());
@@ -387,8 +480,15 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     reg.register(research.searchProducts);
     reg.register(research.recommendOffer);
     reg.register(createSearchCapabilitiesTool({ appViewClient: input.appViewClient }));
+    // REAL_LIFE_FIXES §9: Core's record of providers that went quiet.
+    const standingCore = input.coreClient as Partial<Pick<CoreClient, 'serviceProviderStanding'>>;
+    const providerStanding =
+      typeof standingCore.serviceProviderStanding === 'function'
+        ? (dids: string[]) => standingCore.serviceProviderStanding!(dids)
+        : undefined;
     reg.register(
       createSearchProviderServicesTool({
+        ...(providerStanding !== undefined ? { providerStanding } : {}),
         appViewClient: input.appViewClient,
         // Never let the agent discover + query our own listing (self-routing
         // → "No response"). See SearchProviderServicesToolOptions.selfDid.
@@ -402,6 +502,9 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
         // auto-fetch `schema_hash` on SHORTCUT dispatches. Fail-soft.
         appViewClient: input.appViewClient,
         logger: input.logger,
+        ...(scope.replyTo !== undefined && scope.replyTo !== '' ? { replyThread: scope.replyTo } : {}),
+        ...(input.ownerDid !== undefined ? { selfDid: input.ownerDid } : {}),
+        ...(providerStanding !== undefined ? { providerStanding } : {}),
       }),
     );
     reg.register(
@@ -539,6 +642,8 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     tools,
     router,
     handlerOptions: { intentClassifier, guardScanner },
+    ...(input.ownerDid !== undefined && input.ownerDid !== '' ? { ownerDid: input.ownerDid } : {}),
+    closeContacts,
   };
 
   // Always wire buildToolsForAsk — coreClient is always provided and
@@ -548,6 +653,31 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     const coreClient = input.coreClient;
     const ownerDid = input.ownerDid;
     result.buildToolsForAsk = (ctx: AskToolContext): ToolRegistry => {
+      const scope = {
+        ...(ctx.releaseSession !== undefined ? { releaseSession: ctx.releaseSession } : {}),
+        ...(ctx.replyTo !== undefined ? { replyTo: ctx.replyTo } : {}),
+      };
+      // Agent/device ask: Core decides every persona read (REAL_LIFE_FIXES
+      // §3). The fan-out asks `check` (no card), a named persona asks
+      // `request` (one card), and every read carries the authority.
+      if (ctx.askAuthority !== undefined && ctx.askAuthority !== '') {
+        const askAuthority = ctx.askAuthority;
+        const agentRead = asAgentReadClient(coreClient);
+        if (agentRead === null) {
+          return buildToolsWithGuard(denyAllGuard, ctx.sessionId, scope, {
+            accessCheck: async () => new Set<string>(),
+          });
+        }
+        return buildToolsWithGuard(
+          createCoreAccessGuard({ coreClient: agentRead, askAuthority }),
+          ctx.sessionId,
+          scope,
+          {
+            readBackend: vaultReadBackendForAuthority(agentRead, askAuthority),
+            accessCheck: createCoreAccessCheck({ coreClient: agentRead, askAuthority }),
+          },
+        );
+      }
       const guardOpts: Parameters<typeof createPersonaGuard>[0] = {
         coreClient,
         askId: ctx.askId,
@@ -567,10 +697,26 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
         guardOpts.sessionId = ctx.sessionId;
       }
       const guard = createPersonaGuard(guardOpts);
-      return buildToolsWithGuard(guard, ctx.sessionId, {
-        ...(ctx.releaseSession !== undefined ? { releaseSession: ctx.releaseSession } : {}),
-        ...(ctx.replyTo !== undefined ? { replyTo: ctx.replyTo } : {}),
-      });
+      // An owner chat turn: the requester is the owner and the ask names a
+      // chat thread. Only those turns may save the owner's words.
+      const ownerChat =
+        ownerDid !== undefined &&
+        ownerDid !== '' &&
+        ctx.requesterDid === ownerDid &&
+        ctx.replyTo !== undefined &&
+        ctx.replyTo !== ''
+          ? ctx.replyTo
+          : undefined;
+      return buildToolsWithGuard(
+        guard,
+        ctx.sessionId,
+        {
+          ...(ctx.releaseSession !== undefined ? { releaseSession: ctx.releaseSession } : {}),
+          ...(ctx.replyTo !== undefined ? { replyTo: ctx.replyTo } : {}),
+        },
+        {},
+        ownerChat,
+      );
     };
   }
 
@@ -609,7 +755,10 @@ function buildLightweightLLMCall(
  * isn't registered (early boot, tests) we short-circuit with an empty
  * ToC so the classifier falls back to the conservative default.
  */
-function buildIntentClassifier(router: LLMRouter): IntentClassifier {
+function buildIntentClassifier(
+  router: LLMRouter,
+  core: Pick<CoreClient, 'memoryToC'> | null,
+): IntentClassifier {
   return new IntentClassifier({
     llm: async (systemPrompt: string, userPrompt: string): Promise<string> => {
       const response = await router.chat({
@@ -621,9 +770,34 @@ function buildIntentClassifier(router: LLMRouter): IntentClassifier {
       });
       return response.content;
     },
-    tocFetcher: async (releaseSession) => {
+    tocFetcher: async (releaseSession, askAuthority) => {
+      // Agent/device ask (REAL_LIFE_FIXES §3.5): only topics of personas the
+      // requester may read now, filtered by Core under the ask authority.
+      // Without a Core access surface, none (fail closed).
+      if (askAuthority !== undefined && askAuthority !== '') {
+        if (core === null) return [];
+        try {
+          return (await core.memoryToC({ limit: 20, askAuthority })).entries;
+        } catch {
+          return [];
+        }
+      }
       const svc = getMemoryService();
-      if (svc === null) return [];
+      if (svc === null) {
+        // Split-process Brain (server): no in-process memory service; read
+        // Core's ToC and let Core record the release into the conversation.
+        if (core === null) return [];
+        try {
+          return (
+            await core.memoryToC({
+              limit: 20,
+              ...(releaseSession !== undefined ? { releaseSession } : {}),
+            })
+          ).entries;
+        } catch {
+          return [];
+        }
+      }
       try {
         return await svc.toc(
           undefined,

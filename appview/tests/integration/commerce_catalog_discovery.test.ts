@@ -213,6 +213,31 @@ describe('a buyer with no prior supplier reference finds one', () => {
     expect(found.candidates.map((c) => c.supplier_did)).toEqual([CHAIRMAKER])
   })
 
+  it('a live seller comes before a silent one, whatever the score (REAL_LIFE_FIXES §14)', async () => {
+    const { sql } = await import('drizzle-orm')
+    const now = Date.now() * 1000
+    const HOUR = 3_600_000_000
+    // ChairMaker renewed an hour ago; Rivalwood last renewed 20 days ago.
+    await db.execute(sql`INSERT INTO service_operator_presence (did, last_seen_us, presence_capable, presence_present)
+      VALUES (${CHAIRMAKER}, ${now - HOUR}, true, true), (${RIVALWOOD}, ${now - 480 * HOUR}, true, true)`)
+    const found = await search({ category: ['furniture.seating'], limit: 20 })
+    expect(found.candidates[0]?.supplier_did).toBe(CHAIRMAKER)
+    expect(found.candidates.map((c) => c.supplier_did)).toContain(RIVALWOOD)
+    // With hiding on, the expired seller is left out.
+    const { setBoolFlag } = await import('@/db/queries/appview-config.js')
+    await setBoolFlag(db as never, 'service_presence_hide_expired', true)
+    const hidden = await search({ category: ['furniture.seating'], limit: 20 })
+    expect(hidden.candidates.map((c) => c.supplier_did)).not.toContain(RIVALWOOD)
+  })
+
+  it('an inactive seller account is left out', async () => {
+    const { sql } = await import('drizzle-orm')
+    await db.execute(sql`INSERT INTO service_account_status (did, active, status, time_us)
+      VALUES (${RIVALWOOD}, false, 'takendown', ${Date.now() * 1000})`)
+    const found = await search({ category: ['furniture.seating'], limit: 20 })
+    expect(found.candidates.map((c) => c.supplier_did)).toEqual([CHAIRMAKER])
+  })
+
   it('by region, and does not offer a supplier who does not deliver there', async () => {
     // `scheme:value`, which is the documented query form and what BOTH the SQL
     // narrowing and the pure matcher compare against. A bare value matches

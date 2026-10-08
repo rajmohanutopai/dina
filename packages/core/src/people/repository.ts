@@ -36,6 +36,7 @@ import { scopedInsertFields, scopedParams, scopedWhere } from '../scope/reposito
 import {
   canonicalizeIdentityValue,
   type ApplyExtractionResponse,
+  type ExtractionPersonLink,
   type ExtractionResult,
   type Person,
   type PersonIdentity,
@@ -50,6 +51,7 @@ import {
   SURFACE_STATUS_REJECTED,
   SURFACE_STATUS_SUGGESTED,
 } from './domain';
+import { parseRelationshipPhrase } from './relationship_words';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -58,6 +60,13 @@ import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 // ---------------------------------------------------------------------------
 
 export interface PeopleRepository {
+  /**
+   * Mirror a contact alias into the person's surfaces (REAL_LIFE_FIXES
+   * §5.2), so recall by the alias finds them. `present: false` retires it.
+   */
+  setContactAliasSurface?(personId: string, alias: string, present: boolean): void;
+  /** One-time repair of people stored under a relationship word (§5.1). */
+  repairRelationshipNames?(): number;
   applyExtraction(result: ExtractionResult): ApplyExtractionResponse;
   getPerson(personId: string): Person | null;
   listPeople(): Person[];
@@ -160,6 +169,15 @@ export interface PeopleRepository {
 let repo: PeopleRepository | null = null;
 export function setPeopleRepository(r: PeopleRepository | null): void {
   repo = r;
+  // REAL_LIFE_FIXES §5.1: repair people stored under a relationship word
+  // once, when the graph is installed. Never blocks the install.
+  if (r !== null) {
+    try {
+      r.repairRelationshipNames?.();
+    } catch {
+      /* best effort */
+    }
+  }
 }
 export function getPeopleRepository(): PeopleRepository | null {
   return repo;
@@ -168,6 +186,60 @@ export function getPeopleRepository(): PeopleRepository | null {
 // ---------------------------------------------------------------------------
 // SQLite implementation
 // ---------------------------------------------------------------------------
+
+/**
+ * How two names relate (REAL_LIFE_FIXES §5.1): the same, one the fuller
+ * form of the other ("Carlos" / "Carlos Garcia": same person, keep the
+ * fuller), or different people ("Tom" / "Sam").
+ */
+function compareNames(
+  existing: string,
+  incoming: string,
+): 'same' | 'existing_fuller' | 'incoming_fuller' | 'different' {
+  const a = normalizeAlias(existing).split(' ').filter((t) => t !== '');
+  const b = normalizeAlias(incoming).split(' ').filter((t) => t !== '');
+  if (b.length === 0) return 'existing_fuller';
+  if (a.length === 0) return 'incoming_fuller';
+  const aSet = new Set(a);
+  const bSet = new Set(b);
+  const aHasB = b.every((t) => aSet.has(t));
+  const bHasA = a.every((t) => bSet.has(t));
+  if (aHasB && bHasA) return 'same';
+  if (aHasB) return 'existing_fuller';
+  if (bHasA) return 'incoming_fuller';
+  return 'different';
+}
+
+/**
+ * REAL_LIFE_FIXES §5.1: read relationship words as roles. A `name` (or the
+ * canonical name) that is a relationship phrase becomes a `role_phrase`
+ * surface in canonical form ("my mother", "sancho's mother"), and the
+ * person's name stays empty until a real one arrives.
+ */
+function asRoleLink(link: ExtractionPersonLink): ExtractionPersonLink {
+  const fromName = parseRelationshipPhrase(link.canonicalName);
+  const surfaces = link.surfaces.map((s) => {
+    const rp = s.surfaceType === 'name' || s.surfaceType === 'role_phrase' ? parseRelationshipPhrase(s.surface) : null;
+    return rp !== null ? { ...s, surfaceType: 'role_phrase' as const, surface: rp.phrase } : s;
+  });
+  if (
+    fromName !== null &&
+    !surfaces.some((s) => s.surfaceType === 'role_phrase' && normalizeAlias(s.surface) === normalizeAlias(fromName.phrase))
+  ) {
+    surfaces.push({ surface: fromName.phrase, surfaceType: 'role_phrase', confidence: 'high' });
+  }
+  const canonicalName = fromName !== null ? '' : link.canonicalName;
+  // The canonical name is itself a way to refer to the person. People are
+  // matched by surface, so without it a later "Emma" misses the person
+  // first linked as "my daughter" (named Emma) and makes a second Emma.
+  if (
+    canonicalName.trim() !== '' &&
+    !surfaces.some((s) => s.surfaceType === 'name' && normalizeAlias(s.surface) === normalizeAlias(canonicalName))
+  ) {
+    surfaces.push({ surface: canonicalName.trim(), surfaceType: 'name', confidence: 'high' });
+  }
+  return { ...link, canonicalName, surfaces };
+}
 
 export class SQLitePeopleRepository implements PeopleRepository {
   constructor(
@@ -199,8 +271,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
     const nowSec = Math.floor(this.nowFn() / 1000);
 
     this.db.transaction(() => {
-      for (const link of result.results) {
+      for (const rawLink of result.results) {
+        // REAL_LIFE_FIXES §5.1: a relationship word is a role, not a name.
+        const link = asRoleLink(rawLink);
         const personId = this.findOrAssignPersonId(link);
+        // A bare role held by two or more people names nobody in particular:
+        // the fact links to no one and no empty person is created.
+        if (personId === null) continue;
         touchedPersonIds.add(personId);
         const isNew = !this.personExists(personId);
         const personStatus = link.surfaces.some((s) => s.confidence === 'high')
@@ -226,7 +303,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
         } else {
           // Coalesce non-empty fields onto the existing row; promote
           // status to confirmed when this extraction had a high
-          // surface (mirrors the Go CASE logic).
+          // surface (mirrors the Go CASE logic). REAL_LIFE_FIXES §5.1:
+          // never replace a fuller name with a shorter one.
+          const existingName = this.canonicalNameOf(personId);
+          const nameForUpdate =
+            existingName !== '' && compareNames(existingName, link.canonicalName) === 'existing_fuller'
+              ? ''
+              : link.canonicalName;
           this.db.execute(
             `UPDATE people SET
                canonical_name = CASE WHEN ? = '' THEN canonical_name ELSE ? END,
@@ -235,8 +318,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
                updated_at = ?
              WHERE person_id = ? AND ${scopedWhere()}`,
             [
-              link.canonicalName,
-              link.canonicalName,
+              nameForUpdate,
+              nameForUpdate,
               link.relationshipHint,
               link.relationshipHint,
               personStatus,
@@ -267,7 +350,10 @@ export class SQLitePeopleRepository implements PeopleRepository {
                LIMIT 1`,
               [norm, personId, ...scopedParams()],
             );
-            if (conflict.length > 0) {
+            // Several people may share a role ("my brother Tom", "my
+            // brother Sam") when each has a real, different name. A
+            // nameless second claim is still a conflict.
+            if (conflict.length > 0 && !this.namedSiblingRole(norm, personId, link.canonicalName)) {
               response.conflicts.push(entry.surface);
               continue;
             }
@@ -653,7 +739,28 @@ export class SQLitePeopleRepository implements PeopleRepository {
   // private helpers
   // -------------------------------------------------------------------
 
-  private findOrAssignPersonId(link: ExtractionResult['results'][number]): string {
+  /**
+   * True when `canonicalName` is a real name and every other confirmed
+   * holder of the role phrase `norm` has a different real name: siblings
+   * sharing "my brother", not two claims on one unnamed person.
+   */
+  private namedSiblingRole(norm: string, personId: string, canonicalName: string): boolean {
+    if (canonicalName.trim() === '') return false;
+    const holders = this.db.query(
+      `SELECT DISTINCT p.canonical_name AS name FROM person_surfaces ps
+       JOIN people p ON ps.person_id = p.person_id
+       WHERE ps.normalized_surface = ? AND ps.surface_type = 'role_phrase'
+         AND ps.status = 'confirmed' AND ps.person_id != ?
+         AND ${scopedWhere('ps')} AND ${scopedWhere('p')}`,
+      [norm, personId, ...scopedParams(), ...scopedParams()],
+    );
+    return holders.every((h) => {
+      const n = typeof h.name === 'string' ? h.name.trim() : '';
+      return n !== '' && compareNames(n, canonicalName) === 'different';
+    });
+  }
+
+  private findOrAssignPersonId(link: ExtractionResult['results'][number]): string | null {
     // Both lookups below resolve a surface string to a person ONLY when
     // it points at exactly one. `LIMIT 2` + a length check is the
     // ambiguity guard: if a confirmed surface ("Don", "my brother") maps
@@ -677,7 +784,31 @@ export class SQLitePeopleRepository implements PeopleRepository {
         [norm, ...scopedParams()],
       );
       if (rows.length === 1 && typeof rows[0].person_id === 'string') {
-        return rows[0].person_id;
+        const candidate = rows[0].person_id;
+        // REAL_LIFE_FIXES §5.1: reuse never overwrites a name. A candidate
+        // with a different real name is someone else ("my brother Sam"
+        // after "my brother Tom").
+        if (link.canonicalName !== '') {
+          const existing = this.canonicalNameOf(candidate);
+          if (existing !== '' && compareNames(existing, link.canonicalName) === 'different') {
+            continue;
+          }
+        }
+        return candidate;
+      }
+      // A bare role with several holders: attach to nobody.
+      if (rows.length >= 2 && link.canonicalName === '') return null;
+      // No one holds "my daughter" as a surface yet, but exactly one person
+      // was introduced as the owner's daughter ("my daughter's name is
+      // Emma" → Emma, relationship "daughter"): that is who is meant.
+      if (rows.length === 0) {
+        const byHint = this.ownerRelationHolder(entry.surface);
+        if (byHint !== null) {
+          const existing = this.canonicalNameOf(byHint);
+          if (link.canonicalName === '' || existing === '' || compareNames(existing, link.canonicalName) !== 'different') {
+            return byHint;
+          }
+        }
       }
     }
 
@@ -702,6 +833,117 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
     // (3) New person.
     return newPersonId();
+  }
+
+  setContactAliasSurface(personId: string, alias: string, present: boolean): void {
+    const trimmed = alias.trim();
+    if (personId === '' || trimmed === '') return;
+    const norm = normalizeAlias(trimmed);
+    const nowSec = Math.floor(this.nowFn() / 1000);
+    if (present) {
+      this.upsertSurface({
+        personId,
+        surface: trimmed,
+        normalizedSurface: norm,
+        surfaceType: 'alias',
+        status: SURFACE_STATUS_CONFIRMED,
+        confidence: 'high',
+        sourceItemId: 'contact-alias',
+        sourceExcerpt: '',
+        extractorVersion: 'contact-directory',
+        nowSec,
+      });
+    } else {
+      this.db.execute(
+        `UPDATE person_surfaces SET status = ?, updated_at = ?
+         WHERE person_id = ? AND normalized_surface = ? AND surface_type = 'alias' AND ${scopedWhere()}`,
+        [SURFACE_STATUS_REJECTED, nowSec, personId, norm, ...scopedParams()],
+      );
+    }
+  }
+
+  private canonicalNameOf(personId: string): string {
+    const rows = this.db.query(
+      `SELECT canonical_name FROM people WHERE person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [personId, ...scopedParams()],
+    );
+    const v = rows[0]?.canonical_name;
+    return typeof v === 'string' ? v : '';
+  }
+
+  /**
+   * One-time repair (REAL_LIFE_FIXES §5.1): people stored under a
+   * relationship word ("Mom") become role-only people, with the word kept
+   * as their role surface. Idempotent; returns how many were repaired.
+   */
+  repairRelationshipNames(): number {
+    let repaired = 0;
+    const rows = this.db.query(
+      `SELECT person_id, canonical_name FROM people WHERE canonical_name != '' AND ${scopedWhere()}`,
+      [...scopedParams()],
+    );
+    const nowSec = Math.floor(this.nowFn() / 1000);
+    this.db.transaction(() => {
+      for (const row of rows) {
+        const name = typeof row.canonical_name === 'string' ? row.canonical_name : '';
+        const rp = parseRelationshipPhrase(name);
+        if (typeof row.person_id !== 'string') continue;
+        if (rp === null) {
+          // A named person stored without its name as a surface (see
+          // asRoleLink): add it, so later mentions of the name find them.
+          const has = this.db.query(
+            `SELECT 1 AS one FROM person_surfaces
+              WHERE person_id = ? AND surface_type = 'name' AND normalized_surface = ? AND ${scopedWhere()} LIMIT 1`,
+            [row.person_id, normalizeAlias(name), ...scopedParams()],
+          );
+          if (has.length === 0 && normalizeAlias(name) !== '') {
+            this.db.execute(
+              `INSERT INTO person_surfaces
+                 (person_id, surface, normalized_surface, surface_type,
+                  status, confidence, source_item_id, source_excerpt,
+                  extractor_version, created_from, created_at, updated_at, data_scope)
+               VALUES (?, ?, ?, 'name', 'confirmed', 'high', '', '', 'repair', 'llm', ?, ?, ?)`,
+              [row.person_id, name, normalizeAlias(name), nowSec, nowSec, scopedInsertFields().data_scope],
+            );
+            repaired++;
+          }
+          continue;
+        }
+        this.db.execute(
+          `UPDATE people SET canonical_name = '', updated_at = ? WHERE person_id = ? AND ${scopedWhere()}`,
+          [nowSec, row.person_id, ...scopedParams()],
+        );
+        this.db.execute(
+          `UPDATE person_surfaces SET surface_type = 'role_phrase', surface = ?, normalized_surface = ?
+           WHERE person_id = ? AND surface_type = 'name' AND normalized_surface = ? AND ${scopedWhere()}`,
+          [rp.phrase, normalizeAlias(rp.phrase), row.person_id, normalizeAlias(name), ...scopedParams()],
+        );
+        repaired++;
+      }
+    });
+    return repaired;
+  }
+
+  /**
+   * The one confirmed person whose relationship to the owner is the role in
+   * `surface` ("my daughter" → relationship "daughter"), or null when none
+   * or several. A person known as someone else's relation ("Sancho's
+   * mother") never counts as the owner's.
+   */
+  private ownerRelationHolder(surface: string): string | null {
+    const rp = parseRelationshipPhrase(surface);
+    if (rp === null || rp.owner !== 'self') return null;
+    const rows = this.db.query(
+      `SELECT p.person_id FROM people p
+        WHERE lower(trim(p.relationship_hint)) = ? AND p.status = 'confirmed' AND ${scopedWhere('p')}
+          AND NOT EXISTS (
+            SELECT 1 FROM person_surfaces ps
+             WHERE ps.person_id = p.person_id AND ps.surface_type = 'role_phrase'
+               AND ps.normalized_surface LIKE '%''s %' AND ${scopedWhere('ps')})
+        LIMIT 2`,
+      [rp.role.toLowerCase(), ...scopedParams(), ...scopedParams()],
+    );
+    return rows.length === 1 && typeof rows[0].person_id === 'string' ? rows[0].person_id : null;
   }
 
   private personExists(personId: string): boolean {

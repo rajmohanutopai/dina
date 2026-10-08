@@ -232,7 +232,7 @@ describe('LLMRouter', () => {
         content: 'Sure. [PERSON_1] turns 7.',
         toolCalls: [{ id: 'c', name: 'vault_search', arguments: { query: 'PERSON_1 birthday' } }],
       });
-      const names = new NameLexicon({ fetch: async () => [{ group: 1, names: ['Emma'] }] });
+      const names = new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Emma'] }] }) });
       const response = await cloudRouter(stub.provider, names).chat({
         taskType: 'reason',
         systemPrompt: 'You help the owner. Emma is their daughter.',
@@ -267,7 +267,7 @@ describe('LLMRouter', () => {
 
     it('reads the installed lexicon when given none', async () => {
       const stub = makeStubProvider();
-      installNameLexicon(new NameLexicon({ fetch: async () => [{ group: 1, names: ['Sancho'] }] }));
+      installNameLexicon(new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Sancho'] }] }) }));
       try {
         await cloudRouter(stub.provider).chat({
           taskType: 'reason',

@@ -42,7 +42,6 @@ import {
   installNameLexicon,
   NameLexicon,
   resetAskCommandHandler,
-  setAccessiblePersonas,
   setAskCommandHandler,
   setOwnerTurnRecorder,
   setContactReadBackend,
@@ -52,13 +51,13 @@ import {
   vaultReadBackendFromCore,
 } from '@dina/brain';
 import { registerEngagementProvider, collectNotificationBriefingItems } from '@dina/brain/briefing';
+import { hydrateThread } from '@dina/brain/chat';
 import { routedProvider } from '@dina/brain/llm';
 import { installNodeTraceScopeStorage } from '@dina/brain/node-trace-storage';
 import { hydrateNotifications, mergeNotifications } from '@dina/brain/notifications';
 import {
   createCoreClientReasoningAuthority,
-  createPersona,
-  getPersona,
+  setChatMessageRepository,
   ReasoningBackendSupervisor,
   ReasoningBackendWorker,
   setNotificationLogRepository,
@@ -74,6 +73,7 @@ import {
 } from '@dina/home-node/chat-runtime';
 
 import { CallerDirectory, registerCallerAuth } from './caller_auth';
+import { CoreChatMessageRepository } from './chat_store';
 import { loadConfig, type BrainServerConfig } from './config';
 import { buildCoreClient, type CoreClientStatus } from './core_client';
 import { registerHostAllowlistGuard } from './host_guard';
@@ -81,6 +81,7 @@ import { postInboundD2DToMainChat } from './inbound_d2d_chat';
 import { buildBrainServerLLMRuntime } from './llm_provider';
 import { createLogger, type Logger } from './logger';
 import { CoreClientNotificationLogRepository } from './notifications/core_client_repository';
+import { createPersonaDirectory, type PersonaDirectory } from './persona_directory';
 import { registerAskRoutes } from './routes/ask';
 import { registerCapabilityRoutes } from './routes/capability';
 import { registerChatRoutes } from './routes/chat';
@@ -98,6 +99,7 @@ import {
   registerOriginGuard,
   registerWebOriginCors,
 } from './web_origin';
+
 
 /**
  * Per-persona hints used by the agentic /remember loop's system prompt.
@@ -123,7 +125,7 @@ function isLoopbackHost(host: string): boolean {
 }
 
 import type { AskCoordinator } from '@dina/brain';
-import type { CoreClient, PersonaTier } from '@dina/core';
+import type { CoreClient } from '@dina/core';
 import type { HomeNodeRuntime } from '@dina/home-node';
 
 export interface BrainServerClients {
@@ -248,9 +250,9 @@ export async function bootServer(
     coreForNames === undefined
       ? null
       : new NameLexicon({
-          fetch: () => coreForNames.piiNames(),
+          fetch: (known) => coreForNames.piiNames(known),
           onDegraded: (reason) =>
-            logger.warn({ reason }, 'pii names unavailable; scrubbing with patterns only'),
+            logger.warn({ reason }, 'pii names unavailable; refusing model calls until Core answers'),
         }),
   );
   // Every consumer outside the ask pipeline gets the model behind the router,
@@ -274,7 +276,8 @@ export async function bootServer(
   // (which feeds them into the pre-flight retrieval planner) can
   // share one source of truth. Populated inside the
   // `clients.core !== undefined` block below.
-  let personaDescriptors: { name: string; description: string }[] = [];
+  let personaDescriptors: () => { name: string; description: string }[] = () => [];
+  let personaDirectory: PersonaDirectory | null = null;
   const dependencyStatus: BrainServerDependencyStatus = {
     appView: 'configured',
     core: coreResult.status,
@@ -291,6 +294,17 @@ export async function bootServer(
     // route through `core.vaultQuery` because vault SQLite lives in
     // core-server's process.
     setVaultReadBackend(vaultReadBackendFromCore(core));
+
+    // Chat threads live in Core (REAL_LIFE_FIXES §1.4), as on the phone, so
+    // a Brain restart keeps conversation history and a cleared thread stays
+    // cleared. `main` is loaded at boot; other threads load on first use.
+    setChatMessageRepository(new CoreChatMessageRepository(core));
+    void hydrateThread('main').catch((err: unknown) => {
+      logger.warn(
+        { error: err instanceof Error ? err.name : 'unknown' },
+        'brain-server main chat thread not loaded at boot; it will load on first use',
+      );
+    });
 
     // People-graph read backend — parallel to the vault backend. The
     // reasoning agent's `find_person` tool uses these handles to
@@ -339,52 +353,20 @@ export async function bootServer(
     // Failure to fetch is non-fatal — the boot continues with an empty
     // persona list and the operator sees the warning. Re-mirroring on
     // a schedule (or on persona-create push) is a future polish.
-    let remotePersonas: { name: string; tier: string; isOpen: boolean }[] = [];
-    try {
-      remotePersonas = await core.personasList();
-      const names = remotePersonas.map((p) => p.name);
-      setAccessiblePersonas(names);
-      // SECURITY: mirror persona TIERS into Brain's local persona
-      // registry too — not just the accessible-names set. The agent
-      // vault-read gate (`persona_guard` / `vault_tool`) reads tiers via
-      // `getPersona` / `listPersonas`; in this split-process Brain that
-      // registry is otherwise empty, so the gate would fail OPEN — every
-      // sensitive/locked persona treated as not requiring approval. An
-      // unrecognised tier is mirrored as `locked` (fail-closed).
-      const VALID_TIERS = new Set<PersonaTier>(['default', 'standard', 'sensitive', 'locked']);
-      for (const p of remotePersonas) {
-        if (getPersona(p.name) !== null) continue; // already mirrored this process
-        const tier: PersonaTier = VALID_TIERS.has(p.tier as PersonaTier)
-          ? (p.tier as PersonaTier)
-          : 'locked';
-        try {
-          createPersona(p.name, tier);
-        } catch {
-          // Invalid name / duplicate race — skip. `setAccessiblePersonas`
-          // above still constrains what `vault_search` can reach.
-        }
-      }
-      logger.info(
-        { count: names.length, personas: names },
-        'brain-server accessible personas + tiers mirrored from Core',
-      );
-    } catch (err) {
-      logger.warn(
-        { error: err instanceof Error ? err.message : String(err) },
-        'brain-server persona mirror failed; vault_search will see no personas',
-      );
-      setAccessiblePersonas([]);
-    }
-
-    // Build the per-item remember runtime from the configured LLM. The
-    // staging drain uses the agentic loop for every drained item (persona
-    // routing, reminders, people links, preferences) — one LLM round-trip
-    // per item. Dina is LLM-driven: when no LLM is configured the drain
-    // stays unwired (below); there is NO non-LLM fallback.
-    personaDescriptors = remotePersonas.map((p) => ({
-      name: p.name,
-      description: PERSONA_DESCRIPTIONS[p.name] ?? '',
-    }));
+    // Live persona directory (REAL_LIFE_FIXES §2.3): retries the first read
+    // until Core answers, then refreshes every 30 s. Mirrors names into the
+    // accessible list and tiers into Brain's registry; until the first read
+    // succeeds both stay empty and the agent gate treats every persona as
+    // gated (fail closed). Boot does not wait for it; /readyz reports
+    // not-ready until the first read lands (a healthy Core answers in ms).
+    personaDirectory = createPersonaDirectory({
+      core,
+      logger,
+      fallbackDescriptions: PERSONA_DESCRIPTIONS,
+    });
+    void personaDirectory.start();
+    const directory = personaDirectory;
+    personaDescriptors = () => directory.descriptors();
     const rememberRuntime =
       scrubbedLLM !== undefined
         ? buildRememberRuntime({
@@ -405,7 +387,7 @@ export async function bootServer(
       );
     } else {
       logger.info(
-        { personaCount: personaDescriptors.length },
+        { personaCount: personaDescriptors().length },
         'brain-server remember runtime configured (agentic /remember)',
       );
 
@@ -487,6 +469,7 @@ export async function bootServer(
     schedulers.stagingDrain?.stop();
     await schedulers.reasoningBackend?.stop();
     chatRememberRuntime?.dispose();
+    personaDirectory?.dispose();
   });
   // Freshness stamp — the epoch ms this Brain process booted. Relay E2E
   // uses it to detect a dina-node running STALE code (started before the
@@ -555,7 +538,7 @@ export async function bootServer(
         core: clients.core,
         appView: clients.appView,
         logger: (entry) => logger.info(entry, 'brain-server ask'),
-        installedPersonas: () => lookupPersonas,
+        installedPersonas: () => lookupPersonas(),
         retrievalFetchers,
         // Owner shortcut for the vault persona guard — the SPA user is the
         // owner, so their /ask must never hit `approval_required` on vault_search.
@@ -582,6 +565,20 @@ export async function bootServer(
       });
       compositions.ask = ask;
       askCoordinator = ask.coordinator;
+      // Approvals decided on the card in Core (the app's Approvals list)
+      // reach a waiting ask only through this sweep — the phone runs the
+      // same one. Without it an approved agent ask never resumes on a
+      // server (REAL_LIFE_FIXES §3.3, "resume on both hosts").
+      const askReconcile = setInterval(() => {
+        void ask.coordinator.gateway.reconcile().catch((err: unknown) => {
+          logger.debug(
+            { error: err instanceof Error ? err.message : String(err) },
+            'ask approval reconcile failed (retrying next tick)',
+          );
+        });
+      }, 3_000);
+      askReconcile.unref();
+      app.addHook('onClose', async () => clearInterval(askReconcile));
       // A2A Lane 1 guard (design §6.5): scans held remote results through the
       // same router (PII-scrubbed egress) and posts digest-bound verdicts. It
       // exists only where a model is configured; without one, results stay
@@ -786,12 +783,18 @@ export async function bootServer(
       stagingDrain:
         dependencyStatus.stagingDrain === 'running' ? ('ok' as const) : ('disabled' as const),
       runtime: dependencyStatus.runtime === 'ok' ? ('ok' as const) : ('fail' as const),
+      // Core's persona list has been read at least once (§2.3). Before that,
+      // vault_search sees no vaults and the remember prompt lists none.
+      personas:
+        personaDirectory === null || personaDirectory.isSynced()
+          ? ('ok' as const)
+          : ('fail' as const),
     };
     // Ready when boot completed (`runtime === 'ok'`) AND Core is wired.
     // Without Core the server is a stub: no vault, no D2D, no ask path
     // worth exposing. AppView/askRoutes/service/staging are tracked for
     // diagnostics but only Core+runtime gate readiness.
-    const ready = checks.runtime === 'ok' && checks.core === 'ok';
+    const ready = checks.runtime === 'ok' && checks.core === 'ok' && checks.personas === 'ok';
     await reply.code(ready ? 200 : 503).send({
       status: ready ? 'ok' : 'not_ready',
       role: 'brain',

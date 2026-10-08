@@ -1,7 +1,9 @@
-import { eq } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { ServiceProfile } from '@/shared/types/lexicon-types.js'
-import { services } from '@/db/schema/index.js'
+import { serviceDeletions, services } from '@/db/schema/index.js'
+import { revIsNewer } from '@/shared/service-liveness.js'
+import { accountAdmits, noteProfileWrite } from '../service-liveness-ingest.js'
 import {
   allowedCategoriesForCapability,
   canonicalizeForIndex,
@@ -27,6 +29,25 @@ import {
 export const serviceProfileHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as ServiceProfile
+
+    // Live listings (docs/REAL_LIFE_FIXES.md §14): revision order, deletion
+    // markers and the account gate, before anything is written.
+    const observedUs = op.observedUs ?? Date.now() * 1000
+    if (!(await accountAdmits(ctx.db, op.did, observedUs))) {
+      ctx.metrics.incr('ingester.service_profile.account_refused')
+      return
+    }
+    if (op.repoRev !== undefined) {
+      const deleted = await ctx.db
+        .select({ rev: serviceDeletions.deletedRev })
+        .from(serviceDeletions)
+        .where(eq(serviceDeletions.uri, op.uri))
+        .limit(1)
+      if (deleted[0] !== undefined && !revIsNewer(op.repoRev, deleted[0].rev)) {
+        ctx.metrics.incr('ingester.service_profile.stale_after_delete')
+        return
+      }
+    }
 
     // Three-state discoverability (catalog §5.2):
     //   public     → indexed + returned in public search.
@@ -208,6 +229,7 @@ export const serviceProfileHandler: RecordHandler = {
         .where(eq(services.uri, op.uri))
         .limit(1)
       const createdAt = prior[0]?.createdAt ?? now
+      const repoRev = op.repoRev ?? null
 
       const values = {
         uri: op.uri,
@@ -244,6 +266,7 @@ export const serviceProfileHandler: RecordHandler = {
         updatedAt: record.updatedAt ? new Date(record.updatedAt) : now,
         // `indexedAt` is the AppView-side write time. Always = `now`.
         indexedAt: now,
+        repoRev,
       }
 
       await tx
@@ -270,15 +293,47 @@ export const serviceProfileHandler: RecordHandler = {
             searchContent: values.searchContent,
             updatedAt: values.updatedAt,
             indexedAt: values.indexedAt,
+            repoRev: values.repoRev,
           },
+          // An older revision never overwrites a newer row (§14.4 C).
+          ...(repoRev !== null
+            ? { setWhere: sql`${services.repoRev} IS NULL OR ${services.repoRev} < ${repoRev}` }
+            : {}),
         })
+      if (repoRev !== null) {
+        await tx
+          .delete(serviceDeletions)
+          .where(and(eq(serviceDeletions.uri, op.uri), sql`${serviceDeletions.deletedRev} < ${repoRev}`))
+      }
     })
 
+    // An operator that has never written presence (an older release) is
+    // judged on its profile writes. A reconciled read is not a write.
+    if (op.reconciled !== true) await noteProfileWrite(ctx.db, op.did, observedUs)
     ctx.metrics.incr('ingester.service_profile.created')
   },
 
   async handleDelete(ctx: HandlerContext, op: RecordOp) {
-    await ctx.db.delete(services).where(eq(services.uri, op.uri))
+    if (op.repoRev === undefined) {
+      await ctx.db.delete(services).where(eq(services.uri, op.uri))
+    } else {
+      const rev = op.repoRev
+      // A deletion marker, so a replayed older create cannot bring it back;
+      // and only a row older than the delete is removed.
+      await ctx.db.transaction(async (tx) => {
+        await tx
+          .insert(serviceDeletions)
+          .values({ uri: op.uri, did: op.did, deletedRev: rev })
+          .onConflictDoUpdate({
+            target: serviceDeletions.uri,
+            set: { deletedRev: rev, at: new Date() },
+            setWhere: sql`${serviceDeletions.deletedRev} < ${rev}`,
+          })
+        await tx
+          .delete(services)
+          .where(and(eq(services.uri, op.uri), sql`(${services.repoRev} IS NULL OR ${services.repoRev} < ${rev})`))
+      })
+    }
     ctx.metrics.incr('ingester.service_profile.deleted')
   },
 }

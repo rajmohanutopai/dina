@@ -21,6 +21,7 @@ import {
   effectiveListingStatus,
   isListingPublic,
   isListingPublishable,
+  MAX_PUBLISHED_LISTINGS,
   resolveCanonicalCapability,
   validateServiceListing,
 } from '@dina/protocol';
@@ -198,6 +199,7 @@ export async function setServiceConfigDurable(
   rkey: string = DEFAULT_LISTING_RKEY,
 ): Promise<void> {
   validateServiceConfig(config);
+  assertWithinListingLimit(config, rkey);
   const repo = getServiceConfigRepository();
   if (repo !== null) {
     await repo.put(rkey, JSON.stringify(config), Date.now());
@@ -205,6 +207,29 @@ export async function setServiceConfigDurable(
   configs.set(rkey, config);
   notifyListeners(rkey, config);
   configEventChannel().emitConfigChanged();
+}
+
+/**
+ * A node publishes at most `MAX_PUBLISHED_LISTINGS` listings, so its presence
+ * record can always name the whole set (docs/REAL_LIFE_FIXES.md §14). Thrown
+ * when a save would publish one more; a save that keeps a listing published,
+ * or unpublishes it, always passes.
+ */
+export class ListingLimitError extends Error {
+  readonly code = 'too_many_listings';
+  constructor() {
+    super(`too_many_listings: a node publishes at most ${MAX_PUBLISHED_LISTINGS} listings`);
+    this.name = 'ListingLimitError';
+  }
+}
+
+function assertWithinListingLimit(config: ServiceConfig, rkey: string): void {
+  if (!isListingPublishable(config)) return;
+  const current = configs.get(rkey);
+  if (current !== undefined && isListingPublishable(current)) return;
+  let published = 0;
+  for (const [key, cfg] of configs) if (key !== rkey && isListingPublishable(cfg)) published += 1;
+  if (published >= MAX_PUBLISHED_LISTINGS) throw new ListingLimitError();
 }
 
 export type ServiceConfigForSaveValidation =

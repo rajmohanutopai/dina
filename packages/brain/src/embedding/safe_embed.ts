@@ -51,7 +51,7 @@ export async function embedMaybeSensitive(text: string): Promise<SafeEmbedOutcom
   }
 
   if (hasCloudEmbeddingProvider()) {
-    const ev = new EntityVault();
+    const ev = await EntityVault.create();
     const scrubbed = ev.scrub(text);
     return {
       result: await generateCloudEmbedding(scrubbed),

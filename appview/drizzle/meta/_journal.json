@@ -204,6 +204,13 @@
       "when": 1790001006000,
       "tag": "0028_ucp_merchant_index",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1790001007000,
+      "tag": "0029_service_liveness",
+      "breakpoints": true
     }
   ]
 }

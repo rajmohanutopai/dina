@@ -297,10 +297,12 @@ describe('schedule_reminder tool', () => {
     // The bug: the old description said recurring reminders were "out of
     // scope", so the agentic loop linked the person and skipped the
     // reminder for "Emma's birthday is Nov 7". Guard against that wording
-    // and require birthdays/anniversaries + next-occurrence to be named.
+    // and require birthdays/anniversaries to be named, now through the event
+    // form that derives the day-before + day-of reminders (REAL_LIFE_FIXES §2.6).
     expect(desc).not.toMatch(/out of scope/);
     expect(desc).toMatch(/birthday|anniversar/);
-    expect(desc).toMatch(/next occurrence/);
+    expect(desc).toMatch(/`event`/);
+    expect(desc).toMatch(/day before/);
   });
 
   it('declares a tool schema the LLM can wire (name, required fields)', () => {
@@ -313,9 +315,10 @@ describe('schedule_reminder tool', () => {
       properties: Record<string, unknown>;
     };
     expect(schema.type).toBe('object');
-    expect(schema.required).toEqual(['message', 'due_at']);
+    // message + due_at OR event; execute checks which one came.
+    expect(schema.required).toEqual([]);
     expect(Object.keys(schema.properties)).toEqual(
-      expect.arrayContaining(['message', 'due_at', 'persona']),
+      expect.arrayContaining(['message', 'due_at', 'event', 'persona']),
     );
     expect(schema.properties.due_at).toEqual(
       expect.objectContaining({

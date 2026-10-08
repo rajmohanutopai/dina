@@ -26,6 +26,7 @@
 
 import { validateCardSpec, type CardSpec } from '@dina/protocol';
 
+import { THREAD_ORIGIN_PREFIX } from '../reasoning/service_tools';
 import { buildResultCardSpec } from '../service/result_card_mapper';
 
 import {
@@ -34,7 +35,9 @@ import {
   findMessageBySource,
   findMessageByTaskId,
   hydrateThread,
+  listThreads,
   readLifecycle,
+  threadLength,
   updateMessageLifecycle,
   type ServiceQueryLifecycle,
   type ServiceQueryStatus,
@@ -150,7 +153,26 @@ export function createServiceQueryDeliverer(
 
     let target = threadId;
     let diverted = false;
-    if (threadResolver !== undefined) {
+    // REAL_LIFE_FIXES §1.5: a query asked from a chat thread is stamped
+    // `thread:<id>` by this node; its reply goes back to that thread when it
+    // still exists, else to the default. Shared by both hosts.
+    if (originChannel.startsWith(THREAD_ORIGIN_PREFIX)) {
+      const asked = originChannel.slice(THREAD_ORIGIN_PREFIX.length);
+      if (asked !== '' && asked !== threadId) {
+        // After a restart the thread may be stored but not yet loaded.
+        if (!listThreads().includes(asked)) {
+          try {
+            await hydrateThread(asked);
+          } catch {
+            /* unreadable → treated as gone; the reply lands in the default thread */
+          }
+        }
+        if (threadLength(asked) > 0) {
+          target = asked;
+          diverted = true;
+        }
+      }
+    } else if (threadResolver !== undefined) {
       const resolved = threadResolver({
         originChannel,
         eventKind: event.event_kind,
@@ -212,6 +234,12 @@ export function createServiceQueryDeliverer(
               : null))
           : null;
 
+      // At-least-once delivery: a terminal event for a card that is already
+      // final changes nothing (never shows a reply twice or flips its state).
+      if (lc !== null && lc.kind === 'service_query' && lc.status !== 'pending') {
+        return;
+      }
+
       if (lc !== null && lc.kind === 'service_query') {
         const patch: Partial<{
           status: ServiceQueryStatus;
@@ -220,7 +248,7 @@ export function createServiceQueryDeliverer(
           error: string;
           serviceName: string;
           resolvedAt: number;
-        }> = { status, serviceName, resolvedAt: Date.now() };
+        }> = { status, serviceName, ...(status !== 'pending' ? { resolvedAt: Date.now() } : {}) };
         if (resultBody !== null) patch.result = resultBody;
         if (cardSpec !== null) patch.cardSpec = cardSpec;
         if (typeof details.error === 'string' && details.error !== '') {
@@ -274,6 +302,9 @@ export function mapResponseStatusToCardStatus(status: string | undefined): Servi
       return 'resolved';
     case 'expired':
       return 'expired';
+    case 'retargeted':
+      // Still waiting — now on the next provider (REAL_LIFE_FIXES §9).
+      return 'pending';
     case 'unavailable':
     case 'error':
     default:

@@ -30,6 +30,11 @@ export interface AgentPersonaGrant {
   revokedAt: number | null;
   createdAt: number;
   /**
+   * REAL_LIFE_FIXES §3.3: set for an "Approve Once" grant — it serves only the
+   * agent ask with this id. NULL for a session grant ("Approve").
+   */
+  askId: string | null;
+  /**
    * PLG-28 #1: false while the grant is RESERVED (durability proven, but not yet
    * gate-visible). `findActiveGrant` ignores reserved rows, so a grant inserted
    * before the approval CAS can't be used until `activate` flips it — closing
@@ -51,6 +56,8 @@ export interface AgentPersonaGrantInsert {
   /** PLG-28 #1: insert RESERVED (`active: false`) for the reserve-then-activate
    *  approval flow. Omitted / true → active on insert (all other callers). */
   active?: boolean;
+  /** "Approve Once": bind the grant to this one ask. Omitted → session grant. */
+  askId?: string | null;
 }
 
 export interface AgentGrantRepository {
@@ -67,6 +74,10 @@ export interface AgentGrantRepository {
    * session matches only that session's grants). A fresh session therefore
    * finds no grant and re-prompts — approvals do NOT carry across sessions.
    * Deterministic; no LLM involvement.
+   *
+   * ASK-SCOPED (REAL_LIFE_FIXES §3.3): a grant with an `askId` ("Approve
+   * Once") matches only when the same `askId` is passed; a session grant
+   * (`askId` null) matches any ask in its session.
    */
   findActiveGrant(
     agentDID: string,
@@ -74,6 +85,7 @@ export interface AgentGrantRepository {
     mode: GrantMode,
     sessionId: string | null,
     now: number,
+    askId?: string | null,
   ): AgentPersonaGrant | null;
   /**
    * PLG-28 #1: flip a RESERVED grant to active (gate-visible). Called AFTER the
@@ -112,7 +124,7 @@ export function getAgentGrantRepository(): AgentGrantRepository | null {
 }
 
 const COLS =
-  'id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active';
+  'id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active, ask_id';
 
 export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   constructor(private readonly db: DatabaseAdapter) {}
@@ -120,8 +132,8 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   insert(g: AgentPersonaGrantInsert): AgentPersonaGrant {
     this.db.execute(
       `INSERT INTO agent_persona_grants
-         (id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`,
+         (id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active, ask_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
       [
         g.id,
         g.sessionId ?? null,
@@ -133,6 +145,7 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
         g.expiresAt,
         g.createdAt,
         g.active === false ? 0 : 1, // PLG-28 #1: reserve = 0, else active
+        g.askId ?? null,
       ],
     );
     const row = this.get(g.id);
@@ -161,16 +174,19 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     mode: GrantMode,
     sessionId: string | null,
     now: number,
+    askId?: string | null,
   ): AgentPersonaGrant | null {
     // `session_id IS ?` is null-safe: a null bind matches session_id IS NULL,
     // a value matches equality — so the session dimension is part of the key.
+    // An ask-bound grant matches only its own ask (a NULL bind matches none).
     const rows = this.db.query(
       `SELECT ${COLS} FROM agent_persona_grants
         WHERE agent_did = ? AND persona = ? AND session_id IS ? AND revoked_at IS NULL
           AND active = 1 AND expires_at > ? AND (mode = ? OR mode = 'write')
+          AND (ask_id IS NULL OR ask_id = ?)
         ORDER BY expires_at DESC
         LIMIT 1`,
-      [agentDID, persona, sessionId, now, mode],
+      [agentDID, persona, sessionId, now, mode, askId ?? null],
     );
     return rows.length > 0 ? rowToGrant(rows[0]) : null;
   }
@@ -250,6 +266,7 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
       revokedAt: null,
       createdAt: g.createdAt,
       active: g.active !== false, // PLG-28 #1: reserve = false, else active
+      askId: g.askId ?? null,
     };
     this.rows.set(row.id, row);
     return { ...row };
@@ -273,6 +290,7 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
     mode: GrantMode,
     sessionId: string | null,
     now: number,
+    askId?: string | null,
   ): AgentPersonaGrant | null {
     let best: AgentPersonaGrant | null = null;
     for (const r of this.rows.values()) {
@@ -280,6 +298,7 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
         r.agentDID === agentDID &&
         r.persona === persona &&
         r.sessionId === sessionId &&
+        (r.askId === null || (askId !== undefined && askId !== null && r.askId === askId)) &&
         r.revokedAt === null &&
         r.active &&
         r.expiresAt > now &&
@@ -353,5 +372,6 @@ function rowToGrant(row: DBRow): AgentPersonaGrant {
     // PLG-28 #1: default active for legacy rows written before the column
     // existed (fail-OPEN on hydration is fine — a legacy grant WAS active).
     active: Number(row.active ?? 1) === 1,
+    askId: row.ask_id === null || row.ask_id === undefined ? null : String(row.ask_id),
   };
 }

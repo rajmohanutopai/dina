@@ -35,6 +35,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
+import { randomBytes } from '@noble/hashes/utils.js';
 
 import {
   AppViewClient,
@@ -43,6 +44,7 @@ import {
   createReasoningOutputGuard,
   PDSPublisherError,
   publishAttestationToPDS,
+  type PDSPublisher,
 } from '@dina/brain';
 import {
   authenticateOwnerDeviceCore,
@@ -145,10 +147,20 @@ import {
   bootstrapMsgBox,
   disconnectMsgBox,
   isMsgBoxAuthenticated,
+  onMsgBoxAuthenticated,
   type MsgBoxBootConfig,
   type WSFactory,
 } from '@dina/core/runtime';
-import { A2ADispatchRunner, currentA2ACardKey, ensureA2ACardKey, makeCatalogRepoAccess, makeResolveSender } from '@dina/home-node';
+import {
+  A2ADispatchRunner,
+  currentA2ACardKey,
+  ensureA2ACardKey,
+  kvPresenceStateStore,
+  makeCatalogRepoAccess,
+  makeResolveSender,
+  ServicePresenceWriter,
+} from '@dina/home-node';
+import { kvGet, kvSet } from '@dina/core/kv';
 import { createA2AHostTransport, createNodePolicySocket, makeNodeWebSocketFactory } from '@dina/net-node';
 
 import { createAgentFacades } from './agent/facades';
@@ -650,6 +662,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   // Wired AFTER db_open since the config listener reads from the SQLite
   // KV repo, which db_open initializes.
   let wiredPublisher: WiredServicePublisher | undefined;
+  let presenceWriter: ServicePresenceWriter | undefined;
+  let presenceTimer: ReturnType<typeof setInterval> | undefined;
+  let stopPresenceAuthHook: (() => void) | undefined;
   // Workflow + service-query plane (repo + WorkflowService + sweepers +
   // runtime). Wired AFTER core_router because the runtime's
   // InProcessTransport dispatches through the router. Captured during
@@ -837,7 +852,41 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // nothing publishes — the listener fires the first publish
       // when the operator saves a config.
       if (pdsIdentity !== undefined) {
-        wiredPublisher = wireServiceProfilePublisher({ pdsIdentity, logger });
+        // REAL_LIFE_FIXES §14: the node's daily presence record, so AppView
+        // can tell this live provider from listings left behind. Written only
+        // while MsgBox is up; renewed when over 22 h old; nudged whenever a
+        // listing really changes and whenever MsgBox (re)authenticates.
+        const pds = (): PDSPublisher => wiredPublisher!.pdsPublisher;
+        presenceWriter = new ServicePresenceWriter({
+          repo: {
+            listRecords: async (collection) =>
+              (await pds().listRecords(collection)).map((r) => ({ rkey: r.rkey, cid: r.cid })),
+            getRecord: async (collection, rkey) => pds().getRecord(collection, rkey),
+            putRecord: async (collection, rkey, record, opts) =>
+              pds().putRecord(collection, rkey, record, { swapRecord: opts.swapRecord }),
+            deleteRecord: async (collection, rkey, opts) =>
+              pds().deleteRecord(collection, rkey, { swapRecord: opts.swapRecord }),
+          },
+          store: kvPresenceStateStore({ get: (k) => kvGet(k), set: (k, v) => kvSet(k, v) }),
+          inboundUp: () => isMsgBoxAuthenticated(),
+          randomBytes: (n) => randomBytes(n),
+          onOutcome: (o) => {
+            if (o.status === 'failed') logger.warn({ error: o.error }, 'service presence write failed');
+            else if (o.status === 'written') logger.info({ listings: o.listings, complete: o.complete }, 'service presence renewed');
+          },
+        });
+        const writer = presenceWriter;
+        wiredPublisher = wireServiceProfilePublisher({
+          pdsIdentity,
+          logger,
+          onListingsChanged: () => void writer.nudge(),
+        });
+        stopPresenceAuthHook = onMsgBoxAuthenticated(() => void writer.onInboundUp());
+        // Hourly check, up to 1 h of random delay on top of the 22 h age.
+        presenceTimer = setInterval(() => {
+          setTimeout(() => void writer.renewIfDue(), Math.floor(Math.random() * 60 * 60 * 1000)).unref?.();
+        }, 60 * 60 * 1000);
+        presenceTimer.unref?.();
         // Lane 3 (A2A design §8.2): the card publisher, a trusted host process
         // beside the profile publisher, on the same repo session. It writes
         // nothing until the owner switches the listing on and activates it.
@@ -1368,6 +1417,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
       }
+      if (presenceTimer !== undefined) clearInterval(presenceTimer);
+      stopPresenceAuthHook?.();
       await phoneApprovalManager?.stop();
       await disconnectMsgBox();
       // Item 2c — drop our discovery lock on clean shutdown (registered here,
@@ -1542,6 +1593,19 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         ...(wiredWorkflow !== undefined
           ? { onBypassedD2D: wiredWorkflow.onBypassedD2D.bind(wiredWorkflow) }
           : {}),
+        // REAL_LIFE_FIXES §6.2: a stranger's message (a safety alert
+        // included) waits in quarantine; tell Brain, which owns the chat, to
+        // show the review card, as the phone does in-process. The body stays
+        // in Core until the owner decides.
+        onQuarantinedD2D: ({ senderDID, messageType, quarantineId }) => {
+          void brainFetch(`${config.services?.brainUrl ?? LOCAL_BRAIN_URL}/api/v1/chat/quarantine-request`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ quarantine_id: quarantineId, sender_did: senderDID, message_type: messageType }),
+          }).catch(() => {
+            // Best effort: the item stays in quarantine and in the review list.
+          });
+        },
         readyTimeoutMs: options.msgboxReadyTimeoutMs ?? 10_000,
       });
       msgboxState = {

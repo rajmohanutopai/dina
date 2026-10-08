@@ -84,11 +84,21 @@ export type ApprovalSourceStatus = 'pending' | 'approved' | 'denied' | 'expired'
  * already-terminal). The gateway catches and translates throws into
  * structured `source_rejected` outcomes.
  */
+/** The owner's approval choice, passed through to the source. */
+export interface ApproveOptions {
+  scope?: 'single' | 'session';
+}
+
 export interface ApprovalSource {
   /** Read current status for an id. Returns `'unknown'` when not present. */
   getStatus(approvalId: string): Promise<ApprovalSourceStatus> | ApprovalSourceStatus;
-  /** Drive the source from `pending → approved`. Throws on transition failure. */
-  approve(approvalId: string): Promise<void> | void;
+  /**
+   * Drive the source from `pending → approved`. Throws on transition failure.
+   * `scope` is the owner's choice (REAL_LIFE_FIXES §3.3): 'single' is
+   * "Approve Once" (this ask only), 'session' is "Approve" (this agent
+   * session). Omitted → the source's default.
+   */
+  approve(approvalId: string, opts?: ApproveOptions): Promise<void> | void;
   /** Drive the source from `pending → denied`. Throws on transition failure. */
   deny(approvalId: string): Promise<void> | void;
 }
@@ -208,7 +218,7 @@ export class AskApprovalGateway {
    * in_flight with no path back to pending_approval — corrupt state
    * the reconcile loop can't repair.
    */
-  async approve(approvalId: string): Promise<ApprovalActionOutcome> {
+  async approve(approvalId: string, opts?: ApproveOptions): Promise<ApprovalActionOutcome> {
     if (!approvalId || approvalId.length === 0) {
       return { ok: false, failure: { reason: 'unknown_approval', detail: 'empty approvalId' } };
     }
@@ -217,7 +227,7 @@ export class AskApprovalGateway {
       return { ok: false, failure: { reason: 'unknown_approval' } };
     }
     try {
-      await this.approvalSource.approve(approvalId);
+      await this.approvalSource.approve(approvalId, opts);
     } catch (err) {
       return { ok: false, failure: { reason: 'source_rejected', detail: stringifyError(err) } };
     }

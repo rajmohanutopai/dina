@@ -49,6 +49,41 @@ describe('route_to_persona', () => {
   });
 });
 
+describe('route_to_persona against the live persona list (REAL_LIFE_FIXES §2.1)', () => {
+  it('refuses a name that is not installed and lists the installed ones', async () => {
+    const collect = emptyRememberSideEffects();
+    const tool = createRouteToPersonaTool({
+      collect,
+      installedPersonas: () => ['general', 'work', 'garden'],
+    });
+    const out = (await tool.execute({ persona: 'professional' })) as { error?: string };
+    expect(out.error).toContain("'professional'");
+    expect(out.error).toContain('general, work, garden');
+    expect(collect.routes).toEqual([]);
+  });
+
+  it('checks secondary targets too', async () => {
+    const collect = emptyRememberSideEffects();
+    const tool = createRouteToPersonaTool({ collect, installedPersonas: () => ['general', 'health'] });
+    const out = (await tool.execute({ persona: 'health', secondary: ['money'] })) as { error?: string };
+    expect(out.error).toContain("'money'");
+    expect(collect.routes).toEqual([]);
+  });
+
+  it('accepts installed names in any case', async () => {
+    const collect = emptyRememberSideEffects();
+    const tool = createRouteToPersonaTool({ collect, installedPersonas: () => ['general', 'garden'] });
+    expect(await tool.execute({ persona: 'Garden' })).toMatchObject({ ok: true });
+    expect(collect.routes).toEqual([{ primary: 'garden', secondary: [] }]);
+  });
+
+  it('skips the check while the list is empty (Core parks unknown names)', async () => {
+    const collect = emptyRememberSideEffects();
+    const tool = createRouteToPersonaTool({ collect, installedPersonas: () => [] });
+    expect(await tool.execute({ persona: 'anything' })).toMatchObject({ ok: true });
+  });
+});
+
 describe('link_to_person', () => {
   it('records person mention with all fields', async () => {
     const collect = fresh();

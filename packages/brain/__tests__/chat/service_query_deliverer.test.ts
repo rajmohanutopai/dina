@@ -221,3 +221,60 @@ describe('createServiceQueryDeliverer — group-plan spokes (GROUP_COORDINATION 
     expect(getThread(PEER)).toHaveLength(0);
   });
 });
+
+describe('createServiceQueryDeliverer — reply goes to the asking thread (REAL_LIFE_FIXES §1.5)', () => {
+  const pending = (thread: string): void => {
+    addLifecycleMessage(thread, 'Asking…', {
+      kind: 'service_query',
+      status: 'pending',
+      taskId: TASK_ID,
+      queryId: 'q1',
+      capability: 'availability_coordination',
+      serviceName: 'Sancho scheduling',
+    });
+  };
+
+  it('updates the pending card in the thread that asked, not main', async () => {
+    pending('trip-planning');
+    const deliver = createServiceQueryDeliverer({ threadId: 'main' });
+    await deliver({
+      text: 'Sancho can do Tue 3pm.',
+      event: makeEvent(),
+      task: makeTask('thread:trip-planning'),
+      details: SUCCESS_DETAILS,
+    });
+    const lc = readLifecycle(getThread('trip-planning')[0]);
+    expect(lc?.kind === 'service_query' && lc.status).toBe('resolved');
+    expect(getThread('main')).toHaveLength(0);
+  });
+
+  it('a deleted asking thread sends the reply to the default thread', async () => {
+    const deliver = createServiceQueryDeliverer({ threadId: 'main' });
+    await deliver({
+      text: 'done',
+      event: makeEvent(),
+      task: makeTask('thread:gone'),
+      details: SUCCESS_DETAILS,
+    });
+    expect(getThread('main')).toHaveLength(1);
+    expect(getThread('gone')).toHaveLength(0);
+  });
+
+  it('a repeated terminal event changes nothing', async () => {
+    pending('t9');
+    const deliver = createServiceQueryDeliverer({ threadId: 'main' });
+    const once = {
+      text: 'Tue 3pm.',
+      event: makeEvent(),
+      task: makeTask('thread:t9'),
+      details: SUCCESS_DETAILS,
+    };
+    await deliver(once);
+    await deliver({ ...once, text: 'something else', details: { ...SUCCESS_DETAILS, response_status: 'error' } });
+    const thread = getThread('t9');
+    expect(thread).toHaveLength(1);
+    const lc = readLifecycle(thread[0]);
+    expect(lc?.kind === 'service_query' && lc.status).toBe('resolved');
+    expect(thread[0]!.content).toBe('Tue 3pm.');
+  });
+});

@@ -243,9 +243,10 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
       // findOrAssignPersonId picks the first match (Carlos); the
       // second role_phrase ("my doctor") triggers a conflict.
       const third = repo.applyExtraction(
+        // Nameless: named people may share a role (REAL_LIFE_FIXES §5.1),
+        // but an unnamed claim on a held role is still a conflict.
         makeExtraction('i3', 'v1', [
-          link('Eve', [
-            surface('Eve', 'name', 'high'),
+          link('', [
             surface('my brother', 'role_phrase', 'high'),
             surface('my doctor', 'role_phrase', 'high'),
           ]),

@@ -31,6 +31,11 @@ interface Recorded {
   body: unknown;
 }
 
+let existingRecord: { uri: string; cid: string; value: Record<string, unknown> } | null = null;
+beforeEach(() => {
+  existingRecord = null;
+});
+
 function makeFetch(responses: (Response | Error)[]): {
   fetchFn: FetchFn;
   calls: Recorded[];
@@ -40,6 +45,14 @@ function makeFetch(responses: (Response | Error)[]): {
   const fetchFn: FetchFn = async (input, init) => {
     const url = typeof input === 'string' ? input : (input as URL | Request).toString();
     const bodyStr = typeof init?.body === 'string' ? init.body : '';
+    // The publisher reads the current record before writing (unchanged
+    // listings are not rewritten); by default there is none.
+    if (url.includes('com.atproto.repo.getRecord') && existingRecord === null) {
+      return jsonResponse(400, { error: 'RecordNotFound', message: 'not found' });
+    }
+    if (url.includes('com.atproto.repo.getRecord') && existingRecord !== null) {
+      return jsonResponse(200, existingRecord);
+    }
     calls.push({ url, body: bodyStr ? JSON.parse(bodyStr) : undefined });
     const entry = responses[i];
     i = Math.min(i + 1, responses.length - 1);
@@ -528,3 +541,19 @@ describe('ServicePublisher', () => {
     });
   });
 });
+
+describe('an unchanged listing is not written again (REAL_LIFE_FIXES §14)', () => {
+  it('skips the write when only updatedAt would change, and writes a real change', async () => {
+    const prior = buildRecord(validPublishConfig, 1_000);
+    existingRecord = { uri: `at://${DID}/${SERVICE_PROFILE_COLLECTION}/self`, cid: 'bafyreiprior', value: prior };
+    const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x', cid: 'bafyreinew' })]);
+    const pds = new PDSPublisher({ pdsUrl: PDS, handle: HANDLE, password: PASSWORD, fetch: fetchFn });
+    const pub = new ServicePublisher({ pds, expectedDID: DID, nowFn: () => 9_000 });
+    const same = await pub.publish(validPublishConfig);
+    expect(same.cid).toBe('bafyreiprior');
+    expect(calls.some((c) => c.url.includes('putRecord'))).toBe(false);
+    const changed = await pub.publish({ ...validPublishConfig, name: 'Bus 42 Express' });
+    expect(changed.cid).toBe('bafyreinew');
+  });
+});
+

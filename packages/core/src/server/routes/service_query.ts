@@ -24,6 +24,8 @@ import {
 import { MAX_SERVICE_TTL } from '../../d2d/families';
 import { getNodeDID } from '../../pairing/ceremony';
 import { issueServiceOffer } from '../../service/issue_offer';
+import { isReadOnlyCapability, readFallbacks, setFailoverSender } from '../../service/provider_failover';
+import { loadProviderStanding, providerStanding } from '../../service/provider_outcomes';
 import { getServiceGrantRepository } from '../../service/service_grant_repository';
 import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../workflow/domain';
 import { WorkflowConflictError, type WorkflowRepository } from '../../workflow/repository';
@@ -45,6 +47,8 @@ export type ServiceQuerySender = (
 let senderInstance: ServiceQuerySender | null = null;
 
 export function setServiceQuerySender(s: ServiceQuerySender | null): void {
+  // The read-only failover (REAL_LIFE_FIXES §9) sends through the same sender.
+  setFailoverSender(s === null ? null : (to, _type, body) => s(to, 'service.query', body as never));
   senderInstance = s;
 }
 
@@ -96,6 +100,12 @@ export function computeIdempotencyKey(
   grantId?: string,
   requesterPrincipal?: string,
   dedupeScope?: string,
+  /**
+   * The owner's chat thread that asked (`origin_channel` `thread:<id>`,
+   * REAL_LIFE_FIXES §1.5). Two threads asking the same question get two
+   * tasks, so each thread's card is answered. Lookup stays active-only.
+   */
+  replyThread?: string,
 ): string {
   // Namespace the dedupe key by `schema_hash` when present (review #8).
   // Two requests targeting the same (to_did, capability, params) but
@@ -135,7 +145,9 @@ export function computeIdempotencyKey(
   // never merges into one task and one shared reply.
   const scopeFragment =
     dedupeScope !== undefined && dedupeScope !== '' ? `|scope=${dedupeScope}` : '';
-  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}${requesterFragment}${scopeFragment}`;
+  const threadFragment =
+    replyThread !== undefined && replyThread !== '' ? `|thread=${replyThread}` : '';
+  const input = `${toDID}|${capability}|${canonical}${schemaFragment}${uriFragment}${grantFragment}${requesterFragment}${scopeFragment}${threadFragment}`;
   return bytesToHex(sha256(new TextEncoder().encode(input)));
 }
 
@@ -153,6 +165,8 @@ export interface ServiceQueryRouteOptions {
 }
 
 export interface ServiceQueryRequest {
+  /** Other public providers to try if this one goes quiet (§9); validated. */
+  fallbacks?: unknown;
   to_did: string;
   capability: string;
   params: unknown;
@@ -248,6 +262,7 @@ export function validateServiceQueryRequest(
       schema_hash: typeof b.schema_hash === 'string' ? b.schema_hash : undefined,
       service_uri: serviceUri,
       grant_id: grantId,
+      ...(b.fallbacks !== undefined ? { fallbacks: b.fallbacks } : {}),
     },
   };
 }
@@ -323,6 +338,9 @@ export async function submitServiceQuery(
     q.grant_id,
     requesterPrincipal,
     options.dedupeScope,
+    typeof q.origin_channel === 'string' && q.origin_channel.startsWith('thread:')
+      ? q.origin_channel
+      : undefined,
   );
   const repo: WorkflowRepository = service.store();
   // A SCOPED query names one question to one guest in one round, so a hit in
@@ -365,6 +383,11 @@ export async function submitServiceQuery(
     grant_id: q.grant_id ?? '',
     requester_agent_did: requesterDid,
     requester_session_id: requesterSession,
+    // REAL_LIFE_FIXES §9: other public providers to ask if this one goes
+    // quiet — read-only capabilities only, never with a grant.
+    ...(isReadOnlyCapability(q.capability) && (q.grant_id === undefined || q.grant_id === '')
+      ? { fallbacks: readFallbacks(q.fallbacks, q.to_did) }
+      : {}),
   };
 
   try {
@@ -434,6 +457,26 @@ export function registerServiceQueryRoutes(
   options: ServiceQueryRouteOptions = {},
 ): void {
   const nowSecFn = options.nowSecFn ?? (() => Math.floor(Date.now() / 1000));
+
+  // REAL_LIFE_FIXES §9: which providers this node has seen go quiet, for
+  // Brain's ranking. Brain only; no contents, only standing.
+  router.get('/v1/service/provider-standing', async (req) => {
+    if (!(req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined))) {
+      return { status: 403, body: { error: 'brain only' } };
+    }
+    const dids = (typeof req.query.dids === 'string' ? req.query.dids : '')
+      .split(',')
+      .map((d) => d.trim())
+      .filter((d) => d.startsWith('did:'))
+      .slice(0, 50);
+    const now = Date.now();
+    const standing: Record<string, { ejected: boolean }> = {};
+    for (const did of dids) {
+      await loadProviderStanding(did);
+      standing[did] = { ejected: providerStanding(did, now).ejected };
+    }
+    return { status: 200, body: { standing } };
+  });
 
   router.post('/v1/service/query', async (req) => {
     const session = requireAgentSession(req);

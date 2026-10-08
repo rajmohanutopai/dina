@@ -215,7 +215,10 @@ describe('GET /v1/pii/names', () => {
     } as unknown as PeopleRepository);
     const res = await router.handle(request);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ groups: [{ group: 1, names: ['Sancho', 'Sanch'] }] });
+    expect(res.body).toEqual({
+      version: expect.any(String),
+      groups: [{ group: 1, names: ['Sancho', 'Sanch'] }],
+    });
     expect(JSON.stringify(res.body)).not.toContain('p-secret-id');
   });
 

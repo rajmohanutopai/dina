@@ -34,7 +34,7 @@
  * the config.
  */
 
-import { PDSPublisher } from '@dina/brain';
+import { PDSPublisher, sameListingContent } from '@dina/brain';
 import {
   getServiceConfigRepository,
   listServiceConfigs,
@@ -71,6 +71,12 @@ export interface WireServicePublisherOptions {
    * tests pass a stub.
    */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Called after a listing was really written or removed on the PDS (not for
+   * an unchanged re-publish), so the presence writer can name the new set
+   * (REAL_LIFE_FIXES §14.4 A).
+   */
+  onListingsChanged?: () => void;
 }
 
 export interface WiredServicePublisher {
@@ -121,7 +127,17 @@ export function wireServiceProfilePublisher(
   //    `ServiceProfilePublisher.publish` consumes. The brain publisher
   //    handles session lifecycle internally; we only translate the
   //    argument shape + surface errors as structured outcomes upstream.
+  // Listings whose last step really wrote the PDS. Runs are single-flight per
+  // rkey, so one entry per rkey is never shared between two runs.
+  const writtenRkeys = new Set<string>();
   const putRecordFn: PutRecordFn = async (input: PutRecordInput) => {
+    // An unchanged listing is not written again (REAL_LIFE_FIXES §14.4 A): a
+    // boot then makes no public commit. `updatedAt` alone is no change.
+    const existing = await pdsPublisher.getRecord(input.collection, input.rkey).catch(() => null);
+    if (existing !== null && sameListingContent(existing.value, input.record as unknown as Record<string, unknown>)) {
+      return { uri: existing.uri, cid: existing.cid };
+    }
+    writtenRkeys.add(input.rkey);
     const { uri, cid } = await pdsPublisher.putRecord(
       input.collection,
       input.rkey,
@@ -184,6 +200,7 @@ export function wireServiceProfilePublisher(
     });
 
     const publishing = desired !== null && shouldPublishListing(desired);
+    writtenRkeys.delete(rkey);
     let outcome: Awaited<ReturnType<typeof publishOnce>> | Awaited<ReturnType<typeof unpublishOnce>>;
     try {
       outcome = publishing
@@ -210,6 +227,13 @@ export function wireServiceProfilePublisher(
 
     if (outcome.ok) {
       slot.attempt = 0;
+      if (!publishing || writtenRkeys.delete(rkey)) {
+        try {
+          options.onListingsChanged?.();
+        } catch {
+          /* the presence writer reports its own failures */
+        }
+      }
       if (publishing) {
         const published = outcome as Extract<PublishOutcome, { ok: true }>;
         await persistStatus(rkey, {

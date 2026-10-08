@@ -65,6 +65,24 @@ let vaultBackend: VaultReadBackend | null = null;
  * calls this at boot with its `CoreClient`. Mobile leaves it unset so
  * the in-process fast path is used.
  */
+/**
+ * A backend for one agent/device ask: every read carries Core's ask
+ * authority, so Core judges it as the requester (REAL_LIFE_FIXES §0.1 B).
+ * Explicit per ask — never ambient — because asks run concurrently.
+ */
+export function vaultReadBackendForAuthority(
+  core: Pick<CoreClient, 'vaultQuery' | 'vaultGet' | 'vaultList' | 'vaultItemsForPerson'>,
+  askAuthority: string,
+): Required<VaultReadBackend> {
+  return {
+    vaultQuery: (persona, query) => core.vaultQuery(persona, { ...query, askAuthority }),
+    vaultGet: (persona, itemId, opts) => core.vaultGet(persona, itemId, { ...opts, askAuthority }),
+    vaultList: (persona, opts) => core.vaultList(persona, { ...opts, askAuthority }),
+    vaultItemsForPerson: (persona, personId, limit, opts) =>
+      core.vaultItemsForPerson(persona, personId, limit, { ...opts, askAuthority }),
+  };
+}
+
 export function setVaultReadBackend(backend: VaultReadBackend | null): void {
   vaultBackend = backend;
 }
@@ -265,6 +283,12 @@ export async function executeToolSearch(
   query: string,
   limit?: number,
   releaseSession?: string,
+  /**
+   * A per-ask backend (REAL_LIFE_FIXES §0.1 B): an agent/device ask reads
+   * through Core with its authority stamped on, on both hosts, so Core
+   * enforces the requester's access on the read itself.
+   */
+  backendOverride?: VaultReadBackend,
 ): Promise<ContextItem[]> {
   // Security: only search personas the user has access to
   if (!getAccessiblePersonas().includes(persona)) return [];
@@ -274,8 +298,9 @@ export async function executeToolSearch(
   // Out-of-process Core (home-node-lite): route through the registered
   // backend so brain doesn't reach for SQLite. Mobile leaves the backend
   // unset → in-process `queryVault` runs.
-  if (vaultBackend !== null) {
-    const result = await vaultBackend.vaultQuery(persona, {
+  const backend = backendOverride ?? vaultBackend;
+  if (backend !== null) {
+    const result = await backend.vaultQuery(persona, {
       mode: 'fts5',
       text: query,
       limit: searchLimit,

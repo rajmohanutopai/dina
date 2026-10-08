@@ -312,6 +312,46 @@ export class PDSPublisher {
   }
 
   /**
+   * Every record in one collection of the account's own repository, with
+   * the CIDs a later compare-and-swap needs. Pages through the whole
+   * collection; `maxRecords` bounds it (a repo holding more is an error, so
+   * a caller never mistakes a truncated list for a complete one).
+   */
+  async listRecords(
+    collection: string,
+    maxRecords = 1000,
+  ): Promise<{ rkey: string; cid: string; value: Record<string, unknown> }[]> {
+    validateCollectionAndRkey(collection, 'self');
+    const session = await this.ensureSession();
+    const out: { rkey: string; cid: string; value: Record<string, unknown> }[] = [];
+    let cursor: string | undefined;
+    const path = '/xrpc/com.atproto.repo.listRecords';
+    for (;;) {
+      const params = new URLSearchParams({ repo: session.did, collection, limit: '100' });
+      if (cursor !== undefined) params.set('cursor', cursor);
+      const resp = await this.rawGet(`${this.pdsUrl}${path}?${params.toString()}`, session.accessJwt);
+      if (resp.status !== 200) {
+        if (resp.status === 401) this.invalidateSession();
+        throw await toPDSError(path, resp);
+      }
+      const body = await parseJSON(resp);
+      if (!body || typeof body !== 'object') throw new PDSPublisherError('listRecords: malformed response', null);
+      const r = body as { records?: unknown; cursor?: unknown };
+      if (!Array.isArray(r.records)) throw new PDSPublisherError('listRecords: response missing records', null);
+      for (const rec of r.records) {
+        const e = rec as { uri?: unknown; cid?: unknown; value?: unknown };
+        if (typeof e.uri !== 'string' || typeof e.cid !== 'string' || e.value === null || typeof e.value !== 'object') {
+          throw new PDSPublisherError('listRecords: malformed record', null);
+        }
+        out.push({ rkey: e.uri.slice(e.uri.lastIndexOf('/') + 1), cid: e.cid, value: e.value as Record<string, unknown> });
+        if (out.length > maxRecords) throw new PDSPublisherError(`listRecords: more than ${maxRecords} records`, null);
+      }
+      if (typeof r.cursor !== 'string' || r.cursor === '' || r.records.length === 0) return out;
+      cursor = r.cursor;
+    }
+  }
+
+  /**
    * Delete a record, treating "not found" as success. Use this when callers
    * want the op to be safely retryable — publishing a service profile,
    * flipping `isDiscoverable → false`, etc.

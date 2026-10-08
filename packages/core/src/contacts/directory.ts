@@ -49,7 +49,7 @@ import { canonicalizeIdentityValue } from '../people/domain';
 import { getPeopleRepository, type PeopleRepository } from '../people/repository';
 import { getVaultRepository, listVaultPersonas } from '../vault/repository';
 
-import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
+import { normalisePreferredForCategories, preferredForKey } from './preferred_for';
 import { getContactRepository } from './repository';
 import {
   validateAlias,
@@ -479,10 +479,25 @@ export function updateContact(
   // cached contact is left untouched, so memory never runs ahead of disk.
   const sqlRepo = getContactRepository();
   if (sqlRepo) sqlRepo.update(personId, next);
+  const renamed = next.displayName !== contact.displayName && next.displayName !== '';
   Object.assign(contact, next);
 
   // A trust change flips gate eligibility (block prunes, unblock restores).
   if (trustChanged) syncProjections(personId);
+
+  // REAL_LIFE_FIXES §5.2: a rename updates the person too — resolved by DID,
+  // new canonical name and confirmed name surface; the old name surface
+  // stays, so recall by the old name still finds them.
+  if (renamed) {
+    const people = getPeopleRepository();
+    if (people !== null) {
+      try {
+        people.upsertContactPerson(contact.did, next.displayName);
+      } catch {
+        /* the contact rename stands; the person keeps the old name until the next sync */
+      }
+    }
+  }
 
   return contact;
 }
@@ -539,6 +554,8 @@ export function addAlias(did: string, alias: string): void {
   aliasIndex.set(normalized, personId);
   contact.aliases.push(alias.trim());
   contact.updatedAt = Date.now();
+  // REAL_LIFE_FIXES §5.2: recall by the alias finds the person.
+  getPeopleRepository()?.setContactAliasSurface?.(personId, alias, true);
 }
 
 /** Remove an alias from a contact. */
@@ -555,6 +572,7 @@ export function removeAlias(did: string, alias: string): void {
   aliasIndex.delete(normalized);
   contact.aliases = contact.aliases.filter((a) => a.toLowerCase() !== normalized);
   contact.updatedAt = Date.now();
+  getPeopleRepository()?.setContactAliasSurface?.(contact.personId, alias, false);
 }
 
 /** Resolve a DID from an alias. Returns the contact's primary DID, or null. */
@@ -1052,11 +1070,13 @@ export function getPreferredFor(did: string): string[] {
  * (case-insensitive). Empty / whitespace-only category → `[]`.
  */
 export function findByPreferredFor(category: string): Contact[] {
-  const needle = normalisePreferredForCategory(category);
+  // REAL_LIFE_FIXES §5.3: role and category forms of one service match
+  // ("plumber" stored, "plumbing" asked, and the reverse).
+  const needle = preferredForKey(category);
   if (needle === '') return [];
   const matches: Contact[] = [];
   for (const contact of contactsByPerson.values()) {
-    if ((contact.preferredFor ?? []).includes(needle)) {
+    if ((contact.preferredFor ?? []).some((v) => preferredForKey(v) === needle)) {
       matches.push(contact);
     }
   }

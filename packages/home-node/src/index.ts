@@ -68,3 +68,15 @@ export type {
 } from './repo_proof_chain';
 export { A2ADispatchRunner } from './a2a_runner';
 export type { A2ADispatchRunnerOptions } from './a2a_runner';
+
+// Service presence: the node's daily "still here" record (REAL_LIFE_FIXES §14).
+export {
+  kvPresenceStateStore,
+  PRESENCE_RENEW_AFTER_MS,
+  ServicePresenceWriter,
+  type PresenceOutcome,
+  type PresenceRepo,
+  type PresenceState,
+  type PresenceStateStore,
+  type ServicePresenceWriterOptions,
+} from './service_presence';

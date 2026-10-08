@@ -578,6 +578,16 @@ const AUTHZ_RULES: {
   // /v1/intent/proposals/:id/status (the status endpoint). Brain +
   // Admin + Device may also probe (chat orchestrator surfaces
   // proposals; admin UI inspects them).
+  // REAL_LIFE_FIXES §1.4: chat thread storage for a split-process Brain.
+  // Brain only — no device or agent reads another conversation through it.
+  { prefix: '/v1/chat/', allowed: new Set(['brain']) },
+  // REAL_LIFE_FIXES §7: the owner's chat messaging a contact. Brain only;
+  // Core binds the send to the owner's recorded turn.
+  { prefix: '/v1/talk/send', exact: true, allowed: new Set(['brain']) },
+  // REAL_LIFE_FIXES §3.2: Core's persona-access decision for an agent/device
+  // ask, keyed on Core's ask authority. Brain only — an agent never judges
+  // its own access.
+  { prefix: '/v1/agent/persona-access', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/agent/', allowed: new Set(['brain', 'admin', 'device', 'agent']) },
   { prefix: '/v1/intent/', allowed: new Set(['brain', 'admin', 'device', 'agent']) },
 

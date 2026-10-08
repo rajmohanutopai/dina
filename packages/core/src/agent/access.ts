@@ -68,10 +68,23 @@ export interface AgentPersonaAccessApprovalPayload {
    * access boundary.
    */
   scope: string;
+  /**
+   * The agent ask that raised the card (REAL_LIFE_FIXES §3.3). "Approve Once"
+   * binds the grant to this ask alone. Absent on cards from agent vault routes.
+   */
+  ask_id?: string;
 }
 
-/** Granted access lasts this long once approved (1 h). */
+/** An "Approve Once" grant (bound to one ask) lasts at most this long (1 h). */
 export const DEFAULT_GRANT_TTL_MS = 60 * 60 * 1000;
+/**
+ * A session grant ("Approve") lasts until the agent's session ends, when
+ * `revokeForSession` tombstones it; this caps a session never ended (24 h).
+ */
+export const SESSION_GRANT_CAP_MS = 24 * 60 * 60 * 1000;
+
+/** How the owner approved an agent persona-access card. */
+export type AgentGrantScope = 'single' | 'session';
 /** A pending approval card expires if not actioned within 15 min. */
 export const DEFAULT_APPROVAL_TTL_SEC = 15 * 60;
 
@@ -103,8 +116,37 @@ export interface RequireAgentPersonaAccessParams {
   scope: string;
   /** Optional named-session tag for the eventual grant. */
   sessionId?: string | null;
+  /**
+   * The agent ask making this read (REAL_LIFE_FIXES §3.3). An "Approve Once"
+   * grant serves only the ask it is bound to; new cards record it.
+   */
+  askId?: string | null;
   /** Test clock override. */
   now?: number;
+}
+
+/**
+ * The gate's decision with NO side effects (REAL_LIFE_FIXES §3.2 `check`):
+ * no approval card, no consumption. `allow` when a grant or a free tier
+ * lets this agent read now; `gated` otherwise.
+ */
+export function evaluateAgentPersonaAccess(
+  params: Omit<RequireAgentPersonaAccessParams, 'scope'>,
+): { kind: 'allow'; grantId?: string } | { kind: 'gated' } {
+  const now = params.now ?? Date.now();
+  const persona = resolveInstalledPersonaName(params.persona);
+  const tier = getPersonaTier(persona);
+  const grant =
+    getAgentGrantRepository()?.findActiveGrant(
+      params.agentDID,
+      persona,
+      params.mode,
+      params.sessionId ?? null,
+      now,
+      params.askId ?? null,
+    ) ?? null;
+  if (!agentCanAccess(tier, grant !== null)) return { kind: 'gated' };
+  return grant !== null ? { kind: 'allow', grantId: grant.id } : { kind: 'allow' };
 }
 
 function idemKeyFor(
@@ -150,6 +192,7 @@ export function requireAgentPersonaAccess(
       params.mode,
       params.sessionId ?? null,
       now,
+      params.askId ?? null,
     ) ?? null;
 
   // SINGLE source of truth for the tier policy: the same pure predicate the
@@ -187,6 +230,9 @@ export function requireAgentPersonaAccess(
     persona,
     mode: params.mode,
     scope: params.scope,
+    ...(params.askId !== undefined && params.askId !== null && params.askId !== ''
+      ? { ask_id: params.askId }
+      : {}),
   };
   service.create({
     id,
@@ -278,12 +324,25 @@ export function parseAgentPersonaAccessPayload(
   if (p.mode !== 'read' && p.mode !== 'write') return null;
   const scope = typeof p.scope === 'string' ? p.scope : '';
   if (scope.length > 4096 || hasControlOrBidi(scope)) return null;
+  let askId: string | undefined;
+  if (p.ask_id !== undefined) {
+    if (
+      typeof p.ask_id !== 'string' ||
+      p.ask_id === '' ||
+      p.ask_id.length > 256 ||
+      hasControlOrBidi(p.ask_id)
+    ) {
+      return null;
+    }
+    askId = p.ask_id;
+  }
   return {
     type: AGENT_PERSONA_ACCESS_APPROVAL_TYPE,
     agent_did: p.agent_did,
     persona: p.persona,
     mode: p.mode,
     scope,
+    ...(askId !== undefined ? { ask_id: askId } : {}),
   };
 }
 
@@ -307,6 +366,7 @@ export function isAgentPersonaAccessApproval(task: WorkflowTask | null): boolean
 export function reserveAgentPersonaGrant(
   task: WorkflowTask,
   now?: number,
+  scope: AgentGrantScope = 'session',
 ): AgentPersonaGrant | null {
   // PLG-29 #2: validate the WHOLE payload (agent_did / persona / mode / scope),
   // not just the type — a malformed payload persists nothing.
@@ -316,6 +376,10 @@ export function reserveAgentPersonaGrant(
   if (grantRepo === null) return null;
 
   const t = now ?? Date.now();
+  // REAL_LIFE_FIXES §3.3: "Approve Once" on a card raised by an ask binds the
+  // grant to that ask alone (it serves every read of that ask, and no other);
+  // "Approve" is a session grant, held until the session ends (capped).
+  const onceAsk = scope === 'single' && payload.ask_id !== undefined ? payload.ask_id : null;
   const g = grantRepo.insert({
     id: `grant-${bytesToHex(randomBytes(8))}`,
     sessionId: task.session_name && task.session_name !== '' ? task.session_name : null,
@@ -325,9 +389,10 @@ export function reserveAgentPersonaGrant(
     // Persist the requested scope only — never the vault result.
     scopeJson: JSON.stringify({ scope: payload.scope }),
     approvalTaskId: task.id,
-    expiresAt: t + DEFAULT_GRANT_TTL_MS,
+    expiresAt: t + (onceAsk !== null ? DEFAULT_GRANT_TTL_MS : SESSION_GRANT_CAP_MS),
     createdAt: t,
     active: false, // reserved — invisible to the gate until activated
+    askId: onceAsk,
   });
   // PLG-29 #6: audit the RESERVE (not "approved") here — the approval CAS hasn't
   // run yet, so a lost CAS + compensating revoke must not leave an append-only

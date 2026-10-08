@@ -27,7 +27,8 @@ import { base64 } from '@scure/base';
 
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
-import { readPiiNameGroups, type PiiNameGroup } from '../pii/names';
+import { readPiiNamesResult, type PiiNamesResult } from '../pii/names';
+
 
 import {
   a2aDelegateBody,
@@ -44,7 +45,7 @@ import {
   parseOpenGroupPlanResponse,
   updateContactBody,
   WorkflowConflictError,
-} from './core-client';
+ readAccessDecision, readAccessDecisions } from './core-client';
 import { CoreHttpError } from './http-transport';
 import {
   parseUcpFetchResponse,
@@ -112,6 +113,9 @@ import type {
   ServiceListing,
   ServiceQueryClientRequest,
   ServiceQueryResult,
+  AgentPersonaAccessDecision,
+  OwnerWordsProof,
+  TalkSendResult,
   MemoryToCOptions,
   MemoryToCResult,
   StagingIngestRequest,
@@ -158,6 +162,7 @@ import type {
   ReasoningFailRequest,
   ReasoningFailure,
 } from './core-client';
+import type { StoredChatMessage } from '../chat/repository';
 import type { QuarantinedMessage } from '../d2d/quarantine';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
 
@@ -171,7 +176,12 @@ import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
  */
 /** The release session as a query parameter, when the read names one. */
 function releaseQuery(opts: VaultReleaseOptions | undefined): Record<string, string> {
-  return opts?.releaseSession !== undefined ? { release_session: opts.releaseSession } : {};
+  return {
+    ...(opts?.releaseSession !== undefined ? { release_session: opts.releaseSession } : {}),
+    ...(opts?.askAuthority !== undefined && opts.askAuthority !== ''
+      ? { ask_authority: opts.askAuthority }
+      : {}),
+  };
 }
 
 function blankRequest(overrides: Partial<CoreRequest>): CoreRequest {
@@ -274,7 +284,12 @@ export class InProcessTransport implements CoreClient {
       blankRequest({
         method: 'POST',
         path: `/v1/vault/query`,
-        query: { persona },
+        query: {
+          persona,
+          ...(query.askAuthority !== undefined && query.askAuthority !== ''
+            ? { ask_authority: query.askAuthority }
+            : {}),
+        },
         body,
       }),
     );
@@ -480,6 +495,15 @@ export class InProcessTransport implements CoreClient {
     expectOk<unknown>(res, `deleteServiceConfig(rkey=${rkey})`);
   }
 
+  async serviceProviderStanding(dids: string[]): Promise<Set<string>> {
+    if (dids.length === 0) return new Set();
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/service/provider-standing', query: { dids: dids.join(',') } }),
+    );
+    const raw = expectOk<{ standing: Record<string, { ejected: boolean }> }>(res, 'serviceProviderStanding');
+    return new Set(Object.entries(raw.standing ?? {}).filter(([, s]) => s.ejected).map(([d]) => d));
+  }
+
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
     // Route's validator speaks snake_case; translate at the boundary
     // so Brain code stays in camelCase. Optional fields are omitted
@@ -497,6 +521,14 @@ export class InProcessTransport implements CoreClient {
     if (req.schemaHash !== undefined) body.schema_hash = req.schemaHash;
     if (req.serviceUri !== undefined) body.service_uri = req.serviceUri;
     if (req.grantId !== undefined) body.grant_id = req.grantId;
+    if (req.fallbacks !== undefined && req.fallbacks.length > 0) {
+      body.fallbacks = req.fallbacks.map((f) => ({
+        to_did: f.toDID,
+        ...(f.serviceUri !== undefined ? { service_uri: f.serviceUri } : {}),
+        ...(f.schemaHash !== undefined ? { schema_hash: f.schemaHash } : {}),
+        ...(f.serviceName !== undefined ? { service_name: f.serviceName } : {}),
+      }));
+    }
 
     const res = await this.router.handle(
       blankRequest({ method: 'POST', path: '/v1/service/query', body }),
@@ -510,6 +542,87 @@ export class InProcessTransport implements CoreClient {
     return out;
   }
 
+  async chatAppend(msg: StoredChatMessage): Promise<void> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: `/v1/chat/threads/${encodeURIComponent(msg.threadId)}/messages`,
+        params: { id: msg.threadId },
+        body: msg,
+      }),
+    );
+    expectOk<unknown>(res, 'chatAppend');
+  }
+
+  async chatList(threadId: string, limit?: number): Promise<StoredChatMessage[]> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: `/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+        params: { id: threadId },
+        query: limit !== undefined ? { limit: String(limit) } : {},
+      }),
+    );
+    const raw = expectOk<{ messages?: unknown }>(res, 'chatList');
+    return Array.isArray(raw.messages) ? (raw.messages as StoredChatMessage[]) : [];
+  }
+
+  async chatThreadIds(): Promise<string[]> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/chat/threads' }));
+    const raw = expectOk<{ threads?: unknown }>(res, 'chatThreadIds');
+    return Array.isArray(raw.threads) ? raw.threads.filter((t): t is string => typeof t === 'string') : [];
+  }
+
+  async chatDeleteThread(threadId: string): Promise<boolean> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'DELETE',
+        path: `/v1/chat/threads/${encodeURIComponent(threadId)}`,
+        params: { id: threadId },
+      }),
+    );
+    return expectOk<{ deleted?: unknown }>(res, 'chatDeleteThread').deleted === true;
+  }
+
+  async chatReset(): Promise<void> {
+    expectOk<unknown>(
+      await this.router.handle(blankRequest({ method: 'POST', path: '/v1/chat/reset', body: {} })),
+      'chatReset',
+    );
+  }
+
+  async agentPersonaAccessCheck(
+    askAuthority: string,
+    personas: string[],
+    mode: 'read' | 'write' = 'read',
+  ): Promise<Record<string, 'allowed' | 'gated'>> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/agent/persona-access',
+        body: { ask_authority: askAuthority, op: 'check', personas, mode },
+      }),
+    );
+    const raw = expectOk<{ decisions?: Record<string, unknown> }>(res, 'agentPersonaAccessCheck');
+    return readAccessDecisions(personas, raw.decisions);
+  }
+
+  async agentPersonaAccessRequest(
+    askAuthority: string,
+    persona: string,
+    scope: string,
+    mode: 'read' | 'write' = 'read',
+  ): Promise<AgentPersonaAccessDecision> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/agent/persona-access',
+        body: { ask_authority: askAuthority, op: 'request', persona, scope, mode },
+      }),
+    );
+    return readAccessDecision(expectOk<Record<string, unknown>>(res, 'agentPersonaAccessRequest'));
+  }
+
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
     // Personas flatten to a comma-separated list per the route's
     // contract (`parsePersonaFilter`). Limit encodes as string — the
@@ -521,6 +634,7 @@ export class InProcessTransport implements CoreClient {
     if (opts?.limit !== undefined) {
       query.limit = String(opts.limit);
     }
+    Object.assign(query, releaseQuery(opts));
     const res = await this.router.handle(
       blankRequest({ method: 'GET', path: '/v1/memory/toc', query }),
     );
@@ -528,6 +642,49 @@ export class InProcessTransport implements CoreClient {
   }
 
   // ─── Staging inbox ────────────────────────────────────────────────────
+
+  async talkSend(input: {
+    proof: OwnerWordsProof;
+    contact: string;
+    proposedText: string;
+  }): Promise<TalkSendResult> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/talk/send',
+        body: {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      contact: input.contact,
+      proposed_text: input.proposedText,
+        },
+      }),
+    );
+    return expectOk<TalkSendResult>(res, 'talkSend');
+  }
+
+  async stagingIngestOwnerWords(
+    proof: OwnerWordsProof,
+  ): Promise<StagingIngestResult & { source: string }> {
+    const body = {
+      release_session: proof.releaseSession,
+      turn_id: proof.turnId,
+      turn_text: proof.turnText,
+      start: proof.start,
+      end: proof.end,
+    };
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/staging/ingest-owner-words', body }),
+    );
+    const raw = expectOk<{ id: string; duplicate: boolean; status: string; source: string }>(
+      res,
+      'stagingIngestOwnerWords',
+    );
+    return { itemId: raw.id, duplicate: raw.duplicate, status: raw.status, source: raw.source };
+  }
 
   async stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult> {
     const body: Record<string, unknown> = {
@@ -583,12 +740,16 @@ export class InProcessTransport implements CoreClient {
       stored_personas?: string[];
       pending_personas?: string[];
       failed_personas?: string[];
+      unknown_personas?: string[];
+      duplicate_personas?: string[];
     }>(res, `stagingResolve(itemId=${req.itemId})`);
     const out: StagingResolveResult = { itemId: raw.id, status: raw.status };
     if (raw.personas !== undefined) out.personas = raw.personas;
     if (raw.stored_personas !== undefined) out.storedPersonas = raw.stored_personas;
     if (raw.pending_personas !== undefined) out.pendingPersonas = raw.pending_personas;
     if (raw.failed_personas !== undefined) out.failedPersonas = raw.failed_personas;
+    if (raw.unknown_personas !== undefined) out.unknownPersonas = raw.unknown_personas;
+    if (raw.duplicate_personas !== undefined) out.duplicatePersonas = raw.duplicate_personas;
     return out;
   }
 
@@ -1341,10 +1502,16 @@ export class InProcessTransport implements CoreClient {
     return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
   }
 
-  async piiNames(): Promise<PiiNameGroup[]> {
-    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/pii/names' }));
+  async piiNames(known?: string): Promise<PiiNamesResult> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/pii/names',
+        query: known !== undefined && known !== '' ? { known } : {},
+      }),
+    );
     if (res.status !== 200) throw new Error(`piiNames: core answered ${res.status}`);
-    return readPiiNameGroups((res.body as { groups?: unknown } | null)?.groups);
+    return readPiiNamesResult(res.body);
   }
 
   async peopleFindByName(surface: string): Promise<Person[]> {

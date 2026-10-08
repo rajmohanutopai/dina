@@ -19,6 +19,7 @@
  */
 
 import { randomBytes } from '@noble/ciphers/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import {
@@ -200,11 +201,50 @@ function normalizeEmbedding(
  *
  * Auto-generates an ID if the item's id field is empty or missing.
  */
+/** Sources whose items are the owner's own memories (REAL_LIFE_FIXES §2.4). */
+export const OWNER_MEMORY_SOURCE_SET: ReadonlySet<string> = new Set(['user_remember', 'chat_auto']);
+
+/**
+ * Content key of an owner memory: SHA-256 over type, summary and body after
+ * Unicode NFC, trimming and collapsing whitespace. No lowercasing and no
+ * punctuation stripping: exact text, so "PIN 4471" and "pin 4471!" stay two
+ * memories.
+ */
+export function ownerMemoryKey(type: string, summary: string, body: string): string {
+  const n = (s: string): string => s.normalize('NFC').trim().replace(/\s+/g, ' ');
+  return bytesToHex(sha256(new TextEncoder().encode(`${n(type)}\u0000${n(summary)}\u0000${n(body)}`)));
+}
+
+/** The key an item would carry, or null when it is not an owner memory. */
+function ownerMemoryKeyOf(item: Pick<VaultItem, 'source' | 'type' | 'summary' | 'body'>): string | null {
+  return OWNER_MEMORY_SOURCE_SET.has(item.source) ? ownerMemoryKey(item.type, item.summary, item.body) : null;
+}
+
+/** Result of a store: the id written, or the existing memory it repeated. */
+export interface StoreItemResult {
+  id: string;
+  /** Set when the item repeated a live owner memory; nothing new was written. */
+  duplicateOf?: string;
+}
+
 export function storeItem(
   persona: string,
   item: VaultItemWrite,
   origin: VaultOrigin = 'owner_request',
 ): string {
+  return storeItemDetailed(persona, item, origin).id;
+}
+
+/**
+ * `storeItem` that also reports a repeated owner memory (REAL_LIFE_FIXES
+ * §2.4). Only the owner's own memories are checked; a re-store of the same
+ * id (crash replay of a staging row) is never a duplicate.
+ */
+export function storeItemDetailed(
+  persona: string,
+  item: VaultItemWrite,
+  origin: VaultOrigin = 'owner_request',
+): StoreItemResult {
   // Item 5b — typed-origin gate at the storage seam (§5/§14). A read/search
   // origin (agent_ask/service_task) can NEVER write, whatever persona is open —
   // this holds on the mobile in-process path too, where there is no HTTP authz.
@@ -264,8 +304,18 @@ export function storeItem(
     ...(embedding ? { embedding } : {}),
   };
 
+  const memoryKey = ownerMemoryKeyOf(stored);
+  if (memoryKey !== null) {
+    const repeat = repo.findOwnerMemorySync(memoryKey, stored.summary, id, ownerMemoryKeyOf);
+    if (repeat !== null) {
+      repo.confirmOwnerMemorySync(repeat.id, now);
+      return { id: repeat.id, duplicateOf: repeat.id };
+    }
+    stored.owner_memory_key = memoryKey;
+  }
+
   repo.storeItemSync(stored);
-  return id;
+  return { id };
 }
 
 /**

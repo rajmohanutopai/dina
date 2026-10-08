@@ -53,6 +53,11 @@ export interface AskRecord {
   readonly requesterDid: string;
   /** Coding-agent session that submitted the ask, when applicable. */
   readonly sessionId?: string;
+  /**
+   * Core's ask authority (REAL_LIFE_FIXES §0.1 B). Kept so both resume
+   * paths read under the same authority the ask started with.
+   */
+  readonly askAuthority?: string;
   status: AskStatus;
   readonly createdAtMs: number;
   updatedAtMs: number;
@@ -98,6 +103,8 @@ export interface AskEnqueueInput {
   requesterDid: string;
   /** Coding-agent session that owns polling access to this ask. */
   sessionId?: string;
+  /** Core's ask authority for an agent/device ask. */
+  askAuthority?: string;
   /** Explicit composer lane — preserved on the record for approval-resume. */
   forcedSources?: readonly IntentSource[];
   /** The owner's chat thread — preserved on the record for approval-resume. */
@@ -225,6 +232,9 @@ export class AskRegistry {
         : {}),
       ...(input.sessionId !== undefined && input.sessionId !== ''
         ? { sessionId: input.sessionId }
+        : {}),
+      ...(input.askAuthority !== undefined && input.askAuthority !== ''
+        ? { askAuthority: input.askAuthority }
         : {}),
     };
     await this.adapter.insert(record);
@@ -455,6 +465,7 @@ function cloneAsk(r: AskRecord): AskRecord {
     ...(r.forcedSources !== undefined ? { forcedSources: r.forcedSources } : {}),
     ...(r.conversation !== undefined ? { conversation: r.conversation } : {}),
     ...(r.sessionId !== undefined ? { sessionId: r.sessionId } : {}),
+    ...(r.askAuthority !== undefined ? { askAuthority: r.askAuthority } : {}),
   };
   if (r.answerJson !== undefined) clone.answerJson = r.answerJson;
   if (r.errorJson !== undefined) clone.errorJson = r.errorJson;

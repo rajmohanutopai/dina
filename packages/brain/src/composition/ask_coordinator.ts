@@ -58,8 +58,10 @@ import {
   type AskEvent,
   type AskPersistenceAdapter,
 } from '../ask/ask_registry';
-import { generateHumanRedirect } from '../guardian/anti_her';
-import { preScreenMessage } from '../guardian/anti_her_classify';
+import { buildTurnHistory, fenceNonce, outsideDataRule, recentTurnsBlock } from '../chat/history';
+import { crisisReply, humanConnectionDirective, peoplePointerLine } from '../guardian/anti_her';
+import { HUMAN_CONNECTION_KINDS, preScreenMessage } from '../guardian/anti_her_classify';
+import { scanResponse, stripViolations } from '../guardian/guard_scan';
 import {
   resumeAgenticTurn,
   runAgenticTurn,
@@ -80,6 +82,7 @@ import { buildComparisonCardSpec } from '../service/comparison_card_spec';
 import type { AgenticAskPipeline } from './agentic_ask';
 import type { PreFlightRetrievalResult } from './ask_retrieval_planner';
 import type { VaultApprovalWorkflowClient } from './persona_guard';
+import type { ChatMessage as LLMMessage } from '../llm/adapters/provider';
 import type { PreFlightRetrievalProvider } from '../reasoning/ask_handler';
 import type { IntentSource } from '../reasoning/intent_classifier';
 import type { QuoteRequestDraftWire } from '../reasoning/quote_request_tool';
@@ -88,7 +91,7 @@ import type { WorkflowTask } from '@dina/core';
 /** CoreClient surface `createAskCoordinator` needs for the approval gateway. */
 export interface AskCoordinatorCoreClient extends VaultApprovalWorkflowClient {
   /** Drive a workflow task from `pending_approval` → `queued`. */
-  approveWorkflowTask(id: string): Promise<WorkflowTask>;
+  approveWorkflowTask(id: string, opts?: { scope?: 'single' | 'session' }): Promise<WorkflowTask>;
   /** Cancel a workflow task from any active state → `cancelled`. */
   cancelWorkflowTask(id: string, reason?: string): Promise<WorkflowTask>;
 }
@@ -222,10 +225,20 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
       // it survives the pending_approval round-trip. The result gate + rich
       // answer shaping happen in `shapeCompletedAnswer` below (via the same
       // translateLoopResult the first-turn path uses).
+      // An ask from anyone but the owner reads only under Core's authority
+      // (REAL_LIFE_FIXES §0.1 B); a record that lost it never resumes as
+      // the owner.
+      if (refusesWithoutAuthority(opts.pipeline, ctx.requesterDid, ctx.askAuthority)) {
+        throw new Error('missing_ask_authority');
+      }
       const tools = scopeToolsForLane(
         buildToolsForAsk({
           askId: ctx.askId,
           requesterDid: ctx.requesterDid,
+          ...(ctx.sessionId !== undefined && ctx.sessionId !== '' ? { sessionId: ctx.sessionId } : {}),
+          ...(ctx.askAuthority !== undefined && ctx.askAuthority !== ''
+            ? { askAuthority: ctx.askAuthority }
+            : {}),
           ...askConversation(ctx.askId, ctx.conversation),
         }),
         ctx.forcedSources,
@@ -244,6 +257,7 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
           ctx.question,
           ctx.forcedSources,
           askConversation(ctx.askId, ctx.conversation).releaseSession,
+          ctx.askAuthority,
         ),
         pausedState,
       });
@@ -324,12 +338,56 @@ export function buildAgenticExecuteFn(args: {
     // Home Node use this coordinator path in production, so enforce the same
     // invariant here rather than relying on the model to redirect itself.
     const conversation = askConversation(input.id, input.conversation);
-    const preScreen = await preScreenMessage(input.question);
-    if (preScreen.shouldRedirect) {
+    // An ask from anyone but the owner must carry Core's ask authority
+    // (REAL_LIFE_FIXES §0.1 B). Without it, refuse before any read: a
+    // missing authority must never mean owner access.
+    if (refusesWithoutAuthority(pipeline, input.requesterDid, input.askAuthority)) {
       return {
-        kind: 'answer',
-        answer: { text: generateHumanRedirect([]) },
+        kind: 'failure',
+        failure: { kind: 'missing_ask_authority', message: 'agent ask has no Core authority' },
       };
+    }
+    // Conversation memory (REAL_LIFE_FIXES §1): the owner's chat turns carry
+    // the thread's earlier turns. Agent asks (Core authority) get none: they
+    // have sessions, not the owner's conversation.
+    let history: LLMMessage[] = [];
+    let fence = '';
+    const isOwnerChat =
+      input.conversation !== undefined &&
+      input.conversation !== '' &&
+      (input.askAuthority === undefined || input.askAuthority === '') &&
+      (pipeline.ownerDid === undefined || input.requesterDid === pipeline.ownerDid);
+    if (isOwnerChat) {
+      fence = fenceNonce();
+      try {
+        history = await buildTurnHistory(input.conversation!, {
+          excludeQuestion: input.question,
+          nonce: fence,
+        });
+      } catch {
+        return {
+          kind: 'failure',
+          failure: {
+            kind: 'history_unavailable',
+            message: 'could not load this conversation; try again',
+          },
+        };
+      }
+    }
+    const recentTurns = recentTurnsBlock(history);
+
+    // Law 4 (REAL_LIFE_FIXES §8). Acute risk gets a fixed crisis reply,
+    // never model text. Other emotional messages go ahead with warmth and an
+    // instruction to help the user reach real people, named from their own
+    // contacts — a canned reply that ends the talk is a known failure mode.
+    const preScreen = await preScreenMessage(input.question);
+    let humanDirective = '';
+    if (preScreen.category === 'acute_risk' || HUMAN_CONNECTION_KINDS.has(preScreen.category)) {
+      const names = await closeContactNames(pipeline);
+      if (preScreen.category === 'acute_risk') {
+        return { kind: 'answer', answer: { text: crisisReply(names) } };
+      }
+      humanDirective = humanConnectionDirective(preScreen.category, names);
     }
 
     // Explicit composer lane (Services/Reviews): scope the tools to the lane's
@@ -341,6 +399,9 @@ export function buildAgenticExecuteFn(args: {
         requesterDid: input.requesterDid,
         ...(input.sessionId !== undefined && input.sessionId !== ''
           ? { sessionId: input.sessionId }
+          : {}),
+        ...(input.askAuthority !== undefined && input.askAuthority !== ''
+          ? { askAuthority: input.askAuthority }
           : {}),
         ...conversation,
       }),
@@ -354,13 +415,17 @@ export function buildAgenticExecuteFn(args: {
     // session must stay synced with wall-clock — `now_iso` baked in at
     // `buildAgenticExecuteFn` time would silently age across turns.
     // Then append the imperative forced-lane block when a lane is forced.
-    const promptForTurn = await buildPromptForTurn(
+    let promptForTurn = await buildPromptForTurn(
       pipeline,
       systemPrompt,
       input.question,
       input.forcedSources,
       conversation.releaseSession,
+      input.askAuthority,
+      recentTurns,
     );
+    if (history.length > 0) promptForTurn = `${promptForTurn}\n\n${outsideDataRule(fence)}`;
+    if (humanDirective !== '') promptForTurn = `${promptForTurn}\n\n${humanDirective}`;
 
     let userMessage = input.question;
     if (preFlight !== undefined) {
@@ -375,6 +440,10 @@ export function buildAgenticExecuteFn(args: {
           ...(input.sessionId !== undefined && input.sessionId !== ''
             ? { sessionId: input.sessionId }
             : {}),
+          ...(input.askAuthority !== undefined && input.askAuthority !== ''
+            ? { askAuthority: input.askAuthority }
+            : {}),
+          ...(recentTurns !== '' ? { recentTurns } : {}),
           releaseSession: conversation.releaseSession,
         });
       } catch {
@@ -392,6 +461,7 @@ export function buildAgenticExecuteFn(args: {
         tools,
         systemPrompt: promptForTurn,
         userMessage,
+        ...(history.length > 0 ? { initialMessages: history } : {}),
       };
       if (input.signal !== undefined) {
         turnArgs.options = { signal: input.signal };
@@ -406,6 +476,31 @@ export function buildAgenticExecuteFn(args: {
   };
 }
 
+/** Up to three close contacts' names, for Law 4 (never fails the turn). */
+async function closeContactNames(pipeline: AgenticAskPipeline): Promise<string[]> {
+  try {
+    return (await pipeline.closeContacts?.()) ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * True when an ask must be refused for lacking Core's ask authority: the
+ * pipeline knows the owner, the requester is someone else, and no authority
+ * came with the ask (REAL_LIFE_FIXES §0.1 B).
+ */
+function refusesWithoutAuthority(
+  pipeline: AgenticAskPipeline,
+  requesterDid: string,
+  askAuthority: string | undefined,
+): boolean {
+  const owner = pipeline.ownerDid;
+  if (owner === undefined || owner === '') return false;
+  if (requesterDid === owner) return false;
+  return askAuthority === undefined || askAuthority === '';
+}
+
 /** Build the same per-turn prompt used by the direct agentic Ask handler. */
 async function buildPromptForTurn(
   pipeline: AgenticAskPipeline,
@@ -413,6 +508,8 @@ async function buildPromptForTurn(
   question: string,
   forcedSources: readonly IntentSource[] | undefined,
   releaseSession: string,
+  askAuthority?: string,
+  recentTurns?: string,
 ): Promise<string> {
   let prompt = `${formatCurrentTimeBlock()}\n\n${baseSystemPrompt}`;
 
@@ -426,7 +523,11 @@ async function buildPromptForTurn(
 
   let hint;
   try {
-    hint = await classifier.classify(question, { releaseSession });
+    hint = await classifier.classify(question, {
+      releaseSession,
+      ...(askAuthority !== undefined && askAuthority !== '' ? { askAuthority } : {}),
+      ...(recentTurns !== undefined && recentTurns !== '' ? { recentTurns } : {}),
+    });
   } catch {
     hint = IntentClassifier.default();
   }
@@ -435,27 +536,49 @@ async function buildPromptForTurn(
   return prompt;
 }
 
-/** Apply the existing fail-open output guard before result/lane shaping. */
+/**
+ * Apply the output guard before result/lane shaping. The model-based guard
+ * fails open; the fixed Law 4 phrase suites (therapy talk, engagement hooks,
+ * simulated intimacy) then run on every completed answer as a deterministic
+ * net, and removing any of them adds one line pointing to people
+ * (REAL_LIFE_FIXES §8).
+ */
 async function guardCompletedResult(
   pipeline: AgenticAskPipeline,
   result: AgenticLoopResult,
   question: string,
 ): Promise<AgenticLoopResult> {
+  if (result.finishReason !== 'completed' || result.answer === '') return result;
+  let out = result;
   const scanner = pipeline.handlerOptions.guardScanner;
-  if (result.finishReason !== 'completed' || result.answer === '' || scanner === undefined) {
-    return result;
+  if (scanner !== undefined) {
+    try {
+      const decision = await scanner({
+        userPrompt: question,
+        response: result.answer,
+        toolsCalled: result.toolCalls.map((call) => call.name),
+      });
+      out = { ...result, answer: decision.content };
+    } catch {
+      out = result;
+    }
   }
-
   try {
-    const decision = await scanner({
-      userPrompt: question,
-      response: result.answer,
-      toolsCalled: result.toolCalls.map((call) => call.name),
-    });
-    return { ...result, answer: decision.content };
+    const scan = await scanResponse(out.answer, { userPrompt: question });
+    const lawFour = scan.violations.filter((v) => v.category === 'anti_her');
+    if (lawFour.length > 0) {
+      const stripped = stripViolations(out.answer, {
+        ...scan,
+        violations: lawFour,
+        flaggedSentences: lawFour.flatMap((v) => v.sentenceIndices ?? []),
+      });
+      const names = await closeContactNames(pipeline);
+      out = { ...out, answer: `${stripped.trim()} ${peoplePointerLine(names)}`.trim() };
+    }
   } catch {
-    return result;
+    /* the net never fails a turn */
   }
+  return out;
 }
 
 /**
@@ -481,8 +604,8 @@ export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSo
       // completed (already consumed) or other terminal
       return 'expired';
     },
-    async approve(id: string): Promise<void> {
-      await core.approveWorkflowTask(id);
+    async approve(id: string, opts?: { scope?: 'single' | 'session' }): Promise<void> {
+      await core.approveWorkflowTask(id, opts?.scope !== undefined ? { scope: opts.scope } : undefined);
     },
     async deny(id: string): Promise<void> {
       await core.cancelWorkflowTask(id, 'denied_by_operator');

@@ -37,6 +37,7 @@ export * from './proposal';
 export * from './push_configs';
 export * from './provenance';
 export * from './provenance_text';
+export * from './span_proof';
 export * from './receipts';
 export * from './release_log';
 export * from './remote_agents';

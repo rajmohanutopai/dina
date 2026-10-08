@@ -174,7 +174,7 @@ describe('the router with a stranger detector', () => {
 
   it('a known name keeps its token; a stranger gets the next number', async () => {
     const llm = recorder({ content: '[PERSON_1] and [PERSON_2]' });
-    const names = new NameLexicon({ fetch: async () => [{ group: 7, names: ['Sancho'] }] });
+    const names = new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 7, names: ['Sancho'] }] }) });
     const strangers = new StrangerNames({ detector: fakeDetector({ Sancho: 0.9, Priya: 0.9 }) });
     const res = await router(llm, strangers, names).chat({
       taskType: 'reason',

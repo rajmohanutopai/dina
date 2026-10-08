@@ -34,7 +34,8 @@ function stubDb(rows: Array<{ capabilitiesJson: string[] }>): {
       where = pred
       return Promise.resolve(rows)
     },
-  }
+  }  ;(whereStep as Record<string, unknown>).leftJoin = () => whereStep // live listings (§14) add joins
+
   const db = {
     select: () => ({
       from: () => ({

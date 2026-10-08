@@ -266,6 +266,8 @@ export class WorkflowEventConsumer {
       'cancelled',
       'approved',
       'outcome_unknown',
+      // REAL_LIFE_FIXES §9: a read-only query moved to the next provider.
+      'retargeted',
       ...A2A_EVENT_KINDS,
     ]);
     if (!DELIVERABLE_KINDS.has(event.event_kind)) {
@@ -384,6 +386,10 @@ export class WorkflowEventConsumer {
     } else if (task.kind === 'service_query') {
       details = this.composeDetails(event, task);
       text = formatServiceQueryResult(details);
+    } else if (event.event_kind === 'retargeted') {
+      // Only a service query is ever retargeted.
+      await this.ackAndTrack(event, 'skipped', result);
+      return;
     } else if (task.kind === 'delegation') {
       details = {};
       text = formatDelegationResult(event.event_kind, task);

@@ -18,8 +18,10 @@
  * Source: MT-38 (OpenClaw locked-vault data request with approval resume).
  */
 
-import { API_ASK } from './paths';
+import { bindAskAuthority, closeAskAuthority, mintAskAuthority } from '../../agent/ask_authority';
 import { getSessionRegistry } from '../../session/registry';
+
+import { API_ASK } from './paths';
 
 import type { CoreRouter } from '../router';
 
@@ -39,6 +41,12 @@ export interface AskSubmitInput {
    */
   sessionId?: string;
   ttlMs?: number;
+  /**
+   * Core's record of who is asking (REAL_LIFE_FIXES §0.1 B). Brain must carry
+   * it on every Core call it makes for this ask; Core enforces the
+   * requester's persona access on those reads.
+   */
+  askAuthority?: string;
 }
 
 /**
@@ -147,7 +155,18 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
     };
     if (sessionId !== '') input.sessionId = sessionId;
     if (typeof body.ttl_ms === 'number') input.ttlMs = body.ttl_ms;
+    // Every ask through this route comes from a paired device or agent, never
+    // the owner's own chat: record its authority so Core can enforce the
+    // requester's persona access on every read Brain makes for it.
+    const authority = mintAskAuthority({
+      requesterDid,
+      sessionId: sessionId !== '' ? sessionId : null,
+    });
+    input.askAuthority = authority.id;
     const result = await handler.handleAsk(input);
+    const askId = (result.body as { request_id?: unknown } | null)?.request_id;
+    if (typeof askId === 'string' && askId !== '') bindAskAuthority(authority.id, askId);
+    else if (result.status >= 400) closeAskAuthority(authority.id);
     return { status: result.status, body: result.body };
   });
 

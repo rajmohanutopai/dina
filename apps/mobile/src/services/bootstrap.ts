@@ -201,8 +201,12 @@ import {
   type IdentityKeypair,
   type ServiceInboundNotifier,
   type ServiceQueryIngress,
+  personaExists as corePersonaExists,
+  resolveInstalledPersonaName as coreResolveInstalledPersonaName,
 } from '@dina/core';
-import { makeResolveSender } from '@dina/home-node';
+import { kvPresenceStateStore, makeResolveSender, ServicePresenceWriter } from '@dina/home-node';
+import { kvGet, kvSet } from '@dina/core/kv';
+import { randomBytes as presenceRandomBytes } from '@noble/hashes/utils.js';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import {
   buildHomeNodeServiceRuntime,
@@ -298,6 +302,13 @@ export interface CreateNodeOptions {
    * failure. Defaults to "reachable" when omitted (test/no-PDS paths).
    */
   pdsSessionReachable?: boolean;
+  /**
+   * True while the app is in the foreground (the root layout passes
+   * `AppState.currentState === 'active'`). Drives the presence renewal's
+   * foreground-time trigger (REAL_LIFE_FIXES §14.4 A); omitted in tests, in
+   * which case presence renews only on listing changes.
+   */
+  isAppActive?: () => boolean;
   workflowRepository: WorkflowRepository;
   /**
    * Service-config repository (SQLite-backed in production). When supplied
@@ -1056,7 +1067,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // before resolve. Only wired when persistence is ready (mobile context).
   if (!('ownerPersonaOpener' in drainOptions)) {
     drainOptions.ownerPersonaOpener = async (persona: string) => {
-      if (isPersistenceReady()) await openPersonaDB(persona);
+      // Open only a vault the registry has. Opening an unregistered name
+      // would create a file /ask never searches; Core parks such items.
+      const installed = coreResolveInstalledPersonaName(persona);
+      if (isPersistenceReady() && corePersonaExists(installed)) await openPersonaDB(installed);
     };
   }
   // Drain consumes the transport-agnostic `CoreClient` surface directly.
@@ -1358,6 +1372,30 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // throws out of start()), so constructing it against an unreachable PDS would
   // turn a transient outage into a boot failure. The review-outbox drainer still
   // gets the lazy `node.pdsPublisher` and retries independently.
+  // REAL_LIFE_FIXES §14: the node's daily presence record. Built whatever
+  // happened at boot (it retries when the PDS or MsgBox comes back), and
+  // written only while MsgBox is up.
+  let presenceWriter: ServicePresenceWriter | null = null;
+  if (isProvider && options.pdsPublisher !== undefined) {
+    const pds = options.pdsPublisher;
+    presenceWriter = new ServicePresenceWriter({
+      repo: {
+        listRecords: async (collection) =>
+          (await pds.listRecords(collection)).map((r) => ({ rkey: r.rkey, cid: r.cid })),
+        getRecord: async (collection, rkey) => pds.getRecord(collection, rkey),
+        putRecord: async (collection, rkey, record, opts) =>
+          pds.putRecord(collection, rkey, record, { swapRecord: opts.swapRecord }),
+        deleteRecord: async (collection, rkey, opts) =>
+          pds.deleteRecord(collection, rkey, { swapRecord: opts.swapRecord }),
+      },
+      store: kvPresenceStateStore({ get: (k) => kvGet(k), set: (k, v) => kvSet(k, v) }),
+      inboundUp: () => isMsgBoxAuthenticated(),
+      randomBytes: (n) => presenceRandomBytes(n),
+      nowMs: nowMsFn,
+      onOutcome: (o) => log({ event: 'node.service_presence', status: o.status }),
+    });
+  }
+
   let publisher: ServicePublisher | null = null;
   if (isProvider && options.pdsPublisher !== undefined && options.pdsSessionReachable !== false) {
     publisher = new ServicePublisher({
@@ -1571,10 +1609,14 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         // and the store has no listings, fall back to the single-config path so
         // the injected config still publishes.
         const listings = listServiceConfigs();
+        // A listing that really changed while the app was closed: the presence
+        // set must name it. An unchanged boot writes nothing (§14.4 A).
+        let bootChanged = false;
         if (listings.length > 0) {
           for (const { rkey, config } of listings) {
             try {
-              await publisher.sync(toPublisherConfig(config), rkey);
+              const synced = await publisher.sync(toPublisherConfig(config), rkey);
+              if (!synced.published || synced.result.unchanged !== true) bootChanged = true;
             } catch (err) {
               // A listing that cannot be published as it stands (a schema
               // with no canonical form, saved before the save refused one)
@@ -1598,10 +1640,12 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         } else {
           const cfg = readConfig();
           if (cfg !== null) {
-            await publisher.sync(toPublisherConfig(cfg));
+            const synced = await publisher.sync(toPublisherConfig(cfg));
+            if (!synced.published || synced.result.unchanged !== true) bootChanged = true;
             log({ event: 'node.service_profile_synced', is_public: cfg.isDiscoverable });
           }
         }
+        if (bootChanged) void presenceWriter?.nudge();
         const unsubscribe = onServiceConfigChanged((rkey, next) => {
           const p = publisher;
           if (p === null) return;
@@ -1609,16 +1653,20 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           // (one row → one record under its rkey). Fire-and-forget — the
           // listener is synchronous but the publisher's sync is async, so we
           // never block the config-event emission on the PDS round-trip.
-          const syncPromise =
+          const syncPromise: Promise<unknown> =
             next === null ? p.unpublish(rkey) : p.sync(toPublisherConfig(next), rkey);
           void syncPromise.then(
-            () =>
+            (synced) => {
+              // The owner changed a listing: the presence set follows at once.
+              const s = synced as { published?: boolean; result?: { unchanged?: true } } | undefined;
+              if (s === undefined || s.published !== true || s.result?.unchanged !== true) void presenceWriter?.nudge();
               log({
                 event: 'node.service_profile_synced',
                 is_public: next?.isDiscoverable ?? false,
                 reason: 'config_changed',
                 rkey,
-              }),
+              });
+            },
             (err) => {
               log({
                 event: 'node.service_profile_sync_failed',
@@ -1638,6 +1686,46 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           );
         });
         globalDisposers.push(unsubscribe);
+      }
+
+      // REAL_LIFE_FIXES §14.4 A: presence on the phone. A reconnect writes
+      // only what was waiting for MsgBox, never a renewal (the relay
+      // reconnects when the app comes forward, and a renewal there would tie
+      // the public commit to the app opening). Renewal comes after a random
+      // 2–10 minutes of foreground time, summed across sessions in Core's KV
+      // so short sessions add up.
+      if (presenceWriter !== null) {
+        const writer = presenceWriter;
+        globalDisposers.push(onMsgBoxAuthenticated(() => void writer.flushWaiting()));
+        if (options.isAppActive !== undefined) {
+          const isActive = options.isAppActive;
+          const TICK_MS = 60_000;
+          const FG_KEY = 'service_presence_foreground';
+          const newTarget = () => (2 + Math.floor(Math.random() * 9)) * 60_000;
+          const _siPresence: (fn: () => void, ms: number) => unknown =
+            options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
+          const _ciPresence: (h: unknown) => void =
+            options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
+          const handle = _siPresence(() => {
+            if (!isActive()) return;
+            void (async () => {
+              let fg = { acc: 0, target: newTarget() };
+              try {
+                const raw = await kvGet(FG_KEY);
+                if (raw !== null) fg = { ...fg, ...(JSON.parse(raw) as Partial<typeof fg>) };
+              } catch {
+                /* start a fresh count */
+              }
+              fg.acc += TICK_MS;
+              if (fg.acc >= fg.target) {
+                fg = { acc: 0, target: newTarget() };
+                void writer.renewIfDue();
+              }
+              await kvSet(FG_KEY, JSON.stringify(fg)).catch(() => undefined);
+            })();
+          }, TICK_MS);
+          globalDisposers.push(() => _ciPresence(handle));
+        }
       }
 
       events.start();

@@ -214,7 +214,7 @@ async function runReasoning(
 
   // 3. Cloud gate — PII scrub if needed
   options.onStage?.('cloud_gate');
-  const gate = checkCloudGate(fullPrompt, req.persona, req.provider);
+  const gate = await checkCloudGate(fullPrompt, req.persona, req.provider);
   trace.step('cloud_gate', {
     allowed: gate.allowed,
     scrubbed: gate.scrubbed,

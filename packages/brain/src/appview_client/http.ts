@@ -91,6 +91,14 @@ export interface ServiceProfile {
    * (the coercion spread keeps it). Optional for backward compat.
    */
   uri?: string;
+  /**
+   * Live listings (REAL_LIFE_FIXES §14): whether the operator's node has
+   * renewed its presence lately. `fresh` (within 72 h), `stale`, `expired`, or
+   * `unknown` (a release that never renews). Absent from an older AppView.
+   */
+  liveness?: 'fresh' | 'stale' | 'expired' | 'unknown';
+  /** When AppView last saw the operator renew, to the hour; null if never. */
+  lastSeenAt?: string | null;
 }
 
 /** Parameters for `searchServices`. */
@@ -1000,7 +1008,20 @@ function coerceCatalogCandidate(raw: unknown): CommerceCatalogCandidate | null {
  * mobile reads survive a mixed ecosystem (main-style providers
  * alongside older mobile-published profiles).
  */
-function normalizeProfile(p: ServiceProfile): ServiceProfile {
+const LIVENESS = new Set(['fresh', 'stale', 'expired', 'unknown']);
+
+/** Drop liveness fields an AppView sent in a shape we do not know. */
+function normalizeLiveness(p: ServiceProfile): ServiceProfile {
+  const out = { ...p };
+  if (out.liveness !== undefined && !LIVENESS.has(out.liveness)) delete out.liveness;
+  if (out.lastSeenAt !== undefined && out.lastSeenAt !== null && !(typeof out.lastSeenAt === 'string' && Number.isFinite(Date.parse(out.lastSeenAt)))) {
+    delete out.lastSeenAt;
+  }
+  return out;
+}
+
+function normalizeProfile(input: ServiceProfile): ServiceProfile {
+  const p = normalizeLiveness(input);
   // Real AppView emits `capabilitySchemas: null` (NOT undefined) for a
   // provider that publishes no schema — see appview service-search.ts
   // (`r.capabilitySchemas ?? null`). `Object.entries(null)` throws, so a

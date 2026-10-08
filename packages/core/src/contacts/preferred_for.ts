@@ -70,3 +70,88 @@ export function normalisePreferredForCategory(input: string): string {
   if (typeof input !== 'string') return '';
   return input.trim().toLowerCase();
 }
+
+// ---------------------------------------------------------------------------
+// One vocabulary for roles and categories (REAL_LIFE_FIXES §5.3).
+// ---------------------------------------------------------------------------
+
+/**
+ * Role words and the service categories they map to. The preference binder
+ * (Brain) and the lookup (Core) share this one table, so "my plumber" and a
+ * search for "plumbing" meet. Keep it conservative: adding a role is cheap;
+ * removing one later changes what stored values match.
+ */
+export const PREFERRED_ROLE_TO_CATEGORIES: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  dentist: ['dental'],
+  doctor: ['medical'],
+  physician: ['medical'],
+  gp: ['medical'],
+  paediatrician: ['pediatric'],
+  pediatrician: ['pediatric'],
+  accountant: ['tax', 'accounting'],
+  cpa: ['tax', 'accounting'],
+  lawyer: ['legal'],
+  attorney: ['legal'],
+  mechanic: ['automotive'],
+  plumber: ['plumbing'],
+  electrician: ['electrical'],
+  vet: ['veterinary'],
+  veterinarian: ['veterinary'],
+  barber: ['hair'],
+  hairdresser: ['hair'],
+  stylist: ['hair'],
+  therapist: ['mental_health'],
+  psychiatrist: ['mental_health'],
+  psychologist: ['mental_health'],
+  trainer: ['fitness'],
+  coach: ['fitness'],
+  pharmacist: ['pharmacy'],
+  optometrist: ['optical'],
+  chiropractor: ['chiropractic'],
+  physiotherapist: ['physiotherapy'],
+  physio: ['physiotherapy'],
+  realtor: ['real_estate'],
+  broker: ['real_estate'],
+  banker: ['banking'],
+  florist: ['floral'],
+  tailor: ['tailoring'],
+  architect: ['architecture'],
+  contractor: ['construction'],
+  landscaper: ['landscaping'],
+  gardener: ['landscaping'],
+  nanny: ['childcare'],
+  babysitter: ['childcare'],
+  tutor: ['education'],
+  teacher: ['education'],
+});
+
+/** Every role and category in a group → the group's first category. */
+const CATEGORY_KEY: ReadonlyMap<string, string> = (() => {
+  const m = new Map<string, string>();
+  for (const [role, cats] of Object.entries(PREFERRED_ROLE_TO_CATEGORIES)) {
+    const key = cats[0];
+    if (key === undefined) continue;
+    if (!m.has(role)) m.set(role, key);
+    for (const c of cats) if (!m.has(c)) m.set(c, key);
+  }
+  return m;
+})();
+
+/**
+ * The matching key of a preferred-for value: role and category forms of one
+ * service fold together ("plumber", "plumbing", "plumbers" → "plumbing";
+ * "accountant", "tax", "accounting" → "tax"). A word not in the table is
+ * kept as given (lowercased), so unknown roles still match exactly.
+ */
+export function preferredForKey(input: string): string {
+  const v = normalisePreferredForCategory(input).replace(/\s+/g, '_');
+  if (v === '') return '';
+  const direct = CATEGORY_KEY.get(v);
+  if (direct !== undefined) return direct;
+  // Plurals: "dentists" → "dentist", "plumbers" → "plumber".
+  if (v.length > 3 && v.endsWith('s')) {
+    const single = CATEGORY_KEY.get(v.slice(0, -1));
+    if (single !== undefined) return single;
+  }
+  return v;
+}

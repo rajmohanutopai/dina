@@ -126,7 +126,7 @@ export async function enrichItem(
       const bodyForLLM = bodyText.slice(0, 4000); // Cap at 4000 chars (matching Python)
 
       // PII scrub before sending to cloud LLM
-      const vault = new EntityVault();
+      const vault = await EntityVault.create();
       const scrubbedBody = vault.scrub(bodyForLLM);
       const scrubbedSummary = vault.scrub(input.summary ?? '');
       if (vault.entries().length > 0) {

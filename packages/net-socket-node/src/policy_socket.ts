@@ -67,6 +67,7 @@ const SOCKET_HEADERS: ReadonlySet<string> = new Set([
 const ACCEPT_VALUE: Record<PolicySocketRequest['accept'], string> = {
   json: 'application/json',
   'json-or-sse': 'application/json, text/event-stream',
+  car: 'application/vnd.ipld.car',
   status: '*/*',
 };
 

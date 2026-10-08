@@ -107,9 +107,19 @@ export function wireChatRememberRuntime(
           pendingNeedsApproval,
         };
       }
-      if (item?.status === 'failed') break;
+      if (item?.status === 'duplicate') {
+        return { persona: null, duplicate: true };
+      }
+      if (item?.status === 'parked') {
+        return { persona: null, parkedPersona: item.persona, reason: item.reason ?? 'unknown_persona' };
+      }
+      if (item?.status === 'failed') {
+        return { persona: null, failedReason: item.reason ?? 'storage_error' };
+      }
     }
-    return { persona: null };
+    // The item never came back from the drain within the attempts: it is
+    // still staged (durable) but not filed yet.
+    return { persona: null, notYetFiled: true };
   });
 
   return {

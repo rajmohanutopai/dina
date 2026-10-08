@@ -2,7 +2,15 @@ import { and, eq, gte, inArray, or, sql, type SQL } from 'drizzle-orm'
 import { z } from 'zod'
 
 import type { DrizzleDB } from '@/db/connection.js'
-import { commerceCatalogProducts, commerceProductRelationships, subjectScores, subjects } from '@/db/schema/index.js'
+import {
+  commerceCatalogProducts,
+  commerceProductRelationships,
+  serviceAccountStatus,
+  serviceOperatorPresence,
+  subjectScores,
+  subjects,
+} from '@/db/schema/index.js'
+import { readLivenessSettings, tierSql } from '@/shared/service-liveness.js'
 import { productKey, type CatalogProductRow } from '@/shared/commerce/catalog-projection.js'
 import {
   belowCommerceTrustFloor,
@@ -292,20 +300,33 @@ export async function searchCommerceCatalog(
   // is an error rather than a no-op tier. The tier is added only when it has
   // something to say.
   const identifierKeysForOrder = identifiers.map((ref) => productKey(ref as never))
+  // Live listings (docs/REAL_LIFE_FIXES.md §14): a dead seller's products
+  // sort after live sellers' BEFORE the cap, so a pile of them can never
+  // crowd live sellers out; an inactive account's products are left out, and
+  // expired sellers too when hiding is on.
+  const live = await readLivenessSettings(db)
+  const tierExpr = tierSql('service_operator_presence', live)
+  conditions.push(sql`COALESCE(${serviceAccountStatus.active}, true)`)
+  if (live.hideExpired) conditions.push(sql`${tierExpr} < 2`)
   const ordering =
     identifierKeysForOrder.length > 0
       ? [
+          sql`${tierExpr} ASC`,
           sql`CASE WHEN ${commerceCatalogProducts.productKey} IN ${identifierKeysForOrder} THEN 0 ELSE 1 END`,
           commerceCatalogProducts.rowKey,
         ]
-      : [commerceCatalogProducts.rowKey]
+      : [sql`${tierExpr} ASC`, commerceCatalogProducts.rowKey]
 
-  const rows = await db
-    .select()
+  const joined = await db
+    .select({ row: commerceCatalogProducts, tier: sql<number>`${tierExpr}` })
     .from(commerceCatalogProducts)
+    .leftJoin(serviceOperatorPresence, eq(commerceCatalogProducts.supplierDid, serviceOperatorPresence.did))
+    .leftJoin(serviceAccountStatus, eq(commerceCatalogProducts.supplierDid, serviceAccountStatus.did))
     .where(and(...conditions))
     .orderBy(...ordering)
     .limit(params.limit * 4)
+  const rows = joined.map((j) => j.row)
+  const tierBySupplier = new Map(joined.map((j) => [j.row.supplierDid, Number(j.tier)]))
 
   const query: CatalogSearchQuery = {
     atIso: nowIso,
@@ -366,7 +387,11 @@ export async function searchCommerceCatalog(
   const suppressed = scored.length - admitted.length
 
   const ranked = rankCatalogMatches(
-    admitted.map((entry) => ({ ...entry, rowKey: entry.row.rowKey })),
+    admitted.map((entry) => ({
+      ...entry,
+      rowKey: entry.row.rowKey,
+      livenessTier: tierBySupplier.get(entry.row.supplierDid) ?? 1,
+    })),
   ).slice(0, params.limit)
 
   return {

@@ -38,8 +38,19 @@ import { classifyDomain, classifyPersonas } from '../routing/domain';
 export interface StagingProcessResult {
   itemId: string;
   persona: string;
-  status: 'stored' | 'pending_unlock' | 'failed';
+  /**
+   * `parked`: every target named a persona this node does not have, so Core
+   * kept the item in staging instead of storing it anywhere.
+   */
+  status: 'stored' | 'duplicate' | 'pending_unlock' | 'parked' | 'failed';
   enriched: boolean;
+  /** Personas Core confirmed it stored to (stored results only). */
+  storedPersonas?: string[];
+  /**
+   * Short, content-free reason for `failed` / `parked` (an error code or a
+   * persona name, never item text), for the owner-facing reply.
+   */
+  reason?: string;
   /**
    * Populated only when `processPendingItems` runs with a
    * `topicTouch` option AND the item stored successfully. `touched`

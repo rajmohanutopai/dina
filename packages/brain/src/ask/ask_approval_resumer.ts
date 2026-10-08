@@ -100,6 +100,13 @@ export interface ResumeContext {
   forcedSources?: readonly IntentSource[];
   /** The owner's chat thread the ask came from (A2A §4.2), so the resume releases into it. */
   conversation?: string;
+  /**
+   * The agent session and Core ask authority the ask started with
+   * (REAL_LIFE_FIXES §3.4): the resumed reads must match the grant the
+   * owner just approved, so both ride on the record and come back here.
+   */
+  sessionId?: string;
+  askAuthority?: string;
 }
 
 /**
@@ -241,6 +248,8 @@ export class AskApprovalResumer {
           ? { forcedSources: record.forcedSources }
           : {}),
         ...(record.conversation !== undefined ? { conversation: record.conversation } : {}),
+        ...(record.sessionId !== undefined ? { sessionId: record.sessionId } : {}),
+        ...(record.askAuthority !== undefined ? { askAuthority: record.askAuthority } : {}),
       };
       let result: AgenticLoopResult;
       try {
@@ -270,6 +279,8 @@ export class AskApprovalResumer {
             ? { forcedSources: record.forcedSources }
             : {}),
           ...(record.conversation !== undefined ? { conversation: record.conversation } : {}),
+          ...(record.sessionId !== undefined ? { sessionId: record.sessionId } : {}),
+          ...(record.askAuthority !== undefined ? { askAuthority: record.askAuthority } : {}),
         });
       } catch (err) {
         const detail = stringifyError(err);

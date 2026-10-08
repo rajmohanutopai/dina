@@ -64,9 +64,11 @@ export function receiveAndStage(
     return { action: 'ephemeral', reason: `Ephemeral type: ${messageType}` };
   }
 
-  // 2. Safety alerts always pass — skip trust evaluation
-  if (alwaysPasses(messageType)) {
-    return stageMessage(messageType, senderDID, body, messageId);
+  // 2. Safety alerts from a contact always pass the scenario gate. A
+  // stranger's alert is quarantined for the owner's review like any other
+  // stranger message (REAL_LIFE_FIXES §6.2): sending is contact-only too.
+  if (alwaysPasses(messageType) && isContact && senderTrust !== 'blocked') {
+    return stageMessage(messageType, senderDID, body, messageId, senderTrust);
   }
 
   // 3. Trust evaluation — contacts-only model (matches Go EvaluateIngress)
@@ -85,7 +87,26 @@ export function receiveAndStage(
   }
 
   // 4. Trusted sender — stage to vault
-  return stageMessage(messageType, senderDID, body, messageId);
+  return stageMessage(messageType, senderDID, body, messageId, senderTrust);
+}
+
+/**
+ * Core's trust stamp for a contact's message (REAL_LIFE_FIXES §6.1). Core
+ * knows the sender is a contact; staging resolve keeps this stamp over
+ * whatever Brain supplies, so a friend's message is searchable as normal.
+ */
+export interface D2DTrustStamp {
+  sender_trust: 'contact_ring1' | 'contact_ring2';
+  source_type: 'contact';
+  retrieval_policy: 'normal';
+}
+
+function trustStampFor(senderTrust: string): D2DTrustStamp {
+  return {
+    sender_trust: senderTrust === 'contact_ring2' ? 'contact_ring2' : 'contact_ring1',
+    source_type: 'contact',
+    retrieval_policy: 'normal',
+  };
 }
 
 /** Stage a message into the staging inbox. */
@@ -94,6 +115,8 @@ function stageMessage(
   senderDID: string,
   body: string,
   messageId: string,
+  /** The contact's trust level; only contacts reach staging. */
+  senderTrust: string,
 ): ReceiveResult {
   const vaultItemType = mapToVaultItemType(messageType) ?? messageType;
 
@@ -141,6 +164,7 @@ function stageMessage(
       origin_did: senderDID,
       summary,
       body,
+      core_trust: trustStampFor(senderTrust),
     },
   });
 

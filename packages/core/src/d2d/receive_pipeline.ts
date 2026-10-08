@@ -32,6 +32,7 @@ import {
   type LocalCapabilityChecker,
   type RequesterWindowView,
 } from '../service/bypass';
+import { recordProviderOutcome } from '../service/provider_outcomes';
 import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../service/service_config';
 import { getServiceGrantRepository } from '../service/service_grant_repository';
 import { requesterWindow, setProviderWindow } from '../service/windows';
@@ -1251,4 +1252,7 @@ function completeMatchingServiceQueryTask(
     eventDetails,
     Date.now(),
   );
+  // REAL_LIFE_FIXES §9: the provider answered (an error reply is still a
+  // reply), so it is alive.
+  recordProviderOutcome(raw.from, responseStatus === 'success' ? 'answered' : 'error', { handedOff: true });
 }

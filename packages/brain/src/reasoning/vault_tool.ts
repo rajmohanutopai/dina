@@ -27,6 +27,7 @@ import {
   executeToolSearch,
   getAccessiblePersonas,
   getVaultReadBackend,
+  type VaultReadBackend,
 } from '../vault_context/assembly';
 
 import { ApprovalRequiredError, type AgentTool } from './tool_registry';
@@ -95,6 +96,17 @@ export interface VaultGetFullContentToolOptions extends VaultReleaseScope {
  */
 export interface VaultReleaseScope {
   releaseSession?: string;
+  /**
+   * Agent/device ask (REAL_LIFE_FIXES §3): read through this backend, which
+   * carries Core's ask authority, instead of the host default.
+   */
+  readBackend?: VaultReadBackend;
+  /**
+   * Agent/device ask: Core's no-side-effect `check`. Returns the personas
+   * the requester may read now; anything else is gated. Must fail closed
+   * (empty set) when Core does not answer.
+   */
+  accessCheck?: (personas: string[]) => Promise<ReadonlySet<string>>;
 }
 
 type VaultItem = ReturnType<typeof listRecentItems>[number];
@@ -113,8 +125,9 @@ async function recentItemsFor(
   persona: string,
   limit: number,
   releaseSession: string | undefined,
+  backendOverride?: VaultReadBackend,
 ): Promise<VaultItem[]> {
-  const backend = getVaultReadBackend();
+  const backend = backendOverride ?? getVaultReadBackend();
   if (backend !== null && backend.vaultList !== undefined) {
     const res = await backend.vaultList(persona, {
       limit,
@@ -174,6 +187,37 @@ const BROWSE_FIELD_CHARS = 500;
  * parameters schema + execute).
  */
 export function createVaultSearchTool(options: VaultSearchToolOptions = {}): AgentTool {
+
+  // Per ask (the registry is built per ask): has the open fan-out run?
+  let openSearchDone = false;
+  /** Agent fan-out: search only what Core says the requester may read now. */
+  const agentFanOut = async (query: string, limit: number) => {
+    openSearchDone = true;
+    const scope = resolveScope();
+    const accessiblePersonas =
+      scope === null ? getAccessiblePersonas() : getAccessiblePersonas().filter((p) => scope.has(p));
+    let allowed: ReadonlySet<string>;
+    try {
+      allowed = options.accessCheck !== undefined ? await options.accessCheck(accessiblePersonas) : new Set();
+    } catch {
+      allowed = new Set(); // fail closed
+    }
+    const searchSet = accessiblePersonas.filter((p) => allowed.has(p));
+    const gated = accessiblePersonas.filter((p) => !allowed.has(p));
+    const merged: Awaited<ReturnType<typeof executeToolSearch>> = [];
+    for (const persona of searchSet) {
+      merged.push(...(await executeToolSearch(persona, query, limit, options.releaseSession, options.readBackend)));
+    }
+    merged.sort((a, b) => b.score - a.score);
+    return {
+      persona: 'all',
+      personas_searched: searchSet,
+      query,
+      accessible: searchSet.length > 0,
+      results: merged.slice(0, limit),
+      ...(gated.length > 0 ? { gated_personas: gated } : {}),
+    };
+  };
   const cap = options.maxResults ?? DEFAULT_MAX_RESULTS;
   const personaGuard = options.personaGuard;
   /** Per-call allow-list (null = unrestricted). See `allowedPersonas` docs. */
@@ -185,7 +229,7 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
   return {
     name: 'vault_search',
     description:
-      "Search the user's own memory (the vault) for items matching a free-text query. Use this ANY time the user asks about something personal, a prior fact, or an event they might have told you before — before answering from general knowledge. By default, searches ALL unlocked personas (recommended) — the persona-routing pass at ingest may have placed an item in 'general' even when its topic looks like 'health' or 'financial'. Pass `persona` only when the user's question explicitly names one (e.g. \"in my health vault\", \"check my work notes\").",
+      "Search the user's own memory (the vault) for items matching a free-text query. Use this ANY time the user asks about something personal, a prior fact, or an event they might have told you before — before answering from general knowledge. By default, searches ALL unlocked personas (recommended) — the persona-routing pass at ingest may have placed an item in 'general' even when its topic looks like 'health' or 'financial'. Pass `persona` only when the user's question explicitly names one (e.g. \"in my health vault\", \"check my work notes\"). If the result lists `gated_personas`, those were not searched because they need the owner's approval; name one in `persona` only when the question clearly needs it (that asks the owner once).",
     parameters: {
       type: 'object',
       properties: {
@@ -209,6 +253,9 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
     async execute(args): Promise<{
       persona: string;
       personas_searched: string[];
+      /** Agent asks: personas not searched because they need the owner's approval. */
+      gated_personas?: string[];
+      note?: string;
       query: string;
       accessible: boolean;
       results: {
@@ -227,6 +274,27 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
 
       const namedPersona =
         typeof args.persona === 'string' && args.persona.trim() !== '' ? args.persona.trim() : null;
+
+      // Agent/device ask (REAL_LIFE_FIXES §3.4, least agency): the first
+      // time the model names a persona it may not read yet, search what it
+      // may read instead and say the named one was not searched. Only a
+      // second, deliberate request raises the owner's card — so a question
+      // answered in an open vault never asks the owner at all.
+      if (namedPersona !== null && options.accessCheck !== undefined && !openSearchDone) {
+        let allowedNamed: ReadonlySet<string>;
+        try {
+          allowedNamed = await options.accessCheck([namedPersona]);
+        } catch {
+          allowedNamed = new Set();
+        }
+        if (!allowedNamed.has(namedPersona)) {
+          const open = await agentFanOut(query, limit);
+          return {
+            ...open,
+            note: `"${namedPersona}" needs the owner's approval and was not searched. If these results do not answer the question, call vault_search again with persona "${namedPersona}" to ask the owner.`,
+          };
+        }
+      }
 
       // Single-persona path — LLM explicitly named one. Run the
       // pluggable guard FIRST so a sensitive/locked persona can bail
@@ -250,7 +318,13 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
         }
         await checkPersonaGuard(personaGuard, namedPersona);
         const accessible = getAccessiblePersonas().includes(namedPersona);
-        const rows = await executeToolSearch(namedPersona, query, limit, options.releaseSession);
+        const rows = await executeToolSearch(
+          namedPersona,
+          query,
+          limit,
+          options.releaseSession,
+          options.readBackend,
+        );
         return {
           persona: namedPersona,
           personas_searched: [namedPersona],
@@ -307,6 +381,14 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       // persona set. For agents bailing on a fresh mint, the agentic
       // loop's `ApprovalRequiredError` short-circuits BEFORE we reach
       // the search step — the agent's HTTP response is `pending_approval`.
+      // Agent/device ask (REAL_LIFE_FIXES §3.4): ask Core which personas the
+      // requester may read NOW (no card), search only those, and name the
+      // rest as gated. A card is raised only when the model then names one
+      // gated persona (single-persona path above).
+      if (options.accessCheck !== undefined) {
+        return agentFanOut(query, limit);
+      }
+
       const sensitivePersonasInRegistry: string[] = [];
       if (personaGuard) {
         const allPersonas = listPersonas();
@@ -327,7 +409,13 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       //     proceeds over everything the registry has open.
       //   - For an agent bailing on a fresh approval, we never reach this point.
       for (const persona of accessiblePersonas) {
-        const rows = await executeToolSearch(persona, query, limit, options.releaseSession);
+        const rows = await executeToolSearch(
+          persona,
+          query,
+          limit,
+          options.releaseSession,
+          options.readBackend,
+        );
         merged.push(...rows);
       }
       merged.sort((a, b) => b.score - a.score);
@@ -362,7 +450,7 @@ export function createListPersonasTool(options: VaultReleaseScope = {}): AgentTo
   return {
     name: 'list_personas',
     description:
-      "Enumerate the user's persona vaults with a short preview (item count + types + top-5 summaries) for each. Call this first when the user's question doesn't name a persona — the previews tell you which persona to search. Locked personas surface as {status:'locked'}; skip them silently.",
+      "Enumerate the user's persona vaults with a short preview (item count + types + top-5 summaries) for each. Call this first when the user's question doesn't name a persona — the previews tell you which persona to search. Locked personas surface as {status:'locked'}; skip them silently. Personas that need the owner's approval for this requester surface as {status:'gated'}: search one by name only when the question needs it.",
     parameters: {
       type: 'object',
       properties: {},
@@ -379,6 +467,16 @@ export function createListPersonasTool(options: VaultReleaseScope = {}): AgentTo
     }> {
       const accessible = new Set(getAccessiblePersonas());
       const all = listPersonas();
+      // Agent/device ask (REAL_LIFE_FIXES §3.5): previews only for personas
+      // Core says the requester may read now; the rest show as gated.
+      let mayPreview: ReadonlySet<string> | null = null;
+      if (options.accessCheck !== undefined) {
+        try {
+          mayPreview = await options.accessCheck(all.map((p) => p.name));
+        } catch {
+          mayPreview = new Set(); // fail closed
+        }
+      }
       const out: {
         name: string;
         item_count?: number;
@@ -401,13 +499,23 @@ export function createListPersonasTool(options: VaultReleaseScope = {}): AgentTo
           out.push(entry);
           continue;
         }
+        if (mayPreview !== null && !mayPreview.has(p.name)) {
+          entry.status = 'gated';
+          out.push(entry);
+          continue;
+        }
 
         try {
           // Most-recent items (no search term) — matches Python's
           // `core.search_vault(persona, query="")` semantics via the
           // timestamp-DESC helper. Capped at BROWSE_LIMIT so a huge
           // vault doesn't blow the prompt.
-          const items = await recentItemsFor(p.name, BROWSE_LIMIT, options.releaseSession);
+          const items = await recentItemsFor(
+            p.name,
+            BROWSE_LIMIT,
+            options.releaseSession,
+            options.readBackend,
+          );
           entry.item_count = items.length;
           const types = new Set<string>();
           const summaries: string[] = [];
@@ -482,7 +590,12 @@ export function createBrowseVaultTool(options: VaultBrowseToolOptions = {}): Age
 
       let rawItems;
       try {
-        rawItems = await recentItemsFor(persona, BROWSE_LIMIT, options.releaseSession);
+        rawItems = await recentItemsFor(
+          persona,
+          BROWSE_LIMIT,
+          options.releaseSession,
+          options.readBackend,
+        );
       } catch {
         return { persona, items: [] };
       }
@@ -569,8 +682,8 @@ export function createGetFullContentTool(options: VaultGetFullContentToolOptions
         return { error: `Persona '${persona}' is locked` };
       }
 
-      // Out-of-process Core: route through the registered backend.
-      const backend = getVaultReadBackend();
+      // Out-of-process Core (or an agent ask's authority backend).
+      const backend = options.readBackend ?? getVaultReadBackend();
       const item =
         backend !== null && backend.vaultGet !== undefined
           ? ((await backend.vaultGet(

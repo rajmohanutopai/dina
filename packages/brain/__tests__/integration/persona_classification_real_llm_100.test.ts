@@ -28,12 +28,14 @@
  *     day-to-day dev.
  */
 
+import { createOpenAI } from '@ai-sdk/openai';
+
+import { AISDKAdapter } from '../../src/llm/adapters/aisdk';
 import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
+import { getProviderTiers } from '../../src/llm/provider_config';
 import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
-import {
-  createGeminiClassifier,
-  type InstalledPersona,
-} from '../../src/routing/gemini_classify';
+import { NameLexicon } from '../../src/pii/names';
+import { createGeminiClassifier, type InstalledPersona } from '../../src/routing/gemini_classify';
 
 import type { ClassificationInput, MentionedContact } from '../../src/routing/domain';
 
@@ -42,10 +44,41 @@ import type { ClassificationInput, MentionedContact } from '../../src/routing/do
 // shell env (common — picked up by other tools) silently triggers
 // real-network classifier runs that depend on Gemini's behaviour and
 // can drift between model upgrades.
+//
+// Provider: `DINA_CLASSIFY_PROVIDER=openrouter` runs the same suite through
+// OpenRouter (OPENROUTER_API_KEY; model OPENROUTER_CLASSIFY_MODEL, default the
+// openrouter lite tier) — e.g. `deepseek/deepseek-v4.1-flash`. Default: Gemini.
+//
+// Names: `DINA_PII_HIDE_NAMES=1` gives the router the people in these messages
+// as known names (docs/PII_ARCHITECTURE_V2.md §5), so the model sees
+// `[PERSON_1]` instead of "Sancho" — the production path since PII V2. Run with
+// and without to see whether hiding names changes the answers.
+const CLASSIFY_PROVIDER: 'gemini' | 'openrouter' =
+  process.env.DINA_CLASSIFY_PROVIDER === 'openrouter' ? 'openrouter' : 'gemini';
 const GEMINI_API_KEY =
   process.env.DINA_RUN_REAL_LLM === '1'
-    ? (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
+    ? CLASSIFY_PROVIDER === 'openrouter'
+      ? (process.env.OPENROUTER_API_KEY ?? '')
+      : (process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '')
     : '';
+const OPENROUTER_CLASSIFY_MODEL =
+  process.env.OPENROUTER_CLASSIFY_MODEL ?? getProviderTiers('openrouter').lite;
+const HIDE_NAMES = process.env.DINA_PII_HIDE_NAMES === '1';
+/** The people these messages name (not pets, not businesses), as a user's contacts would list them. */
+const KNOWN_PEOPLE = [
+  'Alonso',
+  'Sancho',
+  'Sarah',
+  'Emma',
+  'Dave',
+  'Tom',
+  'Mike',
+  'Maria',
+  'Williams',
+  'Martinez',
+  'Chen',
+  'Jenkins',
+];
 // No hardcoded classification model here. The production
 // `createGeminiClassifier` auto-picks the `lite` tier via
 // `getProviderTiers('gemini').lite` (currently
@@ -411,7 +444,7 @@ const ALL_SCENARIOS: Scenario[] = RUN_ALL_100
 const describeReal = GEMINI_API_KEY ? describe : describe.skip;
 
 describeReal(
-  `Persona classification — real Gemini (${ALL_SCENARIOS.length} scenarios, lite tier${GEMINI_CLASSIFY_MODEL_OVERRIDE !== '' ? ` [override: ${GEMINI_CLASSIFY_MODEL_OVERRIDE}]` : ''})`,
+  `Persona classification — real ${CLASSIFY_PROVIDER === 'openrouter' ? `OpenRouter ${OPENROUTER_CLASSIFY_MODEL}` : 'Gemini'} (${ALL_SCENARIOS.length} scenarios, names ${HIDE_NAMES ? 'hidden' : 'visible'}${GEMINI_CLASSIFY_MODEL_OVERRIDE !== '' ? ` [override: ${GEMINI_CLASSIFY_MODEL_OVERRIDE}]` : ''})`,
   () => {
     let classifier: ReturnType<typeof createGeminiClassifier>;
 
@@ -427,15 +460,35 @@ describeReal(
       //   4. createGeminiClassifier on top.
       // Nothing in the test path is synthetic; a regression in any
       // layer surfaces here.
-      const rawProvider = new GeminiGenaiAdapter({ apiKey: GEMINI_API_KEY });
+      // OpenRouter: the same AI-SDK adapter brain-server builds for it.
+      const rawProvider =
+        CLASSIFY_PROVIDER === 'openrouter'
+          ? new AISDKAdapter({
+              model: createOpenAI({
+                apiKey: GEMINI_API_KEY,
+                baseURL: 'https://openrouter.ai/api/v1',
+              }).chat(OPENROUTER_CLASSIFY_MODEL),
+              name: 'openrouter',
+            })
+          : new GeminiGenaiAdapter({ apiKey: GEMINI_API_KEY });
       const router = new LLMRouter({
-        providers: { gemini: rawProvider },
+        providers: { [CLASSIFY_PROVIDER]: rawProvider },
         config: {
           localAvailable: false,
-          cloudProviders: ['gemini'],
+          cloudProviders: [CLASSIFY_PROVIDER],
           sensitivePersonas: ['health', 'financial'],
           cloudConsentGranted: true,
         },
+        ...(HIDE_NAMES
+          ? {
+              names: new NameLexicon({
+                fetch: async () => ({
+                  version: 'v1',
+                  groups: KNOWN_PEOPLE.map((name, i) => ({ group: i + 1, names: [name] })),
+                }),
+              }),
+            }
+          : {}),
       });
       const classifyProvider = new RoutedLLMProvider({
         router,
@@ -453,9 +506,11 @@ describeReal(
         // Explicit override applies only when the env var is set —
         // lets dev runs A/B a specific model without editing this
         // file. Default path hits the router's tier auto-pick.
-        ...(GEMINI_CLASSIFY_MODEL_OVERRIDE !== ''
-          ? { model: GEMINI_CLASSIFY_MODEL_OVERRIDE }
-          : {}),
+        ...(CLASSIFY_PROVIDER === 'openrouter'
+          ? { providerName: 'openrouter', model: OPENROUTER_CLASSIFY_MODEL }
+          : GEMINI_CLASSIFY_MODEL_OVERRIDE !== ''
+            ? { model: GEMINI_CLASSIFY_MODEL_OVERRIDE }
+            : {}),
       });
     });
 

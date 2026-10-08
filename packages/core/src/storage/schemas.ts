@@ -3854,6 +3854,16 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // REAL_LIFE_FIXES §3.3 — "Approve Once" binds a grant to the one agent ask
+    // that raised the card. `ask_id` NULL is a session grant (Approve), held
+    // for the agent's session; a non-NULL `ask_id` grant serves only that ask.
+    version: 69,
+    name: 'agent_persona_grants_ask_scope',
+    sql: `
+      ALTER TABLE agent_persona_grants ADD COLUMN ask_id TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------
@@ -4016,6 +4026,23 @@ export const PERSONA_MIGRATIONS: Migration[] = [
 
       CREATE INDEX IF NOT EXISTS idx_vault_items_scope ON vault_items(data_scope);
       CREATE INDEX IF NOT EXISTS idx_vault_item_subjects_scope ON vault_item_subjects(data_scope);
+    `,
+  },
+  {
+    // REAL_LIFE_FIXES §2.4 — the owner's own memories carry a content key so
+    // the same memory said twice is recognised (events never do: two equal
+    // messages on two days are both real). `last_confirmed_at` records the
+    // owner saying it again. Rows from before this have no key; it is
+    // computed for them when a save could match them.
+    version: 4,
+    name: 'vault_owner_memory_key',
+    sql: `
+      ALTER TABLE vault_items ADD COLUMN owner_memory_key TEXT;
+      ALTER TABLE vault_items ADD COLUMN last_confirmed_at INTEGER;
+
+      CREATE INDEX IF NOT EXISTS idx_vault_items_owner_memory
+        ON vault_items(owner_memory_key, data_scope)
+        WHERE owner_memory_key IS NOT NULL;
     `,
   },
 ];

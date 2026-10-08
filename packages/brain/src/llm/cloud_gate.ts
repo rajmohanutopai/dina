@@ -36,12 +36,12 @@ export interface CloudGateResult {
  * The caller should use scrubbedText for the LLM call and the
  * returned EntityVault to rehydrate the response afterward.
  */
-export function checkCloudGate(
+export async function checkCloudGate(
   text: string,
   persona: string,
   provider: string,
   sensitivePersonas?: string[],
-): CloudGateResult {
+): Promise<CloudGateResult> {
   // Local/none providers → always allowed, no scrubbing
   if (provider === 'local' || provider === 'none') {
     return {
@@ -63,7 +63,7 @@ export function checkCloudGate(
   }
 
   // Sensitive persona + cloud → mandatory scrub
-  const vault = new EntityVault();
+  const vault = await EntityVault.create();
 
   try {
     const scrubbedText = vault.scrub(text);

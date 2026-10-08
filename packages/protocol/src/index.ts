@@ -357,6 +357,10 @@ export * from './services/capability-catalog';
 // kind), fail-closed + explainable. See docs/SERVICE_CAPABILITY_CATALOG_DESIGN.md §5.1.
 export * from './services/listing-validation';
 
+// Service presence: a node's daily "still here" record, so AppView can tell a
+// live provider from a listing left behind (docs/REAL_LIFE_FIXES.md §14).
+export * from './services/presence';
+
 // PeerLens review-dimension registry — shared canonical vocabulary +
 // resolver. Byte-identical to appview/src/shared/dimension-registry.ts.
 export * from './services/dimension-registry';

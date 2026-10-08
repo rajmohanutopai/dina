@@ -71,6 +71,7 @@ import {
   denyApproval,
   drainForApprovalWithEffects,
 } from '../../staging/service';
+import { isOwnerTalkSendApproval, sendApprovedOwnerTalk } from '../../talk/owner_send';
 import {
   WorkflowTaskKind,
   WorkflowTaskState,
@@ -1145,7 +1146,14 @@ async function approveTask(
     // approval CAS commits. Reserve is SYNCHRONOUS (no awaited unlock between it
     // and the CAS), so the reserve→approve span carries no event-loop yield to
     // race. Only after approve succeeds do we activate + unlock (phase 2).
-    const grant = reserveAgentPersonaGrant(before, Date.now());
+    // REAL_LIFE_FIXES §3.3: "Approve Once" (scope 'single') binds the grant to
+    // the ask that raised the card; "Approve" (session, the default) holds it
+    // for the agent's session.
+    const grant = reserveAgentPersonaGrant(
+      before,
+      Date.now(),
+      body?.scope === 'single' ? 'single' : 'session',
+    );
     if (grant === null) {
       throw new WorkflowValidationError(
         'agent persona-access grant could not be created (grant repository unavailable)',
@@ -1198,6 +1206,17 @@ async function approveTask(
     }
     writeSessionGrant();
     return approved;
+  }
+
+  // REAL_LIFE_FIXES §7: approving an owner-talk confirm card sends exactly
+  // the frozen recipient and text, then completes the card.
+  if (isOwnerTalkSendApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+    const approved = service.approve(id);
+    const sent = await sendApprovedOwnerTalk(approved);
+    if (sent.status === 'sent') {
+      return service.complete(id, JSON.stringify({ sent: true }), `sent to ${sent.recipient_name}`);
+    }
+    return service.fail(id, `send failed: ${'reason' in sent ? sent.reason : sent.status}`);
   }
 
   // Item B — approving a coding-gate request mints the single-use, payload-bound

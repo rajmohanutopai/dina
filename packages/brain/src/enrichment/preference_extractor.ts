@@ -34,6 +34,8 @@
  *      because "is" starts lowercase.
  */
 
+import { PREFERRED_ROLE_TO_CATEGORIES } from '@dina/core';
+
 /**
  * Role word → category (or categories) it implies. Lowercase keys.
  * Categories are the values that end up in `Contact.preferredFor`,
@@ -41,49 +43,8 @@
  * the list conservative — adding a role is cheap; removing one later
  * hurts (back-fill implications).
  */
-const ROLE_TO_CATEGORIES: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  dentist: ['dental'],
-  doctor: ['medical'],
-  physician: ['medical'],
-  gp: ['medical'],
-  paediatrician: ['pediatric'],
-  pediatrician: ['pediatric'],
-  accountant: ['tax', 'accounting'],
-  cpa: ['tax', 'accounting'],
-  lawyer: ['legal'],
-  attorney: ['legal'],
-  mechanic: ['automotive'],
-  plumber: ['plumbing'],
-  electrician: ['electrical'],
-  vet: ['veterinary'],
-  veterinarian: ['veterinary'],
-  barber: ['hair'],
-  hairdresser: ['hair'],
-  stylist: ['hair'],
-  therapist: ['mental_health'],
-  psychiatrist: ['mental_health'],
-  psychologist: ['mental_health'],
-  trainer: ['fitness'],
-  coach: ['fitness'],
-  pharmacist: ['pharmacy'],
-  optometrist: ['optical'],
-  chiropractor: ['chiropractic'],
-  physiotherapist: ['physiotherapy'],
-  physio: ['physiotherapy'],
-  realtor: ['real_estate'],
-  broker: ['real_estate'],
-  banker: ['banking'],
-  florist: ['floral'],
-  tailor: ['tailoring'],
-  architect: ['architecture'],
-  contractor: ['construction'],
-  landscaper: ['landscaping'],
-  gardener: ['landscaping'],
-  nanny: ['childcare'],
-  babysitter: ['childcare'],
-  tutor: ['education'],
-  teacher: ['education'],
-});
+// One table for the binder and the lookup (REAL_LIFE_FIXES §5.3), kept in Core.
+const ROLE_TO_CATEGORIES = PREFERRED_ROLE_TO_CATEGORIES;
 
 /** A single preference candidate extracted from free text. */
 export interface PreferenceCandidate {

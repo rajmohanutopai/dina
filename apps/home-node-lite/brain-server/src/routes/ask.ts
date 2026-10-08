@@ -66,6 +66,8 @@ interface SubmitBody {
   requesterDid?: unknown;
   sessionId?: unknown;
   ttlMs?: unknown;
+  /** Core's ask authority for an agent/device ask (REAL_LIFE_FIXES §0.1 B). */
+  askAuthority?: unknown;
 }
 
 interface IdParams {
@@ -124,6 +126,16 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
         submitInput.sessionId = body.sessionId;
       }
       if (typeof body.ttlMs === 'number') submitInput.ttlMs = body.ttlMs;
+      // Core forwards an agent/device ask with the authority it minted; the
+      // coordinator refuses any non-owner ask that lacks one. An owner
+      // device's ask is the owner's own and carries none.
+      if (
+        callerOf(req)?.kind !== 'owner_device' &&
+        typeof body.askAuthority === 'string' &&
+        body.askAuthority !== ''
+      ) {
+        submitInput.askAuthority = body.askAuthority;
+      }
       const result = await coordinator.handleAsk(submitInput);
       return reply.status(result.status).send(result.body);
     },
@@ -165,7 +177,11 @@ export function registerAskRoutes(app: FastifyInstance, opts: RegisterAskRoutesO
           .status(404)
           .send({ error: 'ask not found or has no pending approval', request_id: id });
       }
-      const r = await coordinator.gateway.approve(record.approvalId);
+      const scopeRaw = (req.body as { scope?: unknown } | undefined)?.scope;
+      const r = await coordinator.gateway.approve(
+        record.approvalId,
+        scopeRaw === 'single' || scopeRaw === 'session' ? { scope: scopeRaw } : undefined,
+      );
       if (r.ok) {
         return reply.status(200).send({ ok: true, request_id: id, approval_id: record.approvalId });
       }

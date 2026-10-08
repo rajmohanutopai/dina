@@ -12,6 +12,7 @@ import {
   parseLLMResponse,
   registerAntiHerClassifier,
   resetAntiHerClassifier,
+  mayBeEmotional,
 } from '../../src/guardian/anti_her_classify';
 
 describe('Anti-Her Pre-Screening Classifier', () => {
@@ -340,5 +341,26 @@ describe('Anti-Her Pre-Screening Classifier', () => {
       expect(result.category).toBe('companionship_seeking');
       expect(result.shouldRedirect).toBe(true);
     });
+  });
+});
+
+describe('named emotional kinds (REAL_LIFE_FIXES §8)', () => {
+  it.each([
+    ["I think I'm falling for you", 'romantic_attachment'],
+    ["I've started to have feelings for you", 'romantic_attachment'],
+    ['my dad died last month and I just want to talk', 'grief'],
+    ['since mum passed I barely leave the house', 'grief'],
+    ['I have no one to talk to these days', 'isolation'],
+    ["honestly I don't see a reason to go on", 'acute_risk'],
+    ['I want to hurt myself', 'acute_risk'],
+  ])('%s → %s', (text, kind) => {
+    expect(classifyDeterministic(text).category).toBe(kind);
+  });
+
+  it('plain tasks skip the model pass; emotional words reach it', () => {
+    expect(mayBeEmotional('what time does the pharmacy close?')).toBe(false);
+    expect(mayBeEmotional('remind me to buy milk')).toBe(false);
+    expect(mayBeEmotional('I miss the way things were')).toBe(true);
+    expect(mayBeEmotional('talking with you is the best part of my day')).toBe(true);
   });
 });

@@ -15,6 +15,10 @@
 
 import { parseServiceQueryExecutionPayload } from '@dina/protocol';
 
+import { carriesHostOperationMarker } from '../plugins/host_operation_lane';
+import { failoverExpiringServiceQueries } from '../service/provider_failover';
+import { recordProviderOutcome } from '../service/provider_outcomes';
+
 import {
   AllowedOrigins,
   WorkflowTaskKind,
@@ -25,10 +29,11 @@ import {
   type WorkflowTask,
 } from './domain';
 import { parsePluginEnvelope } from './plugin_envelope';
+
 // The SAME recogniser the completion handler uses. Asking the question here
 // as well is what stops a proposal being answered as a result — see
 // `complete()`.
-import { carriesHostOperationMarker } from '../plugins/host_operation_lane';
+
 import { WorkflowConflictError, type RequeueObserver, type WorkflowRepository } from './repository';
 
 import type { PluginCompletionHandler } from '../plugins/host_operation_completion';
@@ -563,9 +568,33 @@ export class WorkflowService {
     // The repository hands back each task as it stood BEFORE the sweep, so
     // an approval that lapsed is one still awaiting its owner; an approved
     // card whose own execution overran its deadline is a failure, not a lapse.
+    // REAL_LIFE_FIXES §9: a read-only query with a fallback left moves to
+    // the next provider instead of expiring (same task, same card).
+    failoverExpiringServiceQueries(this.repo, nowSec, nowMs, (id, reason) => {
+      try {
+        this.fail(id, reason);
+      } catch {
+        /* already terminal */
+      }
+    });
     const expired = this.repo.expireTasks(nowSec, nowMs);
     for (const task of expired) {
       if (task.status === WorkflowTaskState.PendingApproval) this.noticeApprovalDecision(task, 'lapsed');
+      // A query that was handed off and never answered counts against its
+      // provider (only with the relay link up — see provider_outcomes).
+      if (task.kind === WorkflowTaskKind.ServiceQuery) {
+        try {
+          const p = JSON.parse(task.payload) as { to_did?: unknown };
+          if (typeof p.to_did === 'string') {
+            recordProviderOutcome(p.to_did, 'expired', {
+              handedOff: task.status === WorkflowTaskState.Running,
+              now: nowMs,
+            });
+          }
+        } catch {
+          /* malformed payload */
+        }
+      }
     }
     return expired;
   }

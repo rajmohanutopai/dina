@@ -24,6 +24,7 @@ import {
   registerAgentGatingPolicyRoutes,
   type AgentGatingPolicyChanged,
 } from './routes/agent_gating_policy';
+import { registerAgentPersonaAccessRoute } from './routes/agent_persona_access';
 import {
   registerAskRoutes,
   setAskRouteHandler,
@@ -31,6 +32,7 @@ import {
   type AskRouteOptions,
 } from './routes/ask';
 import { registerBrainCallerRoutes } from './routes/brain_callers';
+import { registerChatThreadRoutes } from './routes/chat_threads';
 import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
 import { registerCommerceRoutes } from './routes/commerce';
 import { registerContactsRoutes } from './routes/contacts';
@@ -64,6 +66,7 @@ import {
 } from './routes/service_respond';
 import { registerSessionRoutes } from './routes/session';
 import { registerStagingRoutes } from './routes/staging';
+import { registerTalkSendRoute } from './routes/talk_send';
 import { registerUcpRoutes } from './routes/ucp';
 import { registerVaultRoutes } from './routes/vault';
 import { registerWatchRoutes } from './routes/watch';
@@ -122,6 +125,9 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   );
 
   registerVaultRoutes(router);
+  registerAgentPersonaAccessRoute(router);
+  registerChatThreadRoutes(router);
+  registerTalkSendRoute(router);
   registerStagingRoutes(router);
   registerPIIRoutes(router);
   registerDevicesRoutes(router);

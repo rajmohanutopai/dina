@@ -24,6 +24,7 @@ import {
   listServiceConfigs,
   setServiceConfigDurable,
   clearServiceConfigDurable,
+  ListingLimitError,
   validateServiceConfigForSave,
 } from '../../service/service_config';
 
@@ -60,6 +61,9 @@ export async function upsertServiceListing(
   try {
     await setServiceConfigDurable(validated.config, rkey);
   } catch (err) {
+    if (err instanceof ListingLimitError) {
+      return { status: 409, body: { error: err.message, code: err.code } };
+    }
     return {
       status: 503,
       body: { error: `service_config: persistence failed — ${(err as Error).message}` },

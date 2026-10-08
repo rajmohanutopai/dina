@@ -39,6 +39,7 @@ import {
   type ReasoningSensitivity,
   type ReasoningTaskKind,
 } from '../reasoning/domain';
+import { serviceQueryMayHaveActed } from '../service/provider_failover';
 import { isReservedLane, reservedLaneSql } from '../service/reserved_lanes';
 
 import { WorkflowTaskState, isTerminal, type WorkflowEvent, type WorkflowTask } from './domain';
@@ -344,6 +345,12 @@ export interface WorkflowRepository {
    * Returns whether the task moved.
    */
   parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean;
+  /**
+   * REAL_LIFE_FIXES §9: point a running service query at the next provider
+   * (new payload, new deadline) instead of letting it expire. The task, and
+   * so the chat card, stay the same. False when it is no longer running.
+   */
+  retargetServiceQuery(id: string, payload: string, expiresAtSec: number, nowMs: number): boolean;
 
   /**
    * Revert tasks whose lease expired (agent died mid-execution) back to
@@ -1355,6 +1362,16 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     return affected > 0;
   }
 
+  retargetServiceQuery(id: string, payload: string, expiresAtSec: number, nowMs: number): boolean {
+    return (
+      this.db.run(
+        `UPDATE workflow_tasks SET payload = ?, expires_at = ?, updated_at = ?
+          WHERE id = ? AND kind = 'service_query' AND state = 'running'`,
+        [payload, expiresAtSec, nowMs, id],
+      ) > 0
+    );
+  }
+
   parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean {
     const claimClause = claimId !== undefined ? ' AND claim_id = ?' : '';
     const params: unknown[] = [expiresAtSec, nowMs, id, agentDID];
@@ -1804,7 +1821,11 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
       // failed. Everything else keeps the failed('expired') ending.
       for (const t of candidates) {
         const envelope = t.status === 'running' ? parsePluginEnvelope(t.payload) : null;
-        const toUnknown = envelope !== null && isDeclaredEffectful(envelope);
+        // REAL_LIFE_FIXES §9: a handed-off query that may act (a booking)
+        // has an unknown outcome, never "no response".
+        const toUnknown =
+          (envelope !== null && isDeclaredEffectful(envelope)) ||
+          (t.kind === 'service_query' && t.status === 'running' && serviceQueryMayHaveActed(t.payload));
         const affected = this.db.run(
           toUnknown
             ? `UPDATE workflow_tasks
@@ -2455,6 +2476,15 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return true;
   }
 
+  retargetServiceQuery(id: string, payload: string, expiresAtSec: number, nowMs: number): boolean {
+    const t = this.tasks.get(id);
+    if (t === undefined || t.kind !== 'service_query' || t.status !== 'running') return false;
+    t.payload = payload;
+    t.expires_at = expiresAtSec;
+    t.updated_at = nowMs;
+    return true;
+  }
+
   parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean {
     const t = this.tasks.get(id);
     if (t === undefined) return false;
@@ -2751,7 +2781,11 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
         // §9.5 parity with the SQL store: deadline expiry MID-RUN on a
         // declared-effectful plugin task → outcome_unknown.
         const envelope = t.status === 'running' ? parsePluginEnvelope(t.payload) : null;
-        const toUnknown = envelope !== null && isDeclaredEffectful(envelope);
+        // REAL_LIFE_FIXES §9: a handed-off query that may act (a booking)
+        // has an unknown outcome, never "no response".
+        const toUnknown =
+          (envelope !== null && isDeclaredEffectful(envelope)) ||
+          (t.kind === 'service_query' && t.status === 'running' && serviceQueryMayHaveActed(t.payload));
         t.status = toUnknown ? 'outcome_unknown' : 'failed';
         t.error = toUnknown ? 'expired mid-run — external outcome unknown' : 'expired';
         t.updated_at = nowMs;

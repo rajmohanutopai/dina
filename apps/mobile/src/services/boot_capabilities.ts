@@ -30,6 +30,7 @@
  *         service-discovery demo is actually runnable from the current app shell.
  */
 
+import { isAppActive } from './app_active';
 import {
   AppViewClient,
   PDSAccountClient,
@@ -392,15 +393,15 @@ export async function buildBootInputs(
   // fails and the next model call tries again.
   installNameLexicon(
     new NameLexicon({
-      fetch: async () => {
+      fetch: async (known) => {
         // Loaded when called: useNodeBootstrap imports this module.
         const { getBootedNode } = await import('../hooks/useNodeBootstrap');
         const node = getBootedNode();
         if (node === null) throw new Error('node not booted');
-        return node.coreClient.piiNames();
+        return node.coreClient.piiNames(known);
       },
       onDegraded: (reason) =>
-        console.warn('[pii] names unavailable; scrubbing with patterns only', reason),
+        console.warn('[pii] names unavailable; refusing model calls until Core answers', reason),
     }),
   );
   // Names of people Dina does not know, found on the device (§7); iPhone only.
@@ -721,6 +722,7 @@ export async function buildBootInputs(
     localDelegationRunner,
     pdsPublisher,
     pdsSessionReachable,
+    isAppActive,
     // Round-5 #4: install the device-role resolver so `resolveCallerType` maps
     // a paired PLUGIN device to callerType 'plugin' and an AGENT device to
     // 'agent' — NOT the wider default 'device'. Without this, `createNode`

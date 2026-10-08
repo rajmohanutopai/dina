@@ -99,15 +99,45 @@ describe('D2D Receive — Stage Memory', () => {
       expect(result.action).toBe('staged');
     });
 
-    it('safety.alert always passes regardless of trust', () => {
+    it("a contact's safety.alert always passes the trust gate", () => {
+      const result = receiveAndStage(
+        'safety.alert',
+        'did:plc:friend',
+        'unknown',
+        '{"alert":"emergency"}',
+        'msg-007',
+        true,
+      );
+      expect(result.action).toBe('staged');
+    });
+
+    it("a stranger's safety.alert is quarantined for review (REAL_LIFE_FIXES §6.2)", () => {
       const result = receiveAndStage(
         'safety.alert',
         'did:plc:unknown',
         'unknown',
         '{"alert":"emergency"}',
-        'msg-007',
+        'msg-007b',
       );
-      expect(result.action).toBe('staged'); // not quarantined
+      expect(result.action).toBe('quarantined');
+    });
+
+    it("a contact's message carries Core's trust stamp (REAL_LIFE_FIXES §6.1)", () => {
+      const result = receiveAndStage(
+        'social.update',
+        'did:plc:friend',
+        'contact_ring1',
+        '{"text":"we moved to Leeds"}',
+        'msg-008',
+        true,
+      );
+      expect(result.action).toBe('staged');
+      const item = getItem(result.stagingId!);
+      expect((item?.data as { core_trust?: unknown }).core_trust).toEqual({
+        sender_trust: 'contact_ring1',
+        source_type: 'contact',
+        retrieval_policy: 'normal',
+      });
     });
 
     it('staged item appears in staging inbox', () => {

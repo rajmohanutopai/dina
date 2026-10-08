@@ -210,7 +210,7 @@ describe('serviceSearch — capability canonicalization (Layer 3)', () => {
     })
     expect(r.services).toEqual([])
     expect(r.cursor).toBeNull()
-    expect(r.rankingVersion).toBe('v1')
+    expect(r.rankingVersion).toBe('v2')
     // The early return short-circuits before binding the capability.
     expect(allBoundStrings(cap)).not.toContain('["plumbing"]')
   })
@@ -253,7 +253,7 @@ describe('serviceSearch — response shape', () => {
       limit: 10,
     })
     expect(r.cursor).toBeNull()
-    expect(r.rankingVersion).toBe('v1')
+    expect(r.rankingVersion).toBe('v2')
     expect(r.services).toEqual([])
   })
 

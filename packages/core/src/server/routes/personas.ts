@@ -40,7 +40,12 @@ export function registerPersonasRoutes(
 
 async function handleList(resolveList: () => PersonaState[]): Promise<CoreResponse> {
   const personas = [...resolveList()]
-    .map((p) => ({ name: p.name, tier: p.tier, isOpen: p.isOpen }))
+    .map((p) => ({
+      name: p.name,
+      tier: p.tier,
+      isOpen: p.isOpen,
+      ...(p.description !== undefined && p.description !== '' ? { description: p.description } : {}),
+    }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return { status: 200, body: { personas } };
 }
