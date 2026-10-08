@@ -127,6 +127,8 @@ The gatekeeper decides who may open which persona. Tiers auto-migrate from legac
 
 The owner acting **through the app** sees every persona — the tiers gate *external agents*, not the human. Agents work inside named sessions (`dina session start`); grants are scoped to a session and revoked when it ends.
 
+An agent's `/ask` carries an **ask authority** that Core mints (`aa-…`, `packages/core/src/agent/ask_authority.ts`). Brain passes it on every vault, ToC and persona-list read made for that ask, and Core gates each read against the agent's grants (`routes/ask_authority_gate.ts`). An approval grants either this ask only or the session (24-hour cap). An ask with no session is refused. Brain never pre-fetches for an agent ask, so no read escapes the gate.
+
 ---
 
 ## Storage & Vault
@@ -212,7 +214,10 @@ sequenceDiagram
   C->>Core: poll /api/v1/ask/<id>/status → complete
 ```
 
-- **Pre-flight retrieval planner** — a structured LLM planner pre-fetches cross-domain vault context so answers can bridge personas (e.g. "birthday" in General + "budget" in Finance). Wired through `buildHomeNodeAskRuntime`. (`packages/brain/src/composition/ask_retrieval_planner.ts`, `packages/home-node/src/ask_runtime.ts`)
+- **Pre-flight retrieval planner** — a structured LLM planner pre-fetches cross-domain vault context so answers can bridge personas (e.g. "birthday" in General + "budget" in Finance). Wired through `buildHomeNodeAskRuntime`. Owner asks only; agent asks read through the gated tools. (`packages/brain/src/composition/ask_retrieval_planner.ts`, `packages/home-node/src/ask_runtime.ts`)
+- **Conversation memory** — each chat thread is stored by Core (phone and server alike; Brain reaches it through brain-only `/v1/chat/*` routes). The last turns, fenced as data, go to the planner, the intent classifier and the loop, so a follow-up such as "and her teacher?" resolves. (`packages/brain/src/chat/history.ts`, `packages/core/src/server/routes/chat_threads.ts`)
+- **Owner words are proven** — saving from chat ("remember that …") and messaging a contact ("tell Sancho …") act at once only on the owner's own recorded turn: Brain sends a span proof and Core re-hashes the turn. Anything else becomes a card. (`packages/core/src/a2a/span_proof.ts`, `packages/core/src/talk/owner_send.ts`)
+- **Never replace a human** — a regex pass, then a model pass when emotional words appear, names the kind (companionship, romance, grief, isolation, acute risk). Acute risk gets a fixed crisis reply; the others go ahead with warmth and an instruction to point to people the owner knows. The output guard keeps a deterministic net. (`packages/brain/src/guardian/anti_her*.ts`)
 - **Intent classifier** injects an `intent_routable` catalog so price/ETA/availability/quote queries route to provider Services instead of the vault.
 - **Tier-1 prompt-provider** — `runCapability` takes an instruction + params, searches the relevant vault, and returns schema-constrained JSON.
 - **Tool policy & enforcement** — `ask_handler` enforces forced lanes and result validation (e.g. a PeerLens-only lane blocks vault tools). LLM routing balances cost/quality across providers (`config/` model defaults).
@@ -396,6 +401,8 @@ sequenceDiagram
   MB-->>CB: result → answer
 ```
 
+- **Choosing a live provider** — Core records, per provider DID, service queries answered or expired after hand-off (an expiry counts only with the relay link up). Three in a row eject the provider for 30 minutes, doubling to 24 hours; one answer clears it. Brain ranks ejected providers last (at most half a set, never a lone one). A `read` capability carries up to two fallbacks and moves to the next provider on the same card; a capability that acts never resends and ends as `outcome_unknown`. (`packages/core/src/service/provider_outcomes.ts`, `provider_failover.ts`)
+- **Live listings** — a node with published listings renews one public record, `com.dinakernel.service.presence/self`, about once a day while it can receive queries; it names the node's listings and carries no time. AppView judges liveness by when it received the renewals (its own clock, paused over its own outages), ranks fresh providers first, labels the rest (`fresh` / `stale` / `expired` / `unknown`), withholds closed accounts and listings the node no longer names, and re-reads anything it may have missed from the repository with a signed proof. (`packages/home-node/src/service_presence.ts`, `appview/src/shared/service-liveness.ts`, `docs/REAL_LIFE_FIXES.md` §14)
 - **Multi-listing config** — `service_configs` rows are keyed per `rkey`; one row maps to one published `service.profile`. The AppView (schema PK = uri, upsert-on-uri) is already multi-listing. (`packages/core/src/service`, `packages/core/src/d2d/service_bodies.ts`, `packages/core/src/server/routes/service_query.ts` + `service_respond.ts`)
 
 ---

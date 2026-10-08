@@ -1,8 +1,18 @@
 import { z } from 'zod'
 import { eq, and, sql, lt, or, isNull, type SQL } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { services } from '@/db/schema/index.js'
+import { services, serviceAccountStatus, serviceOperatorPresence } from '@/db/schema/index.js'
 import { didProfiles, didRedactions } from '@/db/schema/index.js'
+import {
+  lastSeenAtIso,
+  livenessSql,
+  readLivenessSettings,
+  recencySql,
+  servableSql,
+  tierSql,
+  type Liveness,
+  type LivenessSettings,
+} from '@/shared/service-liveness.js'
 import { encodeCursor, decodeCursor } from '@/util/cursor.js'
 import { resolveSearchableCapability } from '@/shared/capability-registry.js'
 
@@ -17,11 +27,21 @@ import { resolveSearchableCapability } from '@/shared/capability-registry.js'
  * in-flight cursor's "next page" claim is wrong. See the cursor
  * helper docstring for the full rationale.
  */
-export const RANKING_VERSION = 'v1'
+export const RANKING_VERSION = 'v2'
 
-/** Payload shape for the service-search cursor (bucket-binned composite score). */
+/**
+ * Payload shape for the service-search cursor. v2 (docs/REAL_LIFE_FIXES.md
+ * §14): the ordering leads with the liveness tier and a recency bucket, and
+ * `evalAt` pins the time tiers are judged at, so paging never shifts a row
+ * between tiers by ageing. A renewal between pages can still move one
+ * (`consistency: 'weak'`); clients de-duplicate by uri.
+ */
 const ServiceSearchCursor = z.object({
+  rv: z.literal(2),
+  evalAt: z.number(),
+  tier: z.number(),
   bucket: z.number(),
+  recency: z.number(),
   uri: z.string(),
 })
 
@@ -107,10 +127,20 @@ export interface ServiceSearchResult {
    * (search ran in text+trust-only mode).
    */
   distanceKm: number | null
+  /**
+   * Live listings (§14): `fresh` (renewed in the last 72 h of unpaused time),
+   * `stale`, `expired`, or `unknown` (an operator on a release that never
+   * renews). Results come fresh first.
+   */
+  liveness: Liveness
+  /** When AppView last observed the operator renew, to the hour; null if never. */
+  lastSeenAt: string | null
 }
 
 export interface ServiceSearchResponse {
   services: ServiceSearchResult[]
+  /** Paging may move a provider that renews between pages; de-duplicate by uri. */
+  consistency: 'weak'
   cursor: string | null
   /**
    * Version of the ranking formula that produced the `score` field.
@@ -135,8 +165,19 @@ export async function serviceSearch(
   // rather than querying a raw string the index can't hold.
   const canonicalCapability = resolveSearchableCapability(capability)
   if (canonicalCapability === null) {
-    return { services: [], cursor: null, rankingVersion: RANKING_VERSION }
+    return { services: [], consistency: 'weak', cursor: null, rankingVersion: RANKING_VERSION }
   }
+
+  // Live listings (§14): judge every page at the first page's time.
+  // Throws InvalidCursorError (→ 400) on a malformed or pre-v2 cursor.
+  const decoded = cursor !== undefined ? decodeCursor(cursor, ServiceSearchCursor) : null
+  const live: LivenessSettings = await readLivenessSettings(
+    db,
+    decoded !== null ? decoded.evalAt : Date.now() * 1000,
+  )
+  const P = 'service_operator_presence'
+  const tierExpr = tierSql(P, live)
+  const recencyExpr = recencySql(P, live.nowUs)
 
   // Haversine distance — only meaningful when the caller provided a
   // reference location. Non-geospatial searches drop the distance term
@@ -208,6 +249,11 @@ export async function serviceSearch(
     conditions.push(sql`${services.lat} IS NOT NULL AND ${services.lng} IS NOT NULL`)
     conditions.push(sql`${distanceExpr} <= ${radiusKm}`)
   }
+  // Live listings (§14): withhold listings of inactive accounts, of nodes
+  // that withdrew, and those a complete presence set does not name; leave
+  // expired ones out when hiding is on.
+  conditions.push(servableSql('services', P, 'service_account_status'))
+  if (live.hideExpired) conditions.push(sql`${tierExpr} < 2`)
 
   // Keyset pagination on (score_bucket DESC, uri DESC). The cursor is
   // an opaque base64url-wrapped JSON envelope `{v, bucket, uri}` so a
@@ -215,19 +261,14 @@ export async function serviceSearch(
   // integer bucket binning) doesn't break clients holding cursors.
   // Malformed / unknown-version cursors are rejected loud rather than
   // silently producing an unconstrained page.
-  if (cursor !== undefined) {
-    // Throws InvalidCursorError (→ 400 InvalidRequest) on malformed
-    // input. Loud rejection beats silently producing an unconstrained
-    // page when a client sends a cursor from a prior CURSOR_VERSION.
-    const decoded = decodeCursor(cursor, ServiceSearchCursor)
-    // `or(...)` is variadic and may return undefined when given zero
-    // args; both branches below are concrete SQL fragments, so the
-    // result is non-null at runtime. The `!` aligns the type checker
-    // with that invariant.
-    conditions.push(or(
-      lt(scoreBucketExpr, sql`${decoded.bucket}`),
-      and(sql`${scoreBucketExpr} = ${decoded.bucket}`, lt(services.uri, decoded.uri)),
-    )!)
+  if (decoded !== null) {
+    // Keyset on (tier ASC, bucket DESC, recency ASC, uri DESC).
+    conditions.push(sql`(
+      ${tierExpr} > ${decoded.tier}
+      OR (${tierExpr} = ${decoded.tier} AND ${scoreBucketExpr} < ${decoded.bucket})
+      OR (${tierExpr} = ${decoded.tier} AND ${scoreBucketExpr} = ${decoded.bucket} AND ${recencyExpr} > ${decoded.recency})
+      OR (${tierExpr} = ${decoded.tier} AND ${scoreBucketExpr} = ${decoded.bucket} AND ${recencyExpr} = ${decoded.recency} AND ${services.uri} < ${decoded.uri})
+    )`)
   }
 
   const results = await db
@@ -247,6 +288,10 @@ export async function serviceSearch(
       trustScore: didProfiles.overallTrustScore,
       score: compositeScoreExpr,
       scoreBucket: scoreBucketExpr,
+      tier: sql<number>`${tierExpr}`.as('liveness_tier'),
+      recency: sql<number>`${recencyExpr}`.as('liveness_recency'),
+      liveness: sql<string>`${livenessSql(P, live)}`.as('liveness_label'),
+      lastSeenUs: serviceOperatorPresence.lastSeenUs,
       // Server-side distance projection so the response carries an
       // already-computed value (consumers don't redo haversine
       // themselves). `null` when no caller location was supplied.
@@ -263,15 +308,29 @@ export async function serviceSearch(
     // redacted operators eligible; the IS NULL check in the WHERE
     // filter excludes the redacted ones.
     .leftJoin(didRedactions, eq(services.operatorDid, didRedactions.did))
+    .leftJoin(serviceOperatorPresence, eq(services.operatorDid, serviceOperatorPresence.did))
+    .leftJoin(serviceAccountStatus, eq(services.operatorDid, serviceAccountStatus.did))
     .where(and(isNull(didRedactions.did), ...conditions))
-    .orderBy(sql`${scoreBucketExpr} DESC`, sql`${services.uri} DESC`)
+    .orderBy(
+      sql`${tierExpr} ASC`,
+      sql`${scoreBucketExpr} DESC`,
+      sql`${recencyExpr} ASC`,
+      sql`${services.uri} DESC`,
+    )
     .limit(limit + 1)
 
   const hasMore = results.length > limit
   const page = hasMore ? results.slice(0, limit) : results
   const lastRow = page[page.length - 1]
   const nextCursor = hasMore && lastRow
-    ? encodeCursor({ bucket: lastRow.scoreBucket, uri: lastRow.uri })
+    ? encodeCursor({
+        rv: 2,
+        evalAt: live.nowUs,
+        tier: Number(lastRow.tier),
+        bucket: lastRow.scoreBucket,
+        recency: Number(lastRow.recency),
+        uri: lastRow.uri,
+      })
     : null
 
   return {
@@ -313,8 +372,11 @@ export async function serviceSearch(
         matchedCategory:
           (r.capabilityCategories as Record<string, string> | null)?.[canonicalCapability] ?? null,
         distanceKm: typeof r.distanceKm === 'number' ? r.distanceKm : null,
+        liveness: (r.liveness ?? 'unknown') as Liveness,
+        lastSeenAt: lastSeenAtIso(r.lastSeenUs),
       }
     }),
+    consistency: 'weak' as const,
     cursor: nextCursor,
     rankingVersion: RANKING_VERSION,
   }

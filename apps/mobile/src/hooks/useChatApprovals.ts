@@ -97,12 +97,10 @@ export async function approveCard(
 ): Promise<ApprovalCardData | null> {
   const gateway = getAskApprovalGateway();
   if (gateway !== null) {
-    const r = await gateway.approve(id);
-    // Gateway drives `approvalSource.approve` internally, but
-    // hardcodes scope to 'single'. When the caller asked for
-    // 'session', upgrade the scope on the manager side after the
-    // resume has been triggered. Idempotent — the manager state is
-    // already 'approved'; we just widen the scope.
+    // The owner's choice reaches Core (REAL_LIFE_FIXES §3.3): 'single' is
+    // Approve Once (this ask only), 'session' is Approve (this agent session).
+    const r = await gateway.approve(id, { scope });
+    // Keep the manager-side record in step with the chosen scope too.
     if (r.ok && scope === 'session') {
       try {
         getApprovalManager().approveRequest(id, 'session', approverDID);

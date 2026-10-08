@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { eq, and, isNull } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { services, didRedactions } from '@/db/schema/index.js'
+import { services, didRedactions, serviceAccountStatus, serviceOperatorPresence } from '@/db/schema/index.js'
+import { livenessSql, readLivenessSettings, servableSql, type Liveness } from '@/shared/service-liveness.js'
 
 /**
  * xRPC endpoint: com.dinakernel.service.isDiscoverable
@@ -20,14 +21,19 @@ export type ServiceIsDiscoverableParamsType = z.infer<typeof ServiceIsDiscoverab
 export interface ServiceIsDiscoverableResponse {
   isDiscoverable: boolean
   capabilities?: string[]
+  /** Live listings (§14): the operator's liveness, when discoverable. */
+  liveness?: Liveness
 }
 
 export async function serviceIsDiscoverable(
   db: DrizzleDB,
   params: ServiceIsDiscoverableParamsType,
 ): Promise<ServiceIsDiscoverableResponse> {
+  const live = await readLivenessSettings(db)
+  const P = 'service_operator_presence'
   const rows = await db.select({
     capabilitiesJson: services.capabilitiesJson,
+    liveness: sql<string>`${livenessSql(P, live)}`.as('liveness_label'),
   })
     .from(services)
     // GDPR-shaped: a DID with a `did_redactions` row is excluded entirely.
@@ -36,8 +42,12 @@ export async function serviceIsDiscoverable(
     // JOIN keeps non-redacted operators eligible; the IS NULL check drops the
     // redacted ones.
     .leftJoin(didRedactions, eq(services.operatorDid, didRedactions.did))
+    .leftJoin(serviceOperatorPresence, eq(services.operatorDid, serviceOperatorPresence.did))
+    .leftJoin(serviceAccountStatus, eq(services.operatorDid, serviceAccountStatus.did))
     .where(and(
       eq(services.operatorDid, params.did),
+      // Live listings (§14): the same gate as search.
+      servableSql('services', P, 'service_account_status'),
       eq(services.isDiscoverable, true),
       // Exclude moderator-tombstoned rows. A tombstoned service must NOT
       // pass the public-service egress bypass even though its row still
@@ -65,5 +75,6 @@ export async function serviceIsDiscoverable(
   return {
     isDiscoverable: true,
     capabilities: Array.from(allCapabilities),
+    liveness: (rows[0]?.liveness ?? 'unknown') as Liveness,
   }
 }

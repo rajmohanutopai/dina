@@ -10,7 +10,7 @@
 
 import {
   AGENT_PERSONA_ACCESS_APPROVAL_TYPE,
-  DEFAULT_GRANT_TTL_MS,
+  SESSION_GRANT_CAP_MS,
   grantAgentPersonaAccessFromApproval,
   isAgentPersonaAccessApproval,
   parseAgentPersonaAccessPayload,
@@ -240,7 +240,7 @@ describe('approve → durable grant → resume', () => {
       persona: 'health',
       mode: 'read',
       scope: 'q',
-      now: 1_000 + DEFAULT_GRANT_TTL_MS + 1,
+      now: 1_000 + SESSION_GRANT_CAP_MS + 1,
     });
     expect(afterExpiry.kind).toBe('approval_required');
   });

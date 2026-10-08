@@ -73,6 +73,10 @@ describe('11.1 Schema Correctness', () => {
       'ucp_profile_labels',
       // The UCP merchant index (§3.15).
       'ucp_merchants',
+      // Live listings (docs/REAL_LIFE_FIXES.md §14): operator presence,
+      // deletion markers, account status, blind intervals, reconciliation.
+      'service_operator_presence', 'service_deletions', 'service_account_status',
+      'service_blind_intervals', 'service_reconcile_jobs', 'ingest_hourly_events',
     ]
 
     const result = await db.execute(sql`

@@ -25,7 +25,6 @@ import {
   updateContact,
   getVaultRepository,
   getPeopleRepository,
-  resolvePersonaName,
 } from '@dina/core';
 import { type Reminder } from '@dina/core/reminders';
 
@@ -493,14 +492,16 @@ export async function runStagingDrainTick(
       const personas = Array.from(
         new Set(
           [routedPrimary, ...routedSecondary]
-            .map((persona) => resolvePersonaName(persona.trim()))
+            // Names pass through as the model gave them; Core maps them to
+            // the installed vault (an alias only when its target exists).
+            .map((persona) => persona.trim().toLowerCase())
             .filter((persona) => persona !== ''),
         ),
       );
       if (personas.length === 0) personas.push('general');
       const routedPersonaSet = new Set(personas);
       const normalizedReminderPlans = turn.sideEffects.reminders.map((plan) => {
-        const requestedReminderPersona = resolvePersonaName(plan.persona.trim());
+        const requestedReminderPersona = plan.persona.trim().toLowerCase();
         return {
           ...plan,
           persona: routedPersonaSet.has(requestedReminderPersona)
@@ -537,12 +538,24 @@ export async function runStagingDrainTick(
         name: c.displayName,
         aliases: Array.isArray(c.aliases) ? c.aliases : undefined,
       }));
-      const senderScore = scoreSender(
+      const scored = scoreSender(
         pickString('sender'),
         pickString('source'),
         ingressChannel,
         contacts,
       );
+      // REAL_LIFE_FIXES §6.1: a D2D item's trust is Core's stamp (Core knows
+      // the sender is a contact); Core keeps it at resolve regardless.
+      const coreTrust = pick('core_trust') as Record<string, unknown> | undefined;
+      const senderScore =
+        ingressChannel === 'd2d' && coreTrust !== undefined && typeof coreTrust === 'object'
+          ? {
+              ...scored,
+              sender_trust: String(coreTrust.sender_trust ?? scored.sender_trust),
+              source_type: String(coreTrust.source_type ?? scored.source_type),
+              retrieval_policy: String(coreTrust.retrieval_policy ?? scored.retrieval_policy),
+            }
+          : scored;
 
       // Original event timestamp — Python reads `metadata.timestamp`
       // so a vault item for an email received 3 days ago shows that
@@ -716,8 +729,13 @@ export async function runStagingDrainTick(
       // it is not sufficient evidence for per-vault side effects. Newer Core
       // transports return the exact stored set; the fallback preserves
       // compatibility with older/simplified test clients.
+      // A repeated owner memory (REAL_LIFE_FIXES §2.4) is "stored" but new to
+      // nobody: no reminders, links or topics are applied for it again.
+      const duplicateSet = new Set(resolveResult.duplicatePersonas ?? []);
       const storedPersonaSet = new Set(
-        resolveResult.storedPersonas ?? (resolveResult.status === 'stored' ? personas : []),
+        (resolveResult.storedPersonas ?? (resolveResult.status === 'stored' ? personas : [])).filter(
+          (p) => !duplicateSet.has(p),
+        ),
       );
 
       // `schedule_reminder` is plan-only inside the Remember runtime. Apply
@@ -747,14 +765,25 @@ export async function runStagingDrainTick(
         }
       }
 
+      const unknownPersonas = resolveResult.unknownPersonas ?? [];
       if (resolveResult.status !== 'stored') {
-        // Report the storage target (`personas[0]`, the agentic loop's
-        // routed primary), which targets a real, installed persona.
+        // Every target unknown → Core parked the item; otherwise report the
+        // routed primary as waiting (unlock / approval) or failed.
+        const parked =
+          resolveResult.status === 'pending_unlock' &&
+          storedPersonaSet.size === 0 &&
+          unknownPersonas.length > 0 &&
+          unknownPersonas.length >= personas.length;
         const result: StagingProcessResult = {
           itemId,
           persona: personas[0] ?? 'general',
-          status: resolveResult.status === 'pending_unlock' ? 'pending_unlock' : 'failed',
+          status: parked
+            ? 'parked'
+            : resolveResult.status === 'pending_unlock'
+              ? 'pending_unlock'
+              : 'failed',
           enriched: true,
+          ...(parked ? { reason: 'unknown_persona' } : {}),
         };
         results.push(result);
         log({
@@ -767,6 +796,18 @@ export async function runStagingDrainTick(
         continue;
       }
 
+      if (storedPersonaSet.size === 0 && duplicateSet.size > 0) {
+        results.push({
+          itemId,
+          persona: [...duplicateSet][0] ?? personas[0] ?? 'general',
+          status: 'duplicate',
+          enriched: true,
+          storedPersonas: [...duplicateSet],
+        });
+        log({ event: 'staging.drain.duplicate', item_id: itemId, personas: [...duplicateSet] });
+        continue;
+      }
+
       stored++;
       log({
         event: 'staging.drain.resolved',
@@ -774,15 +815,16 @@ export async function runStagingDrainTick(
         personas,
       });
 
-      // The primary persona where the item actually got stored is
-      // `personas[0]` — the agentic loop's routed primary (or the first
-      // of its fan-out). Report that, so the chat reply names the vault
-      // the row truly landed in.
+      // Name a vault Core confirmed it stored to: the routed primary when it
+      // stored, else the first target that did. Never claim a vault that
+      // did not accept the row.
+      const storedInOrder = personas.filter((p) => storedPersonaSet.has(p));
       const result: StagingProcessResult = {
         itemId,
-        persona: personas[0] ?? 'general',
+        persona: storedInOrder[0] ?? personas[0] ?? 'general',
         status: 'stored',
         enriched: true,
+        storedPersonas: storedInOrder.length > 0 ? storedInOrder : [personas[0] ?? 'general'],
       };
 
       // GAP-RT-02 wire-point: topic-touch hook runs AFTER a durable
@@ -1088,6 +1130,7 @@ export async function runStagingDrainTick(
         persona: 'general',
         status: 'failed',
         enriched: false,
+        reason: 'storage_error',
       });
     } finally {
       stopHeartbeat();

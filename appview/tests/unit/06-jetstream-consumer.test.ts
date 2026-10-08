@@ -66,6 +66,15 @@ const mockIsRateLimited = vi.fn().mockReturnValue(false)
 const mockIsCollectionRateLimited = vi.fn().mockReturnValue(false)
 const mockGetCollectionDailyCap = vi.fn().mockReturnValue(null)
 
+// Live listings (REAL_LIFE_FIXES §14): the liveness writes, as spies.
+const mockNoteServiceAccount = vi.fn(async () => undefined)
+const mockQueueReconcile = vi.fn(async () => undefined)
+vi.mock('@/ingester/service-liveness-ingest.js', () => ({
+  noteServiceAccount: (...args: unknown[]) => (mockNoteServiceAccount as (...a: unknown[]) => Promise<void>)(...args),
+  queueReconcile: (...args: unknown[]) => (mockQueueReconcile as (...a: unknown[]) => Promise<void>)(...args),
+  noteIngestGap: vi.fn(async () => false),
+}))
+
 vi.mock('@/ingester/rate-limiter.js', () => ({
   isRateLimited: (...args: any[]) => mockIsRateLimited(...args),
   isCollectionRateLimited: (...args: any[]) => mockIsCollectionRateLimited(...args),
@@ -1211,10 +1220,18 @@ describe('SS6.A2A card, identity and account events reach the A2A directory', ()
     send(cardEvent())
     send(makeAccountEvent('deactivated'))
     send(makeCommitCreate())
+    // Live listings (REAL_LIFE_FIXES §14): a presence event is never dropped.
+    send({
+      did: 'did:plc:provider', time_us: 2000, kind: 'commit',
+      commit: { rev: 'rev2', operation: 'create', collection: 'com.dinakernel.service.presence', rkey: 'self', record: {}, cid: 'cid2' },
+    })
+    // Every event carries AppView's receive time (§14.4 C).
+    const received = { receivedUs: expect.any(Number) }
     expect(mockQueuePush.mock.calls).toEqual([
-      [expect.objectContaining({ context: { a2aGeneration: 7 } }), { required: true }],
-      [expect.not.objectContaining({ context: expect.anything() }), { required: true }],
-      [expect.not.objectContaining({ context: expect.anything() }), { required: false }],
+      [expect.objectContaining({ context: { ...received, a2aGeneration: 7 } }), { required: true }],
+      [expect.objectContaining({ context: received }), { required: true }],
+      [expect.objectContaining({ context: received }), { required: false }],
+      [expect.objectContaining({ context: received }), { required: true }],
     ])
   })
 

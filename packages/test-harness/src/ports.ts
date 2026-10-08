@@ -45,6 +45,14 @@ export interface VaultItem {
   content_l1: string;
   enrichment_status: string;
   enrichment_version: string;
+  /**
+   * REAL_LIFE_FIXES §2.4: set only on the owner's own memories
+   * (`user_remember`, `chat_auto`) — a hash of type, summary and body, so
+   * the same memory said twice is recognised. Absent on events.
+   */
+  owner_memory_key?: string;
+  /** When the owner last said this memory again (epoch ms). */
+  last_confirmed_at?: number;
 }
 
 export interface SearchQuery {

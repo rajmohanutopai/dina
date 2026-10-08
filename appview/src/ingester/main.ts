@@ -48,6 +48,9 @@ async function main() {
     retentionUs: env.A2A_JETSTREAM_RETENTION_HOURS * 3_600_000_000,
   })
   consumer.setA2ADirectory(a2aDirectory)
+  // Live listings (docs/REAL_LIFE_FIXES.md §14): renewals lost to a gap are
+  // blind time. The same retention as the A2A directory's gap check.
+  consumer.setServiceRetention(env.A2A_JETSTREAM_RETENTION_HOURS * 3_600_000_000)
 
   logger.info('Starting Ingester daemon')
   await consumer.start()

@@ -123,12 +123,44 @@ describe('Chat Orchestrator', () => {
       expect(result.response).not.toContain('Reminders set:');
     });
 
-    it('drain-hook returning null persona: staged "Got it" ack (drain not resolved yet)', async () => {
-      setRememberDrainHook(async () => ({ persona: null }));
+    it('drain not resolved yet: says it is kept, never claims a save', async () => {
+      setRememberDrainHook(async () => ({ persona: null, notYetFiled: true }));
 
       const result = await handleChat('/remember edge case');
-      expect(result.response).toContain("Got it — I'll remember that");
+      expect(result.response).toContain("I've kept that");
       expect(result.response).not.toContain('Stored in');
+      expect(result.response).not.toContain('Got it');
+    });
+
+    it('a failed save says so (REAL_LIFE_FIXES §2.2)', async () => {
+      setRememberDrainHook(async () => ({ persona: null, failedReason: 'storage_error' }));
+
+      const result = await handleChat('/remember the boiler code is 7731');
+      expect(result.response).toContain("I couldn't save that");
+      expect(result.response).not.toContain('Got it');
+      expect(result.response).not.toContain('Stored in');
+    });
+
+    it('an item parked for a missing vault says where it waits', async () => {
+      setRememberDrainHook(async () => ({
+        persona: null,
+        parkedPersona: 'garden',
+        reason: 'unknown_persona',
+      }));
+
+      const result = await handleChat('/remember the roses need feeding in May');
+      expect(result.response).toContain("couldn't file that yet");
+      expect(result.response).toContain('Garden');
+      expect(result.response).not.toContain('Stored in');
+    });
+
+    it('a drain hook that throws never claims a save', async () => {
+      setRememberDrainHook(async () => {
+        throw new Error('core unreachable');
+      });
+
+      const result = await handleChat('/remember the spare key is with Juno');
+      expect(result.response).toBe("I couldn't save that right now.");
     });
 
     it('pending_unlock: tells the user the row is parked behind approval (MT-13-I1)', async () => {

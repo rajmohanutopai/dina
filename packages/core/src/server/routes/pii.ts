@@ -5,7 +5,7 @@
 import { isScopeAuthorized } from '../../auth/agent_scope';
 import { listContacts } from '../../contacts/directory';
 import { getPeopleRepository } from '../../people/repository';
-import { buildPiiNameGroups } from '../../pii/names';
+import { buildPiiNameGroups, piiNamesVersion } from '../../pii/names';
 import { scrubPII } from '../../pii/patterns';
 
 import { PII_NAMES } from './paths';
@@ -25,9 +25,21 @@ export function registerPIIRoutes(router: CoreRouter): void {
   // grouped by person, with no person IDs, DIDs or relationships. Brain-only,
   // like the rest of `/v1/pii/`. With no people graph wired the list is the
   // contacts alone.
-  router.get(PII_NAMES, async () => {
+  //
+  // Freshness (REAL_LIFE_FIXES §4.3): the answer carries `version`, a hash of
+  // the list. Brain sends the version it holds as `known` before every call
+  // that leaves the node; when it is current Core answers `unchanged` and no
+  // list. The list is built fresh on each read, so a write is visible to the
+  // very next read.
+  router.get(PII_NAMES, async (req) => {
     const people = getPeopleRepository()?.listPeople() ?? [];
-    return { status: 200, body: { groups: buildPiiNameGroups(people, listContacts()) } };
+    const groups = buildPiiNameGroups(people, listContacts());
+    const version = piiNamesVersion(groups);
+    const known = typeof req.query?.known === 'string' ? req.query.known : '';
+    if (known !== '' && known === version) {
+      return { status: 200, body: { version, unchanged: true } };
+    }
+    return { status: 200, body: { version, groups } };
   });
 
   // Brain's internal scrub surface deliberately omits original values. Brain

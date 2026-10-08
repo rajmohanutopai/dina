@@ -158,7 +158,12 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
       const systemPrompt = buildSystemPrompt();
 
       const tools = new ToolRegistry();
-      tools.register(createRouteToPersonaTool({ collect }));
+      tools.register(
+        createRouteToPersonaTool({
+          collect,
+          installedPersonas: () => resolvePersonas().map((p) => p.name),
+        }),
+      );
       tools.register(createLinkToPersonTool({ collect }));
       tools.register(createBindPreferenceTool({ collect }));
       // Recall tool — lets the loop look up what the user has ALREADY

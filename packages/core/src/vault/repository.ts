@@ -66,6 +66,20 @@ export interface VaultRepository {
   // while routing everything through SQL. Async variants above are kept
   // for places that already await (e.g. HTTP handlers).
   storeItemSync(item: VaultItem): void;
+  /**
+   * REAL_LIFE_FIXES §2.4: a live (not deleted), current-scope owner memory
+   * with this content key, other than `exceptId`. Owner-memory rows stored
+   * before keys existed are matched by `legacyKeyOf` over the rows that
+   * share `summary` (their key is filled in as they are checked).
+   */
+  findOwnerMemorySync(
+    key: string,
+    summary: string,
+    exceptId: string,
+    legacyKeyOf: (item: VaultItem) => string | null,
+  ): VaultItem | null;
+  /** Record that the owner said a stored memory again. */
+  confirmOwnerMemorySync(id: string, at: number): void;
   getItemSync(id: string): VaultItem | null;
   getItemIncludeDeletedSync(id: string): VaultItem | null;
   deleteItemSync(id: string): boolean;
@@ -167,8 +181,9 @@ export class SQLiteVaultRepository implements VaultRepository {
         id, type, source, source_id, contact_did, author_person_id, summary, body, metadata, tags,
         content_l0, content_l1, deleted, timestamp, created_at, updated_at,
         sender, sender_trust, source_type, confidence, retrieval_policy,
-        contradicts, enrichment_status, enrichment_version, embedding, data_scope
-      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        contradicts, enrichment_status, enrichment_version, embedding, data_scope,
+        owner_memory_key, last_confirmed_at
+      ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         item.id,
         item.type,
@@ -197,8 +212,44 @@ export class SQLiteVaultRepository implements VaultRepository {
         embedding,
         // Stamp the active scope: 'user' normally, 'guided_demo:<id>' in a demo.
         scopedInsertFields().data_scope,
+        item.owner_memory_key ?? null,
+        item.last_confirmed_at ?? null,
       ],
     );
+  }
+
+  findOwnerMemorySync(
+    key: string,
+    summary: string,
+    exceptId: string,
+    legacyKeyOf: (item: VaultItem) => string | null,
+  ): VaultItem | null {
+    const keyed = this.db.query(
+      `SELECT * FROM vault_items
+        WHERE owner_memory_key = ? AND deleted = 0 AND id != ? AND ${scopedWhere()}
+        ORDER BY created_at ASC LIMIT 1`,
+      [key, exceptId, ...scopedParams()],
+    );
+    if (keyed.length > 0) return rowToVaultItem(keyed[0]!);
+    // Owner memories from before keys existed: check the rows that share the
+    // summary, and fill in their key so later checks use the index.
+    const legacy = this.db.query(
+      `SELECT * FROM vault_items
+        WHERE owner_memory_key IS NULL AND summary = ? AND deleted = 0 AND id != ? AND ${scopedWhere()}`,
+      [summary, exceptId, ...scopedParams()],
+    );
+    for (const row of legacy) {
+      const item = rowToVaultItem(row);
+      const k = legacyKeyOf(item);
+      if (k === null) continue;
+      this.db.execute('UPDATE vault_items SET owner_memory_key = ? WHERE id = ?', [k, item.id]);
+      if (k === key) return { ...item, owner_memory_key: k };
+    }
+    return null;
+  }
+
+  confirmOwnerMemorySync(id: string, at: number): void {
+    this.db.execute('UPDATE vault_items SET last_confirmed_at = ? WHERE id = ?', [at, id]);
   }
 
   async getItem(id: string): Promise<VaultItem | null> {
@@ -402,6 +453,30 @@ export class InMemoryVaultRepository implements VaultRepository {
   storeItemSync(item: VaultItem): void {
     this.items.set(item.id, { ...item });
     this.itemScope.set(item.id, currentDataScope());
+  }
+
+  findOwnerMemorySync(
+    key: string,
+    summary: string,
+    exceptId: string,
+    legacyKeyOf: (item: VaultItem) => string | null,
+  ): VaultItem | null {
+    let best: VaultItem | null = null;
+    for (const item of this.items.values()) {
+      if (item.id === exceptId || item.deleted || !this.inScope(item.id)) continue;
+      let k = item.owner_memory_key ?? null;
+      if (k === null && item.summary === summary) {
+        k = legacyKeyOf(item);
+        if (k !== null) item.owner_memory_key = k;
+      }
+      if (k === key && (best === null || item.created_at < best.created_at)) best = item;
+    }
+    return best !== null ? { ...best } : null;
+  }
+
+  confirmOwnerMemorySync(id: string, at: number): void {
+    const item = this.items.get(id);
+    if (item !== undefined) item.last_confirmed_at = at;
   }
 
   /** True iff `id` belongs to the active scope (read-isolation gate). */
@@ -631,5 +706,7 @@ function rowToVaultItem(row: DBRow): VaultItem {
     enrichment_status: String(row.enrichment_status ?? 'pending'),
     enrichment_version: String(row.enrichment_version ?? ''),
     ...(embedding ? { embedding } : {}),
+    ...(typeof row.owner_memory_key === 'string' ? { owner_memory_key: row.owner_memory_key } : {}),
+    ...(typeof row.last_confirmed_at === 'number' ? { last_confirmed_at: row.last_confirmed_at } : {}),
   };
 }

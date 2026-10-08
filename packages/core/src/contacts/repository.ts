@@ -33,7 +33,7 @@ import {
   type TaxRegistration,
 } from '../commerce/trade_identity';
 
-import { normalisePreferredForCategories, normalisePreferredForCategory } from './preferred_for';
+import { normalisePreferredForCategories, preferredForKey } from './preferred_for';
 
 import type {
   Contact,
@@ -253,7 +253,8 @@ export class SQLiteContactRepository implements ContactRepository {
   }
 
   findByPreferredFor(category: string): Contact[] {
-    const needle = normalisePreferredForCategory(category);
+    // REAL_LIFE_FIXES §5.3: compare matching keys, not raw words.
+    const needle = preferredForKey(category);
     if (needle === '') return [];
     // Filter the JSON containment test in memory rather than via
     // SQLite JSON1 — keeps us off the JSON1 extension (may or may
@@ -269,7 +270,7 @@ export class SQLiteContactRepository implements ContactRepository {
     const matches: Contact[] = [];
     for (const row of rows) {
       const prefs = decodePreferredFor(String(row.preferred_for ?? '[]'));
-      if (!prefs.includes(needle)) continue;
+      if (!prefs.some((v) => preferredForKey(v) === needle)) continue;
       const aliases = this.getAliases(String(row.person_id));
       matches.push(rowToContact(row, aliases));
     }

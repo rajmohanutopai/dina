@@ -191,7 +191,9 @@ export class LLMRouter {
     const strangers = this.strangers ?? getStrangerNames();
     const texts = textsNewestFirst(args);
     const session = new PiiSession(
-      lexicon !== null && lexicon !== undefined ? await lexicon.current() : undefined,
+      // Fresh as of this call, or throws (NamesUnavailableError) so the call
+      // is refused rather than sent with a stale list (REAL_LIFE_FIXES §4.3).
+      lexicon !== null && lexicon !== undefined ? await lexicon.freshMatcher() : undefined,
       strangers !== null && strangers !== undefined ? await strangers.matcherFor(texts) : undefined,
     );
     // Tokens already anywhere in the call are set aside before any is minted.

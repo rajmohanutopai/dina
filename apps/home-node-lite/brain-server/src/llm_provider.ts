@@ -72,7 +72,10 @@ export function buildBrainServerLLMRuntime(
     case 'openrouter': {
       // `.chat(...)` matters: OpenRouter does not serve `/v1/responses`,
       // and the default `openai(...)` form would route there.
-      const openrouter = createOpenAI({ apiKey: config.apiKey, baseURL: OPENROUTER_BASE_URL });
+      const openrouter = createOpenAI({
+        apiKey: config.apiKey,
+        baseURL: config.baseUrl ?? OPENROUTER_BASE_URL,
+      });
       const model = config.model ?? getProviderTiers('openrouter').primary;
       return {
         providerName: 'openrouter',

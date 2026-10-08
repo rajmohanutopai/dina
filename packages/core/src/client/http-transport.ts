@@ -28,7 +28,8 @@
 
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
-import { readPiiNameGroups, type PiiNameGroup } from '../pii/names';
+import { readPiiNamesResult, type PiiNamesResult } from '../pii/names';
+
 
 import {
   a2aDelegateBody,
@@ -45,7 +46,7 @@ import {
   parseOpenGroupPlanResponse,
   updateContactBody,
   WorkflowConflictError,
-} from './core-client';
+ readAccessDecision, readAccessDecisions } from './core-client';
 import {
   parseUcpFetchResponse,
   parseUcpGuardVerdictResponse,
@@ -112,6 +113,9 @@ import type {
   ServiceListing,
   ServiceQueryClientRequest,
   ServiceQueryResult,
+  AgentPersonaAccessDecision,
+  OwnerWordsProof,
+  TalkSendResult,
   MemoryToCOptions,
   MemoryToCResult,
   StagingIngestRequest,
@@ -158,6 +162,7 @@ import type {
   ReasoningFailRequest,
   ReasoningFailure,
 } from './core-client';
+import type { StoredChatMessage } from '../chat/repository';
 import type { QuarantinedMessage } from '../d2d/quarantine';
 
 // ---------------------------------------------------------------------------
@@ -198,7 +203,12 @@ export interface HttpResponse {
  */
 /** The release session as a query parameter, when the read names one. */
 function releaseQuery(opts: VaultReleaseOptions | undefined): Record<string, string> {
-  return opts?.releaseSession !== undefined ? { release_session: opts.releaseSession } : {};
+  return {
+    ...(opts?.releaseSession !== undefined ? { release_session: opts.releaseSession } : {}),
+    ...(opts?.askAuthority !== undefined && opts.askAuthority !== ''
+      ? { ask_authority: opts.askAuthority }
+      : {}),
+  };
 }
 
 export class CoreHttpError extends Error {
@@ -292,7 +302,12 @@ export class HttpCoreTransport implements CoreClient {
     return this.call<VaultQueryResult>(
       'POST',
       '/v1/vault/query',
-      { persona },
+      {
+        persona,
+        ...(query.askAuthority !== undefined && query.askAuthority !== ''
+          ? { ask_authority: query.askAuthority }
+          : {}),
+      },
       body,
       `vaultQuery(persona=${persona})`,
     );
@@ -490,6 +505,18 @@ export class HttpCoreTransport implements CoreClient {
     );
   }
 
+  async serviceProviderStanding(dids: string[]): Promise<Set<string>> {
+    if (dids.length === 0) return new Set();
+    const raw = await this.call<{ standing: Record<string, { ejected: boolean }> }>(
+      'GET',
+      '/v1/service/provider-standing',
+      { dids: dids.join(',') },
+      undefined,
+      'serviceProviderStanding',
+    );
+    return new Set(Object.entries(raw.standing ?? {}).filter(([, s]) => s.ejected).map(([d]) => d));
+  }
+
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
     // Route expects snake_case; camelCase→snake_case at the boundary
     // (same mapping as InProcessTransport — both transports speak the
@@ -506,6 +533,14 @@ export class HttpCoreTransport implements CoreClient {
     if (req.schemaHash !== undefined) body.schema_hash = req.schemaHash;
     if (req.serviceUri !== undefined) body.service_uri = req.serviceUri;
     if (req.grantId !== undefined) body.grant_id = req.grantId;
+    if (req.fallbacks !== undefined && req.fallbacks.length > 0) {
+      body.fallbacks = req.fallbacks.map((f) => ({
+        to_did: f.toDID,
+        ...(f.serviceUri !== undefined ? { service_uri: f.serviceUri } : {}),
+        ...(f.schemaHash !== undefined ? { schema_hash: f.schemaHash } : {}),
+        ...(f.serviceName !== undefined ? { service_name: f.serviceName } : {}),
+      }));
+    }
 
     const raw = await this.call<{ task_id: string; query_id: string; deduped?: boolean }>(
       'POST',
@@ -519,6 +554,78 @@ export class HttpCoreTransport implements CoreClient {
     return out;
   }
 
+  async chatAppend(msg: StoredChatMessage): Promise<void> {
+    await this.call<unknown>(
+      'POST',
+      `/v1/chat/threads/${encodeURIComponent(msg.threadId)}/messages`,
+      undefined,
+      msg,
+      'chatAppend',
+    );
+  }
+
+  async chatList(threadId: string, limit?: number): Promise<StoredChatMessage[]> {
+    const raw = await this.call<{ messages?: unknown }>(
+      'GET',
+      `/v1/chat/threads/${encodeURIComponent(threadId)}/messages`,
+      limit !== undefined ? { limit: String(limit) } : undefined,
+      undefined,
+      'chatList',
+    );
+    return Array.isArray(raw.messages) ? (raw.messages as StoredChatMessage[]) : [];
+  }
+
+  async chatThreadIds(): Promise<string[]> {
+    const raw = await this.call<{ threads?: unknown }>('GET', '/v1/chat/threads', undefined, undefined, 'chatThreadIds');
+    return Array.isArray(raw.threads) ? raw.threads.filter((t): t is string => typeof t === 'string') : [];
+  }
+
+  async chatDeleteThread(threadId: string): Promise<boolean> {
+    const raw = await this.call<{ deleted?: unknown }>(
+      'DELETE',
+      `/v1/chat/threads/${encodeURIComponent(threadId)}`,
+      undefined,
+      undefined,
+      'chatDeleteThread',
+    );
+    return raw.deleted === true;
+  }
+
+  async chatReset(): Promise<void> {
+    await this.call<unknown>('POST', '/v1/chat/reset', undefined, {}, 'chatReset');
+  }
+
+  async agentPersonaAccessCheck(
+    askAuthority: string,
+    personas: string[],
+    mode: 'read' | 'write' = 'read',
+  ): Promise<Record<string, 'allowed' | 'gated'>> {
+    const raw = await this.call<{ decisions?: Record<string, unknown> }>(
+      'POST',
+      '/v1/agent/persona-access',
+      undefined,
+      { ask_authority: askAuthority, op: 'check', personas, mode },
+      'agentPersonaAccessCheck',
+    );
+    return readAccessDecisions(personas, raw.decisions);
+  }
+
+  async agentPersonaAccessRequest(
+    askAuthority: string,
+    persona: string,
+    scope: string,
+    mode: 'read' | 'write' = 'read',
+  ): Promise<AgentPersonaAccessDecision> {
+    const raw = await this.call<Record<string, unknown>>(
+      'POST',
+      '/v1/agent/persona-access',
+      undefined,
+      { ask_authority: askAuthority, op: 'request', persona, scope, mode },
+      'agentPersonaAccessRequest',
+    );
+    return readAccessDecision(raw);
+  }
+
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
     const query: Record<string, string> = {};
     if (opts?.personas !== undefined && opts.personas.length > 0) {
@@ -527,6 +634,7 @@ export class HttpCoreTransport implements CoreClient {
     if (opts?.limit !== undefined) {
       query.limit = String(opts.limit);
     }
+    Object.assign(query, releaseQuery(opts));
     return this.call<MemoryToCResult>(
       'GET',
       '/v1/memory/toc',
@@ -537,6 +645,42 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   // ─── Staging inbox ────────────────────────────────────────────────────
+
+  async talkSend(input: {
+    proof: OwnerWordsProof;
+    contact: string;
+    proposedText: string;
+  }): Promise<TalkSendResult> {
+    return this.call<TalkSendResult>('POST', '/v1/talk/send', undefined, {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      contact: input.contact,
+      proposed_text: input.proposedText,
+    }, 'talkSend');
+  }
+
+  async stagingIngestOwnerWords(
+    proof: OwnerWordsProof,
+  ): Promise<StagingIngestResult & { source: string }> {
+    const body = {
+      release_session: proof.releaseSession,
+      turn_id: proof.turnId,
+      turn_text: proof.turnText,
+      start: proof.start,
+      end: proof.end,
+    };
+    const raw = await this.call<{ id: string; duplicate: boolean; status: string; source: string }>(
+      'POST',
+      '/v1/staging/ingest-owner-words',
+      undefined,
+      body,
+      'stagingIngestOwnerWords',
+    );
+    return { itemId: raw.id, duplicate: raw.duplicate, status: raw.status, source: raw.source };
+  }
 
   async stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult> {
     const body: Record<string, unknown> = {
@@ -584,12 +728,16 @@ export class HttpCoreTransport implements CoreClient {
       stored_personas?: string[];
       pending_personas?: string[];
       failed_personas?: string[];
+      unknown_personas?: string[];
+      duplicate_personas?: string[];
     }>('POST', '/v1/staging/resolve', undefined, body, `stagingResolve(itemId=${req.itemId})`);
     const out: StagingResolveResult = { itemId: raw.id, status: raw.status };
     if (raw.personas !== undefined) out.personas = raw.personas;
     if (raw.stored_personas !== undefined) out.storedPersonas = raw.stored_personas;
     if (raw.pending_personas !== undefined) out.pendingPersonas = raw.pending_personas;
     if (raw.failed_personas !== undefined) out.failedPersonas = raw.failed_personas;
+    if (raw.unknown_personas !== undefined) out.unknownPersonas = raw.unknown_personas;
+    if (raw.duplicate_personas !== undefined) out.duplicatePersonas = raw.duplicate_personas;
     return out;
   }
 
@@ -1345,15 +1493,15 @@ export class HttpCoreTransport implements CoreClient {
     return Array.isArray(raw.people) ? (raw.people as Person[]) : [];
   }
 
-  async piiNames(): Promise<PiiNameGroup[]> {
-    const raw = await this.call<{ groups?: unknown }>(
+  async piiNames(known?: string): Promise<PiiNamesResult> {
+    const raw = await this.call<unknown>(
       'GET',
       '/v1/pii/names',
-      undefined,
+      known !== undefined && known !== '' ? { known } : undefined,
       undefined,
       'piiNames',
     );
-    return readPiiNameGroups(raw.groups);
+    return readPiiNamesResult(raw);
   }
 
   async peopleFindByName(surface: string): Promise<Person[]> {

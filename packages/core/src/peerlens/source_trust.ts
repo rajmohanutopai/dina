@@ -39,6 +39,8 @@ const SELF_SOURCES = new Set([
   // L0 enrichment — visible to the user as a confusing caveat on the
   // vault detail screen.
   'user_remember',
+  // The owner's own words from a chat turn, proven by Core (REAL_LIFE_FIXES §2.5).
+  'chat_auto',
 ]);
 const SELF_SENDERS = new Set(['user', 'self', 'me']);
 

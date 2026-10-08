@@ -484,6 +484,22 @@ const capabilitySchemaEntrySchema = z.object({
   default_ttl_seconds: z.number().int().positive().max(86400).optional(),
 })
 
+/**
+ * A node's presence record (docs/REAL_LIFE_FIXES.md §14), mirroring
+ * `validateServicePresenceRecord` in `@dina/protocol`. It carries no time:
+ * AppView judges liveness by when it observed the renewal.
+ */
+const servicePresenceSchema = z.object({
+  v: z.literal(1),
+  n: z.string().regex(/^[0-9a-f]{16}$/),
+  listings: z.array(z.object({
+    rkey: z.string().regex(/^[A-Za-z0-9._~-]{1,512}$/).refine((r) => r !== '.' && r !== '..'),
+    cid: z.string().regex(/^b[a-z2-7]{20,120}$/),
+  })).max(100),
+  complete: z.boolean(),
+}).refine((r) => r.complete || r.listings.length === 0, { message: 'an incomplete set must be empty' })
+  .refine((r) => new Set(r.listings.map((l) => l.rkey)).size === r.listings.length, { message: 'listings repeat an rkey' })
+
 const serviceProfileSchema = z.object({
   name: z.string().min(1).max(200),
   // Optional: the TypeScript publishers omit `description` entirely when the
@@ -776,6 +792,7 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   'com.dinakernel.peerlens.trustPolicy': trustPolicySchema,
   'com.dinakernel.peerlens.notificationPrefs': notificationPrefsSchema,
   'com.dinakernel.service.profile': serviceProfileSchema,
+  'com.dinakernel.service.presence': servicePresenceSchema,
   // FROM THE PROTOCOL PACKAGE, not spelled again here. The publisher used a
   // different name for the pointer collection than this file did, and every
   // pointer it published reached no handler. Both sides now read one constant.

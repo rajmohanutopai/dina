@@ -21,11 +21,16 @@
 
 import { randomBytes, bytesToHex } from '@noble/hashes/utils.js';
 
+import { SMALL_TASK_MAX_TOKENS } from '../constants';
+
 import type { LLMRouter } from '../llm/router_dispatch';
 import type { A2AGuardVerdictCode, A2AGuardWork, CoreClient } from '@dina/core';
 
 /** The verdict is one short JSON object. */
-const GUARD_MAX_TOKENS = 120;
+// The shared small-task budget: room for a reasoning model to think before
+// its one-line JSON verdict. At 120 tokens such a model spent the whole
+// budget reasoning and returned nothing, so results were blocked as unparseable.
+const GUARD_MAX_TOKENS = SMALL_TASK_MAX_TOKENS;
 
 /** Throws when the model cannot be reached; resolves with its raw answer otherwise. */
 export type A2AGuardLLM = (system: string, prompt: string) => Promise<string>;

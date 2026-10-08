@@ -25,9 +25,25 @@ export interface EntityVaultEntry {
 export class EntityVault {
   private readonly session: PiiSession;
 
-  /** `names` defaults to the host's installed lexicon (its current copy). */
+  /**
+   * `names` is the known-names matcher to scrub with. Code that sends text
+   * off the node must use `EntityVault.create()`, which fetches a list at
+   * least as new as Core's (REAL_LIFE_FIXES §4.3); the bare constructor is
+   * for callers that already hold a fresh matcher, or tests.
+   */
   constructor(names?: NameMatcher) {
-    this.session = new PiiSession(names ?? getNameLexicon()?.peek());
+    this.session = new PiiSession(names);
+  }
+
+  /**
+   * A vault scrubbing with the host's names, checked current with Core at
+   * this moment. Throws `NamesUnavailableError` when Core cannot confirm
+   * it: the caller must not send. With no lexicon installed (no Core on
+   * this host), patterns alone apply, as before.
+   */
+  static async create(): Promise<EntityVault> {
+    const lexicon = getNameLexicon();
+    return new EntityVault(lexicon !== null ? await lexicon.freshMatcher() : undefined);
   }
 
   /** Replace private values with tokens, remembering each one. */

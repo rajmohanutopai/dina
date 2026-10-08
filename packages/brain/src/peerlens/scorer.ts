@@ -59,6 +59,8 @@ const SELF_SOURCES = new Set([
   // user's own note as "an unverified source claims…" — which reads
   // as Dina distrusting facts the operator just told her to keep.
   'user_remember',
+  // The owner's own words from a chat turn, proven by Core (REAL_LIFE_FIXES §2.5).
+  'chat_auto',
 ]);
 
 /** Sender strings that indicate self. */

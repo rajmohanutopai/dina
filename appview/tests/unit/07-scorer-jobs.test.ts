@@ -139,13 +139,15 @@ describe('SS7.1 Scheduler', () => {
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0263", "section": "01", "sectionName": "General", "title": "UT-SCH-001: all 14 jobs registered"}
-  it('UT-SCH-001: all 14 jobs registered', () => {
+  it('UT-SCH-001: all 17 jobs registered', () => {
     // Description: startScheduler called
     // Expected: 14 cron.schedule calls made (9 baseline + cosig-expiry-sweep
     // + subject-orphan-gc + subject-enrich-recompute (TN-ENRICH-006)
     // + backfill-handles + ucp-merchant-crawler (UCP plan §3.15))
-    expect(cronScheduleCalls).toHaveLength(14)
+    // + the three live-listing jobs (REAL_LIFE_FIXES §14)
+    expect(cronScheduleCalls).toHaveLength(17)
     expect(cronScheduleCalls[13]?.schedule).toBe('20 * * * *')
+    expect(cronScheduleCalls[14]?.schedule).toBe('* * * * *')
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0264", "section": "01", "sectionName": "General", "title": "UT-SCH-002: refresh-profiles runs every 5 min"}

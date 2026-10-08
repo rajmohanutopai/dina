@@ -52,7 +52,6 @@ import {
 } from '@dina/core';
 
 import { extractPersonLinks, type PersonLink } from '../person/linking';
-import { getNameLexicon } from '../pii/names';
 
 /**
  * Extractor version stamp. Bump when the wire shape of the LLM
@@ -179,9 +178,8 @@ export async function applyPeopleGraphExtraction(
       error: err instanceof Error ? err.message : String(err),
     };
   }
-  // New names are hidden from the next model call, not only after the
-  // lexicon's next refresh (docs/PII_ARCHITECTURE_V2.md §5.2).
-  getNameLexicon()?.invalidate();
+  // New names are hidden from the next model call: every call checks the
+  // list's version with Core first (REAL_LIFE_FIXES §4.3).
   return { ok: true, applied, linkCount: result.results.length };
 }
 

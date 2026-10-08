@@ -173,8 +173,9 @@ describe('SQLitePeopleRepository', () => {
         ext({
           sourceItemId: 'item-3',
           results: [
-            lc('Eve', [
-              { surface: 'Eve', surfaceType: 'name', confidence: 'high' },
+            // Nameless: named people may share a role (REAL_LIFE_FIXES
+            // §5.1), but an unnamed claim on a held role still conflicts.
+            lc('', [
               { surface: 'my brother', surfaceType: 'role_phrase', confidence: 'high' },
               { surface: 'my doctor', surfaceType: 'role_phrase', confidence: 'high' },
             ]),

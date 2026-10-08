@@ -85,7 +85,7 @@ describe('buildRememberRuntime', () => {
         };
       },
     };
-    const names = new NameLexicon({ fetch: async () => [{ group: 1, names: ['Emma'] }] });
+    const names = new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Emma'] }] }) });
     const { run } = buildRememberRuntime({
       llm: routedProvider({ llm: recorder, providerName: 'gemini', taskType: 'reason', names }),
       personas: [{ name: 'general', description: 'everyday notes' }],

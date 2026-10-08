@@ -51,11 +51,11 @@ import { capabilitySchemaHash } from './capability_schema_hash';
 import { isReservedLane, namesReservedLane } from './reserved_lanes';
 
 import type { ProviderIngressSubmitter } from '../plugins/provider_ingress';
-import type { WorkflowService } from '../workflow/service';
 import type {
   ServiceReasoningSubmission,
   ServiceReasoningSubmitter,
 } from '../reasoning/service_execution';
+import type { WorkflowService } from '../workflow/service';
 import type {
   ServiceCapabilityConfig,
   ServiceCapabilitySchemas,

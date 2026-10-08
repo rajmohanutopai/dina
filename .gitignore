@@ -386,3 +386,7 @@ marketing/
 
 # Jiffy strategy documents (private, not for the public repo)
 jiffy-strategy/
+
+# Real-life scenario fleet (scripts/scenarios/fleet.ts): node state, keys, logs
+scripts/scenarios/.fleet/
+scripts/scenarios/reports/

@@ -126,10 +126,12 @@ describe('createPersonaGuard — tier policy', () => {
     expect(await guard('work')).toBeNull();
   });
 
-  it('returns null for unknown persona', async () => {
+  it('fails closed for a persona whose tier Brain cannot see (REAL_LIFE_FIXES §2.3)', async () => {
+    // An empty or stale mirror must never let an agent read a persona
+    // without the gate: unknown is treated as gated, not as open.
     const { client } = makeFakeWorkflowClient();
     const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
-    expect(await guard('does_not_exist')).toBeNull();
+    expect(await guard('does_not_exist')).not.toBeNull();
   });
 
   it('returns approvalId for sensitive tier', async () => {

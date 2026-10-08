@@ -199,11 +199,20 @@ export class ServicePublisher {
   async publish(
     config: ServicePublisherConfig,
     rkey: string = SERVICE_PROFILE_RKEY,
-  ): Promise<PutRecordResult> {
+  ): Promise<PutRecordResult & { unchanged?: true }> {
     validateConfig(config);
     assertValidRkey(rkey);
     await this.verifyIdentity();
     const record = buildRecord(config, this.nowFn(), this.log);
+    // An unchanged listing is not written again (REAL_LIFE_FIXES §14.4 A):
+    // a boot or a re-save then makes no public commit, so commits are not
+    // tied to app launch. `updatedAt` alone never counts as a change.
+    const existing = await Promise.resolve()
+      .then(() => this.pds.getRecord(SERVICE_PROFILE_COLLECTION, rkey))
+      .catch(() => null);
+    if (existing !== null && sameListingContent(existing.value, record)) {
+      return { uri: existing.uri, cid: existing.cid, unchanged: true };
+    }
     return this.pds.putRecord(SERVICE_PROFILE_COLLECTION, rkey, record);
   }
 
@@ -229,7 +238,7 @@ export class ServicePublisher {
   async sync(
     config: ServicePublisherConfig,
     rkey: string = SERVICE_PROFILE_RKEY,
-  ): Promise<{ published: true; result: PutRecordResult } | { published: false }> {
+  ): Promise<{ published: true; result: PutRecordResult & { unchanged?: true } } | { published: false }> {
     if (shouldPublishProfile(config)) {
       const result = await this.publish(config, rkey);
       return { published: true, result };
@@ -395,3 +404,27 @@ function validateConfig(config: ServicePublisherConfig): void {
     }
   }
 }
+
+/** Key-order-independent JSON form, for content comparison. */
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj)
+      .filter((k) => obj[k] !== undefined)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${stableJson(obj[k])}`)
+      .join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/** True when two profile records differ in nothing but `updatedAt`. */
+export function sameListingContent(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+  const strip = (r: Record<string, unknown>) => {
+    const { updatedAt: _u, ...rest } = r;
+    return rest;
+  };
+  return stableJson(strip(a)) === stableJson(strip(b));
+}
+

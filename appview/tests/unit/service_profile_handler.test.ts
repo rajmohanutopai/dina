@@ -70,6 +70,13 @@ function stubCtx(captured: Captured, opts: { priorCreatedAt?: Date | null } = {}
   }
   return {
     db: {
+      // Live listings (§14): the account check and the older-release renewal
+      // run outside the transaction. Quiet stand-ins: no account status, and
+      // writes that record nothing, so the event order below is the
+      // handler's own.
+      select: () => ({ from: () => ({ where: () => ({ limit: async () => [] }) }) }),
+      insert: () => ({ values: () => ({ onConflictDoUpdate: async () => undefined }) }),
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
       // Top-level delete (NOT inside a transaction) — used by the
       // unpublish path (isDiscoverable=false removes any existing row).
       delete: (table: unknown) => ({

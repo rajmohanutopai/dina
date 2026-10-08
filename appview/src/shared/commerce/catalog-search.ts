@@ -193,11 +193,16 @@ export function matchCatalogRow(
  * commercial meaning. Ordering ties by recency or by price would make the
  * index a ranking authority, and §10.5 is explicit that it is not one.
  */
-export function rankCatalogMatches<T extends { retrievalScoreBp: number; rowKey: string }>(
-  matches: readonly T[],
-): T[] {
+export function rankCatalogMatches<
+  T extends { retrievalScoreBp: number; rowKey: string; livenessTier?: number },
+>(matches: readonly T[]): T[] {
+  // Live listings (docs/REAL_LIFE_FIXES.md §14): a live seller before a stale
+  // or expired one, whatever the score. Liveness is not a commercial signal:
+  // it says only whether the seller can answer at all.
   return [...matches].sort((a, b) =>
-    b.retrievalScoreBp !== a.retrievalScoreBp
+    (a.livenessTier ?? 1) !== (b.livenessTier ?? 1)
+      ? (a.livenessTier ?? 1) - (b.livenessTier ?? 1)
+      : b.retrievalScoreBp !== a.retrievalScoreBp
       ? b.retrievalScoreBp - a.retrievalScoreBp
       : a.rowKey < b.rowKey
         ? -1

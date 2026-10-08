@@ -26,6 +26,14 @@ export { didProfiles } from './did-profiles'
 export { subjectScores } from './subject-scores'
 export { domainScores } from './domain-scores'
 export { services } from './services'
+export {
+  ingestHourlyEvents,
+  serviceAccountStatus,
+  serviceBlindIntervals,
+  serviceDeletions,
+  serviceOperatorPresence,
+  serviceReconcileJobs,
+} from './service-liveness'
 export { ingestRejections } from './ingest-rejections'
 export { cosigRequests } from './cosig-requests'
 export { peerlensV1Params } from './peerlens-v1-params'

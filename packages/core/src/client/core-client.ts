@@ -603,6 +603,11 @@ export interface CoreClient {
    * at the callsite.
    */
   sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult>;
+  /**
+   * Which of these providers this node has seen go quiet (REAL_LIFE_FIXES
+   * §9) — for ranking only. Returns DIDs currently ejected.
+   */
+  serviceProviderStanding(dids: string[]): Promise<Set<string>>;
 
   // ─── Working-memory ToC (task 1.29g) ──────────────────────────────────
 
@@ -618,6 +623,42 @@ export interface CoreClient {
    */
   memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult>;
 
+  // ─── Chat thread storage (REAL_LIFE_FIXES §1.4; brain-only) ───────────
+  /** Append (upsert on id) one chat message to its thread. */
+  chatAppend(msg: StoredChatMessage): Promise<void>;
+  /** The newest `limit` messages of a thread, oldest first (all when omitted). */
+  chatList(threadId: string, limit?: number): Promise<StoredChatMessage[]>;
+  /** Every thread id with at least one message. */
+  chatThreadIds(): Promise<string[]>;
+  /** Delete a thread; `true` iff anything was removed. */
+  chatDeleteThread(threadId: string): Promise<boolean>;
+  /** Delete every thread. */
+  chatReset(): Promise<void>;
+
+  /**
+   * REAL_LIFE_FIXES §3.2 `check`: may this agent/device ask read each persona
+   * now? No side effects (no card). Throws when Core does not answer; the
+   * caller treats that as every persona gated.
+   */
+  agentPersonaAccessCheck(
+    askAuthority: string,
+    personas: string[],
+    mode?: 'read' | 'write',
+  ): Promise<Record<string, 'allowed' | 'gated'>>;
+
+  /**
+   * REAL_LIFE_FIXES §3.2 `request`: ask for one persona for an agent/device
+   * ask. `approval_required` carries the card's task id (one card per agent +
+   * session + persona while pending). Throws when Core does not answer; the
+   * caller treats that as denied.
+   */
+  agentPersonaAccessRequest(
+    askAuthority: string,
+    persona: string,
+    scope: string,
+    mode?: 'read' | 'write',
+  ): Promise<AgentPersonaAccessDecision>;
+
   // ─── Staging inbox (task 1.29h / 1.32 preamble) ──────────────────────
   //
   // Brain's drain loop moves items received/classifying/stored through
@@ -631,6 +672,19 @@ export interface CoreClient {
    * in-memory staging service directly.
    */
   stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult>;
+
+  /**
+   * Remember the owner's own words from a chat turn (REAL_LIFE_FIXES §2.5).
+   * Core checks the span proof and picks the source itself. Throws on a
+   * refused proof (409 `no_owner_turn`).
+   */
+  stagingIngestOwnerWords(proof: OwnerWordsProof): Promise<StagingIngestResult & { source: string }>;
+
+  /**
+   * The owner's chat asks to message a contact (REAL_LIFE_FIXES §7). Core
+   * binds it to the owner's turn: sent at once, or a confirm card.
+   */
+  talkSend(input: { proof: OwnerWordsProof; contact: string; proposedText: string }): Promise<TalkSendResult>;
 
   /**
    * Atomically move up to `limit` `received` items to `classifying`
@@ -1098,10 +1152,12 @@ export interface CoreClient {
 
   /**
    * The names Brain hides from a cloud model, grouped by person
-   * (docs/PII_ARCHITECTURE_V2.md §5.2). Throws when Core does not answer,
-   * so the caller can tell "no names" from "no answer".
+   * (docs/PII_ARCHITECTURE_V2.md §5.2), with a content version. Pass the
+   * version you hold as `known`; when it is current the answer is
+   * `{version, unchanged: true}` with no list. Throws when Core does not
+   * answer, so the caller can tell "no names" from "no answer".
    */
-  piiNames(): Promise<PiiNameGroup[]>;
+  piiNames(known?: string): Promise<PiiNamesResult>;
 
   /**
    * Find every person whose surfaces include `surface` (case-insensitive
@@ -1283,6 +1339,12 @@ export interface VaultQuery {
   type?: string;
   /** The conversation the results are released into; Core logs the release (A2A §4.2). */
   releaseSession?: string;
+  /**
+   * Core's ask authority for an agent/device ask (REAL_LIFE_FIXES §0.1 B).
+   * Present on every read made for such an ask; Core then applies the
+   * requester's persona access to the read. Sent in the signed query.
+   */
+  askAuthority?: string;
 }
 
 /**
@@ -1291,6 +1353,8 @@ export interface VaultQuery {
  */
 export interface VaultReleaseOptions {
   releaseSession?: string;
+  /** See `VaultQuery.askAuthority`. */
+  askAuthority?: string;
 }
 
 /**
@@ -1403,7 +1467,6 @@ export interface PIIRehydrateResult {
 
 // ─── Notify method types (task 1.29d) ────────────────────────────────────
 
-import type { NotifyPriority, ServiceConfig } from '@dina/protocol';
 export type { NotifyPriority };
 
 export interface NotifyRequest {
@@ -1523,6 +1586,11 @@ export interface ServiceQueryClientRequest {
    * the authenticated caller DID. A non-secret selector.
    */
   grantId?: string;
+  /**
+   * Other public providers Core may try, in order, if this one goes quiet
+   * (REAL_LIFE_FIXES §9). Core keeps them only for read-only capabilities.
+   */
+  fallbacks?: { toDID: string; serviceUri?: string; schemaHash?: string; serviceName?: string }[];
 }
 
 export interface ServiceQueryResult {
@@ -1541,8 +1609,51 @@ export interface ServiceQueryResult {
 // ─── Memory ToC method types (task 1.29g) ───────────────────────────────
 
 /** Import via relative path — TocEntry lives in core's memory domain. */
+import { readGroupPlanWire, type GroupPlanHandleWire, type GroupPlanWire } from '../coordination/plan_wire';
+import {
+  WorkflowConflictError,
+  WorkflowValidationError,
+  WorkflowTransitionError,
+} from '../workflow/service';
+
+import type { StoredChatMessage } from '../chat/repository';
+import type { Contact } from '../contacts/directory';
+import type { QuarantinedMessage } from '../d2d/quarantine';
+import type { RiskLevel } from '../gatekeeper/intent';
 import type { TocEntry } from '../memory/domain';
 export type { TocEntry };
+
+/**
+ * Read a `check` answer: a persona is `allowed` only when Core said so
+ * explicitly; anything missing or malformed is `gated` (fail closed).
+ */
+export function readAccessDecisions(
+  personas: string[],
+  raw: Record<string, unknown> | undefined,
+): Record<string, 'allowed' | 'gated'> {
+  const out: Record<string, 'allowed' | 'gated'> = {};
+  for (const p of personas) out[p] = raw?.[p] === 'allowed' ? 'allowed' : 'gated';
+  return out;
+}
+
+/** Read a `request` answer; anything unrecognised is `denied` (fail closed). */
+export function readAccessDecision(raw: Record<string, unknown>): AgentPersonaAccessDecision {
+  if (raw.decision === 'allowed') return { decision: 'allowed' };
+  if (raw.decision === 'approval_required' && typeof raw.task_id === 'string' && raw.task_id !== '') {
+    return { decision: 'approval_required', taskId: raw.task_id };
+  }
+  return {
+    decision: 'denied',
+    reason: typeof raw.reason === 'string' ? raw.reason : 'no decision',
+  };
+}
+
+/** Core's answer to an agent/device ask's request for one persona. */
+export interface AgentPersonaAccessDecision {
+  decision: 'allowed' | 'approval_required' | 'denied';
+  taskId?: string;
+  reason?: string;
+}
 
 export interface MemoryToCOptions {
   /**
@@ -1552,6 +1663,13 @@ export interface MemoryToCOptions {
   personas?: string[];
   /** Row count cap; server clamps to 200. Default 50. */
   limit?: number;
+  /**
+   * The owner conversation the topics are released into (REAL_LIFE_FIXES
+   * §3.5); Core records the release, as the phone does in-process.
+   */
+  releaseSession?: string;
+  /** Agent/device ask: Core returns topics only for personas it may read now. */
+  askAuthority?: string;
 }
 
 export interface MemoryToCResult {
@@ -1636,6 +1754,28 @@ export interface StagingResolveMultiRequest extends StagingResolveBaseRequest {
   personaOpen?: never;
 }
 
+/** Core's answer to an owner's request to message a contact (REAL_LIFE_FIXES §7). */
+export interface TalkSendResult {
+  status: 'sent' | 'confirm_pending' | 'ambiguous' | 'not_a_contact' | 'no_owner_turn' | 'failed';
+  recipient_name?: string;
+  recipient_did?: string;
+  text?: string;
+  task_id?: string;
+  candidates?: string[];
+  reason?: string;
+}
+
+/** A span proof on the wire (REAL_LIFE_FIXES §0.1 A). */
+export interface OwnerWordsProof {
+  /** `chat:<thread>` — the conversation the turn was recorded under. */
+  releaseSession: string;
+  turnId: string;
+  turnText: string;
+  /** Offsets into the cleaned turn text (`cleanForProvenance`). */
+  start: number;
+  end: number;
+}
+
 export interface StagingResolveResult {
   /** Echoes the resolved item id. */
   itemId: string;
@@ -1653,6 +1793,13 @@ export interface StagingResolveResult {
   pendingPersonas?: string[];
   /** Open persona vaults whose write failed while another target succeeded. */
   failedPersonas?: string[];
+  /**
+   * Targets naming a persona this node does not have. Nothing was stored
+   * there; when every target is unknown the item is parked (`pending_unlock`).
+   */
+  unknownPersonas?: string[];
+  /** Stored targets where the item repeated a live owner memory (§2.4). */
+  duplicatePersonas?: string[];
 }
 
 export interface StagingFailResult {
@@ -1747,6 +1894,9 @@ export interface ServiceRespondResult {
 
 /** Re-export from core's workflow domain — the event shape is already
  *  authoritative there; Brain consumers just need the type name. */
+import type { TopicKind } from '../memory/domain';
+import type { StoredNotificationItem } from '../notifications/repository';
+import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
 import type { WorkflowEvent } from '../workflow/domain';
 export type { WorkflowEvent };
 
@@ -1782,11 +1932,6 @@ export interface FailWorkflowEventOptions {
 import type { WorkflowTask } from '../workflow/domain';
 import type { CreateWorkflowTaskInput } from '../workflow/service';
 
-import {
-  WorkflowConflictError,
-  WorkflowValidationError,
-  WorkflowTransitionError,
-} from '../workflow/service';
 export type { WorkflowTask, CreateWorkflowTaskInput };
 export { WorkflowConflictError, WorkflowValidationError, WorkflowTransitionError };
 
@@ -1856,7 +2001,6 @@ export interface ReasoningFailRequest {
 
 /** Re-export TopicKind so Brain consumers import memory-touch params
  *  from `@dina/core` without a second deep-import. */
-import type { TopicKind } from '../memory/domain';
 export type { TopicKind };
 
 export interface MemoryTouchParams {
@@ -1884,18 +2028,14 @@ export interface MemoryTouchResult {
 }
 
 /** The group plan on the wire (GROUP_COORDINATION §9), shared with the routes. */
-import { readGroupPlanWire, type GroupPlanHandleWire, type GroupPlanWire } from '../coordination/plan_wire';
 export type { GroupPlanHandleWire, GroupPlanWire };
 
 /** Re-export `Contact` so consumers find it on `@dina/core`'s public
  *  barrel without deep-importing from `contacts/directory`. */
-import type { Contact } from '../contacts/directory';
-import type { QuarantinedMessage } from '../d2d/quarantine';
 export type { Contact };
 
 /** People-graph types crossing the Core HTTP boundary. */
-import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
-import type { PiiNameGroup } from '../pii/names';
+import type { PiiNamesResult } from '../pii/names';
 export type { ExtractionResult, ApplyExtractionResponse, Person };
 
 /** Reminder types crossing the Core HTTP boundary. Re-exported so Brain
@@ -1905,7 +2045,6 @@ import type { Reminder, RecurringFrequency } from '../reminders/service';
 export type { Reminder, RecurringFrequency };
 
 /** The durable notification-log row shape, crossing the Core boundary (R4-03). */
-import type { StoredNotificationItem } from '../notifications/repository';
 export type { StoredNotificationItem };
 
 /**
@@ -1932,6 +2071,8 @@ export interface PersonaListEntry {
   tier: 'default' | 'standard' | 'sensitive' | 'locked';
   /** True when the persona's vault is currently mounted/decrypted. */
   isOpen: boolean;
+  /** Owner-written description (what belongs in this vault); may be empty. */
+  description?: string;
 }
 
 export interface UpdateContactParams {
@@ -2005,7 +2146,7 @@ export function updateContactBody(updates: UpdateContactParams): Record<string, 
 // ─── Policy management types ────────────────────────────────────────────────
 
 export type { RiskLevel } from '../gatekeeper/intent';
-import type { RiskLevel } from '../gatekeeper/intent';
+import type { NotifyPriority, ServiceConfig } from '@dina/protocol';
 
 export interface ActionPolicyEntry {
   action: string;

@@ -41,6 +41,10 @@ export const services = pgTable('services', {
   // trail + URL stability) but excludes it from active reads.
   tombstonedAt: timestamp('tombstoned_at'),
   tombstoneReason: text('tombstone_reason'),
+  // Repository revision of the event that last wrote this row
+  // (docs/REAL_LIFE_FIXES.md §14): an older event never overwrites it.
+  // Null for rows written before revisions were kept.
+  repoRev: text('repo_rev'),
 }, (table) => [
   index('services_operator_did_idx').on(table.operatorDid),
   index('services_is_discoverable_idx').on(table.isDiscoverable),

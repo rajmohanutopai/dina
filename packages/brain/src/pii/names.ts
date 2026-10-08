@@ -7,7 +7,7 @@
  * without case match as plain substrings.
  */
 
-import type { PiiNameGroup } from '@dina/core';
+import type { PiiNameGroup, PiiNamesResult } from '@dina/core';
 
 /** One name found in text: its span and the person it belongs to. */
 export interface NameMatch {
@@ -219,109 +219,80 @@ function startsUpper(value: string): boolean {
 }
 
 /** How Brain asks Core for the list (`CoreClient.piiNames`). */
-export type PiiNamesFetch = () => Promise<PiiNameGroup[]>;
+export type PiiNamesFetch = (known?: string) => Promise<PiiNamesResult>;
 
 export interface NameLexiconOptions {
   fetch: PiiNamesFetch;
-  nowMs?: () => number;
-  /** A copy older than this is refreshed in the background. */
-  refreshAfterMs?: number;
-  /** How long the first model call waits for the first copy. */
-  firstWaitMs?: number;
-  /** Told when no copy could be had; gets counts only, never names. */
+  /** Told when no current list could be had; gets an error name, never names. */
   onDegraded?: (reason: string) => void;
 }
 
-export const NAME_LEXICON_REFRESH_MS = 30_000;
-export const NAME_LEXICON_FIRST_WAIT_MS = 2_000;
+/** No list at least as new as Core's could be had; nothing may leave the node. */
+export class NamesUnavailableError extends Error {
+  constructor(reason: string) {
+    super(`pii names unavailable (${reason}); refusing to send`);
+    this.name = 'NamesUnavailableError';
+  }
+}
 
 /**
- * Brain's copy of the known names (§5.2). The first call waits briefly for a
- * copy; later calls use the current one and refresh it in the background once
- * it is old. When Core does not answer, the last good copy stays in use; with
- * none, the matcher is empty and the call goes ahead on patterns alone.
+ * Brain's copy of the known names (§5.2; REAL_LIFE_FIXES §4.3).
+ *
+ * `freshMatcher()` is the only way to get a matcher. Each call asks Core,
+ * at that moment, whether the copy is current (`known` = the version held);
+ * Core answers "unchanged" or sends the new list. So a name written to the
+ * people graph or contacts by any writer, on any client, is hidden on the
+ * very next call that leaves the node. If Core cannot be asked, the call
+ * throws: the caller must not send. Answers are applied in request order, so
+ * a slow older answer never replaces a newer list.
  */
 export class NameLexicon {
   private matcher = new NameMatcher([]);
-  private loadedAt: number | null = null;
-  private inFlight: Promise<void> | null = null;
-  /** An invalidate came during a fetch. */
-  private again = false;
-  private readonly now: () => number;
-  private readonly refreshAfterMs: number;
-  private readonly firstWaitMs: number;
+  private version: string | null = null;
+  private issued = 0;
+  private applied = 0;
 
-  constructor(private readonly options: NameLexiconOptions) {
-    this.now = options.nowMs ?? Date.now;
-    this.refreshAfterMs = options.refreshAfterMs ?? NAME_LEXICON_REFRESH_MS;
-    this.firstWaitMs = options.firstWaitMs ?? NAME_LEXICON_FIRST_WAIT_MS;
-  }
+  constructor(private readonly options: NameLexiconOptions) {}
 
-  /** The matcher to use now, refreshing first or in the background as §5.2 says. */
-  async current(): Promise<NameMatcher> {
-    if (this.loadedAt === null) {
-      await this.waitAtMost(this.refresh(), this.firstWaitMs);
-    } else if (this.now() - this.loadedAt >= this.refreshAfterMs) {
-      void this.refresh();
-    }
-    return this.matcher;
-  }
-
-  /**
-   * The matcher to use now, without waiting: for callers that scrub
-   * synchronously. Starts a refresh when there is no copy or it is old.
-   */
-  peek(): NameMatcher {
-    if (this.loadedAt === null || this.now() - this.loadedAt >= this.refreshAfterMs)
-      void this.refresh();
-    return this.matcher;
-  }
-
-  /** The people graph changed: fetch a new copy now. */
-  invalidate(): void {
-    // A fetch already under way may have started before the change: fetch
-    // again once it settles.
-    if (this.inFlight !== null) this.again = true;
-    else void this.refresh();
-  }
-
-  /** Whether a copy has ever loaded. */
-  get loaded(): boolean {
-    return this.loadedAt !== null;
-  }
-
-  private refresh(): Promise<void> {
-    if (this.inFlight !== null) return this.inFlight;
-    const run = (async () => {
+  /** A matcher built from a list at least as new as Core's at call time. */
+  async freshMatcher(): Promise<NameMatcher> {
+    const seq = ++this.issued;
+    let known: string | undefined = this.version ?? undefined;
+    let result: PiiNamesResult | undefined;
+    for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const groups = await this.options.fetch();
-        this.matcher = new NameMatcher(groups);
-        this.loadedAt = this.now();
+        result = await this.options.fetch(known);
       } catch (err) {
-        if (this.loadedAt === null)
-          this.options.onDegraded?.(err instanceof Error ? err.name : 'unknown');
-      } finally {
-        this.inFlight = null;
-        if (this.again) {
-          this.again = false;
-          void this.refresh();
-        }
+        const reason = err instanceof Error ? err.name : 'unknown';
+        this.options.onDegraded?.(reason);
+        throw new NamesUnavailableError(reason);
       }
-    })();
-    this.inFlight = run;
-    return run;
+      if (result.unchanged !== true) break;
+      // Matcher and version always change together, so a match is current.
+      if (result.version === this.version) return this.matcher;
+      // "Unchanged" against a version another call has since replaced:
+      // ask once more for the whole list.
+      known = undefined;
+      result = undefined;
+    }
+    if (result === undefined || result.groups === undefined) {
+      this.options.onDegraded?.('no_list');
+      throw new NamesUnavailableError('no_list');
+    }
+    const matcher = new NameMatcher(result.groups);
+    if (seq > this.applied) {
+      this.applied = seq;
+      this.matcher = matcher;
+      this.version = result.version;
+    }
+    // This call uses the list its own answer carried, which is current as
+    // of this call even when a newer answer has already been applied.
+    return matcher;
   }
 
-  private async waitAtMost(p: Promise<void>, ms: number): Promise<void> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<void>((resolve) => {
-      timer = setTimeout(resolve, ms);
-    });
-    try {
-      await Promise.race([p, timeout]);
-    } finally {
-      if (timer !== undefined) clearTimeout(timer);
-    }
+  /** Whether a list has ever loaded. */
+  get loaded(): boolean {
+    return this.version !== null;
   }
 }
 

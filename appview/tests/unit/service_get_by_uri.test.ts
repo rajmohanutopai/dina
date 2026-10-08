@@ -37,7 +37,8 @@ function stubDb(rows: Row[]): { db: DrizzleDB; capturedWhere: () => unknown } {
       where = pred
       return limitStep
     },
-  }
+  }  ;(whereStep as Record<string, unknown>).leftJoin = () => whereStep // live listings (§14) add joins
+
   const db = {
     select: () => ({ from: () => ({ leftJoin: () => whereStep }) }),
   } as unknown as DrizzleDB

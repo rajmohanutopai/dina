@@ -196,14 +196,19 @@ const DEFAULT_CLASSIFICATION: Readonly<IntentClassification> = Object.freeze({
 
 export class IntentClassifier {
   private readonly llm: IntentClassifierLLM;
-  private readonly tocFetcher: (releaseSession?: string) => Promise<TocEntry[]>;
+  private readonly tocFetcher: (releaseSession?: string, askAuthority?: string) => Promise<TocEntry[]>;
 
   /**
    * `tocFetcher` receives the conversation the topics are released into
    * (A2A §4.2 (b)): topic names reach the model through the hint, so Core
-   * logs them against the conversation.
+   * logs them against the conversation. For an agent/device ask it also
+   * receives Core's ask authority, and must return only topics of personas
+   * that requester may read now (REAL_LIFE_FIXES §3.5).
    */
-  constructor(opts: { llm: IntentClassifierLLM; tocFetcher: (releaseSession?: string) => Promise<TocEntry[]> }) {
+  constructor(opts: {
+    llm: IntentClassifierLLM;
+    tocFetcher: (releaseSession?: string, askAuthority?: string) => Promise<TocEntry[]>;
+  }) {
     this.llm = opts.llm;
     this.tocFetcher = opts.tocFetcher;
   }
@@ -217,7 +222,15 @@ export class IntentClassifier {
     return cloneDefault();
   }
 
-  async classify(query: string, opts: { releaseSession?: string } = {}): Promise<IntentClassification> {
+  async classify(
+    query: string,
+    opts: {
+      releaseSession?: string;
+      askAuthority?: string;
+      /** The last few turns (REAL_LIFE_FIXES §1.3 D), so a follow-up routes right. */
+      recentTurns?: string;
+    } = {},
+  ): Promise<IntentClassification> {
     // Empty query → conservative default WITHOUT calling the LLM.
     if (typeof query !== 'string' || query.trim() === '') {
       return cloneDefault();
@@ -225,13 +238,15 @@ export class IntentClassifier {
 
     let toc: TocEntry[];
     try {
-      toc = await this.tocFetcher(opts.releaseSession);
+      toc = await this.tocFetcher(opts.releaseSession, opts.askAuthority);
     } catch {
       return cloneDefault();
     }
     const tocBlock = renderTocForPrompt(Array.isArray(toc) ? toc : []);
 
-    const userPrompt = `Table of Contents:\n${tocBlock}\n\nQuery:\n${query.trim()}`;
+    const recent =
+      opts.recentTurns !== undefined && opts.recentTurns !== '' ? `${opts.recentTurns}\n\n` : '';
+    const userPrompt = `Table of Contents:\n${tocBlock}\n\n${recent}Query:\n${query.trim()}`;
 
     let raw: string;
     try {

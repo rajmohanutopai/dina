@@ -65,6 +65,17 @@ export function formatServiceQueryResult(details: ServiceQueryEventDetails): str
   if (status === 'expired') {
     return `No response from ${serviceName}.`;
   }
+  if (status === 'retargeted') {
+    // REAL_LIFE_FIXES §9: a read-only query moved to the next provider.
+    const prev = (details as { previous_service_name?: unknown }).previous_service_name;
+    const from = typeof prev === 'string' && prev !== '' ? prev : 'the first provider';
+    return `No answer from ${from}; asking ${serviceName}.`;
+  }
+  if (status === 'outcome_unknown') {
+    // A request that acts (a booking) went quiet after it was sent: it may
+    // or may not have gone through. Nothing is resent.
+    return `No reply from ${serviceName}; the request may or may not have gone through. Check with them before asking again.`;
+  }
   if (status === 'success') {
     const formatter = FORMATTERS[capability] ?? formatGeneric;
     return formatter(details, serviceName);

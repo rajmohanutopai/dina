@@ -102,7 +102,7 @@ Rules:
 
 export class TopicExtractor {
   private readonly llm: TopicExtractorLLM;
-  private readonly createVault: () => EntityVault;
+  private readonly createVault: () => EntityVault | Promise<EntityVault>;
 
   constructor(opts: {
     llm: TopicExtractorLLM;
@@ -111,10 +111,10 @@ export class TopicExtractor {
      * across items in a batch. When omitted, each call creates a fresh
      * `EntityVault` so the scrub/rehydrate cycle is isolated per-item.
      */
-    createVault?: () => EntityVault;
+    createVault?: () => EntityVault | Promise<EntityVault>;
   }) {
     this.llm = opts.llm;
-    this.createVault = opts.createVault ?? (() => new EntityVault());
+    this.createVault = opts.createVault ?? (() => EntityVault.create());
   }
 
   async extract(item: TopicExtractorInput): Promise<TopicExtractionResult> {
@@ -130,7 +130,7 @@ export class TopicExtractor {
     let scrubbedSummary: string;
     let scrubbedContent: string;
     try {
-      vault = this.createVault();
+      vault = await this.createVault();
       scrubbedSummary = vault.scrub(summary);
       scrubbedContent = vault.scrub(content);
     } catch {

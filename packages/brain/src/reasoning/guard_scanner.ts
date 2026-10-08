@@ -27,6 +27,7 @@
  * labels in the numbered response block.
  */
 
+import { peoplePointerLine } from '../guardian/anti_her';
 import { isTrustTool } from '../guardian/peerlens_tools';
 import { GUARD_SCAN } from '../llm/prompts';
 
@@ -92,6 +93,11 @@ export interface GuardScannerOptions {
    * `[]`.
    */
   trustToolNames?: readonly string[];
+  /**
+   * Up to three close contacts' names (REAL_LIFE_FIXES §8). When Anti-Her
+   * sentences are removed, the reply gains one line pointing to people.
+   */
+  closeContacts?: () => Promise<string[]>;
 }
 
 export type GuardScanner = (args: {
@@ -211,6 +217,22 @@ export function createGuardScanner(
 
     const stripped = removeSentences(sentences, removeIndices);
     if (stripped.trim() !== '') {
+      // REAL_LIFE_FIXES §8: removing Anti-Her sentences must still point the
+      // user to people, not only when everything was removed.
+      if (flagged.anti_her_sentences !== undefined && flagged.anti_her_sentences.length > 0) {
+        let names: string[] = [];
+        try {
+          names = (await options.closeContacts?.()) ?? [];
+        } catch {
+          names = [];
+        }
+        return {
+          content: `${stripped.trim()} ${peoplePointerLine(names)}`,
+          mutated: true,
+          reason: 'sentences_removed',
+          flagged,
+        };
+      }
       return {
         content: stripped,
         mutated: true,

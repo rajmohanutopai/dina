@@ -18,6 +18,7 @@
  * chat UI can tap through to the corresponding workflow task.
  */
 
+import { buildTurnHistory, fenceNonce, outsideDataRule, recentTurnsBlock } from '../chat/history';
 import {
   makeMissingCapabilityNotice,
   type AskCommandHandler,
@@ -43,7 +44,7 @@ import {
 import type { GuardScanner } from './guard_scanner';
 import type { ToolRegistry } from './tool_registry';
 import type { PreFlightRetrievalResult } from '../composition/ask_retrieval_planner';
-import type { LLMProvider } from '../llm/adapters/provider';
+import type { ChatMessage, LLMProvider } from '../llm/adapters/provider';
 
 /**
  * Pre-flight retrieval provider — runs ONCE per ask before the
@@ -67,6 +68,13 @@ export interface PreFlightContext {
   sessionId?: string;
   /** The conversation the pre-fetched items go into (A2A §4.2). */
   releaseSession?: string;
+  /**
+   * Core's ask authority (agent/device asks). The planner does not pre-fetch
+   * for these: retrieval happens in the loop, under Core's gate.
+   */
+  askAuthority?: string;
+  /** The last few turns of an owner conversation (REAL_LIFE_FIXES §1.3 D). */
+  recentTurns?: string;
 }
 
 export type PreFlightRetrievalProvider = (
@@ -274,6 +282,21 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     const timeBlock = formatCurrentTimeBlock();
     let systemPrompt = `${timeBlock}\n\n${baseSystemPrompt}`;
 
+    // Conversation memory (REAL_LIFE_FIXES §1): this path serves the owner's
+    // own chat, so the thread's earlier turns ride along.
+    let history: ChatMessage[] = [];
+    const fence = fenceNonce();
+    const threadId = context?.threadId;
+    if (threadId !== undefined && threadId !== '') {
+      try {
+        history = await buildTurnHistory(threadId, { excludeQuestion: query, nonce: fence });
+      } catch {
+        return { response: 'I could not load this conversation. Please try again.', sources: [] };
+      }
+    }
+    const recentTurns = recentTurnsBlock(history);
+    if (history.length > 0) systemPrompt = `${systemPrompt}\n\n${outsideDataRule(fence)}`;
+
     // Explicit composer lane (Services/Reviews): force the source, SKIP the
     // classifier, and append the IMPERATIVE lane block. The lane is bound below
     // by the per-mode tool allowlist + the result-validation gate. When there
@@ -288,7 +311,9 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       // reasoning agent gets a routing nudge. No classifier → skip.
       let hint: IntentClassification;
       try {
-        hint = await options.intentClassifier.classify(query);
+        hint = await options.intentClassifier.classify(query, {
+          ...(recentTurns !== '' ? { recentTurns } : {}),
+        });
       } catch {
         hint = IntentClassifier.default();
       }
@@ -307,7 +332,7 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     if (options.preFlight !== undefined) {
       let preFlight: PreFlightRetrievalResult | null = null;
       try {
-        preFlight = await options.preFlight(query);
+        preFlight = await options.preFlight(query, recentTurns !== '' ? { recentTurns } : undefined);
       } catch {
         preFlight = null;
       }
@@ -327,6 +352,7 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
       tools: toolsForTurn,
       systemPrompt,
       userMessage,
+      ...(history.length > 0 ? { initialMessages: history } : {}),
       options: options.loopOptions,
     });
 

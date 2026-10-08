@@ -293,6 +293,11 @@ export interface SearchProviderServicesToolOptions {
    * is never useful; we know our own capabilities locally.
    */
   selfDid?: string;
+  /**
+   * Providers this node saw go quiet (Core's outcome record, REAL_LIFE_FIXES
+   * §9). They rank lower. Fail-soft: a failed lookup ranks as usual.
+   */
+  providerStanding?: (dids: string[]) => Promise<ReadonlySet<string>>;
 }
 
 /** Per-capability schema block returned to the LLM — trimmed from the
@@ -328,7 +333,7 @@ export function createSearchProviderServicesTool(
   return {
     name: 'search_provider_services',
     description:
-      'Find provider services on the Dina network that advertise a given capability (e.g. "eta_query" for transit ETAs). Returns service profiles RANKED BEST-FIRST (trust + proximity) with their DIDs, names, and per-capability schema blocks (params shape, hash, description, TTL). Pass lat/lng when the user mentioned a location. IMPORTANT: dispatch query_service to the SINGLE TOP result only — the registry may list the same provider more than once or several similar providers; querying more than one wastes the user\'s request. Pick a lower-ranked entry only if the user explicitly named that specific provider.',
+      'Find provider services on the Dina network that advertise a given capability (e.g. "eta_query" for transit ETAs). Returns service profiles RANKED BEST-FIRST (trust + proximity) with their DIDs, names, and per-capability schema blocks (params shape, hash, description, TTL). Pass lat/lng when the user mentioned a location. IMPORTANT: dispatch query_service to the SINGLE TOP result only — the registry may list the same provider more than once or several similar providers; querying more than one wastes the user\'s request. Pick a lower-ranked entry only if the user explicitly named that specific provider. Providers that have renewed lately come first; one with an availability_note has not been seen lately and may not answer, so if you query it, say so to the user rather than promising an answer.',
     parameters: {
       type: 'object',
       properties: {
@@ -374,11 +379,13 @@ export function createSearchProviderServicesTool(
         where.lat !== undefined && where.lng !== undefined
           ? { lat: where.lat, lng: where.lng }
           : undefined;
+      const ejected = await quietProviders(options.providerStanding, profiles);
       const ranked = rankCandidates(capability, profiles, {
         ...(viewer !== undefined ? { viewer } : {}),
         ...(options.selfDid !== undefined && options.selfDid !== ''
           ? { excludeDid: options.selfDid }
           : {}),
+        ejected,
       });
       return ranked.slice(0, limit).map((c) => toLLMProfile(c.profile));
     },
@@ -400,6 +407,24 @@ export interface LLMProfile {
    * is carried to the provider (multi-listing-per-DID disambiguation).
    */
   service_uri?: string;
+  /**
+   * Live listings (REAL_LIFE_FIXES §14): present only when the provider has
+   * not renewed lately, so the model can say it may not answer instead of
+   * promising one. Never a time AppView did not observe.
+   */
+  availability_note?: string;
+}
+
+/** A plain note for a provider that is not known to be live, or undefined. */
+export function availabilityNote(p: Pick<ServiceProfile, 'liveness' | 'lastSeenAt'>, nowMs = Date.now()): string | undefined {
+  if (p.liveness === undefined || p.liveness === 'fresh') return undefined;
+  if (p.liveness === 'unknown') return 'This provider runs an older version that does not report whether it is online.';
+  const seen = typeof p.lastSeenAt === 'string' ? Date.parse(p.lastSeenAt) : NaN;
+  const days = Number.isFinite(seen) ? Math.max(1, Math.floor((nowMs - seen) / 86_400_000)) : null;
+  const when = days === null ? 'lately' : `for ${days} day${days === 1 ? '' : 's'}`;
+  return p.liveness === 'expired'
+    ? `This provider has not been seen ${when}; it will probably not answer.`
+    : `This provider has not been seen ${when}; it may not answer.`;
 }
 
 function toLLMProfile(p: ServiceProfile): LLMProfile {
@@ -428,6 +453,7 @@ function toLLMProfile(p: ServiceProfile): LLMProfile {
     distance_km: p.distanceKm,
     // Carry the listing uri so the LLM can pass it back as service_uri.
     service_uri: typeof p.uri === 'string' && p.uri !== '' ? p.uri : undefined,
+    ...(availabilityNote(p) !== undefined ? { availability_note: availabilityNote(p) } : {}),
   };
 }
 
@@ -461,7 +487,45 @@ export interface QueryServiceToolOptions {
    * omitted, failures are silent.
    */
   logger?: (entry: Record<string, unknown>) => void;
+  /**
+   * The chat thread the asking turn came from (REAL_LIFE_FIXES §1.5). The
+   * query is stamped `thread:<id>`, so the reply updates the card in that
+   * thread instead of `main`. This node stamps it; a provider never sees or
+   * sets it.
+   */
+  replyThread?: string;
+  /** This node's own DID — never a fallback. */
+  selfDid?: string;
+  /** As on `search_provider_services`: providers this node saw go quiet. */
+  providerStanding?: (dids: string[]) => Promise<ReadonlySet<string>>;
 }
+
+/** How many other providers a read-only query may fall over to (§9). */
+export const MAX_QUERY_FALLBACKS = 2;
+
+async function quietProviders(
+  lookup: ((dids: string[]) => Promise<ReadonlySet<string>>) | undefined,
+  profiles: readonly ServiceProfile[],
+): Promise<ReadonlySet<string>> {
+  if (lookup === undefined || profiles.length === 0) return new Set();
+  try {
+    return await lookup([...new Set(profiles.map((p) => p.did))]);
+  } catch {
+    return new Set();
+  }
+}
+
+/** The location a query's params name (`location: {lat, lng}`), if any. */
+function queryLocation(params: unknown): { lat: number; lng: number } | undefined {
+  if (params === null || typeof params !== 'object') return undefined;
+  const loc = (params as { location?: unknown }).location;
+  if (loc === null || typeof loc !== 'object') return undefined;
+  const where = viewerLocationFromArgs(loc as Record<string, unknown>);
+  return where.lat !== undefined && where.lng !== undefined ? { lat: where.lat, lng: where.lng } : undefined;
+}
+
+/** Origin stamp for a query asked from a chat thread (REAL_LIFE_FIXES §1.5). */
+export const THREAD_ORIGIN_PREFIX = 'thread:';
 
 /**
  * Factory — returns an `AgentTool` that dispatches a service query via
@@ -596,6 +660,9 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
       const grantId =
         typeof args.grant_id === 'string' && args.grant_id !== '' ? args.grant_id : undefined;
       let matchedProfiles: ServiceProfile[] = [];
+      // Other public providers Core may try if this one goes quiet (§9).
+      // Never with a grant (that listing is the only one authorised).
+      let fallbacks: { toDID: string; serviceUri?: string; schemaHash?: string; serviceName?: string }[] = [];
 
       // WM-BRAIN-06d: if the LLM didn't route via search_provider_services
       // first (intent-classifier SHORTCUT, cached DID, whatever), the
@@ -613,6 +680,41 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         try {
           const profiles = await options.appViewClient.searchServices({ capability });
           matchedProfiles = profiles.filter((p) => p.did === operatorDID);
+          if (grantId === undefined) {
+            // Fallbacks near the place asked about: the query's own location
+            // (params.location) when it has one, else the unlocated list.
+            const where = queryLocation(params);
+            let pool = profiles;
+            if (where !== undefined) {
+              try {
+                pool = await options.appViewClient.searchServices({ capability, lat: where.lat, lng: where.lng });
+              } catch {
+                pool = profiles;
+              }
+            }
+            const others = pool.filter((p) => p.did !== operatorDID);
+            const ejected = await quietProviders(options.providerStanding, others);
+            const candidates = rankCandidates(capability, others, {
+              ...(options.selfDid !== undefined && options.selfDid !== '' ? { excludeDid: options.selfDid } : {}),
+              ...(where !== undefined ? { viewer: where } : {}),
+              ejected,
+            }).filter((c) => !ejected.has(c.profile.did));
+            // Live listings (§14): when any fallback is known to be live, only
+            // live ones; a stale or silent provider is a last resort.
+            const live = candidates.filter((c) => c.profile.liveness === 'fresh');
+            fallbacks = (live.length > 0 ? live : candidates)
+              .filter((c, i, all) => all.findIndex((x) => x.profile.did === c.profile.did) === i)
+              .slice(0, MAX_QUERY_FALLBACKS)
+              .map((c) => {
+                const hash = schemaForCapability(c.profile.capabilitySchemas, capability)?.schemaHash;
+                return {
+                  toDID: c.profile.did,
+                  ...(c.profile.uri !== undefined ? { serviceUri: c.profile.uri } : {}),
+                  ...(typeof hash === 'string' && hash !== '' ? { schemaHash: hash } : {}),
+                  serviceName: c.profile.name,
+                };
+              });
+          }
           // Resolve the SPECIFIC listing the caller chose so the autofetched
           // schema_hash / params / TTL / name come from THAT listing — not
           // whichever the index happened to order first. When the caller
@@ -752,13 +854,17 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
         ttlSeconds: ttl,
         schemaHash,
         serviceName,
-        originChannel: 'ask',
+        originChannel:
+          options.replyThread !== undefined && options.replyThread !== ''
+            ? `${THREAD_ORIGIN_PREFIX}${options.replyThread}`
+            : 'ask',
         // #1: forward the LLM-chosen listing uri so a multi-listing provider
         // DID knows which one was selected. Auto-filled / validated above.
         serviceUri,
         // Forward the grant id (known_only): the provider authorizes by
         // grant_id + the authenticated caller DID.
         grantId,
+        ...(fallbacks.length > 0 ? { fallbacks } : {}),
       });
       // Record the successful dispatch so a 2nd query_service for the same
       // capability this request is refused (single-provider-per-request).
@@ -871,7 +977,7 @@ export function createFindPreferredProviderTool(
   return {
     name: 'find_preferred_provider',
     description:
-      'Find the user\'s go-to contact for a given service category (e.g. "dental", "legal", "tax"). Returns the user\'s preferred provider(s) — already-established contacts the user has explicitly chosen for that category — plus their currently-published capabilities from AppView. PREFER THIS over search_provider_services when the question is about an established service relationship ("my dentist", "my lawyer", "my accountant"), because it honours the user\'s choice rather than re-ranking providers each time. If this returns no candidates, fall back to search_provider_services.',
+      'Find the user\'s go-to contact for a given service (e.g. "dentist" or "dental", "plumber" or "plumbing" — role or category both work). Returns the user\'s preferred provider(s) — already-established contacts the user has explicitly chosen for that category — plus their currently-published capabilities from AppView. PREFER THIS over search_provider_services when the question is about an established service relationship ("my dentist", "my lawyer", "my accountant"), because it honours the user\'s choice rather than re-ranking providers each time. If this returns no candidates, fall back to search_provider_services.',
     parameters: {
       type: 'object',
       properties: {

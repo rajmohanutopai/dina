@@ -2,7 +2,7 @@ import WebSocket from 'ws'
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, unlinkSync, openSync, writeSync, closeSync, constants as fsConstants } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
 import type {
   JetstreamEvent,
@@ -34,6 +34,16 @@ import { JETSTREAM_COLLECTIONS, TRUST_COLLECTIONS } from '@/config/lexicons.js'
 import { A2A_UNSTAMPED, isA2ACommit, type A2ACommitEvent, type A2ADirectory } from './a2a-directory.js'
 import { refuseImportedReview, type ImportRefusal } from '@/config/review-feeds.js'
 import { ingesterCursor } from '@/db/schema/index.js'
+import { observedUs } from '@/shared/service-liveness.js'
+import { noteIngestGap, noteServiceAccount, queueReconcile } from './service-liveness-ingest.js'
+
+const SERVICE_PROFILE_NSID = 'com.dinakernel.service.profile'
+const SERVICE_PRESENCE_NSID = 'com.dinakernel.service.presence'
+
+/** A node's presence record (docs/REAL_LIFE_FIXES.md §14): never dropped. */
+function isPresenceCommit(event: { kind: string; commit?: { collection?: string } }): boolean {
+  return event.kind === 'commit' && event.commit?.collection === SERVICE_PRESENCE_NSID
+}
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
 
@@ -262,6 +272,42 @@ export class JetstreamConsumer {
 
   constructor(private db: DrizzleDB) {}
 
+  /** Jetstream's retention, for the live-listings gap check (§14.4 C); null disables it. */
+  private serviceRetentionUs: number | null = null
+
+  /** Enable the live-listings gap check. Set before `start()`. */
+  setServiceRetention(retentionUs: number | null): void {
+    this.serviceRetentionUs = retentionUs
+  }
+
+  /** Events counted since the last hourly flush (§14.4 C upstream signal). */
+  private pendingHourlyEvents = 0
+  private lastHourlyFlushMs = Date.now()
+
+  /** Count one event; write the hourly total about once a minute. */
+  private countHourlyEvent(): void {
+    this.pendingHourlyEvents += 1
+    const nowMs = Date.now()
+    if (nowMs - this.lastHourlyFlushMs < 60_000) return
+    const n = this.pendingHourlyEvents
+    this.pendingHourlyEvents = 0
+    this.lastHourlyFlushMs = nowMs
+    const hourUs = Math.floor(nowMs / 3_600_000) * 3_600_000_000
+    void this.db
+      .execute(sql`
+        INSERT INTO ingest_hourly_events (hour_start_us, events) VALUES (${hourUs}, ${n})
+        ON CONFLICT (hour_start_us) DO UPDATE SET events = ingest_hourly_events.events + ${n}`)
+      .catch((err) => logger.warn({ err }, 'hourly event count failed'))
+  }
+
+  /** Renewals lost to a gap are blind time, never ageing. */
+  private async noteServiceGap(): Promise<void> {
+    if (this.serviceRetentionUs === null) return
+    await noteIngestGap(this.db, this.cursor, this.serviceRetentionUs).catch((err) =>
+      logger.warn({ err }, 'service gap check failed'),
+    )
+  }
+
   /** Inject the A2A directory. Set before `start()`, so the gap check runs before ingestion. */
   setA2ADirectory(directory: A2ADirectory | null): void {
     this.a2a = directory
@@ -317,6 +363,7 @@ export class JetstreamConsumer {
     logger.info({ cursor: this.cursor }, 'Starting Jetstream consumer')
     // Before anything is ingested: events lost to a gap make every card prove itself again.
     if (this.a2a !== null) this.a2aGeneration = (await this.a2a.markGapIfUnreplayable(this.cursor)).generation
+    await this.noteServiceGap()
     await this.replaySpool()
     this.connect()
     this.setupGracefulShutdown()
@@ -529,9 +576,18 @@ export class JetstreamConsumer {
         // never dropped: it waits in the queue, holding the cursor, instead. A
         // card event carries the gap generation it was received under.
         const card = isA2ACommit(event as { kind: string; commit?: { collection?: string } })
-        const required = card || event.kind === 'account'
-        const context = card ? { a2aGeneration: this.a2aGeneration } : undefined
-        if (!this.queue!.push({ data: event, timestampUs: event.time_us, ...(context ? { context } : {}) }, { required })) {
+        // A presence event (docs/REAL_LIFE_FIXES.md §14) is never dropped
+        // either: losing one would age a live provider. One rkey per DID keeps
+        // a flood cheap.
+        const presence = isPresenceCommit(event as { kind: string; commit?: { collection?: string } })
+        const required = card || presence || event.kind === 'account'
+        // AppView's receive time, so an event's observation time can never be
+        // later than when it arrived.
+        const context = {
+          receivedUs: this.lastMessageUs,
+          ...(card ? { a2aGeneration: this.a2aGeneration } : {}),
+        }
+        if (!this.queue!.push({ data: event, timestampUs: event.time_us, context }, { required })) {
           metrics.incr('ingester.queue.dropped')
           logger.warn({ event: event.kind }, 'queue full — spooling dropped event')
           try {
@@ -562,6 +618,7 @@ export class JetstreamConsumer {
   }
 
   private async processEvent(event: JetstreamEvent, context?: Readonly<Record<string, unknown>>): Promise<void> {
+    this.countHourlyEvent()
     if (event.kind === 'identity') {
       await this.handleIdentityEvent(event as JetstreamIdentityEvent)
       return
@@ -588,6 +645,16 @@ export class JetstreamConsumer {
     const collection = commit.collection
 
     if (!TRUST_COLLECTIONS.includes(collection as any)) return
+
+    // Live listings (docs/REAL_LIFE_FIXES.md §14.4 C): service events take
+    // their own path. Their kill switch is `service_index_enabled`, not the
+    // trust flag; an event that switch or a limit drops is never silently
+    // lost: its DID is queued for reconciliation against its repository.
+    if (collection === SERVICE_PROFILE_NSID || collection === SERVICE_PRESENCE_NSID) {
+      await this.processServiceCommit(event as JetstreamCommitCreate | JetstreamCommitDelete, context)
+      await this.countForCursor()
+      return
+    }
 
     // Both `JetstreamCommitCreate` and `JetstreamCommitDelete` carry
     // `rkey: string`, so we can safely build the AT-URI here once and
@@ -684,6 +751,47 @@ export class JetstreamConsumer {
     await this.countForCursor()
   }
 
+  private async processServiceCommit(
+    event: JetstreamCommitCreate | JetstreamCommitDelete,
+    context: Readonly<Record<string, unknown>> | undefined,
+  ): Promise<void> {
+    const { commit, did } = event
+    const collection = commit.collection
+    const atUri = `at://${did}/${collection}/${commit.rkey}`
+    const traceId = randomUUID()
+    const rejectionCtx = { db: this.db, logger, metrics, traceId }
+    const receivedUs = typeof context?.receivedUs === 'number' ? context.receivedUs : Date.now() * 1000
+    const live = { observedUs: observedUs(event.time_us, receivedUs), repoRev: commit.rev }
+
+    if (!(await readCachedBoolFlag(this.db, 'service_index_enabled'))) {
+      await queueReconcile(this.db, did, 'index_off')
+      await recordRejection(rejectionCtx, { atUri, did, reason: 'feature_off', detail: { operation: commit.operation } })
+      return
+    }
+    if (this.pdsSuspensionGate !== null) {
+      const result = await checkPdsSuspension(this.pdsSuspensionGate, did)
+      if (!result.ok) {
+        await recordRejection(rejectionCtx, { atUri, did, reason: result.reason, detail: result.detail })
+        return
+      }
+    }
+    // Profiles keep the per-DID bound (one DID cannot flood listings); a
+    // dropped one is re-read from the repository later. Presence is one
+    // record per DID and is never limited.
+    if (collection === SERVICE_PROFILE_NSID && isRateLimited(did)) {
+      await queueReconcile(this.db, did, 'rate_limited')
+      await recordRejection(rejectionCtx, { atUri, did, reason: 'rate_limit' })
+      metrics.incr('ingester.rate_limited_drops', { collection })
+      return
+    }
+    metrics.incr('ingester.events.received', { collection, operation: commit.operation })
+    if (commit.operation === 'create' || commit.operation === 'update') {
+      await this.handleCreateOrUpdate(did, commit as JetstreamCommitCreate['commit'], traceId, live)
+    } else if (commit.operation === 'delete') {
+      await this.handleDelete(did, commit as JetstreamCommitDelete['commit'], traceId, live)
+    }
+  }
+
   private async countForCursor(): Promise<void> {
     this.eventsSinceCursorSave++
     if (this.eventsSinceCursorSave >= this.CURSOR_SAVE_INTERVAL) {
@@ -697,6 +805,7 @@ export class JetstreamConsumer {
     did: string,
     commit: JetstreamCommitCreate['commit'],
     traceId: string,
+    live?: { observedUs: number; repoRev?: string },
   ): Promise<void> {
     const { collection, rkey, record, cid } = commit
     const uri = `at://${did}/${collection}/${rkey}`
@@ -825,6 +934,8 @@ export class JetstreamConsumer {
       uri, did, collection, rkey, cid,
       record: validation.data as Record<string, unknown>,
       traceId,
+      ...(live !== undefined ? { observedUs: live.observedUs } : {}),
+      ...(live?.repoRev !== undefined ? { repoRev: live.repoRev } : {}),
     })
 
     // TN-OBS-002: trace_id lives in structured LOGS, not metric
@@ -840,6 +951,7 @@ export class JetstreamConsumer {
     did: string,
     commit: JetstreamCommitDelete['commit'],
     traceId: string,
+    live?: { observedUs: number; repoRev?: string },
   ): Promise<void> {
     const { collection, rkey } = commit
     const uri = `at://${did}/${collection}/${rkey}`
@@ -848,7 +960,11 @@ export class JetstreamConsumer {
     if (!handler) return
 
     const ctx = { db: this.db, logger, metrics }
-    await handler.handleDelete(ctx, { uri, did, collection, rkey, traceId })
+    await handler.handleDelete(ctx, {
+      uri, did, collection, rkey, traceId,
+      ...(live !== undefined ? { observedUs: live.observedUs } : {}),
+      ...(live?.repoRev !== undefined ? { repoRev: live.repoRev } : {}),
+    })
     logger.info({ collection, operation: 'delete', uri, trace_id: traceId }, 'Record processed')
     metrics.incr('ingester.records.processed', { collection, operation: 'delete' })
   }
@@ -867,6 +983,8 @@ export class JetstreamConsumer {
     metrics.incr('ingester.events.account', { status: event.account?.status ?? 'active' })
     if (typeof event.account?.active === 'boolean') {
       await this.a2a?.noteAccount(event.did, event.account.active, event.time_us)
+      // Live listings: an inactive account's listings are withheld (§14.4 C).
+      await noteServiceAccount(this.db, event.did, event.account.active, event.account.status, event.time_us)
     }
   }
 
@@ -903,6 +1021,7 @@ export class JetstreamConsumer {
           // An outage longer than Jetstream keeps events lost some: the gap
           // is recorded before ingestion resumes, or it does not resume.
           if (this.a2a !== null) this.a2aGeneration = (await this.a2a.markGapIfUnreplayable(this.cursor)).generation
+    await this.noteServiceGap()
           this.connect()
         })
         .catch((err: unknown) => {

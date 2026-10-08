@@ -1,7 +1,8 @@
 import { z } from 'zod'
 import { and, eq, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { services, didRedactions } from '@/db/schema/index.js'
+import { services, didRedactions, serviceAccountStatus, serviceOperatorPresence } from '@/db/schema/index.js'
+import { readLivenessSettings, servableSql, tierSql } from '@/shared/service-liveness.js'
 import { allCanonicalCapabilities } from '@/shared/capability-registry.js'
 
 /**
@@ -72,6 +73,9 @@ export async function searchCapabilities(
   // keys currently have ≥1 live provider. We only need the capability name:
   // custom capabilities are intentionally excluded from this result (below),
   // so the per-capability descriptions the old custom branch needed are gone.
+  // Live listings (§14): coverage counts only providers search would serve.
+  const live = await readLivenessSettings(db)
+  const P = 'service_operator_presence'
   const rows = await db
     .select({
       cap: sql<string>`jsonb_array_elements_text(${services.capabilitiesJson}::jsonb)`,
@@ -82,11 +86,15 @@ export async function searchCapabilities(
     // provider still influences capability coverage (the LLM would see a
     // capability as "available" backed only by a taken-down provider).
     .leftJoin(didRedactions, eq(services.operatorDid, didRedactions.did))
+    .leftJoin(serviceOperatorPresence, eq(services.operatorDid, serviceOperatorPresence.did))
+    .leftJoin(serviceAccountStatus, eq(services.operatorDid, serviceAccountStatus.did))
     .where(
       and(
         eq(services.isDiscoverable, true),
         isNull(services.tombstonedAt),
         isNull(didRedactions.did),
+        servableSql('services', P, 'service_account_status'),
+        ...(live.hideExpired ? [sql`${tierSql(P, live)} < 2`] : []),
       ),
     )
 

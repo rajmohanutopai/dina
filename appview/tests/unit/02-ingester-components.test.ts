@@ -181,6 +181,12 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
       enableFlags: true,
       createdAt: now,
     },
+    'com.dinakernel.service.presence': {
+      v: 1,
+      n: '0123456789abcdef',
+      listings: [{ rkey: 'self', cid: 'bafyreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy' }],
+      complete: true,
+    },
     'com.dinakernel.service.profile': {
       name: 'Test Transit',
       description: 'Demo transit provider',
@@ -659,9 +665,9 @@ describe('§2.1 Record Validator', () => {
     expect(result.errors).toBeDefined()
   })
 
-  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 23 collection types \u2014 valid minimal records"}
-  it('UT-RV-034: all 23 collection types — valid minimal records', () => {
-    // Input: Minimal valid record for each of the 23 collections
+  // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 24 collection types \u2014 valid minimal records"}
+  it('UT-RV-034: all 24 collection types — valid minimal records', () => {
+    // Input: Minimal valid record for each of the 24 collections
     // Expected: All return success = true
     for (const collection of TRUST_COLLECTIONS) {
       const record = minimalRecordForCollection(collection)
@@ -1841,12 +1847,12 @@ describe('§2.4 Handler Router', () => {
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 23 collections registered"}
-  it('UT-HR-003: routeHandler — all 23 collections registered', () => {
+  it('UT-HR-003: routeHandler — all 24 collections registered', () => {
     // Input: Iterate TRUST_COLLECTIONS (19 peerlens records + service.profile +
-    // the two §10.2 commerce catalog records)
+    // service.presence (REAL_LIFE_FIXES §14) + the commerce records)
     // Expected: All return non-null handler
     const registered = getRegisteredCollections()
-    expect(registered).toHaveLength(23)
+    expect(registered).toHaveLength(24)
 
     for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)

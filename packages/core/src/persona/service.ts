@@ -286,6 +286,26 @@ export function resolveInstalledPersonaName(name: string): string {
   return canonical;
 }
 
+/**
+ * True when the registry holds a persona list and `name` (after alias
+ * resolution) is not in it. With an empty registry (a context that never
+ * loaded personas) nothing counts as unknown, so callers keep their old
+ * behaviour there.
+ */
+export function isUnknownPersona(name: string): boolean {
+  if (personas.size === 0) return false;
+  return !personas.has(resolveInstalledPersonaName(name));
+}
+
+/**
+ * Change a persona's tier in this process's registry. Brain-side mirrors use
+ * it to follow tier changes made in Core; it does not persist.
+ */
+export function setPersonaTierInMemory(name: string, tier: PersonaTier): void {
+  const state = personas.get(name.trim().toLowerCase());
+  if (state !== undefined) state.tier = tier;
+}
+
 /** Reset all persona state (for testing). */
 export function resetPersonaState(): void {
   personas.clear();

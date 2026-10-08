@@ -1,7 +1,8 @@
 import { z } from 'zod'
-import { eq, and, isNull } from 'drizzle-orm'
+import { eq, and, isNull, sql } from 'drizzle-orm'
 import type { DrizzleDB } from '@/db/connection.js'
-import { services, didRedactions } from '@/db/schema/index.js'
+import { services, didRedactions, serviceAccountStatus, serviceOperatorPresence } from '@/db/schema/index.js'
+import { lastSeenAtIso, livenessSql, readLivenessSettings, servableSql, type Liveness } from '@/shared/service-liveness.js'
 
 /**
  * xRPC endpoint: com.dinakernel.service.getByUri
@@ -40,12 +41,20 @@ export interface ServiceGetByUriResponse {
   responsePolicy: unknown
   serviceArea: { lat: number; lng: number; radiusKm: number } | null
   discoverability: string | null
+  /**
+   * Live listings (§14). An expired listing still resolves here (a shared
+   * link or QR code), labelled, so the requester can warn.
+   */
+  liveness: Liveness
+  lastSeenAt: string | null
 }
 
 export async function serviceGetByUri(
   db: DrizzleDB,
   params: ServiceGetByUriParamsType,
 ): Promise<ServiceGetByUriResponse | null> {
+  const live = await readLivenessSettings(db)
+  const P = 'service_operator_presence'
   const rows = await db
     .select({
       uri: services.uri,
@@ -59,17 +68,24 @@ export async function serviceGetByUri(
       lng: services.lng,
       radiusKm: services.radiusKm,
       discoverability: services.discoverability,
+      liveness: sql<string>`${livenessSql(P, live)}`.as('liveness_label'),
+      lastSeenUs: serviceOperatorPresence.lastSeenUs,
     })
     .from(services)
     // GDPR-shaped exclusion (mirrors service-search / isDiscoverable): a DID
     // with a did_redactions row resolves to null. Tombstoned rows likewise —
     // a moderator takedown must not be invocable even via a direct link.
     .leftJoin(didRedactions, eq(services.operatorDid, didRedactions.did))
+    .leftJoin(serviceOperatorPresence, eq(services.operatorDid, serviceOperatorPresence.did))
+    .leftJoin(serviceAccountStatus, eq(services.operatorDid, serviceAccountStatus.did))
     .where(
       and(
         eq(services.uri, params.uri),
         isNull(services.tombstonedAt),
         isNull(didRedactions.did),
+        // Live listings (§14): an inactive account, a withdrawn node, or a
+        // listing its node's presence set does not name, resolves to null.
+        servableSql('services', P, 'service_account_status'),
       ),
     )
     .limit(1)
@@ -96,5 +112,7 @@ export async function serviceGetByUri(
     responsePolicy: row.responsePolicyJson,
     serviceArea,
     discoverability: row.discoverability,
+    liveness: (row.liveness ?? 'unknown') as Liveness,
+    lastSeenAt: lastSeenAtIso(row.lastSeenUs),
   }
 }

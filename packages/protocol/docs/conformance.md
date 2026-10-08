@@ -503,6 +503,15 @@ describe the network-level exchange but require a live loopback.
   conformance vector covers these frames. The strict "anything else closes
   with 1008" rule now explicitly excepts the optional `features` array.
 
+- **2026-10-08** — **Service presence record (additive).** New AT-Proto
+  collection `com.dinakernel.service.presence` (rkey `self`):
+  `{v: 1, n, listings: [{rkey, cid}], complete}`, validated by
+  `validateServicePresenceRecord`, plus `MAX_PUBLISHED_LISTINGS` (100). A
+  node with published listings renews it about once a day; AppView judges
+  liveness by when it received the renewals. ADDITIVE: no envelope, field or
+  frozen vector changes; a port that never writes the record is treated as
+  an older release.
+
 ## 16. See also
 
 - [`README.md`](../README.md) — `@dina/protocol` implementer

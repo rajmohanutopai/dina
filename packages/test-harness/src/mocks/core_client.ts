@@ -19,7 +19,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.34.
  */
 
-import { WorkflowConflictError } from '@dina/core';
+import { WorkflowConflictError, piiNamesVersion } from '@dina/core';
 
 import type {
   A2ACallableAgent,
@@ -106,6 +106,11 @@ import type {
   ApplyExtractionResponse,
   Person,
   PiiNameGroup,
+  PiiNamesResult,
+  AgentPersonaAccessDecision,
+  OwnerWordsProof,
+  TalkSendResult,
+  StoredChatMessage,
   Reminder,
   ReminderCreateInput,
   StoredNotificationItem,
@@ -488,6 +493,13 @@ export class MockCoreClient implements CoreClient {
     });
   }
 
+  /** Providers the test marks as gone quiet (REAL_LIFE_FIXES §9). */
+  ejectedProviders = new Set<string>();
+
+  async serviceProviderStanding(dids: string[]): Promise<Set<string>> {
+    return this.dispatch('serviceProviderStanding', [dids], () => new Set(dids.filter((d) => this.ejectedProviders.has(d))));
+  }
+
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
     return this.dispatch('sendServiceQuery', [req], () => ({
       ...this.serviceQueryResult,
@@ -495,8 +507,88 @@ export class MockCoreClient implements CoreClient {
     }));
   }
 
+  /** In-memory chat thread store for the chat* calls. */
+  chatMessages: StoredChatMessage[] = [];
+
+  async chatAppend(msg: StoredChatMessage): Promise<void> {
+    return this.dispatch('chatAppend', [msg], () => {
+      this.chatMessages = this.chatMessages.filter((m) => m.id !== msg.id);
+      this.chatMessages.push({ ...msg });
+    });
+  }
+
+  async chatList(threadId: string, limit?: number): Promise<StoredChatMessage[]> {
+    return this.dispatch('chatList', [threadId, limit], () => {
+      const rows = this.chatMessages.filter((m) => m.threadId === threadId);
+      return limit !== undefined ? rows.slice(-limit) : rows;
+    });
+  }
+
+  async chatThreadIds(): Promise<string[]> {
+    return this.dispatch('chatThreadIds', [], () => [...new Set(this.chatMessages.map((m) => m.threadId))]);
+  }
+
+  async chatDeleteThread(threadId: string): Promise<boolean> {
+    return this.dispatch('chatDeleteThread', [threadId], () => {
+      const before = this.chatMessages.length;
+      this.chatMessages = this.chatMessages.filter((m) => m.threadId !== threadId);
+      return this.chatMessages.length < before;
+    });
+  }
+
+  async chatReset(): Promise<void> {
+    return this.dispatch('chatReset', [], () => {
+      this.chatMessages = [];
+    });
+  }
+
+  /** Canned `check` answers by persona; missing personas read as gated. */
+  agentPersonaAccessCheckResult: Record<string, 'allowed' | 'gated'> = {};
+  /** Canned `request` answer. */
+  agentPersonaAccessRequestResult: AgentPersonaAccessDecision = { decision: 'allowed' };
+
+  async agentPersonaAccessCheck(
+    askAuthority: string,
+    personas: string[],
+    mode: 'read' | 'write' = 'read',
+  ): Promise<Record<string, 'allowed' | 'gated'>> {
+    return this.dispatch('agentPersonaAccessCheck', [askAuthority, personas, mode], () => {
+      const out: Record<string, 'allowed' | 'gated'> = {};
+      for (const p of personas) out[p] = this.agentPersonaAccessCheckResult[p] ?? 'gated';
+      return out;
+    });
+  }
+
+  async agentPersonaAccessRequest(
+    askAuthority: string,
+    persona: string,
+    scope: string,
+    mode: 'read' | 'write' = 'read',
+  ): Promise<AgentPersonaAccessDecision> {
+    return this.dispatch('agentPersonaAccessRequest', [askAuthority, persona, scope, mode], () => ({
+      ...this.agentPersonaAccessRequestResult,
+    }));
+  }
+
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
     return this.dispatch('memoryToC', [opts], () => this.memoryToCResult);
+  }
+
+  /** Canned `talkSend` answer. */
+  talkSendResult: TalkSendResult = { status: 'sent' };
+
+  async talkSend(input: { proof: OwnerWordsProof; contact: string; proposedText: string }): Promise<TalkSendResult> {
+    return this.dispatch('talkSend', [input], () => ({ ...this.talkSendResult }));
+  }
+
+  async stagingIngestOwnerWords(
+    proof: OwnerWordsProof,
+  ): Promise<StagingIngestResult & { source: string }> {
+    return this.dispatch('stagingIngestOwnerWords', [proof], () => ({
+      ...this.stagingIngestResult,
+      itemId: this.stagingIngestResult.itemId || `mock-chat-${proof.turnId}`,
+      source: 'chat_auto',
+    }));
   }
 
   async stagingIngest(req: StagingIngestRequest): Promise<StagingIngestResult> {
@@ -1056,9 +1148,12 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('peopleList', [], () => [...this.peopleListResult]);
   }
 
-  async piiNames(): Promise<PiiNameGroup[]> {
-    return this.dispatch('piiNames', [], () =>
-      this.piiNamesResult.map((g) => ({ ...g, names: [...g.names] })),
+  async piiNames(known?: string): Promise<PiiNamesResult> {
+    return this.dispatch('piiNames', [known], () => {
+      const groups = this.piiNamesResult.map((g) => ({ ...g, names: [...g.names] }));
+      const version = piiNamesVersion(groups);
+      return known === version ? { version, unchanged: true } : { version, groups };
+    }
     );
   }
 

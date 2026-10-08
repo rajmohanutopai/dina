@@ -5,43 +5,19 @@
  * group number per person — no person IDs, DIDs or relationships.
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { isRelationshipPhrase } from '../people/relationship_words';
+
 import type { Contact } from '../contacts/directory';
 import type { Person } from '../people/domain';
 
 /** Surface types that name someone; `role_phrase` ("my doctor") names no one. */
 const NAMING_SURFACE_TYPES: ReadonlySet<string> = new Set(['name', 'nickname', 'alias']);
 
-/**
- * Words that name a relationship and are never anyone's given name, for a
- * person whose relationship the graph does not record. Short on purpose: a
- * word here is never hidden, so a real name on this list would leak; a
- * relationship word missing from it is only hidden when it need not be.
- * Each person's own `relationshipHint` (in the owner's words and language)
- * covers the rest.
- */
-const RELATIONSHIP_WORDS: ReadonlySet<string> = new Set([
-  'mom',
-  'mum',
-  'mother',
-  'dad',
-  'father',
-  'wife',
-  'husband',
-  'son',
-  'daughter',
-  'brother',
-  'sister',
-  'grandmother',
-  'grandfather',
-  'grandma',
-  'grandpa',
-  'aunt',
-  'uncle',
-  'cousin',
-  'nephew',
-  'niece',
-  'boss',
-]);
+// Relationship words are read by the shared helper (people/relationship_words.ts).
+
 
 /** One person's names: the strings Brain hides, under one group number. */
 export interface PiiNameGroup {
@@ -62,7 +38,7 @@ function keep(name: string, hint: string): string | null {
   if (trimmed.length < 2) return null;
   const lower = trimmed.toLowerCase();
   const bare = lower.replace(/^(my|our)\s+/, '');
-  if (RELATIONSHIP_WORDS.has(bare)) return null;
+  if (isRelationshipPhrase(trimmed)) return null;
   if (hint !== '' && bare === hint) return null;
   return trimmed;
 }
@@ -119,6 +95,35 @@ export function buildPiiNameGroups(
     if (names.length > 0) out.push({ group: out.length + 1, names });
   }
   return out;
+}
+
+/**
+ * Version of a names list: a hash of its content (REAL_LIFE_FIXES §4.3).
+ * Core builds the list from the people graph and contacts on every read, so
+ * a content hash changes whenever any write changes the list, with no
+ * counter to bump at each write site, and it survives restarts.
+ */
+export function piiNamesVersion(groups: readonly PiiNameGroup[]): string {
+  return bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(groups)))).slice(0, 32);
+}
+
+/** One read of the names list: the list, or "unchanged" when the caller's copy is current. */
+export interface PiiNamesResult {
+  version: string;
+  /** Present unless `unchanged`. */
+  groups?: PiiNameGroup[];
+  /** The caller's `known` version is current; no list sent. */
+  unchanged?: boolean;
+}
+
+/** Read a names result off the wire; malformed input reads as no answer. */
+export function readPiiNamesResult(value: unknown): PiiNamesResult {
+  const raw = (value ?? {}) as { version?: unknown; groups?: unknown; unchanged?: unknown };
+  if (typeof raw.version !== 'string' || raw.version === '') {
+    throw new Error('piiNames: answer has no version');
+  }
+  if (raw.unchanged === true) return { version: raw.version, unchanged: true };
+  return { version: raw.version, groups: readPiiNameGroups(raw.groups) };
 }
 
 /**

@@ -8,7 +8,6 @@
  */
 
 import { appendAudit } from '../audit/service';
-import { resolvePersonaName } from '../persona/names';
 import {
   isPersonaOpen,
   getPersonaTier,
@@ -708,7 +707,7 @@ export async function persistConnectedBrainMemoryProposal(
   ) {
     return { status: 400, body: { error: 'invalid_memory_proposal' } };
   }
-  const persona = resolvePersonaName(proposal.persona.trim());
+  const persona = resolveInstalledPersonaName(proposal.persona.trim());
   if (persona === '' || !personaExists(persona)) {
     return { status: 400, body: { error: 'unknown_memory_persona' } };
   }
@@ -831,7 +830,7 @@ async function proposeMemory(
   ) {
     return { status: 400, body: { error: 'invalid_memory_proposal' } };
   }
-  const persona = resolvePersonaName(proposal.persona.trim());
+  const persona = resolveInstalledPersonaName(proposal.persona.trim());
   if (persona === '' || !personaExists(persona)) {
     return { status: 400, body: { error: 'unknown_memory_persona' } };
   }

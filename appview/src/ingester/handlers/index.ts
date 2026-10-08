@@ -39,6 +39,20 @@ export interface RecordOp {
    * dispatcher.
    */
   traceId?: string
+  /**
+   * When AppView observed the event (µs): `min(time_us, received)`, never a
+   * time the record claims (docs/REAL_LIFE_FIXES.md §14). Set by the
+   * consumer; handlers that track liveness use it.
+   */
+  observedUs?: number
+  /** The commit's repository revision (a TID), for revision ordering. */
+  repoRev?: string
+  /**
+   * Written by reconciliation from a verified repository read, not by an
+   * event: it proves the record exists, never that the node is alive now,
+   * so it credits no freshness (§14.4 C).
+   */
+  reconciled?: boolean
 }
 
 // ── Handler interface ───────────────────────────────────────────────
@@ -73,6 +87,7 @@ import { subjectClaimHandler } from './subject-claim.js'
 import { peerlensPolicyHandler } from './peerlens-policy.js'
 import { notificationPrefsHandler } from './notification-prefs.js'
 import { serviceProfileHandler } from './service-profile.js'
+import { servicePresenceHandler } from './service-presence.js'
 import {
   commerceCatalogPointerHandler,
   commerceCatalogSnapshotHandler,
@@ -100,6 +115,7 @@ const handlers: Record<string, RecordHandler> = {
   'com.dinakernel.peerlens.trustPolicy': peerlensPolicyHandler,
   'com.dinakernel.peerlens.notificationPrefs': notificationPrefsHandler,
   'com.dinakernel.service.profile': serviceProfileHandler,
+  'com.dinakernel.service.presence': servicePresenceHandler,
   // Keyed on the PROTOCOL's constants, so the collection a publisher writes to
   // and the collection this map routes are the same string by construction.
   [CATALOG_POINTER_NSID]: commerceCatalogPointerHandler,

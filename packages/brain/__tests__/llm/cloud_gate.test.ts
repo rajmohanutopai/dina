@@ -8,28 +8,28 @@ import { checkCloudGate, rehydrateResponse, needsScrub } from '../../src/llm/clo
 
 describe('Cloud LLM Gate', () => {
   describe('checkCloudGate', () => {
-    it('local provider → always allowed, no scrub', () => {
-      const result = checkCloudGate('Health data with john@example.com', 'health', 'local');
+    it('local provider → always allowed, no scrub', async () => {
+      const result = await checkCloudGate('Health data with john@example.com', 'health', 'local');
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(false);
       expect(result.scrubbedText).toContain('john@example.com'); // NOT scrubbed
     });
 
-    it('none provider → always allowed, no scrub', () => {
-      const result = checkCloudGate('Data', 'health', 'none');
+    it('none provider → always allowed, no scrub', async () => {
+      const result = await checkCloudGate('Data', 'health', 'none');
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(false);
     });
 
-    it('non-sensitive persona + cloud → allowed WITH scrub (cloud-wide policy)', () => {
-      const result = checkCloudGate('Meeting notes with alice@work.com', 'general', 'claude');
+    it('non-sensitive persona + cloud → allowed WITH scrub (cloud-wide policy)', async () => {
+      const result = await checkCloudGate('Meeting notes with alice@work.com', 'general', 'claude');
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(true); // cloud-wide scrub
       expect(result.scrubbedText).not.toContain('alice@work.com');
     });
 
-    it('sensitive persona + cloud → scrubbed', () => {
-      const result = checkCloudGate('Patient john@example.com has lab results', 'health', 'claude');
+    it('sensitive persona + cloud → scrubbed', async () => {
+      const result = await checkCloudGate('Patient john@example.com has lab results', 'health', 'claude');
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(true);
       expect(result.scrubbedText).not.toContain('john@example.com');
@@ -37,14 +37,14 @@ describe('Cloud LLM Gate', () => {
       expect(result.vault).toBeDefined();
     });
 
-    it('financial persona + cloud → scrubbed', () => {
-      const result = checkCloudGate('Transfer to account 555-123-4567', 'financial', 'openai');
+    it('financial persona + cloud → scrubbed', async () => {
+      const result = await checkCloudGate('Transfer to account 555-123-4567', 'financial', 'openai');
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(true);
     });
 
-    it('custom sensitive personas list', () => {
-      const result = checkCloudGate('Secret data with email test@secret.com', 'secret', 'claude', [
+    it('custom sensitive personas list', async () => {
+      const result = await checkCloudGate('Secret data with email test@secret.com', 'secret', 'claude', [
         'secret',
         'classified',
       ]);
@@ -52,8 +52,8 @@ describe('Cloud LLM Gate', () => {
       expect(result.scrubbed).toBe(true);
     });
 
-    it('text without PII still passes (scrub succeeds trivially)', () => {
-      const result = checkCloudGate(
+    it('text without PII still passes (scrub succeeds trivially)', async () => {
+      const result = await checkCloudGate(
         'No personal data here, just medical terminology',
         'health',
         'claude',
@@ -64,8 +64,8 @@ describe('Cloud LLM Gate', () => {
   });
 
   describe('rehydrateResponse', () => {
-    it('restores PII in LLM response', () => {
-      const gateResult = checkCloudGate(
+    it('restores PII in LLM response', async () => {
+      const gateResult = await checkCloudGate(
         'Email john@example.com about the lab results',
         'health',
         'claude',
@@ -81,14 +81,14 @@ describe('Cloud LLM Gate', () => {
   });
 
   describe('gate rejection (scrub failure)', () => {
-    it('refuses cloud when scrub throws', () => {
+    it('refuses cloud when scrub throws', async () => {
       // Mock EntityVault to throw during scrub — simulates catastrophic scrub failure
       const origScrub = require('../../src/pii/entity_vault').EntityVault.prototype.scrub;
       require('../../src/pii/entity_vault').EntityVault.prototype.scrub = () => {
         throw new Error('scrub catastrophe');
       };
 
-      const result = checkCloudGate('Sensitive data', 'health', 'claude');
+      const result = await checkCloudGate('Sensitive data', 'health', 'claude');
       expect(result.allowed).toBe(false);
       expect(result.scrubbed).toBe(false);
       expect(result.fallback).toBe('local');
@@ -100,23 +100,23 @@ describe('Cloud LLM Gate', () => {
   });
 
   describe('needsScrub', () => {
-    it('health + cloud → true', () => {
+    it('health + cloud → true', async () => {
       expect(needsScrub('health', 'claude')).toBe(true);
     });
 
-    it('financial + cloud → true', () => {
+    it('financial + cloud → true', async () => {
       expect(needsScrub('financial', 'openai')).toBe(true);
     });
 
-    it('general + cloud → true (cloud-wide scrub policy)', () => {
+    it('general + cloud → true (cloud-wide scrub policy)', async () => {
       expect(needsScrub('general', 'claude')).toBe(true);
     });
 
-    it('health + local → false', () => {
+    it('health + local → false', async () => {
       expect(needsScrub('health', 'local')).toBe(false);
     });
 
-    it('any + none → false', () => {
+    it('any + none → false', async () => {
       expect(needsScrub('health', 'none')).toBe(false);
     });
   });

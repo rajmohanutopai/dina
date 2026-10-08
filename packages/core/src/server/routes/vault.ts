@@ -22,6 +22,8 @@ import {
 import { isVaultOperationAllowed, type VaultOrigin } from '../../vault/origin_capability';
 import { parseReleaseSession, type ReleaseContext } from '../../vault/release';
 
+import { askAuthorityGate } from './ask_authority_gate';
+
 import type { GrantMode } from '../../agent/grant_repository';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../router';
 
@@ -93,6 +95,10 @@ function agentGate(
   mode: GrantMode,
   scope: string,
 ): CoreResponse | null {
+  // A read Brain makes for an agent/device ask carries that ask's authority;
+  // it is judged as the requester, never as the owner (REAL_LIFE_FIXES §3).
+  const authorityGate = askAuthorityGate(req, persona, mode);
+  if (authorityGate !== null) return authorityGate;
   if (req.callerType !== 'agent') return null;
   const agentDID = req.callerDID ?? '';
   if (agentDID === '') {

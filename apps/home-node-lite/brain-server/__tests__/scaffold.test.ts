@@ -183,6 +183,22 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
     });
   });
 
+  it('reads an OpenRouter base URL for a proxy or recorder, and refuses a malformed one', () => {
+    const viaProxy = loadConfig({
+      DINA_BRAIN_LLM_PROVIDER: 'openrouter',
+      DINA_OPENROUTER_API_KEY: 'sk-or-test',
+      DINA_OPENROUTER_BASE_URL: 'http://127.0.0.1:18999/api/v1',
+    });
+    expect(viaProxy.llm).toMatchObject({ provider: 'openrouter', baseUrl: 'http://127.0.0.1:18999/api/v1' });
+    expect(() =>
+      loadConfig({
+        DINA_BRAIN_LLM_PROVIDER: 'openrouter',
+        DINA_OPENROUTER_API_KEY: 'sk-or-test',
+        DINA_OPENROUTER_BASE_URL: 'not a url',
+      }),
+    ).toThrow(ConfigError);
+  });
+
   it('requires an explicit LLM when the internal Brain worker is enabled', () => {
     expect(() => loadConfig({ DINA_INTERNAL_BRAIN_ENABLED: 'true' })).toThrow(ConfigError);
     expect(
@@ -233,6 +249,7 @@ describe('brain-server — boot (task 5.1)', () => {
           askRoutes: 'disabled',
           stagingDrain: 'disabled',
           runtime: 'ok',
+          personas: 'ok',
         },
       });
     } finally {
@@ -402,6 +419,7 @@ describe('brain-server — boot (task 5.1)', () => {
           askRoutes: 'ok',
           stagingDrain: 'disabled',
           runtime: 'ok',
+          personas: 'ok',
         },
       });
     } finally {
@@ -436,6 +454,18 @@ describe('brain-server — boot (task 5.1)', () => {
 
     const originalFetch = globalThis.fetch;
     const fetchFn = jest.fn(async (url: string) => {
+      // Every model call checks the hidden-names list first (REAL_LIFE_FIXES §4.3).
+      if (url.includes('/v1/pii/names')) {
+        return new Response(JSON.stringify({ version: 'v0', groups: [] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Brain is ready only after reading Core's persona list (REAL_LIFE_FIXES §2.3).
+      if (url.endsWith('/v1/personas')) {
+        return new Response(JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
         status: 500,
         headers: { 'content-type': 'application/json' },
@@ -478,6 +508,9 @@ describe('brain-server — boot (task 5.1)', () => {
         payload: {
           question: 'does boot compose ask?',
           requesterDid: 'did:key:zBootRuntimeTester',
+          // A non-owner ask arrives from Core with its ask authority
+          // (REAL_LIFE_FIXES §0.1 B); without one it is refused.
+          askAuthority: 'aa-boot-test',
         },
       });
       expect(ask.statusCode).toBe(200);
@@ -487,14 +520,14 @@ describe('brain-server — boot (task 5.1)', () => {
       });
       // Four provider.chat calls per ask on the coordinator path:
       // (1) the Anti-Her pre-screen (Law 4 runs before anything else),
-      // (2) the pre-flight retrieval planner (taskType:
-      // 'intent_classification', emits a structured plan before the
-      // agentic loop), (3) the per-turn intent-hint classifier that
-      // buildPromptForTurn shares with the direct handler, and (4) the
-      // agentic loop itself (taskType: 'reason'). Pre-screen, planner,
-      // and hint classifier are all fail-soft — malformed scripted
-      // output leaves the loop unchanged, but every call still counts.
-      expect(provider.chat).toHaveBeenCalledTimes(4);
+      // (2) the per-turn intent-hint classifier that buildPromptForTurn
+      // shares with the direct handler, and (3) the agentic loop itself
+      // (taskType: 'reason'). An agent ask skips the pre-flight retrieval
+      // planner: its reads happen in the loop under Core's ask authority
+      // (REAL_LIFE_FIXES §3). Pre-screen and hint classifier are fail-soft
+      // — malformed scripted output leaves the loop unchanged, but every
+      // call still counts.
+      expect(provider.chat).toHaveBeenCalledTimes(3);
 
       // Core configured + ask wired + staging drain running → /readyz
       // returns 200 (status: 'ok'). Real runtime status: boot is fully
@@ -509,6 +542,7 @@ describe('brain-server — boot (task 5.1)', () => {
           askRoutes: 'ok',
           stagingDrain: 'ok',
           runtime: 'ok',
+          personas: 'ok',
         },
       });
     } finally {
@@ -530,6 +564,18 @@ describe('brain-server — boot (task 5.1)', () => {
 
     const originalFetch = globalThis.fetch;
     const fetchFn = jest.fn(async (url: string) => {
+      // Every model call checks the hidden-names list first (REAL_LIFE_FIXES §4.3).
+      if (url.includes('/v1/pii/names')) {
+        return new Response(JSON.stringify({ version: 'v0', groups: [] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      // Brain is ready only after reading Core's persona list (REAL_LIFE_FIXES §2.3).
+      if (url.endsWith('/v1/personas')) {
+        return new Response(JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
         status: 500,
         headers: { 'content-type': 'application/json' },
@@ -592,6 +638,11 @@ describe('brain-server — boot (task 5.1)', () => {
 
     const originalFetch = globalThis.fetch;
     const fetchFn = jest.fn(async (url: string) => {
+      if (url === 'http://core.example:8100/v1/personas') {
+        return new Response(JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }), {
+          headers: { 'content-type': 'application/json' },
+        });
+      }
       if (url === 'http://core.example:8100/v1/staging/claim?limit=10') {
         return new Response(JSON.stringify({ items: [], count: 0 }), {
           headers: { 'content-type': 'application/json' },
@@ -651,6 +702,7 @@ describe('brain-server — boot (task 5.1)', () => {
           core: 'ok',
           stagingDrain: 'ok',
           runtime: 'ok',
+          personas: 'ok',
         },
       });
     } finally {
@@ -757,6 +809,7 @@ describe('brain-server — boot (task 5.1)', () => {
           core: 'ok',
           stagingDrain: 'ok',
           runtime: 'ok',
+          personas: 'ok',
         },
       });
       expect(fetchFn).toHaveBeenCalledTimes(1);

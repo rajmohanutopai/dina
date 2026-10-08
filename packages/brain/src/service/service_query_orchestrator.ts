@@ -110,6 +110,8 @@ export interface IssueQueryToDIDRequest {
    * for a known_only listing (provider authorizes by grant_id + authed DID).
    */
   grantId?: string;
+  /** Other public providers Core may try if this one goes quiet (§9). */
+  fallbacks?: { toDID: string; serviceUri?: string; schemaHash?: string; serviceName?: string }[];
 }
 
 /**
@@ -390,6 +392,7 @@ export class ServiceQueryOrchestrator {
         // Carry the grant id for a known_only listing (provider authorizes by
         // grant_id + the authenticated caller DID).
         grantId: req.grantId !== undefined && req.grantId !== '' ? req.grantId : undefined,
+        ...(req.fallbacks !== undefined && req.fallbacks.length > 0 ? { fallbacks: req.fallbacks } : {}),
       });
     } catch (err) {
       throw new ServiceOrchestratorError(

@@ -10,6 +10,7 @@
  * Source: ARCHITECTURE.md Task 4.17
  */
 
+import { getAccessiblePersonas, setAccessiblePersonas } from '@dina/brain';
 import {
   createPersona,
   listPersonas,
@@ -113,6 +114,10 @@ export async function addPersona(
   // approved=true → the in-app owner bypasses the tier gate. Marked open only
   // after the DB is wired, so an open vault is always a writable vault.
   openPersona(normalized, true);
+  // Make the new vault searchable at once (vault_search reads this list);
+  // otherwise it stays invisible to /ask until the next unlock.
+  const accessible = getAccessiblePersonas();
+  if (!accessible.includes(normalized)) setAccessiblePersonas([...accessible, normalized]);
   return null;
 }
 

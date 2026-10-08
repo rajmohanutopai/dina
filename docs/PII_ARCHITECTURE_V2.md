@@ -151,19 +151,30 @@ Brain may call. The answer is names grouped by person, with an opaque group
 number and no person IDs, DIDs or anything else. On the phone the same
 route runs in-process.
 
-`NameLexicon` (`packages/brain/src/pii/names.ts`) keeps Brain's copy:
+`NameLexicon` (`packages/brain/src/pii/names.ts`) keeps Brain's copy, and
+every call that sends text off the node checks it first
+(`docs/REAL_LIFE_FIXES.md` §4):
 
-- the first model call waits up to two seconds for the first copy;
-- after that a copy older than 30 seconds is refreshed in the background
-  while the current one is used;
-- Brain refreshes at once after it writes to the people graph;
-- if Core cannot be reached, the last good copy is used; with none at all,
-  the call goes ahead with structured patterns only and the degradation is
-  logged (as a count, never the names).
-
-Going ahead without names is a deliberate choice: blocking every model call
-on a Core hiccup would stop Dina working, and V1 ran that way. The routing
-guarantee (§2.2) does not depend on the list.
+- **The version is a hash of the list.** Core builds the list fresh on every
+  read and answers with `version`, a hash of its content. A write by any
+  writer (the remember drain, a contact edit on another client, a rename)
+  changes the next answer, with no counter to bump and nothing to lose on a
+  restart.
+- **One check per call.** `freshMatcher()` sends the version Brain holds as
+  `known`. Core answers `unchanged` or sends the new list, so a name stored
+  a moment ago is hidden on the very next call. On the server this is a
+  loopback read; on the phone it runs in-process.
+- **Every scrub path uses it.** That covers the router, the cloud gate,
+  enrichment, topic extraction and cloud embeddings. They all get their
+  matcher through `freshMatcher()` or `EntityVault.create()`. There is no
+  synchronous `peek()`.
+- **Answers apply in request order.** A slow older answer never replaces a
+  newer list.
+- **Fail closed.** If Core cannot be asked, the call is refused
+  (`NamesUnavailableError`) and the degradation is logged as an error name,
+  never the names. The list's only purpose is to stop a name leaving, so
+  sending without it would defeat it. A Core outage already stops asks,
+  because the vault lives in Core.
 
 ### 5.3 How names are matched
 

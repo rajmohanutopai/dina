@@ -74,6 +74,7 @@ export function makeHttpAskHandler(options: HttpAskHandlerOptions): AskRouteHand
           requesterDid: input.requesterDid,
           ...(input.sessionId !== undefined ? { sessionId: input.sessionId } : {}),
           ...(input.ttlMs !== undefined ? { ttlMs: input.ttlMs } : {}),
+          ...(input.askAuthority !== undefined ? { askAuthority: input.askAuthority } : {}),
         }),
       });
     },

@@ -110,6 +110,11 @@ export type AskExecuteFn = (input: {
   forcedSources?: readonly IntentSource[];
   /** The owner's chat thread this ask serves, when it came from chat (A2A §4.2). */
   conversation?: string;
+  /**
+   * Core's ask authority for an agent/device ask (REAL_LIFE_FIXES §0.1 B).
+   * Every Core read for the ask carries it; absent for the owner's asks.
+   */
+  askAuthority?: string;
   signal?: AbortSignal;
 }) => Promise<ExecuteOutcome>;
 
@@ -124,6 +129,8 @@ export interface AskSubmitRequest {
   forcedSources?: readonly IntentSource[];
   /** The owner's chat thread, when the ask came from chat — propagated to `AskExecuteFn`. */
   conversation?: string;
+  /** Core's ask authority (agent/device asks) — propagated to `AskExecuteFn`. */
+  askAuthority?: string;
   /** TTL override. */
   ttlMs?: number;
 }
@@ -241,6 +248,9 @@ export function createAskHandler(
     if (req.conversation !== undefined && req.conversation !== '') {
       enqueueInput.conversation = req.conversation;
     }
+    if (req.askAuthority !== undefined && req.askAuthority !== '') {
+      enqueueInput.askAuthority = req.askAuthority;
+    }
     if (req.ttlMs !== undefined) enqueueInput.ttlMs = req.ttlMs;
     await registry.enqueue(enqueueInput);
 
@@ -266,6 +276,9 @@ export function createAskHandler(
             : {}),
           ...(req.conversation !== undefined && req.conversation !== ''
             ? { conversation: req.conversation }
+            : {}),
+          ...(req.askAuthority !== undefined && req.askAuthority !== ''
+            ? { askAuthority: req.askAuthority }
             : {}),
         });
       } catch (err) {

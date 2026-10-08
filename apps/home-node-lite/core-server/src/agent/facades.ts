@@ -40,7 +40,7 @@ import {
   publishClaimedReview,
   listPersonas,
   resolveByName,
-  resolvePersonaName,
+  resolveInstalledPersonaName,
   computeStagingSourceHash,
   stagingGetItem,
   stagingIngest,
@@ -150,7 +150,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         return { status: 413, body: { error: 'content too large' } };
       }
       const rawPersona = typeof ctx.body.persona === 'string' ? ctx.body.persona.trim() : '';
-      const persona = rawPersona === '' ? '' : resolvePersonaName(rawPersona);
+      const persona = rawPersona === '' ? '' : resolveInstalledPersonaName(rawPersona);
       if (persona !== '' && !listPersonas().some((candidate) => candidate.name === persona)) {
         return { status: 400, body: { error: `unknown persona: ${persona}` } };
       }

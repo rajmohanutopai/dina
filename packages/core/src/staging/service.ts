@@ -17,13 +17,13 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S, STAGING_MAX_RETRIES } from '../constants';
-import { isPersonaOpen, personaExists } from '../persona/service';
+import { isPersonaOpen, isUnknownPersona, personaExists } from '../persona/service';
 import {
   createReminderDurable,
   listByPersona as listRemindersByPersona,
 } from '../reminders/service';
 import { currentDataScope, setCurrentDataScope, type DataScope } from '../scope/data_scope';
-import { storeItem } from '../vault/crud';
+import { storeItemDetailed } from '../vault/crud';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,
@@ -102,6 +102,39 @@ export interface StagingResolveMultiResult {
   storedPersonas: string[];
   pendingPersonas: string[];
   failedPersonas: string[];
+  /** Targets this node has no vault for; the item is parked, not stored there. */
+  unknownPersonas: string[];
+  /** Stored targets where the item repeated a live owner memory (§2.4). */
+  duplicatePersonas: string[];
+}
+
+/** Staging `error` marker for an item parked because its persona does not exist. */
+export const UNKNOWN_PERSONA_ERROR = 'unknown_persona';
+
+/**
+ * Park an item whose every target names a persona this node does not have.
+ * It waits as `pending_unlock` under the requested name (drained if that
+ * persona is created and opened later), with no approval card: there is no
+ * vault to approve access to. Nothing is written to any vault.
+ */
+function parkForUnknownPersona(
+  item: StagingItem,
+  persona: string,
+  classifiedItem?: Record<string, unknown>,
+): void {
+  const repo = getStagingRepository();
+  item.persona = persona;
+  item.status = 'pending_unlock';
+  item.error = UNKNOWN_PERSONA_ERROR;
+  if (classifiedItem) item.classified_item = classifiedItem;
+  if (repo) {
+    repo.updateStatus(item.id, item.status, {
+      persona: item.persona,
+      error: item.error,
+      ...(item.classified_item ? { classified_item: item.classified_item } : {}),
+    });
+  }
+  cacheItem(item);
 }
 
 const LEASE_DURATION_S = STAGING_LEASE_DURATION_S;
@@ -213,6 +246,17 @@ function nowSeconds(): number {
   return Math.floor(Date.now() / 1000);
 }
 
+/** Core's D2D trust stamp on a staging row (set by `d2d/receive.ts`). */
+function d2dStampOf(item: StagingItem): Record<string, string> | undefined {
+  const raw = (item.data as Record<string, unknown> | undefined)?.core_trust;
+  if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const r = raw as Record<string, unknown>;
+  if (typeof r.sender_trust !== 'string' || typeof r.source_type !== 'string' || typeof r.retrieval_policy !== 'string') {
+    return undefined;
+  }
+  return { sender_trust: r.sender_trust, source_type: r.source_type, retrieval_policy: r.retrieval_policy };
+}
+
 /**
  * Store a classified item into the vault PINNED to the staging row's own data
  * scope, then restore the prior runtime scope. The interval drain's
@@ -229,7 +273,11 @@ function storeItemInScope(
   classifiedItem: Record<string, unknown>,
   scope: DataScope,
   ownedId: string,
-): void {
+  /** The staging row's source, set by Core at ingest (trusted). */
+  stagingSource: string,
+  /** Core's trust stamp for a D2D item (`data.core_trust`), when present. */
+  d2dStamp?: Record<string, string>,
+): { duplicate: boolean } {
   // PLG-29 #3: Core OWNS the vault primary key — NEVER trust a classifier /
   // producer-supplied `id`. `storeItem` uses INSERT-OR-REPLACE keyed on the
   // item id, so a supplied id that collides with an existing vault row would
@@ -238,11 +286,26 @@ function storeItemInScope(
   // Core-derived id (`stg-<stagingId>`, deterministic for crash-recovery
   // idempotency) on a SHALLOW COPY — the caller's stored classified_item is
   // untouched, and any supplied `id` can never dictate the storage key.
-  const owned = { ...classifiedItem, id: ownedId };
+  // REAL_LIFE_FIXES §6.1: a D2D item's trust comes from Core's stamp at
+  // receive time, never from Brain. A D2D item without one stays quarantined.
+  const d2dTrust =
+    stagingSource === 'd2d'
+      ? (d2dStamp ?? { sender_trust: 'unknown', source_type: 'unknown', retrieval_policy: 'quarantine' })
+      : null;
+  // REAL_LIFE_FIXES §2.4: whether this is the owner's own memory comes from
+  // the staging row's source (Core-set), never from the Brain-supplied item.
+  const claimsOwnerMemory =
+    typeof classifiedItem.source === 'string' && OWNER_MEMORY_SOURCES.has(classifiedItem.source);
+  const owned = {
+    ...classifiedItem,
+    id: ownedId,
+    ...(OWNER_MEMORY_SOURCES.has(stagingSource) || claimsOwnerMemory ? { source: stagingSource } : {}),
+    ...(d2dTrust ?? {}),
+  };
   const prev = currentDataScope();
   if (scope !== prev) setCurrentDataScope(scope);
   try {
-    storeItem(persona, owned);
+    return { duplicate: storeItemDetailed(persona, owned).duplicateOf !== undefined };
   } finally {
     if (scope !== prev) setCurrentDataScope(prev);
   }
@@ -281,6 +344,16 @@ function stagingApprovalId(stagingId: string, persona: string): string {
  * and still require approval when the target persona vault is closed.
  */
 export const OWNER_DIRECT_SOURCES = new Set(['user_remember']);
+
+/**
+ * The owner's own words from a chat turn, proven by a span proof, that were
+ * not a plain request to remember (REAL_LIFE_FIXES §2.5). First-party, but
+ * NOT owner-direct: a sensitive or locked target waits for the owner's card.
+ */
+export const CHAT_AUTO_SOURCE = 'chat_auto';
+
+/** Sources whose items are the owner's own memories (dedup, §2.4). */
+export const OWNER_MEMORY_SOURCES = new Set(['user_remember', CHAT_AUTO_SOURCE]);
 
 function previewForApproval(item: StagingItem, classifiedItem?: Record<string, unknown>): string {
   const candidates = [
@@ -585,6 +658,11 @@ export function resolve(
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
 
+  if (isUnknownPersona(persona)) {
+    parkForUnknownPersona(item, persona, classifiedItem);
+    return;
+  }
+
   // PLG-32 #1: Core decides open vs. locked, not the caller.
   const personaOpen = effectivePersonaOpen(persona, claimedPersonaOpen);
   const needsApproval = !personaOpen && !OWNER_DIRECT_SOURCES.has(item.source);
@@ -607,7 +685,7 @@ export function resolve(
   let storedOpenPersona: string | null = null;
   if (personaOpen && classifiedItem) {
     try {
-      storeItemInScope(persona, classifiedItem, item.data_scope, `stg-${item.id}`);
+      storeItemInScope(persona, classifiedItem, item.data_scope, `stg-${item.id}`, item.source, d2dStampOf(item));
       storedOpenPersona = persona;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -660,9 +738,27 @@ export function resolveMultiDetailed(
   if (claimedTargets.length === 0) {
     throw new Error('staging: resolveMulti requires at least one target persona');
   }
+  // A target naming a persona this node does not have is never stored and
+  // never treated as open. If no target is known, the item is parked.
+  const unknownPersonas = claimedTargets
+    .filter((t) => isUnknownPersona(t.persona))
+    .map((t) => t.persona);
+  const knownTargets = claimedTargets.filter((t) => !isUnknownPersona(t.persona));
+  if (knownTargets.length === 0) {
+    parkForUnknownPersona(item, claimedTargets[0]?.persona ?? 'general', classifiedItem);
+    return {
+      count: 0,
+      storedPersonas: [],
+      pendingPersonas: [],
+      failedPersonas: [],
+      unknownPersonas,
+      duplicatePersonas: [],
+    };
+  }
+
   // PLG-32 #1: Core decides open vs. locked per target, not the caller — a
   // persona Core knows is closed can never be stored open on the caller's word.
-  const targets = claimedTargets.map((t) => ({
+  const targets = knownTargets.map((t) => ({
     persona: t.persona,
     personaOpen: effectivePersonaOpen(t.persona, t.personaOpen),
   }));
@@ -709,13 +805,23 @@ export function resolveMultiDetailed(
   // advance to the drain callback — otherwise post-publish hooks
   // fire against a row that doesn't exist.
   const storedPersonas: string[] = [];
+  /** Stored targets where the item repeated a live owner memory (§2.4). */
+  const duplicatePersonas: string[] = [];
   const failures: { persona: string; reason: string }[] = [];
 
   for (const target of targets) {
     if (target.personaOpen && classifiedItem) {
       try {
-        storeItemInScope(target.persona, classifiedItem, item.data_scope, `stg-${item.id}`);
+        const stored = storeItemInScope(
+          target.persona,
+          classifiedItem,
+          item.data_scope,
+          `stg-${item.id}`,
+          item.source,
+          d2dStampOf(item),
+        );
         storedPersonas.push(target.persona);
+        if (stored.duplicate) duplicatePersonas.push(target.persona);
       } catch (err) {
         // Surface the reason so the drain / ops can see WHY the vault
         // rejected the write (invalid type, missing required field,
@@ -819,6 +925,8 @@ export function resolveMultiDetailed(
     storedPersonas,
     pendingPersonas: lockedTargets,
     failedPersonas: failures.map((failure) => failure.persona),
+    unknownPersonas,
+    duplicatePersonas,
   };
 }
 
@@ -1007,7 +1115,7 @@ export function drainForPersona(persona: string): number {
       // storeItemInScope.
       if (item.classified_item) {
         try {
-          storeItemInScope(persona, item.classified_item, item.data_scope, `stg-${item.id}`);
+          storeItemInScope(persona, item.classified_item, item.data_scope, `stg-${item.id}`, item.source, d2dStampOf(item));
         } catch {
           continue; // leave pending_unlock; do NOT mark stored
         }
@@ -1066,7 +1174,7 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
     // Core-owned → a classifier-supplied id can never dictate the key and
     // overwrite an unrelated vault row.
     try {
-      storeItemInScope(item.persona, item.classified_item, item.data_scope, `stg-${item.id}`);
+      storeItemInScope(item.persona, item.classified_item, item.data_scope, `stg-${item.id}`, item.source, d2dStampOf(item));
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(`staging: vault store failed for persona "${item.persona}": ${reason}`);

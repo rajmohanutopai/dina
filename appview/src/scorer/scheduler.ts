@@ -16,12 +16,16 @@ import { ucpMerchantCrawler } from './jobs/ucp-merchant-crawler.js'
 import type { DrizzleDB } from '@/db/connection.js'
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
-import { readBoolFlag } from '@/db/queries/appview-config.js'
+import { readBoolFlag, type AppviewFlagKey } from '@/db/queries/appview-config.js'
+import { serviceReconcile } from './jobs/service-reconcile.js'
+import { serviceLivenessGc, servicePresenceHealth } from './jobs/service-liveness-jobs.js'
 
 interface ScorerJob {
   name: string
   schedule: string
   handler: (db: DrizzleDB) => Promise<void>
+  /** The kill switch the job obeys. Default `trust_v1_enabled`. */
+  flag?: AppviewFlagKey
 }
 
 /**
@@ -65,6 +69,13 @@ export const SCORER_JOBS: ScorerJob[] = [
   // jobs); each origin is read at most once a day, so an hour only bounds how soon a
   // newly reviewed merchant is read.
   { name: 'ucp-merchant-crawler', schedule: '20 * * * *', handler: (db) => ucpMerchantCrawler(db) },
+  // Live listings (docs/REAL_LIFE_FIXES.md §14): re-read listings AppView may
+  // hold wrongly (every minute; one run per DID per hour), the health guard
+  // that pauses ageing when AppView misses renewals (hourly at :40), and the
+  // daily clean-up (04:30). They obey the services switch, not the trust one.
+  { name: 'service-reconcile', schedule: '* * * * *', handler: (db) => serviceReconcile(db), flag: 'service_index_enabled' },
+  { name: 'service-presence-health', schedule: '40 * * * *', handler: async (db) => void (await servicePresenceHealth(db)), flag: 'service_index_enabled' },
+  { name: 'service-liveness-gc', schedule: '30 4 * * *', handler: (db) => serviceLivenessGc(db), flag: 'service_index_enabled' },
 ]
 
 /**
@@ -156,11 +167,12 @@ export function startScheduler(db: DrizzleDB): void {
       // the scorer against an unknown-flag state. Same posture as the
       // local/distributed locks below — defer the run, don't crash.
       try {
-        const trustEnabled = await readBoolFlag(db, 'trust_v1_enabled')
+        const flag = job.flag ?? 'trust_v1_enabled'
+        const trustEnabled = await readBoolFlag(db, flag)
         if (!trustEnabled) {
           logger.debug(
-            { job: job.name },
-            'Scorer job skipped — trust_v1_enabled = false',
+            { job: job.name, flag },
+            'Scorer job skipped — its flag is off',
           )
           metrics.incr('scorer.job.skipped_disabled', { job: job.name })
           return

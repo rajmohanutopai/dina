@@ -3,7 +3,9 @@
  * Brain's copy of the list.
  */
 
-import { NameLexicon, NameMatcher } from '../../src/pii/names';
+import { piiNamesVersion, type PiiNamesResult } from '@dina/core';
+
+import { NameLexicon, NameMatcher, NamesUnavailableError } from '../../src/pii/names';
 
 const found = (m: NameMatcher, text: string) => m.find(text).map((x) => x.value);
 
@@ -52,89 +54,86 @@ describe('NameMatcher', () => {
   });
 });
 
-describe('NameLexicon', () => {
-  const groups = [{ group: 1, names: ['Sancho'] }];
+/** A fake Core: the list is versioned by content, as Core does it. */
+function fakeCore(initial: string[]) {
+  const state = { names: initial, calls: 0, fail: false };
+  const fetch = async (known?: string): Promise<PiiNamesResult> => {
+    state.calls++;
+    if (state.fail) throw new TypeError('unreachable');
+    const groups = state.names.length > 0 ? [{ group: 1, names: [...state.names] }] : [];
+    const version = piiNamesVersion(groups);
+    return known === version ? { version, unchanged: true } : { version, groups };
+  };
+  return { state, fetch };
+}
 
-  it('the first call waits for a copy; later calls use it', async () => {
-    let calls = 0;
+describe('NameLexicon (REAL_LIFE_FIXES §4.3)', () => {
+  it('every call checks with Core; an unchanged list is not sent again', async () => {
+    const core = fakeCore(['Sancho']);
+    const seen: (string | undefined)[] = [];
     const lex = new NameLexicon({
-      fetch: async () => {
-        calls++;
-        return groups;
+      fetch: async (known) => {
+        seen.push(known);
+        return core.fetch(known);
       },
     });
-    expect((await lex.current()).find('Sancho')).toHaveLength(1);
-    await lex.current();
-    expect(calls).toBe(1);
+    expect((await lex.freshMatcher()).find('Sancho')).toHaveLength(1);
+    expect((await lex.freshMatcher()).find('Sancho')).toHaveLength(1);
+    expect(core.state.calls).toBe(2);
+    expect(seen[0]).toBeUndefined();
+    expect(seen[1]).toEqual(expect.any(String));
   });
 
-  it('an old copy is refreshed in the background while the current one is used', async () => {
-    let now = 0;
-    let names = ['Sancho'];
-    const lex = new NameLexicon({
-      fetch: async () => [{ group: 1, names }],
-      nowMs: () => now,
-      refreshAfterMs: 1000,
-    });
-    await lex.current();
-    names = ['Albert'];
-    now = 2000;
-    // This call still sees the old copy; the refresh lands after.
-    expect((await lex.current()).find('Sancho')).toHaveLength(1);
-    await new Promise((r) => setImmediate(r));
-    expect((await lex.current()).find('Albert')).toHaveLength(1);
+  it('a name written just before a call is hidden on that call', async () => {
+    const core = fakeCore(['Sancho']);
+    const lex = new NameLexicon({ fetch: core.fetch });
+    await lex.freshMatcher();
+    // Another client adds a contact; no notice reaches Brain.
+    core.state.names = ['Sancho', 'Ottilie'];
+    expect((await lex.freshMatcher()).find('Ottilie is allergic')).toHaveLength(1);
   });
 
-  it('when Core does not answer, the last good copy stays', async () => {
-    let fail = false;
-    let now = 0;
-    const lex = new NameLexicon({
-      fetch: async () => {
-        if (fail) throw new Error('down');
-        return groups;
-      },
-      nowMs: () => now,
-      refreshAfterMs: 1000,
-    });
-    await lex.current();
-    fail = true;
-    now = 5000;
-    await lex.current();
-    await new Promise((r) => setImmediate(r));
-    expect((await lex.current()).find('Sancho')).toHaveLength(1);
-  });
-
-  it('with no copy at all the call goes ahead empty, and the degradation is reported without names', async () => {
+  it('fails closed when Core cannot be asked, even with a good copy in hand', async () => {
     const reasons: string[] = [];
-    const lex = new NameLexicon({
-      fetch: async () => {
-        throw new TypeError('unreachable');
-      },
-      onDegraded: (r) => reasons.push(r),
-    });
-    expect((await lex.current()).size).toBe(0);
-    expect(lex.loaded).toBe(false);
+    const core = fakeCore(['Sancho']);
+    const lex = new NameLexicon({ fetch: core.fetch, onDegraded: (r) => reasons.push(r) });
+    await lex.freshMatcher();
+    core.state.fail = true;
+    await expect(lex.freshMatcher()).rejects.toBeInstanceOf(NamesUnavailableError);
     expect(reasons).toEqual(['TypeError']);
   });
 
-  it('the first call waits no longer than its limit', async () => {
-    const lex = new NameLexicon({
-      fetch: () => new Promise(() => undefined),
-      firstWaitMs: 20,
-    });
-    const started = Date.now();
-    expect((await lex.current()).size).toBe(0);
-    expect(Date.now() - started).toBeLessThan(1000);
+  it('with no list ever loaded, the call is refused, not sent on patterns alone', async () => {
+    const core = fakeCore([]);
+    core.state.fail = true;
+    const lex = new NameLexicon({ fetch: core.fetch });
+    await expect(lex.freshMatcher()).rejects.toBeInstanceOf(NamesUnavailableError);
+    expect(lex.loaded).toBe(false);
   });
 
-  it('invalidate fetches a new copy at once', async () => {
-    let names = ['Sancho'];
-    const lex = new NameLexicon({ fetch: async () => [{ group: 1, names }] });
-    await lex.current();
-    names = ['Albert'];
-    lex.invalidate();
-    await new Promise((r) => setImmediate(r));
-    expect(lex.peek().find('Albert')).toHaveLength(1);
+  it('a slow older answer never replaces a newer list', async () => {
+    let release: () => void = () => undefined;
+    const knowns: (string | undefined)[] = [];
+    const newer = [{ group: 1, names: ['Sancho', 'Albert'] }];
+    const lex = new NameLexicon({
+      fetch: async (known) => {
+        knowns.push(known);
+        if (knowns.length === 1) {
+          await new Promise<void>((r) => (release = r));
+          const groups = [{ group: 1, names: ['Sancho'] }];
+          return { version: piiNamesVersion(groups), groups };
+        }
+        return { version: piiNamesVersion(newer), groups: newer };
+      },
+    });
+    const first = lex.freshMatcher();
+    expect((await lex.freshMatcher()).find('Albert')).toHaveLength(1);
+    release();
+    // The first call answers with the list its own fetch carried...
+    expect((await first).find('Albert')).toHaveLength(0);
+    // ...but the copy kept for later is the newer one.
+    await lex.freshMatcher();
+    expect(knowns[2]).toBe(piiNamesVersion(newer));
   });
 });
 
@@ -160,27 +159,5 @@ describe('dual review round 1', () => {
     expect(found(m, 'Will called, Ray too')).toEqual(['Will', 'Ray']);
     expect(found(m, 'you will see a ray of light')).toEqual([]);
     expect(found(m, 'WILL IS HERE')).toEqual(['WILL']);
-  });
-
-  it('F9: an invalidate during a fetch fetches again once it settles', async () => {
-    let names = ['Sancho'];
-    let release: () => void = () => undefined;
-    let calls = 0;
-    const lex = new NameLexicon({
-      fetch: async () => {
-        calls++;
-        const snapshot = names;
-        if (calls === 2) await new Promise<void>((r) => (release = r));
-        return [{ group: 1, names: snapshot }];
-      },
-    });
-    await lex.current();
-    lex.invalidate(); // fetch 2 starts with the old list and stalls
-    names = ['Albert']; // the people graph changes during it
-    lex.invalidate();
-    release();
-    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r));
-    expect(calls).toBe(3);
-    expect(lex.peek().find('Albert')).toHaveLength(1);
   });
 });

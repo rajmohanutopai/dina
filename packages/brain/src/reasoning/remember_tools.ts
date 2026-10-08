@@ -77,11 +77,18 @@ export function emptyRememberSideEffects(): RememberSideEffects {
 
 export function createRouteToPersonaTool(opts: {
   collect: RememberSideEffects;
+  /**
+   * Live installed persona names. When given (and non-empty), names outside
+   * it are refused with the installed list, so the model can pick again.
+   * An empty list (directory not synced yet) skips the check; Core parks
+   * items for personas it does not have.
+   */
+  installedPersonas?: () => string[];
 }): AgentTool {
   return {
     name: 'route_to_persona',
     description:
-      "Route this memory to the persona vault where it semantically belongs. Call once per memory. Use the persona names listed in the system prompt (typically general / work / health / finance — the user may have added others). General is the default for everyday personal notes; finance for budgets, spending, income, bills, debt; health for medical, fitness, symptoms; work for job-related context. When the memory genuinely straddles two areas (e.g., a doctor's bill — both health and finance), pass `secondary` with the additional name(s); otherwise leave it empty.",
+      "Route this memory to the persona vault where it semantically belongs. Call once per memory. Use exactly one of the persona names listed in the system prompt, guided by each vault's description; the default vault is for everyday notes that fit nowhere more specific. Almost every memory belongs in exactly one vault: pick the single best fit. Pass `secondary` only when the memory is needed in a second area for a different purpose (e.g., a doctor's bill kept both as a medical record and as money owed); a fact that merely touches another area gets one vault. Never copy a sensitive fact into a less protected vault just because it also mentions everyday life. Otherwise leave `secondary` empty.",
     parameters: {
       type: 'object',
       properties: {
@@ -103,6 +110,17 @@ export function createRouteToPersonaTool(opts: {
       const secondary = Array.isArray(args.secondary)
         ? args.secondary.filter((v): v is string => typeof v === 'string' && v.trim() !== '')
         : [];
+      const installed = (opts.installedPersonas?.() ?? []).map((n) => n.toLowerCase());
+      if (installed.length > 0) {
+        const unknown = [primary, ...secondary].filter(
+          (n) => !installed.includes(n.trim().toLowerCase()),
+        );
+        if (unknown.length > 0) {
+          return {
+            error: `unknown persona ${unknown.map((n) => `'${n}'`).join(', ')}; installed: ${installed.join(', ')}`,
+          };
+        }
+      }
       opts.collect.routes.push({ primary: primary.toLowerCase(), secondary });
       return { ok: true, routed_to: primary, secondary };
     },
@@ -119,13 +137,14 @@ export function createLinkToPersonTool(opts: {
   return {
     name: 'link_to_person',
     description:
-      "Record that this memory mentions a named individual. Use canonicalName for the formal name ('Emma', 'Dr Smith'), surface for the exact form in the user's text (might be 'Em' or 'my daughter Emma'), relationshipHint when the text explicitly states the relationship ('daughter', 'doctor', 'colleague') — leave empty when not stated. Call once per distinct person. Don't include yourself.",
+      "Record that this memory mentions a person. Use canonicalName for the person's real name ('Emma', 'Dr Smith'), surface for the exact form in the user's text (might be 'Em' or 'my daughter Emma'), relationshipHint when the text explicitly states the relationship ('daughter', 'doctor', 'colleague') — leave empty when not stated. When the user names only a relationship ('my mom', 'my boss'), pass surface with surfaceType 'role_phrase' and leave canonicalName empty — a relationship is not a name. Call once per distinct person. Don't include yourself.",
     parameters: {
       type: 'object',
       properties: {
         canonicalName: {
           type: 'string',
-          description: "The person's formal name as you'd address them.",
+          description:
+            "The person's real name as you'd address them. Empty when the user named only a relationship ('my mom').",
         },
         surface: {
           type: 'string',
@@ -146,18 +165,20 @@ export function createLinkToPersonTool(opts: {
           description: 'Short verbatim quote from the memory that justifies the link.',
         },
       },
-      required: ['canonicalName', 'surface', 'surfaceType'],
+      required: ['surface', 'surfaceType'],
     },
     async execute(args) {
       const canonicalName = typeof args.canonicalName === 'string' ? args.canonicalName.trim() : '';
       const surface = typeof args.surface === 'string' ? args.surface.trim() : '';
-      if (canonicalName === '' || surface === '') {
-        return { error: 'canonicalName and surface are required' };
-      }
       const surfaceType =
         args.surfaceType === 'nickname' || args.surfaceType === 'role_phrase'
           ? args.surfaceType
           : 'name';
+      if (surface === '') return { error: 'surface is required' };
+      // A relationship alone ('my mom') is a role, not a name (REAL_LIFE_FIXES §5.1).
+      if (canonicalName === '' && surfaceType !== 'role_phrase') {
+        return { error: "canonicalName is required unless surfaceType is 'role_phrase'" };
+      }
       opts.collect.people.push({
         canonicalName,
         surface,
@@ -167,7 +188,7 @@ export function createLinkToPersonTool(opts: {
         sourceExcerpt:
           typeof args.sourceExcerpt === 'string' ? args.sourceExcerpt.trim() : '',
       });
-      return { ok: true, linked: canonicalName };
+      return { ok: true, linked: canonicalName !== '' ? canonicalName : surface };
     },
   };
 }

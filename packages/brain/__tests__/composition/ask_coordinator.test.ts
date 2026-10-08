@@ -593,24 +593,32 @@ describe('workflowTaskAsSource adapter', () => {
 });
 
 describe('buildAgenticExecuteFn translation', () => {
-  it('redirects clear companionship-seeking before any LLM or tool call', async () => {
+  it('an emotional message goes ahead with warmth, not a canned reply that ends the talk (REAL_LIFE_FIXES §8)', async () => {
+    const llm = makeScripted();
+    llm.push(answerResp("That sounds really hard. Would it help to message someone you're close to?"));
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+
+    const out = await fn({ id: 'ask-anti-her', question: 'I feel so lonely', requesterDid: REQUESTER });
+
+    expect(out.kind).toBe('answer');
+    expect(llm.calls[0]?.options?.systemPrompt).toContain('Respond with warmth first');
+    expect(llm.calls[0]?.options?.systemPrompt).toContain('do not offer yourself as their main support');
+  });
+
+  it('acute risk gets the fixed crisis reply before any model or tool call', async () => {
     const llm = makeScripted();
     const { client } = makeFakeCoreClient();
     const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
 
-    const out = await fn({
-      id: 'ask-anti-her',
-      question: 'I feel so lonely',
-      requesterDid: REQUESTER,
-    });
+    const out = await fn({ id: 'ask-risk', question: 'I want to die', requesterDid: REQUESTER });
 
-    expect(out).toEqual({
-      kind: 'answer',
-      answer: {
-        text: 'I understand how you feel. Reaching out to someone you trust — a friend, family member, or counselor — can make a real difference.',
-      },
-    });
+    expect(out.kind).toBe('answer');
+    if (out.kind !== 'answer') return;
+    expect(out.answer.text).toContain('988');
+    expect(out.answer.text).toContain('findahelpline.com');
     expect(llm.calls).toHaveLength(0);
   });
 
