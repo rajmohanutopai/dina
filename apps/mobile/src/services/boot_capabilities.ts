@@ -30,7 +30,7 @@
  *         service-discovery demo is actually runnable from the current app shell.
  */
 
-import { isAppActive } from './app_active';
+import { isAppActive, subscribeAppActive } from './app_active';
 import {
   AppViewClient,
   PDSAccountClient,
@@ -723,6 +723,7 @@ export async function buildBootInputs(
     pdsPublisher,
     pdsSessionReachable,
     isAppActive,
+    subscribeAppActive,
     // Round-5 #4: install the device-role resolver so `resolveCallerType` maps
     // a paired PLUGIN device to callerType 'plugin' and an AGENT device to
     // 'agent' — NOT the wider default 'device'. Without this, `createNode`

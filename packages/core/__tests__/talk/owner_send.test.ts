@@ -107,6 +107,69 @@ describe("what goes out is the owner's words", () => {
   });
 });
 
+describe('multi-word names (dual review, 2026-10-08)', () => {
+  it("'send John: May not attend' keeps its colon boundary even with a contact 'John May'", async () => {
+    addContact('did:plc:johnmay00', 'John May');
+    const out = await ownerSendToContact({ proof: turn('send John: May not attend'), contact: 'John May', proposedText: 'not attend' });
+    // The colon fixes the boundary: the owner's whole message goes, never a trim.
+    expect(out.status).toBe('sent');
+    expect(sent).toEqual([{ to: 'did:plc:johnmay00', type: 'coordination.request', body: { text: 'May not attend' } }]);
+  });
+
+  it("'tell John  that May not attend' (two spaces) keeps the 'that' boundary", async () => {
+    addContact('did:plc:johnmay00', 'John May');
+    const out = await ownerSendToContact({ proof: turn('tell John  that May not attend'), contact: 'John May', proposedText: 'not attend' });
+    expect(out.status).toBe('sent');
+    expect(sent[0]?.body).toEqual({ text: 'May not attend' });
+  });
+
+  it("'tell Sancho: on my way' keeps the colon boundary", async () => {
+    const out = await ownerSendToContact({ proof: turn('tell Sancho: on my way'), contact: 'Sancho', proposedText: 'on my way' });
+    expect(out.status).toBe('sent');
+    expect(sent[0]?.body).toEqual({ text: 'on my way' });
+  });
+
+  it("'let Alex know Smith cannot come' goes to Alex, never Alex Smith", async () => {
+    addContact('did:plc:alex00000', 'Alex');
+    addContact('did:plc:alexsmith', 'Alex Smith');
+    const out = await ownerSendToContact({
+      proof: turn('let Alex know Smith cannot come'),
+      contact: 'Alex Smith',
+      proposedText: 'cannot come',
+    });
+    expect(out.status).toBe('confirm_pending');
+    expect(sent).toEqual([]);
+  });
+
+  it("'tell Alex Smith hi' with contacts Alex and Alex Smith is unclear: a card", async () => {
+    addContact('did:plc:alex00000', 'Alex');
+    addContact('did:plc:alexsmith', 'Alex Smith');
+    const out = await ownerSendToContact({ proof: turn('tell Alex Smith hi'), contact: 'Alex Smith', proposedText: 'hi' });
+    expect(out.status).toBe('confirm_pending');
+    expect(sent).toEqual([]);
+  });
+
+  it("'tell Sancho Panza I'm running late' sends 'I'm running late' to Sancho Panza", async () => {
+    const out = await ownerSendToContact({
+      proof: turn("tell Sancho Panza I'm running late"),
+      contact: 'Sancho Panza',
+      proposedText: "I'm running late",
+    });
+    expect(out.status).toBe('sent');
+    expect(sent).toEqual([{ to: 'did:plc:sancho000', type: 'coordination.request', body: { text: "I'm running late" } }]);
+  });
+
+  it("a 'that' clause after a full name", async () => {
+    const out = await ownerSendToContact({
+      proof: turn('tell Sancho Panza that the keys are under the mat'),
+      contact: 'Sancho Panza',
+      proposedText: 'the keys are under the mat',
+    });
+    expect(out.status).toBe('sent');
+    expect(sent[0]?.body).toEqual({ text: 'the keys are under the mat' });
+  });
+});
+
 describe('everything else is a confirm card, sending nothing', () => {
   it.each([
     ['a reworded draft', "tell Sancho I'm running late", 'Sancho', 'Alonso is running late'],

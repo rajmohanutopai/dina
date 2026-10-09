@@ -205,6 +205,7 @@ import {
   resolveInstalledPersonaName as coreResolveInstalledPersonaName,
 } from '@dina/core';
 import { kvPresenceStateStore, makeResolveSender, ServicePresenceWriter } from '@dina/home-node';
+import { startForegroundMeter } from './foreground_meter';
 import { kvGet, kvSet } from '@dina/core/kv';
 import { randomBytes as presenceRandomBytes } from '@noble/hashes/utils.js';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
@@ -309,6 +310,12 @@ export interface CreateNodeOptions {
    * which case presence renews only on listing changes.
    */
   isAppActive?: () => boolean;
+  /**
+   * Subscribe to foreground changes (`true` = active); returns the
+   * unsubscribe. With it, foreground time is measured from the changes
+   * themselves; the root layout passes React Native's AppState events.
+   */
+  subscribeAppActive?: (onChange: (active: boolean) => void) => () => void;
   workflowRepository: WorkflowRepository;
   /**
    * Service-config repository (SQLite-backed in production). When supplied
@@ -1698,17 +1705,18 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         const writer = presenceWriter;
         globalDisposers.push(onMsgBoxAuthenticated(() => void writer.flushWaiting()));
         if (options.isAppActive !== undefined) {
-          const isActive = options.isAppActive;
-          const TICK_MS = 60_000;
+          // Foreground time is measured from app-state changes, not guessed
+          // from timer callbacks (dual review, 2026-10-08): a session starts
+          // when the app becomes active and is credited when it leaves, with
+          // checkpoints every 15 s in between. A timer that fires late after
+          // a suspension credits nothing, because leaving the foreground
+          // ended the session; short sessions still add up across launches.
           const FG_KEY = 'service_presence_foreground';
           const newTarget = () => (2 + Math.floor(Math.random() * 9)) * 60_000;
-          const _siPresence: (fn: () => void, ms: number) => unknown =
-            options.setInterval ?? ((fn, ms) => setInterval(fn, ms));
-          const _ciPresence: (h: unknown) => void =
-            options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
-          const handle = _siPresence(() => {
-            if (!isActive()) return;
-            void (async () => {
+          let chain: Promise<void> = Promise.resolve();
+          const credit = (ms: number): void => {
+            if (ms <= 0) return;
+            chain = chain.then(async () => {
               let fg = { acc: 0, target: newTarget() };
               try {
                 const raw = await kvGet(FG_KEY);
@@ -1716,15 +1724,23 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
               } catch {
                 /* start a fresh count */
               }
-              fg.acc += TICK_MS;
+              fg.acc += ms;
               if (fg.acc >= fg.target) {
                 fg = { acc: 0, target: newTarget() };
                 void writer.renewIfDue();
               }
               await kvSet(FG_KEY, JSON.stringify(fg)).catch(() => undefined);
-            })();
-          }, TICK_MS);
-          globalDisposers.push(() => _ciPresence(handle));
+            });
+          };
+          globalDisposers.push(
+            startForegroundMeter({
+              isActive: options.isAppActive,
+              ...(options.subscribeAppActive !== undefined ? { subscribe: options.subscribeAppActive } : {}),
+              onCredit: credit,
+              ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
+              ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
+            }),
+          );
         }
       }
 

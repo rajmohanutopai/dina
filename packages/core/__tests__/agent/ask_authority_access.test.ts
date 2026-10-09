@@ -249,3 +249,33 @@ describe('reads carrying the authority are judged as the requester (§0.1 B)', (
   });
 });
 
+
+describe('Core names the ask before Brain runs (dual review, 2026-10-08)', () => {
+  it('a card raised inside the ask carries its ask id, and Approve Once serves that ask alone', async () => {
+    const { registerAskRoutes } = await import('../../src/server/routes/ask');
+    const session = startSession('host-once');
+    let raisedTask = '';
+    let askAuthority = '';
+    registerAskRoutes(router, {
+      handler: {
+        // A tool asks for Health during Brain's fast path, before the route returns.
+        handleAsk: async (input) => {
+          askAuthority = input.askAuthority ?? '';
+          raisedTask = (await request(askAuthority, 'health')).task_id ?? '';
+          return { status: 202, body: { status: 'in_flight', request_id: input.requestIdHeader } };
+        },
+        handleStatus: async () => ({ status: 200, body: { status: 'complete' } }),
+      },
+    });
+    const res = await router.handle(
+      { ...brainReq('POST', '/api/v1/ask', { body: { prompt: 'my LDL?', session_id: session }, callerType: 'agent' }), callerDID: AGENT },
+    );
+    expect(res.status).toBe(202);
+    const card = JSON.parse(getWorkflowService()!.store().getById(raisedTask)!.payload) as { ask_id?: string };
+    expect(card.ask_id).toBe((res.body as { request_id: string }).request_id);
+    await approve(raisedTask, 'single');
+    expect((await check(askAuthority, ['health'])).health).toBe('allowed');
+    // Another ask in the same session is not covered by Approve Once.
+    expect((await check(authorityFor(session, 'another-ask-id-0000'), ['health'])).health).not.toBe('allowed');
+  });
+});

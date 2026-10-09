@@ -21,7 +21,7 @@ export const servicePresenceHandler: RecordHandler = {
 
   async handleDelete(ctx: HandlerContext, op: RecordOp) {
     if (op.rkey !== 'self') return
-    await notePresenceDelete(ctx.db, op.did, op.repoRev)
+    await notePresenceDelete(ctx.db, op.did, op.repoRev, op.reconciled === true)
     ctx.metrics.incr('ingester.service_presence.withdrawn')
   },
 }

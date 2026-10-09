@@ -23,6 +23,7 @@ import {
   services,
 } from '@/db/schema/index.js'
 import { CREDIT_EVERY_US, revIsNewer, rkeyOfUri } from '@/shared/service-liveness.js'
+import { metrics } from '@/shared/utils/metrics.js'
 
 export interface PresenceListing {
   rkey: string
@@ -31,6 +32,13 @@ export interface PresenceListing {
 
 /** Delay before a queued reconciliation runs, so in-flight events land first. */
 const RECONCILE_SETTLE_MS = 60_000
+/**
+ * Most jobs waiting at once. Any DID can cause a job (an event over a limit,
+ * the kill switch), so many DIDs could otherwise grow the queue and the PDS
+ * reads without bound; past this, new requests are counted and dropped (the
+ * next renewal or event queues them again).
+ */
+export const RECONCILE_QUEUE_MAX = 10_000
 
 /**
  * Queue `did` for reconciliation. Idempotent: a pending job keeps its time;
@@ -38,6 +46,25 @@ const RECONCILE_SETTLE_MS = 60_000
  * (one run per DID per hour).
  */
 export async function queueReconcile(db: DrizzleDB, did: string, reason: string): Promise<void> {
+  await db.transaction(async (tx) => {
+    // Admission is serialised, so the bound holds under concurrency; only a
+    // job already pending passes when full (reopening a done one counts).
+    await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext('svc:reconcile-queue'))`)
+    const [state] = ((await tx.execute(sql`
+      SELECT (SELECT COUNT(*) FROM service_reconcile_jobs WHERE reason <> 'done') AS pending,
+             (SELECT reason FROM service_reconcile_jobs WHERE did = ${did}) AS mine`)) as unknown as {
+      rows: { pending: string | number; mine: string | null }[]
+    }).rows
+    const alreadyPending = state?.mine !== null && state?.mine !== undefined && state.mine !== 'done'
+    if (!alreadyPending && Number(state?.pending ?? 0) >= RECONCILE_QUEUE_MAX) {
+      metrics.incr('service.reconcile.queue_full', { reason })
+      return
+    }
+    await insertJob(tx as never, did, reason)
+  })
+}
+
+async function insertJob(db: DrizzleDB, did: string, reason: string): Promise<void> {
   const presence = await db
     .select({ rev: serviceOperatorPresence.presenceRev })
     .from(serviceOperatorPresence)
@@ -73,14 +100,20 @@ export async function notePresence(
   /** False for a reconciled read: it updates the set but renews nothing. */
   creditFreshness = true,
 ): Promise<'applied' | 'stale'> {
-  const prior = await db
+  // One provider's presence, profile and account writes are applied under one
+  // per-DID lock, so a check and its write are never split by another event
+  // for the same DID (an older revision cannot land after a newer one).
+  let mismatch = false
+  const out = await db.transaction(async (tx) => {
+    await lockDid(tx as never, did)
+    const prior = await tx
     .select()
     .from(serviceOperatorPresence)
     .where(eq(serviceOperatorPresence.did, did))
     .limit(1)
   const row = prior[0]
   // Membership: every newer revision applies, whatever the credit limit.
-  if (row !== undefined && repoRev !== undefined && !revIsNewer(repoRev, row.presenceRev)) return 'stale'
+  if (row !== undefined && repoRev !== undefined && !revIsNewer(repoRev, row.presenceRev)) return 'stale' as const
   // Freshness: credited at most once per 10 minutes, never moved backwards.
   const credit =
     creditFreshness &&
@@ -97,32 +130,61 @@ export async function notePresence(
     presenceRev: repoRev ?? row?.presenceRev ?? null,
     updatedAt: new Date(),
   }
-  await db
+  await tx
     .insert(serviceOperatorPresence)
     .values(values)
     .onConflictDoUpdate({ target: serviceOperatorPresence.did, set: values })
-  await clearInactiveIfOlder(db, did, observedUs)
-  if (record.complete && (await setDiffersFromIndex(db, did, record.listings))) {
-    await queueReconcile(db, did, 'presence_set_mismatch')
-  }
-  return 'applied'
+  await clearInactiveIfOlder(tx as never, did, observedUs)
+  mismatch = record.complete && (await setDiffersFromIndex(tx as never, did, record.listings))
+  return 'applied' as const
+  })
+  if (mismatch) await queueReconcile(db, did, 'presence_set_mismatch')
+  return out
 }
 
 /** A presence delete: the node withdrew; all its listings are withheld. */
-export async function notePresenceDelete(db: DrizzleDB, did: string, repoRev: string | undefined): Promise<void> {
-  const prior = await db
-    .select({ rev: serviceOperatorPresence.presenceRev })
-    .from(serviceOperatorPresence)
-    .where(eq(serviceOperatorPresence.did, did))
-    .limit(1)
-  if (prior[0] !== undefined && repoRev !== undefined && !revIsNewer(repoRev, prior[0].rev)) return
-  await db
-    .insert(serviceOperatorPresence)
-    .values({ did, presenceCapable: true, presencePresent: false, presenceComplete: false, listingsJson: [], presenceRev: repoRev ?? null })
-    .onConflictDoUpdate({
-      target: serviceOperatorPresence.did,
-      set: { presencePresent: false, presenceComplete: false, listingsJson: [], presenceRev: repoRev ?? null, updatedAt: new Date() },
-    })
+export async function notePresenceDelete(
+  db: DrizzleDB,
+  did: string,
+  repoRev: string | undefined,
+  /**
+   * True when reconciliation PROVED the record absent, rather than a delete
+   * event arriving. Absence proves a withdrawal only for a DID known to write
+   * presence; an older release that never wrote one keeps its listings.
+   */
+  observedAbsence = false,
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockDid(tx as never, did)
+    const prior = await tx
+      .select({ rev: serviceOperatorPresence.presenceRev, capable: serviceOperatorPresence.presenceCapable })
+      .from(serviceOperatorPresence)
+      .where(eq(serviceOperatorPresence.did, did))
+      .limit(1)
+    if (observedAbsence && prior[0]?.capable !== true) return
+    if (prior[0] !== undefined && repoRev !== undefined && !revIsNewer(repoRev, prior[0].rev)) return
+    // A withdrawal proves the node writes presence, even when AppView missed
+    // its first presence record: its listings are withheld at once.
+    await tx
+      .insert(serviceOperatorPresence)
+      .values({ did, presenceCapable: true, presencePresent: false, presenceComplete: false, listingsJson: [], presenceRev: repoRev ?? null })
+      .onConflictDoUpdate({
+        target: serviceOperatorPresence.did,
+        set: {
+          presenceCapable: true,
+          presencePresent: false,
+          presenceComplete: false,
+          listingsJson: [],
+          presenceRev: repoRev ?? null,
+          updatedAt: new Date(),
+        },
+      })
+  })
+}
+
+/** Serialise every liveness write for one DID (held until the transaction ends). */
+export async function lockDid(tx: DrizzleDB, did: string): Promise<void> {
+  await tx.execute(sql`SELECT pg_advisory_xact_lock(hashtext(${'svc:' + did}))`)
 }
 
 /**
@@ -190,12 +252,23 @@ export async function accountAdmits(db: DrizzleDB, did: string, observedUs: numb
   return !(s.status === 'deleted' && Number(s.timeUs) >= observedUs)
 }
 
-/** A commit observed after an inactive status proves the account active again. */
+/**
+ * A commit observed after a `deactivated` status proves the owner resumed the
+ * account (a lost reactivation event cannot hide it for good). Only the
+ * owner's own pause clears this way: a host's `takendown` or `suspended`, and
+ * `deleted`, are cleared only by a newer `#account` event, so a misbehaving
+ * PDS cannot lift a takedown by emitting a commit.
+ */
 async function clearInactiveIfOlder(db: DrizzleDB, did: string, observedUs: number): Promise<void> {
   await db
     .update(serviceAccountStatus)
     .set({ active: true, status: 'active', timeUs: observedUs, updatedAt: new Date() })
-    .where(and(eq(serviceAccountStatus.did, did), eq(serviceAccountStatus.active, false), sql`${serviceAccountStatus.timeUs} < ${observedUs}`))
+    .where(and(
+      eq(serviceAccountStatus.did, did),
+      eq(serviceAccountStatus.active, false),
+      eq(serviceAccountStatus.status, 'deactivated'),
+      sql`${serviceAccountStatus.timeUs} < ${observedUs}`,
+    ))
 }
 
 /** Does the presence set differ from what AppView holds for `did`? */

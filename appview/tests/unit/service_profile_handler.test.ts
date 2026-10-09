@@ -48,7 +48,13 @@ function stubCtx(captured: Captured, opts: { priorCreatedAt?: Date | null } = {}
           },
         }
       },
+      // The per-DID lock (REAL_LIFE_FIXES §14) — a no-op here.
+      execute: async () => ({ rows: [] }),
+      update: () => ({ set: () => ({ where: async () => undefined }) }),
       insert: (table: unknown) => {
+        // Only the services upsert is the handler's own write; the liveness
+        // renewal (another table) is a quiet stand-in.
+        if (table !== services) return { values: () => ({ onConflictDoUpdate: async () => undefined }) }
         return {
           values: (v: Record<string, unknown>) => {
             captured.insertValues = v
@@ -133,6 +139,8 @@ describe('serviceProfileHandler.handleCreate', () => {
     // each published profile is its own listing (multi-listing per DID).
     expect(captured.events).toEqual([
       'tx:begin',
+      // The account check (REAL_LIFE_FIXES §14), under the per-DID lock.
+      'tx:select:services',
       'tx:select:services',
       'tx:upsert:services',
       'tx:commit',
@@ -346,9 +354,9 @@ describe('serviceProfileHandler.handleCreate', () => {
     const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op({ ...validProfile(), isDiscoverable: false }))
-    expect(captured.txOpened).toBe(false)
-    // The unpublish delete ran (top-level, not inside a tx).
-    expect(captured.events).toEqual(['db:delete:services'])
+    // The unpublish delete ran, alone in its own transaction under the per-DID
+    // lock (REAL_LIFE_FIXES §14), with no upsert.
+    expect(captured.events).toEqual(['tx:begin', 'tx:delete:services', 'tx:commit'])
   })
 
   it('skips records whose responsePolicy values are outside the supported set', async () => {
@@ -577,7 +585,7 @@ describe('serviceProfileHandler — discoverability gating (#2)', () => {
     )
     // Stored (upsert), NOT deleted — link/QR/invite resolution needs the row.
     expect(captured.events).toContain('tx:upsert:services')
-    expect(captured.events).not.toContain('db:delete:services')
+    expect(captured.events).not.toContain('tx:delete:services')
     // Row carries the unlisted markers; search excludes it via isDiscoverable=true.
     expect(captured.insertValues?.discoverability).toBe('unlisted')
     expect(captured.insertValues?.isDiscoverable).toBe(false)
@@ -590,7 +598,7 @@ describe('serviceProfileHandler — discoverability gating (#2)', () => {
       ctx,
       op({ ...validProfile(), isDiscoverable: false, discoverability: 'known_only' }),
     )
-    expect(captured.events).toEqual(['db:delete:services'])
+    expect(captured.events).toEqual(['tx:begin', 'tx:delete:services', 'tx:commit'])
     expect(captured.insertValues).toBeNull()
   })
 
@@ -598,7 +606,7 @@ describe('serviceProfileHandler — discoverability gating (#2)', () => {
     const captured = freshCaptured()
     const ctx = stubCtx(captured)
     await serviceProfileHandler.handleCreate(ctx, op({ ...validProfile(), isDiscoverable: false }))
-    expect(captured.events).toEqual(['db:delete:services'])
+    expect(captured.events).toEqual(['tx:begin', 'tx:delete:services', 'tx:commit'])
     expect(captured.insertValues).toBeNull()
   })
 
@@ -610,7 +618,7 @@ describe('serviceProfileHandler — discoverability gating (#2)', () => {
       op({ ...validProfile(), isDiscoverable: true, discoverability: 'public' }),
     )
     expect(captured.events).toContain('tx:upsert:services')
-    expect(captured.events).not.toContain('db:delete:services')
+    expect(captured.events).not.toContain('tx:delete:services')
     expect(captured.insertValues?.isDiscoverable).toBe(true)
   })
 })

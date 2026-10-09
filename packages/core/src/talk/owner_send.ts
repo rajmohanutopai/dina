@@ -126,7 +126,7 @@ export async function ownerSendToContact(input: {
     return { status: 'no_owner_turn', reason: checked.reason };
   }
 
-  const instruction = parseSendInstruction(checked.turnText);
+  const instruction = recipientByContacts(checked.turnText, parseSendInstruction(checked.turnText));
   const named = instruction !== null ? resolveContactRef(instruction.recipient) : null;
   const direct =
     instruction !== null &&
@@ -135,6 +135,51 @@ export async function ownerSendToContact(input: {
     named.contact.did === chosen.contact.did &&
     drawsOnlyFrom(text, instruction.payload);
   return direct ? sendNow(chosen.contact, instruction.payload) : confirmCard(chosen.contact, text);
+}
+
+/**
+ * The parser takes the shortest recipient ("tell Sancho Panza I'm late" →
+ * "Sancho" + "Panza I'm late"). A contact's name may run to several words,
+ * so where the wording leaves the boundary open ("tell / message / text
+ * <name> <words>", with no delimiter or "that" after the first word), runs
+ * of up to four leading words are tried. When every
+ * run that names exactly one contact names the SAME contact, the longest
+ * wins; when two runs name different contacts, or a run names several
+ * ("Alex" with contacts Alex and Alex Smith), the boundary is unclear and
+ * null is returned, so the send is a card. Where
+ * the wording fixes the boundary ("let <name> know …"), the parser's
+ * recipient stands.
+ */
+function recipientByContacts(
+  turnText: string,
+  parsed: { recipient: string; payload: string } | null,
+): { recipient: string; payload: string } | null {
+  if (parsed === null) return null;
+  // Only "tell / message / text <words>" leaves the boundary open. "let …
+  // know" and "send <name>: …" fix it, and so does a delimiter or "that"
+  // right after the first word ("tell Sancho: …", "tell Sancho that …").
+  // Whitespace collapsed first, so the check sees the word after the first
+  // one and cannot be stepped around with extra spaces.
+  const head = turnText.trim().replace(/\s+/g, ' ').replace(/^(?:please[, ] ?)?/i, '');
+  const open = /^(?:tell|message|text) (\S+) (?![:,-]|that )/i.exec(head);
+  if (open === null || /[:,-]$/.test(open[1] ?? '')) return parsed;
+  const words = `${parsed.recipient} ${parsed.payload}`.split(/\s+/).filter((w) => w !== '');
+  let best: { recipient: string; payload: string } | null = null;
+  let did: string | null = null;
+  for (let k = Math.min(4, words.length - 1); k >= 1; k -= 1) {
+    const recipient = words.slice(0, k).join(' ').replace(/[:,-]+$/, '');
+    const found = resolveContactRef(recipient);
+    // A run naming several contacts ("Alex" with Alex and Alex Smith) means
+    // the owner's words do not settle who is meant.
+    if (found.kind === 'ambiguous') return null;
+    if (found.kind !== 'one') continue;
+    if (did !== null && found.contact.did !== did) return null;
+    const payload = words.slice(k).join(' ').replace(/^(?:[:,-]\s*)?(?:that\s+)?/i, '').trim();
+    if (payload === '') continue;
+    did = found.contact.did;
+    best ??= { recipient, payload };
+  }
+  return best ?? parsed;
 }
 
 /** Read a confirm card's frozen payload, or null when it is not one. */

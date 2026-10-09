@@ -40,9 +40,37 @@ import { noteIngestGap, noteServiceAccount, queueReconcile } from './service-liv
 const SERVICE_PROFILE_NSID = 'com.dinakernel.service.profile'
 const SERVICE_PRESENCE_NSID = 'com.dinakernel.service.presence'
 
-/** A node's presence record (docs/REAL_LIFE_FIXES.md §14): never dropped. */
+/** A node's presence record (docs/REAL_LIFE_FIXES.md §14). */
 function isPresenceCommit(event: { kind: string; commit?: { collection?: string } }): boolean {
   return event.kind === 'commit' && event.commit?.collection === SERVICE_PRESENCE_NSID
+}
+
+/**
+ * Per-DID presence budget. A node renews about once a day and writes again
+ * only when its listings change, so a handful an hour is generous. Within
+ * `PRESENCE_REQUIRED_PER_HOUR` an event is never dropped; beyond it the event
+ * may be dropped like any other (a flood cannot hold the shared queue); beyond
+ * `PRESENCE_PROCESSED_PER_HOUR` it is not applied, and the DID is re-read from
+ * its repository instead, so the newest set still lands.
+ */
+export const PRESENCE_REQUIRED_PER_HOUR = 6
+export const PRESENCE_PROCESSED_PER_HOUR = 30
+const PRESENCE_BUDGET_MAX_DIDS = 100_000
+
+class HourlyCounter {
+  private hour = -1
+  private counts = new Map<string, number>()
+  /** Count one event for `key` and return its count this hour. */
+  hit(key: string, nowMs = Date.now()): number {
+    const hour = Math.floor(nowMs / 3_600_000)
+    if (hour !== this.hour || this.counts.size > PRESENCE_BUDGET_MAX_DIDS) {
+      this.hour = hour
+      this.counts = new Map()
+    }
+    const n = (this.counts.get(key) ?? 0) + 1
+    this.counts.set(key, n)
+    return n
+  }
 }
 import { logger } from '@/shared/utils/logger.js'
 import { metrics } from '@/shared/utils/metrics.js'
@@ -280,6 +308,10 @@ export class JetstreamConsumer {
     this.serviceRetentionUs = retentionUs
   }
 
+  /** Per-DID presence budgets (at the socket, and when processing). */
+  private readonly presenceAtSocket = new HourlyCounter()
+  private readonly presenceProcessed = new HourlyCounter()
+
   /** Events counted since the last hourly flush (§14.4 C upstream signal). */
   private pendingHourlyEvents = 0
   private lastHourlyFlushMs = Date.now()
@@ -300,12 +332,49 @@ export class JetstreamConsumer {
       .catch((err) => logger.warn({ err }, 'hourly event count failed'))
   }
 
-  /** Renewals lost to a gap are blind time, never ageing. */
+  /**
+   * Renewals lost to a gap are blind time, never ageing. A failed write
+   * throws, so ingestion does not resume (and move the cursor past the gap)
+   * until the gap is recorded — as the A2A gap check does.
+   */
   private async noteServiceGap(): Promise<void> {
     if (this.serviceRetentionUs === null) return
-    await noteIngestGap(this.db, this.cursor, this.serviceRetentionUs).catch((err) =>
-      logger.warn({ err }, 'service gap check failed'),
-    )
+    await noteIngestGap(this.db, this.cursor, this.serviceRetentionUs)
+  }
+
+  /** Read the services switch and open or close the `index_off` interval. */
+  private async followIndexSwitch(): Promise<void> {
+    try {
+      const on = await readCachedBoolFlag(this.db, 'service_index_enabled')
+      await this.noteIndexSwitch(on, Date.now() * 1000)
+    } catch (err) {
+      logger.warn({ err }, 'services switch check failed')
+    }
+  }
+
+  /** Whether an `index_off` blind interval is open (known after the first check). */
+  private indexOffOpen: boolean | null = null
+
+  /**
+   * While the services switch is off, renewals are not applied: that span is
+   * blind time, so nobody ages for it (§14.4 C). Opened on the first event
+   * seen with the switch off; closed on the first seen with it on.
+   */
+  private async noteIndexSwitch(on: boolean, nowUs: number): Promise<void> {
+    if (this.indexOffOpen === null) {
+      const rows = (await this.db.execute(sql`
+        SELECT 1 FROM service_blind_intervals WHERE reason = 'index_off' AND end_us IS NULL LIMIT 1`)) as unknown as { rows?: unknown[] }
+      this.indexOffOpen = (rows.rows ?? []).length > 0
+    }
+    if (!on && !this.indexOffOpen) {
+      await this.db.execute(sql`
+        INSERT INTO service_blind_intervals (start_us, end_us, reason) VALUES (${nowUs}, NULL, 'index_off')`)
+      this.indexOffOpen = true
+    } else if (on && this.indexOffOpen) {
+      await this.db.execute(sql`
+        UPDATE service_blind_intervals SET end_us = ${nowUs} WHERE reason = 'index_off' AND end_us IS NULL`)
+      this.indexOffOpen = false
+    }
   }
 
   /** Inject the A2A directory. Set before `start()`, so the gap check runs before ingestion. */
@@ -386,6 +455,11 @@ export class JetstreamConsumer {
     this.cursorSaveTimer = setInterval(() => {
       void this.advanceAndSaveCursor('timer')
       void this.livenessTick(Date.now() * 1000)
+      // Live listings: the services switch is followed even when no service
+      // event arrives, so an `index_off` blind interval closes within a tick
+      // of the switch coming back on (service events are few: about one
+      // renewal a day per node).
+      void this.followIndexSwitch()
     }, this.CURSOR_SAVE_INTERVAL_MS)
   }
 
@@ -579,7 +653,9 @@ export class JetstreamConsumer {
         // A presence event (docs/REAL_LIFE_FIXES.md §14) is never dropped
         // either: losing one would age a live provider. One rkey per DID keeps
         // a flood cheap.
-        const presence = isPresenceCommit(event as { kind: string; commit?: { collection?: string } })
+        const presence =
+          isPresenceCommit(event as { kind: string; commit?: { collection?: string } }) &&
+          this.presenceAtSocket.hit((event as { did: string }).did) <= PRESENCE_REQUIRED_PER_HOUR
         const required = card || presence || event.kind === 'account'
         // AppView's receive time, so an event's observation time can never be
         // later than when it arrived.
@@ -763,7 +839,9 @@ export class JetstreamConsumer {
     const receivedUs = typeof context?.receivedUs === 'number' ? context.receivedUs : Date.now() * 1000
     const live = { observedUs: observedUs(event.time_us, receivedUs), repoRev: commit.rev }
 
-    if (!(await readCachedBoolFlag(this.db, 'service_index_enabled'))) {
+    const indexOn = await readCachedBoolFlag(this.db, 'service_index_enabled')
+    await this.noteIndexSwitch(indexOn, receivedUs)
+    if (!indexOn) {
       await queueReconcile(this.db, did, 'index_off')
       await recordRejection(rejectionCtx, { atUri, did, reason: 'feature_off', detail: { operation: commit.operation } })
       return
@@ -776,8 +854,13 @@ export class JetstreamConsumer {
       }
     }
     // Profiles keep the per-DID bound (one DID cannot flood listings); a
-    // dropped one is re-read from the repository later. Presence is one
-    // record per DID and is never limited.
+    // dropped one is re-read from the repository later. Presence has its own,
+    // looser bound for the same reason.
+    if (collection === SERVICE_PRESENCE_NSID && this.presenceProcessed.hit(did) > PRESENCE_PROCESSED_PER_HOUR) {
+      await queueReconcile(this.db, did, 'presence_rate_limited')
+      await recordRejection(rejectionCtx, { atUri, did, reason: 'rate_limit', detail: { scope: 'presence_hourly' } })
+      return
+    }
     if (collection === SERVICE_PROFILE_NSID && isRateLimited(did)) {
       await queueReconcile(this.db, did, 'rate_limited')
       await recordRejection(rejectionCtx, { atUri, did, reason: 'rate_limit' })

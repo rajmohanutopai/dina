@@ -402,3 +402,320 @@ describe('the health guard and clean-up', () => {
     expect((await db.execute(sql`SELECT did FROM service_account_status`)).rows).toEqual([{ did: 'did:plc:kept' }])
   })
 })
+
+describe('security review fixes (2026-10-08)', () => {
+  it('a commit after a takedown does not lift it; one after a user pause does', async () => {
+    await publish('did:plc:p', { observedUs: NOW - 2 * HOUR })
+    await noteServiceAccount(db as never, 'did:plc:p', false, 'takendown', NOW - HOUR)
+    await publish('did:plc:p', { observedUs: NOW })
+    expect((await search()).services).toEqual([])
+    await publish('did:plc:q', { observedUs: NOW - 2 * HOUR })
+    await noteServiceAccount(db as never, 'did:plc:q', false, 'deactivated', NOW - HOUR)
+    await publish('did:plc:q', { observedUs: NOW })
+    expect((await search()).services.map((s) => s.operatorDid)).toEqual(['did:plc:q'])
+  })
+
+  it('presence beyond the hourly budget is not applied; the DID is re-read instead', async () => {
+    const consumer = new JetstreamConsumer(db as never)
+    const process = (consumer as unknown as { processEvent: (e: unknown, c: unknown) => Promise<void> }).processEvent.bind(consumer)
+    for (let i = 0; i < 31; i++) {
+      await process(
+        { did: 'did:plc:flood', time_us: NOW, kind: 'commit',
+          commit: { rev: `rev${String(i).padStart(3, '0')}`, operation: 'create', collection: 'com.dinakernel.service.presence', rkey: 'self', cid: CID(9),
+            record: { v: 1, n: '0123456789abcdef', listings: [], complete: true } } },
+        { receivedUs: NOW },
+      )
+    }
+    const jobs = await db.execute(sql`SELECT reason FROM service_reconcile_jobs WHERE did = 'did:plc:flood'`)
+    expect(jobs.rows).toEqual([{ reason: 'presence_rate_limited' }])
+  })
+
+  it('the reconciliation queue is bounded', async () => {
+    const { queueReconcile, RECONCILE_QUEUE_MAX } = await import('@/ingester/service-liveness-ingest.js')
+    await db.execute(sql`INSERT INTO service_reconcile_jobs (did, reason)
+      SELECT 'did:plc:q' || g, 'rate_limited' FROM generate_series(1, ${RECONCILE_QUEUE_MAX}) g`)
+    await queueReconcile(db as never, 'did:plc:newcomer', 'rate_limited')
+    const rows = await db.execute(sql`SELECT did FROM service_reconcile_jobs WHERE did = 'did:plc:newcomer'`)
+    expect(rows.rows).toEqual([])
+  })
+
+  it('a slow PDS cannot hold a reconciliation worker', async () => {
+    const { RECONCILE_JOB_BUDGET_MS } = await import('@/scorer/jobs/service-reconcile.js')
+    await publish('did:plc:slow', { rkey: 'a', cid: 1 })
+    await publish('did:plc:slow', { rkey: 'b', cid: 2 })
+    await db.execute(sql`INSERT INTO service_reconcile_jobs (did, reason) VALUES ('did:plc:slow', 'rate_limited')`)
+    let clock = Date.now()
+    const realNow = Date.now
+    Date.now = () => clock
+    try {
+      const out = await reconcileOne(db as never, {
+        resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+        listRkeys: async () => [{ rkey: 'a', cid: CID(1) }, { rkey: 'b', cid: CID(2) }],
+        readVerified: async () => {
+          clock += RECONCILE_JOB_BUDGET_MS
+          return { kind: 'absent' as const, rev: 'rev9' }
+        },
+      } as never, { did: 'did:plc:slow', reason: 'rate_limited', presence_rev_at_queue: null, attempts: 0 })
+      expect(out).toBe('failed')
+    } finally {
+      Date.now = realNow
+    }
+    expect((await db.execute(sql`SELECT uri FROM services WHERE operator_did = 'did:plc:slow'`)).rows).toHaveLength(2)
+  })
+})
+
+describe('overlapping blind time (dual review, 2026-10-08)', () => {
+  it('two notes of one outage count once', async () => {
+    await publish('did:plc:r', { observedUs: NOW - 181 * HOUR })
+    await renew('did:plc:r', NOW - 180 * HOUR, [{ rkey: 'self', cid: CID(0) }], 'rev2')
+    for (let i = 0; i < 2; i++) {
+      await db.execute(sql`INSERT INTO service_blind_intervals (start_us, end_us, reason)
+        VALUES (${NOW - 150 * HOUR}, ${NOW - 50 * HOUR}, 'ingest_gap')`)
+    }
+    // 180 h since seen, 100 h of it blind: age 80 h, stale (not fresh).
+    expect((await search()).services[0]!.liveness).toBe('stale')
+  })
+})
+
+describe('dual review fixes (2026-10-08)', () => {
+  it('reconciliation reads the listings named by the verified current presence, not the old set', async () => {
+    await publish('did:plc:s', { rkey: 'old', cid: 2, rev: 'rev1' })
+    await renew('did:plc:s', NOW, [{ rkey: 'old', cid: CID(2) }], 'rev2')
+    const read: string[] = []
+    const out = await reconcileOne(db as never, {
+      resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+      listRkeys: async () => [],
+      readVerified: async (_p: string, _d: string, _k: string, collection: string, rkey: string) => {
+        read.push(`${collection.split('.').pop()}:${rkey}`)
+        if (collection === 'com.dinakernel.service.presence') {
+          return { kind: 'present' as const, rev: 'rev9', cid: CID(9), record: { v: 1, n: '0123456789abcdef', listings: [{ rkey: 'new', cid: CID(1) }], complete: true } }
+        }
+        return rkey === 'new' ? { kind: 'present' as const, rev: 'rev9', cid: CID(1), record: profile() } : { kind: 'absent' as const, rev: 'rev9' }
+      },
+    } as never, { did: 'did:plc:s', reason: 'presence_set_mismatch', presence_rev_at_queue: null, attempts: 0 })
+    expect(out).toBe('done')
+    expect(read).toContain('profile:new')
+    expect((await search()).services.map((s) => s.uri)).toEqual(['at://did:plc:s/com.dinakernel.service.profile/new'])
+  })
+
+  it('a presence delete for a provider AppView only knew from profiles withholds its listings', async () => {
+    await publish('did:plc:t')
+    await servicePresenceHandler.handleDelete(ctx(), {
+      uri: 'at://did:plc:t/com.dinakernel.service.presence/self', did: 'did:plc:t',
+      collection: 'com.dinakernel.service.presence', rkey: 'self', repoRev: 'rev5',
+    })
+    expect((await search()).services).toEqual([])
+  })
+
+  it('the services switch being off is blind time, closed when it comes back on', async () => {
+    const consumer = new JetstreamConsumer(db as never)
+    const process = (consumer as unknown as { processEvent: (e: unknown, c: unknown) => Promise<void> }).processEvent.bind(consumer)
+    const ev = (t: number) => ({ did: 'did:plc:u', time_us: t, kind: 'commit',
+      commit: { rev: `rev${t}`, operation: 'create', collection: 'com.dinakernel.service.presence', rkey: 'self', cid: CID(9),
+        record: { v: 1, n: '0123456789abcdef', listings: [], complete: true } } })
+    await setBoolFlag(db as never, 'service_index_enabled', false)
+    await process(ev(NOW - HOUR), { receivedUs: NOW - HOUR })
+    clearFlagCache()
+    await setBoolFlag(db as never, 'service_index_enabled', true)
+    await process(ev(NOW), { receivedUs: NOW })
+    const rows = await db.execute(sql`SELECT start_us, end_us, reason FROM service_blind_intervals WHERE reason = 'index_off'`)
+    expect(rows.rows).toEqual([{ start_us: String(NOW - HOUR), end_us: String(NOW), reason: 'index_off' }])
+  })
+
+  it('a redo happens once; then the DID waits the hour out', async () => {
+    await publish('did:plc:v', { rkey: 'self', cid: 1, rev: 'rev1' })
+    await renew('did:plc:v', NOW, [{ rkey: 'self', cid: CID(1) }], 'rev2')
+    await db.execute(sql`INSERT INTO service_reconcile_jobs (did, reason) VALUES ('did:plc:v', 'rate_limited')`)
+    let n = 3
+    const deps = {
+      resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+      listRkeys: async () => [],
+      readVerified: async (_p: string, _d: string, _k: string, collection: string) => {
+        // The provider rewrites presence while the job runs.
+        if (collection === 'com.dinakernel.service.profile') {
+          await renew('did:plc:v', NOW, [{ rkey: 'self', cid: CID(1) }], `rev${++n}`)
+        }
+        return collection === 'com.dinakernel.service.presence'
+          ? { kind: 'present' as const, rev: 'rev9', cid: CID(9), record: { v: 1, n: '0123456789abcdef', listings: [{ rkey: 'self', cid: CID(1) }], complete: true } }
+          : { kind: 'present' as const, rev: 'rev9', cid: CID(1), record: profile() }
+      },
+    }
+    expect(await reconcileOne(db as never, deps as never, { did: 'did:plc:v', reason: 'rate_limited', presence_rev_at_queue: null, attempts: 0 })).toBe('redo')
+    expect(await reconcileOne(db as never, deps as never, { did: 'did:plc:v', reason: 'redo', presence_rev_at_queue: null, attempts: 0 })).toBe('redo')
+    const rows = await db.execute(sql`SELECT next_attempt_at > now() + interval '50 minutes' AS later FROM service_reconcile_jobs WHERE did = 'did:plc:v'`)
+    expect(rows.rows).toEqual([{ later: true }])
+  })
+
+  it('reopening a finished job counts against the queue bound', async () => {
+    const { queueReconcile, RECONCILE_QUEUE_MAX } = await import('@/ingester/service-liveness-ingest.js')
+    await db.execute(sql`INSERT INTO service_reconcile_jobs (did, reason) VALUES ('did:plc:finished', 'done')`)
+    await db.execute(sql`INSERT INTO service_reconcile_jobs (did, reason)
+      SELECT 'did:plc:p' || g, 'rate_limited' FROM generate_series(1, ${RECONCILE_QUEUE_MAX}) g`)
+    await queueReconcile(db as never, 'did:plc:finished', 'rate_limited')
+    const rows = await db.execute(sql`SELECT reason FROM service_reconcile_jobs WHERE did = 'did:plc:finished'`)
+    expect(rows.rows).toEqual([{ reason: 'done' }])
+  })
+})
+
+describe('round 2 fixes (2026-10-08)', () => {
+  it('a create checked before a newer delete cannot land after it', async () => {
+    // Run a create and a newer delete for the same uri concurrently, many times.
+    for (let i = 0; i < 10; i++) {
+      await cleanAllTables(db)
+      await Promise.all([
+        publish('did:plc:w', { rev: 'rev5' }),
+        serviceProfileHandler.handleDelete(ctx(), {
+          uri: 'at://did:plc:w/com.dinakernel.service.profile/self', did: 'did:plc:w',
+          collection: 'com.dinakernel.service.profile', rkey: 'self', repoRev: 'rev6',
+        }),
+      ])
+      expect((await db.execute(sql`SELECT uri FROM services`)).rows).toEqual([])
+    }
+  })
+
+  it('the switch coming back on closes the blind interval without any service event', async () => {
+    const consumer = new JetstreamConsumer(db as never)
+    const c = consumer as unknown as { followIndexSwitch: () => Promise<void> }
+    await setBoolFlag(db as never, 'service_index_enabled', false)
+    clearFlagCache()
+    await c.followIndexSwitch()
+    await setBoolFlag(db as never, 'service_index_enabled', true)
+    clearFlagCache()
+    await c.followIndexSwitch()
+    const rows = await db.execute(sql`SELECT end_us IS NOT NULL AS closed FROM service_blind_intervals WHERE reason = 'index_off'`)
+    expect(rows.rows).toEqual([{ closed: true }])
+  })
+})
+
+describe('round 2 Codex fixes (2026-10-08)', () => {
+  it("re-reading an older-release provider that has no presence keeps its listings", async () => {
+    await publish('did:plc:legacy2', { rkey: 'self', cid: 1, rev: 'rev1' })
+    const out = await reconcileOne(db as never, {
+      resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+      listRkeys: async () => [{ rkey: 'self', cid: CID(1) }],
+      readVerified: async (_p: string, _d: string, _k: string, collection: string) =>
+        collection === 'com.dinakernel.service.presence'
+          ? { kind: 'absent' as const, rev: 'rev9' }
+          : { kind: 'present' as const, rev: 'rev9', cid: CID(1), record: profile() },
+    } as never, { did: 'did:plc:legacy2', reason: 'rate_limited', presence_rev_at_queue: null, attempts: 0 })
+    expect(out).toBe('done')
+    expect((await search()).services.map((s) => s.liveness)).toEqual(['unknown'])
+  })
+
+  it('a job past its deadline after its last read applies nothing', async () => {
+    const { RECONCILE_JOB_BUDGET_MS } = await import('@/scorer/jobs/service-reconcile.js')
+    await publish('did:plc:late', { rkey: 'self', cid: 1, rev: 'rev1' })
+    let clock = Date.now()
+    const realNow = Date.now
+    Date.now = () => clock
+    try {
+      const out = await reconcileOne(db as never, {
+        resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+        listRkeys: async () => [],
+        readVerified: async (_p: string, _d: string, _k: string, collection: string) => {
+          if (collection === 'com.dinakernel.service.profile') clock += RECONCILE_JOB_BUDGET_MS
+          return collection === 'com.dinakernel.service.presence'
+            ? { kind: 'present' as const, rev: 'rev9', cid: CID(9), record: { v: 1, n: '0123456789abcdef', listings: [{ rkey: 'self', cid: CID(1) }], complete: true } }
+            : { kind: 'absent' as const, rev: 'rev9' }
+        },
+      } as never, { did: 'did:plc:late', reason: 'rate_limited', presence_rev_at_queue: null, attempts: 0 })
+      // The last read ran past the deadline: nothing is applied.
+      expect(out).toBe('failed')
+    } finally {
+      Date.now = realNow
+    }
+    expect((await db.execute(sql`SELECT uri FROM services WHERE operator_did = 'did:plc:late'`)).rows).toHaveLength(1)
+  })
+})
+
+describe('round 3 fixes (2026-10-08)', () => {
+  it('a stale friends-only removal cannot delete a newer listing; an older update cannot undo a newer removal', async () => {
+    await publish('did:plc:x1', { rev: 'rev5', name: 'Newer' })
+    // A stale (rev4) republish as friends-only arrives late.
+    await serviceProfileHandler.handleCreate(ctx(), {
+      uri: 'at://did:plc:x1/com.dinakernel.service.profile/self', did: 'did:plc:x1',
+      collection: 'com.dinakernel.service.profile', rkey: 'self', cid: CID(3),
+      record: { ...profile(), isDiscoverable: false, discoverability: 'known_only' } as never,
+      repoRev: 'rev4', observedUs: NOW,
+    })
+    expect((await db.execute(sql`SELECT name FROM services`)).rows).toEqual([{ name: 'Newer' }])
+    // A newer (rev6) friends-only removal, then an older (rev5) public update replayed.
+    await serviceProfileHandler.handleCreate(ctx(), {
+      uri: 'at://did:plc:x1/com.dinakernel.service.profile/self', did: 'did:plc:x1',
+      collection: 'com.dinakernel.service.profile', rkey: 'self', cid: CID(3),
+      record: { ...profile(), isDiscoverable: false, discoverability: 'known_only' } as never,
+      repoRev: 'rev6', observedUs: NOW,
+    })
+    await publish('did:plc:x1', { rev: 'rev5', name: 'Replayed' })
+    expect((await db.execute(sql`SELECT name FROM services`)).rows).toEqual([])
+  })
+
+  it('a re-check whose writes wait past the deadline commits nothing and fails', async () => {
+    const { RECONCILE_JOB_BUDGET_MS } = await import('@/scorer/jobs/service-reconcile.js')
+    await publish('did:plc:x2', { rkey: 'self', cid: 1, rev: 'rev1' })
+    // Another connection holds this DID's liveness lock.
+    const pg = (await import('pg')).default
+    const holder = new pg.Client({ connectionString: process.env.DATABASE_URL })
+    await holder.connect()
+    await holder.query('BEGIN')
+    await holder.query(`SELECT pg_advisory_xact_lock(hashtext('svc:did:plc:x2'))`)
+    const start = Date.now()
+    const realNow = Date.now
+    let out: string
+    try {
+      // When the profile read starts, the clock jumps so that only ~300 ms of
+      // the budget is left for the writes, which then wait on the held lock.
+      let shifted = false
+      out = await reconcileOne(db as never, {
+        resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+        listRkeys: async () => [],
+        readVerified: async (_p: string, _d: string, _k: string, collection: string) => {
+          if (!shifted && collection === 'com.dinakernel.service.profile') {
+            shifted = true
+            const base = realNow()
+            Date.now = () => realNow() - base + start + RECONCILE_JOB_BUDGET_MS - 300
+          }
+          return collection === 'com.dinakernel.service.presence'
+            ? { kind: 'present' as const, rev: 'rev9', cid: CID(9), record: { v: 1, n: '0123456789abcdef', listings: [{ rkey: 'self', cid: CID(1) }], complete: true } }
+            : { kind: 'absent' as const, rev: 'rev9' }
+        },
+      } as never, { did: 'did:plc:x2', reason: 'rate_limited', presence_rev_at_queue: null, attempts: 0 })
+    } finally {
+      Date.now = realNow
+      await holder.query('ROLLBACK')
+      await holder.end()
+    }
+    expect(out).toBe('failed')
+    expect((await db.execute(sql`SELECT uri FROM services WHERE operator_did = 'did:plc:x2'`)).rows).toHaveLength(1)
+    expect(realNow() - start).toBeLessThan(5_000)
+  })
+})
+
+describe('round 4 fixes (2026-10-08)', () => {
+  it('writes stop at the deadline even when each one is quick', async () => {
+    const { RECONCILE_JOB_BUDGET_MS } = await import('@/scorer/jobs/service-reconcile.js')
+    for (const r of ['a', 'b', 'c', 'd']) await publish('did:plc:x3', { rkey: r, cid: 1, rev: 'rev1' })
+    const realNow = Date.now
+    const start = realNow()
+    let offset = 0
+    Date.now = () => realNow() + offset
+    let out: string
+    try {
+      out = await reconcileOne(db as never, {
+        resolve: async () => ({ signingKey: 'did:key:zTest', pds: 'https://pds.example' }),
+        listRkeys: async () => [],
+        readVerified: async (_p: string, _d: string, _k: string, collection: string) => {
+          // Reads use most of the budget, leaving room for about one write.
+          if (collection === 'com.dinakernel.service.profile') offset = RECONCILE_JOB_BUDGET_MS - (realNow() - start) - 1
+          return collection === 'com.dinakernel.service.presence'
+            ? { kind: 'present' as const, rev: 'rev9', cid: CID(9), record: { v: 1, n: '0123456789abcdef', listings: ['a', 'b', 'c', 'd'].map((rkey) => ({ rkey, cid: CID(1) })), complete: true } }
+            : { kind: 'absent' as const, rev: 'rev9' }
+        },
+      } as never, { did: 'did:plc:x3', reason: 'rate_limited', presence_rev_at_queue: null, attempts: 0 })
+    } finally {
+      Date.now = realNow
+    }
+    expect(out).toBe('failed')
+    expect((await db.execute(sql`SELECT uri FROM services WHERE operator_did = 'did:plc:x3'`)).rows).toHaveLength(4)
+  })
+})

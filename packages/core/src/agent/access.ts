@@ -389,7 +389,11 @@ export function reserveAgentPersonaGrant(
     // Persist the requested scope only — never the vault result.
     scopeJson: JSON.stringify({ scope: payload.scope }),
     approvalTaskId: task.id,
-    expiresAt: t + (onceAsk !== null ? DEFAULT_GRANT_TTL_MS : SESSION_GRANT_CAP_MS),
+    // "Approve Once" never widens to the 24 h session cap: bound to its ask
+    // when the card names one (every card an ask raises does, since Core binds
+    // the ask id before Brain runs), else the pre-existing one-hour grant for
+    // an agent's direct read.
+    expiresAt: t + (scope === 'single' ? DEFAULT_GRANT_TTL_MS : SESSION_GRANT_CAP_MS),
     createdAt: t,
     active: false, // reserved — invisible to the gate until activated
     askId: onceAsk,

@@ -224,6 +224,8 @@ export interface BootServiceInputs {
   pdsSessionReachable?: boolean;
   /** True while the app is in the foreground (presence renewal, §14.4 A). */
   isAppActive?: () => boolean;
+  /** Foreground changes, for measuring foreground time (§14.4 A). */
+  subscribeAppActive?: (onChange: (active: boolean) => void) => () => void;
   /**
    * Seed config for provider nodes — matches Core's
    * `setServiceConfig` shape. Without it a provider node boots
@@ -840,6 +842,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     pdsPublisher: inputs.pdsPublisher,
     pdsSessionReachable: inputs.pdsSessionReachable,
     ...(inputs.isAppActive !== undefined ? { isAppActive: inputs.isAppActive } : {}),
+    ...(inputs.subscribeAppActive !== undefined ? { subscribeAppActive: inputs.subscribeAppActive } : {}),
     workflowRepository,
     serviceConfigRepository,
     reviewPublishRepository,

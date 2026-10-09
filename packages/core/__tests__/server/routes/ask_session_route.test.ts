@@ -41,9 +41,10 @@ beforeEach(() => {
   setSessionRegistry(registry);
   sessionId = registry.start({ agentDid: AGENT_DID, hostSessionId: 'host' }).sessionId;
   handler = {
-    handleAsk: jest.fn(async (_input: AskSubmitInput) => ({
+    // Brain uses the ask id Core hands it (REAL_LIFE_FIXES §3, Core names asks).
+    handleAsk: jest.fn(async (input: AskSubmitInput) => ({
       status: 202,
-      body: { status: 'in_flight', request_id: 'ask-1' },
+      body: { status: 'in_flight', request_id: input.requestIdHeader ?? 'ask-1' },
     })),
     handleStatus: jest.fn(
       async (_id: string, _requesterDid?: string, _sessionId?: string) => ({

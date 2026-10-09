@@ -18,6 +18,8 @@
  * Source: MT-38 (OpenClaw locked-vault data request with approval resume).
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { bindAskAuthority, closeAskAuthority, mintAskAuthority } from '../../agent/ask_authority';
 import { getSessionRegistry } from '../../session/registry';
 
@@ -163,10 +165,19 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
       sessionId: sessionId !== '' ? sessionId : null,
     });
     input.askAuthority = authority.id;
+    // Core names the ask and binds the authority to it BEFORE Brain runs a
+    // single tool: a card raised in the first moments of the ask must carry
+    // its ask id, or "Approve Once" could not be bound to this ask alone. The
+    // id is Core's own and random, never the caller's X-Request-Id, so no
+    // other ask can ever present it (the caller's header stays a trace hint).
+    const askId = bytesToHex(randomBytes(16));
+    bindAskAuthority(authority.id, askId);
+    input.requestIdHeader = askId;
     const result = await handler.handleAsk(input);
-    const askId = (result.body as { request_id?: unknown } | null)?.request_id;
-    if (typeof askId === 'string' && askId !== '') bindAskAuthority(authority.id, askId);
-    else if (result.status >= 400) closeAskAuthority(authority.id);
+    const answeredId = (result.body as { request_id?: unknown } | null)?.request_id;
+    if (result.status >= 400 || (typeof answeredId === 'string' && answeredId !== askId)) {
+      closeAskAuthority(authority.id);
+    }
     return { status: result.status, body: result.body };
   });
 

@@ -3,7 +3,7 @@ import type { RecordHandler, HandlerContext, RecordOp } from './index.js'
 import type { ServiceProfile } from '@/shared/types/lexicon-types.js'
 import { serviceDeletions, services } from '@/db/schema/index.js'
 import { revIsNewer } from '@/shared/service-liveness.js'
-import { accountAdmits, noteProfileWrite } from '../service-liveness-ingest.js'
+import { accountAdmits, lockDid, noteProfileWrite } from '../service-liveness-ingest.js'
 import {
   allowedCategoriesForCapability,
   canonicalizeForIndex,
@@ -30,24 +30,10 @@ export const serviceProfileHandler: RecordHandler = {
   async handleCreate(ctx: HandlerContext, op: RecordOp) {
     const record = op.record as unknown as ServiceProfile
 
-    // Live listings (docs/REAL_LIFE_FIXES.md §14): revision order, deletion
-    // markers and the account gate, before anything is written.
+    // Live listings (docs/REAL_LIFE_FIXES.md §14): the account gate,
+    // deletion markers and revision order are checked inside the write's
+    // transaction, under the per-DID lock (below).
     const observedUs = op.observedUs ?? Date.now() * 1000
-    if (!(await accountAdmits(ctx.db, op.did, observedUs))) {
-      ctx.metrics.incr('ingester.service_profile.account_refused')
-      return
-    }
-    if (op.repoRev !== undefined) {
-      const deleted = await ctx.db
-        .select({ rev: serviceDeletions.deletedRev })
-        .from(serviceDeletions)
-        .where(eq(serviceDeletions.uri, op.uri))
-        .limit(1)
-      if (deleted[0] !== undefined && !revIsNewer(op.repoRev, deleted[0].rev)) {
-        ctx.metrics.incr('ingester.service_profile.stale_after_delete')
-        return
-      }
-    }
 
     // Three-state discoverability (catalog §5.2):
     //   public     → indexed + returned in public search.
@@ -65,7 +51,10 @@ export const serviceProfileHandler: RecordHandler = {
     const disc = record.discoverability
     const isKnownOnly = disc === 'known_only' || (disc === undefined && !record.isDiscoverable)
     if (isKnownOnly) {
-      await ctx.db.delete(services).where(eq(services.uri, op.uri))
+      // A removal like any delete (§14.4 C): under the per-DID lock, at its
+      // revision, leaving a marker — so a stale removal cannot delete a newer
+      // listing, and an older update cannot bring this one back.
+      await removeListing(ctx.db, op)
       ctx.logger.debug(
         { uri: op.uri, discoverability: disc ?? '(legacy isDiscoverable=false)' },
         '[ServiceProfile] known_only / unpublished — removed any existing indexed row',
@@ -218,7 +207,23 @@ export const serviceProfileHandler: RecordHandler = {
     // do NOT delete the operator's other uris (that would cap them at one
     // listing); each uri is independent.
     const now = new Date()
-    await ctx.db.transaction(async (tx) => {
+    const written = await ctx.db.transaction(async (tx) => {
+      await lockDid(tx as never, op.did)
+      if (!(await accountAdmits(tx as never, op.did, observedUs))) {
+        ctx.metrics.incr('ingester.service_profile.account_refused')
+        return false
+      }
+      if (op.repoRev !== undefined) {
+        const deleted = await tx
+          .select({ rev: serviceDeletions.deletedRev })
+          .from(serviceDeletions)
+          .where(eq(serviceDeletions.uri, op.uri))
+          .limit(1)
+        if (deleted[0] !== undefined && !revIsNewer(op.repoRev, deleted[0].rev)) {
+          ctx.metrics.incr('ingester.service_profile.stale_after_delete')
+          return false
+        }
+      }
       // Preserve `createdAt` across re-publishes of the SAME uri. Capture
       // it from the existing row (if any) so the upsert's createdAt is
       // correct on first insert; on conflict we deliberately do not
@@ -305,35 +310,45 @@ export const serviceProfileHandler: RecordHandler = {
           .delete(serviceDeletions)
           .where(and(eq(serviceDeletions.uri, op.uri), sql`${serviceDeletions.deletedRev} < ${repoRev}`))
       }
+      // An operator that has never written presence (an older release) is
+      // judged on its profile writes. A reconciled read is not a write.
+      if (op.reconciled !== true) await noteProfileWrite(tx as never, op.did, observedUs)
+      return true
     })
-
-    // An operator that has never written presence (an older release) is
-    // judged on its profile writes. A reconciled read is not a write.
-    if (op.reconciled !== true) await noteProfileWrite(ctx.db, op.did, observedUs)
-    ctx.metrics.incr('ingester.service_profile.created')
+    if (written) ctx.metrics.incr('ingester.service_profile.created')
   },
 
   async handleDelete(ctx: HandlerContext, op: RecordOp) {
-    if (op.repoRev === undefined) {
-      await ctx.db.delete(services).where(eq(services.uri, op.uri))
-    } else {
-      const rev = op.repoRev
-      // A deletion marker, so a replayed older create cannot bring it back;
-      // and only a row older than the delete is removed.
-      await ctx.db.transaction(async (tx) => {
-        await tx
-          .insert(serviceDeletions)
-          .values({ uri: op.uri, did: op.did, deletedRev: rev })
-          .onConflictDoUpdate({
-            target: serviceDeletions.uri,
-            set: { deletedRev: rev, at: new Date() },
-            setWhere: sql`${serviceDeletions.deletedRev} < ${rev}`,
-          })
-        await tx
-          .delete(services)
-          .where(and(eq(services.uri, op.uri), sql`(${services.repoRev} IS NULL OR ${services.repoRev} < ${rev})`))
-      })
-    }
+    await removeListing(ctx.db, op)
     ctx.metrics.incr('ingester.service_profile.deleted')
   },
 }
+
+/**
+ * Remove a listing (a delete event, or a republish as friends-only), under
+ * the per-DID lock so a create for the same listing can never check for a
+ * marker, wait, and then write after this. With a revision it leaves a
+ * deletion marker and removes only a row older than itself.
+ */
+async function removeListing(db: HandlerContext['db'], op: RecordOp): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockDid(tx as never, op.did)
+    if (op.repoRev === undefined) {
+      await tx.delete(services).where(eq(services.uri, op.uri))
+      return
+    }
+    const rev = op.repoRev
+    await tx
+      .insert(serviceDeletions)
+      .values({ uri: op.uri, did: op.did, deletedRev: rev })
+      .onConflictDoUpdate({
+        target: serviceDeletions.uri,
+        set: { deletedRev: rev, at: new Date() },
+        setWhere: sql`${serviceDeletions.deletedRev} < ${rev}`,
+      })
+    await tx
+      .delete(services)
+      .where(and(eq(services.uri, op.uri), sql`(${services.repoRev} IS NULL OR ${services.repoRev} < ${rev})`))
+  })
+}
+

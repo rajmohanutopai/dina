@@ -90,12 +90,28 @@ export async function readLivenessSettings(db: DrizzleDB, nowUs = Date.now() * 1
  */
 export function ageUsSql(presence: string, nowUs: number): SQL {
   const seen = sql.raw(`COALESCE(${presence}.last_seen_us, 0)`)
+  // Blind time is the UNION of the intervals inside [seen, now]: intervals
+  // may overlap (two gaps noted for one outage, a health drop over a gap),
+  // and summing them would make a dead provider look younger.
   return sql`(
     ${nowUs}::bigint - ${seen}
     - COALESCE((
-        SELECT SUM(GREATEST(0, LEAST(COALESCE(b.end_us, ${nowUs}::bigint), ${nowUs}::bigint) - GREATEST(b.start_us, ${seen})))
-        FROM service_blind_intervals b
-        WHERE COALESCE(b.end_us, ${nowUs}::bigint) > ${seen}
+        SELECT SUM(m.e - m.s) FROM (
+          SELECT MIN(g.s) AS s, MAX(g.e) AS e FROM (
+            SELECT c.s, c.e, SUM(c.brk) OVER (ORDER BY c.s, c.e) AS grp FROM (
+              SELECT x.s, x.e,
+                CASE WHEN x.s <= MAX(x.e) OVER (ORDER BY x.s, x.e ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING)
+                  THEN 0 ELSE 1 END AS brk
+              FROM (
+                SELECT GREATEST(b.start_us, ${seen}) AS s,
+                       LEAST(COALESCE(b.end_us, ${nowUs}::bigint), ${nowUs}::bigint) AS e
+                FROM service_blind_intervals b
+              ) x
+              WHERE x.e > x.s
+            ) c
+          ) g
+          GROUP BY g.grp
+        ) m
       ), 0)
   )`
 }

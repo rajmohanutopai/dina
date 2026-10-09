@@ -1654,8 +1654,11 @@ Additive: a protocol minor version, a line in `docs/conformance.md`
     24 h past its time, so it is still there when a slow first commit lands.
     Before a DID's first record is admitted, its kept status is checked.
   - An inactive status hides that DID's listings and products from every
-    read. A commit observed later than the inactive status proves the account
-    active again, so a lost reactivation cannot hide it for good.
+    read. A commit observed later than a `deactivated` status (the owner's
+    own pause) proves the account active again, so a lost reactivation
+    cannot hide it for good. A host's `takendown` or `suspended`, and
+    `deleted`, are lifted only by a newer `#account` event: a commit from a
+    misbehaving PDS cannot undo a takedown.
   - `deleted` also removes the rows and leaves the inactive status as a
     marker, so a queued older create cannot restore them.
   - Status and commits for one DID are applied under a per-DID advisory lock,
@@ -1924,4 +1927,86 @@ Where the code differs from the design above:
 `service_legacy_sunset` to the deploy day, and turn
 `service_presence_hide_expired` on, so the dead test providers drop out at
 once (§14.7 step 4).
+
+**Security and dual review of `cdb02207` (2026-10-08).** A background
+security review and a dual review (Claude and Codex) of the commit found 22
+issues, all fixed with tests:
+
+- **Core names every agent ask** and binds its authority before Brain runs
+  a tool. A card raised in the ask's first moments now carries its ask id,
+  so "Approve Once" serves that ask alone; the id is random and Core's own,
+  never the caller's `X-Request-Id`. "Approve Once" never takes the 24 h
+  session cap (a card raised outside an ask keeps the one-hour grant).
+- **Messaging a contact** takes the longest run of leading words that names
+  exactly one contact as the recipient ("tell Sancho Panza …").
+- **Only an owner's own pause** is lifted by a later commit (above).
+- **Per-DID budgets for presence**: within six an hour an event is never
+  dropped; beyond that it may be; beyond thirty it is not applied and the
+  DID is re-read instead.
+- **One per-DID lock** covers presence, profile and account writes, so a
+  check and its write cannot be split by another event for the same DID. A
+  presence delete marks the DID as a presence writer, so its listings are
+  withheld even if its first presence record was missed.
+- **Blind time is the union** of the intervals, so overlapping notes of one
+  outage count once.
+- **While the services switch is off**, events are not applied (each DID is
+  queued for a re-read) and the off span is blind time, opened and closed by
+  the consumer. This replaces the design's spool: a re-read gives the
+  newest state without storing every event.
+- **Reconciliation** reads the verified current presence first and reads
+  the listings it names; one deadline covers the whole job; a DID whose
+  presence keeps moving is re-read once soon, then not for an hour; the
+  queue bound (10,000) holds under concurrency, counts a reopened finished
+  job, and a refused request raises a metric.
+- **A failed gap record stops ingestion** from resuming until it is
+  written, as the A2A gap check does.
+- **The phone credits real foreground time** (15 s ticks, at most 20 s a
+  tick), so short sessions add up.
+
+**Round 2 of that review** (both reviewers, on the fixes) found six more,
+all fixed with tests:
+
+- **Explicit boundaries stand.** "let <name> know …" keeps the parser's
+  recipient; only "tell / message / text <name> …" tries longer names. If a
+  run of words names several contacts, or two runs name different ones, the
+  send is a card ("Alex" with contacts Alex and Alex Smith).
+- **Profile deletes take the per-DID lock** too, both the delete event and
+  the friends-only removal, so a create can never land after a newer delete.
+- **The switch-off interval closes on a timer**, within 30 s of the switch
+  coming back on, whether or not a service event arrives.
+- **A re-read that finds no presence record** withdraws only a DID known to
+  write presence; an older release keeps its listings.
+- **The job deadline holds through the last read**: an expired job applies
+  nothing more and reports failure.
+- **The phone measures foreground time from app-state changes**
+  (`foreground_meter.ts`): a session is credited when the app leaves the
+  foreground, with 15 s checkpoints, so a late timer after a suspension
+  credits nothing and short sessions count in full.
+
+**Round 3** (Codex, on round 2's fixes) found three, all fixed with tests:
+
+- **Longer names only where nothing marks the boundary**: a delimiter or
+  "that" after the first word ("tell Sancho: …", "send John: …") keeps the
+  parser's recipient, and the owner's whole message is what goes.
+- **A friends-only republish is a removal like any delete**: at its
+  revision, under the lock, leaving a marker. A stale removal cannot delete
+  a newer listing, and an older update cannot bring one back.
+- **Reconciliation writes in one transaction** with Postgres statement and
+  lock timeouts set to the time left; an expired job rolls back and reports
+  failure, so nothing commits after the deadline.
+
+**Round 4** (Codex) found two edges, fixed with tests: whitespace is
+collapsed before the recipient-boundary check (two spaces before "that"
+no longer step around it), and reconciliation re-checks the deadline and
+resets its statement and lock timeouts to the time left before every write,
+so many quick writes cannot add up past the deadline.
+
+**Accepted residual (round 5).** Reconciliation checks its deadline before
+every handler and bounds each statement by the time left at that point. A
+single handler runs a few statements (the lock, a marker, a delete), each
+bounded by the time left when the handler began, so the job can overrun its
+deadline by those few local statements before the transaction rolls back.
+The overrun is bounded, runs on AppView's own database (a hostile PDS cannot
+slow it), and commits nothing late. Closing it would mean timing every
+statement inside the shared ingest handlers; judged not worth that cost.
 
