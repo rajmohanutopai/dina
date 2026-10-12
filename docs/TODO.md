@@ -9,6 +9,7 @@ Most urgent open items:
 4. **Phone identity and data.** Random signing key when the Keychain rows are missing (#3); vault-salt fallback can set every database aside (#4); runtimes installed twice (#2).
 5. **Confirmed bugs.** Booking can confirm without saving; D2D resends mint new ids and the replay cache is in memory; stopped epoch in memory (#6); bare `order_status` (#5); lite tier ignored (#10); commerce gaps; `sent:true` when nothing was sent; located search drops services with no location; reminder card clips long text; in-flight ask lost on restart.
 6. **PeerLens.** Vouch and inbound-edge counts skip the inbound-vouch filter (sybil gap); review dimension vocabulary not used on the write path (launch gate); AppView namespace and suspension gates never switched on; users cannot retract a review.
+7. **Deck code checks (2026-10-12).** 19 fixes and 12 doc corrections in `docs/FIXES.md`. Worst: the cloud-AI consent gate does nothing (F1), the agent money trust ring never fires (F2), no lb/oz/gal units (F17). PeerLens feature work is in `docs/PEERLENS_COMPLETION_PLAN.md`.
 
 Needs the owner or a device: the four UCP rows; the merchant-directory deploy; the erased-device linked-service bug; agent setup while the phone sleeps; the slow first request; the guided-demo fix.
 
@@ -119,6 +120,36 @@ Problems the readers reported that I didn't check myself
 - AppView gates: PENDING. `setNamespaceGate` / `setPdsSuspensionGate` have no callers outside tests. Sybil/coordination results go to `anomalyEvents`, which no scorer reads.
 - MsgBox global quota: PENDING. Only per-DID `MaxBytesPerDID` (`msgbox/internal/buffer.go`).
 - Docker: DONE. The Dockerfiles now copy every workspace package (d8331ab0, 534b7e24).
+
+
+# Fixes found by the deck code checks
+
+> **Status (checked against the code 2026-10-12, main 9bd04010):** PENDING, all items. Full list with file references in `docs/FIXES.md`; overlaps with the tables above are noted there.
+
+Security and privacy:
+- [ ] F1 Cloud-AI consent gate does nothing (`financial`/`professional` vs seeded `finance`/`work`; consent defaults to yes).
+- [ ] F2 Agent money trust ring never fires (every signed agent marked "verified"; `transfer_money` missing).
+- [ ] F3 Agents pick `send_small`/`send_large` themselves; the count is never read.
+- [ ] F4 CLI self-approves read/lookup/recall when Core is unreachable.
+- [ ] F5 No per-sender limit on incoming service questions inside the provider's Dina.
+- [ ] F6 Owner presence check skipped on nodes that can't verify presence (except photo orders).
+- [ ] F7 PeerLens person scores count moderator takedowns.
+- [ ] F8 DECIDE: service-query parameters skip the outbound D2D checks.
+
+Broken or missing behaviour:
+- [ ] F9 Consent card points to `dina-plugin serve`, which doesn't exist.
+- [ ] F10 `/ask` plugin calls pass no subject, so no context is sent.
+- [ ] F11 Answers paused for approval are lost on restart.
+- [ ] F12 Home server never updates working memory (empty ToC).
+- [ ] F13 Home server has no Claude provider; heavy tier never chosen.
+- [ ] F14 Hybrid search keyword half scans every row; embeddings only with Gemini.
+- [ ] F15 Service editor hardcodes OpenClaw; headless runners drop structured service details.
+- [ ] F16 Catalog `eta_query` parameters don't match Core's schema.
+- [ ] F17 No lb, oz or gal units.
+- [ ] F18 Reminders don't check Do Not Disturb.
+- [ ] F19 PeerLens smaller defects (null `authenticity`, per-instance rate limits, dead friend boost, unscheduled namespace-stats job).
+
+Docs and comments (D1–D12 in `docs/FIXES.md`): Argon2id comment says 64 MB (code: 128 MB); UCP key path; "design only" on built work; stale counts; ARCHITECTURE.md search claims; README briefing and transit claims; CLAUDE.md interpreted plugins.
 
 
 # Control Plane
