@@ -104,6 +104,10 @@ const GRIEF_PATTERNS = [
 
 const ISOLATION_PATTERNS = [
   /\bi\s+(have|'ve\s+got)\s+no\s+(one|friends)\b/i,
+  // "I just need someone to talk to." The clause must end after "talk to" /
+  // "listen": "I need someone to talk to the landlord" is a task
+  // (REAL_LIFE_FIXES_2 §6.1).
+  /\bi\s+(just\s+)?need\s+(someone|somebody|anyone)\s+to\s+(talk\s+to|listen(\s+to\s+me)?)\s*(?:[.!?,;:]|$|\s+(right\s+)?now\b|\s+tonight\b)/i,
   /\bno\s+one\s+(cares|understands|listens)\b/i,
   /\bi\s+(can't|cannot)\s+talk\s+to\s+anyone\b/i,
 ];
@@ -190,7 +194,7 @@ export async function preScreenMessage(userMessage: string): Promise<PreScreenRe
  * phrase pass and the output guard.
  */
 const EMOTION_CUES =
-  /\b(feel|feels|feeling|felt|love|loved|lonely|alone|miss|missing|sad|grief|griev\w*|died|dead|death|passed|funeral|lost|hurt|hurting|cry|crying|scared|afraid|anxious|depress\w*|hopeless|worthless|suicid\w*|kill|die|empty|heartbroken|broken|nobody|no one|friend|friends|only you|you're|you are|talk to you|talking (to|with) you|with you|need you|care about|you always|our conversations?|enjoy)\b/i;
+  /\b(feel|feels|feeling|felt|love|loved|lonely|alone|miss|missing|sad|grief|griev\w*|died|dead|death|passed|funeral|lost|hurt|hurting|cry|crying|scared|afraid|anxious|depress\w*|hopeless|worthless|suicid\w*|kill|die|empty|heartbroken|broken|nobody|no one|friend|friends|only you|you're|you are|talk to you|talking (to|with) you|with you|need you|care about|you always|our conversations?|enjoy|tired|exhausted|drained|can't sleep|cannot sleep|won't sleep|awake all night|need (someone|somebody)|someone to talk to|keep me company|stay with me)\b/i;
 
 export function mayBeEmotional(text: string): boolean {
   return EMOTION_CUES.test(text);

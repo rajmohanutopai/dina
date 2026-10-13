@@ -104,7 +104,20 @@ export function formatServiceQueryResult(details: ServiceQueryEventDetails): str
 const FORMATTERS: Record<string, (details: ServiceQueryEventDetails, name: string) => string> = {
   eta_query: formatEta,
   appointment_status: formatAppointmentStatus,
+  appointment_availability: formatAvailability,
 };
+
+/** "Free on 2026-10-10 at 16:00 and 17:30" (REAL_LIFE_FIXES_2 §12). */
+function formatAvailability(details: ServiceQueryEventDetails, name: string): string {
+  const r = parseResultObject(details.result) as Record<string, unknown>;
+  const slots = Array.isArray(r.slots) ? (r.slots as Record<string, unknown>[]) : [];
+  const times = slots
+    .map((s) => `${stringOrEmpty(s.date) !== '' && stringOrEmpty(s.date) !== stringOrEmpty(r.date) ? `${stringOrEmpty(s.date)} ` : ''}${stringOrEmpty(s.time)}`.trim())
+    .filter((t) => t !== '');
+  if (times.length === 0) return `${name} — no free slots${stringOrEmpty(r.date) !== '' ? ` on ${stringOrEmpty(r.date)}` : ''}.`;
+  const list = times.length === 1 ? times[0] : `${times.slice(0, -1).join(', ')} and ${times[times.length - 1]}`;
+  return `${name} — free${stringOrEmpty(r.date) !== '' ? ` on ${stringOrEmpty(r.date)}` : ''} at ${list}.`;
+}
 
 // ---------------------------------------------------------------------------
 // eta_query
@@ -244,14 +257,29 @@ function stringOrEmpty(v: unknown): string {
 // ---------------------------------------------------------------------------
 
 /**
- * Catch-all formatter for capabilities that haven't registered a
- * bespoke renderer yet. Shows a truncated JSON stringification so the user
- * at least sees *something* rather than a silent empty bubble.
+ * Catch-all formatter for capabilities that haven't registered a bespoke
+ * renderer yet: short "label: value" lines, never raw JSON
+ * (REAL_LIFE_FIXES_2 §12). A list of objects reads as one line per item.
  */
 function formatGeneric(details: ServiceQueryEventDetails, name: string): string {
-  const result = parseResultObject(details.result);
-  const summary = truncate(JSON.stringify(result), 200);
-  return `${name} — response received: ${summary}`;
+  const result = parseResultObject(details.result) as Record<string, unknown>;
+  const label = (k: string) => k.replace(/_/g, ' ');
+  const plain = (v: unknown): string => {
+    if (v === null || v === undefined) return '';
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
+    if (Array.isArray(v)) return v.map(plain).filter((x) => x !== '').join(', ');
+    if (typeof v === 'object')
+      return Object.entries(v as Record<string, unknown>)
+        .map(([k, x]) => (plain(x) === '' ? '' : `${label(k)} ${plain(x)}`))
+        .filter((x) => x !== '')
+        .join(', ');
+    return '';
+  };
+  const lines = Object.entries(result)
+    .map(([k, v]) => (plain(v) === '' ? '' : `${label(k)}: ${truncate(plain(v), 160)}`))
+    .filter((l) => l !== '')
+    .slice(0, 8);
+  return lines.length === 0 ? `${name} — response received.` : `${name}\n${lines.join('\n')}`;
 }
 
 // ---------------------------------------------------------------------------

@@ -203,6 +203,7 @@ import {
   type ServiceQueryIngress,
   personaExists as corePersonaExists,
   resolveInstalledPersonaName as coreResolveInstalledPersonaName,
+  recoverOwnerApprovals,
 } from '@dina/core';
 import { kvPresenceStateStore, makeResolveSender, ServicePresenceWriter } from '@dina/home-node';
 import { startForegroundMeter } from './foreground_meter';
@@ -707,6 +708,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // `getWorkflowService()` / `getWorkflowRepository()`. Installed
     // last so every dependent layer above has wired up first.
     setWorkflowService(workflowService);
+    // REAL_LIFE_FIXES_2: approvals a crash cut short (forgets, purchases,
+    // standing replies, budgets), now that a card's fate can be read.
+    void recoverOwnerApprovals().catch(() => undefined);
     if (reasoningBroker !== null) {
       setReasoningBroker(reasoningBroker);
       reasoningBroker.reconcileSessionAuthorities();

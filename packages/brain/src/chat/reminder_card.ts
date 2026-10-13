@@ -21,9 +21,14 @@ import type { Reminder } from '@dina/core/reminders';
 export function postReminderCard(
   threadId: string,
   reminder: Reminder,
-  opts: { scheduled?: boolean } = {},
+  opts: { scheduled?: boolean; timeZone?: string } = {},
 ): void {
-  addMessage(threadId, 'reminder', reminder.message, {
+  // A scheduled card's text carries its date (REAL_LIFE_FIXES_2 §8.4): the
+  // message is written for when it fires ("… is tomorrow"), and a reader
+  // without the card's date field would otherwise be misled.
+  const content =
+    opts.scheduled === true ? `${formatReminderDue(reminder.due_at, opts.timeZone)} · ${reminder.message}` : reminder.message;
+  addMessage(threadId, 'reminder', content, {
     metadata: {
       kind: 'reminder',
       reminderId: reminder.id,
@@ -34,6 +39,20 @@ export function postReminderCard(
       recurring: reminder.recurring,
       sourceItemId: reminder.source_item_id,
       scheduled: opts.scheduled === true,
+      // The message as written, for a card that shows the date on its own.
+      reminderMessage: reminder.message,
     },
   });
+}
+
+/** "3 Dec, 10:00" in the owner's zone (REAL_LIFE_FIXES_2 §8.4). */
+export function formatReminderDue(ms: number, timeZone?: string): string {
+  try {
+    const d = new Date(ms);
+    const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(timeZone !== undefined ? { timeZone } : {}) });
+    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', ...(timeZone !== undefined ? { timeZone } : {}) });
+    return `${day}, ${time}`;
+  } catch {
+    return new Date(ms).toISOString().slice(0, 16).replace('T', ' ');
+  }
 }

@@ -52,6 +52,7 @@ import {
   type CommerceComparisonLifecycle,
   type GroupPlanLifecycle,
   type QuoteRequestDraftLifecycle,
+  type ExportLifecycle,
   type UcpComparisonLifecycle,
   type ServiceQueryLifecycle,
 } from '../chat/thread';
@@ -295,6 +296,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       postCommerceCard(targetThread, parsed);
       postGroupPlanCard(targetThread, parsed);
       postQuoteRequestDraftCard(targetThread, parsed);
+      postExportCard(targetThread, parsed);
       postUcpComparisonCard(targetThread, parsed);
 
       if (formatHeader !== null && tracking.approvalId !== undefined) {
@@ -435,6 +437,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
       postCommerceCard(callerThread, answer);
       postGroupPlanCard(callerThread, answer);
       postQuoteRequestDraftCard(callerThread, answer);
+      postExportCard(callerThread, answer);
       postUcpComparisonCard(callerThread, answer);
       return {
         response: extractAnswerText(answer),
@@ -694,6 +697,20 @@ function postQuoteRequestDraftCard(threadId: string, answer: unknown): void {
     status: 'ready',
     draftId: `quote_request_draft:${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`,
     draft,
+  };
+  addLifecycleMessage(threadId, '', lifecycle);
+}
+
+/** Post the readable export's card (REAL_LIFE_FIXES_2 §5): manifest and id only. */
+function postExportCard(threadId: string, answer: unknown): void {
+  if (typeof answer !== 'object' || answer === null) return;
+  const raw = (answer as Record<string, unknown>).exportCard as { exportId?: unknown; manifest?: unknown } | undefined;
+  if (raw === undefined || typeof raw.exportId !== 'string' || typeof raw.manifest !== 'object' || raw.manifest === null) return;
+  const lifecycle: ExportLifecycle = {
+    kind: 'export',
+    status: 'ready',
+    exportId: raw.exportId,
+    manifest: raw.manifest as ExportLifecycle['manifest'],
   };
   addLifecycleMessage(threadId, '', lifecycle);
 }

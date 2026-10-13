@@ -130,7 +130,12 @@ Output schema (every key required):
         "general_knowledge"  — facts the LLM itself knows
     ],
     "relevant_personas": [ persona names from the ToC whose data is
-                           worth loading; empty array is allowed ],
+                           worth loading; empty array is allowed. A
+                           persona shown as "(closed to this requester…)"
+                           has no topics listed: include it when the
+                           question is about the user's own matters and
+                           fits its description (e.g. a project's dates
+                           fit "projects, deadlines") ],
     "toc_evidence": {
       "entity_matches": [ ToC entities that matched the query ],
       "theme_matches":  [ ToC themes that matched the query ],

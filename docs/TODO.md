@@ -5,13 +5,27 @@ Each section below now starts with a dated **Status** line. Words used: DONE (th
 Most urgent open items:
 1. **No backups.** PDS, AppView database and infra volumes ("Major issue").
 2. **Server privacy and authority.** Native install runs Core and Brain as one OS user, and Brain gets `DINA_VAULT_DIR` (#7, second half). (2026-10-07: the unscrubbed remember loop (#1) and the `delegate_to_agent` leak are fixed; #7's signing half was already fixed; #12 is a design choice.)
-3. **Likely broken on the server.** Brain gets 403 on `/v1/vault/list`, `/v1/vault/subjects`, `/v1/people` (#8).
+3. **Likely broken on the server.** Brain gets 403 on `/v1/vault/subjects`, `/v1/people` (#8). (2026-10-10: `/v1/vault/list` fixed, and the server's missing working-memory ToC; see REAL_LIFE_FIXES_2 §18.)
 4. **Phone identity and data.** Random signing key when the Keychain rows are missing (#3); vault-salt fallback can set every database aside (#4); runtimes installed twice (#2).
 5. **Confirmed bugs.** Booking can confirm without saving; D2D resends mint new ids and the replay cache is in memory; stopped epoch in memory (#6); bare `order_status` (#5); lite tier ignored (#10); commerce gaps; `sent:true` when nothing was sent; located search drops services with no location; reminder card clips long text; in-flight ask lost on restart.
 6. **PeerLens.** Vouch and inbound-edge counts skip the inbound-vouch filter (sybil gap); review dimension vocabulary not used on the write path (launch gate); AppView namespace and suspension gates never switched on; users cannot retract a review.
 7. **Deck code checks (2026-10-12).** 19 fixes and 12 doc corrections in `docs/FIXES.md`. Worst: the cloud-AI consent gate does nothing (F1), the agent money trust ring never fires (F2), no lb/oz/gal units (F17). PeerLens feature work is in `docs/PEERLENS_COMPLETION_PLAN.md`.
 
 Needs the owner or a device: the four UCP rows; the merchant-directory deploy; the erased-device linked-service bug; agent setup while the phone sleeps; the slow first request; the guided-demo fix.
+
+# Safety checks on replies (decisions)
+
+> **Status (2026-10-10):** PARTIAL. Built: a fixed-choice decision call in the router (`LLMRouter.decide`, consent gate and PII scrub included); Jev through OpenRouter as its backend (zero data retention requested) when the owner's model is on OpenRouter; the guard scan asks Jev one yes/no per sentence and falls back to the owner's model, now with thinking turned down. See REAL_LIFE_FIXES_2 §18.
+
+Not done yet:
+1. **On-device decision model.** Laya CoreML on iPhone, behind `decide`, offered as a download. The Settings button exists, disabled ("coming soon"). Check its licence, size, multilingual accuracy and our Anti-Her cases first. Server: Laya itself; Android: a LiteRT port.
+2. **A checks-only OpenRouter key** for owners whose model is OpenAI, Gemini or Claude, so they get Jev too while their conversation stays with their vendor.
+3. **Our own small classifier**, trained on labelled replies, run locally: a separate project.
+4. **Low thinking on Gemini.** The router asks for it, but the Gemini adapter ignores it; only OpenAI and OpenRouter honour it.
+5. **OpenAI effort key.** `AISDKAdapter` sends `openai.reasoning.effort`, which the SDK ignores (it reads `reasoningEffort`), so the "lowest effort" floor for OpenAI models has never applied. Fixing it also cuts thinking on reasoning turns, which an older note says hurt tool planning: decide and test before changing.
+6. **Jev's data terms.** OpenRouter's Jev page states no retention period; TypeSafe offers zero retention to enterprise only. Confirm that `zdr: true` is honoured on the decisions endpoint.
+7. **Approvals inbox hides new cards past 50.** `listPendingApprovals` (apps/mobile `useServiceInbox.ts`) asks Core for 50 pending cards, and Core lists oldest first (`listByKindAndState`, `ORDER BY created_at ASC`). With more than 50 waiting, a card the owner just caused (a forget, a talk send) never shows. Core needs newest-first (or paging), and the inbox should use it. Found 2026-10-10 by the scenario harness, which hit the same cap at 100.
+8. **From live testing (2026-10-13):** (a) an incoming message reaches the server chat only after Brain classifies it (about a minute on OpenRouter); post the bubble first, as the comment in the drain intends. (b) Dina's reply to a card-raising request can open with "I've set up…" before saying a card waits; the action-claim check does not cover that verb. (c) In limited mode the web inbox and chat show only what this page saw; after a reload the inbox can look empty while Core holds the card (web thin-client work). (d) `dina-nodes/agent.sh` assumes the CLI nests its config under `.dina/cli`; this checkout's CLI saves straight into `--config-dir`, so `agent.sh session` fails here. (e) Web Approve opens a browser confirm, which automated browser tests cannot answer.
 
 # Remaining things in UCP
 

@@ -302,3 +302,33 @@ describe('Brain cannot forge provenance or reach originals (M1b)', () => {
     expect(view.body).not.toHaveProperty('placeholder_legend');
   });
 });
+
+describe("Brain cannot forge or answer the owner's message card (REAL_LIFE_FIXES_2 §0)", () => {
+  it('cannot create one (400)', async () => {
+    const resp = await call('brain', 'POST', '/v1/workflow/tasks', {
+      id: 'brain-talk',
+      kind: 'approval',
+      description: 'x',
+      payload: JSON.stringify({ type: 'owner_talk_send', recipient_did: 'did:plc:someone', recipient_name: 'Someone', text: 'hi' }),
+    });
+    expect(resp.status).toBe(400);
+    expect(errorOf(resp)).toBe('reserved_payload_type');
+  });
+
+  it.each(['approve', 'cancel'])('cannot %s one Core raised (403)', async (verb) => {
+    const { getWorkflowService } = await import('../../src/workflow/service');
+    const { WorkflowTaskKind, WorkflowTaskState } = await import('../../src/workflow/domain');
+    getWorkflowService()!.create({
+      id: 'talk-card-1',
+      kind: WorkflowTaskKind.Approval,
+      description: 'Send to Someone',
+      payload: JSON.stringify({ type: 'owner_talk_send', recipient_did: 'did:plc:someone', recipient_name: 'Someone', text: 'hi' }),
+      expiresAtSec: Math.floor(Date.now() / 1000) + 600,
+      origin: 'system',
+      initialState: WorkflowTaskState.PendingApproval,
+    });
+    const resp = await call('brain', 'POST', `/v1/workflow/tasks/talk-card-1/${verb}`, {});
+    expect(resp.status).toBe(403);
+    expect(world.repo.getById('talk-card-1')?.status).toBe('pending_approval');
+  });
+});

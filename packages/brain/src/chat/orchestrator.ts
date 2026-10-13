@@ -29,7 +29,7 @@ import {
   setCurrentOwnerTurn,
   type RememberChatOutcome,
 } from './owner_turns';
-import { postReminderCard } from './reminder_card';
+import { formatReminderDue, postReminderCard } from './reminder_card';
 import { plainResponse, richResponse, errorResponse, type BotResponse } from './response_types';
 import { addUserMessage, addDinaResponse, addLifecycleMessage } from './thread';
 
@@ -381,6 +381,8 @@ export interface RememberDrainResult {
   notYetFiled?: boolean;
   /** The owner already had this memory (REAL_LIFE_FIXES §2.4). */
   duplicate?: boolean;
+  /** Earlier memories this one changes (REAL_LIFE_FIXES_2 §8.2). */
+  changes?: { priorSummary: string; relation: 'supersedes' | 'conflicts' }[];
 }
 
 /** Owner-facing words for a content-free failure code. */
@@ -410,7 +412,7 @@ export function resetRememberDrainHook(): void {
 }
 
 export type RememberCoreClient = Pick<CoreClient, 'stagingIngest'> &
-  Partial<Pick<CoreClient, 'stagingIngestOwnerWords'>>;
+  Partial<Pick<CoreClient, 'stagingIngestOwnerWords' | 'getOwnerTimeZone'>>;
 
 let rememberCoreClient: RememberCoreClient | null = null;
 
@@ -501,6 +503,14 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
   }
 
   const { persona } = drainResult;
+  // REAL_LIFE_FIXES_2 §8.2: say what the new memory changes.
+  const changeLine = (drainResult.changes ?? [])
+    .map((c) =>
+      c.relation === 'supersedes'
+        ? ` Earlier you told me "${clip(c.priorSummary)}"; I'll treat this as current.`
+        : ` Earlier you told me "${clip(c.priorSummary)}". Which is right?`,
+    )
+    .join('');
   if (persona === null) {
     // MT-13-I1: pending_unlock is the "classifier picked a closed
     // persona, write parked behind an approval" case. Telling the
@@ -554,8 +564,20 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
     .sort((a, b) => a.due_at - b.due_at);
 
   if (reminders.length === 0) {
-    return plainResponse(`Stored in ${personaName} vault.`);
+    return plainResponse(`Stored in ${personaName} vault.${changeLine}`);
   }
+
+  // REAL_LIFE_FIXES_2 §8.4: the reply names the reminders by date, in the
+  // owner's time zone. A reminder's own text is written for when it fires
+  // ("… is tomorrow"), so on its own it misleads anyone reading it now.
+  let zone: string | undefined;
+  try {
+    zone = (await rememberCoreClient.getOwnerTimeZone?.())?.timezone;
+  } catch {
+    zone = undefined;
+  }
+  const when = reminders.map((r) => formatReminderDue(r.due_at, zone));
+  const list = when.length === 1 ? when[0] : `${when.slice(0, -1).join(', ')} and ${when[when.length - 1]}`;
 
   // Render created reminders as scheduled cards (InlineReminderCard in
   // its `scheduled` state) instead of a raw "[id] 🔔 time — text" list,
@@ -563,11 +585,19 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
   // per reminder, then return empty so processMessage doesn't append
   // another bubble (same "handler posted its own messages" contract the
   // service-query path uses).
-  addDinaResponse(thread, `Stored in ${personaName} vault.`);
+  addDinaResponse(
+    thread,
+    `Stored in ${personaName} vault.${changeLine} Reminder${reminders.length === 1 ? '' : 's'} set for ${list}.`,
+  );
   for (const r of reminders) {
-    postReminderCard(thread, r, { scheduled: true });
+    postReminderCard(thread, r, { scheduled: true, timeZone: zone });
   }
   return plainResponse('');
+}
+
+function clip(text: string): string {
+  const t = text.trim().replace(/\s+/g, ' ');
+  return t.length <= 160 ? t : `${t.slice(0, 160)}…`;
 }
 
 /** Handle /ask or detected question: reason pipeline. */

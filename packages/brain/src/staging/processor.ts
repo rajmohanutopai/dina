@@ -47,6 +47,11 @@ export interface StagingProcessResult {
   /** Personas Core confirmed it stored to (stored results only). */
   storedPersonas?: string[];
   /**
+   * REAL_LIFE_FIXES_2 §8.2: earlier memories this one changes, for the
+   * owner-facing reply (stored results only). Never logged.
+   */
+  changes?: { priorSummary: string; relation: 'supersedes' | 'conflicts' }[];
+  /**
    * Short, content-free reason for `failed` / `parked` (an error code or a
    * persona name, never item text), for the owner-facing reply.
    */

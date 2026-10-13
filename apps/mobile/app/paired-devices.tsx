@@ -29,6 +29,7 @@ import {
   Pressable,
   TouchableOpacity,
   ActivityIndicator,
+  Switch,
 } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -155,6 +156,10 @@ export default function PairedDevicesScreen() {
   // grants. Staff devices get their authority on the Staff screen; the
   // pairing only mints the identity.
   const [role, setRole] = useState<PairableRole>('agent');
+  // REAL_LIFE_FIXES_2 §7.2: work-type personas a new agent may read from the
+  // start. None ticked by default; an unticked one raises a card when asked.
+  const [standardPersonas, setStandardPersonas] = useState<{ name: string; description: string }[]>([]);
+  const [allowedPersonas, setAllowedPersonas] = useState<ReadonlySet<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
   const [now, setNow] = useState(() => Math.floor(Date.now() / 1000));
@@ -209,6 +214,7 @@ export default function PairedDevicesScreen() {
     try {
       const status = await client.status();
       setDevices(status.devices.map(toRow));
+      setStandardPersonas(status.standard_personas ?? []);
       setApprovalPhone(status.phone);
       setDevicesError(null);
     } catch (err) {
@@ -429,7 +435,7 @@ export default function PairedDevicesScreen() {
       // no coding agent can send a checkout card or a link to open.
       const minted =
         pairing === 'agent'
-          ? await client.mintCodingAgentCode(name)
+          ? await client.mintCodingAgentCode(name, [...allowedPersonas])
           : pairing === 'node'
             ? await client.mintServerNodeCode(name)
             : await client.mintStaffCode(name);
@@ -440,7 +446,7 @@ export default function PairedDevicesScreen() {
         setupCode: minted.setup_code,
       });
     }).finally(() => setGenerating(false));
-  }, [deviceName, role, gated]);
+  }, [deviceName, role, gated, allowedPersonas]);
 
   const secondsRemaining = liveCode === null ? 0 : Math.max(0, liveCode.expiresAt - now);
 
@@ -650,6 +656,33 @@ export default function PairedDevicesScreen() {
               </TouchableOpacity>
             ))}
           </View>
+
+          {role === 'agent' && standardPersonas.length > 0 && (
+            <View testID="paired-devices-standard-personas">
+              <Text style={styles.help}>
+                Vaults this agent may read without asking you each time. Leave them off and
+                Dina asks you when it wants one.
+              </Text>
+              {standardPersonas.map((p) => (
+                <View key={p.name} style={styles.roleRow}>
+                  <Switch
+                    testID={`paired-devices-persona-${p.name}`}
+                    value={allowedPersonas.has(p.name)}
+                    onValueChange={(on) =>
+                      setAllowedPersonas((prev) => {
+                        const next = new Set(prev);
+                        if (on) next.add(p.name);
+                        else next.delete(p.name);
+                        return next;
+                      })
+                    }
+                    accessibilityLabel={`Let this agent read ${p.name}`}
+                  />
+                  <Text style={styles.help}>{p.name}</Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           {/*
             Role picker removed: today every paired entry is a

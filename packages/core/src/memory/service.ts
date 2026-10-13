@@ -167,10 +167,18 @@ export class MemoryService {
       }
     }
 
-    // Stable descending sort by decayed salience. Array#sort is
-    // stable in ES2019+, so ties preserve per-persona insertion
-    // order — keeps results deterministic across process runs.
-    merged.sort((a, b) => b.salience - a.salience);
+    // Interleave by rank within each persona, then by salience
+    // (REAL_LIFE_FIXES_2 §7.2): every persona's best topics come before
+    // any persona's runners-up, so a busy persona cannot crowd another
+    // out of the top N. Array#sort is stable, so the order is deterministic.
+    const rankOf = new Map<TocEntry, number>();
+    const seen = new Map<string, number>();
+    for (const entry of [...merged].sort((a, b) => b.salience - a.salience)) {
+      const r = seen.get(entry.persona) ?? 0;
+      rankOf.set(entry, r);
+      seen.set(entry.persona, r + 1);
+    }
+    merged.sort((a, b) => (rankOf.get(a) ?? 0) - (rankOf.get(b) ?? 0) || b.salience - a.salience);
     const returned = merged.slice(0, limit);
     const byPersona = new Map<string, string[]>();
     for (const entry of returned) byPersona.set(entry.persona, [...(byPersona.get(entry.persona) ?? []), entry.topic]);

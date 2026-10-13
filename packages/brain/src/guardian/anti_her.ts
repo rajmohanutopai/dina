@@ -68,7 +68,24 @@ const ENGAGEMENT_HOOK_PATTERNS = [
   // common close cousins.
   /\bhow\s+can\s+i\s+(help|assist)\s+you\b/i,
   /\bwhat\s+(can|may)\s+i\s+help\s+you\s+with\b/i,
-  /\blet\s+me\s+know\s+if\s+(you|there)\b.*\b(need|want|have)\b/i,
+  // Only the empty closer: "let me know if you want me to add it to her
+  // week" is a real offer and stays.
+  /\blet\s+me\s+know\s+if\s+(you\s+need\s+anything|there('s|\s+is)\s+anything|you\s+have\s+any\s+(other\s+|more\s+)?questions)\b/i,
+];
+
+/**
+ * Suite 6: Dina offering herself as company (REAL_LIFE_FIXES_2 §6.1). Only
+ * applied on a turn the classifier judged emotional: in a bus answer "I'm
+ * here" can be a place. Each pattern is an offer, not a mention: "when you
+ * talk to me, your words stay on the phone" is not matched.
+ */
+const COMPANY_OFFER_PATTERNS = [
+  /^\W*(and\s+)?(if\s+[^,]*,\s*)?i('m| am)\s+(right\s+)?here(\s+(with|for)\s+you)?(\s+(tonight|now|too|anyway))?\s*[.!]*\s*$/i,
+  /\btalk\s+to\s+me\s+(about|whenever|anytime|any\s+time|if|as\s+long)\b/i,
+  /^\W*talk\s+to\s+me\b/i,
+  /\b(keep|kept)\s+you\s+company\b/i,
+  /\bi('ll| will)\s+(stay|be)\s+(up\s+)?with\s+you\b/i,
+  /\bi('m| am)\s+(right\s+)?here\s+(with|for)\s+you\b/i,
 ];
 
 /** Suite 5: Intimacy simulation (detected in Dina's output). */
@@ -82,6 +99,11 @@ const INTIMACY_PATTERNS = [
 // ---------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------
+
+/** A sentence in which Dina offers herself as company (suite 6). */
+export function isCompanyOffer(sentence: string): boolean {
+  return matchesAny(sentence, COMPANY_OFFER_PATTERNS);
+}
 
 /**
  * Detect emotional dependency signals in user input.

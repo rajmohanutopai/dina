@@ -3864,6 +3864,22 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE agent_persona_grants ADD COLUMN ask_id TEXT;
     `,
   },
+  {
+    // REAL_LIFE_FIXES_2 §7.2 — a standard persona needs a grant for agents.
+    // A 'standing' grant matches any session of its agent and does not expire
+    // (expires_at holds a far-future sentinel: the column is NOT NULL); every
+    // existing row keeps 'session' and its meaning. `granted_tier` binds a
+    // grant to the tier it was given at: it counts only while the persona is
+    // no more protected (NULL on older rows = given at the most protected
+    // tier, so they keep working as before).
+    version: 70,
+    name: 'agent_persona_grants_standing',
+    sql: `
+      ALTER TABLE agent_persona_grants ADD COLUMN grant_kind TEXT NOT NULL DEFAULT 'session'
+        CHECK (grant_kind IN ('session', 'standing'));
+      ALTER TABLE agent_persona_grants ADD COLUMN granted_tier TEXT;
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

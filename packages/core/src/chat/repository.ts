@@ -43,6 +43,8 @@ export interface ChatMessageRepository {
   listThreadIds(): Promise<string[]>;
   /** Delete an entire thread. Returns `true` iff any row was removed. */
   deleteThread(threadId: string): Promise<boolean>;
+  /** Delete single messages by id (REAL_LIFE_FIXES_2 §4.4). Returns how many went. */
+  deleteMessages?(ids: readonly string[]): Promise<number>;
   /** Remove every thread + message. Testing / identity-reset. */
   reset(): Promise<void>;
 }
@@ -126,6 +128,16 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
       [...scopedParams()],
     );
     return rows.map((r) => String(r.thread_id));
+  }
+
+  async deleteMessages(ids: readonly string[]): Promise<number> {
+    if (ids.length === 0) return 0;
+    this.db.execute('PRAGMA secure_delete=ON');
+    let n = 0;
+    this.db.transaction(() => {
+      for (const id of ids) n += this.db.run(`DELETE FROM chat_messages WHERE id = ? AND ${scopedWhere()}`, [id, ...scopedParams()]);
+    });
+    return n;
   }
 
   async deleteThread(threadId: string): Promise<boolean> {
@@ -242,6 +254,16 @@ export class InMemoryChatMessageRepository implements ChatMessageRepository {
     return Array.from(
       new Set(this.rows.filter((r) => r.scope === scope).map((r) => r.msg.threadId)),
     ).sort();
+  }
+
+  async deleteMessages(ids: readonly string[]): Promise<number> {
+    const scope = currentDataScope();
+    const set = new Set(ids);
+    const before = this.rows.length;
+    for (let i = this.rows.length - 1; i >= 0; i--) {
+      if (this.rows[i].scope === scope && set.has(this.rows[i].msg.id)) this.rows.splice(i, 1);
+    }
+    return before - this.rows.length;
   }
 
   async deleteThread(threadId: string): Promise<boolean> {

@@ -299,8 +299,11 @@ export class Dina {
   }
 
   async tasks(kind: string, state: string): Promise<{ id: string; kind: string; state: string; payload?: string }[]> {
-    const r = await this.core('GET', '/v1/workflow/tasks', { query: { kind, state } });
-    return (r.body?.tasks ?? []) as never;
+    // Core lists oldest first, 100 by default (500 at most). A long run
+    // leaves more than 100 cards pending, so read the most and put the
+    // newest first: callers look for the card they just caused.
+    const r = await this.core('GET', '/v1/workflow/tasks', { query: { kind, state, limit: '500' } });
+    return [...((r.body?.tasks ?? []) as { id: string; kind: string; state: string; payload?: string }[])].reverse() as never;
   }
 
   /** Send a D2D message as the owner (the Talk screen's path). */

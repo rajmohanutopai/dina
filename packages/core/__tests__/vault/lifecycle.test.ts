@@ -81,8 +81,9 @@ describe('Vault Persona Tier Lifecycle', () => {
     it('default → agent can access freely (no grant needed)', () => {
       expect(agentCanAccess('default', false)).toBe(true);
     });
-    it('standard → agent can access freely in V1 (no grant needed)', () => {
-      expect(agentCanAccess('standard', false)).toBe(true);
+    it('standard → agent needs a grant (REAL_LIFE_FIXES_2 §7.2)', () => {
+      expect(agentCanAccess('standard', false)).toBe(false);
+      expect(agentCanAccess('standard', true)).toBe(true);
     });
     it('sensitive → agent without grant denied', () => {
       expect(agentCanAccess('sensitive', false)).toBe(false);

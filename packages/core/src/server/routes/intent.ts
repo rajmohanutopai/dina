@@ -51,6 +51,8 @@
  *   CAPABILITIES.md "She Guards Your Agents"
  */
 
+import { formatMoney } from '../../commerce/money_display';
+import { evaluateSpend } from '../../spend/allowance';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
@@ -337,6 +339,67 @@ export function registerIntentRoutes(router: CoreRouter): void {
       };
     }
 
+    // REAL_LIFE_FIXES_2 §15: a declared purchase may be covered by an
+    // allowance the owner set for this agent. The amount, merchant and
+    // category are the agent's claim; Dina never moves money.
+    let spendClaim: { value_minor: number; currency: string; merchant: string; category: string; request_key: string } | undefined;
+    let spendProposalId: string | undefined;
+    // Only a signed agent spends its own allowance: any other caller (the
+    // phone's in-process Brain, a device) gets the owner's card as before.
+    const agentSpend = req.callerType === 'agent' && typeof req.callerDID === 'string' && req.callerDID !== '';
+    if (agentSpend && action === 'purchase' && decision.riskLevel === 'HIGH' && body.amount !== undefined) {
+      const spend = await evaluateSpend({
+        agentDid: req.callerDID!,
+        amount: body.amount,
+        merchant: body.merchant,
+        category: body.category,
+        requestKey: body.request_key,
+      });
+      if (spend.kind === 'invalid') return { status: 400, body: { error: spend.error } };
+      if (spend.kind === 'conflict') {
+        return { status: 409, body: { error: 'request_key was used for a different purchase' } };
+      }
+      if (spend.kind === 'auto') {
+        return {
+          status: 200,
+          body: {
+            action: 'auto_approve',
+            risk: decision.riskLevel,
+            reason: "Within the owner's allowance for this agent (the agent pays at the merchant; Dina moves no money)",
+            approved: true,
+            requires_approval: false,
+            proposal_id: spend.proposalId,
+          } satisfies AgentValidateResponse,
+        };
+      }
+      // A retry of a purchase already sent for review: the same card. If
+      // that card was never created (the first try failed after the record
+      // was written), it is created now under the recorded id.
+      const cardExists = getWorkflowRepository()?.getById(spend.proposalId) != null;
+      if (!spend.fresh && cardExists) {
+        return {
+          status: 200,
+          body: {
+            action: 'flag_for_review',
+            risk: decision.riskLevel,
+            reason: `${riskAdjective(decision.riskLevel)}-risk action: ${action} requires user approval`,
+            approved: false,
+            requires_approval: true,
+            proposal_id: spend.proposalId,
+          } satisfies AgentValidateResponse,
+        };
+      }
+      const a = body.amount as { value_minor: number; currency: string };
+      spendProposalId = spend.proposalId;
+      spendClaim = {
+        value_minor: a.value_minor,
+        currency: a.currency,
+        merchant: typeof body.merchant === 'string' ? body.merchant.slice(0, 200) : '',
+        category: typeof body.category === 'string' ? body.category.slice(0, 200) : '',
+        request_key: String(body.request_key).trim(),
+      };
+    }
+
     // MODERATE with an active session approval — auto-approve without
     // surfacing a new card. HIGH always requires explicit approval.
     // Session approvals are now keyed on (agentDid, sessionId, action)
@@ -363,7 +426,7 @@ export function registerIntentRoutes(router: CoreRouter): void {
 
     // ID prefix mirrors Brain's `uuid4()` proposal IDs but stays
     // recognisable in audit / approvals UI as an intent proposal.
-    const proposalId = `prop-intent-${bytesToHex(randomBytes(8))}`;
+    const proposalId = spendProposalId ?? `prop-intent-${bytesToHex(randomBytes(8))}`;
     const nowMs = Date.now();
     const nowSec = Math.floor(nowMs / 1000);
     const expiresAtSec = nowSec + DEFAULT_TTL_SEC;
@@ -375,7 +438,11 @@ export function registerIntentRoutes(router: CoreRouter): void {
       status: 'pending_approval',
       priority: decision.riskLevel === 'HIGH' ? 'high' : 'normal',
       description:
-        target !== '' ? `${action}: ${targetPreview}` : `Agent intent: ${action}`,
+        spendClaim !== undefined
+          ? `${action}: the agent states ${formatMoney({ currency: spendClaim.currency, minor_units: String(spendClaim.value_minor) } as Parameters<typeof formatMoney>[0])}${spendClaim.merchant !== '' ? ` at ${spendClaim.merchant}` : ''}${targetPreview !== '' ? ` (${targetPreview})` : ''}`
+          : target !== ''
+            ? `${action}: ${targetPreview}`
+            : `Agent intent: ${action}`,
       payload: JSON.stringify({
         type: 'intent_validation',
         action,
@@ -385,6 +452,7 @@ export function registerIntentRoutes(router: CoreRouter): void {
         trust_level: trustLevel,
         risk_level: decision.riskLevel,
         reason: decision.reason,
+        ...(spendClaim !== undefined ? { spend: spendClaim } : {}),
       }),
       result_summary: '',
       policy: '',

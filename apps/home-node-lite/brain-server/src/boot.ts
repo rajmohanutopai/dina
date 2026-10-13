@@ -373,6 +373,8 @@ export async function bootServer(
             llm: scrubbedLLM,
             personas: personaDescriptors,
             defaultPersona: 'general',
+            // The owner's zone from Core, not the server's (REAL_LIFE_FIXES_2 §0).
+            timezoneSource: async () => (await core.getOwnerTimeZone()).timezone,
           })
         : undefined;
     if (rememberRuntime === undefined) {
@@ -510,9 +512,23 @@ export async function bootServer(
             mode: 'fts5',
             text: query,
             limit: 5,
+            wordForms: true,
             ...(opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : {}),
           });
           return result.items.map((item) => ({
+            id: String(item.id ?? ''),
+            content_l0: String(item.content_l0 ?? item.summary ?? ''),
+            ...(typeof item.body === 'string' ? { body: item.body } : {}),
+            persona,
+          }));
+        },
+        // REAL_LIFE_FIXES_2 §9.2: an inventory question reads the newest items too.
+        async recent(persona: string, limit: number, opts?: { releaseSession?: string }) {
+          const page = await liteCoreClient.vaultList(persona, {
+            limit,
+            ...(opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : {}),
+          });
+          return (page.items as Record<string, unknown>[]).map((item) => ({
             id: String(item.id ?? ''),
             content_l0: String(item.content_l0 ?? item.summary ?? ''),
             ...(typeof item.body === 'string' ? { body: item.body } : {}),

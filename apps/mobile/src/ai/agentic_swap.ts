@@ -21,7 +21,7 @@
  */
 
 
-import { createLLMProvider } from './provider';
+import { createDecisionBackend, createLLMProvider } from './provider';
 
 import type { ProviderType } from './provider';
 import type { LLMRouter, ProviderName } from '@dina/brain/llm';
@@ -58,5 +58,8 @@ export async function swapAgenticActiveProvider(
   const llm = await createLLMProvider(provider);
   if (llm === null) return false;
   activeRouter.replaceCloudProvider(provider as ProviderName, llm);
+  // The small checks follow the provider: Jev on OpenRouter, else the
+  // owner's model (REAL_LIFE_FIXES_2 §18).
+  activeRouter.setDecisionBackend(await createDecisionBackend(provider));
   return true;
 }

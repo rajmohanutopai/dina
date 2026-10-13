@@ -71,7 +71,21 @@ import {
   denyApproval,
   drainForApprovalWithEffects,
 } from '../../staging/service';
-import { isOwnerTalkSendApproval, sendApprovedOwnerTalk } from '../../talk/owner_send';
+import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
+import {
+  activateAllowance,
+  declineAllowance,
+  isSpendAllowanceApproval,
+  OWNER_SPEND_ALLOWANCE_TYPE,
+  recordApprovedSpend,
+} from '../../spend/allowance';
+import {
+  activateStandingReply,
+  declineStandingReply,
+  isStandingReplyApproval,
+  OWNER_STANDING_REPLY_TYPE,
+} from '../../standing/standing_replies';
+import { isOwnerTalkSendApproval, OWNER_TALK_SEND_APPROVAL_TYPE, sendApprovedOwnerTalk } from '../../talk/owner_send';
 import {
   WorkflowTaskKind,
   WorkflowTaskState,
@@ -1208,13 +1222,47 @@ async function approveTask(
     return approved;
   }
 
+  // REAL_LIFE_FIXES_2 §15: approving an allowance card makes it live.
+  if (isSpendAllowanceApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+    const approved = service.approve(id);
+    if (await activateAllowance(approved)) return settleApprovedCard(service, id, JSON.stringify({ active: true }), 'allowance on');
+    return service.fail(id, 'allowance could not be turned on');
+  }
+
+  // REAL_LIFE_FIXES_2 §14: approving a standing-reply card makes it live.
+  if (isStandingReplyApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+    const approved = service.approve(id);
+    const live = await activateStandingReply(approved);
+    if (live) return settleApprovedCard(service, id, JSON.stringify({ active: true }), 'standing reply on');
+    return service.fail(id, 'standing reply could not be turned on');
+  }
+
+  // REAL_LIFE_FIXES_2 §4: approving a forget card runs the durable job; the
+  // card completes only when every step ran (or every open persona's did).
+  if (isOwnerForgetApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+    const approved = service.approve(id);
+    let state: Awaited<ReturnType<typeof approveForget>> = null;
+    try {
+      state = await approveForget(approved);
+    } catch {
+      // Not finished yet (a vault still loading): the job resumes and
+      // settles the card itself; nothing is reported done before then.
+      return approved;
+    }
+    if (state === 'done') return settleApprovedCard(service, id, JSON.stringify({ forgotten: true }), 'forgotten');
+    if (state === 'waiting_on_unlock') {
+      return settleApprovedCard(service, id, JSON.stringify({ forgotten: true, waiting_on_unlock: true }), 'forgotten; the rest when a closed vault is next unlocked');
+    }
+    return approved;
+  }
+
   // REAL_LIFE_FIXES §7: approving an owner-talk confirm card sends exactly
   // the frozen recipient and text, then completes the card.
   if (isOwnerTalkSendApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
     const approved = service.approve(id);
     const sent = await sendApprovedOwnerTalk(approved);
     if (sent.status === 'sent') {
-      return service.complete(id, JSON.stringify({ sent: true }), `sent to ${sent.recipient_name}`);
+      return settleApprovedCard(service, id, JSON.stringify({ sent: true }), `sent to ${sent.recipient_name}`);
     }
     return service.fail(id, `send failed: ${'reason' in sent ? sent.reason : sent.status}`);
   }
@@ -1306,6 +1354,18 @@ async function approveTask(
   ) {
     const approved = service.approve(id); // throws → no grant written (fix #1)
     writeSessionGrant();
+    // REAL_LIFE_FIXES_2 §15: an approved purchase that carried an amount
+    // counts against the agent's live allowance, once.
+    // Awaited, so the count is written before the agent can learn of the
+    // approval; a crash in between is settled at boot (reconcileSpend).
+    const spend = before !== null ? (safeParseBody(before.payload) as { type?: unknown; spend?: { request_key?: unknown }; agent_did?: unknown } | null) : null;
+    if (spend?.type === 'intent_validation' && typeof spend.spend?.request_key === 'string' && typeof spend.agent_did === 'string') {
+      try {
+        await recordApprovedSpend({ agentDid: spend.agent_did, requestKey: spend.spend.request_key, proposalId: id });
+      } catch {
+        /* settled at boot */
+      }
+    }
     return approved;
   }
 
@@ -1363,6 +1423,23 @@ function safeParseBody(raw: string): Record<string, unknown> | null {
   }
 }
 
+/**
+ * Complete an approved card whose action Core ran itself (a message sent, a
+ * forget done). An approved card sits `queued`, and `queued → completed` is
+ * not a valid transition: it is claimed for execution (`running`) first.
+ * Before REAL_LIFE_FIXES_2 the message card called `complete` straight from
+ * `queued`, which threw after the message had gone.
+ */
+export function settleApprovedCard(
+  service: NonNullable<ReturnType<typeof getWorkflowService>>,
+  id: string,
+  resultJSON: string,
+  summary: string,
+): WorkflowTask {
+  service.store().claimApprovalForExecution(id, 60, Math.floor(Date.now() / 1000));
+  return service.complete(id, resultJSON, summary);
+}
+
 function cancelTask(
   id: string,
   body: Record<string, unknown> | null,
@@ -1384,6 +1461,9 @@ function cancelTask(
   // Cancel first; deny only once the cancellation has committed. Mirrors the
   // approve path's transition-first ordering (Round-15 #2).
   const cancelled = service.cancel(id, reason);
+  if (isOwnerForgetApproval(before) && before !== null) void cancelForget(before);
+  if (isStandingReplyApproval(before) && before !== null) void declineStandingReply(before);
+  if (isSpendAllowanceApproval(before) && before !== null) void declineAllowance(before);
   if (isStagingApproval) {
     denyApproval(id, reason);
   }
@@ -1534,6 +1614,8 @@ export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map
     'offering a price below your automatic limit needs a person present',
   ],
   [PAYMENT_EVIDENCE_RECORD_TYPE, 'recording a payment needs a person present'],
+  [OWNER_FORGET_APPROVAL_TYPE, 'forgetting cannot be undone, so it needs a person present'],
+  [OWNER_SPEND_ALLOWANCE_TYPE, 'letting an agent spend needs a person present'],
   [STAFF_ESCALATION_APPROVAL_TYPE, 'approving a clerk above their limit needs a person present'],
   [INTEGRATION_SETTINGS_PROPOSAL_TYPE, 'changing supplier settings needs a person present'],
   // UCP plan §3.7: a person, not an agent, opens a merchant's payment page.
@@ -1601,6 +1683,15 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   UCP_ORDER_NOTICE_TYPE,
   // §3.17 — "link your account at this merchant?": its yes opens the merchant's sign-in page.
   UCP_LINK_HANDOFF_TYPE,
+  // REAL_LIFE_FIXES_2 §0 — "send exactly this to that contact?" Core mints it
+  // from the owner's proven turn; Brain may neither forge nor answer it.
+  OWNER_TALK_SEND_APPROVAL_TYPE,
+  // REAL_LIFE_FIXES_2 §4 — "forget all of this?" Core plans it; only the owner decides.
+  OWNER_FORGET_APPROVAL_TYPE,
+  // REAL_LIFE_FIXES_2 §14 — "reply this to these people until then?"
+  OWNER_STANDING_REPLY_TYPE,
+  // REAL_LIFE_FIXES_2 §15 — "let this agent spend up to this much?"
+  OWNER_SPEND_ALLOWANCE_TYPE,
 ]);
 
 /**

@@ -623,6 +623,12 @@ export interface CoreClient {
    */
   memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult>;
 
+  // ─── Owner settings (REAL_LIFE_FIXES_2 §0; Brain reads) ───────────────
+  /** Report-or-enforce modes for the reply guards. */
+  getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }>;
+  /** The owner's time zone, or the host's when none is set. */
+  getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }>;
+
   // ─── Chat thread storage (REAL_LIFE_FIXES §1.4; brain-only) ───────────
   /** Append (upsert on id) one chat message to its thread. */
   chatAppend(msg: StoredChatMessage): Promise<void>;
@@ -685,6 +691,45 @@ export interface CoreClient {
    * binds it to the owner's turn: sent at once, or a confirm card.
    */
   talkSend(input: { proof: OwnerWordsProof; contact: string; proposedText: string }): Promise<TalkSendResult>;
+
+  /**
+   * Ask Core to forget something the owner named (REAL_LIFE_FIXES_2 §4).
+   * Core plans it and always raises a card; nothing is deleted by this call.
+   */
+  forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult>;
+  /** Raised each time a forget finishes; Brain reloads its thread copies when it moves. */
+  forgetEpoch(): Promise<number>;
+  /**
+   * Prepare the owner's readable export (REAL_LIFE_FIXES_2 §5): the
+   * manifest and an id only. Only the owner's device can fetch the document.
+   */
+  ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }>;
+
+  // ─── Standing replies (REAL_LIFE_FIXES_2 §14) ─────────────────────────
+  /** Propose a standing reply from the owner's turn; Core always raises a card. */
+  standingReplyPropose(input: {
+    proof: OwnerWordsProof;
+    contacts: string[];
+    replyText: string;
+    until: string;
+  }): Promise<Record<string, unknown>>;
+  standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }>;
+  /** Stop a standing reply; Brain proves the owner asked to. */
+  standingReplyRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }>;
+
+  // ─── Agent spend allowances (REAL_LIFE_FIXES_2 §15) ──────────────────
+  spendAllowancePropose(input: {
+    proof: OwnerWordsProof;
+    agent: string;
+    amountMinor: number;
+    currency: string;
+    period: string;
+    category: string;
+    perItemCapMinor?: number;
+    until?: string;
+  }): Promise<Record<string, unknown>>;
+  spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[]; uses?: Record<string, unknown>[]; agents?: string[] }>;
+  spendAllowanceRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }>;
 
   /**
    * Atomically move up to `limit` `received` items to `classifying`
@@ -1339,6 +1384,8 @@ export interface VaultQuery {
   type?: string;
   /** The conversation the results are released into; Core logs the release (A2A §4.2). */
   releaseSession?: string;
+  /** Match word forms (REAL_LIFE_FIXES_2 §9.2); recall searches only. */
+  wordForms?: boolean;
   /**
    * Core's ask authority for an agent/device ask (REAL_LIFE_FIXES §0.1 B).
    * Present on every read made for such an ask; Core then applies the
@@ -1467,7 +1514,7 @@ export interface PIIRehydrateResult {
 
 // ─── Notify method types (task 1.29d) ────────────────────────────────────
 
-export type { NotifyPriority };
+export type { NotifyPriority } from '@dina/protocol';
 
 export interface NotifyRequest {
   /** Four-Laws priority level — drives routing + quiet-hours handling. */
@@ -1530,7 +1577,7 @@ export interface PersonaUnlockResult {
 
 // ─── Service config + query method types (task 1.29f) ────────────────────
 
-export type { ServiceConfig };
+export type { ServiceConfig } from '@dina/protocol';
 
 /**
  * One row from `listServiceConfigs()` — a published service listing
@@ -1672,6 +1719,25 @@ export interface MemoryToCOptions {
   askAuthority?: string;
 }
 
+/** What a readable export holds (REAL_LIFE_FIXES_2 §5). */
+export interface OwnerExportManifest {
+  personas: { persona: string; tier: string; included: boolean; why?: string; items: number }[];
+  people: number;
+  contacts: number;
+  reminders: number;
+}
+
+/** What the owner asked to forget (REAL_LIFE_FIXES_2 §4.2): exactly one. */
+export type ForgetRequestBody =
+  | { person: string }
+  | { persona: string; keep_item_ids?: string[] }
+  | { item_ids: string[] };
+
+export type ForgetProposeResult =
+  | { status: 'confirm_pending'; task_id: string; summary: string }
+  | { status: 'ambiguous'; candidates: string[] }
+  | { status: 'refused'; reason: string };
+
 export interface MemoryToCResult {
   /**
    * Ranked topic rows with salience decayed to the moment Core read
@@ -1681,6 +1747,11 @@ export interface MemoryToCResult {
   entries: TocEntry[];
   /** Echoes the effective server-side limit after clamping. */
   limit: number;
+  /**
+   * Agent/device asks only (REAL_LIFE_FIXES_2 §7.2): personas the requester
+   * may not read, by name and description, with no topics.
+   */
+  gated_personas?: { name: string; description: string }[];
 }
 
 // ─── Staging method types (task 1.29h / 1.32 preamble) ───────────────────

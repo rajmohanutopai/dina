@@ -114,6 +114,7 @@ import { startMobileCommercePlane } from './commerce_plane';
 import { createDemoServiceResponder } from './demo_service_responder';
 import { resolveMsgBoxURL } from './msgbox_wiring';
 import { setOwnerDispatcher } from './owner_dispatcher';
+import { syncOwnerTimeZone } from './owner_timezone';
 import { emitRuntimeWarning, clearRuntimeWarning } from './runtime_warnings';
 import { buildStagingEnrichment } from './staging_enrichment';
 import { talkThreadResolver } from './talk_thread_routing';
@@ -473,6 +474,8 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     // Brain shares on this JS VM ("trusted-in-process" is not the owner
     // boundary, §20). The router already has every owner route registered.
     setOwnerDispatcher(inProcessOwnerDispatcher(router, ownerCapability));
+    // The owner's time zone, for every date Dina shows (REAL_LIFE_FIXES_2 §0).
+    void syncOwnerTimeZone();
     setErasureKeyStore(new SQLiteErasureKeyStore(inputs.databaseAdapter));
     setReservationRepository(new SQLiteReservationRepository(inputs.databaseAdapter));
     setMessageRepository(new SQLiteMessageRepository(inputs.databaseAdapter));
@@ -781,7 +784,13 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
           name: p.name,
           description: MOBILE_PERSONA_DESCRIPTIONS[p.name] ?? p.description ?? '',
         }));
-      rememberRuntime = buildRememberRuntime({ llm, personas, defaultPersona: 'general' });
+      rememberRuntime = buildRememberRuntime({
+        llm,
+        personas,
+        defaultPersona: 'general',
+        // The owner's zone from Core (REAL_LIFE_FIXES_2 §0).
+        timezoneSource: async () => (await coreClient.getOwnerTimeZone()).timezone,
+      });
     } catch (err) {
       addDegradation(
         'staging.remember_runtime_failed',

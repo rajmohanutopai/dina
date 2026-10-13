@@ -637,3 +637,41 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     }
   });
 });
+
+describe('standard personas chosen at pairing (REAL_LIFE_FIXES_2 §7.2)', () => {
+  beforeEach(async () => {
+    const { createPersona, resetPersonaState } = await import('../../../src/persona/service');
+    resetPersonaState();
+    createPersona('general', 'default');
+    createPersona('work', 'standard');
+    createPersona('health', 'sensitive');
+  });
+
+  it('a ticked standard persona becomes a standing grant once the agent pairs', async () => {
+    const grants = new InMemoryAgentGrantRepository();
+    setAgentGrantRepository(grants);
+    const init = await router.handle(
+      signedReq('POST', '/v1/pair/initiate', { device_name: 'research-bot', role: 'agent', standard_personas: ['work'] }, admin),
+    );
+    expect(init.status).toBe(201);
+    const agent = makeActor();
+    const done = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', { code: (init.body as { code: string }).code, public_key: publicKeyToMultibase(agent.pub) }),
+    );
+    expect(done.status).toBe(201);
+    const made = grants.listAll();
+    expect(made.map((g) => `${g.agentDID}:${g.persona}:${g.grantKind}`)).toEqual([`${agent.did}:work:standing`]);
+    setAgentGrantRepository(null);
+  });
+
+  it('refuses a persona that is not standard, or for a device that is not an agent', async () => {
+    const sensitive = await router.handle(
+      signedReq('POST', '/v1/pair/initiate', { device_name: 'x', role: 'agent', standard_personas: ['health'] }, admin),
+    );
+    expect(sensitive.status).toBe(400);
+    const phone = await router.handle(
+      signedReq('POST', '/v1/pair/initiate', { device_name: 'x', role: 'rich', standard_personas: ['work'] }, admin),
+    );
+    expect(phone.status).toBe(400);
+  });
+});

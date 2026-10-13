@@ -180,7 +180,15 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
       provider: 'openrouter',
       apiKey: 'sk-or-test',
       model: 'deepseek/deepseek-v4-flash-0731',
+      // REAL_LIFE_FIXES_2 §18: the small checks go to Jev unless turned off.
+      decisions: 'jev',
     });
+    const noJev = loadConfig({
+      DINA_BRAIN_LLM_PROVIDER: 'openrouter',
+      DINA_OPENROUTER_API_KEY: 'sk-or-test',
+      DINA_DECISIONS: 'model',
+    });
+    expect((noJev.llm as { decisions?: string }).decisions).toBe('model');
   });
 
   it('reads an OpenRouter base URL for a proxy or recorder, and refuses a malformed one', () => {

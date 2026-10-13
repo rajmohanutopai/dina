@@ -61,6 +61,9 @@ import {
 } from './ucp_wire';
 
 import type {
+  OwnerExportManifest,
+  ForgetProposeResult,
+  ForgetRequestBody,
   A2ACallableAgent,
   A2ADelegateInput,
   A2ADelegateResult,
@@ -299,6 +302,7 @@ export class HttpCoreTransport implements CoreClient {
     if (query.embedding !== undefined) body.embedding = query.embedding;
     if (query.type !== undefined) body.type = query.type;
     if (query.releaseSession !== undefined) body.release_session = query.releaseSession;
+    if (query.wordForms === true) body.word_forms = true;
     return this.call<VaultQueryResult>(
       'POST',
       '/v1/vault/query',
@@ -626,6 +630,14 @@ export class HttpCoreTransport implements CoreClient {
     return readAccessDecision(raw);
   }
 
+  async getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }> {
+    return this.call('GET', '/v1/settings/guard-modes', undefined, undefined, 'getGuardModes');
+  }
+
+  async getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
+    return this.call('GET', '/v1/settings/owner-timezone', undefined, undefined, 'getOwnerTimeZone');
+  }
+
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
     const query: Record<string, string> = {};
     if (opts?.personas !== undefined && opts.personas.length > 0) {
@@ -660,6 +672,83 @@ export class HttpCoreTransport implements CoreClient {
       contact: input.contact,
       proposed_text: input.proposedText,
     }, 'talkSend');
+  }
+
+  async forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult> {
+    return this.call<ForgetProposeResult>('POST', '/v1/forget/propose', undefined, {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      request: input.request,
+    }, 'forgetPropose');
+  }
+
+  async ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }> {
+    return this.call('POST', '/v1/owner-export/prepare', undefined, {}, 'ownerExportPrepare');
+  }
+
+  async standingReplyPropose(input: { proof: OwnerWordsProof; contacts: string[]; replyText: string; until: string }): Promise<Record<string, unknown>> {
+    return this.call('POST', '/v1/standing-replies/propose', undefined, {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      contacts: input.contacts,
+      reply_text: input.replyText,
+      until: input.until,
+    }, 'standingReplyPropose');
+  }
+
+  async standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }> {
+    return this.call('GET', '/v1/standing-replies', undefined, undefined, 'standingReplyList');
+  }
+
+  async standingReplyRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
+    return this.call('POST', `/v1/standing-replies/${encodeURIComponent(id)}/revoke`, undefined, {
+      release_session: proof.releaseSession,
+      turn_id: proof.turnId,
+      turn_text: proof.turnText,
+      start: proof.start,
+      end: proof.end,
+    }, 'standingReplyRevoke');
+  }
+
+  async spendAllowancePropose(input: { proof: OwnerWordsProof; agent: string; amountMinor: number; currency: string; period: string; category: string; perItemCapMinor?: number; until?: string }): Promise<Record<string, unknown>> {
+    return this.call('POST', '/v1/spend-allowances/propose', undefined, {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      agent: input.agent,
+      amount_minor: input.amountMinor,
+      currency: input.currency,
+      period: input.period,
+      category: input.category,
+      ...(input.perItemCapMinor !== undefined ? { per_item_cap_minor: input.perItemCapMinor } : {}),
+      ...(input.until !== undefined ? { until: input.until } : {}),
+    }, 'spendAllowancePropose');
+  }
+
+  async spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[] }> {
+    return this.call('GET', '/v1/spend-allowances', undefined, undefined, 'spendAllowanceList');
+  }
+
+  async spendAllowanceRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
+    return this.call('POST', `/v1/spend-allowances/${encodeURIComponent(id)}/revoke`, undefined, {
+      release_session: proof.releaseSession,
+      turn_id: proof.turnId,
+      turn_text: proof.turnText,
+      start: proof.start,
+      end: proof.end,
+    }, 'spendAllowanceRevoke');
+  }
+
+  async forgetEpoch(): Promise<number> {
+    return (await this.call<{ epoch: number }>('GET', '/v1/forget/epoch', undefined, undefined, 'forgetEpoch')).epoch;
   }
 
   async stagingIngestOwnerWords(

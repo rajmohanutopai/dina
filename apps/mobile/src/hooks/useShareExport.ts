@@ -129,3 +129,27 @@ export function resetShareExport(): void {
   writeFileFn = null;
   deleteFileFn = null;
 }
+
+/**
+ * Save a readable export (REAL_LIFE_FIXES_2 §5): written to a temporary file,
+ * offered through the share sheet, and deleted when the sheet closes. Without
+ * native sharing (the web build), the text goes to the share or copy sheet.
+ */
+export async function shareReadableExport(json: string): Promise<'shared' | 'failed'> {
+  if (shareFn !== null && writeFileFn !== null) {
+    let fileUri: string | null = null;
+    try {
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      fileUri = await writeFileFn(new TextEncoder().encode(json), `dina-my-data-${stamp}.json`);
+      await shareFn(fileUri, 'application/json');
+      return 'shared';
+    } catch {
+      return 'failed';
+    } finally {
+      if (fileUri !== null && deleteFileFn !== null) await deleteFileFn(fileUri).catch(() => undefined);
+    }
+  }
+  const { shareOrCopy } = await import('../services/share_text');
+  return (await shareOrCopy(json)) === 'failed' ? 'failed' : 'shared';
+}
+

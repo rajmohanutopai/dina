@@ -59,6 +59,7 @@ import { registerRemoteApprovalRoutes } from './routes/remote_approval';
 import { registerRunRoutes } from './routes/run';
 import { registerScratchpadRoutes } from './routes/scratchpad';
 import { registerServiceConfigRoutes } from './routes/service_config';
+import { registerSettingsRoutes } from './routes/settings';
 import { registerServiceQueryRoutes, type ServiceQueryRouteOptions } from './routes/service_query';
 import {
   registerServiceRespondRoutes,
@@ -67,6 +68,10 @@ import {
 import { registerSessionRoutes } from './routes/session';
 import { registerStagingRoutes } from './routes/staging';
 import { registerTalkSendRoute } from './routes/talk_send';
+import { registerForgetRoutes } from './routes/forget';
+import { registerOwnerExportRoutes } from './routes/owner_export';
+import { registerStandingReplyRoutes } from './routes/standing_replies';
+import { registerSpendAllowanceRoutes } from './routes/spend_allowances';
 import { registerUcpRoutes } from './routes/ucp';
 import { registerVaultRoutes } from './routes/vault';
 import { registerWatchRoutes } from './routes/watch';
@@ -128,12 +133,17 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   registerAgentPersonaAccessRoute(router);
   registerChatThreadRoutes(router);
   registerTalkSendRoute(router);
+  registerForgetRoutes(router);
+  registerOwnerExportRoutes(router, options.ownerCapability);
+  registerStandingReplyRoutes(router, options.ownerCapability);
+  registerSpendAllowanceRoutes(router, options.ownerCapability);
   registerStagingRoutes(router);
   registerPIIRoutes(router);
   registerDevicesRoutes(router);
   registerD2DMsgRoutes(router);
   registerD2DQuarantineRoutes(router);
   registerServiceConfigRoutes(router);
+  registerSettingsRoutes(router, options.ownerCapability);
   // The owner capability reaches only the approve/cancel decision (a server
   // node's owner console settling a card Core refuses Brain); see the guard.
   registerWorkflowRoutes(router, options.ownerCapability);

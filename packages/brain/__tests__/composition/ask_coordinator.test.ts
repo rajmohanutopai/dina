@@ -670,6 +670,26 @@ describe('buildAgenticExecuteFn translation', () => {
     });
   });
 
+  it('guards a wrap-up written when the step budget ran out, like any answer', async () => {
+    const llm = makeScripted();
+    for (let i = 0; i < 8; i++) llm.push(toolCallResp({ id: `v${i}`, name: 'vault_search', arguments: { query: `q${i}` } }));
+    llm.push(answerResp("I'm always here for you. Call Sancho instead."));
+    const { client } = makeFakeCoreClient();
+    const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
+    pipeline.handlerOptions.guardScanner = jest.fn(async () => ({
+      content: 'Call Sancho instead.',
+      mutated: true,
+      reason: 'sentences_removed' as const,
+      flagged: { anti_her_sentences: [1] },
+    }));
+    const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
+    const out = await fn({ id: 'ask-wrap', question: 'Help me', requesterDid: REQUESTER });
+    expect(out).toEqual({ kind: 'answer', answer: { text: 'Call Sancho instead.' } });
+    expect(pipeline.handlerOptions.guardScanner).toHaveBeenCalledWith(
+      expect.objectContaining({ response: "I'm always here for you. Call Sancho instead." }),
+    );
+  });
+
   it('translates loop completion → answer outcome', async () => {
     const llm = makeScripted();
     llm.push(answerResp('hi'));

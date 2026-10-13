@@ -367,3 +367,25 @@ describe('ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA', () => {
     ]);
   });
 });
+
+describe('inventory questions (REAL_LIFE_FIXES_2 §9.2)', () => {
+  it('parses the inventory flag', () => {
+    const plan = parseAskRetrievalPlan(
+      '{"personas":[{"persona":"general","queries":["week"]}],"people":[],"needs_peerlens":false,"intent":"x","inventory":true}',
+      [{ name: 'general' }],
+    );
+    expect(plan.inventory).toBe(true);
+  });
+
+  it('pre-fetches the newest items, so a fact with no shared word is found', async () => {
+    const plan = parseAskRetrievalPlan(
+      '{"personas":[{"persona":"general","queries":["week"]}],"people":[],"needs_peerlens":false,"intent":"x","inventory":true}',
+      [{ name: 'general' }],
+    );
+    const out = await runAskPreFlightRetrieval(plan, {
+      vaultSearch: async () => [],
+      recent: async (persona) => [{ id: 'r1', content_l0: 'pickup moves to 2:15 on Wednesdays', persona }],
+    });
+    expect(out.block).toContain('pickup moves to 2:15 on Wednesdays');
+  });
+});

@@ -18,8 +18,9 @@ describe('Persona Wall (Release Verification)', () => {
     it('default tier: auto-opens, no gate', () => {
       expect(autoOpensOnBoot('default')).toBe(true);
     });
-    it('standard tier: auto-opens, open to agents in V1', () => {
-      expect(agentCanAccess('standard', false)).toBe(true);
+    it('standard tier: auto-opens; agents need a grant (REAL_LIFE_FIXES_2 §7.2)', () => {
+      expect(agentCanAccess('standard', false)).toBe(false);
+      expect(agentCanAccess('standard', true)).toBe(true);
     });
     it('sensitive tier: closed at boot, requires approval', () => {
       expect(requiresApproval('sensitive')).toBe(true);
@@ -30,8 +31,8 @@ describe('Persona Wall (Release Verification)', () => {
   });
 
   describe('agent access flow (V1 contract — issues.txt §2)', () => {
-    it('agent → standard open in V1 (no grant needed)', () => {
-      expect(agentCanAccess('standard', false)).toBe(true);
+    it('agent → standard needs a grant (REAL_LIFE_FIXES_2 §7.2)', () => {
+      expect(agentCanAccess('standard', false)).toBe(false);
     });
     it('agent without grant → denied for sensitive', () => {
       expect(agentCanAccess('sensitive', false)).toBe(false);

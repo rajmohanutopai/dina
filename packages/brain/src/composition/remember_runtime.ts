@@ -27,6 +27,7 @@ import {
   createBindPreferenceTool,
   createLinkToPersonTool,
   createRouteToPersonaTool,
+  createNoteChangeTool,
   emptyRememberSideEffects,
   type RememberSideEffects,
 } from '../reasoning/remember_tools';
@@ -58,6 +59,11 @@ export interface RememberRuntimeInput {
   defaultPersona?: string;
   /** Override timezone for relative-date resolution. Defaults to runtime. */
   timezone?: string;
+  /**
+   * The owner's time zone, read per run (REAL_LIFE_FIXES_2 §0): a server's
+   * own zone is often UTC. Used when `timezone` is not given.
+   */
+  timezoneSource?: () => Promise<string>;
   /** Override "today" (ISO date string). Defaults to current date. */
   today?: string;
 }
@@ -127,18 +133,34 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
   const personasInput = input.personas;
   const resolvePersonas: () => readonly { name: string; description?: string }[] =
     typeof personasInput === 'function' ? personasInput : () => personasInput;
-  const today = input.today ?? new Date().toISOString().slice(0, 10);
-  const timezone =
-    input.timezone ??
-    (() => {
-      try {
-        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-      } catch {
-        return 'UTC';
-      }
-    })();
+  const hostZone = (): string => {
+    try {
+      return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    } catch {
+      return 'UTC';
+    }
+  };
+  // Per run, not once at boot: a long-running node would otherwise date
+  // every reminder from the day it started (REAL_LIFE_FIXES_2 §0, §8.4).
+  const resolveZone = async (): Promise<string> => {
+    if (input.timezone !== undefined) return input.timezone;
+    try {
+      if (input.timezoneSource !== undefined) return await input.timezoneSource();
+    } catch {
+      /* the host's zone */
+    }
+    return hostZone();
+  };
+  const todayIn = (zone: string): string => {
+    if (input.today !== undefined) return input.today;
+    try {
+      return new Date().toLocaleDateString('en-CA', { timeZone: zone });
+    } catch {
+      return new Date().toISOString().slice(0, 10);
+    }
+  };
 
-  function buildSystemPrompt(): string {
+  function buildSystemPrompt(today: string, timezone: string): string {
     const personasList = resolvePersonas()
       .map((p) =>
         p.description !== undefined && p.description.trim() !== ''
@@ -154,8 +176,9 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
   return {
     async run(turn: RememberTurnInput): Promise<RememberTurnResult> {
       const collect = emptyRememberSideEffects();
+      const timezone = await resolveZone();
       // Built per-run so a persona created since construction is included.
-      const systemPrompt = buildSystemPrompt();
+      const systemPrompt = buildSystemPrompt(todayIn(timezone), timezone);
 
       const tools = new ToolRegistry();
       tools.register(
@@ -174,7 +197,24 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
       // across every unlocked persona, exactly like the in-app user.
       // The prior item(s) are already drained/stored by the time this
       // one runs, so the search finds them.
-      tools.register(createVaultSearchTool());
+      // Record what each search returned, so `note_change` can only name an
+      // item the model actually saw, with that item's own text (§8.2).
+      const seen = new Map<string, string>();
+      const search = createVaultSearchTool();
+      tools.register({
+        ...search,
+        async execute(args) {
+          const out = await search.execute(args);
+          const rows = (out as { results?: { id?: unknown; body?: unknown; content_l0?: unknown }[] } | null)?.results ?? [];
+          for (const r of rows) {
+            if (typeof r.id !== 'string' || r.id === '') continue;
+            const text = typeof r.body === 'string' && r.body !== '' ? r.body : typeof r.content_l0 === 'string' ? r.content_l0 : '';
+            seen.set(r.id, text);
+          }
+          return out;
+        },
+      });
+      tools.register(createNoteChangeTool({ collect, seen }));
       tools.register(
         createScheduleReminderTool({
           defaultPersona,

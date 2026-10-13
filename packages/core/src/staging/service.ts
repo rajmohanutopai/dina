@@ -17,13 +17,13 @@ import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { STAGING_LEASE_DURATION_S, STAGING_ITEM_TTL_S, STAGING_MAX_RETRIES } from '../constants';
-import { isPersonaOpen, isUnknownPersona, personaExists } from '../persona/service';
+import { isPersonaOpen, isUnknownPersona, listPersonas, personaExists } from '../persona/service';
 import {
   createReminderDurable,
   listByPersona as listRemindersByPersona,
 } from '../reminders/service';
 import { currentDataScope, setCurrentDataScope, type DataScope } from '../scope/data_scope';
-import { storeItemDetailed } from '../vault/crud';
+import { getItem as getVaultItem, storeItemDetailed } from '../vault/crud';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,
@@ -298,6 +298,10 @@ function storeItemInScope(
     typeof classifiedItem.source === 'string' && OWNER_MEMORY_SOURCES.has(classifiedItem.source);
   const owned = {
     ...classifiedItem,
+    // REAL_LIFE_FIXES_2 §8.2: a link to the earlier memory this one changes,
+    // `supersedes:<id>` or `conflicts:<id>`. Kept only when that item exists
+    // in an open persona; Brain cannot point a new memory at one it cannot read.
+    contradicts: checkedChangeLink(classifiedItem.contradicts),
     id: ownedId,
     ...(OWNER_MEMORY_SOURCES.has(stagingSource) || claimsOwnerMemory ? { source: stagingSource } : {}),
     ...(d2dTrust ?? {}),
@@ -309,6 +313,23 @@ function storeItemInScope(
   } finally {
     if (scope !== prev) setCurrentDataScope(prev);
   }
+}
+
+/** A `relation:id` link to an existing item in an open persona, or ''. */
+function checkedChangeLink(raw: unknown): string {
+  if (typeof raw !== 'string') return '';
+  const m = /^(supersedes|conflicts):([A-Za-z0-9_.:-]{1,128})$/.exec(raw.trim());
+  if (m === null) return '';
+  const id = m[2]!;
+  for (const p of listPersonas()) {
+    if (!p.isOpen) continue;
+    try {
+      if (getVaultItem(p.name, id) !== null) return `${m[1]}:${id}`;
+    } catch {
+      /* a persona without a repository */
+    }
+  }
+  return '';
 }
 
 /**
@@ -1412,3 +1433,43 @@ export function computeSourceHash(data: Record<string, unknown>): string {
   const serialized = JSON.stringify(data);
   return bytesToHex(sha256(new TextEncoder().encode(serialized)));
 }
+
+// ---------------------------------------------------------------------------
+// Forgetting (REAL_LIFE_FIXES_2 §4.4)
+// ---------------------------------------------------------------------------
+
+/**
+ * Staging rows holding a copy of the planned items: the row a stored item
+ * came from (its vault id is `stg-<stagingId>`), and, for a person, rows not
+ * yet stored whose text names them as a whole word.
+ */
+export function stagingIdsForItems(itemIds: readonly string[], surfaces: readonly string[]): string[] {
+  const out = new Set<string>();
+  for (const id of itemIds) if (id.startsWith('stg-')) out.add(id.slice(4));
+  if (surfaces.length > 0) {
+    const repo = getStagingRepository();
+    const rows = repo !== null ? repo.listAll() : [...inbox.values()];
+    const names = surfaces.map((s) => new RegExp(`(^|[^\\p{L}\\p{N}])${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'iu'));
+    for (const row of rows) {
+      if (row.status === 'stored') continue;
+      const text = JSON.stringify(row.data ?? {});
+      if (names.some((re) => re.test(text))) out.add(row.id);
+    }
+  }
+  return [...out];
+}
+
+/** Delete staging rows and Core's cached copies of them. Returns how many went. */
+export function forgetStagingItems(ids: readonly string[]): number {
+  const repo = getStagingRepository();
+  let n = 0;
+  for (const id of ids) {
+    const row = repo !== null ? repo.get(id) : (inbox.get(id) ?? null);
+    if (row === null) continue;
+    repo?.deleteByDedup(row.producer_id, row.source, row.source_id, row.data_scope);
+    inbox.delete(id);
+    n++;
+  }
+  return n;
+}
+

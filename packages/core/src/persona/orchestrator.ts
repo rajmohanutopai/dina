@@ -72,6 +72,17 @@ export function setVaultOpener(
 }
 
 /** Configure the vault closer. */
+/**
+ * Run inside an unlock, after the vault file opens and before the persona
+ * is marked open or its index loads (REAL_LIFE_FIXES_2 §4.4): items the owner
+ * asked to forget while it was closed are forgotten first. False keeps the
+ * persona closed.
+ */
+let unlockForgetHook: ((persona: string) => Promise<boolean>) | null = null;
+export function setUnlockForgetHook(hook: ((persona: string) => Promise<boolean>) | null): void {
+  unlockForgetHook = hook;
+}
+
 export function setVaultCloser(closer: (persona: string) => Promise<void>): void {
   vaultCloser = closer;
 }
@@ -167,6 +178,28 @@ export async function unlockPersona(
 
   // Store DEK in memory (will be zeroed on lock)
   activeDEKs.set(name, dek);
+
+  // 3b. Forget what the owner asked to forget while it was closed, before
+  // anything can read it (REAL_LIFE_FIXES_2 §4.4).
+  if (unlockForgetHook !== null) {
+    let finished = false;
+    try {
+      finished = await unlockForgetHook(name);
+    } catch {
+      finished = false;
+    }
+    if (!finished) {
+      activeDEKs.delete(name);
+      if (vaultCloser) await vaultCloser(name).catch(() => undefined);
+      return {
+        success: false,
+        persona: name,
+        dekHash: '',
+        indexedItems: 0,
+        reason: 'Could not finish forgetting items in this vault; it stays closed. Try again.',
+      };
+    }
+  }
 
   // 4. Mark persona as open
   openPersona(name, true);

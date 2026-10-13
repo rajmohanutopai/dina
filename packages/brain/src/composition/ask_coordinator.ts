@@ -59,9 +59,13 @@ import {
   type AskPersistenceAdapter,
 } from '../ask/ask_registry';
 import { buildTurnHistory, fenceNonce, outsideDataRule, recentTurnsBlock } from '../chat/history';
-import { crisisReply, humanConnectionDirective, peoplePointerLine } from '../guardian/anti_her';
-import { HUMAN_CONNECTION_KINDS, preScreenMessage } from '../guardian/anti_her_classify';
-import { scanResponse, stripViolations } from '../guardian/guard_scan';
+import { crisisReply, humanConnectionDirective, isCompanyOffer, peoplePointerLine } from '../guardian/anti_her';
+import { classifyDeterministic, HUMAN_CONNECTION_KINDS, preScreenMessage, type AntiHerCategory } from '../guardian/anti_her_classify';
+import { checkActionClaims, receiptsFromToolCalls } from '../guardian/action_claims';
+import { checkRegulated, evidenceFromToolResults } from '../guardian/regulated';
+import { removeSentences, scanResponse, splitSentences, stripViolations } from '../guardian/guard_scan';
+import { earlierReceipts, storeTurnReceipts } from '../chat/turn_receipts';
+import { reloadLoadedThreads } from '../chat/thread';
 import {
   resumeAgenticTurn,
   runAgenticTurn,
@@ -261,7 +265,7 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
         ),
         pausedState,
       });
-      return guardCompletedResult(opts.pipeline, result, ctx.question);
+      return guardCompletedResult(opts.pipeline, result, ctx.question, classifyDeterministic(ctx.question).category, ctx.conversation);
     },
     // On a completed resume, shape the FULL answer (text + serviceQueries +
     // reviewSource + missingCapabilities) AND apply the forced-lane gate, using
@@ -358,6 +362,9 @@ export function buildAgenticExecuteFn(args: {
       (input.askAuthority === undefined || input.askAuthority === '') &&
       (pipeline.ownerDid === undefined || input.requesterDid === pipeline.ownerDid);
     if (isOwnerChat) {
+      // REAL_LIFE_FIXES_2 §4.4: after a forget, Brain's thread copies still
+      // hold what Core deleted; reload them before reading history.
+      await syncForgetEpoch(pipeline);
       fence = fenceNonce();
       try {
         history = await buildTurnHistory(input.conversation!, {
@@ -415,6 +422,7 @@ export function buildAgenticExecuteFn(args: {
     // session must stay synced with wall-clock — `now_iso` baked in at
     // `buildAgenticExecuteFn` time would silently age across turns.
     // Then append the imperative forced-lane block when a lane is forced.
+    let relevantPersonas: string[] = [];
     let promptForTurn = await buildPromptForTurn(
       pipeline,
       systemPrompt,
@@ -423,9 +431,19 @@ export function buildAgenticExecuteFn(args: {
       conversation.releaseSession,
       input.askAuthority,
       recentTurns,
+      (p) => {
+        relevantPersonas = p;
+      },
     );
     if (history.length > 0) promptForTurn = `${promptForTurn}\n\n${outsideDataRule(fence)}`;
     if (humanDirective !== '') promptForTurn = `${promptForTurn}\n\n${humanDirective}`;
+    // REAL_LIFE_FIXES_2 §7.2: an agent's question is answered from the
+    // owner's vault before general knowledge, so a question about the
+    // owner's work reaches the vault (and Core asks the owner for a persona
+    // the agent may not read) instead of a confident public answer.
+    if (input.askAuthority !== undefined && input.askAuthority !== '') {
+      promptForTurn = `${promptForTurn}\n\n${AGENT_VAULT_FIRST_RULE}`;
+    }
 
     let userMessage = input.question;
     if (preFlight !== undefined) {
@@ -463,6 +481,20 @@ export function buildAgenticExecuteFn(args: {
         userMessage,
         ...(history.length > 0 ? { initialMessages: history } : {}),
       };
+      // REAL_LIFE_FIXES_2 §7.2: an agent's question searches the owner's
+      // vault first, deterministically: one search across what the agent may
+      // read; only if that finds nothing, a named search of each vault the
+      // classifier judged relevant (a vault the agent may not read raises the
+      // owner's card).
+      if (input.askAuthority !== undefined && input.askAuthority !== '') {
+        turnArgs.seedToolCalls = [
+          { name: 'vault_search', arguments: { query: input.question } },
+          ...relevantPersonas
+            .filter((p) => typeof p === 'string' && p !== '')
+            .slice(0, 2)
+            .map((persona) => ({ name: 'vault_search', arguments: { query: input.question, persona }, onlyIfNothingFound: true })),
+        ];
+      }
       if (input.signal !== undefined) {
         turnArgs.options = { signal: input.signal };
       }
@@ -471,7 +503,13 @@ export function buildAgenticExecuteFn(args: {
       const message = err instanceof Error ? err.message : String(err);
       return { kind: 'failure', failure: { kind: 'execute_crashed', message } };
     }
-    result = await guardCompletedResult(pipeline, result, input.question);
+    // Evidence for the regulated check (REAL_LIFE_FIXES_2 §6.2): the owner's
+    // own turns and the retrieval block, never Dina's earlier replies.
+    const evidence = [
+      ...userMessage.split('\n'),
+      ...history.filter((m) => m.role === 'user').map((m) => (typeof m.content === 'string' ? m.content : '')),
+    ];
+    result = await guardCompletedResult(pipeline, result, input.question, preScreen.category, isOwnerChat ? input.conversation : undefined, evidence);
     return translateLoopResult(result, input.question, input.forcedSources);
   };
 }
@@ -510,8 +548,16 @@ async function buildPromptForTurn(
   releaseSession: string,
   askAuthority?: string,
   recentTurns?: string,
+  /** Receives the vaults the intent classifier judged relevant. */
+  onRelevantPersonas?: (personas: string[]) => void,
 ): Promise<string> {
-  let prompt = `${formatCurrentTimeBlock()}\n\n${baseSystemPrompt}`;
+  let ownerZone: string | undefined;
+  try {
+    ownerZone = pipeline.ownerTimeZone !== undefined ? await pipeline.ownerTimeZone() : undefined;
+  } catch {
+    ownerZone = undefined;
+  }
+  let prompt = `${formatCurrentTimeBlock(Date.now, ownerZone)}\n\n${baseSystemPrompt}`;
 
   // Explicit lanes are imperative and skip advisory classification.
   if (isServicesLane(forcedSources) || isReviewsLane(forcedSources)) {
@@ -531,6 +577,7 @@ async function buildPromptForTurn(
   } catch {
     hint = IntentClassifier.default();
   }
+  onRelevantPersonas?.(Array.isArray(hint.relevant_personas) ? hint.relevant_personas : []);
   const block = formatIntentHintBlock(hint);
   if (block !== '') prompt = `${prompt}\n\n${block}`;
   return prompt;
@@ -547,8 +594,16 @@ async function guardCompletedResult(
   pipeline: AgenticAskPipeline,
   result: AgenticLoopResult,
   question: string,
+  verdict: AntiHerCategory,
+  /** The owner's thread; undefined for an agent ask (no thread receipts). */
+  conversation?: string,
+  /** What the model was given besides tool results (§6.2), line by line. */
+  evidence: readonly string[] = [],
 ): Promise<AgenticLoopResult> {
-  if (result.finishReason !== 'completed' || result.answer === '') return result;
+  // A wrap-up written when the step budget ran out is delivered as the
+  // answer, so it passes every guard an ordinary answer does.
+  const delivered = result.finishReason === 'completed' || result.wrappedUp === true;
+  if (!delivered || result.answer === '') return result;
   let out = result;
   const scanner = pipeline.handlerOptions.guardScanner;
   if (scanner !== undefined) {
@@ -559,7 +614,14 @@ async function guardCompletedResult(
         toolsCalled: result.toolCalls.map((call) => call.name),
       });
       out = { ...result, answer: decision.content };
+      // Metadata only: which categories were flagged, never the text.
+      console.log('[ask_coordinator] guard scan', {
+        reason: decision.reason,
+        mutated: decision.mutated,
+        flagged: Object.keys(decision.flagged),
+      });
     } catch {
+      console.log('[ask_coordinator] guard scan threw');
       out = result;
     }
   }
@@ -574,6 +636,58 @@ async function guardCompletedResult(
       });
       const names = await closeContactNames(pipeline);
       out = { ...out, answer: `${stripped.trim()} ${peoplePointerLine(names)}`.trim() };
+    }
+  } catch {
+    /* the net never fails a turn */
+  }
+  // REAL_LIFE_FIXES_2 §6.1: on a turn judged emotional, Dina never offers
+  // herself as company ("I'm here.", "talk to me about…"), not even as a
+  // fallback. The sentence goes and the people line takes its place.
+  if (HUMAN_CONNECTION_KINDS.has(verdict) || verdict === 'venting') {
+    try {
+      const offers = splitSentences(out.answer).filter((sentence) => isCompanyOffer(sentence));
+      if (offers.length > 0) {
+        const names = await closeContactNames(pipeline);
+        const line = peoplePointerLine(names);
+        const body = removeSentences(out.answer, offers);
+        out = { ...out, answer: body.includes(line) ? body : `${body}\n\n${line}`.trim() };
+      }
+    } catch {
+      /* the net never fails a turn */
+    }
+  }
+  // REAL_LIFE_FIXES_2 §6.2: no verdict about the owner, and no figure, that
+  // the evidence does not hold. Report mode logs counts only.
+  try {
+    const toolEvidence = evidenceFromToolResults(
+      out.toolCalls.map((c) => (c.outcome.success === true ? c.outcome.result : undefined)),
+    );
+    const checked = checkRegulated(out.answer, {
+      question,
+      evidence: [...evidence.filter((e) => e.trim() !== ''), ...toolEvidence],
+      nowMs: Date.now(),
+    });
+    if (checked.removed + checked.quoted > 0) {
+      const modes = pipeline.guardModes !== undefined ? await pipeline.guardModes() : { regulated: 'report' as const };
+      console.log('[guard] regulated', { mode: modes.regulated, removed: checked.removed, quoted: checked.quoted });
+      if (modes.regulated === 'enforce') out = { ...out, answer: checked.text };
+    }
+  } catch {
+    /* the net never fails a turn */
+  }
+  // REAL_LIFE_FIXES_2 §3: a claimed action is rewritten from its receipt, or
+  // replaced when nothing backs it. Report mode logs counts only.
+  try {
+    const thisTurn = receiptsFromToolCalls(out.toolCalls);
+    const thread = conversation !== undefined && conversation !== '' ? conversation : undefined;
+    const earlier = thread !== undefined ? earlierReceipts(thread, question) : [];
+    if (thread !== undefined) storeTurnReceipts(thread, question, thisTurn);
+    const timeZone = pipeline.ownerTimeZone !== undefined ? await pipeline.ownerTimeZone() : undefined;
+    const checked = checkActionClaims(out.answer, { thisTurn, earlier }, timeZone);
+    if (checked.rewritten > 0) {
+      const modes = pipeline.guardModes !== undefined ? await pipeline.guardModes() : { action_claims: 'report' as const };
+      console.log('[guard] action claims', { mode: modes.action_claims, rewritten: checked.rewritten, unbacked: checked.unbacked });
+      if (modes.action_claims === 'enforce') out = { ...out, answer: checked.text };
     }
   } catch {
     /* the net never fails a turn */
@@ -685,6 +799,16 @@ export function translateLoopResult(
     if (quoteRequestDraft !== undefined) {
       answer.quoteRequestDraft = quoteRequestDraft;
     }
+    // REAL_LIFE_FIXES_2 §5 — the readable export's card (manifest + id only).
+    for (let i = result.toolCalls.length - 1; i >= 0; i--) {
+      const call = result.toolCalls[i]!;
+      if (call.name !== 'export_my_data' || !call.outcome.success) continue;
+      const r = call.outcome.result as { export_id?: unknown; manifest?: unknown } | null;
+      if (typeof r?.export_id === 'string' && typeof r.manifest === 'object' && r.manifest !== null) {
+        answer.exportCard = { exportId: r.export_id, manifest: r.manifest };
+      }
+      break;
+    }
     // UCP plan §4.2 U1 — a merchant search's comparison card rides beside the
     // narrative, like the where-to-buy card: the prose answers, the card shows.
     const ucpComparison = extractUcpComparisonFromToolCalls(result.toolCalls);
@@ -697,6 +821,20 @@ export function translateLoopResult(
     const reviewCount = extractReviewCountFromToolCalls(result.toolCalls);
     if (reviewCount > 0) {
       answer.reviewSource = `reviewsrc:${reviewCount}`;
+    }
+    // REAL_LIFE_FIXES_2 §2: the owner is never handed silence. A card (service,
+    // missing capability, comparison, plan, quote draft) can be the reply on
+    // its own; with no card and no text, say so plainly.
+    const carriesCard =
+      answer.serviceQueries !== undefined ||
+      answer.missingCapabilities !== undefined ||
+      answer.commerceCard !== undefined ||
+      answer.groupPlan !== undefined ||
+      answer.quoteRequestDraft !== undefined ||
+      answer.exportCard !== undefined ||
+      answer.ucpComparison !== undefined;
+    if (String(answer.text ?? '').trim() === '' && !carriesCard) {
+      answer.text = EMPTY_ANSWER_FALLBACK;
     }
     return { kind: 'answer', answer };
   }
@@ -756,17 +894,21 @@ export function translateLoopResult(
     }
   }
 
-  return {
-    kind: 'failure',
-    failure: withMissingCapabilityDetail(
-      {
-        kind: result.finishReason,
-        message: `agentic loop terminated with ${result.finishReason}`,
-      },
-      result.toolCalls,
-      query,
-    ),
-  };
+  const failure = withMissingCapabilityDetail(
+    {
+      kind: result.finishReason,
+      message: `agentic loop terminated with ${result.finishReason}`,
+    },
+    result.toolCalls,
+    query,
+  );
+  // Out of steps with a written wrap-up (what was found, what is missing, at
+  // most one question): that is the answer, unless the turn showed a missing
+  // capability, which keeps its own notice.
+  if (result.wrappedUp === true && result.answer.trim() !== '' && failure.detail?.missingCapabilities === undefined) {
+    return { kind: 'answer', answer: { text: result.answer } };
+  }
+  return { kind: 'failure', failure };
 }
 
 /**
@@ -786,6 +928,27 @@ export function translateLoopResult(
  * told about the card or the dispatch. Undefined when the loop never asked a
  * plugin, or every ask was refused (a refusal is a thrown tool error).
  */
+let seenForgetEpoch: number | null = null;
+
+/** Reload Brain's thread copies when Core's forget counter has moved. */
+async function syncForgetEpoch(pipeline: AgenticAskPipeline): Promise<void> {
+  if (pipeline.forgetEpoch === undefined) return;
+  try {
+    const epoch = await pipeline.forgetEpoch();
+    if (seenForgetEpoch !== null && epoch !== seenForgetEpoch) await reloadLoadedThreads();
+    seenForgetEpoch = epoch;
+  } catch {
+    /* a missed reload costs one stale turn; never fail the turn */
+  }
+}
+
+/** Agent asks search the owner's vault before answering from general knowledge (§7.2). */
+export const AGENT_VAULT_FIRST_RULE =
+  'This question comes from an agent acting for the user. Before answering from general knowledge, search the user\'s vault (vault_search) for it: names, projects and plans may be the user\'s own, not public ones. A persona marked "closed to this requester" in the Table of Contents can still be searched: Dina will ask the user to approve. Answer from general knowledge only when the vault has nothing on it, and say so.';
+
+/** What the owner reads when a turn produced neither text nor a card. */
+export const EMPTY_ANSWER_FALLBACK = "I couldn't put a reply together for that. Could you say it another way?";
+
 function extractPluginInvocationNote(
   toolCalls: AgenticLoopResult['toolCalls'],
 ): string | undefined {

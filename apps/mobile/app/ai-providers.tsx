@@ -377,6 +377,25 @@ export default function AIProvidersScreen(): React.JSX.Element {
         />
       </View>
 
+      {/* REAL_LIFE_FIXES_2 §18: who answers the small checks on each reply
+          (e.g. "does this sentence offer Dina as company?"). */}
+      <View style={styles.section} testID="small-checks">
+        <Text style={styles.smallChecksTitle}>Safety checks on replies</Text>
+        <Text style={styles.sectionDesc}>
+          {active === 'openrouter'
+            ? 'Checked by Jev, a small decision model, through OpenRouter. It sees your question and Dina’s reply, with the names Dina knows and contact details taken out, can only answer yes or no, and is asked to keep nothing.'
+            : 'Checked by your model above, with the names Dina knows and contact details taken out.'}
+        </Text>
+        <TouchableOpacity
+          disabled
+          accessibilityState={{ disabled: true }}
+          style={[styles.onDeviceButton, styles.onDeviceButtonDisabled]}
+          testID="small-checks-on-device"
+        >
+          <Text style={styles.onDeviceText}>On this phone — coming soon</Text>
+        </TouchableOpacity>
+      </View>
+
       {modelSheetProvider !== null && (
         <ModelPickerSheet
           visible={modelSheetProvider !== null}
@@ -488,6 +507,23 @@ const styles = StyleSheet.create({
     color: colors.accent,
   },
   removeButton: { flex: 1, paddingVertical: 12, alignItems: 'center' },
+  smallChecksTitle: {
+    ...textStyles.bodySmallStrong,
+    color: colors.textPrimary,
+    marginBottom: spacing.xs,
+  },
+  onDeviceButton: {
+    paddingVertical: 12,
+    alignItems: 'center',
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  onDeviceButtonDisabled: { opacity: 0.5 },
+  onDeviceText: {
+    ...textStyles.bodySmallStrong,
+    color: colors.textMuted,
+  },
   removeText: {
     ...textStyles.bodySmallStrong,
     color: colors.error,

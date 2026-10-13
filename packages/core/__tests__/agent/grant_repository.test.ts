@@ -217,3 +217,36 @@ describe('SQLiteAgentGrantRepository — durability across restart', () => {
     }
   });
 });
+
+describe.each(factories)('standing grants (REAL_LIFE_FIXES_2 §7.2) — $name', ({ make }) => {
+  let repo: AgentGrantRepository;
+  let cleanup: () => void;
+  beforeEach(() => ({ repo, cleanup } = make()));
+  afterEach(() => cleanup());
+
+  it('matches any session and never expires, and keeps its tier', () => {
+    repo.insert({ ...grant({ id: 's1', persona: 'work', expiresAt: 253_402_300_799_000 }), grantKind: 'standing', grantedTier: 'standard' });
+    for (const session of ['sess-1', 'sess-2', null]) {
+      const g = repo.findActiveGrant('did:key:agentA', 'work', 'read', session, 9_000_000_000_000);
+      expect(g?.id).toBe('s1');
+      expect(g?.grantKind).toBe('standing');
+      expect(g?.grantedTier).toBe('standard');
+    }
+  });
+
+  it('a session grant keeps its session isolation and expiry', () => {
+    repo.insert(grant({ id: 'g1', persona: 'work', sessionId: 'sess-1' }));
+    expect(repo.findActiveGrant('did:key:agentA', 'work', 'read', 'sess-2', 5_000)).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'work', 'read', 'sess-1', 20_000)).toBeNull();
+    expect(repo.get('g1')?.grantKind).toBe('session');
+  });
+
+  it('revoking by persona ends every grant on it', () => {
+    repo.insert({ ...grant({ id: 's1', persona: 'work' }), grantKind: 'standing' });
+    repo.insert(grant({ id: 'g2', persona: 'work', agentDID: 'did:key:agentB' }));
+    repo.insert(grant({ id: 'g3', persona: 'health' }));
+    expect(repo.revokeForPersona('work', 6_000)).toBe(2);
+    expect(repo.findActiveGrant('did:key:agentA', 'work', 'read', null, 5_000)).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', null, 5_000)?.id).toBe('g3');
+  });
+});

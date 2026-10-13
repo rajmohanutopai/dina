@@ -22,6 +22,7 @@ import {
   type AgentFacadeContext,
   type PublicReasoningEvidenceSource,
 } from '../../src';
+import { grantStandingAccess } from '../../src/agent/standing_grants';
 import { setReminderRepository } from '../../src/reminders/repository';
 import { listByPersona, resetReminderState } from '../../src/reminders/service';
 
@@ -99,6 +100,8 @@ describe('shared connected-Brain facades', () => {
   test('walks an installed legacy persona when Brain uses its canonical alias', async () => {
     createPersona('work', 'standard');
     openPersona('work');
+    // A standard persona needs a grant for a connected agent (REAL_LIFE_FIXES_2 §7.2).
+    grantStandingAccess(AGENT, 'work', 'pair-cb');
     setVaultRepository('work', new InMemoryVaultRepository());
     storeItem('work', {
       type: 'user_memory',

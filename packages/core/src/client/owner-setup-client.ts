@@ -66,6 +66,8 @@ export interface OwnerSetupStatus {
   staff_devices: OwnerSetupDevice[];
   owner_devices: OwnerSetupDevice[];
   devices: OwnerSetupDeviceEntry[];
+  /** Work-type personas a new agent may be allowed to read (REAL_LIFE_FIXES_2 §7.2). */
+  standard_personas?: { name: string; description: string }[];
   /** Present on a server node, which can pair a phone to approve its cards. */
   phone?: ApprovalPhoneStatus;
 }
@@ -118,11 +120,18 @@ export class OwnerSetupClient {
   }
 
   /** A coding agent's setup code; the node names it `coding-agent` when no name is given. */
-  async mintCodingAgentCode(deviceName?: string): Promise<MintedSetupCode> {
+  /**
+   * `standardPersonas`: work-type personas this agent may read from the
+   * start (REAL_LIFE_FIXES_2 §7.2); others raise a card when it asks.
+   */
+  async mintCodingAgentCode(deviceName?: string, standardPersonas?: readonly string[]): Promise<MintedSetupCode> {
     const res = await this.dispatcher.dispatch({
       method: 'POST',
       path: `${OWNER_SETUP_PREFIX}/coding-agent`,
-      body: deviceName === undefined ? {} : { device_name: deviceName },
+      body: {
+        ...(deviceName !== undefined ? { device_name: deviceName } : {}),
+        ...(standardPersonas !== undefined && standardPersonas.length > 0 ? { standard_personas: [...standardPersonas] } : {}),
+      },
     });
     return expectStatus<MintedSetupCode>(res, 201, 'mintCodingAgentCode');
   }

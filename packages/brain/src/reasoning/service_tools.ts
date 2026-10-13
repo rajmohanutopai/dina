@@ -558,6 +558,10 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
     // though the service card resolves moments later. Terminal also means a
     // 2nd query_service in the SAME turn is never reached (one provider/turn).
     terminal: true,
+    ownerNote: (result) => {
+      const name = (result as { service_name?: unknown } | null)?.service_name;
+      return `I've asked ${typeof name === 'string' && name !== '' ? name : 'the provider'}; the answer will appear on the card.`;
+    },
     description:
       'Send a structured service query to a specific provider DID. Fire-and-forget: returns a task_id immediately; the answer is delivered asynchronously to the chat thread. Use after search_provider_services has identified the target. Query exactly ONE provider per request — the single best-ranked match; do NOT call this more than once for the same capability in a turn.',
     parameters: {

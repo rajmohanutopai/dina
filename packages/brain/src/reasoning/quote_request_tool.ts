@@ -108,8 +108,15 @@ export function createDraftQuoteRequestTool(): AgentTool {
   return {
     name: 'draft_quote_request',
     terminal: true,
+    ownerNote: (result) => {
+      const lines = ((result as { draft?: { lines?: { description?: unknown }[] } } | null)?.draft?.lines ?? [])
+        .map((l) => (typeof l.description === 'string' ? l.description : ''))
+        .filter((d) => d !== '');
+      const what = lines.length === 0 ? 'what you asked for' : lines.length === 1 ? lines[0] : `${lines.slice(0, -1).join(', ')} and ${lines[lines.length - 1]}`;
+      return `I've drafted a request for quotes for ${what}. Open the card to choose suppliers and send it; nothing has been sent yet.`;
+    },
     description:
-      'Draft a request for quotes from suppliers when the user wants to buy something and asks you to find sellers or get prices from several ("ask bakeries near me for a cake for 20", "get quotes for 50 kg basmati"). Give each item in the user\'s words with a quantity and unit, a short phrase to find suppliers by (what they sell, e.g. "cakes"), and any target price, ceiling, currency, rounds or reply time the user said. When something the user told you before (their own notes) makes the item more exact, such as a favourite kind or an allergy, use it in the item and say what you used in from_memory. Nothing is sent: a card opens the Ask for quotes screen, where the user picks suppliers and sends. Say in one line that the draft is ready.',
+      'Draft a request for quotes from suppliers when the user wants to buy something and asks you to find sellers or get prices from several ("ask bakeries near me for a cake for 20", "get quotes for 50 kg basmati"). Give each item in the user\'s words with a quantity and unit, a short phrase to find suppliers by (what they sell, e.g. "cakes"), and any target price, ceiling, currency, rounds or reply time the user said. When something the user told you before (their own notes) makes the item more exact, such as a favourite kind or an allergy, use it in the item and say what you used in from_memory. Nothing is sent: a card opens the Ask for quotes screen, where the user picks suppliers and sends. It never contacts anyone by itself. When the user names one of their contacts ("ask ChairMaker for a quote"), use send_message to that contact instead. Only for buying: not for planning, preferences or questions.',
     parameters: {
       type: 'object',
       properties: {

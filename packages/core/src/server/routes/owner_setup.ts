@@ -24,6 +24,7 @@ import {
   type PairedDevice,
 } from '../../devices/registry';
 import { generatePairingCode, getNodeDID, getNodeSigningPublicKey } from '../../pairing/ceremony';
+import { getPersona, listPersonas } from '../../persona/service';
 import { buildAgentSetupCode } from '../../pairing/setup_code';
 
 import { makeOwnerGuard } from './owner_guard';
@@ -145,6 +146,11 @@ export function registerOwnerSetupRoutes(
       staff_devices: active.filter(KIND_OF.staff).map(summary),
       owner_devices: active.filter(KIND_OF['owner-device']).map(summary),
       devices: listDevices().map(fullEntry),
+      // REAL_LIFE_FIXES_2 §7.2: the work-type personas the owner may let a
+      // new agent read from the start (none ticked by default).
+      standard_personas: listPersonas()
+        .filter((p) => p.tier === 'standard')
+        .map((p) => ({ name: p.name, description: p.description })),
       ...(options.extraStatus?.() ?? {}),
     });
   });
@@ -156,11 +162,24 @@ export function registerOwnerSetupRoutes(
     if (typeof name !== 'string') return name;
     const nodeDID = getNodeDID();
     if (nodeDID === null) return answer(503, { error: 'Home Node identity is not ready' });
+    // REAL_LIFE_FIXES_2 §7.2: the standard personas the owner ticks for this
+    // agent (none by default); each becomes a standing read grant on pairing.
+    const raw = (req.body as { standard_personas?: unknown } | null)?.standard_personas;
+    let standardPersonas: string[] | undefined;
+    if (raw !== undefined) {
+      if (!Array.isArray(raw) || raw.some((p) => typeof p !== 'string')) {
+        return answer(400, { error: 'standard_personas must be an array of persona names' });
+      }
+      standardPersonas = [...new Set((raw as string[]).map((p) => p.trim()).filter((p) => p !== ''))];
+      const bad = standardPersonas.filter((p) => getPersona(p)?.tier !== 'standard');
+      if (bad.length > 0) return answer(400, { error: `not a standard persona: ${bad.join(', ')}` });
+    }
     try {
       const { code, expiresAt } = generatePairingCode({
         deviceName: name,
         role: 'agent',
         scope: 'coding',
+        ...(standardPersonas !== undefined ? { standardPersonas } : {}),
       });
       return answer(201, {
         setup_code: buildAgentSetupCode({

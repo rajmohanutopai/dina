@@ -145,7 +145,9 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
         <Ionicons name={iconName} size={16} color={colors.textMuted} />
         <Text testID={`reminder-card-header-${meta.reminderId}`} style={styles.label}>{headerLabel}</Text>
       </View>
-      <Text testID={`reminder-card-body-${meta.reminderId}`} style={styles.body}>{message.content}</Text>
+      <Text testID={`reminder-card-body-${meta.reminderId}`} style={styles.body}>
+        {typeof message.metadata?.reminderMessage === 'string' ? message.metadata.reminderMessage : message.content}
+      </Text>
       {meta.persona !== '' && meta.persona !== 'general' && (
         <Text style={styles.personaLine}>/{meta.persona}</Text>
       )}

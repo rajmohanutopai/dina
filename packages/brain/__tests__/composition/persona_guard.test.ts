@@ -119,11 +119,11 @@ describe('createPersonaGuard — tier policy', () => {
     expect(await guard('general')).toBeNull();
   });
 
-  it('returns null for standard tier', async () => {
+  it('asks for a standard persona (REAL_LIFE_FIXES_2 §7.2: agents need a grant)', async () => {
     createPersona('work', 'standard');
     const { client } = makeFakeWorkflowClient();
     const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
-    expect(await guard('work')).toBeNull();
+    expect(await guard('work')).toBe(approvalIdFor(ASK_ID, 'work'));
   });
 
   it('fails closed for a persona whose tier Brain cannot see (REAL_LIFE_FIXES §2.3)', async () => {
@@ -340,7 +340,7 @@ describe('createPersonaGuard — owner-aware shortcut (F-AGENT-VAULT-GATE)', () 
     expect(payload.requester_did).toBe(AGENT_DID);
   });
 
-  it('still allows default/standard for non-owner (no spurious gate on open tiers)', async () => {
+  it('allows default for non-owner and asks for standard (REAL_LIFE_FIXES_2 §7.2)', async () => {
     createPersona('general', 'default');
     createPersona('work', 'standard');
     const { client, tasks } = makeFakeWorkflowClient();
@@ -351,8 +351,8 @@ describe('createPersonaGuard — owner-aware shortcut (F-AGENT-VAULT-GATE)', () 
       ownerDid: OWNER_DID,
     });
     expect(await guard('general')).toBeNull();
-    expect(await guard('work')).toBeNull();
     expect(tasks.size).toBe(0);
+    expect(await guard('work')).toBe(approvalIdFor(ASK_ID, 'work'));
   });
 
   it('omitting ownerDid preserves the legacy "every caller untrusted" behaviour', async () => {

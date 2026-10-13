@@ -254,7 +254,7 @@ describe('MemoryService.toc — errors and limits', () => {
     });
   });
 
-  it('truncates the merged list to `limit` after sorting', async () => {
+  it("truncates the merged list to `limit`, each persona's best first", async () => {
     const a = makeRepo();
     const b = makeRepo();
     a.touch({ topic: 'x', kind: 'theme', nowUnix: T0 });
@@ -263,7 +263,17 @@ describe('MemoryService.toc — errors and limits', () => {
     const svc = makeService({ a, b });
     const toc = await svc.toc(undefined, 2);
     expect(toc).toHaveLength(2);
-    // First two by salience — ties broken by stable-sort (insertion order).
-    expect(toc.map((e) => e.topic)).toEqual(['x', 'y']);
+    // REAL_LIFE_FIXES_2 §7.2: every persona's top topic comes before any
+    // persona's second, so a busy persona cannot crowd another out.
+    expect(toc.map((e) => e.topic)).toEqual(['x', 'z']);
+  });
+
+  it('a persona with many hotter topics still leaves room for another', async () => {
+    const busy = makeRepo();
+    const quiet = makeRepo();
+    for (let i = 0; i < 6; i++) for (let j = 0; j <= i; j++) busy.touch({ topic: `hot${i}`, kind: 'theme', nowUnix: T0 });
+    quiet.touch({ topic: 'launch', kind: 'theme', nowUnix: T0 });
+    const toc = await makeService({ busy, quiet }).toc(undefined, 3);
+    expect(toc.map((e) => e.topic)).toContain('launch');
   });
 });

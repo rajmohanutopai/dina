@@ -582,6 +582,12 @@ function disablePluginAuthorityForDevice(deviceDid: string, nowMs: number): bool
  * Returns false when the repo is absent — the caller cannot then claim the
  * agent-grant half of cleanup succeeded.
  */
+/** Called when an agent device is revoked (REAL_LIFE_FIXES_2 §15: its spend allowances end). */
+const agentDeviceRevokedHooks: ((did: string) => void)[] = [];
+export function onAgentDeviceRevoked(fn: (did: string) => void): void {
+  agentDeviceRevokedHooks.push(fn);
+}
+
 function disableAgentGrantsForDevice(deviceDid: string, nowMs: number): boolean {
   const grantRepo = getAgentGrantRepository();
   if (grantRepo === null) return false;
@@ -678,6 +684,15 @@ export async function revokePluginDeviceForTeardown(deviceDid: string): Promise<
 
 /** Cut a device's auth access — unregister its DID from caller-type resolution. */
 function cutDeviceAccess(device: PairedDevice): void {
+  if (device.did !== '' && device.role === 'agent') {
+    for (const hook of agentDeviceRevokedHooks) {
+      try {
+        hook(device.did);
+      } catch {
+        /* a hook never blocks revocation */
+      }
+    }
+  }
   // Round-12 #14: unregister the STORED `did` — the exact value hydration /
   // pairing registered via `registerDeviceAuth(device.did, …)` (and the value
   // `didIndex`/`getDeviceByDID` key on). The old code RE-DERIVED a DID from

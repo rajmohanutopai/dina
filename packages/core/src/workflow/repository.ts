@@ -181,6 +181,13 @@ export interface WorkflowRepository {
   scrubResult(id: string, updatedAtMs: number): boolean;
 
   /**
+   * Rewrite a decided card's text and blank its events' details
+   * (REAL_LIFE_FIXES_2 §4.4): after a forget, the card that named what was
+   * forgotten keeps only counts. Optional: stores without it keep the text.
+   */
+  scrubCardText?(id: string, description: string, payload: string, updatedAtMs: number): boolean;
+
+  /**
    * Reschedule a poll-mode `watch` (PSVC-0). Sets `next_run_at` (SECONDS, the
    * store's unit) on a `kind='watch'`, `state='running'` row WITHOUT changing
    * state; passing `null` clears it (a PAUSE — a null `next_run_at` is never
@@ -854,6 +861,16 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         WHERE id = ? AND state IN ('completed', 'failed', 'cancelled', 'outcome_unknown')`,
       [updatedAtMs, id],
     );
+    return affected > 0;
+  }
+
+  scrubCardText(id: string, description: string, payload: string, updatedAtMs: number): boolean {
+    this.db.execute('PRAGMA secure_delete=ON');
+    const affected = this.db.run(
+      `UPDATE workflow_tasks SET description = ?, payload = ?, updated_at = ? WHERE id = ?`,
+      [description, payload, updatedAtMs, id],
+    );
+    this.db.run(`UPDATE workflow_events SET details = '{}' WHERE task_id = ?`, [id]);
     return affected > 0;
   }
 
@@ -2068,6 +2085,16 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     t.result = '';
     t.result_summary = 'scrubbed';
     t.updated_at = updatedAtMs;
+    return true;
+  }
+
+  scrubCardText(id: string, description: string, payload: string, updatedAtMs: number): boolean {
+    const t = this.tasks.get(id);
+    if (t === undefined) return false;
+    t.description = description;
+    t.payload = payload;
+    t.updated_at = updatedAtMs;
+    for (const e of this.events) if (e.task_id === id) e.details = '{}';
     return true;
   }
 

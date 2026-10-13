@@ -216,6 +216,13 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
       accessible: searchSet.length > 0,
       results: merged.slice(0, limit),
       ...(gated.length > 0 ? { gated_personas: gated } : {}),
+      // Nothing found where the requester may read: say plainly where it
+      // could be, so the answer is not a confident "you have no notes".
+      ...(gated.length > 0 && merged.length === 0
+        ? {
+            note: `Nothing matched in what this requester may read. Not searched: ${gated.join(', ')}. If the question is about the owner's own matters that could be in one of these, call vault_search again naming that persona (this asks the owner once) before answering.`,
+          }
+        : {}),
     };
   };
   const cap = options.maxResults ?? DEFAULT_MAX_RESULTS;

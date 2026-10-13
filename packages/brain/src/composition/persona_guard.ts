@@ -299,14 +299,16 @@ export function personaReadRequiresApproval(persona: string, ctx: PersonaReadCon
   // Unknown persona (Brain's mirror is empty, stale or failed): fail closed.
   // A non-owner caller never reads a persona whose tier Brain cannot see.
   if (personaState === null) return true;
-  // Open tiers — freely accessible.
-  if (personaState.tier === 'default' || personaState.tier === 'standard') return false;
+  // Only the default tier is open to agents (REAL_LIFE_FIXES_2 §7.2). A
+  // standard persona needs a grant; Core holds standing grants and decides,
+  // so Brain asks rather than reads freely.
+  if (personaState.tier === 'default') return false;
   // Active session grant for this (agent, session, persona).
   const sessionId = typeof ctx.sessionId === 'string' ? ctx.sessionId : '';
   if (sessionId !== '' && isVaultReadSessionApproved(ctx.requesterDid, sessionId, persona)) {
     return false;
   }
-  // Sensitive / locked, non-owner, no grant → approval required.
+  // Standard / sensitive / locked, non-owner, no session grant → ask Core.
   return true;
 }
 

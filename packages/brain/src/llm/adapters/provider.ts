@@ -137,6 +137,12 @@ export interface ChatOptions {
    * Ignored by providers that don't support structured output.
    */
   responseSchema?: Record<string, unknown>;
+  /**
+   * `'low'`: a short decision (classify, guard, plan) that needs no long
+   * thinking. A reasoning model can otherwise spend the whole output
+   * budget thinking and return nothing. Ignored where it does not apply.
+   */
+  reasoning?: 'low';
 }
 
 export interface EmbedOptions {

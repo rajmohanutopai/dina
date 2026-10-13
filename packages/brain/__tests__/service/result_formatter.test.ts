@@ -180,27 +180,49 @@ describe('formatServiceQueryResult', () => {
     });
   });
 
-  describe('unregistered capability → generic formatter', () => {
-    it('renders a truncated JSON summary', () => {
+  describe('unregistered capability → generic formatter (REAL_LIFE_FIXES_2 §12)', () => {
+    it('renders label: value lines, never JSON', () => {
       const out = formatServiceQueryResult({
         response_status: 'success',
         capability: 'mystery_cap',
         service_name: 'Mystery Service',
-        result: { value: 42 },
+        result: { value: 42, next_step: 'call back', slots: [{ time: '09:00' }, { time: '11:30' }] },
       });
-      expect(out).toBe('Mystery Service — response received: {"value":42}');
+      expect(out).toBe('Mystery Service\nvalue: 42\nnext step: call back\nslots: time 09:00, time 11:30');
+      expect(out).not.toMatch(/[{}"]/);
     });
 
-    it('truncates long payloads to 200 chars', () => {
-      const big = { text: 'x'.repeat(500) };
+    it('cuts a long value', () => {
       const out = formatServiceQueryResult({
         response_status: 'success',
         capability: 'mystery_cap',
         service_name: 'Mystery',
-        result: big,
+        result: { text: 'x'.repeat(500) },
       });
-      // "Mystery — response received: " + 200 chars
-      expect(out.length).toBe('Mystery — response received: '.length + 200);
+      expect(out.length).toBeLessThan(200);
+      expect(out).not.toMatch(/[{}"]/);
+    });
+  });
+
+  describe('appointment_availability', () => {
+    it('lists the free times', () => {
+      const out = formatServiceQueryResult({
+        response_status: 'success',
+        capability: 'appointment_availability',
+        service_name: 'Harbour Dental',
+        result: { status: 'ok', date: '2026-11-02', slots: [{ time: '09:15', date: '2026-11-02' }, { time: '14:40', date: '2026-11-02' }] },
+      });
+      expect(out).toBe('Harbour Dental — free on 2026-11-02 at 09:15 and 14:40.');
+    });
+
+    it('says when nothing is free', () => {
+      const out = formatServiceQueryResult({
+        response_status: 'success',
+        capability: 'appointment_availability',
+        service_name: 'Harbour Dental',
+        result: { status: 'ok', date: '2026-11-02', slots: [] },
+      });
+      expect(out).toBe('Harbour Dental — no free slots on 2026-11-02.');
     });
   });
 });

@@ -51,6 +51,13 @@ export interface AgentTool {
    * the result is fed back and the loop continues.
    */
   terminal?: boolean;
+  /**
+   * Required for a terminal tool: the plain sentence the owner reads when the
+   * model ended the turn with the call alone and wrote no text
+   * (REAL_LIFE_FIXES_2 §2). Built from the tool's own result, never from
+   * model text.
+   */
+  ownerNote?: (result: unknown) => string;
 }
 
 export type ToolExecutionOutcome =
@@ -92,6 +99,11 @@ export class ToolRegistry {
     if (!tool.description || tool.description.length === 0) {
       throw new Error(`ToolRegistry: "${tool.name}" missing description`);
     }
+    if (tool.terminal === true && typeof tool.ownerNote !== 'function') {
+      // A terminal tool ends the turn; without its own note the owner could
+      // be handed an empty reply (REAL_LIFE_FIXES_2 §2).
+      throw new Error(`ToolRegistry: terminal tool "${tool.name}" needs an ownerNote`);
+    }
     this.tools.set(tool.name, tool);
   }
 
@@ -127,6 +139,17 @@ export class ToolRegistry {
    */
   isTerminal(name: string): boolean {
     return this.tools.get(name)?.terminal === true;
+  }
+
+  /** The owner-facing note of a terminal tool for `result`; '' when it has none. */
+  ownerNote(name: string, result: unknown): string {
+    const note = this.tools.get(name)?.ownerNote;
+    if (note === undefined) return '';
+    try {
+      return note(result).trim();
+    } catch {
+      return '';
+    }
   }
 
   size(): number {

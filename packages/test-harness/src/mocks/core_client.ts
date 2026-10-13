@@ -574,6 +574,70 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('memoryToC', [opts], () => this.memoryToCResult);
   }
 
+  /** Canned forget proposal (REAL_LIFE_FIXES_2 §4). */
+  forgetProposeResult: { status: 'confirm_pending'; task_id: string; summary: string } | { status: 'refused'; reason: string } = {
+    status: 'confirm_pending',
+    task_id: 'forget-1',
+    summary: 'Forget everything about X',
+  };
+
+  async forgetPropose(input: { proof: OwnerWordsProof; request: unknown }): Promise<{ status: 'confirm_pending'; task_id: string; summary: string } | { status: 'refused'; reason: string }> {
+    return this.dispatch('forgetPropose', [input], () => ({ ...this.forgetProposeResult }));
+  }
+
+  ownerExportPrepareResult = { id: 'exp-1', manifest: { personas: [], people: 0, contacts: 0, reminders: 0 } };
+
+  async ownerExportPrepare(): Promise<{ id: string; manifest: { personas: { persona: string; tier: string; included: boolean; why?: string; items: number }[]; people: number; contacts: number; reminders: number } }> {
+    return this.dispatch('ownerExportPrepare', [], () => this.ownerExportPrepareResult);
+  }
+
+  async standingReplyPropose(input: unknown): Promise<Record<string, unknown>> {
+    return this.dispatch('standingReplyPropose', [input], () => ({ status: 'confirm_pending', task_id: 'standing-1', summary: '' }));
+  }
+
+  async standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }> {
+    return this.dispatch('standingReplyList', [], () => ({ rules: [] }));
+  }
+
+  async standingReplyRevoke(id: string, proof: unknown): Promise<{ revoked: boolean }> {
+    return this.dispatch('standingReplyRevoke', [id, proof], () => ({ revoked: true }));
+  }
+
+  async spendAllowancePropose(input: unknown): Promise<Record<string, unknown>> {
+    return this.dispatch('spendAllowancePropose', [input], () => ({ status: 'confirm_pending', task_id: 'allow-1', summary: '' }));
+  }
+
+  async spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[] }> {
+    return this.dispatch('spendAllowanceList', [], () => ({ allowances: [] }));
+  }
+
+  async spendAllowanceRevoke(id: string, proof: unknown): Promise<{ revoked: boolean }> {
+    return this.dispatch('spendAllowanceRevoke', [id, proof], () => ({ revoked: true }));
+  }
+
+  forgetEpochResult = 0;
+
+  async forgetEpoch(): Promise<number> {
+    return this.dispatch('forgetEpoch', [], () => this.forgetEpochResult);
+  }
+
+  /** Canned guard modes (REAL_LIFE_FIXES_2 §0). */
+  guardModesResult: { action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' } = {
+    action_claims: 'enforce',
+    regulated: 'enforce',
+  };
+
+  async getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }> {
+    return this.dispatch('getGuardModes', [], () => ({ ...this.guardModesResult }));
+  }
+
+  /** Canned owner time zone. */
+  ownerTimeZoneResult: { timezone: string; source: 'owner' | 'host' } = { timezone: 'UTC', source: 'host' };
+
+  async getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
+    return this.dispatch('getOwnerTimeZone', [], () => ({ ...this.ownerTimeZoneResult }));
+  }
+
   /** Canned `talkSend` answer. */
   talkSendResult: TalkSendResult = { status: 'sent' };
 

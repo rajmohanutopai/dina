@@ -1259,6 +1259,13 @@ export type {
   GrantMode,
 } from './agent/grant_repository';
 export * from './agent/access';
+export * from './agent/standing_grants';
+export * from './forget/forget';
+export * from './export/readable';
+export * from './standing/standing_replies';
+export * from './spend/allowance';
+export { recoverOwnerApprovals } from './approvals_recovery';
+export * from './settings/owner_settings';
 export type {
   AgentAccessDecision,
   RequireAgentPersonaAccessParams,

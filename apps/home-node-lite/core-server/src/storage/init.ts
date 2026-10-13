@@ -69,6 +69,11 @@ import {
   hydrateServiceConfig,
   recoverOutboxOnBoot,
   reconcileDefaultAgentGatingPolicies,
+  migrateStandardPersonaGrants,
+  MemoryService,
+  setMemoryService,
+
+  revokeGrantsOnPersonaDelete,
   registerPersonaDEK,
   setAgentGrantRepository,
   setAgentGatingPolicyRepository,
@@ -366,11 +371,28 @@ export async function initializeStorage(
   // (workflow claim, service.query) lands as caller-type 'unknown'
   // and 403s. Matches mobile's boot_capabilities.ts.
   await hydrateDeviceRegistry();
+  // The working-memory ToC (GET /v1/memory/toc) reads the per-persona topic
+  // stores opened above, as on the phone. Without it the intent classifier
+  // on a server saw an empty ToC for every ask.
+  setMemoryService(
+    new MemoryService({
+      nowSecFn: () => Math.floor(Date.now() / 1000),
+      onWarning: (e) => logger.warn({ persona: e.persona }, 'memory service warning'),
+    }),
+  );
+
   const ownerDid = getNodeDID();
   if (ownerDid === null) {
     logger.warn('coding-agent Standard profile reconciliation skipped: owner identity unavailable');
   } else {
     const policies = reconcileDefaultAgentGatingPolicies(ownerDid, listActiveDevices());
+    // REAL_LIFE_FIXES_2 §7.2: standard personas now need a grant; existing
+    // agent pairings keep theirs as audited, revocable standing grants.
+    revokeGrantsOnPersonaDelete();
+    const baseline = await migrateStandardPersonaGrants(listActiveDevices());
+    if (baseline.created > 0) logger.info({ count: baseline.created }, 'standing grants for existing agent pairings');
+    // Forgets, purchases, standing replies and budgets a crash cut short are
+    // recovered in boot.ts, once the workflow service is installed.
     if (policies.created > 0) {
       logger.info({ count: policies.created }, 'created missing coding-agent Standard profiles');
     }

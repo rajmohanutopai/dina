@@ -109,8 +109,25 @@ export class AISDKAdapter implements LLMProvider {
     // through costs more per turn but each turn actually converges.
     // Users who want minimum cost can pick a non-thinking explicit
     // catalog entry in the picker.
+    // A short decision (`reasoning: 'low'`, set by the router for lightweight
+    // tasks without tools): the lowest effort the model takes, sent under the
+    // key the OpenAI SDK actually reads (`reasoningEffort` → `reasoning_effort`;
+    // OpenRouter honours it too). Measured on deepseek-v4.1-flash through
+    // OpenRouter: 'none' → 0 thinking tokens and the same answer; the guard
+    // scan had spent its whole 2048-token budget thinking and returned nothing.
+    const lowEffort =
+      options.reasoning === 'low'
+        ? (lowestSupportedOpenAIEffort(modelId) ?? (this.name === 'openrouter' ? 'none' : null))
+        : null;
     const providerOptions: NonNullable<Parameters<typeof generateText>[0]['providerOptions']> =
-      effort !== null ? { openai: { reasoning: { effort } } } : {};
+      effort !== null || lowEffort !== null
+        ? {
+            openai: {
+              ...(effort !== null ? { reasoning: { effort } } : {}),
+              ...(lowEffort !== null ? { reasoningEffort: lowEffort } : {}),
+            },
+          }
+        : {};
 
     const result = await generateText({
       model: this.model,

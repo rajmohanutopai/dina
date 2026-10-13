@@ -9,6 +9,8 @@ import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 
+import { createOpenRouterJevBackend, type DecisionBackend } from '@dina/brain';
+
 import {
   AISDKAdapter,
   GeminiGenaiAdapter,
@@ -510,3 +512,18 @@ export async function createScrubbedLLMProvider(
   if (llm === null) return null;
   return routedProvider({ llm, providerName: provider, taskType: 'classify' });
 }
+
+/**
+ * The backend for the small checks (the guard scan): Jev through OpenRouter
+ * when the owner's model runs on OpenRouter (their key, or Starter Credits),
+ * with zero data retention requested. Undefined otherwise: those checks then
+ * use the owner's model (REAL_LIFE_FIXES_2 §18). An on-device model (Laya)
+ * is not offered yet.
+ */
+export async function createDecisionBackend(provider: ProviderType): Promise<DecisionBackend | undefined> {
+  if (provider !== 'openrouter') return undefined;
+  const resolved = await resolveProviderKey('openrouter');
+  if (resolved === null) return undefined;
+  return createOpenRouterJevBackend({ apiKey: resolved.apiKey, baseUrl: OPENROUTER_BASE_URL });
+}
+

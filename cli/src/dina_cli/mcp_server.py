@@ -18,6 +18,7 @@ from typing import Any
 from fastmcp import FastMCP
 
 from . import __version__
+from .spend import spend_fields
 from .client import DinaClient, DinaClientError
 from .config import load_config
 from .session import SessionStore
@@ -358,6 +359,11 @@ def dina_validate(
     context: dict | None = None,
     count: int = 1,
     reversible: bool = False,
+    amount: str | None = None,
+    currency: str | None = None,
+    merchant: str | None = None,
+    category: str | None = None,
+    request_key: str | None = None,
 ) -> dict:
     """Validate an action before executing it. Dina checks risk and user policy.
 
@@ -373,6 +379,12 @@ def dina_validate(
                  (e.g. {"to": "user@co.com", "subject": "Report", "attachment_count": 2})
         count: Number of items affected
         reversible: Whether the action can be undone
+        amount: For a purchase, the price (e.g. "1299.50"); a budget the
+                user set may cover it. Dina never pays: you pay at the shop.
+        currency: For a purchase, three-letter code (e.g. "INR")
+        merchant: For a purchase, the shop
+        category: For a purchase, what kind of thing (e.g. "household items")
+        request_key: Makes a retry count once; derived from the purchase if omitted
     """
     c = _get_client()
     payload: dict[str, Any] = {
@@ -384,12 +396,26 @@ def dina_validate(
     if context:
         payload["context"] = context
 
+    try:
+        spend = spend_fields(
+            session=session,
+            action=action,
+            description=description,
+            amount=amount,
+            currency=currency,
+            merchant=merchant,
+            category=category,
+            request_key=request_key,
+        )
+    except ValueError as exc:
+        return {"status": "error", "error": str(exc)}
     result = c.process_event(
         {
             "type": "agent_intent",
             "action": action,
             "target": description,
             "payload": payload,
+            **spend,
         },
         session=session,
     )

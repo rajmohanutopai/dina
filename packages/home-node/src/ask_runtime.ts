@@ -21,6 +21,7 @@ import {
   type PreFlightRetrievalProvider,
   type PreFlightRetrievalResult,
   type RunPreFlightOptions,
+  type DecisionBackend,
   type ProviderName,
 } from '@dina/brain';
 import { type CoreClient } from '@dina/core';
@@ -28,6 +29,8 @@ import { type CoreClient } from '@dina/core';
 export interface HomeNodeAskRuntimeOptions {
   llm: LLMProvider;
   providerName: ProviderName;
+  /** Fixed-choice decisions for the small checks (e.g. Jev); the chat model when absent. */
+  decisions?: DecisionBackend;
   systemPrompt?: string;
   cloudConsentGranted?: boolean;
   sensitivePersonas?: readonly string[];
@@ -204,6 +207,7 @@ export function buildHomeNodeAskRuntime(
   const pipeline = buildAgenticAskPipeline({
     llm: options.llm,
     providerName: options.providerName,
+    ...(options.decisions !== undefined ? { decisions: options.decisions } : {}),
     appViewClient: options.appView,
     orchestratorHandle,
     coreClient: options.core,
@@ -273,7 +277,14 @@ export function buildHomeNodeAskRuntime(
             : releaseSession !== undefined
               ? { releaseSession }
               : undefined;
-        return await runAskPreFlightRetrieval(plan, fetchers, runOpts);
+        const pre = await runAskPreFlightRetrieval(plan, fetchers, runOpts);
+        // Metadata only: never the question, the plan's queries or any item.
+        console.log('[ask_runtime] pre-flight', {
+          inventory: plan.inventory === true,
+          personas: plan.personas.length,
+          hits: pre.hits,
+        });
+        return pre;
       } catch {
         return null;
       }

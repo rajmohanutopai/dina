@@ -23,6 +23,7 @@ import {
 } from '../../src/agent/grant_repository';
 import { queryAudit, resetAuditState } from '../../src/audit/service';
 import { createPersona, resetPersonaState } from '../../src/persona/service';
+import { grantStandingAccess } from '../../src/agent/standing_grants';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import {
@@ -69,6 +70,10 @@ describe('requireAgentPersonaAccess', () => {
 
   it('binds a canonical alias to the installed legacy persona name', () => {
     createPersona('work', 'standard');
+    // A standard persona needs a grant (REAL_LIFE_FIXES_2 §7.2); the standing
+    // grant is on the installed name, and the alias must find it.
+    const id = grantStandingAccess(AGENT_A, 'work', 'pair-1');
+    expect(id).not.toBeNull();
 
     expect(
       requireAgentPersonaAccess({
@@ -77,7 +82,31 @@ describe('requireAgentPersonaAccess', () => {
         mode: 'read',
         scope: 'project status',
       }),
-    ).toEqual({ kind: 'allow' });
+    ).toEqual({ kind: 'allow', grantId: id });
+  });
+
+  it('a standard persona with no grant raises a card (REAL_LIFE_FIXES_2 §7.2)', () => {
+    createPersona('work', 'standard');
+    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'roadmap' });
+    expect(d.kind).toBe('approval_required');
+  });
+
+  it('a standing grant matches any session and survives past any session expiry', () => {
+    createPersona('work', 'standard');
+    grantStandingAccess(AGENT_A, 'work', 'pair-2');
+    for (const sessionId of ['sess-a', 'sess-b', null]) {
+      expect(
+        requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'x', sessionId, now: Date.now() + 400 * 86_400_000 }).kind,
+      ).toBe('allow');
+    }
+  });
+
+  it('a grant given at standard does not open a stricter persona of the same name', () => {
+    createPersona('work', 'standard');
+    grantStandingAccess(AGENT_A, 'work', 'pair-3');
+    resetPersonaState();
+    createPersona('work', 'sensitive');
+    expect(requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'x' }).kind).toBe('approval_required');
   });
 
   it('requires approval for a sensitive persona with no grant — and never reads the vault', () => {

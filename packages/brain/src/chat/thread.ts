@@ -298,6 +298,23 @@ export interface UcpComparisonLifecycle {
   cardSpec: Record<string, unknown>;
 }
 
+/**
+ * `export` lifecycle (REAL_LIFE_FIXES_2 §5) — the owner's readable export,
+ * prepared in Core. The card shows the manifest; its button fetches the
+ * document through the owner's own device. Brain never holds the document.
+ */
+export interface ExportLifecycle {
+  kind: 'export';
+  status: 'ready';
+  exportId: string;
+  manifest: {
+    personas: { persona: string; tier: string; included: boolean; why?: string; items: number }[];
+    people: number;
+    contacts: number;
+    reminders: number;
+  };
+}
+
 export type MessageLifecycle =
   | ServiceQueryLifecycle
   | MissingCapabilityLifecycle
@@ -307,7 +324,8 @@ export type MessageLifecycle =
   | CommerceComparisonLifecycle
   | GroupPlanLifecycle
   | QuoteRequestDraftLifecycle
-  | UcpComparisonLifecycle;
+  | UcpComparisonLifecycle
+  | ExportLifecycle;
 
 export interface ChatMessage {
   id: string;
@@ -550,6 +568,20 @@ export async function hydrateThread(
     }
   }
   return added;
+}
+
+/**
+ * Reload every loaded thread from storage, replacing the in-memory copy
+ * (REAL_LIFE_FIXES_2 §4.4): after a forget, Core has deleted messages and
+ * receipts that this cache still holds.
+ */
+export async function reloadLoadedThreads(): Promise<void> {
+  for (const threadId of [...loaded]) {
+    const before = threads.get(threadId)?.length ?? 0;
+    await hydrateThread(threadId, { force: true });
+    const after = threads.get(threadId) ?? [];
+    if (after.length !== before && after.length > 0) fireSubscribers(after[after.length - 1]!);
+  }
 }
 
 /** Write-through helper — fire-and-forget since Phase 2.3 (task 2.3).
@@ -820,6 +852,9 @@ export function addLifecycleMessage(
     case 'ucp_comparison':
       key = lifecycle.searchId;
       break;
+    case 'export':
+      key = lifecycle.exportId;
+      break;
   }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
@@ -895,6 +930,13 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
     if (typeof lc.draft !== 'object' || lc.draft === null) return null;
     if (!Array.isArray((lc.draft as { lines?: unknown }).lines)) return null;
     return lc as unknown as QuoteRequestDraftLifecycle;
+  }
+  if (lc.kind === 'export') {
+    if (typeof lc.exportId !== 'string' || lc.exportId === '') return null;
+    if (lc.status !== 'ready') return null;
+    const m = lc.manifest as { personas?: unknown } | null;
+    if (typeof m !== 'object' || m === null || !Array.isArray(m.personas)) return null;
+    return lc as unknown as ExportLifecycle;
   }
   if (lc.kind === 'ucp_comparison') {
     if (typeof lc.searchId !== 'string' || lc.searchId === '') return null;

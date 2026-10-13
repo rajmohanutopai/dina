@@ -109,6 +109,11 @@ export interface InboxEntry {
    */
   ucpSearch?: 'own' | 'mirrored';
   /**
+   * A card Core minted for the owner's own request (send, forget, automatic
+   * reply, spending budget): no agent asked, so the card says so.
+   */
+  ownerRequest?: true;
+  /**
    * A checkout card (UCP plan §3.7): `start` asks to open a checkout at a
    * merchant; `handoff` asks to open the merchant's own page to review and
    * pay; `link` asks to open a merchant's sign-in page to link an account
@@ -789,6 +794,14 @@ const A2A_MIRROR_ACTIONS: Readonly<Record<string, 'outbound' | 'inbound'>> = {
   a2a_inbound: 'inbound',
 };
 
+/** Owner cards Core mints, by payload type: the question each card asks. */
+const OWNER_CARD_TITLES: ReadonlyMap<string, string> = new Map([
+  ['owner_talk_send', 'Send this message?'],
+  ['owner_forget', 'Forget this?'],
+  ['owner_standing_reply', 'Turn on this automatic reply?'],
+  ['owner_spend_allowance', 'Allow this spending budget?'],
+]);
+
 function toEntry(task: WorkflowTask): InboxEntry {
   const parsed = safeParse(task.payload);
   const payloadType = typeof parsed.type === 'string' ? parsed.type : '';
@@ -854,6 +867,29 @@ function toEntry(task: WorkflowTask): InboxEntry {
       // transport-authenticated principal in the approval card.
       requesterDID: sourceDeviceDID,
       paramsPreview: toolName,
+      riskLevel: 'HIGH',
+      createdAt: task.created_at,
+      ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+    };
+  }
+
+  // Cards Core mints for the owner's own requests (REAL_LIFE_FIXES §7 and
+  // REAL_LIFE_FIXES_2 §4, §14, §15): Core's description is the whole card,
+  // what will be sent, forgotten, answered or allowed. Without this case
+  // they fell to the generic service card ("Unnamed service") and the owner
+  // approved without seeing what.
+  const ownerCardTitle = OWNER_CARD_TITLES.get(payloadType);
+  if (ownerCardTitle !== undefined) {
+    return {
+      id: task.id,
+      kind: 'agent_action',
+      capability: ownerCardTitle,
+      serviceName: ownerCardTitle,
+      description: ownerCardTitle,
+      requesterDID: '',
+      requesterName: 'You',
+      ownerRequest: true,
+      paramsPreview: task.description ?? '',
       riskLevel: 'HIGH',
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),

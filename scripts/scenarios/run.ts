@@ -5,6 +5,8 @@
  *   npx tsx scripts/scenarios/run.ts --area A,B      some areas
  *   npx tsx scripts/scenarios/run.ts --only A7,E1    some scenarios
  *
+ * Part 2 (docs/REAL_LIFE_SCENARIOS_2.md) is areas O to Z.
+ *
  * Start the fleet first (`fleet.ts up`). Writes a report to
  * scripts/scenarios/.fleet/reports/ and prints a summary. Scenarios marked
  * [phone] are skipped; [gap] scenarios run and are expected to fail.
@@ -27,11 +29,25 @@ import { areaK } from './areas/k_peerlens';
 import { areaL, stopReferenceAgent } from './areas/l_a2a';
 import { areaM, stopRecording } from './areas/m_privacy';
 import { areaN } from './areas/n_errors';
+import { areaO } from './areas/o_home';
+import { areaP } from './areas/p_health';
+import { areaQ } from './areas/q_money';
+import { areaR } from './areas/r_travel';
+import { areaS } from './areas/s_shopping';
+import { areaT } from './areas/t_ondc';
+import { areaU } from './areas/u_local';
+import { areaV } from './areas/v_friends';
+import { areaW } from './areas/w_work';
+import { areaX } from './areas/x_agents';
+import { areaY } from './areas/y_memory';
+import { areaZ } from './areas/z_safety';
 import { Dina } from './client';
 import { FLEET_DIR, loadDotEnv, NODE_NAMES, readState, type NodeName } from './fleet';
 import { Ctx, type Check, type Scenario, type TurnRecord } from './scenario';
 
 const ALL: Scenario[] = [...areaA, ...areaB, ...areaC, ...areaD, ...areaE, ...areaF, ...areaG, ...areaH, ...areaI, ...areaJ, ...areaK, ...areaL, ...areaM, ...areaN];
+/** Part 2 (docs/REAL_LIFE_SCENARIOS_2.md): run with --area O,P,...,Z. */
+const PART2: Scenario[] = [...areaO, ...areaP, ...areaQ, ...areaR, ...areaS, ...areaT, ...areaU, ...areaV, ...areaW, ...areaX, ...areaY, ...areaZ];
 
 interface Outcome {
   id: string;
@@ -77,7 +93,7 @@ async function main(): Promise<void> {
 
   const only = arg('only');
   const areas = arg('area');
-  const chosen = ALL.filter(
+  const chosen = [...ALL, ...PART2].filter(
     (s) => (only === null || only.includes(s.id)) && (areas === null || areas.includes(s.id.replace(/\d+$/, ''))),
   );
 

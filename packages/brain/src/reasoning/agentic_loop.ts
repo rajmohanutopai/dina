@@ -121,6 +121,11 @@ export type AgenticFinishReason =
   | 'approval_required';
 
 export interface AgenticLoopResult {
+  /**
+   * Out of steps, but a last turn without tools wrote an answer from what
+   * was found (`finishReason` still says which budget ran out).
+   */
+  wrappedUp?: boolean;
   /** Final user-visible text from the LLM. Empty when bailed early. */
   answer: string;
   /** Every tool call made during the turn, in order. */
@@ -164,6 +169,10 @@ export interface AgenticLoopResult {
 export const EMPTY_TURN_NUDGE =
   'Your last turn had no text and no tool call. Write your answer to the question now, in full.';
 
+/** Sent when the step budget is spent (see `wrapUp`). */
+export const WRAP_UP_NUDGE =
+  'You have used all your steps for this request; no more tools can run. Answer the question now from what the tools returned. Say plainly what you could not find or do. If one short question to the user would settle what is missing, ask it. Do not claim any action that a tool did not complete.';
+
 const DEFAULT_MAX_ITERATIONS = 8;
 const DEFAULT_MAX_TOOL_CALLS = 12;
 
@@ -180,19 +189,70 @@ export async function runAgenticTurn(args: {
   initialMessages?: ChatMessage[];
   userMessage: string;
   options?: AgenticLoopOptions;
+  /**
+   * Tool calls made before the model's first turn, as if the model had
+   * asked for them (REAL_LIFE_FIXES_2 §7.2: an agent's question searches the
+   * owner's vault before anything else). A call that needs the owner's
+   * approval pauses the turn exactly like a model-made one.
+   */
+  seedToolCalls?: { name: string; arguments: Record<string, unknown>; onlyIfNothingFound?: boolean }[];
 }): Promise<AgenticLoopResult> {
   const { provider, tools, systemPrompt, initialMessages = [], userMessage, options = {} } = args;
-  const transcript: ChatMessage[] = [...initialMessages, { role: 'user', content: userMessage }];
+  let transcript: ChatMessage[] = [...initialMessages, { role: 'user', content: userMessage }];
+  const toolLog: AgenticLoopResult['toolCalls'] = [];
+  const seeds = (args.seedToolCalls ?? []).filter((c) => tools.has(c.name));
+  // A seed marked `onlyIfNothingFound` runs only when the earlier seeds
+  // returned no results (least agency: a question the open search answers
+  // never asks the owner for more).
+  const found = (outcome: unknown): boolean => {
+    const r = (outcome as { result?: { results?: unknown } } | null)?.result?.results;
+    return Array.isArray(r) && r.length > 0;
+  };
+  if (seeds.length > 0) {
+    const first = seeds.filter((c) => c.onlyIfNothingFound !== true);
+    const later = seeds.filter((c) => c.onlyIfNothingFound === true);
+    const firstOutcomes = [];
+    for (const c of first) firstOutcomes.push(await tools.execute(c.name, c.arguments));
+    const run = firstOutcomes.some(found) ? first : [...first, ...later];
+    const calls = run.map((c, i) => ({ id: `seed-${i}`, name: c.name, arguments: c.arguments }));
+    transcript = [...transcript, { role: 'assistant', content: '', toolCalls: calls }];
+    for (let i = 0; i < calls.length; i++) {
+      const call = calls[i]!;
+      const outcome = i < firstOutcomes.length ? firstOutcomes[i] : await tools.execute(call.name, call.arguments);
+      toolLog.push(buildToolLogEntry(call.name, call.arguments, outcome));
+      if (isApprovalRequired(outcome)) {
+        return {
+          answer: '',
+          toolCalls: toolLog,
+          finishReason: 'approval_required',
+          usage: { inputTokens: 0, outputTokens: 0 },
+          transcript,
+          pausedState: {
+            version: 1,
+            transcript,
+            iteration: 0,
+            toolCallCount: i + 1,
+            pendingToolCall: { id: call.id, name: call.name, arguments: call.arguments },
+            remainingToolCalls: calls.slice(i + 1),
+            approvalId: outcome.approvalId,
+            persona: outcome.persona,
+            usage: { inputTokens: 0, outputTokens: 0 },
+          },
+        };
+      }
+      transcript = pushToolResult(transcript, call.id, call.name, outcome);
+    }
+  }
   return runLoopBody({
     provider,
     tools,
     systemPrompt,
     transcript,
     iteration: 0,
-    toolCallCount: 0,
+    toolCallCount: toolLog.length,
     inputTokens: 0,
     outputTokens: 0,
-    toolLog: [],
+    toolLog,
     options,
   });
 }
@@ -526,10 +586,39 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       },
     ];
 
+    // A terminal call batched with other calls would end the turn before the
+    // others' results are used (REAL_LIFE_FIXES_2 §2): run the others, answer
+    // the terminal call with "not run", and let the model go again.
+    const batchedTerminal =
+      resp.toolCalls.some((c) => tools.isTerminal(c.name)) &&
+      resp.toolCalls.some((c) => !tools.isTerminal(c.name));
     for (let i = 0; i < resp.toolCalls.length; i++) {
       const call = resp.toolCalls[i]!;
       if (options.signal?.aborted) return done('cancelled');
+      if (batchedTerminal && tools.isTerminal(call.name)) {
+        console.log('[agentic_loop] terminal tool batched with others — not run', { tool: call.name });
+        const skipped: ToolExecutionOutcome = {
+          success: false,
+          code: 'execution_failed',
+          error: 'not run: call this tool on its own, after the other tools have answered',
+        };
+        toolLog.push(buildToolLogEntry(call.name, call.arguments, skipped));
+        transcript = pushToolResult(transcript, call.id, call.name, skipped);
+        continue;
+      }
       if (toolCallCount >= maxToolCalls) {
+        // Every call in this batch not yet run gets an explicit result, so
+        // the wrap-up request pairs each tool call with its result (some
+        // providers refuse a dangling call).
+        for (const left of resp.toolCalls.slice(i)) {
+          const notRun: ToolExecutionOutcome = { success: false, code: 'execution_failed', error: 'not run: the step budget for this request ran out' };
+          transcript = pushToolResult(transcript, left.id, left.name, notRun);
+        }
+        const wrapped = await wrapUp();
+        if (wrapped !== '') {
+          answer = wrapped;
+          return done('max_tool_calls', true);
+        }
         answer =
           resp.content !== ''
             ? resp.content
@@ -598,7 +687,9 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       // batched AFTER this one in the same response are intentionally skipped
       // (one fire-and-forget action per turn).
       if (outcome.success === true && tools.isTerminal(call.name)) {
-        answer = resp.content;
+        // The model's own words when it wrote any; otherwise the tool's note,
+        // so the owner is never handed an empty reply.
+        answer = resp.content.trim() !== '' ? resp.content : tools.ownerNote(call.name, outcome.result);
         console.log('[agentic_loop] terminal tool — finalizing turn', { tool: call.name });
         return done('completed');
       }
@@ -611,10 +702,36 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     iterations: iteration,
     toolCallCount,
   });
+  const wrapped = await wrapUp();
+  if (wrapped !== '') {
+    answer = wrapped;
+    return done('max_iterations', true);
+  }
   return done('max_iterations');
 
-  function done(finishReason: AgenticFinishReason): AgenticLoopResult {
+  /**
+   * Out of steps: one last turn with no tools, so the owner gets what was
+   * found, what is missing, and at most one question, never a canned "try
+   * a simpler query". Empty when that turn fails or writes nothing.
+   */
+  async function wrapUp(): Promise<string> {
+    if (options.signal?.aborted) return '';
+    try {
+      const last = await provider.chat([...transcript, { role: 'user', content: WRAP_UP_NUDGE }], {
+        systemPrompt,
+        model: options.model,
+        temperature: options.temperature,
+        signal: options.signal,
+      });
+      return last.content.trim();
+    } catch {
+      return '';
+    }
+  }
+
+  function done(finishReason: AgenticFinishReason, wrappedUp = false): AgenticLoopResult {
     const result: AgenticLoopResult = {
+      ...(wrappedUp ? { wrappedUp: true } : {}),
       answer,
       toolCalls: toolLog,
       finishReason,

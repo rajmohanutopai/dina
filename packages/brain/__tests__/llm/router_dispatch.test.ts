@@ -536,3 +536,27 @@ describe('rehydrateResponse', () => {
     expect((out.toolCalls[0]!.arguments.meta as { phone: string }).phone).toBe('555-1234');
   });
 });
+
+describe('LLMRouter — short thinking for short decisions', () => {
+  const routerWith = (provider: LLMProvider) =>
+    new LLMRouter({
+      providers: { gemini: provider },
+      config: { localAvailable: false, cloudProviders: ['gemini'], sensitivePersonas: [], cloudConsentGranted: true },
+    });
+  const tool = { name: 't', description: 'd', parameters: { type: 'object', properties: {} } };
+
+  it('asks for low thinking on a lightweight task with no tools', async () => {
+    const stub = makeStubProvider();
+    await routerWith(stub.provider).chat({ taskType: 'guard_scan', messages: [{ role: 'user', content: 'x' }] });
+    expect(stub.lastOptions()?.reasoning).toBe('low');
+  });
+
+  it('leaves the default for a reasoning task, or a lightweight task with tools', async () => {
+    const stub = makeStubProvider();
+    const router = routerWith(stub.provider);
+    await router.chat({ taskType: 'reason', messages: [{ role: 'user', content: 'x' }] });
+    expect(stub.lastOptions()?.reasoning).toBeUndefined();
+    await router.chat({ taskType: 'classify', messages: [{ role: 'user', content: 'x' }], tools: [tool] as never });
+    expect(stub.lastOptions()?.reasoning).toBeUndefined();
+  });
+});

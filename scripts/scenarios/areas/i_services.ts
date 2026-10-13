@@ -14,7 +14,7 @@ import { startNode, stopNode } from '../fleet';
 
 import type { Ctx, Scenario } from '../scenario';
 
-const PLACE = { name: 'Tórshavn harbour', lat: 62.0107, lng: -6.7741, radiusKm: 15 };
+export const PLACE = { name: 'Tórshavn harbour', lat: 62.0107, lng: -6.7741, radiusKm: 15 };
 const RUNNER = 'albert_runner';
 
 function tomorrowIso(): string {
@@ -108,7 +108,7 @@ let published = false;
 let publisher: Ctx['albert'] | null = null;
 
 /** Publish Albert's listing once, wait for test-appview to index it, start his runner. */
-async function provider(c: Ctx): Promise<AlbertRunner> {
+export async function provider(c: Ctx): Promise<AlbertRunner> {
   if (runner === null) runner = new AlbertRunner(await Agent.pair(c.albert, 'albert-runner'));
   runner.start();
   if (!published) {
@@ -133,14 +133,14 @@ async function provider(c: Ctx): Promise<AlbertRunner> {
  */
 
 /** Service-query tasks on Alonso created after `since`. */
-async function queries(d: Dina, since: number): Promise<{ id: string; state: string; created_at?: number }[]> {
+export async function queries(d: Dina, since: number): Promise<{ id: string; state: string; created_at?: number }[]> {
   const out: { id: string; state: string; created_at?: number }[] = [];
   for (const state of ['created', 'queued', 'running', 'completed', 'failed', 'expired', 'cancelled'])
     for (const t of await d.tasks('service_query', state)) if (Number((t as { created_at?: number }).created_at ?? Date.now()) >= since - 1_000) out.push(t as never);
   return out;
 }
 
-function cardOf(added: { metadata?: Record<string, unknown> }[]): Record<string, unknown> | undefined {
+export function cardOf(added: { metadata?: Record<string, unknown> }[]): Record<string, unknown> | undefined {
   return added.map((m) => m.metadata?.lifecycle as Record<string, unknown> | undefined).find((l) => l?.kind === 'service_query');
 }
 
@@ -149,7 +149,7 @@ function cardOf(added: { metadata?: Record<string, unknown> }[]): Record<string,
  * up to two more providers when one goes quiet (REAL_LIFE_FIXES §9), each
  * with its own deadline, so a card can stay pending for several minutes.
  */
-const SERVICE_WAIT_MS = 480_000;
+export const SERVICE_WAIT_MS = 480_000;
 
 export const areaI: Scenario[] = [
   {

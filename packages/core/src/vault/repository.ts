@@ -97,6 +97,15 @@ export interface VaultRepository {
    */
   repointSubjectsSync(fromPersonId: string, toPersonId: string): void;
   /**
+   * Forget an item (REAL_LIFE_FIXES_2 §4.4): clear every text field, its
+   * embedding and its links, and mark it deleted. The row id stays as a
+   * tombstone. Idempotent: a tombstone is cleared again. False when no such
+   * row exists in this scope.
+   */
+  forgetItemSync(id: string): boolean;
+  /** Fold the write-ahead log into the file, so freed pages do not linger there. */
+  checkpointSync(): void;
+  /**
    * Enumerate every **non-deleted** item (matches the API's default
    * "deleted rows are invisible" rule — same as `getItemSync`, the
    * FTS + hybrid query paths, etc.). Callers that need to see deleted
@@ -359,6 +368,28 @@ export class SQLiteVaultRepository implements VaultRepository {
     this.linkSubjectSync(itemId, personId, opts);
   }
 
+  forgetItemSync(id: string): boolean {
+    // Overwrite freed pages rather than leave old text in them.
+    this.db.execute('PRAGMA secure_delete=ON');
+    const changed = this.db.run(
+      `UPDATE vault_items SET summary = '', body = '', metadata = '{}', tags = '[]', content_l0 = '',
+         content_l1 = '', contact_did = '', sender = '', source_id = '', contradicts = '',
+         author_person_id = '', owner_memory_key = NULL, embedding = NULL, deleted = 1, updated_at = ?
+       WHERE id = ? AND ${scopedWhere()}`,
+      [Date.now(), id, ...scopedParams()],
+    );
+    this.db.run('DELETE FROM vault_item_subjects WHERE item_id = ?', [id]);
+    return changed > 0;
+  }
+
+  checkpointSync(): void {
+    try {
+      this.db.execute('PRAGMA wal_checkpoint(TRUNCATE)');
+    } catch {
+      /* not in WAL mode */
+    }
+  }
+
   linkSubjectSync(itemId: string, personId: string, opts?: SubjectLinkOptions): void {
     if (itemId === '' || personId === '') return;
     const nowSec = Math.floor(Date.now() / 1000);
@@ -535,8 +566,10 @@ export class InMemoryVaultRepository implements VaultRepository {
   queryFTSSync(text: string, limit: number): VaultItem[] {
     const terms = text
       .toLowerCase()
-      // Strip FTS5 token-quote marks so `"emma" OR "birthday"` ⇒ `emma  birthday`.
+      // Strip FTS5 token-quote marks so `"emma" OR "birthday"` ⇒ `emma  birthday`,
+      // and the prefix star of a recall term (a substring match is a prefix match).
       .replace(/"/g, ' ')
+      .replace(/\*/g, ' ')
       .split(/\s+/)
       .filter((t) => t.length > 0 && !/^(and|or|not|near)$/i.test(t));
     if (terms.length === 0) return [];
@@ -610,6 +643,39 @@ export class InMemoryVaultRepository implements VaultRepository {
 
   async linkSubject(itemId: string, personId: string, opts?: SubjectLinkOptions): Promise<void> {
     this.linkSubjectSync(itemId, personId, opts);
+  }
+
+  forgetItemSync(id: string): boolean {
+    if (!this.inScope(id)) return false;
+    const item = this.items.get(id);
+    if (!item) return false;
+    Object.assign(item, {
+      summary: '',
+      body: '',
+      metadata: '{}',
+      tags: '[]',
+      content_l0: '',
+      content_l1: '',
+      contact_did: '',
+      sender: '',
+      source_id: '',
+      contradicts: '',
+      author_person_id: '',
+      embedding: undefined,
+      deleted: 1,
+      updated_at: Date.now(),
+    });
+    for (const [personId, list] of this.subjects) {
+      this.subjects.set(
+        personId,
+        list.filter((l) => l.itemId !== id),
+      );
+    }
+    return true;
+  }
+
+  checkpointSync(): void {
+    /* nothing to fold in memory */
   }
 
   linkSubjectSync(itemId: string, personId: string, _opts?: SubjectLinkOptions): void {

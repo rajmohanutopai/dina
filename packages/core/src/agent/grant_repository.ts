@@ -16,6 +16,10 @@
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export type GrantMode = 'read' | 'write';
+export type GrantKind = 'session' | 'standing';
+
+/** expires_at of a standing grant (the column is NOT NULL): year 9999. */
+export const STANDING_GRANT_EXPIRES_AT = 253_402_300_799_000;
 
 export interface AgentPersonaGrant {
   id: string;
@@ -34,6 +38,14 @@ export interface AgentPersonaGrant {
    * agent ask with this id. NULL for a session grant ("Approve").
    */
   askId: string | null;
+  /**
+   * REAL_LIFE_FIXES_2 §7.2: 'standing' matches any session of its agent and
+   * never expires (owner-chosen at pairing, or the baseline migration);
+   * 'session' is every other grant.
+   */
+  grantKind: GrantKind;
+  /** The persona's tier when the grant was given; null on older rows. */
+  grantedTier: string | null;
   /**
    * PLG-28 #1: false while the grant is RESERVED (durability proven, but not yet
    * gate-visible). `findActiveGrant` ignores reserved rows, so a grant inserted
@@ -58,6 +70,10 @@ export interface AgentPersonaGrantInsert {
   active?: boolean;
   /** "Approve Once": bind the grant to this one ask. Omitted → session grant. */
   askId?: string | null;
+  /** Omitted → 'session'. A standing grant ignores session and expiry. */
+  grantKind?: GrantKind;
+  /** The persona's tier when given (REAL_LIFE_FIXES_2 §7.2). */
+  grantedTier?: string | null;
 }
 
 export interface AgentGrantRepository {
@@ -86,6 +102,12 @@ export interface AgentGrantRepository {
     sessionId: string | null,
     now: number,
     askId?: string | null,
+    /**
+     * Only grants this accepts are considered (REAL_LIFE_FIXES_2 §7.2: the
+     * grant's tier covers the persona's tier now). Applied before choosing,
+     * so a long-lived grant that no longer covers never hides one that does.
+     */
+    covers?: (grantedTier: string | null) => boolean,
   ): AgentPersonaGrant | null;
   /**
    * PLG-28 #1: flip a RESERVED grant to active (gate-visible). Called AFTER the
@@ -107,6 +129,8 @@ export interface AgentGrantRepository {
    * enforced by the live SessionRegistry.
    */
   revokeForSession(agentDID: string, sessionId: string, now: number): number;
+  /** Revoke every active grant on one persona (persona deleted). */
+  revokeForPersona(persona: string, now: number): number;
   /** Active grants for an agent (diagnostics / UI). */
   listActiveForAgent(agentDID: string, now: number): AgentPersonaGrant[];
   /** Every row (tests). */
@@ -124,7 +148,7 @@ export function getAgentGrantRepository(): AgentGrantRepository | null {
 }
 
 const COLS =
-  'id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active, ask_id';
+  'id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active, ask_id, grant_kind, granted_tier';
 
 export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   constructor(private readonly db: DatabaseAdapter) {}
@@ -132,8 +156,8 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   insert(g: AgentPersonaGrantInsert): AgentPersonaGrant {
     this.db.execute(
       `INSERT INTO agent_persona_grants
-         (id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active, ask_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+         (id, session_id, agent_did, persona, mode, scope_json, approval_task_id, expires_at, revoked_at, created_at, active, ask_id, grant_kind, granted_tier)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?)`,
       [
         g.id,
         g.sessionId ?? null,
@@ -146,6 +170,8 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
         g.createdAt,
         g.active === false ? 0 : 1, // PLG-28 #1: reserve = 0, else active
         g.askId ?? null,
+        g.grantKind ?? 'session',
+        g.grantedTier ?? null,
       ],
     );
     const row = this.get(g.id);
@@ -175,20 +201,25 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     sessionId: string | null,
     now: number,
     askId?: string | null,
+    covers?: (grantedTier: string | null) => boolean,
   ): AgentPersonaGrant | null {
     // `session_id IS ?` is null-safe: a null bind matches session_id IS NULL,
     // a value matches equality — so the session dimension is part of the key.
     // An ask-bound grant matches only its own ask (a NULL bind matches none).
     const rows = this.db.query(
       `SELECT ${COLS} FROM agent_persona_grants
-        WHERE agent_did = ? AND persona = ? AND session_id IS ? AND revoked_at IS NULL
-          AND active = 1 AND expires_at > ? AND (mode = ? OR mode = 'write')
+        WHERE agent_did = ? AND persona = ? AND revoked_at IS NULL AND active = 1
+          AND (grant_kind = 'standing' OR (session_id IS ? AND expires_at > ?))
+          AND (mode = ? OR mode = 'write')
           AND (ask_id IS NULL OR ask_id = ?)
-        ORDER BY expires_at DESC
-        LIMIT 1`,
+        ORDER BY expires_at DESC`,
       [agentDID, persona, sessionId, now, mode, askId ?? null],
     );
-    return rows.length > 0 ? rowToGrant(rows[0]) : null;
+    for (const row of rows) {
+      const g = rowToGrant(row);
+      if (covers === undefined || covers(g.grantedTier ?? null)) return g;
+    }
+    return null;
   }
 
   revoke(id: string, now: number): boolean {
@@ -208,6 +239,13 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     );
   }
 
+  revokeForPersona(persona: string, now: number): number {
+    return this.db.run('UPDATE agent_persona_grants SET revoked_at = ? WHERE persona = ? AND revoked_at IS NULL', [
+      now,
+      persona,
+    ]);
+  }
+
   revokeForSession(agentDID: string, sessionId: string, now: number): number {
     return this.db.run(
       `UPDATE agent_persona_grants
@@ -221,7 +259,8 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
     return this.db
       .query(
         `SELECT ${COLS} FROM agent_persona_grants
-          WHERE agent_did = ? AND revoked_at IS NULL AND active = 1 AND expires_at > ?
+          WHERE agent_did = ? AND revoked_at IS NULL AND active = 1
+            AND (grant_kind = 'standing' OR expires_at > ?)
           ORDER BY created_at DESC`,
         [agentDID, now],
       )
@@ -267,6 +306,8 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
       createdAt: g.createdAt,
       active: g.active !== false, // PLG-28 #1: reserve = false, else active
       askId: g.askId ?? null,
+      grantKind: g.grantKind ?? 'session',
+      grantedTier: g.grantedTier ?? null,
     };
     this.rows.set(row.id, row);
     return { ...row };
@@ -291,18 +332,19 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
     sessionId: string | null,
     now: number,
     askId?: string | null,
+    covers?: (grantedTier: string | null) => boolean,
   ): AgentPersonaGrant | null {
     let best: AgentPersonaGrant | null = null;
     for (const r of this.rows.values()) {
       if (
         r.agentDID === agentDID &&
         r.persona === persona &&
-        r.sessionId === sessionId &&
+        (r.grantKind === 'standing' || (r.sessionId === sessionId && r.expiresAt > now)) &&
         (r.askId === null || (askId !== undefined && askId !== null && r.askId === askId)) &&
         r.revokedAt === null &&
         r.active &&
-        r.expiresAt > now &&
-        (r.mode === mode || r.mode === 'write')
+        (r.mode === mode || r.mode === 'write') &&
+        (covers === undefined || covers(r.grantedTier ?? null))
       ) {
         if (best === null || r.expiresAt > best.expiresAt) best = r;
       }
@@ -328,6 +370,17 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
     return count;
   }
 
+  revokeForPersona(persona: string, now: number): number {
+    let count = 0;
+    for (const r of this.rows.values()) {
+      if (r.persona === persona && r.revokedAt === null) {
+        r.revokedAt = now;
+        count++;
+      }
+    }
+    return count;
+  }
+
   revokeForSession(agentDID: string, sessionId: string, now: number): number {
     let count = 0;
     for (const r of this.rows.values()) {
@@ -342,7 +395,11 @@ export class InMemoryAgentGrantRepository implements AgentGrantRepository {
   listActiveForAgent(agentDID: string, now: number): AgentPersonaGrant[] {
     return [...this.rows.values()]
       .filter(
-        (r) => r.agentDID === agentDID && r.revokedAt === null && r.active && r.expiresAt > now,
+        (r) =>
+          r.agentDID === agentDID &&
+          r.revokedAt === null &&
+          r.active &&
+          (r.grantKind === 'standing' || r.expiresAt > now),
       )
       .sort((a, b) => b.createdAt - a.createdAt)
       .map((r) => ({ ...r }));
@@ -373,5 +430,7 @@ function rowToGrant(row: DBRow): AgentPersonaGrant {
     // existed (fail-OPEN on hydration is fine — a legacy grant WAS active).
     active: Number(row.active ?? 1) === 1,
     askId: row.ask_id === null || row.ask_id === undefined ? null : String(row.ask_id),
+    grantKind: row.grant_kind === 'standing' ? 'standing' : 'session',
+    grantedTier: row.granted_tier === null || row.granted_tier === undefined ? null : String(row.granted_tier),
   };
 }

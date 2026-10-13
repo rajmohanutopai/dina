@@ -14,7 +14,23 @@ import { NODE_NAMES, readState, startNode, stopNode } from '../fleet';
 import type { Ctx, Scenario } from '../scenario';
 
 const RECORDER_PORT = 18999;
-const sent: string[] = [];
+export const sent: string[] = [];
+/**
+ * Per recorded call: the path and the start of Dina's own system prompt,
+ * so a check can say WHICH call carried a name (test data only).
+ */
+export const sentLabels: string[] = [];
+
+function labelOf(path: string, body: string): string {
+  try {
+    const j = JSON.parse(body) as { messages?: { role?: string; content?: unknown }[]; model?: string };
+    const sys = (j.messages ?? []).find((m) => m.role === 'system');
+    const head = typeof sys?.content === 'string' ? sys.content.replace(/\s+/g, ' ').slice(0, 50) : '(no system prompt)';
+    return `${path} ${j.model ?? ''} :: ${head}`;
+  } catch {
+    return `${path} (not json)`;
+  }
+}
 let server: http.Server | null = null;
 
 function startRecorder(): Promise<void> {
@@ -25,7 +41,10 @@ function startRecorder(): Promise<void> {
     req.on('end', () => {
       const body = Buffer.concat(chunks);
       sent.push(body.toString('utf8'));
-      const target = `https://openrouter.ai/api/v1${(req.url ?? '').replace(/^\/api\/v1/, '')}`;
+      sentLabels.push(labelOf(req.url ?? '', body.toString('utf8')));
+      // The path as sent: chat calls under /api/v1, decisions (Jev) under
+      // /api/alpha, so both are recorded and checked.
+      const target = `https://openrouter.ai${req.url ?? ''}`;
       const headers: Record<string, string> = {};
       for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string' && !['host', 'content-length', 'connection'].includes(k)) headers[k] = v;
       fetch(target, { method: req.method ?? 'POST', headers, ...(body.length > 0 ? { body } : {}) })
@@ -45,7 +64,7 @@ function startRecorder(): Promise<void> {
 let recording = false;
 
 /** Restart Alonso with his model traffic going through the recorder. */
-async function record(c: Ctx): Promise<void> {
+export async function record(c: Ctx): Promise<void> {
   if (recording) return;
   await startRecorder();
   stopNode('alonso');

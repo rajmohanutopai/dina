@@ -107,6 +107,10 @@ export function createCoordinateGroupTool(options: CoordinateGroupToolOptions): 
   return {
     name: 'coordinate_group',
     terminal: true,
+    ownerNote: (result) => {
+      const note = (result as { note?: unknown } | null)?.note;
+      return typeof note === 'string' && note !== '' ? note : "I've started the plan; the answers will appear on the plan card.";
+    },
     description:
       "Find a time that works for several of the user's contacts at once — \"plan X with A, B and C\". Name each guest as the user did (a family or a person from their contacts) and say whether they are required; give the concrete candidate slots (dates or times in words, e.g. \"Sat 26 Sep afternoon\") you derived from what the user said. Core asks every guest the same question privately, waits one shared window, and folds the answers; nobody sees anyone else's reply. Fire-and-forget and turn-ending: say in one line what you are asking BEFORE calling this; the replies land on a plan card in the chat, not here. Use once per request, never `query_service` for a guest. Ask the user when a name matches more than one contact.",
     parameters: {

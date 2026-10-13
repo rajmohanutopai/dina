@@ -95,6 +95,12 @@ export interface TopicRepository {
   /** Register a variant→canonical mapping. Idempotent; noop when
    *  variant === canonical. Throws on empty variant or canonical. */
   putAlias(variant: string, canonical: string): Promise<void>;
+
+  /**
+   * Forget a topic and every alias pointing at it (REAL_LIFE_FIXES_2 §4.4).
+   * True when the topic existed.
+   */
+  remove?(topic: string): Promise<boolean>;
 }
 
 // ---------------------------------------------------------------------------
@@ -298,6 +304,13 @@ export class SQLiteTopicRepository implements TopicRepository {
     );
   }
 
+  async remove(topic: string): Promise<boolean> {
+    if (topic === '') return false;
+    const n = this.db.run('DELETE FROM topic_salience WHERE topic = ?', [topic]);
+    this.db.run('DELETE FROM topic_aliases WHERE canonical = ? OR variant = ?', [topic, topic]);
+    return n > 0;
+  }
+
   private lookupAlias(variant: string): string | null {
     const rows = this.db.query(`SELECT canonical FROM topic_aliases WHERE variant = ? LIMIT 1`, [
       variant,
@@ -396,6 +409,14 @@ export class InMemoryTopicRepository implements TopicRepository {
     }
     if (variant === canonical) return;
     this.aliases.set(variant, canonical);
+  }
+
+  async remove(topic: string): Promise<boolean> {
+    const existed = this.topics.delete(topic);
+    for (const [variant, canonical] of [...this.aliases]) {
+      if (canonical === topic || variant === topic) this.aliases.delete(variant);
+    }
+    return existed;
   }
 
   /** Test helper: erase every topic + alias. Not on the interface. */

@@ -184,7 +184,21 @@ export function registerVaultRoutes(router: CoreRouter): void {
     if (isResponse(release)) return release;
 
     try {
-      const results = queryVault(persona, { mode, text, limit }, release);
+      const embedding =
+        Array.isArray(body.embedding) && body.embedding.length > 0 && body.embedding.every((n) => typeof n === 'number')
+          ? new Float32Array(body.embedding as number[])
+          : undefined;
+      const results = queryVault(
+        persona,
+        {
+          mode,
+          text,
+          limit,
+          ...(embedding !== undefined ? { embedding } : {}),
+          ...(body.word_forms === true ? { wordForms: true } : {}),
+        },
+        release,
+      );
       return { status: 200, body: { items: results, count: results.length } };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };

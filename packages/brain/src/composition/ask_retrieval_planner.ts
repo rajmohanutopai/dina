@@ -80,6 +80,13 @@ export interface AskRetrievalPlan {
   needs_peerlens: boolean;
   /** One-line restatement of the user's intent. */
   intent: string;
+  /**
+   * True for a question about everything in a scope ("my week", "what do I
+   * have", "what am I missing", REAL_LIFE_FIXES_2 §9.2): keyword search
+   * misses facts that share no word with the question, so the newest items
+   * of each picked persona are pre-fetched too.
+   */
+  inventory?: boolean;
 }
 
 export interface InstalledPersona {
@@ -247,7 +254,8 @@ export function parseAskRetrievalPlan(
         : false;
   const intent = typeof obj.intent === 'string' ? obj.intent.trim() : '';
 
-  return { personas, people, needs_peerlens, intent };
+  const inventory = obj.inventory === true;
+  return { personas, people, needs_peerlens, intent, ...(inventory ? { inventory } : {}) };
 }
 
 function extractPersonas(
@@ -304,7 +312,13 @@ function renderPersonaMenu(personas: readonly InstalledPersona[]): string {
 
 function formatToday(): string {
   const now = new Date();
-  return now.toISOString().slice(0, 10);
+  // The local calendar date, not UTC (REAL_LIFE_FIXES_2 §10): late evening
+  // in Asia is still "yesterday" in UTC.
+  try {
+    return now.toLocaleDateString('en-CA');
+  } catch {
+    return now.toISOString().slice(0, 10);
+  }
 }
 
 // ---------------------------------------------------------------
@@ -344,9 +358,13 @@ export const ASK_RETRIEVAL_PLAN_RESPONSE_SCHEMA: Record<string, unknown> = {
     },
     needs_peerlens: { type: 'boolean' },
     intent: { type: 'string' },
+    inventory: { type: 'boolean' },
   },
   required: ['personas', 'people', 'needs_peerlens', 'intent'],
 };
+
+/** How many newest items an inventory question pre-fetches per persona. */
+const INVENTORY_RECENT = 40;
 
 // ---------------------------------------------------------------
 // Pre-flight retrieval executor + context-block formatter
@@ -375,6 +393,15 @@ export interface AskRetrievalFetchers {
    * field is rendered as a list without resolution.
    */
   findPerson?: (name: string) => Promise<readonly RetrievedPersonMatch[]>;
+  /**
+   * The newest items of a persona (REAL_LIFE_FIXES_2 §9.2), for inventory
+   * questions. Optional — without it an inventory plan uses search alone.
+   */
+  recent?: (
+    persona: string,
+    limit: number,
+    opts?: { releaseSession?: string },
+  ) => Promise<readonly RetrievedVaultItem[]>;
 }
 
 export interface RetrievedVaultItem {
@@ -470,7 +497,8 @@ export async function runAskPreFlightRetrieval(
             t.query,
             opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : undefined,
           );
-        } catch {
+        } catch (err) {
+          console.log('[ask_retrieval] search failed', { status: (err as { status?: number }).status, message: err instanceof Error ? err.message.slice(0, 160) : '' });
           return [] as RetrievedVaultItem[];
         }
       }),
@@ -488,8 +516,34 @@ export async function runAskPreFlightRetrieval(
         ),
   ]);
 
+  // Inventory questions: the newest items of each picked persona too.
+  const recentResults =
+    plan.inventory === true && fetchers.recent !== undefined
+      ? await Promise.all(
+          picks.map(async (pick) => {
+            try {
+              return await fetchers.recent!(
+                pick.persona,
+                INVENTORY_RECENT,
+                opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : undefined,
+              );
+            } catch (err) {
+              console.log('[ask_retrieval] recent fetch failed', { status: (err as { status?: number }).status, message: err instanceof Error ? err.message.slice(0, 160) : '' });
+              return [] as RetrievedVaultItem[];
+            }
+          }),
+        )
+      : [];
+
   const hits: Record<string, number> = {};
   const grouped = new Map<string, RetrievedVaultItem[]>();
+  recentResults.forEach((items, i) => {
+    const persona = picks[i]!.persona;
+    const bucket = grouped.get(persona) ?? [];
+    for (const item of items) if (!bucket.some((e) => e.id === item.id)) bucket.push(item);
+    grouped.set(persona, bucket);
+    hits[persona] = (hits[persona] ?? 0) + items.length;
+  });
   for (let i = 0; i < vaultTasks.length; i++) {
     const persona = vaultTasks[i].persona;
     const items = vaultResults[i] ?? [];
@@ -576,7 +630,7 @@ export function formatRetrievalContextBlock(
       vaultEmitted = true;
     }
     lines.push(`Vault — ${persona}:`);
-    for (const item of items.slice(0, 5)) {
+    for (const item of items.slice(0, input.plan.inventory === true ? 20 : 5)) {
       const text = item.body ?? item.content_l0 ?? '';
       const summary = text.length > 240 ? `${text.slice(0, 240)}…` : text;
       lines.push(`  - ${summary}`);

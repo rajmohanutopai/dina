@@ -12,6 +12,7 @@
  * Source: ARCHITECTURE.md Tasks 6.8–6.12
  */
 
+import { answerWithStandingReply } from '../standing/standing_replies';
 import {
   parseServiceListingUri,
   validateServiceOfferBody,
@@ -806,6 +807,12 @@ export function receiveD2D(
     message.id,
     isContact,
   );
+
+  // REAL_LIFE_FIXES_2 §14: a contact's coordination request may have a
+  // standing reply the owner set; the message is still staged as usual.
+  if (stageResult.action !== 'quarantined' && isContact && message.type === 'coordination.request') {
+    void answerWithStandingReply(message.from).catch(() => undefined);
+  }
 
   // If quarantined, also store in quarantine management
   let quarantineId: string | undefined;

@@ -590,4 +590,35 @@ describe('agent intent validation — SQLite-backed contract', () => {
       ).not.toThrow();
     }
   });
+
+  describe('declared purchases (REAL_LIFE_FIXES_2 §15)', () => {
+    const buy = (key: string, extra: Record<string, unknown> = {}) =>
+      send('POST', '/v1/agent/validate', intent('purchase', 'rice and oil', { amount: { value_minor: 1500, currency: 'JPY' }, merchant: 'Kirana', category: 'household', request_key: key, ...extra }));
+
+    it('a retry of a purchase under review returns the same card and raises no second one', async () => {
+      const first = await buy('k-retry');
+      const again = await buy('k-retry');
+      expect(first.body.requires_approval).toBe(true);
+      expect(again.body.proposal_id).toBe(first.body.proposal_id);
+      const cards = getWorkflowRepository()!.listByKindAndState('approval', 'pending_approval', 50).filter((t) => t.payload.includes('k-retry'));
+      expect(cards).toHaveLength(1);
+      // Yen has no minor unit: the card shows the amount as declared.
+      expect(cards[0]!.description).toContain('JPY 1500');
+      expect(cards[0]!.description).not.toContain('15.00');
+    });
+
+    it('a retry after the card failed to be created creates it, under the same id', async () => {
+      const real = getWorkflowRepository()!;
+      const create = real.create.bind(real);
+      real.create = () => {
+        throw new Error('disk full');
+      };
+      const first = await buy('k-fail');
+      expect(first.status).toBe(500);
+      real.create = create;
+      const again = await buy('k-fail');
+      expect(again.body.requires_approval).toBe(true);
+      expect(real.getById(String(again.body.proposal_id))).not.toBeNull();
+    });
+  });
 });

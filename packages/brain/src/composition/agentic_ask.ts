@@ -81,6 +81,10 @@ import {
   type ResearchCache,
 } from '../reasoning/product_tools';
 import { createDraftQuoteRequestTool } from '../reasoning/quote_request_tool';
+import { createExportTool } from '../reasoning/export_tool';
+import { createForgetTool } from '../reasoning/forget_tool';
+import { createSpendAllowanceTool } from '../reasoning/spend_allowance_tool';
+import { createStandingReplyTool } from '../reasoning/standing_reply_tool';
 import { createRememberChatTool } from '../reasoning/remember_chat_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { createSendMessageTool } from '../reasoning/send_message_tool';
@@ -118,6 +122,7 @@ import {
   type VaultApprovalWorkflowClient,
 } from './persona_guard';
 
+import type { DecisionBackend } from '../llm/decisions';
 import type { LLMProvider } from '../llm/adapters/provider';
 import type { ProviderName, TaskType } from '../llm/router';
 import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
@@ -132,6 +137,11 @@ export interface BuildAgenticAskPipelineInput {
   llm: LLMProvider;
   /** Provider name for `RoutedLLMProvider` labels + the router's provider map key. */
   providerName: ProviderName;
+  /**
+   * Fixed-choice decisions for the small checks (the guard scan), e.g. Jev
+   * through OpenRouter. Without it, those checks use the owner's model.
+   */
+  decisions?: DecisionBackend;
   /** AppView client handle — any object satisfying the tool-surface subsets. */
   appViewClient: Parameters<typeof createSearchProviderServicesTool>[0]['appViewClient'] &
     Parameters<typeof createSearchCapabilitiesTool>[0]['appViewClient'] &
@@ -163,7 +173,9 @@ export interface BuildAgenticAskPipelineInput {
     // Agent/device asks (REAL_LIFE_FIXES §3) also need Core's access
     // decisions and authority-carrying reads; the full CoreClient has them.
     // A client without them makes every agent ask fail closed.
-    Partial<AgentReadCoreClient>;
+    Partial<AgentReadCoreClient> &
+    // Owner settings (REAL_LIFE_FIXES_2 §0): guard modes and the owner's zone.
+    Partial<Pick<CoreClient, 'getGuardModes' | 'getOwnerTimeZone' | 'forgetEpoch'>>;
   /**
    * Workflow surface for `delegate_to_agent` — narrower than the full
    * `BrainCoreClient` so a host that hasn't paired any agents can omit
@@ -321,6 +333,12 @@ export interface AgenticAskPipeline {
   ownerDid?: string;
   /** Up to three close contacts' names, closest first (Law 4, §8). */
   closeContacts?: () => Promise<string[]>;
+  /** Report-or-enforce for the reply guards (REAL_LIFE_FIXES_2 §0); report when unknown. */
+  guardModes?: () => Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }>;
+  /** The owner's time zone (REAL_LIFE_FIXES_2 §0); the host's when unknown. */
+  ownerTimeZone?: () => Promise<string>;
+  /** Core's forget counter (REAL_LIFE_FIXES_2 §4.4); Brain reloads its threads when it moves. */
+  forgetEpoch?: () => Promise<number>;
   router: LLMRouter;
   handlerOptions: Omit<AgenticAskHandlerOptions, 'provider' | 'tools'>;
 }
@@ -341,6 +359,7 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       sensitivePersonas: [...(input.sensitivePersonas ?? DEFAULT_SENSITIVE_PERSONAS)],
       cloudConsentGranted: input.cloudConsentGranted ?? true,
     },
+    ...(input.decisions !== undefined ? { decisions: input.decisions } : {}),
   });
 
   // The `/ask` agentic path is `taskType: 'reason'` — the router picks
@@ -391,7 +410,7 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       taskType: 'guard_scan',
       label: `routed:guard_scan:${input.providerName}`,
     }),
-    { closeContacts },
+    { closeContacts, decide: (request) => router.decide({ request }) },
   );
 
   // Identity / people-graph extractor — the agentic remember loop's
@@ -443,6 +462,36 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
             core: talkCore as Pick<CoreClient, 'talkSend'>,
           }),
         );
+      }
+      // REAL_LIFE_FIXES_2 §5: the owner's readable export (manifest only here).
+      const exportCore = input.coreClient as Partial<Pick<CoreClient, 'ownerExportPrepare'>>;
+      if (typeof exportCore.ownerExportPrepare === 'function') {
+        reg.register(createExportTool({ core: exportCore as Pick<CoreClient, 'ownerExportPrepare'> }));
+      }
+      // REAL_LIFE_FIXES_2 §14: standing replies, always confirmed on a card.
+      const standingCore = input.coreClient as Partial<Pick<CoreClient, 'standingReplyPropose' | 'standingReplyList' | 'standingReplyRevoke'>>;
+      if (typeof standingCore.standingReplyPropose === 'function' && typeof standingCore.standingReplyList === 'function' && typeof standingCore.standingReplyRevoke === 'function') {
+        reg.register(
+          createStandingReplyTool({
+            thread: ownerChatThread,
+            core: standingCore as Pick<CoreClient, 'standingReplyPropose' | 'standingReplyList' | 'standingReplyRevoke'>,
+          }),
+        );
+      }
+      // REAL_LIFE_FIXES_2 §15: an agent's spending budget, set on a card in person.
+      const spendCore = input.coreClient as Partial<Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>>;
+      if (typeof spendCore.spendAllowancePropose === 'function' && typeof spendCore.spendAllowanceList === 'function' && typeof spendCore.spendAllowanceRevoke === 'function') {
+        reg.register(
+          createSpendAllowanceTool({
+            thread: ownerChatThread,
+            core: spendCore as Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>,
+          }),
+        );
+      }
+      // REAL_LIFE_FIXES_2 §4: forget on the owner's word; Core plans, the owner approves.
+      const forgetCore = input.coreClient as Partial<Pick<CoreClient, 'forgetPropose'>>;
+      if (typeof forgetCore.forgetPropose === 'function') {
+        reg.register(createForgetTool({ thread: ownerChatThread, core: forgetCore as Pick<CoreClient, 'forgetPropose'> }));
       }
     }
     const vaultOpts = {
@@ -644,6 +693,27 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     handlerOptions: { intentClassifier, guardScanner },
     ...(input.ownerDid !== undefined && input.ownerDid !== '' ? { ownerDid: input.ownerDid } : {}),
     closeContacts,
+    guardModes: async () => {
+      try {
+        if (input.coreClient.getGuardModes !== undefined) return await input.coreClient.getGuardModes();
+      } catch {
+        /* report when unknown */
+      }
+      return { action_claims: 'report', regulated: 'report' };
+    },
+    forgetEpoch: async () => (input.coreClient.forgetEpoch !== undefined ? input.coreClient.forgetEpoch() : 0),
+    ownerTimeZone: async () => {
+      try {
+        if (input.coreClient.getOwnerTimeZone !== undefined) return (await input.coreClient.getOwnerTimeZone()).timezone;
+      } catch {
+        /* the host's zone */
+      }
+      try {
+        return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+      } catch {
+        return 'UTC';
+      }
+    },
   };
 
   // Always wire buildToolsForAsk — coreClient is always provided and
@@ -777,8 +847,20 @@ function buildIntentClassifier(
       if (askAuthority !== undefined && askAuthority !== '') {
         if (core === null) return [];
         try {
-          return (await core.memoryToC({ limit: 20, askAuthority })).entries;
-        } catch {
+          const toc = await core.memoryToC({ limit: 20, askAuthority });
+          // REAL_LIFE_FIXES_2 §7.2: personas closed to this requester are
+          // named, with their description and no topics, so a question that
+          // belongs there is routed to the vault (and Core asks the owner).
+          const closed = (toc.gated_personas ?? []).map((g) => ({
+            persona: g.name,
+            topic: `(closed to this requester; the owner must approve access) ${g.description}`.trim(),
+            kind: 'theme' as const,
+            salience: 0,
+            last_update: 0,
+          }));
+          return [...toc.entries, ...closed];
+        } catch (err) {
+          console.log('[agentic_ask] agent toc failed', { status: (err as { status?: number }).status, message: err instanceof Error ? err.message.slice(0, 120) : '' });
           return [];
         }
       }

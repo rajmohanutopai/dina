@@ -69,6 +69,11 @@ export interface SearchQuery {
   before?: number;
   /** Skip first N results (pagination). Applied after scoring/sorting. */
   offset?: number;
+  /**
+   * Recall search (REAL_LIFE_FIXES_2 §9.2): match word forms ("receipt" and
+   * "receipts", "book" and "booking"). Exact lookups and forget never set it.
+   */
+  wordForms?: boolean;
 }
 
 export interface StagingItem {

@@ -31,6 +31,7 @@ export type DisplayType =
   | 'group-plan'
   | 'quote-request-draft'
   | 'ucp-comparison'
+  | 'export'
   | 'nudge'
   | 'reminder'
   | 'briefing';
@@ -123,6 +124,11 @@ export function toDisplayType(m: ChatMessage): DisplayType {
   if (m.type === 'dina' && lifecycle?.kind === 'ucp_comparison') {
     return 'ucp-comparison';
   }
+  // export card (REAL_LIFE_FIXES_2 §5): the owner's readable export, saved
+  // through the owner's own device.
+  if (m.type === 'dina' && lifecycle?.kind === 'export') {
+    return 'export';
+  }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
   if (m.type === 'reminder') return 'reminder';
@@ -150,6 +156,8 @@ export function chatRowKind(displayType: DisplayType): string {
       return 'quote-request-draft';
     case 'ucp-comparison':
       return 'ucp-comparison';
+    case 'export':
+      return 'export';
     case 'quarantine-request':
       return 'quarantine';
     case 'ask-approval':

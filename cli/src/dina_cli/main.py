@@ -19,6 +19,7 @@ import click
 import httpx
 
 from . import __version__
+from .spend import spend_fields
 from .client import DinaClient, DinaClientError
 from .config import CONFIG_FILE, load_config, save_config, _load_saved
 from . import config as _config_mod
@@ -1347,6 +1348,15 @@ def _extract_category(item: dict) -> str:
     help="JSON object with action details shown in approval notification "
     '(e.g. \'{"to":"user@example.com","subject":"Report"}\')',
 )
+@click.option("--amount", default=None, help="For a purchase: the price, e.g. 1299.50")
+@click.option("--currency", default=None, help="For a purchase: three-letter code, e.g. INR")
+@click.option("--merchant", default=None, help="For a purchase: the shop")
+@click.option("--category", default=None, help="For a purchase: what kind of thing, e.g. household items")
+@click.option(
+    "--request-key",
+    default=None,
+    help="For a purchase: a key that makes a retry count once (derived from the purchase when omitted)",
+)
 @click.pass_context
 def validate(
     ctx: click.Context,
@@ -1356,6 +1366,11 @@ def validate(
     reversible: bool,
     session: str,
     context_json: str | None,
+    amount: str | None = None,
+    currency: str | None = None,
+    merchant: str | None = None,
+    category: str | None = None,
+    request_key: str | None = None,
 ) -> None:
     """Check if an action is approved by user policy.
 
@@ -1390,12 +1405,26 @@ def validate(
         if context:
             payload["context"] = context
 
+        try:
+            spend = spend_fields(
+                session=session,
+                action=action,
+                description=description,
+                amount=amount,
+                currency=currency,
+                merchant=merchant,
+                category=category,
+                request_key=request_key,
+            )
+        except ValueError as exc:
+            raise click.BadParameter(str(exc), param_hint="--amount/--currency") from exc
         result = client.process_event(
             {
                 "type": "agent_intent",
                 "action": action,
                 "target": description,
                 "payload": payload,
+                **spend,
             },
             session=session,
         )

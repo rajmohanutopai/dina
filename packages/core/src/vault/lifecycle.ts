@@ -54,13 +54,26 @@ export function brainCanAccess(tier: PersonaTier): boolean {
  * is the single source of truth for the boolean decision, so the runtime gate
  * and this documented contract cannot drift. It is exactly
  * `hasGrant || isFreeTier(tier)`:
- *   - default / standard → open to agents (no grant needed in V1).
- *   - sensitive / locked → require an approved durable grant.
+ *   - default → open to agents.
+ *   - standard / sensitive / locked → require a grant (REAL_LIFE_FIXES_2 §7).
  * (`locked` is approval+grant, NOT a hard denial — superseding the old
  * model; the owner's own app is never gated by this, see the user-vs-agent
  * rule in `agent/access.ts`.)
  */
 export function agentCanAccess(tier: PersonaTier, hasGrant: boolean): boolean {
-  if (tier === 'default' || tier === 'standard') return true;
-  return hasGrant; // sensitive + locked
+  // REAL_LIFE_FIXES_2 §7.2: only the default tier is open to agents; a
+  // standard persona (/work) needs a grant, as README and ARCHITECTURE say.
+  if (tier === 'default') return true;
+  return hasGrant; // standard, sensitive, locked
+}
+
+const TIER_RANK: Record<string, number> = { default: 0, standard: 1, sensitive: 2, locked: 3 };
+
+/**
+ * A grant counts only while the persona is no more protected than when the
+ * grant was given (REAL_LIFE_FIXES_2 §7.2). An older grant with no recorded
+ * tier counts as given at the most protected tier.
+ */
+export function grantCoversTier(currentTier: PersonaTier, grantedTier: string | null): boolean {
+  return (TIER_RANK[currentTier] ?? 3) <= (TIER_RANK[grantedTier ?? 'locked'] ?? 3);
 }

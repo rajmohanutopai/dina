@@ -11,6 +11,8 @@ import { createOpenAI } from '@ai-sdk/openai';
 import {
   buildScriptedProvider,
   createGeminiEmbeddingProvider,
+  createOpenRouterJevBackend,
+  type DecisionBackend,
   GeminiGenaiAdapter,
   type EmbeddingProvider,
   type LLMProvider,
@@ -31,6 +33,8 @@ export interface BrainServerLLMRuntime {
   /** Embedding provider matched to the chat provider's credentials.
    *  Forwarded to `buildHomeNodeAskRuntime` for shared registration. */
   embedding?: { name: string; generate: EmbeddingProvider };
+  /** Fixed-choice decisions for the small checks (Jev through OpenRouter). */
+  decisions?: DecisionBackend;
 }
 
 export function buildBrainServerLLMRuntime(
@@ -80,6 +84,14 @@ export function buildBrainServerLLMRuntime(
       return {
         providerName: 'openrouter',
         llm: new AISDKAdapter({ model: openrouter.chat(model), name: 'openrouter' }),
+        ...(config.decisions === 'jev'
+          ? {
+              decisions: createOpenRouterJevBackend({
+                apiKey: config.apiKey,
+                ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
+              }),
+            }
+          : {}),
       };
     }
     case 'scripted':

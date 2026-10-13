@@ -77,6 +77,10 @@ export function createInvokePluginTool(options: PluginToolOptions): AgentTool {
     // Fire-and-forget: the owner's decision and the runner's answer both land
     // outside this loop; continuing would only burn iterations.
     terminal: true,
+    ownerNote: (result) => {
+      const note = (result as { note?: unknown } | null)?.note;
+      return typeof note === 'string' && note !== '' ? note : 'I asked the plugin; its answer will appear in Activity.';
+    },
     description:
       'Ask an installed plugin capability to run (from list_plugin_capabilities). Params MUST match its params_schema exactly. Classify every param in param_categories using the capability\'s data categories (e.g. ["payment"]). Fire-and-forget and turn-ending: Core either shows the owner an approval card on their phone or, under a standing grant, runs it; the answer arrives later on the task, never here — so say in one line what you are asking BEFORE calling this. Use once per request. A refusal comes back as an error you can act on.',
     parameters: {

@@ -36,6 +36,8 @@ import { PII_TOKEN_NOTE, PiiSession } from '../pii/session';
 import { getStrangerNames, type StrangerNames } from '../pii/strangers';
 
 import { getProviderTiers } from './provider_config';
+
+import type { DecisionAnswers, DecisionBackend, DecisionRequest } from './decisions';
 import {
   isFTSOnly,
   isLightweightTask,
@@ -79,10 +81,18 @@ export interface LLMRouterOptions {
    * tier pick would otherwise replace (`routedProvider`).
    */
   keepAdapterModel?: boolean;
+  /**
+   * The backend for fixed-choice decisions (`decide`), e.g. Jev through
+   * OpenRouter. Without one, `decide` answers null and the caller uses its
+   * own model-based check.
+   */
+  decisions?: DecisionBackend;
 }
 
 export interface RouterChatArgs {
   taskType: TaskType;
+  /** See `ChatOptions.reasoning`; defaults to `'low'` for a lightweight task with no tools. */
+  reasoning?: 'low';
   /** The persona whose data this call touches. Required for the
    *  cloud-consent gate — omit only for provider-neutral calls. */
   persona?: string;
@@ -114,8 +124,10 @@ export class LLMRouter {
   private readonly names: NameLexicon | undefined;
   private readonly strangers: StrangerNames | undefined;
   private readonly keepAdapterModel: boolean;
+  private decisions: DecisionBackend | undefined;
 
   constructor(options: LLMRouterOptions) {
+    this.decisions = options.decisions;
     this.providers = options.providers;
     this.config = options.config;
     this.names = options.names;
@@ -145,6 +157,48 @@ export class LLMRouter {
     next[name] = llm;
     this.providers = next;
     this.config = { ...this.config, cloudProviders: [name] };
+  }
+
+  /** Set or clear the decision backend (a key added or removed in Settings). */
+  setDecisionBackend(backend: DecisionBackend | undefined): void {
+    this.decisions = backend;
+  }
+
+  /** The decision backend's name, or null when there is none. */
+  decisionBackendName(): string | null {
+    return this.decisions?.name ?? null;
+  }
+
+  /**
+   * Fixed-choice questions answered with probabilities (see `decisions.ts`).
+   * The same door as `chat`: the consent gate runs, and the state is
+   * scrubbed through one PII session before it leaves. Answers carry no
+   * text, so nothing is rehydrated.
+   *
+   * Null when there is no backend, or when the node runs a local model (the
+   * question then stays on the node: the caller's own check uses it).
+   * Throws when the backend fails; the caller falls back to its own check.
+   */
+  async decide(args: {
+    persona?: string;
+    request: DecisionRequest;
+    signal?: AbortSignal;
+  }): Promise<DecisionAnswers | null> {
+    if (this.decisions === undefined) return null;
+    const { requiresScrubbing } = this.pickProvider(args.persona);
+    if (!requiresScrubbing) return null;
+    const lexicon = this.names ?? getNameLexicon();
+    const strangers = this.strangers ?? getStrangerNames();
+    const texts = Object.values(args.request.state);
+    const session = new PiiSession(
+      lexicon !== null && lexicon !== undefined ? await lexicon.freshMatcher() : undefined,
+      strangers !== null && strangers !== undefined ? await strangers.matcherFor(texts) : undefined,
+    );
+    session.reserve(texts);
+    const state: Record<string, string> = {};
+    for (const [k, v] of Object.entries(args.request.state)) state[k] = session.scrub(v);
+    session.clear();
+    return this.decisions.decide({ questions: args.request.questions, state }, args.signal);
   }
 
   /**
@@ -185,6 +239,7 @@ export class LLMRouter {
         maxTokens: args.maxTokens,
         signal: args.signal,
         responseSchema: args.responseSchema,
+        ...reasoningFor(args),
       });
     }
     const lexicon = this.names ?? getNameLexicon();
@@ -215,6 +270,7 @@ export class LLMRouter {
       maxTokens: args.maxTokens,
       signal: args.signal,
       responseSchema: args.responseSchema,
+      ...reasoningFor(args),
     });
 
     if (session.size === 0) return response;
@@ -399,6 +455,7 @@ export class RoutedLLMProvider implements LLMProvider {
       temperature: options.temperature,
       maxTokens: options.maxTokens,
       signal: options.signal,
+      ...(options.reasoning !== undefined ? { reasoning: options.reasoning } : {}),
       // `ChatOptions.model` is a legacy override. The router normally
       // picks the tier-correct model; respecting `model` here keeps
       // callers that explicitly pinned a model (classifier's lite
@@ -456,4 +513,15 @@ export function routedProvider(input: {
     taskType: input.taskType,
     label: `routed:${input.taskType}:${input.providerName}`,
   });
+}
+
+/**
+ * Short thinking for a short decision: a lightweight task (classify, guard
+ * scan, planner) that offers no tools. A turn with tools keeps the model's
+ * default, which multi-step tool planning needs.
+ */
+function reasoningFor(args: RouterChatArgs): { reasoning?: 'low' } {
+  if (args.reasoning !== undefined) return { reasoning: args.reasoning };
+  const noTools = args.tools === undefined || args.tools.length === 0;
+  return isLightweightTask(args.taskType) && noTools ? { reasoning: 'low' } : {};
 }

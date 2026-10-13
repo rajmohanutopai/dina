@@ -410,7 +410,7 @@ function queryFTS(persona: string, query: SearchQuery): VaultItem[] {
   const repo = requireRepo(persona);
   // In-memory repo accepts free text; SQLite repo needs FTS5 MATCH
   // syntax (quoted tokens). Sanitise once — safe for both.
-  const match = sanitizeFTSMatch(query.text);
+  const match = query.wordForms === true ? recallFTSMatch(query.text) : sanitizeFTSMatch(query.text);
   if (match === '') return [];
   const raw = repo.queryFTSSync(match, limit + (query.offset ?? 0));
   const filtered = raw.filter((item) => isSearchable(item) && passesFilters(item, query));
@@ -442,6 +442,41 @@ function sanitizeFTSMatch(text: string): string {
     .filter((t) => t.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(t));
   if (tokens.length === 0) return '';
   return tokens.map((t) => `"${t}"`).join(' OR ');
+}
+
+/**
+ * The recall form of a query (REAL_LIFE_FIXES_2 §9.2): a possessive is
+ * dropped ("Kavi's" → Kavi), one common ending is stripped from a word of
+ * five letters or more, and each word of three letters or more becomes a
+ * prefix term, so "receipts" finds "receipt" and "booking" finds "booked".
+ * Two-letter words ("BP", "PE", "Dr") and numbers match exactly; single
+ * letters are dropped. Never used for exact lookups
+ * or for forgetting, where "Anna" must not match "Annabel".
+ */
+export function recallFTSMatch(text: string): string {
+  const tokens = text
+    .replace(/['’]s\b/gi, '')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length > 0 && !/^(AND|OR|NOT|NEAR)$/i.test(t));
+  const terms = new Set<string>();
+  for (const t of tokens) {
+    if (/^\p{N}+$/u.test(t)) {
+      terms.add(`"${t}"`);
+      continue;
+    }
+    if (t.length < 2) continue;
+    if (t.length === 2) {
+      terms.add(`"${t}"`);
+      continue;
+    }
+    let stem = t;
+    if (t.length >= 5) stem = t.replace(/(ing|ed|es|s)$/i, '');
+    if (stem.length < 3) stem = t;
+    terms.add(`"${stem}"*`);
+  }
+  return [...terms].join(' OR ');
 }
 
 /**
@@ -498,14 +533,14 @@ function querySemantic(persona: string, query: SearchQuery): VaultItem[] {
 function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
   const repo = requireRepo(persona);
   const limit = clampLimit(query.limit);
-  const terms = query.text
-    .toLowerCase()
-    .split(/\s+/)
-    .filter((t) => t.length > 0);
+  // REAL_LIFE_FIXES_2 §9.2: the keyword half is the FTS5 query itself
+  // (sanitised, word forms for recall), scored by rank, not a raw substring
+  // count over unsanitised words.
+  const match = query.wordForms === true ? recallFTSMatch(query.text) : sanitizeFTSMatch(query.text);
   const hasEmbedding = query.embedding && query.embedding.length > 0;
 
   // If no text AND no embedding, nothing to search
-  if (terms.length === 0 && !hasEmbedding) return [];
+  if (match === '' && !hasEmbedding) return [];
 
   // Use HNSW for semantic component when available
   const useHNSW = hasEmbedding && hasIndex(persona);
@@ -528,25 +563,27 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
     }
   }
 
-  for (const item of repo.valuesSync()) {
+  if (match !== '') {
+    const ranked = repo
+      .queryFTSSync(match, limit * 3)
+      .filter((item) => isSearchable(item) && passesFilters(item, query));
+    // Score each FTS hit by how many query terms it holds (a prefix term
+    // matches any word it starts), so equally good matches stay equal.
+    const terms = match
+      .split(' OR ')
+      .map((t) => t.replace(/["*]/g, '').toLowerCase())
+      .filter((t) => t !== '');
+    for (const item of ranked) {
+      const text = [item.summary, item.body, item.content_l0, item.content_l1].join(' ').toLowerCase();
+      const s = Math.max(1, terms.filter((t) => text.includes(t)).length);
+      ftsScores.set(item.id, s);
+      if (s > maxFts) maxFts = s;
+    }
+  }
+
+  for (const item of useHNSW ? [] : repo.valuesSync()) {
     if (!isSearchable(item)) continue;
     if (!passesFilters(item, query)) continue;
-
-    // FTS score
-    if (terms.length > 0) {
-      const searchable = [item.summary, item.body, item.content_l0, item.content_l1]
-        .join(' ')
-        .toLowerCase();
-
-      let ftsScore = 0;
-      for (const term of terms) {
-        if (searchable.includes(term)) ftsScore++;
-      }
-      if (ftsScore > 0) {
-        ftsScores.set(item.id, ftsScore);
-        if (ftsScore > maxFts) maxFts = ftsScore;
-      }
-    }
 
     // Semantic score (brute-force per-item, used when HNSW is not available)
     if (!useHNSW && hasEmbedding && item.embedding && item.embedding.length > 0) {

@@ -38,7 +38,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { appendAudit } from '../audit/service';
 import { getPersonaTier, resolveInstalledPersonaName } from '../persona/service';
-import { agentCanAccess } from '../vault/lifecycle';
+import { agentCanAccess, grantCoversTier } from '../vault/lifecycle';
 import {
   WorkflowTaskKind,
   WorkflowTaskState,
@@ -144,9 +144,12 @@ export function evaluateAgentPersonaAccess(
       params.sessionId ?? null,
       now,
       params.askId ?? null,
+      (granted) => grantCoversTier(tier, granted),
     ) ?? null;
-  if (!agentCanAccess(tier, grant !== null)) return { kind: 'gated' };
-  return grant !== null ? { kind: 'allow', grantId: grant.id } : { kind: 'allow' };
+  const covering = grant;
+  if (!agentCanAccess(tier, covering !== null)) return { kind: 'gated' };
+  if (covering === null) return { kind: 'allow' };
+  return { kind: 'allow', grantId: covering.id };
 }
 
 function idemKeyFor(
@@ -185,7 +188,7 @@ export function requireAgentPersonaAccess(
   // An active durable grant bound to this exact agent + persona + mode is the
   // only thing that unlocks a gated tier (a write grant satisfies read).
   const grantRepo = getAgentGrantRepository();
-  const grant =
+  const found =
     grantRepo?.findActiveGrant(
       params.agentDID,
       persona,
@@ -193,7 +196,10 @@ export function requireAgentPersonaAccess(
       params.sessionId ?? null,
       now,
       params.askId ?? null,
+      // A grant given at a less protected tier no longer counts (§7.2).
+      (granted) => grantCoversTier(tier, granted),
     ) ?? null;
+  const grant = found;
 
   // SINGLE source of truth for the tier policy: the same pure predicate the
   // persona-wall/lifecycle tests pin (`vault/lifecycle.ts::agentCanAccess`),
@@ -397,6 +403,7 @@ export function reserveAgentPersonaGrant(
     createdAt: t,
     active: false, // reserved — invisible to the gate until activated
     askId: onceAsk,
+    grantedTier: getPersonaTier(payload.persona),
   });
   // PLG-29 #6: audit the RESERVE (not "approved") here — the approval CAS hasn't
   // run yet, so a lost CAS + compensating revoke must not leave an append-only

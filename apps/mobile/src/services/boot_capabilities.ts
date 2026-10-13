@@ -76,6 +76,9 @@ import {
   hydrateContactDirectory,
   listPersonas,
   reconcileDefaultAgentGatingPolicies,
+  migrateStandardPersonaGrants,
+
+  revokeGrantsOnPersonaDelete,
   setOutboxRedeliverFn,
   setPluginDeviceVerifier,
   setRepoProofVerifier,
@@ -84,6 +87,7 @@ import {
   startOutboxDrainer,
   storeItem,
   type DrainerHandle,
+  browseRecent,
 } from '@dina/core';
 import { listActiveDevices, revokePluginDeviceForTeardown } from '@dina/core/devices';
 import { DIDResolver, hydrateDeviceRegistry, getDeviceByDID } from '@dina/core/runtime';
@@ -93,7 +97,12 @@ import { buildHomeNodeAskRuntime } from '@dina/home-node/ask-runtime';
 import { loadActiveProvider } from '../ai/active_provider';
 import { registerAgenticRouter, peekAgenticRouter, resetAgenticRouter } from '../ai/agentic_swap';
 import { loadModelOverrides } from '../ai/model_overrides';
-import { createLLMProvider, getConfiguredProviders, getApiKey } from '../ai/provider';
+import {
+  createDecisionBackend,
+  createLLMProvider,
+  getConfiguredProviders,
+  getApiKey,
+} from '../ai/provider';
 import { startReviewDraft } from '../peerlens/review_draft';
 import { getIdentityAdapter } from '../storage/init';
 
@@ -430,6 +439,13 @@ export async function buildBootInputs(
   // skip that gate but always re-run `buildBootInputs`.
   await hydrateDeviceRegistry();
   const policies = reconcileDefaultAgentGatingPolicies(did, listActiveDevices());
+  // REAL_LIFE_FIXES_2 §7.2: standard personas now need a grant; existing
+  // agent pairings keep theirs as audited, revocable standing grants.
+  revokeGrantsOnPersonaDelete();
+  await migrateStandardPersonaGrants(listActiveDevices());
+  // REAL_LIFE_FIXES_2 §4.4: finish any forget a restart interrupted.
+  // Forgets, purchases, standing replies and budgets a crash cut short are
+  // recovered in bootstrap.ts, once the workflow service is installed.
   if (policies.failed > 0) {
     // Fail-safe behavior remains Full Supervision; never include agent DIDs in logs.
     console.warn(`[boot] ${policies.failed} coding-agent profile(s) could not be reconciled`);
@@ -885,6 +901,9 @@ async function tryBuildAgenticAsk(opts: {
 
   const llm = await createLLMProvider(provider);
   if (llm === null) return undefined;
+  // REAL_LIFE_FIXES_2 §18: the small checks go to Jev when the owner's model
+  // runs on OpenRouter; otherwise to the owner's model.
+  const decisions = await createDecisionBackend(provider);
 
   // Resolve the shared AppView for all tools — explicit > empty stub.
   // Mobile doesn't accept a separate AppView for the trust/search tools;
@@ -966,6 +985,22 @@ async function tryBuildAgenticAsk(opts: {
         persona,
       }));
     },
+    // REAL_LIFE_FIXES_2 §9.2: an inventory question reads the newest items too.
+    async recent(persona: string, limit: number, opts?: { releaseSession?: string }) {
+      const items = browseRecent(
+        persona,
+        0,
+        Date.now() + 1,
+        limit,
+        opts?.releaseSession !== undefined ? { sessionId: opts.releaseSession, audience: 'brain' } : undefined,
+      );
+      return items.map((i) => ({
+        id: i.id,
+        content_l0: i.content_l0 || i.summary || '',
+        ...(i.body !== '' ? { body: i.body } : {}),
+        persona,
+      }));
+    },
     async findPerson(name: string) {
       const repo = getPeopleRepository();
       if (repo === null) return [];
@@ -995,6 +1030,7 @@ async function tryBuildAgenticAsk(opts: {
   const runtime = buildHomeNodeAskRuntime({
     llm,
     providerName: provider as ProviderName,
+    ...(decisions !== undefined ? { decisions } : {}),
     appView: searchClient,
     core: lazyCoreClient(),
     orchestratorHandle: lazyOrchestratorHandle(),

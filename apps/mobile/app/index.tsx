@@ -42,6 +42,7 @@ import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
+import { InlineExportCard } from '../src/components/InlineExportCard';
 import { InlineQuoteRequestDraftCard } from '../src/components/InlineQuoteRequestDraftCard';
 import { InlineReasoningJobCard } from '../src/components/InlineReasoningJobCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
@@ -404,6 +405,13 @@ export default function ChatScreen() {
         return (
           <View testID="chat-card-ucp-comparison">
             <InlineUcpComparisonCard message={item} />
+          </View>
+        );
+      }
+      if (item.displayType === 'export') {
+        return (
+          <View testID="chat-card-export">
+            <InlineExportCard message={item} />
           </View>
         );
       }

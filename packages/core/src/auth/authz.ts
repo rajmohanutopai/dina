@@ -413,6 +413,9 @@ const AUTHZ_RULES: {
   { prefix: '/v1/vault/store', allowed: new Set(['brain']) },
   { prefix: '/v1/vault/query', allowed: new Set(['brain', 'device', 'agent']) },
   { prefix: '/v1/vault/item/', allowed: new Set(['brain', 'device']) },
+  // Newest-first listing (browse_vault, inventory pre-fetch): same callers as
+  // a single item; the route runs the agent gate and records the release.
+  { prefix: '/v1/vault/list', allowed: new Set(['brain', 'device']) },
   { prefix: '/v1/vault/kv/', allowed: new Set(['brain', 'device']) },
 
   // Staging — Brain full access, connector ingest only
@@ -457,6 +460,11 @@ const AUTHZ_RULES: {
 
   // PII — Brain
   { prefix: '/v1/pii/', allowed: new Set(['brain']) },
+
+  // Owner settings (REAL_LIFE_FIXES_2 §0) — Brain reads guard modes and the
+  // owner's time zone; writes are owner-only (checked again on the route).
+  { prefix: '/v1/settings/', method: 'GET', allowed: new Set(['brain', 'owner', 'device', 'admin']) },
+  { prefix: '/v1/settings/', method: 'PUT', allowed: new Set(['owner', 'device', 'admin']) },
 
   // Working Memory — Brain (touch on ingest, read ToC on reasoning).
   // §5.5 design doc: narrow prefix, read-only ToC + POST-touch for ingest.
@@ -584,6 +592,18 @@ const AUTHZ_RULES: {
   // REAL_LIFE_FIXES §7: the owner's chat messaging a contact. Brain only;
   // Core binds the send to the owner's recorded turn.
   { prefix: '/v1/talk/send', exact: true, allowed: new Set(['brain']) },
+  // REAL_LIFE_FIXES_2 §4 — Brain proposes a forget from the owner's turn; Core plans and raises the card.
+  { prefix: '/v1/forget/', allowed: new Set(['brain']) },
+  // REAL_LIFE_FIXES_2 §5 — Brain prepares the readable export (manifest + id
+  // only); only the owner's device fetches it (checked on the route).
+  { prefix: '/v1/owner-export/prepare', method: 'POST', exact: true, allowed: new Set(['brain', 'owner', 'device', 'admin']) },
+  { prefix: '/v1/owner-export/', method: 'GET', allowed: new Set(['owner', 'device', 'admin']) },
+  // REAL_LIFE_FIXES_2 §14 — standing replies: Brain proposes from the owner's
+  // turn (always a card); the owner or Brain-with-proof may list and revoke.
+  { prefix: '/v1/standing-replies', allowed: new Set(['brain', 'owner', 'device', 'admin']) },
+  // REAL_LIFE_FIXES_2 §15 — spend allowances: Brain proposes from the owner's
+  // turn (a presence-gated card); the owner or Brain-with-proof lists and revokes.
+  { prefix: '/v1/spend-allowances', allowed: new Set(['brain', 'owner', 'device', 'admin']) },
   // REAL_LIFE_FIXES §3.2: Core's persona-access decision for an agent/device
   // ask, keyed on Core's ask authority. Brain only — an agent never judges
   // its own access.

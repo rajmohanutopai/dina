@@ -8,6 +8,8 @@
  * Source: brain/tests/test_vault_context.py
  */
 
+import { embedMaybeSensitive } from '../embedding/safe_embed';
+import { hasCloudEmbeddingProvider, hasLocalEmbeddingProvider } from '../embedding/generation';
 import { queryVault, getItem, browseRecent , listPersonas ,
   getContact,
   resolveByName,
@@ -146,6 +148,20 @@ export interface ContextItem {
   body?: string;
   score: number;
   persona: string;
+  /**
+   * REAL_LIFE_FIXES_2 §8.2: the id of an earlier memory this one replaces
+   * (`supersedes`), or questions (`conflicts`). The earlier one is past.
+   */
+  replaces?: string;
+  conflictsWith?: string;
+}
+
+/** The change link a stored item carries, as fields for the model. */
+function changeLink(contradicts: unknown): { replaces?: string; conflictsWith?: string } {
+  if (typeof contradicts !== 'string') return {};
+  const m = /^(supersedes|conflicts):(.+)$/.exec(contradicts);
+  if (m === null) return {};
+  return m[1] === 'supersedes' ? { replaces: m[2]! } : { conflictsWith: m[2]! };
 }
 
 export interface AssembledContext {
@@ -295,15 +311,30 @@ export async function executeToolSearch(
 
   const searchLimit = limit ?? 20;
 
+  // REAL_LIFE_FIXES_2 §9.2: recall matches word forms; with an embedder the
+  // search is hybrid, the query vector made on the PII-safe path.
+  let embedding: number[] | undefined;
+  if (hasLocalEmbeddingProvider() || hasCloudEmbeddingProvider()) {
+    try {
+      const out = await embedMaybeSensitive(query);
+      if (out.result !== null) embedding = Array.from(out.result.vector);
+    } catch {
+      embedding = undefined;
+    }
+  }
+  const mode = embedding !== undefined ? ('hybrid' as const) : ('fts5' as const);
+
   // Out-of-process Core (home-node-lite): route through the registered
   // backend so brain doesn't reach for SQLite. Mobile leaves the backend
   // unset → in-process `queryVault` runs.
   const backend = backendOverride ?? vaultBackend;
   if (backend !== null) {
     const result = await backend.vaultQuery(persona, {
-      mode: 'fts5',
+      mode,
       text: query,
       limit: searchLimit,
+      wordForms: true,
+      ...(embedding !== undefined ? { embedding } : {}),
       ...(releaseSession !== undefined ? { releaseSession } : {}),
     });
     return result.items.map((raw, index) => {
@@ -312,26 +343,55 @@ export async function executeToolSearch(
         id: String(item.id ?? ''),
         content_l0: String(item.content_l0 ?? item.summary ?? ''),
         content_l1: index < 5 ? (item.content_l1 as string | undefined) : undefined,
-        body: index < 1 ? (item.body as string | undefined) : undefined,
-        score: 1.0 - index * 0.05,
+        body: capBody(item.body as string | undefined),
+        score: rankScore(index),
         persona,
+        ...changeLink(item.contradicts),
       };
     });
   }
 
   const results = queryVault(
     persona,
-    { mode: 'fts5', text: query, limit: searchLimit },
+    {
+      mode,
+      text: query,
+      limit: searchLimit,
+      wordForms: true,
+      ...(embedding !== undefined ? { embedding: new Float32Array(embedding) } : {}),
+    },
     releaseSession !== undefined ? { sessionId: releaseSession, audience: 'brain' } : undefined,
   );
   return results.map((item, index) => ({
     id: item.id,
     content_l0: item.content_l0 || item.summary || '',
     content_l1: index < 5 ? item.content_l1 || undefined : undefined,
-    body: index < 1 ? item.body || undefined : undefined,
-    score: 1.0 - index * 0.05,
+    body: capBody(item.body || undefined),
+    score: rankScore(index),
     persona,
+    ...changeLink(item.contradicts),
   }));
+}
+
+/**
+ * Every returned item carries its body (REAL_LIFE_FIXES_2 §9.2): most
+ * remembered facts are one sentence, and a summary can drop the detail
+ * asked about (a time, an amount). Long bodies are cut; the full text stays
+ * one `get_full_content` call away.
+ */
+const BODY_CAP = 600;
+function capBody(body: string | undefined): string | undefined {
+  if (body === undefined || body === '') return undefined;
+  return body.length <= BODY_CAP ? body : `${body.slice(0, BODY_CAP)}…`;
+}
+
+/**
+ * Rank, not raw score, orders results across personas (reciprocal rank,
+ * REAL_LIFE_FIXES_2 §9.2): each persona's scores are its own, so only the
+ * position within its list is comparable.
+ */
+function rankScore(index: number): number {
+  return 1 / (60 + index);
 }
 
 /**

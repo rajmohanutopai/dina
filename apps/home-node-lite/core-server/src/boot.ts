@@ -141,6 +141,7 @@ import {
   setWorkflowService,
   WorkflowService,
   type CoreRouter,
+  recoverOwnerApprovals,
 } from '@dina/core';
 import { DIDResolver } from '@dina/core/runtime';
 import {
@@ -825,6 +826,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         ),
       });
       setWorkflowService(localWorkflowService);
+      // REAL_LIFE_FIXES_2: approvals a crash cut short (forgets, purchases,
+      // standing replies, budgets), now that a card's fate can be read.
+      await recoverOwnerApprovals().catch((err: unknown) =>
+        logger.warn({ err: err instanceof Error ? err.name : 'unknown' }, 'approval recovery failed; retried at the next boot'),
+      );
       // Lane 1's runner reads the CURRENT runtime every tick, so it follows
       // the service the workflow plane installs later in boot.
       a2aRunner = new A2ADispatchRunner({

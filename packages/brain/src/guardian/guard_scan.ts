@@ -693,6 +693,24 @@ export async function scanResponse(
  * scan result removes that footgun and matches the only production
  * call site (`pipeline/chat_reasoning.ts`), which always scans first.
  */
+/**
+ * Remove whole sentences from `text` where they stand, keeping the rest of
+ * the text (paragraphs, lists) exactly as written.
+ */
+export function removeSentences(text: string, sentences: readonly string[]): string {
+  let out = text;
+  for (const sentence of sentences) {
+    const at = out.indexOf(sentence);
+    if (at < 0) continue;
+    // Close the gap the sentence leaves, touching only the spaces around it.
+    const before = out.slice(0, at).replace(/[ \t]+$/, '');
+    const after = out.slice(at + sentence.length).replace(/^[ \t]+/, '');
+    const joiner = before === '' || after === '' || /\n$/.test(before) || /^\n/.test(after) ? '' : ' ';
+    out = before + joiner + after;
+  }
+  return out.replace(/\n{3,}/g, '\n\n').trim();
+}
+
 export function stripViolations(response: string, scanResult: ScanResult): string {
   if (scanResult.flaggedSentences.length === 0) return response;
   const sentences = splitSentences(response);

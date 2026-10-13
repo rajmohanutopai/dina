@@ -85,8 +85,10 @@ function usePresenceProvable(): boolean | null {
 
 /** An agent-action card's headline; an A2A mirror says which way the call goes. */
 function intentHeadline(
-  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice'>,
+  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice' | 'ownerRequest'>,
 ): string {
+  // The owner's own request, carded by Core: no agent is involved.
+  if (e.ownerRequest === true) return 'Your request';
   // Only a failure, a cancellation or a dispute raises one (Silence First).
   if (e.ucpOrderNotice !== undefined) return 'Your purchase needs a look';
   if (e.ucpCheckout?.card === 'start') return 'Start a checkout at a merchant';
@@ -104,8 +106,9 @@ function intentHeadline(
 
 /** An A2A mirror comes via the owner's server node; every other agent card names the agent. */
 function intentRequesterPrefix(
-  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice'>,
+  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice' | 'ownerRequest'>,
 ): string {
+  if (e.ownerRequest === true) return 'asked by';
   return e.a2aMirror !== undefined ||
     e.ucpSearch !== undefined ||
     e.ucpCheckout !== undefined ||
@@ -613,7 +616,9 @@ export function ApprovalActionCard({
               ? 'requester'
               : 'from';
   const riskHint =
-    isIntent && item.riskLevel === 'MODERATE'
+    item.ownerRequest === true
+      ? null
+      : isIntent && item.riskLevel === 'MODERATE'
       ? 'Once per session'
       : isIntent && item.riskLevel === 'HIGH'
         ? 'Every invocation'

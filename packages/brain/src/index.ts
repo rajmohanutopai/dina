@@ -407,3 +407,13 @@ export type {
 } from './chat/orchestrator';
 export { makeServiceApproveHandler, makeServiceDenyHandler } from './service/approve_command';
 export type { ServiceApproveCoreClient, ServiceDenyCoreClient } from './service/approve_command';
+
+// Fixed-choice decisions for the small checks (REAL_LIFE_FIXES_2 §18).
+export { createOpenRouterJevBackend, JEV_MODEL } from './llm/decisions';
+export type {
+  DecisionAnswer,
+  DecisionAnswers,
+  DecisionBackend,
+  DecisionQuestion,
+  DecisionRequest,
+} from './llm/decisions';

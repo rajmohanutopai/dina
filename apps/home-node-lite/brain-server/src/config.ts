@@ -92,6 +92,10 @@ const LLMSchema = z.discriminatedUnion('provider', [
     // openrouter.ai. For an operator's proxy, or a test recorder that checks
     // what leaves the node (docs/REAL_LIFE_SCENARIOS.md, area M).
     baseUrl: z.string().url().optional(),
+    // The small checks (the guard scan), DINA_DECISIONS: 'jev' asks Jev
+    // through OpenRouter (zero data retention requested); 'model' uses the
+    // chat model.
+    decisions: z.enum(['jev', 'model']).default('jev'),
   }),
   // Deterministic canned-response provider for E2E/dev. NEVER production —
   // gated behind an explicit `DINA_BRAIN_LLM_PROVIDER=scripted` opt-in.
@@ -239,6 +243,7 @@ function readLLM(env: NodeJS.ProcessEnv) {
       apiKey: blankToUndefined(env.DINA_OPENROUTER_API_KEY ?? env.OPENROUTER_API_KEY),
       model: blankToUndefined(env.DINA_OPENROUTER_MODEL),
       baseUrl: blankToUndefined(env.DINA_OPENROUTER_BASE_URL),
+      decisions: blankToUndefined(env.DINA_DECISIONS),
     };
   }
   if (provider === 'scripted') {

@@ -132,9 +132,27 @@ it('a coding agent’s code is Core’s, under the owner’s name', async () => 
   fireEvent.changeText(screen.getByTestId('paired-devices-agent-name'), ' my-agent ');
   fireEvent.press(screen.getByTestId('paired-devices-generate'));
   await waitFor(() => expect(screen.getByTestId('paired-devices-setup-code')).toBeTruthy());
-  expect(mockClient.mintCodingAgentCode).toHaveBeenCalledWith('my-agent');
+  // No work-type vault ticked: the agent asks the owner when it wants one.
+  expect(mockClient.mintCodingAgentCode).toHaveBeenCalledWith('my-agent', []);
   expect(mockClient.mintStaffCode).not.toHaveBeenCalled();
   expect(screen.getByTestId('paired-devices-setup-code').props.children).toBe('dina1:agent-setup');
+});
+
+it('a ticked work-type vault goes with the code (REAL_LIFE_FIXES_2 §7.2)', async () => {
+  mockClient.status.mockResolvedValue({
+    devices: [CLAUDE],
+    standard_personas: [
+      { name: 'work', description: 'Work' },
+      { name: 'side_projects', description: 'Side projects' },
+    ],
+  });
+  const screen = render(<PairedDevicesScreen />);
+  await waitFor(() => expect(screen.getByTestId('paired-devices-persona-work')).toBeTruthy());
+  expect(screen.getByTestId('paired-devices-persona-work').props.value).toBe(false);
+  fireEvent(screen.getByTestId('paired-devices-persona-work'), 'valueChange', true);
+  fireEvent.changeText(screen.getByTestId('paired-devices-agent-name'), 'research-bot');
+  fireEvent.press(screen.getByTestId('paired-devices-generate'));
+  await waitFor(() => expect(mockClient.mintCodingAgentCode).toHaveBeenCalledWith('research-bot', ['work']));
 });
 
 it('a staff phone’s code comes from the staff route', async () => {

@@ -674,6 +674,11 @@ export async function runStagingDrainTick(
         retrieval_policy: senderScore.retrieval_policy,
         ...(d2dContactDid !== '' ? { contact_did: d2dContactDid } : {}),
         ...(d2dAuthorPersonId !== '' ? { author_person_id: d2dAuthorPersonId } : {}),
+        // REAL_LIFE_FIXES_2 §8.2: the earlier memory this one changes; Core
+        // keeps the link only if that item exists in an open persona.
+        ...(turn.sideEffects.changes !== undefined && turn.sideEffects.changes.length > 0
+          ? { contradicts: `${turn.sideEffects.changes[0]!.relation}:${turn.sideEffects.changes[0]!.priorItemId}` }
+          : {}),
         // Preserved original event time.
         ...(originalTimestamp > 0 ? { timestamp: originalTimestamp } : {}),
         // Routing metadata inside the metadata blob.
@@ -825,6 +830,9 @@ export async function runStagingDrainTick(
         status: 'stored',
         enriched: true,
         storedPersonas: storedInOrder.length > 0 ? storedInOrder : [personas[0] ?? 'general'],
+        ...(turn.sideEffects.changes !== undefined && turn.sideEffects.changes.length > 0
+          ? { changes: turn.sideEffects.changes.map((c) => ({ priorSummary: c.priorSummary, relation: c.relation })) }
+          : {}),
       };
 
       // GAP-RT-02 wire-point: topic-touch hook runs AFTER a durable

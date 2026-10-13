@@ -64,11 +64,53 @@ export interface RememberSideEffects {
     preference: string;
     sourceExcerpt: string;
   }[];
+
+  /**
+   * REAL_LIFE_FIXES_2 §8.2: an earlier memory this one changes (a new
+   * teacher, a new address). `priorSummary` is that item's own text as the
+   * search returned it, never the model's paraphrase.
+   */
+  changes?: { priorItemId: string; priorSummary: string; relation: 'supersedes' | 'conflicts' }[];
 }
 
 /** Build an empty collector. Drain calls this once per item. */
 export function emptyRememberSideEffects(): RememberSideEffects {
-  return { routes: [], reminders: [], people: [], preferences: [] };
+  return { routes: [], reminders: [], people: [], preferences: [], changes: [] };
+}
+
+/**
+ * `note_change` — mark that the new memory changes an earlier one
+ * (REAL_LIFE_FIXES_2 §8.2). Only an item this run's vault_search returned
+ * can be named; its text comes from that result.
+ */
+export function createNoteChangeTool(opts: {
+  collect: RememberSideEffects;
+  /** Items vault_search returned in this run: id → their own text. */
+  seen: ReadonlyMap<string, string>;
+}): AgentTool {
+  return {
+    name: 'note_change',
+    description:
+      'Call when vault_search found an EARLIER memory about the same subject and attribute that states a different value (a different teacher, address, phone, date). relation "supersedes" when the new memory says it changed, corrects it, or is plainly newer ("moved", "now", "new", "actually"); "conflicts" when you cannot tell which is right. Pass the earlier item\'s id exactly as vault_search returned it.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prior_item_id: { type: 'string', description: 'The id of the earlier memory, from vault_search.' },
+        relation: { type: 'string', enum: ['supersedes', 'conflicts'] },
+      },
+      required: ['prior_item_id', 'relation'],
+    },
+    async execute(args) {
+      const id = typeof args.prior_item_id === 'string' ? args.prior_item_id.trim() : '';
+      const relation = args.relation === 'supersedes' || args.relation === 'conflicts' ? args.relation : null;
+      if (relation === null) return { error: 'relation must be supersedes or conflicts' };
+      const summary = opts.seen.get(id);
+      if (summary === undefined) return { error: 'that id was not in a vault_search result in this memory; search first' };
+      const changes = (opts.collect.changes ??= []);
+      if (!changes.some((c) => c.priorItemId === id)) changes.push({ priorItemId: id, priorSummary: summary, relation });
+      return { noted: true };
+    },
+  };
 }
 
 // ---------------------------------------------------------------------------

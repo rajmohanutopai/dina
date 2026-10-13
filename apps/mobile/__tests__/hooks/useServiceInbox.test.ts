@@ -170,6 +170,25 @@ describe('useServiceInbox', () => {
     expect(entries[0].paramsPreview).toContain('stop_id');
   });
 
+  it("shows Core's own words on the owner cards it mints, never 'Unnamed service'", async () => {
+    const { client } = stubClient({
+      list: [
+        makeTask({ id: 'forget-1', created_at: 1, description: 'Forget everything about Emma:\n- 3 notes', payload: JSON.stringify({ type: 'owner_forget', job_id: 'forget-1' }) }),
+        makeTask({ id: 'allow-1', created_at: 2, description: 'Let pantry-bot buy household items up to INR 5000.00 a month', payload: JSON.stringify({ type: 'owner_spend_allowance', allowance_id: 'allow-1' }) }),
+        makeTask({ id: 'odd-1', created_at: 3, payload: JSON.stringify({ type: 'constructor' }) }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [forget, allow, odd] = await listPendingApprovals();
+    expect(forget!.serviceName).toBe('Forget this?');
+    expect(forget!.ownerRequest).toBe(true);
+    expect(forget!.paramsPreview).toContain('3 notes');
+    expect(allow!.serviceName).toBe('Allow this spending budget?');
+    expect(allow!.paramsPreview).toContain('INR 5000.00');
+    // An unknown type is not mistaken for an owner card.
+    expect(odd!.serviceName).not.toBe('Forget this?');
+  });
+
   it('listPendingApprovals passes kind=approval state=pending_approval', async () => {
     const listSpy = jest.fn().mockResolvedValue([]);
     setInboxCoreClient({

@@ -40,6 +40,8 @@ export interface PairingCode {
 export interface PairingResult {
   deviceId: string;
   nodeDID: string;
+  /** Standard personas the owner chose at initiate (REAL_LIFE_FIXES_2 §7.2). */
+  standardPersonas?: string[];
 }
 
 const CODE_TTL_SECONDS = PAIRING_CODE_TTL_S;
@@ -79,6 +81,11 @@ interface PendingCode {
    * device can exist that no install references.
    */
   pluginInstallId?: string;
+  /**
+   * REAL_LIFE_FIXES_2 §7.2 — the standard personas the owner ticked for this
+   * agent at initiate; each becomes a standing read grant once it pairs.
+   */
+  standardPersonas?: string[];
 }
 
 const pendingCodes = new Map<string, PendingCode>();
@@ -133,6 +140,8 @@ export function generatePairingCode(
     scope?: import('../auth/agent_scope').AgentScope;
     /** §15.3 — bind whoever uses this code to this pending runner install. */
     pluginInstallId?: string;
+    /** REAL_LIFE_FIXES_2 §7.2 — standard personas the owner ticked. */
+    standardPersonas?: string[];
   } = {},
 ): PairingCode {
   if (!nodeDID) throw new Error('pairing: node DID not set — call setNodeDID() at startup');
@@ -179,6 +188,9 @@ export function generatePairingCode(
     role: intent.role,
     scope: intent.scope,
     ...(intent.pluginInstallId !== undefined ? { pluginInstallId: intent.pluginInstallId } : {}),
+    ...(intent.standardPersonas !== undefined && intent.standardPersonas.length > 0
+      ? { standardPersonas: [...intent.standardPersonas] }
+      : {}),
   });
 
   return { code, expiresAt };
@@ -303,7 +315,11 @@ export function completePairing(
   // Mark code as used (single-use) — only after the device is registered.
   pending.used = true;
 
-  return { deviceId: device.deviceId, nodeDID: nodeDID! };
+  return {
+    deviceId: device.deviceId,
+    nodeDID: nodeDID!,
+    ...(pending.standardPersonas !== undefined ? { standardPersonas: [...pending.standardPersonas] } : {}),
+  };
 }
 
 /**

@@ -29,7 +29,10 @@
 
 import { peoplePointerLine } from '../guardian/anti_her';
 import { isTrustTool } from '../guardian/peerlens_tools';
+import { SMALL_TASK_MAX_TOKENS } from '../constants';
 import { GUARD_SCAN } from '../llm/prompts';
+
+import type { DecisionAnswers, DecisionRequest } from '../llm/decisions';
 
 import type { LLMProvider } from '../llm/adapters/provider';
 
@@ -98,6 +101,12 @@ export interface GuardScannerOptions {
    * sentences are removed, the reply gains one line pointing to people.
    */
   closeContacts?: () => Promise<string[]>;
+  /**
+   * Fixed-choice decisions (`LLMRouter.decide`, e.g. Jev). When it answers,
+   * its flags are used and the GUARD_SCAN prompt is not sent; when it
+   * answers null or throws, the prompt runs as before.
+   */
+  decide?: (request: DecisionRequest) => Promise<DecisionAnswers | null>;
 }
 
 export type GuardScanner = (args: {
@@ -153,14 +162,33 @@ export function createGuardScanner(
       numberedContent,
     );
 
+    const trustToolUsedEarly = toolsCalled.some(isTrustToolName);
+    let decided: GuardScanViolations | null = null;
+    if (options.decide !== undefined) {
+      try {
+        const answers = await options.decide(guardDecisionRequest(userPrompt, sentences, !trustToolUsedEarly));
+        decided = answers === null ? null : violationsFromDecisions(answers, sentences.length);
+      } catch (err) {
+        console.log('[guard_scanner] decision backend failed; using the model prompt', {
+          message: err instanceof Error ? err.message.slice(0, 120) : '',
+        });
+        decided = null;
+      }
+    }
+
     let violations: GuardScanViolations;
-    try {
+    if (decided !== null) {
+      violations = decided;
+    } else try {
       const resp = await provider.chat(
         [{ role: 'user', content: promptText }],
-        { temperature: 0, maxTokens: 1024 },
+        // The shared small-task budget: a reasoning model spent 1024 tokens
+        // thinking and returned nothing, so every scan failed open unseen.
+        { temperature: 0, maxTokens: SMALL_TASK_MAX_TOKENS },
       );
       const parsed = parseGuardScanResponse(resp.content);
       if (parsed === null) {
+        console.log('[guard_scanner] unparsable', { contentLen: resp.content.length, finishReason: resp.finishReason });
         return {
           content: response,
           mutated: false,
@@ -169,7 +197,8 @@ export function createGuardScanner(
         };
       }
       violations = parsed;
-    } catch {
+    } catch (err) {
+      console.log('[guard_scanner] call failed', { message: err instanceof Error ? err.message.slice(0, 200) : '' });
       // LLM outage, timeout — fail-open. Python does the same.
       return {
         content: response,
@@ -335,3 +364,85 @@ function indexArrayOrEmpty(value: unknown): number[] {
     (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1,
   );
 }
+
+// ---------------------------------------------------------------------------
+// The same checks as fixed-choice decisions (one yes/no per sentence)
+// ---------------------------------------------------------------------------
+
+/** A sentence is flagged when the backend's probability of yes reaches this. */
+export const DECISION_FLAG_THRESHOLD = 0.5;
+
+const DECISION_CHECKS = {
+  ah: {
+    key: 'anti_her_sentences',
+    ask: 'Does sentence {n} of the assistant response act as an emotional companion, therapist or friend?',
+    yes: 'It offers the assistant itself as company or someone to talk to or listen ("I\'ll listen", "here to talk", "keep you company"), uses a hook that extends an emotional conversation ("I\'m here for you", "how are you holding up?"), asks a therapy-style question, or simulates warmth or intimacy ("I care about you").',
+    no: 'It is factual or task-oriented, or it points the user to a real person (a friend, family, a professional or a helpline).',
+  },
+  un: {
+    key: 'unsolicited_sentences',
+    ask: 'Does sentence {n} of the assistant response push a product, vendor or service the user did not ask for?',
+    yes: 'Cross-sell, "you might also like", trending picks, or products or services unrelated to the question.',
+    no: 'It answers the user\'s question, the user asked for suggestions, or it suggests contacting a real person (family, a friend, a doctor, a helpline).',
+  },
+  fa: {
+    key: 'fabricated_sentences',
+    ask: 'Does sentence {n} of the assistant response state invented trust or review data?',
+    yes: 'A numeric rating (4.2/5, 9/10), an attestation count or a "community review" claim with no source in the conversation.',
+    no: 'Anything else, including personal facts (names, dates, amounts) recalled from the user\'s own records.',
+  },
+  co: {
+    key: 'consensus_sentences',
+    ask: 'Does sentence {n} of the assistant response claim reviewer consensus or wide agreement?',
+    yes: 'It says reviewers, experts or most people agree, with no data shown for it.',
+    no: 'It makes no claim about what many people think.',
+  },
+} as const;
+
+/**
+ * One yes/no question per sentence per check. The trust checks are asked
+ * only when they would be applied (no verified-trust tool was used).
+ */
+export function guardDecisionRequest(
+  userPrompt: string,
+  sentences: readonly string[],
+  includeTrustChecks: boolean,
+): DecisionRequest {
+  const checks = includeTrustChecks ? (['ah', 'un', 'fa', 'co'] as const) : (['ah'] as const);
+  const questions: DecisionRequest['questions'] = {};
+  for (let i = 1; i <= sentences.length; i++) {
+    for (const c of checks) {
+      const d = DECISION_CHECKS[c];
+      questions[`${c}_${i}`] = {
+        type: 'noul',
+        instructions: d.ask.replace('{n}', String(i)),
+        criteria: { true: d.yes, false: d.no },
+      };
+    }
+  }
+  return {
+    questions,
+    state: {
+      user_prompt: userPrompt,
+      assistant_response: sentences.map((s, i) => `[${i + 1}] ${s}`).join('\n'),
+    },
+  };
+}
+
+/** Turn per-sentence answers back into the scanner's violation lists. */
+export function violationsFromDecisions(answers: DecisionAnswers, sentenceCount: number): GuardScanViolations {
+  const out: GuardScanViolations = {
+    anti_her_sentences: [],
+    unsolicited_sentences: [],
+    fabricated_sentences: [],
+    consensus_sentences: [],
+  };
+  for (let i = 1; i <= sentenceCount; i++) {
+    for (const c of ['ah', 'un', 'fa', 'co'] as const) {
+      const a = answers[`${c}_${i}`];
+      if (a?.type === 'noul' && a.noul >= DECISION_FLAG_THRESHOLD) out[DECISION_CHECKS[c].key].push(i);
+    }
+  }
+  return out;
+}
+

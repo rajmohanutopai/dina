@@ -126,6 +126,12 @@ describe('Anti-Her Safeguard', () => {
 
     it('flags "Let me know if you need anything else"', () => {
       expect(isEngagementHook('Let me know if you need anything else.')).toBe(true);
+      expect(isEngagementHook("Let me know if there's anything I can do.")).toBe(true);
+      expect(isEngagementHook('Let me know if you have any other questions.')).toBe(true);
+    });
+
+    it('keeps a specific offer', () => {
+      expect(isEngagementHook("Let me know if you want me to add the pickup to Kavi's week.")).toBe(false);
     });
 
     it('does NOT flag the user asking Dina the same shape', () => {

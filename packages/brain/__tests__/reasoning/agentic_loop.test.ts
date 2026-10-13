@@ -13,7 +13,7 @@
 import { runAgenticTurn,
   EMPTY_TURN_NUDGE,
 } from '../../src/reasoning/agentic_loop';
-import { ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
+import { ApprovalRequiredError, ToolRegistry, type AgentTool } from '../../src/reasoning/tool_registry';
 
 import type {
   ChatOptions,
@@ -97,6 +97,7 @@ function terminalDispatchTool(runs: string[], opts: { failFirst?: boolean } = {}
     description: 'Fire-and-forget dispatch',
     parameters: { type: 'object', properties: {}, required: [] },
     terminal: true,
+    ownerNote: () => 'Dispatched; the answer will follow.',
     execute: async () => {
       calls += 1;
       if (opts.failFirst === true && calls === 1) throw new Error('dispatch failed');
@@ -398,6 +399,7 @@ describe('runAgenticTurn — budget caps', () => {
     const { provider } = scriptedProvider([
       { content: '', toolCalls: mkCalls(5) }, // 5 calls in one iteration
       { content: '', toolCalls: mkCalls(5) }, // another 5 — should trigger cap
+      { content: '', toolCalls: [] }, // the wrap-up turn writes nothing
     ]);
     const tools = new ToolRegistry();
     tools.register(echoTool());
@@ -413,6 +415,22 @@ describe('runAgenticTurn — budget caps', () => {
     expect(result.finishReason).toBe('max_tool_calls');
     expect(result.toolCalls.length).toBe(7);
     expect(result.answer).toMatch(/budget|try again/i);
+  });
+
+  it('out of steps: one last turn without tools answers from what was found', async () => {
+    const toolCall: ToolCall = { id: 'c1', name: 'echo', arguments: { text: 'x' } };
+    const { provider, calls } = scriptedProvider([
+      { content: '', toolCalls: [toolCall] },
+      { content: '', toolCalls: [toolCall] },
+      { content: 'I found Albert\'s listing but not Sancho\'s. Shall I send it to him?', toolCalls: [] },
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(echoTool());
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: '', userMessage: 'q', options: { maxIterations: 2, maxToolCalls: 100 } });
+    expect(result.finishReason).toBe('max_iterations');
+    expect(result.wrappedUp).toBe(true);
+    expect(result.answer).toMatch(/Shall I send it/);
+    expect(calls[calls.length - 1]?.hasTools).toBe(false);
   });
 });
 
@@ -600,5 +618,149 @@ describe('runAgenticTurn — never logs vault/tool content to console (SEC P1.3)
     expect(logged.filter((line) => line.includes(MARKER))).toEqual([]);
     // Sanity: the loop DID log (so we're actually exercising the log path).
     expect(logged.some((l) => l.includes('[agentic_loop]'))).toBe(true);
+  });
+});
+
+describe('runAgenticTurn — a turn-ending tool never leaves the owner with silence (REAL_LIFE_FIXES_2 §2)', () => {
+  function noteTool(runs: string[]): AgentTool {
+    return {
+      name: 'open_card',
+      description: 'Opens a card and ends the turn',
+      parameters: { type: 'object', properties: {}, required: [] },
+      terminal: true,
+      ownerNote: (r) => `Card ${(r as { id: string }).id} is ready.`,
+      execute: async () => {
+        runs.push('open_card');
+        return { id: 'c-17' };
+      },
+    };
+  }
+
+  it("uses the tool's note when the model sends the call with no text", async () => {
+    const runs: string[] = [];
+    const { provider } = scriptedProvider([{ content: '', toolCalls: [{ id: 't1', name: 'open_card', arguments: {} }] }]);
+    const tools = new ToolRegistry();
+    tools.register(noteTool(runs));
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'q' });
+    expect(result.answer).toBe('Card c-17 is ready.');
+    expect(result.finishReason).toBe('completed');
+  });
+
+  it("keeps the model's own words when it wrote some", async () => {
+    const { provider } = scriptedProvider([{ content: 'Opening it now.', toolCalls: [{ id: 't1', name: 'open_card', arguments: {} }] }]);
+    const tools = new ToolRegistry();
+    tools.register(noteTool([]));
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'q' });
+    expect(result.answer).toBe('Opening it now.');
+  });
+
+  it('a turn-ending call batched with another is not run; the other runs and the model goes again', async () => {
+    const runs: string[] = [];
+    const { provider, calls } = scriptedProvider([
+      { content: '', toolCalls: [{ id: 'a', name: 'echo', arguments: { text: 'x' } }, { id: 'b', name: 'open_card', arguments: {} }] },
+      { content: 'Here is the plan.', toolCalls: [] },
+    ]);
+    const tools = new ToolRegistry();
+    tools.register(echoTool());
+    tools.register(noteTool(runs));
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'q' });
+    expect(runs).toEqual([]);
+    expect(calls).toHaveLength(2);
+    expect(result.answer).toBe('Here is the plan.');
+    const skipped = result.toolCalls.find((t) => t.name === 'open_card');
+    expect(skipped?.outcome.success).toBe(false);
+  });
+
+  it('refuses to register a turn-ending tool without a note', () => {
+    const tools = new ToolRegistry();
+    const { ownerNote: _drop, ...bare } = noteTool([]);
+    expect(() => tools.register(bare)).toThrow(/ownerNote/);
+  });
+});
+
+describe('runAgenticTurn — seeded first calls (REAL_LIFE_FIXES_2 §7.2)', () => {
+  it('runs the seeded calls before the model, which then sees their results', async () => {
+    const { provider, calls } = scriptedProvider([{ content: 'From your notes: x.', toolCalls: [] }]);
+    const tools = new ToolRegistry();
+    tools.register(echoTool());
+    const result = await runAgenticTurn({
+      provider,
+      tools,
+      systemPrompt: 's',
+      userMessage: 'q',
+      seedToolCalls: [{ name: 'echo', arguments: { text: 'seeded' } }, { name: 'not_registered', arguments: {} }],
+    });
+    expect(result.toolCalls.map((t) => t.name)).toEqual(['echo']);
+    expect(calls).toHaveLength(1);
+    expect(result.answer).toBe('From your notes: x.');
+  });
+
+  it('a seeded call that needs approval pauses the turn before any model call', async () => {
+    const { provider, calls } = scriptedProvider([{ content: 'never', toolCalls: [] }]);
+    const tools = new ToolRegistry();
+    tools.register({
+      name: 'gated',
+      description: 'needs approval',
+      parameters: { type: 'object', properties: {}, required: [] },
+      execute: async () => {
+        throw new ApprovalRequiredError('appr-1', 'work');
+      },
+    } as AgentTool);
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'q', seedToolCalls: [{ name: 'gated', arguments: {} }] });
+    expect(result.finishReason).toBe('approval_required');
+    expect(result.pausedState?.pendingToolCall.name).toBe('gated');
+    expect(calls).toHaveLength(0);
+  });
+});
+
+describe('runAgenticTurn — a seed that runs only when nothing was found', () => {
+  const search = (results: unknown[], hits: string[]): AgentTool =>
+    ({
+      name: 'search',
+      description: 's',
+      parameters: { type: 'object', properties: {}, required: [] },
+      execute: async (a: Record<string, unknown>) => {
+        hits.push(String(a.persona ?? 'open'));
+        return { results: a.persona === undefined ? results : [] };
+      },
+    }) as AgentTool;
+
+  it('skips it when the open search found something', async () => {
+    const hits: string[] = [];
+    const { provider } = scriptedProvider([{ content: 'ok', toolCalls: [] }]);
+    const tools = new ToolRegistry();
+    tools.register(search([{ id: 'a' }], hits));
+    await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'q', seedToolCalls: [{ name: 'search', arguments: {} }, { name: 'search', arguments: { persona: 'work' }, onlyIfNothingFound: true }] });
+    expect(hits).toEqual(['open']);
+  });
+
+  it('runs it when the open search found nothing', async () => {
+    const hits: string[] = [];
+    const { provider } = scriptedProvider([{ content: 'ok', toolCalls: [] }]);
+    const tools = new ToolRegistry();
+    tools.register(search([], hits));
+    await runAgenticTurn({ provider, tools, systemPrompt: 's', userMessage: 'q', seedToolCalls: [{ name: 'search', arguments: {} }, { name: 'search', arguments: { persona: 'work' }, onlyIfNothingFound: true }] });
+    expect(hits).toEqual(['open', 'work']);
+  });
+});
+
+describe('runAgenticTurn — wrap-up when a batch runs past the budget', () => {
+  it('answers every call in the batch before asking for the wrap-up', async () => {
+    const calls: ToolCall[] = [0, 1, 2].map((i) => ({ id: `b${i}`, name: 'echo', arguments: { text: `${i}` } }));
+    const seen: { role: string; toolCallId?: string; toolCalls?: ToolCall[] }[][] = [];
+    const { provider } = scriptedProvider([{ content: '', toolCalls: calls }, { content: 'From what I found: 0.', toolCalls: [] }]);
+    const chat = provider.chat.bind(provider);
+    provider.chat = async (messages, opts) => {
+      seen.push(messages as never);
+      return chat(messages, opts);
+    };
+    const tools = new ToolRegistry();
+    tools.register(echoTool());
+    const result = await runAgenticTurn({ provider, tools, systemPrompt: '', userMessage: 'q', options: { maxIterations: 5, maxToolCalls: 1 } });
+    expect(result.wrappedUp).toBe(true);
+    const last = seen[seen.length - 1]!;
+    const asked = last.flatMap((m) => m.toolCalls ?? []).map((c) => c.id);
+    const answered = last.map((m) => (m as { toolCallId?: string }).toolCallId).filter(Boolean);
+    expect([...answered].sort()).toEqual([...asked].sort());
   });
 });

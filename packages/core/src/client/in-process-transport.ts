@@ -61,6 +61,9 @@ import {
 } from './ucp_wire';
 
 import type {
+  OwnerExportManifest,
+  ForgetProposeResult,
+  ForgetRequestBody,
   A2ACallableAgent,
   A2ADelegateInput,
   A2ADelegateResult,
@@ -280,6 +283,7 @@ export class InProcessTransport implements CoreClient {
     if (query.embedding !== undefined) body.embedding = query.embedding;
     if (query.type !== undefined) body.type = query.type;
     if (query.releaseSession !== undefined) body.release_session = query.releaseSession;
+    if (query.wordForms === true) body.word_forms = true;
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
@@ -623,6 +627,16 @@ export class InProcessTransport implements CoreClient {
     return readAccessDecision(expectOk<Record<string, unknown>>(res, 'agentPersonaAccessRequest'));
   }
 
+  async getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/settings/guard-modes' }));
+    return expectOk(res, 'getGuardModes');
+  }
+
+  async getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/settings/owner-timezone' }));
+    return expectOk(res, 'getOwnerTimeZone');
+  }
+
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
     // Personas flatten to a comma-separated list per the route's
     // contract (`parsePersonaFilter`). Limit encodes as string — the
@@ -642,6 +656,102 @@ export class InProcessTransport implements CoreClient {
   }
 
   // ─── Staging inbox ────────────────────────────────────────────────────
+
+  async forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/forget/propose',
+        body: {
+          release_session: input.proof.releaseSession,
+          turn_id: input.proof.turnId,
+          turn_text: input.proof.turnText,
+          start: input.proof.start,
+          end: input.proof.end,
+          request: input.request,
+        },
+      }),
+    );
+    return expectOk<ForgetProposeResult>(res, 'forgetPropose');
+  }
+
+  async ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/owner-export/prepare', body: {} }));
+    return expectOk(res, 'ownerExportPrepare');
+  }
+
+  async standingReplyPropose(input: { proof: OwnerWordsProof; contacts: string[]; replyText: string; until: string }): Promise<Record<string, unknown>> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/standing-replies/propose', body: {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      contacts: input.contacts,
+      reply_text: input.replyText,
+      until: input.until,
+    } }));
+    return expectOk(res, 'standingReplyPropose');
+  }
+
+  async standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/standing-replies' }));
+    return expectOk(res, 'standingReplyList');
+  }
+
+  async standingReplyRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: `/v1/standing-replies/${encodeURIComponent(id)}/revoke`, params: { id }, body: {
+      release_session: proof.releaseSession,
+      turn_id: proof.turnId,
+      turn_text: proof.turnText,
+      start: proof.start,
+      end: proof.end,
+    } }),
+    );
+    return expectOk(res, 'standingReplyRevoke');
+  }
+
+  async spendAllowancePropose(input: { proof: OwnerWordsProof; agent: string; amountMinor: number; currency: string; period: string; category: string; perItemCapMinor?: number; until?: string }): Promise<Record<string, unknown>> {
+    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/spend-allowances/propose', body: {
+      release_session: input.proof.releaseSession,
+      turn_id: input.proof.turnId,
+      turn_text: input.proof.turnText,
+      start: input.proof.start,
+      end: input.proof.end,
+      agent: input.agent,
+      amount_minor: input.amountMinor,
+      currency: input.currency,
+      period: input.period,
+      category: input.category,
+      ...(input.perItemCapMinor !== undefined ? { per_item_cap_minor: input.perItemCapMinor } : {}),
+      ...(input.until !== undefined ? { until: input.until } : {}),
+    } }));
+    return expectOk(res, 'spendAllowancePropose');
+  }
+
+  async spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[] }> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/spend-allowances' }));
+    return expectOk(res, 'spendAllowanceList');
+  }
+
+  async spendAllowanceRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: `/v1/spend-allowances/${encodeURIComponent(id)}/revoke`, params: { id }, body: {
+      release_session: proof.releaseSession,
+      turn_id: proof.turnId,
+      turn_text: proof.turnText,
+      start: proof.start,
+      end: proof.end,
+    } }),
+    );
+    return expectOk(res, 'spendAllowanceRevoke');
+  }
+
+  async forgetEpoch(): Promise<number> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/forget/epoch' }));
+    return expectOk<{ epoch: number }>(res, 'forgetEpoch').epoch;
+  }
 
   async talkSend(input: {
     proof: OwnerWordsProof;

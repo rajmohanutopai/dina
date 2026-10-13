@@ -92,7 +92,7 @@ export function wireChatRememberRuntime(
       const tick = await options.stagingDrain.runTick();
       const item = tick.results.find((r) => r.itemId === stagingId);
       if (item?.status === 'stored' && item.persona) {
-        return { persona: item.persona };
+        return { persona: item.persona, ...(item.changes !== undefined ? { changes: item.changes } : {}) };
       }
       // MT-13-I1 — classifier routed to a closed persona; staging
       // parks the row + (when an approval flow is wired) creates a

@@ -312,9 +312,25 @@ export function isOwnerSurfacePath(p: string, method: string): boolean {
     (p === '/v1/service/respond' && method === 'POST') ||
     p === '/v1/reasoning/backends' ||
     p === '/v1/reasoning/backends/register' ||
-    (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke'))
+    (p.startsWith('/v1/reasoning/backends/') && p.endsWith('/revoke')) ||
+    // REAL_LIFE_FIXES_2: the owner's own reads and revokes. Fetching a
+    // prepared export (§5; the route itself is owner-only and single-use),
+    // the guard modes and time zone (§0), and listing or stopping a standing
+    // reply (§14) or an agent's budget (§15). Proposing either stays Brain's
+    // (with the owner's words), and activation is a card.
+    (OWNER_EXPORT_FETCH.test(p) && method === 'GET') ||
+    ((p === '/v1/settings/guard-modes' || p === '/v1/settings/owner-timezone') &&
+      (method === 'GET' || method === 'PUT')) ||
+    ((p === '/v1/standing-replies' || p === '/v1/spend-allowances') && method === 'GET') ||
+    (OWNER_REVOKE.test(p) && method === 'POST')
   );
 }
+
+/** `/v1/owner-export/<id>` — one id segment. */
+const OWNER_EXPORT_FETCH = /^\/v1\/owner-export\/[^/]+$/;
+
+/** `/v1/standing-replies/<id>/revoke` or `/v1/spend-allowances/<id>/revoke`. */
+const OWNER_REVOKE = /^\/v1\/(standing-replies|spend-allowances)\/[^/]+\/revoke$/;
 
 /** `/v1/workflow/tasks/<id>/approve` or `/cancel` — one id segment, nothing after the verb. */
 const OWNER_DECISION_VERB = /^\/v1\/workflow\/tasks\/[^/]+\/(approve|cancel)$/;

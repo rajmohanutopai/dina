@@ -208,6 +208,8 @@ export async function connectOwnerDevice(input: ConnectOwnerDeviceInput): Promis
   };
   await writeRecord(stored);
   changed();
+  // Now connected: tell Core this owner's time zone (REAL_LIFE_FIXES_2 §0).
+  void import('./owner_timezone').then((m) => m.syncOwnerTimeZone());
   return { did: stored.did, deviceName: stored.deviceName };
 }
 

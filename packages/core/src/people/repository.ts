@@ -94,6 +94,14 @@ export interface PeopleRepository {
   mergePeople(keepId: string, mergeId: string): void;
   deletePerson(personId: string): boolean;
   /**
+   * Forget a person (REAL_LIFE_FIXES_2 §4): delete every surface (with its
+   * source excerpt) and identity link, and blank the person row, so no
+   * name, relationship or excerpt survives. The empty row stays as a
+   * tombstone. Optional so test fakes stay valid; forget refuses to run
+   * without it.
+   */
+  erasePerson?(personId: string): boolean;
+  /**
    * Bind a DID to a person — convenience wrapper over
    * `upsertIdentity(personId, 'did', contactDid, {verified, primary})`.
    * Returns false when `personId` is unknown. Idempotent; re-points
@@ -519,6 +527,25 @@ export class SQLitePeopleRepository implements PeopleRepository {
 
   deletePerson(personId: string): boolean {
     return this.rejectPerson(personId);
+  }
+
+  erasePerson(personId: string): boolean {
+    const nowSec = Math.floor(this.nowFn() / 1000);
+    const before = this.db.query(
+      `SELECT 1 AS one FROM people WHERE person_id = ? AND ${scopedWhere()} LIMIT 1`,
+      [personId, ...scopedParams()],
+    );
+    if (before.length === 0) return false;
+    this.db.transaction(() => {
+      this.db.execute(`DELETE FROM person_surfaces WHERE person_id = ? AND ${scopedWhere()}`, [personId, ...scopedParams()]);
+      this.db.execute('DELETE FROM person_identities WHERE person_id = ?', [personId]);
+      this.db.execute(
+        `UPDATE people SET canonical_name = '', relationship_hint = '', status = ?, updated_at = ?
+         WHERE person_id = ? AND ${scopedWhere()}`,
+        [PERSON_STATUS_REJECTED, nowSec, personId, ...scopedParams()],
+      );
+    });
+    return true;
   }
 
   linkContact(personId: string, contactDid: string): boolean {

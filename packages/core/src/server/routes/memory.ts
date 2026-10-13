@@ -197,10 +197,18 @@ async function handleToc(
   // requester may read now. Nothing gated reaches the model answering it.
   const authority = askAuthorityOf(req);
   if (authority.kind === 'refuse') return authority.response;
+  // REAL_LIFE_FIXES_2 §7.2: the personas this requester may not read are
+  // named (with their description) but never their topics, so the
+  // classifier can see a question belongs there and ask for access.
+  let gated: { name: string; description: string }[] | undefined;
   if (authority.kind === 'ok') {
     const candidates = personas ?? listPersonas().map((p) => p.name);
     personas = candidates.filter((p) => authorityMayAccess(authority.authority, p, 'read'));
-    if (personas.length === 0) return { status: 200, body: { entries: [], limit } };
+    const readable = new Set(personas);
+    gated = listPersonas()
+      .filter((p) => candidates.includes(p.name) && !readable.has(p.name))
+      .map((p) => ({ name: p.name, description: p.description }));
+    if (personas.length === 0) return { status: 200, body: { entries: [], limit, gated_personas: gated } };
   }
 
   // Owner conversation (REAL_LIFE_FIXES §3.5): record the topics released
@@ -219,7 +227,7 @@ async function handleToc(
 
   return {
     status: 200,
-    body: { entries, limit },
+    body: { entries, limit, ...(gated !== undefined ? { gated_personas: gated } : {}) },
   };
 }
 

@@ -248,3 +248,48 @@ describe('createGuardScanner', () => {
     expect(lastPrompt()).toContain('[2] Second one.');
   });
 });
+
+describe('guard scan through a decision backend (Jev)', () => {
+  const reply = 'Ask Meera to sit with you tonight. Tell me how the night goes, I will listen.';
+
+  it("uses the backend's yes/no per sentence and never sends the prompt", async () => {
+    const { provider } = mockProvider('{"anti_her_sentences": []}');
+    const scan = createGuardScanner(provider, {
+      trustToolNames: [],
+      decide: async (req) => {
+        const out: Record<string, { type: 'noul'; noul: number }> = {};
+        for (const k of Object.keys(req.questions)) out[k] = { type: 'noul', noul: k === 'ah_2' ? 0.93 : 0.02 };
+        return out;
+      },
+    });
+    const d = await scan({ userPrompt: "It's 3am and I can't cope", response: reply });
+    expect(d.flagged.anti_her_sentences).toEqual([2]);
+    expect(d.content).toContain('Ask Meera');
+    expect(d.content).not.toContain('I will listen');
+    expect(provider.chat).not.toHaveBeenCalled();
+  });
+
+  it('asks only the companion check when a trust tool was used', async () => {
+    const { provider } = mockProvider('{}');
+    let keys: string[] = [];
+    const scan = createGuardScanner(provider, {
+      trustToolNames: ['search_peerlens'],
+      decide: async (req) => {
+        keys = Object.keys(req.questions);
+        return Object.fromEntries(keys.map((k) => [k, { type: 'noul' as const, noul: 0 }]));
+      },
+    });
+    await scan({ userPrompt: 'q', response: 'One. Two.', toolsCalled: ['search_peerlens'] });
+    expect(keys.sort()).toEqual(['ah_1', 'ah_2']);
+  });
+
+  it('falls back to the model prompt when the backend throws or answers null', async () => {
+    for (const decide of [async () => { throw new Error('jev: HTTP 503'); }, async () => null]) {
+      const { provider } = mockProvider('{"anti_her_sentences": [2], "unsolicited_sentences": [], "fabricated_sentences": [], "consensus_sentences": []}');
+      const scan = createGuardScanner(provider, { trustToolNames: [], decide });
+      const d = await scan({ userPrompt: 'q', response: reply });
+      expect(provider.chat).toHaveBeenCalledTimes(1);
+      expect(d.flagged.anti_her_sentences).toEqual([2]);
+    }
+  });
+});
