@@ -267,7 +267,26 @@ export class InProcessTransport implements CoreClient {
   constructor(
     private readonly router: CoreRouter,
     private readonly reasoningPrincipalDid?: string,
+    /**
+     * Who this client's WORKFLOW calls speak for. The phone runs Brain and the
+     * owner's inbox in one VM; unstamped, the workflow routes read Brain's
+     * calls as the owner's — no redaction of owner-only cards, no "Brain
+     * cannot decide this" guard. Brain's client sets `'brain'`, so those
+     * routes treat it exactly as they treat the server's signed Brain. The
+     * owner's client leaves it unset.
+     */
+    private readonly options: { workflowCaller?: 'brain' } = {},
   ) {}
+
+  /** A workflow request, stamped with this client's caller when it has one. */
+  private workflowRequest(overrides: Partial<CoreRequest>): CoreRequest {
+    return blankRequest({
+      ...overrides,
+      ...(this.options.workflowCaller !== undefined
+        ? { callerType: this.options.workflowCaller }
+        : {}),
+    });
+  }
 
   async healthz(): Promise<CoreHealth> {
     const res = await this.router.handle(blankRequest({ method: 'GET', path: '/healthz' }));
@@ -994,7 +1013,7 @@ export class InProcessTransport implements CoreClient {
     if (opts.needsDeliveryOnly === true) query.needs_delivery = 'true';
 
     const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: '/v1/workflow/events', query }),
+      this.workflowRequest({ method: 'GET', path: '/v1/workflow/events', query }),
     );
     const raw = expectOk<{ events?: WorkflowEvent[] }>(res, 'listWorkflowEvents');
     return Array.isArray(raw.events) ? raw.events : [];
@@ -1002,7 +1021,7 @@ export class InProcessTransport implements CoreClient {
 
   async acknowledgeWorkflowEvent(eventId: number): Promise<boolean> {
     const res = await this.router.handle(
-      blankRequest({
+      this.workflowRequest({
         method: 'POST',
         path: `/v1/workflow/events/${encodeURIComponent(String(eventId))}/ack`,
         body: {},
@@ -1024,7 +1043,7 @@ export class InProcessTransport implements CoreClient {
     if (opts.error !== undefined) body.error = opts.error;
 
     const res = await this.router.handle(
-      blankRequest({
+      this.workflowRequest({
         method: 'POST',
         path: `/v1/workflow/events/${encodeURIComponent(String(eventId))}/fail`,
         body,
@@ -1047,7 +1066,7 @@ export class InProcessTransport implements CoreClient {
     if (filter.limit !== undefined) query.limit = String(filter.limit);
 
     const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: '/v1/workflow/tasks', query }),
+      this.workflowRequest({ method: 'GET', path: '/v1/workflow/tasks', query }),
     );
     const raw = expectOk<{ tasks?: WorkflowTask[] }>(
       res,
@@ -1058,7 +1077,7 @@ export class InProcessTransport implements CoreClient {
 
   async getWorkflowTask(id: string): Promise<WorkflowTask | null> {
     const res = await this.router.handle(
-      blankRequest({
+      this.workflowRequest({
         method: 'GET',
         path: `/v1/workflow/tasks/${encodeURIComponent(id)}`,
       }),
@@ -1089,7 +1108,7 @@ export class InProcessTransport implements CoreClient {
     if (input.requestedRunner !== undefined) body.requested_runner = input.requestedRunner;
 
     const res = await this.router.handle(
-      blankRequest({ method: 'POST', path: '/v1/workflow/tasks', body }),
+      this.workflowRequest({ method: 'POST', path: '/v1/workflow/tasks', body }),
     );
     // 409 → typed conflict error so callers match on `.code`. Route
     // emits `{error, code}` on this branch; fall back to `duplicate_id`
@@ -1306,7 +1325,7 @@ export class InProcessTransport implements CoreClient {
     body?: Record<string, unknown>,
   ): Promise<WorkflowTask> {
     const res = await this.router.handle(
-      blankRequest({
+      this.workflowRequest({
         method: 'POST',
         path: `/v1/workflow/tasks/${encodeURIComponent(id)}/${action}`,
         body: body ?? {},

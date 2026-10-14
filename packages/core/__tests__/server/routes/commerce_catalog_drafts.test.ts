@@ -1915,6 +1915,26 @@ describe('proving a person is here', () => {
       );
       expect(resp.status).not.toBe(200);
     }
+    // An owner presenting the wrong capability is no owner.
+    const forged = await router.handle(
+      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner', 'not-the-secret'),
+    );
+    expect(forged.status).toBe(403);
+  });
+
+  it('answers, to the owner only, whether this node can check a passphrase at all', async () => {
+    const ask = (caller: string | undefined): CoreRequest => ({
+      ...post('/v1/commerce/catalog/drafts/presence', {}, caller),
+      method: 'GET',
+    });
+    installOwnerPresenceVerifier(async () => true);
+    expect(await router.handle(ask('owner'))).toEqual({ status: 200, body: { available: true } });
+    for (const caller of NON_OWNER) expect((await router.handle(ask(caller))).status).not.toBe(200);
+    expect(
+      (await router.handle({ ...ask('owner'), ownerCapability: 'not-the-secret' })).status,
+    ).toBe(403);
+    installOwnerPresenceVerifier(null);
+    expect(await router.handle(ask('owner'))).toEqual({ status: 200, body: { available: false } });
   });
 
   it('says so plainly when this node cannot check a passphrase', async () => {

@@ -12,7 +12,6 @@
  * Source: ARCHITECTURE.md Tasks 6.8–6.12
  */
 
-import { answerWithStandingReply } from '../standing/standing_replies';
 import {
   parseServiceListingUri,
   validateServiceOfferBody,
@@ -37,6 +36,7 @@ import { recordProviderOutcome } from '../service/provider_outcomes';
 import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../service/service_config';
 import { getServiceGrantRepository } from '../service/service_grant_repository';
 import { requesterWindow, setProviderWindow } from '../service/windows';
+import { answerWithStandingReply } from '../standing/standing_replies';
 import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
 import { oneLine } from '../util/one_line';
 import { WorkflowConflictError } from '../workflow/repository';
@@ -652,7 +652,11 @@ export function receiveD2D(
     // A contact, or the counterparty of an order this node accepted or
     // placed, for an order-bound kind (item 8): an order found through
     // discovery is a trading relationship too.
-    if (!isContact && !isTradeCounterparty(message.from, tradeKind)) {
+    const tradeDocument =
+      parsedTrade !== null && typeof parsedTrade === 'object'
+        ? ((parsedTrade as { document?: unknown }).document ?? null)
+        : null;
+    if (!isContact && !isTradeCounterparty(message.from, tradeKind, { document: tradeDocument, direction: 'inbound' })) {
       appendAudit(
         message.from,
         'd2d_recv_trade_denied',
@@ -694,7 +698,14 @@ export function receiveD2D(
       evidenceJson: tradeEvidence,
       nowMs: Date.now(),
     });
-    if (settled.outcome === 'applied' || settled.outcome === 'duplicate' || settled.outcome === 'spooled') {
+    // `held` (SHELF_SPACE_NEGOTIATION §5.3) is kept durably and answered with a
+    // receipt, like a spooled document: the message was taken, not dropped.
+    if (
+      settled.outcome === 'applied' ||
+      settled.outcome === 'duplicate' ||
+      settled.outcome === 'spooled' ||
+      settled.outcome === 'held'
+    ) {
       appendAudit(
         message.from,
         settled.outcome === 'spooled' ? 'd2d_recv_trade_spooled' : 'd2d_recv_trade_applied',

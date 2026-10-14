@@ -45,6 +45,9 @@ import {
   STAFF_ESCALATION_APPROVAL_TYPE,
   STAFF_ESCALATION_KEY_PREFIX,
 } from '../../commerce/staff_escalation';
+import { TERM_PROPOSAL_CARD } from '../../commerce/term/term_buyer';
+import { TERM_CARD_TYPES } from '../../commerce/term/term_engine';
+import { TERM_DECISION_CARD, TERM_FLOOR_CARD } from '../../commerce/term/term_seller';
 import { UCP_CHECKOUT_HANDOFF_TYPE } from '../../commerce/ucp/handoff_card';
 import { UCP_LINK_HANDOFF_TYPE } from '../../commerce/ucp/link_card';
 import { UCP_ORDER_NOTICE_TYPE } from '../../commerce/ucp/order_notice_card';
@@ -55,6 +58,7 @@ import {
   WATERMARK_REFUSAL,
 } from '../../commerce/watermark_gate';
 import { DISCLOSURE_REVIEW_APPROVAL_TYPE } from '../../coordination/disclosure_egress';
+import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
 import { getPluginGrantRepository } from '../../plugins/grants';
@@ -67,18 +71,17 @@ import {
 import { getPluginInstallRepository } from '../../plugins/registry';
 import { isReservedLane } from '../../service/reserved_lanes';
 import {
-  STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
-  denyApproval,
-  drainForApprovalWithEffects,
-} from '../../staging/service';
-import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
-import {
   activateAllowance,
   declineAllowance,
   isSpendAllowanceApproval,
   OWNER_SPEND_ALLOWANCE_TYPE,
   recordApprovedSpend,
 } from '../../spend/allowance';
+import {
+  STAGING_PERSONA_ACCESS_APPROVAL_TYPE,
+  denyApproval,
+  drainForApprovalWithEffects,
+} from '../../staging/service';
 import {
   activateStandingReply,
   declineStandingReply,
@@ -622,6 +625,13 @@ function redactCardForBrain(payload: string): string {
   if (isUcpCheckoutCard(card.type, agentDid)) {
     const { session_id: sessionId } = parsed as { session_id?: unknown };
     return JSON.stringify({ type: card.type, session_id: sessionId, redacted: 'owner_only' });
+  }
+  // SHELF_SPACE_NEGOTIATION §7.4 — a term card carries rent, share, floors
+  // asked about and holding counts: the owner's alone. Brain learns which
+  // card and which negotiation, never a number.
+  if (typeof card.type === 'string' && TERM_CARD_TYPES.includes(card.type)) {
+    const { card_id: cardId, request_id: requestId } = parsed as { card_id?: unknown; request_id?: unknown };
+    return JSON.stringify({ type: card.type, card_id: cardId, request_id: requestId, redacted: 'owner_only' });
   }
   if (card.type !== NEGOTIATION_PRICE_APPROVAL_TYPE) return payload;
   const lines = Array.isArray(card.lines)
@@ -1624,6 +1634,10 @@ export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map
   [UCP_LINK_HANDOFF_TYPE, 'linking an account at a merchant needs a person present'],
   // §3.9: the same card mirrored from a paired server; this node's yes is the one made in person.
   [REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE, 'this needs a person present'],
+  // SHELF_SPACE_NEGOTIATION §5.4, §7.2 — terms past the automatic limit, and the two cards that bind a deal.
+  [TERM_FLOOR_CARD, 'offering terms past your automatic limit needs a person present'],
+  [TERM_PROPOSAL_CARD, 'sending a slot proposal needs a person present'],
+  [TERM_DECISION_CARD, 'accepting a slot agreement needs a person present'],
 ]);
 
 function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | null {
@@ -1635,7 +1649,10 @@ function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | nu
   if (detail === undefined) return null;
   // A mirror's yes is reported to the server as made in person: a node that cannot tell
   // never makes one.
-  if (type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE && !ownerPresenceCanBeEstablished())
+  if (
+    type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE &&
+    !ownerPresenceCanBeEstablished()
+  )
     return j(403, { error: 'no_user_presence', detail });
   return ownerPresenceRefusal(req, Date.now(), detail);
 }
@@ -1658,6 +1675,8 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   NEGOTIATION_PRICE_APPROVAL_TYPE,
   // §4.5 — the buyer owner's "your tender is ready" notice.
   TENDER_READY_TYPE,
+  // SHELF_SPACE_NEGOTIATION — every term card is Core's to mint and the owner's to answer.
+  ...TERM_CARD_TYPES,
   // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — a clerk's operation above the
   // cap. A yes lets money move: Brain may neither mint nor decide one.
   STAFF_ESCALATION_APPROVAL_TYPE,

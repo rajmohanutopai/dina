@@ -2,9 +2,11 @@ import { z } from 'zod'
 import { logger } from '@/shared/utils/logger.js'
 import type { TrustCollection } from '@/config/lexicons.js'
 import { CONSTANTS } from '@/config/constants.js'
+import { readTermListingRecord } from '@/shared/commerce/term-listing.js'
 import {
   CATALOG_POINTER_NSID,
   CATALOG_SNAPSHOT_NSID,
+  TERM_LISTING_COLLECTION,
   checkProtocolVersion,
   validateId,
   validateProductRelationshipClaim,
@@ -696,6 +698,16 @@ const productRefSchema = z.object({
  * than here, because the projection is where standing composes along the edge
  * and a rule enforced only at the wire would be missing on any other path in.
  */
+// ── Term listing (SHELF_SPACE_NEGOTIATION §6.1) ─────────────────────
+//
+// The PROTOCOL's own validator, not a second spelling of its rules: a closed
+// vocabulary (no money field, no free text — any other key is refused) and the
+// listing digest. The PDS's `$type` is the one key the repo adds; it is set
+// aside before the check, and the handler sees the record as published.
+const termListingSchema = z.custom<Record<string, unknown>>((value) => readTermListingRecord(value) !== null, {
+  message: 'not a valid term listing',
+})
+
 const relationshipClaimSchema = z.object({
   claim_id: z.string().min(1).max(128),
   /**
@@ -799,6 +811,7 @@ const SCHEMA_MAP: Record<string, z.ZodSchema> = {
   [CATALOG_POINTER_NSID]: catalogPointerSchema,
   [CATALOG_SNAPSHOT_NSID]: catalogSnapshotRecordSchema,
   'com.dinakernel.commerce.relationshipClaim': relationshipClaimSchema,
+  [TERM_LISTING_COLLECTION]: termListingSchema,
   // NOTE: every collection added here whose contents are covered by a digest
   // must also be listed in DIGEST_BOUND_COLLECTIONS below.
 }
@@ -814,6 +827,7 @@ const DIGEST_BOUND_COLLECTIONS: ReadonlySet<string> = new Set([
   CATALOG_POINTER_NSID,
   CATALOG_SNAPSHOT_NSID,
   'com.dinakernel.commerce.relationshipClaim',
+  TERM_LISTING_COLLECTION,
 ])
 
 // ── Public API ──────────────────────────────────────────────────────

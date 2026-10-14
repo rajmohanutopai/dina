@@ -30,6 +30,7 @@
  * it against the pinned result schema before it lands.
  */
 
+import { servedByCore } from '../../commerce/first_party_packs';
 import { type InvocationSubject } from '../../plugins/context_sources';
 import { consentedCapability } from '../../plugins/host_operation_lane';
 import { invokeToolCapability, type InvokePolicy, type InvokeToolCapabilityResult } from '../../plugins/invoke';
@@ -61,7 +62,8 @@ export function listPluginToolCapabilities(): PluginToolCapabilityView[] {
   if (installs === null) return [];
   const out: PluginToolCapabilityView[] = [];
   for (const install of installs.list()) {
-    if (install.status !== 'active') continue;
+    // A pack Core serves itself has nothing to invoke (`servedByCore`).
+    if (install.status !== 'active' || servedByCore(install)) continue;
     for (const declared of install.manifest.capabilities) {
       const cap = consentedCapability(install, declared.id);
       if (cap === null || !(cap.kinds ?? []).includes('tool')) continue;

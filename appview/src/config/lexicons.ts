@@ -1,5 +1,5 @@
 import { A2A_CARD_COLLECTION } from '@dina/a2a'
-import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID } from '@dina/commerce-protocol'
+import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID, TERM_LISTING_COLLECTION } from '@dina/commerce-protocol'
 
 /**
  * All trust record collection NSIDs.
@@ -38,6 +38,8 @@ export const TRUST_COLLECTIONS = [
   CATALOG_POINTER_NSID,
   CATALOG_SNAPSHOT_NSID,
   'com.dinakernel.commerce.relationshipClaim',
+  // SHELF_SPACE_NEGOTIATION §6.1 — a store's open slots.
+  TERM_LISTING_COLLECTION,
 ] as const
 
 export type TrustCollection = typeof TRUST_COLLECTIONS[number]
@@ -78,4 +80,5 @@ export const COLLECTION_NSID_MAP: Record<string, TrustCollection> = {
   commerceCatalog: CATALOG_POINTER_NSID,
   commerceCatalogSnapshot: CATALOG_SNAPSHOT_NSID,
   commerceRelationshipClaim: 'com.dinakernel.commerce.relationshipClaim',
+  commerceTermListing: TERM_LISTING_COLLECTION,
 }

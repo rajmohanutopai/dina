@@ -36,6 +36,10 @@ const ALLOWED_DEEP_LINK_ROOTS: ReadonlySet<string> = new Set([
   'approvals', // shows the pending-approvals list; navigating there auto-approves nothing
   'runs',
   'subscriptions',
+  // SHELF_SPACE_NEGOTIATION §6.3 — a directory's "talk to this store" link. The
+  // screen accepts ONLY a listing address, shows the slot, and asks nothing
+  // until the owner taps; it carries no price and binds nothing.
+  'shelf-request',
 ]);
 
 /**

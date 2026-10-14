@@ -113,6 +113,13 @@ export type SettlementNote = {
   gross_sales: Money;
   /** Validated: gross × share_bps / 10000, ONE half-even rounding (§9.1). */
   computed_share: Money;
+  /**
+   * The fixed fee for the period. Present ONLY on a note that pins a term
+   * agreement (term.ts, SHELF_SPACE_NEGOTIATION §5.6), where Core derives
+   * it from the period schedule; a revenue-share agreement has no fee, so
+   * `verifySettlementAgainstAgreement` refuses a note that carries one.
+   */
+  fee_due?: Money;
   /** A correction SUPERSEDES by revision — never a second live note. */
   replaces_settlement_digest?: string;
   issued_at: string;
@@ -240,6 +247,12 @@ export function validateSettlementNote(value: unknown, sha256: Sha256Fn): string
     ((n.gross_sales as Money).currency === (n.computed_share as Money).currency
       ? null
       : 'settlement: gross and share must share a currency') ??
+    (n.fee_due === undefined
+      ? null
+      : (validateMoney(n.fee_due) ??
+        ((n.fee_due as Money).currency === (n.gross_sales as Money).currency
+          ? null
+          : 'settlement: the fee must share the gross currency'))) ??
     (n.replaces_settlement_digest === undefined
       ? null
       : validateHex64(n.replaces_settlement_digest, 'settlement.replaces_settlement_digest')) ??
@@ -262,6 +275,9 @@ export function verifySettlementAgainstAgreement(
   }
   if (note.gross_sales.currency !== proposal.currency) {
     return 'settlement: currency differs from the agreement';
+  }
+  if (note.fee_due !== undefined) {
+    return 'settlement: a revenue-share agreement has no fee — fee_due belongs to term agreements';
   }
   const expected = computedShareMinor(moneyMinorUnits(note.gross_sales), proposal.share_bps);
   if (moneyMinorUnits(note.computed_share) !== expected) {

@@ -174,6 +174,8 @@ export type {
   IsDiscoverableResult,
   CommerceCatalogCandidate,
   SearchCatalogParams,
+  SearchTermListingsParams,
+  TermListingCandidate,
 } from './appview_client/http';
 export { PDSPublisher, PDSPublisherError } from './pds/publisher';
 export type { PDSPublisherOptions, PutRecordResult } from './pds/publisher';

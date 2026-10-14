@@ -39,6 +39,7 @@ import { ReconcilePollSweeper } from './reconcile_sweeper';
 import { getCommerceRuntime } from './runtime';
 import { syncSupplierListingName } from './supplier_listing';
 import { SupplierReferenceRunner } from './supplier_runner';
+import { TermSweeper, type TermSweeperOptions } from './term/term_sweeper';
 
 import type { CommerceAdmissionSweeperOptions } from './admission_sweeper';
 import type { ContinuityReleaseSweeperOptions } from './continuity_release_sweeper';
@@ -95,6 +96,8 @@ export interface CommerceSweeperOptions {
   supplierRunner?: Pick<SupplierReferenceRunnerOptions, 'dispatch' | 'intervalMs' | 'onError'>;
   /** NEGOTIATION_PLAN §4.5 — the buyer's tender loop; always on, idle with no policy. */
   negotiation?: Pick<NegotiationSweeperOptions, 'intervalMs' | 'onError'>;
+  /** SHELF_SPACE_NEGOTIATION — resends, holds, lapsed cards and the brand's loop. */
+  term?: Pick<TermSweeperOptions, 'intervalMs' | 'onError'>;
   /** Injectable timer pair, shared by all five. Tests pass fakes. */
   setInterval?: CommerceAdmissionSweeperOptions['setInterval'];
   clearInterval?: CommerceAdmissionSweeperOptions['clearInterval'];
@@ -110,6 +113,7 @@ export interface CommerceSweepers {
   invite: InviteSweeper;
   supplierRunner: SupplierReferenceRunner | null;
   negotiation: NegotiationSweeper;
+  term: TermSweeper;
   /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
 }
@@ -151,6 +155,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
       ? null
       : new SupplierReferenceRunner({ ...options.supplierRunner, ...timers });
   const negotiation = new NegotiationSweeper({ ...(options.negotiation ?? {}), ...timers });
+  const term = new TermSweeper({ ...(options.term ?? {}), ...timers });
   admission.start();
   epoch.start();
   reconcile?.start();
@@ -159,6 +164,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
   invite.start();
   supplierRunner?.start();
   negotiation.start();
+  term.start();
   healSupplierListingName();
   return {
     admission,
@@ -169,6 +175,7 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
     invite,
     supplierRunner,
     negotiation,
+    term,
     stop: () => {
       supplierRunner?.stop();
       // All stopped even if an earlier one throws: a teardown that abandons a
@@ -192,7 +199,11 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
                 try {
                   invite.stop();
                 } finally {
-                  negotiation.stop();
+                  try {
+                    negotiation.stop();
+                  } finally {
+                    term.stop();
+                  }
                 }
               }
             }

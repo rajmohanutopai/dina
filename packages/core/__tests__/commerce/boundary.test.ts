@@ -480,6 +480,14 @@ describe('commerce aggregate boundary', () => {
       // and a miss reads as NO card — the handler does nothing — never as a
       // PaymentNote authored on a payload nobody checked.
       'order_attachments.ts',
+      // SHELF_SPACE_NEGOTIATION — the term engine's ONE reader, the
+      // `money_rehydrate.ts` discipline: every stored term document runs
+      // straight back through its protocol validator (digest included), the
+      // owner's policies through the validators the write path used (a row
+      // that fails reads as the policy OFF), and Core-minted card material
+      // field by field toward refusal. A held or queued body is parsed here
+      // and re-validated by its consumer before anything acts on it.
+      'term_rehydrate.ts',
     ]);
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
@@ -1333,7 +1341,10 @@ describe('commerce aggregate boundary', () => {
    * caps the count would pass a build where one half stopped checking.
    */
   it('both halves check the approval binding, and nothing else does', () => {
-    const EXPECTED = ['buyer_executor.ts', 'order_decision.ts'];
+    // The goods order's two halves, and the term agreement's two halves
+    // (SHELF_SPACE_NEGOTIATION §7.2): the brand's proposal and the store's
+    // decision each mint from exactly the payload the owner's card showed.
+    const EXPECTED = ['buyer_executor.ts', 'order_decision.ts', 'term_buyer.ts', 'term_seller.ts'];
     const callers: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {
       const base = path.basename(file);

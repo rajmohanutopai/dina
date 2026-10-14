@@ -21,9 +21,15 @@ import { SUPPLIER_REFERENCE_MANIFEST } from '../../../src/commerce/reference_man
 import {
   getCommerceRuntime,
   installCommerceRuntime,
+  resolveCommerceMoney,
+  type CommerceMoneyStores,
   type CommerceRuntime,
 } from '../../../src/commerce/runtime';
 import { InMemoryCommerceSettingsRepository } from '../../../src/commerce/settings_store';
+import {
+  SLOT_BUYER_MANIFEST,
+  SLOT_SELLER_MANIFEST,
+} from '../../../src/commerce/slot_pack_manifests';
 import {
   PLACEHOLDER_LISTING_NAME,
   SUPPLIER_LISTING_BINDINGS,
@@ -31,6 +37,7 @@ import {
   syncSupplierListingName,
 } from '../../../src/commerce/supplier_listing';
 import { referenceRunnerDevice } from '../../../src/commerce/supplier_runner';
+import { activeTermPack, termPackHeld } from '../../../src/commerce/term/term_runtime';
 import { getDeviceByDID, resetDeviceRegistry } from '../../../src/devices/registry';
 import { SQLiteDeviceRepository, setDeviceRepository } from '../../../src/devices/repository';
 import { resetKVStore } from '../../../src/kv/store';
@@ -47,6 +54,7 @@ import {
   SQLiteDrainAuthorizationRepository,
   setDrainAuthorizationRepository,
 } from '../../../src/plugins/drain_authorizations';
+import { invokeToolCapability } from '../../../src/plugins/invoke';
 import { UpdateRebindCoordinator } from '../../../src/plugins/update_rebind';
 import {
   clearPreparedUpdates,
@@ -55,6 +63,7 @@ import {
 import { tier0TxRunner } from '../../../src/run/tx';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
+import { listPluginToolCapabilities } from '../../../src/server/routes/plugin_invoke';
 import { rebindListingsForUpdate } from '../../../src/service/listing_rebind';
 import {
   getServiceConfig,
@@ -590,5 +599,129 @@ describe('the listing follows the business’s legal name', () => {
     );
     expect(await syncSupplierListingName({ legalName: 'Sancho Bakery' })).toBe('unchanged');
     expect(getServiceConfig('self')?.name).toBe(PLACEHOLDER_LISTING_NAME);
+  });
+});
+
+describe('the Slot Pack at the owner’s doors (SHELF_SPACE_NEGOTIATION §4)', () => {
+  async function slotBegin(
+    side: unknown,
+  ): Promise<{ status: number; body: Record<string, unknown> }> {
+    const res = await router.handle(post('/v1/commerce/terms/install/begin', { side }));
+    return { status: res.status, body: res.body as Record<string, unknown> };
+  }
+
+  it('each side is its own install: begin, bind Core’s runner, consent — and the term engine sees it active', async () => {
+    expect(activeTermPack('term_seller')).toBeNull();
+    const seller = await slotBegin('seller');
+    expect(seller.status).toBe(200);
+    expect(seller.body).toMatchObject({
+      ok: true,
+      plugin_id: SLOT_SELLER_MANIFEST.plugin_id,
+      status: 'pending',
+    });
+    expect(seller.body.consent).toBeDefined();
+    // The Commerce Pack's listing is not this pack's business.
+    expect(seller.body.listing).toBeUndefined();
+    const installId = String(seller.body.install_id);
+    // Pending is not active: the term engine still refuses to act as a store.
+    expect(activeTermPack('term_seller')).toBeNull();
+
+    const paired = await router.handle(
+      post('/v1/commerce/install/bind_reference_runner', { install_id: installId }),
+    );
+    expect(paired.status).toBe(200);
+    const deviceDid = (paired.body as { device_did: string }).device_did;
+    expect(getDeviceByDID(deviceDid)).toMatchObject({
+      role: 'plugin',
+      scope: 'runner',
+      deviceName: 'slot-seller-runner',
+    });
+    const confirmed = await router.handle(
+      post('/v1/commerce/install/confirm', { install_id: installId, device_did: deviceDid }),
+    );
+    expect(confirmed.status).toBe(200);
+    expect(confirmed.body).toEqual({ ok: true, status: 'active' });
+    expect(activeTermPack('term_seller')).toMatchObject({ installId });
+    // The store's half does not turn on the brand's.
+    expect(activeTermPack('term_buyer')).toBeNull();
+
+    // Idempotent: an active install answers without a second consent.
+    const again = await slotBegin('seller');
+    expect(again.body).toEqual({
+      ok: true,
+      install_id: installId,
+      plugin_id: SLOT_SELLER_MANIFEST.plugin_id,
+      status: 'active',
+    });
+
+    // The Slot Pack is not the Commerce Pack: its active half opens no money store.
+    expect(resolveCommerceMoney({} as CommerceMoneyStores)).toMatchObject({
+      available: false,
+      reason: 'pack_not_installed',
+    });
+
+    const buyer = await slotBegin('buyer');
+    expect(buyer.body).toMatchObject({
+      plugin_id: SLOT_BUYER_MANIFEST.plugin_id,
+      status: 'pending',
+    });
+    expect(buyer.body.install_id).not.toBe(installId);
+  });
+
+  it('the brand half’s capabilities are Core’s own: Brain’s tool list leaves them out and no invocation reaches them', async () => {
+    const begun = await slotBegin('buyer');
+    const installId = String(begun.body.install_id);
+    const paired = await router.handle(
+      post('/v1/commerce/install/bind_reference_runner', { install_id: installId }),
+    );
+    const deviceDid = (paired.body as { device_did: string }).device_did;
+    const confirmed = await router.handle(
+      post('/v1/commerce/install/confirm', { install_id: installId, device_did: deviceDid }),
+    );
+    expect(confirmed.status).toBe(200);
+    // Both are consented `tool` capabilities on an active install …
+    expect(SLOT_BUYER_MANIFEST.capabilities.every((c) => (c.kinds ?? []).includes('tool'))).toBe(
+      true,
+    );
+    // … yet nothing lists them for `/ask`, and nothing can queue a task on a
+    // lane no runner claims: the only door into a negotiation is the owner's.
+    expect(listPluginToolCapabilities().filter((c) => c.install_id === installId)).toEqual([]);
+    const created: unknown[] = [];
+    for (const capability of SLOT_BUYER_MANIFEST.capabilities) {
+      const result = invokeToolCapability(
+        { installId, capabilityId: capability.id, params: {}, nowMs: Date.now() },
+        { workflow: { create: (input: unknown) => created.push(input) } as never },
+      );
+      expect(result).toMatchObject({ ok: false, code: 'served_by_core' });
+    }
+    expect(created).toEqual([]);
+  });
+
+  it('a paused half is still held (its listings stay); a device-revoked or revoked half is not', async () => {
+    const begun = await slotBegin('seller');
+    const installId = String(begun.body.install_id);
+    const paired = await router.handle(post('/v1/commerce/install/bind_reference_runner', { install_id: installId }));
+    const deviceDid = (paired.body as { device_did: string }).device_did;
+    await router.handle(post('/v1/commerce/install/confirm', { install_id: installId, device_did: deviceDid }));
+    const installs = getPluginInstallRepository();
+    if (installs === null) throw new Error('no registry');
+    expect(termPackHeld('term_seller')).toBe(true);
+    expect(installs.pause(installId, Date.now(), 'manual')).toBe(true);
+    expect(termPackHeld('term_seller')).toBe(true);
+    expect(installs.resume(installId, Date.now())).toBe(true);
+    expect(installs.pause(installId, Date.now(), 'device_revoked')).toBe(true);
+    // No resume lifts this hold, so the half counts as gone for its listings.
+    expect(termPackHeld('term_seller')).toBe(false);
+    expect(termPackHeld('term_buyer')).toBe(false);
+  });
+
+  it('refuses a side it does not know, and a caller who is not the owner', async () => {
+    expect((await slotBegin('both')).status).toBe(400);
+    expect((await slotBegin(undefined)).status).toBe(400);
+    const brain = await router.handle(
+      post('/v1/commerce/terms/install/begin', { side: 'seller' }, 'service'),
+    );
+    expect(brain.status).toBe(403);
+    expect(getPluginInstallRepository()?.list()).toEqual([]);
   });
 });

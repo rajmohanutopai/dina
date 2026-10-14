@@ -59,6 +59,41 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **ADDITIVE (SHELF_SPACE_NEGOTIATION §5)** — term negotiation: a general way
+  to offer, counter and agree on named terms for a resource. Six documents,
+  each digest-sealed under its own domain in a NEW family,
+  `dina:commerce:term:v1:` — `TermListing` (`term_listing`, the public record:
+  a closed vocabulary with no money field and no free text; the validator
+  refuses any other field), `TermRequest`, `TermOffer` (one revision chain per
+  offer), `TermCounter`, `TermReceipt` (`stored | held | refused`; only `held`
+  is not final) and `TermAgreementProposal`. Every term document refuses an
+  unknown field: a node without these kinds has no lane for them, and one
+  with them reads all of them. The term table is Core-owned (`fee` money,
+  `share_bps` 0–10,000, both favour the buyer when lower) and a terms list
+  names each table term once, sorted. The decision, termination, settlement
+  and acknowledgement that follow a term agreement are the §5 revenue-share
+  documents pinned to its digest; `SettlementNote.fee_due` exists only on a
+  note pinned to a term agreement (`verifySettlementAgainstAgreement` refuses
+  it on a revenue-share agreement). Date arithmetic: calendar months in UTC,
+  always counted from the anchor, the day clamped to the month's end. The
+  period schedule (`deriveTermSchedule`), the per-period fee with one
+  half-even proration of a cut period, the settlement rules
+  (`verifyTermSettlement`) and the signed fold (`computeTermAgreementFold`)
+  are vector-pinned in `term.test.ts`, as are all six digests and the
+  preimage rule.
+  **Transport:** every term document travels as a `commerce.trade` push under
+  its own kind — `term_request`, `term_offer`, `term_counter`, `term_receipt`,
+  `term_proposal`, and, for the follow-ups, `term_decision`,
+  `term_termination`, `term_settlement`, `term_settlement_ack` (never the
+  revenue-share kinds, so a term follow-up cannot reach a revenue-share
+  ledger). A node without these kinds refuses the push as unreadable at once;
+  it never spools it. **Versions:** term documents carry no minor-gated field;
+  a chain pins the `protocol_version` of its request, and a document at any
+  other version in that chain is refused. **Listing region:** only `scheme`
+  and `value`; scheme `country` (`^[A-Z]{2}$`), `admin_area`
+  (`^[A-Z]{2}-[A-Z0-9]{1,3}$`), `postal_area`
+  (`^(?:[A-Z]{2}-)?[A-Z0-9]{2,8}(?: [A-Z0-9]{2,4})?$`) or `geohash`
+  (`^[0-9b-hjkmnp-z]{1,12}$`); no `custom` scheme and no `issuer_did`.
 - **ADDITIVE at minor 1.1 (PHOTO_CATALOG_LANE §7)** — `CatalogItem.images`:
   optional, 1–4 absolute https URLs (no credentials, ≤ 1000 characters each),
   the supplier's own opt-in product photos, first is the cover. Absent —

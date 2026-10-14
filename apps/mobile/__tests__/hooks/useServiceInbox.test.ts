@@ -492,6 +492,70 @@ describe('useServiceInbox', () => {
     });
   });
 
+  it('classifies the five shelf-space term cards in the owner’s words (SHELF_SPACE_NEGOTIATION)', async () => {
+    const general = {
+      tag: 'beverages.juice',
+      currency: 'INR',
+      period: 'monthly',
+      cash_handler: 'vendor',
+      start: '2027-02-01T00:00:00Z',
+      end: '2027-08-01T00:00:00Z',
+      exit_notice_days: 30,
+    };
+    const terms = [
+      { name: 'fee', value: '195000' },
+      { name: 'share_bps', value: '800' },
+    ];
+    const { client } = stubClient({
+      list: [
+        makeTask({ id: 'term-stranger-1', payload: JSON.stringify({ type: 'term_stranger_request', card_id: 'term-stranger-1', buyer_did: 'did:plc:brand', resource_ref: 'slot-3', tag: 'beverages.juice', start: general.start, end: general.end }) }),
+        makeTask({ id: 'term-floor-1', payload: JSON.stringify({ type: 'term_floor_approval', card_id: 'term-floor-1', buyer_did: 'did:plc:brand', resource_ref: 'slot-3', currency: 'INR', asked: { fee: '210000' }, offered: { fee: '234000', share_bps: '800' } }) }),
+        makeTask({ id: 'term-proposal-1', payload: JSON.stringify({ type: 'term_agreement_proposal', card_id: 'term-proposal-1', seller_did: 'did:plc:store', resource_ref: 'slot-3', general, terms, valid_until: '2027-01-13T09:00:00.000Z' }) }),
+        makeTask({ id: 'term-decision-1', payload: JSON.stringify({ type: 'term_agreement_decision', card_id: 'term-decision-1', vendor_did: 'did:plc:brand', resource_ref: 'slot-3', general: { ...general, cash_handler: 'host', trial: { end: '2027-02-15T00:00:00Z', fee: { currency: 'INR', minor_units: '50000' } }, stock_duties: { min_skus: 4, restock_days: 7 } }, terms, holding: { tag: 'beverages.juice', already_held: 2, premium_bps_per_count: 1500 } }) }),
+        makeTask({ id: 'term-undelivered-1', payload: JSON.stringify({ type: 'term_delivery_failed', card_id: 'term-undelivered-1', counterparty_did: 'did:plc:store', kind: 'term_request', why: 'unanswered' }) }),
+        makeTask({ id: 'term-refused-1', payload: JSON.stringify({ type: 'term_delivery_failed', card_id: 'term-refused-1', counterparty_did: 'did:plc:store', kind: 'term_termination', why: 'refused' }) }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const byId = new Map((await listPendingApprovals()).map((e) => [e.id, e]));
+    expect(byId.get('term-stranger-1')).toMatchObject({
+      kind: 'term_stranger_request',
+      requesterDID: 'did:plc:brand',
+      paramsPreview: 'Juice · slot-3 · 2027-02-01 to 2027-08-01',
+    });
+    expect(byId.get('term-floor-1')?.paramsPreview).toBe('slot-3: asks rent INR 2100.00 (offered now: rent INR 2340.00, share 8%)');
+    expect(byId.get('term-proposal-1')).toMatchObject({
+      kind: 'term_agreement_proposal',
+      requesterDID: 'did:plc:store',
+      paramsPreview:
+        "slot-3 · INR 1950.00 a month + 8% of sales · 2027-02-01 to 2027-08-01 · Juice\nthe brand keeps the takings · 30 days' notice to end\noffer good until 2027-01-13",
+    });
+    // Everything the store's yes binds is on its card: who keeps the
+    // takings, the trial, the notice and the stock duties as well as the rent.
+    expect(byId.get('term-decision-1')?.paramsPreview).toBe(
+      "slot-3 · INR 1950.00 a month + 8% of sales · 2027-02-01 to 2027-08-01 · Juice · 2 Juice brand(s) already here, +15% each\nthe store keeps the takings · trial until 2027-02-15 at INR 500.00 · 30 days' notice to end · at least 4 products · restock every 7 days",
+    );
+    expect(byId.get('term-undelivered-1')).toMatchObject({
+      kind: 'term_delivery_failed',
+      requesterDID: 'did:plc:store',
+      serviceName: 'Message not delivered',
+    });
+    // A refused follow-up says so: it took effect on neither side.
+    expect(byId.get('term-refused-1')).toMatchObject({
+      serviceName: 'Refused by the other side',
+      paramsPreview: 'The other side refused it, so it did not take effect. Send it again if it still stands.',
+    });
+  });
+
+  it('a “no” on a term card is a plain cancel — the term engine answers the other side itself', async () => {
+    const { client, calls } = stubClient({});
+    setInboxCoreClient(client);
+    await denyPending('term-decision-1', 'denied_by_operator', 'term_agreement_decision');
+    await denyPending('term-proposal-1', 'denied_by_operator', 'term_agreement_proposal');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled.map((c) => c.id)).toEqual(['term-decision-1', 'term-proposal-1']);
+  });
+
   it('denyPending on either negotiation card is a plain cancel — neither has a D2D requester to answer', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);

@@ -77,6 +77,9 @@ describe('11.1 Schema Correctness', () => {
       // deletion markers, account status, blind intervals, reconciliation.
       'service_operator_presence', 'service_deletions', 'service_account_status',
       'service_blind_intervals', 'service_reconcile_jobs', 'ingest_hourly_events',
+      // Term listings (docs/SHELF_SPACE_NEGOTIATION.md §6.1): open shelf slots,
+      // a closed record with no price in it.
+      'term_listings',
     ]
 
     const result = await db.execute(sql`

@@ -32,6 +32,12 @@ import {
   CommerceSupplierDimensionsParams,
   getSupplierDimensions,
 } from '@/api/xrpc/commerce-review-dimensions.js'
+import {
+  getTermListing,
+  GetTermListingParams,
+  searchTermListings,
+  SearchTermListingsParams,
+} from '@/api/xrpc/commerce-term-listings.js'
 import { searchCapabilities, SearchCapabilitiesParams } from '@/api/xrpc/search-capabilities.js'
 import { catalogCapabilities, CatalogCapabilitiesParams } from '@/api/xrpc/catalog-capabilities.js'
 import { serviceIsDiscoverable, ServiceIsDiscoverableParams } from '@/api/xrpc/service-is-discoverable.js'
@@ -81,6 +87,16 @@ export const XRPC_ROUTES: Record<string, XrpcRoute> = {
   'com.dinakernel.commerce.getSupplierDimensions': {
     params: CommerceSupplierDimensionsParams,
     handler: getSupplierDimensions,
+  },
+  // SHELF_SPACE_NEGOTIATION §6.1, §6.3 — open slots: candidates with no price
+  // (the record has no money field), and one listing by URI for a deep link.
+  'com.dinakernel.commerce.searchTermListings': {
+    params: SearchTermListingsParams,
+    handler: (db: any, params: any) => searchTermListings(db, params),
+  },
+  'com.dinakernel.commerce.getTermListing': {
+    params: GetTermListingParams,
+    handler: (db: any, params: any) => getTermListing(db, params),
   },
   // The A2A directory (Lane 3, design §8.3): candidates, never grants.
   'com.dinakernel.a2a.searchAgents': {

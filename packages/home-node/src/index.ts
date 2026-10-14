@@ -1,4 +1,5 @@
 export * from './commerce_catalog_repo';
+export * from './commerce_term_listing_repo';
 export {
   HomeNodeEndpointConfigError,
   MOBILE_ENDPOINT_ENV_KEYS,

@@ -1169,7 +1169,9 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
     | 'getGroupPlan'
     | 'listGroupPlanHandles'
   > {
-  // All methods proxy through the booted node's coreClient. The node is
+  // All methods proxy through the booted node's BRAIN client (its workflow
+  // calls are stamped `brain`, as on the server); the owner's client is
+  // never handed to the ask loop. The node is
   // always available by the time these are called (the pipeline is only
   // invoked mid-ask, well after boot). Returning [] / null on the cold
   // path keeps tool calls on fail-soft rails rather than throwing.
@@ -1180,65 +1182,65 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
   }
   return {
     async findContactsByPreference(category: string) {
-      return node()?.coreClient.findContactsByPreference(category) ?? [];
+      return node()?.brainCoreClient.findContactsByPreference(category) ?? [];
     },
     // §5.A6 — `search_products` names a seller the owner already knows.
     // Cold path: no directory yet, so the seller stays unnamed.
     async contactLookup(query: string) {
-      return (await node()?.coreClient.contactLookup(query)) ?? null;
+      return (await node()?.brainCoreClient.contactLookup(query)) ?? null;
     },
     // §6 — `/ask` into installed plugins. Cold path: nothing installed, and an
     // ask before boot is a typed refusal the loop relays, never a throw.
     async listPluginToolCapabilities() {
-      return (await node()?.coreClient.listPluginToolCapabilities()) ?? [];
+      return (await node()?.brainCoreClient.listPluginToolCapabilities()) ?? [];
     },
     async invokePluginTool(input: import('@dina/core').InvokePluginToolInput) {
       const n = node();
       if (n === null) return { ok: false as const, code: 'registry_unavailable', message: 'DinaNode not booted' };
-      return n.coreClient.invokePluginTool(input);
+      return n.brainCoreClient.invokePluginTool(input);
     },
     async listServiceOffers(params?: { providerDid?: string; capability?: string }) {
-      return (await node()?.coreClient.listServiceOffers(params)) ?? [];
+      return (await node()?.brainCoreClient.listServiceOffers(params)) ?? [];
     },
     // GROUP_COORDINATION §11 — `coordinate_group` names guests from the
     // contact directory and hands the plan to Core. Cold path: no contacts
     // yet, and an ask before boot is a typed refusal the loop relays.
     async listContacts() {
-      return (await node()?.coreClient.listContacts()) ?? [];
+      return (await node()?.brainCoreClient.listContacts()) ?? [];
     },
     async openGroupPlan(input: import('@dina/core').OpenGroupPlanClientInput) {
       const n = node();
       if (n === null) return { ok: false as const, refusal: 'not_wired', detail: 'DinaNode not booted' };
-      return n.coreClient.openGroupPlan(input);
+      return n.brainCoreClient.openGroupPlan(input);
     },
     async getGroupPlan(planId: string) {
-      return (await node()?.coreClient.getGroupPlan(planId)) ?? null;
+      return (await node()?.brainCoreClient.getGroupPlan(planId)) ?? null;
     },
     async listGroupPlanHandles() {
-      return (await node()?.coreClient.listGroupPlanHandles()) ?? [];
+      return (await node()?.brainCoreClient.listGroupPlanHandles()) ?? [];
     },
     async createWorkflowTask(input: import('@dina/core').CreateWorkflowTaskInput) {
       const n = node();
       if (n === null) throw new Error('lazyCoreClient.createWorkflowTask: DinaNode not booted');
-      return n.coreClient.createWorkflowTask(input);
+      return n.brainCoreClient.createWorkflowTask(input);
     },
     async getWorkflowTask(id: string) {
-      return node()?.coreClient.getWorkflowTask(id) ?? null;
+      return node()?.brainCoreClient.getWorkflowTask(id) ?? null;
     },
     async completeWorkflowTask(id: string, result: string, resultSummary: string) {
       const n = node();
       if (n === null) throw new Error('lazyCoreClient.completeWorkflowTask: DinaNode not booted');
-      return n.coreClient.completeWorkflowTask(id, result, resultSummary);
+      return n.brainCoreClient.completeWorkflowTask(id, result, resultSummary);
     },
     async approveWorkflowTask(id: string) {
       const n = node();
       if (n === null) throw new Error('lazyCoreClient.approveWorkflowTask: DinaNode not booted');
-      return n.coreClient.approveWorkflowTask(id);
+      return n.brainCoreClient.approveWorkflowTask(id);
     },
     async cancelWorkflowTask(id: string, reason?: string) {
       const n = node();
       if (n === null) throw new Error('lazyCoreClient.cancelWorkflowTask: DinaNode not booted');
-      return n.coreClient.cancelWorkflowTask(id, reason);
+      return n.brainCoreClient.cancelWorkflowTask(id, reason);
     },
   };
 }
@@ -1288,7 +1290,7 @@ function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['
       if (node === null) {
         throw new Error('delegate_to_local_agent: DinaNode not booted yet');
       }
-      return node.coreClient.createWorkflowTask(input);
+      return node.brainCoreClient.createWorkflowTask(input);
     },
     // No getWorkflowTask: delegate_to_agent fires-and-returns (async result
     // delivery via WorkflowEventConsumer), so it never polls the task.

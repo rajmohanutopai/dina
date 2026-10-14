@@ -99,6 +99,11 @@ export * from './order_attachments';
 export * from './negotiation_policy';
 export * from './negotiation_supplier';
 export * from './buyer_negotiation';
+// SHELF_SPACE_NEGOTIATION — what the composition roots wire: the inbox hooks and the listing repo seam.
+export { termWorkflowHooks } from './term/term_workflow';
+export { installTermListingRepo, getTermListingRepo, type TermListingRepo } from './term/term_listing_repo';
+export { DEFAULT_TERM_POLICY, validateTermPolicy } from './term/term_policy';
+export type { TermDelivery, TermListingView } from './term/term_engine';
 export {
   confirmFirstPartyUpdate,
   listFirstPartyUpdates,

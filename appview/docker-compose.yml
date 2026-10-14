@@ -52,6 +52,7 @@ services:
         com.dinakernel.commerce.catalog,
         com.dinakernel.commerce.catalogSnapshot,
         com.dinakernel.commerce.relationshipClaim,
+        com.dinakernel.commerce.termListing,
         com.dinakernel.service.profile,
         com.dinakernel.service.presence
       JETSTREAM_PORT: 6008

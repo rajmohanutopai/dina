@@ -48,9 +48,12 @@ const BUSINESS_DID = 'did:plc:chairmakermobile000';
  * its tick is always-on rather than optional. The sixth is the §8 invite
  * sweep — the same always-on rule. The seventh is the NEGOTIATION_PLAN §4.5
  * tender loop: a buyer's negotiated tender must keep moving on the phone,
- * and with no policy anywhere it ticks quietly.
+ * and with no policy anywhere it ticks quietly. The eighth is the
+ * SHELF_SPACE_NEGOTIATION term sweep: resends until a receipt, held
+ * documents, lapsed cards and the brand's loop — a store's phone is the
+ * pilot's main node, so its clock must run there.
  */
-const COMMERCE_TICKS = 7;
+const COMMERCE_TICKS = 8;
 
 /** A fake AT Protocol repo: one record, CAS on the CID we handed out. */
 class FakeRepo {

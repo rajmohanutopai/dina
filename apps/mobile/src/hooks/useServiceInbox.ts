@@ -29,6 +29,9 @@ import {
   UCP_SEARCH_REVIEW_TYPE,
 } from '@dina/core';
 
+import { bpsText, categoryLabel, moneyText, termsText } from '../services/shelf_labels';
+
+import type { Term } from '@dina/commerce-protocol';
 import type { CoreClient, WorkflowTask } from '@dina/core';
 import type { CardSpec } from '@dina/protocol';
 
@@ -74,6 +77,16 @@ export type InboxEntryKind =
   | 'negotiation_price_approval'
   /** NEGOTIATION_PLAN §4.5 — a negotiated tender is ready to award (a notice; the award is its own act). */
   | 'tender_ready'
+  /** SHELF_SPACE_NEGOTIATION §6.2 — a brand the store does not know asks about a slot. */
+  | 'term_stranger_request'
+  /** §5.4 — a brand asks past the store's automatic limit. */
+  | 'term_floor_approval'
+  /** §7.2 — the brand's yes: send the slot proposal. */
+  | 'term_agreement_proposal'
+  /** §7.2 — the store's yes: accept the slot agreement. */
+  | 'term_agreement_decision'
+  /** §5.3 — a shelf-space message could not be delivered (a notice). */
+  | 'term_delivery_failed'
   | 'unknown';
 
 export interface InboxEntry {
@@ -742,7 +755,10 @@ export async function denyPending(
     // NEGOTIATION_PLAN — a "no" to a lower price, or dismissing a tender
     // notice, cancels the card; neither has a D2D requester to answer.
     kind === 'negotiation_price_approval' ||
-    kind === 'tender_ready'
+    kind === 'tender_ready' ||
+    // SHELF_SPACE_NEGOTIATION — a "no" on a term card is a cancelled card;
+    // Core's term engine hears it and answers the other side itself.
+    isTermCardType(kind)
   ) {
     // Plain cancel — no service.respond peer to notify. The agent
     // observes intent_validation through polling; staging approvals are
@@ -1254,6 +1270,12 @@ function toEntry(task: WorkflowTask): InboxEntry {
     };
   }
 
+  // SHELF_SPACE_NEGOTIATION — the five term cards. Core mints each; the
+  // numbers on them are the owner's own (Brain reads them redacted).
+  if (typeof payloadType === 'string' && isTermCardType(payloadType)) {
+    return termCardEntry(task, payloadType, parsed);
+  }
+
   if (payloadType === 'vault_read_request') {
     const persona = typeof parsed.persona === 'string' ? parsed.persona : '';
     const requesterDID = typeof parsed.requester_did === 'string' ? parsed.requester_did : '';
@@ -1401,5 +1423,167 @@ function summariseParams(params: unknown, max = 120): string {
     return s.length <= max ? s : `${s.slice(0, max)}…`;
   } catch {
     return '';
+  }
+}
+
+// ---------------------------------------------------------------------------
+// SHELF_SPACE_NEGOTIATION — term cards
+// ---------------------------------------------------------------------------
+
+const TERM_CARD_TYPES = [
+  'term_stranger_request',
+  'term_floor_approval',
+  'term_agreement_proposal',
+  'term_agreement_decision',
+  'term_delivery_failed',
+] as const;
+type TermCardType = (typeof TERM_CARD_TYPES)[number];
+
+export function isTermCardType(value: string): value is TermCardType {
+  return (TERM_CARD_TYPES as readonly string[]).includes(value);
+}
+
+function str(value: unknown): string {
+  return typeof value === 'string' ? value : '';
+}
+
+/** The terms on a card in the owner's words, or '' when the card carries none it can read. */
+function termsLine(parsed: Record<string, unknown>): string {
+  const general = parsed.general as
+    | { currency?: unknown; period?: unknown; start?: unknown; end?: unknown; tag?: unknown }
+    | undefined;
+  if (general === undefined || !Array.isArray(parsed.terms) || typeof general.currency !== 'string')
+    return '';
+  const terms = (parsed.terms as unknown[]).filter(
+    (t): t is Term =>
+      t !== null &&
+      typeof t === 'object' &&
+      typeof (t as Term).name === 'string' &&
+      typeof (t as Term).value === 'string',
+  );
+  const period = general.period === 'weekly' ? 'weekly' : 'monthly';
+  const dates =
+    typeof general.start === 'string' && typeof general.end === 'string'
+      ? ` · ${general.start.slice(0, 10)} to ${general.end.slice(0, 10)}`
+      : '';
+  const tag = typeof general.tag === 'string' ? ` · ${categoryLabel(general.tag)}` : '';
+  return `${termsText(terms, { currency: general.currency, period })}${dates}${tag}`;
+}
+
+/**
+ * Everything else the owner's yes binds (§5.2): who keeps the takings, the
+ * trial, the exit notice and the stock duties. A card that binds a deal shows
+ * all of it — a yes must never cover a term the owner was not shown.
+ */
+function conditionsLine(parsed: Record<string, unknown>): string {
+  const g = parsed.general as
+    | {
+        currency?: unknown;
+        cash_handler?: unknown;
+        trial?: { end?: unknown; fee?: { minor_units?: unknown } };
+        exit_notice_days?: unknown;
+        stock_duties?: { min_skus?: unknown; restock_days?: unknown };
+      }
+    | undefined;
+  if (g === undefined || typeof g.currency !== 'string') return '';
+  const parts = [
+    g.cash_handler === 'host' ? 'the store keeps the takings' : 'the brand keeps the takings',
+  ];
+  if (g.trial !== undefined && typeof g.trial.end === 'string') {
+    parts.push(
+      `trial until ${g.trial.end.slice(0, 10)} at ${moneyText(g.currency, g.trial.fee?.minor_units)}`,
+    );
+  }
+  if (typeof g.exit_notice_days === 'number')
+    parts.push(`${String(g.exit_notice_days)} days' notice to end`);
+  if (typeof g.stock_duties?.min_skus === 'number')
+    parts.push(`at least ${String(g.stock_duties.min_skus)} products`);
+  if (typeof g.stock_duties?.restock_days === 'number')
+    parts.push(`restock every ${String(g.stock_duties.restock_days)} days`);
+  return parts.join(' · ');
+}
+
+function termCardEntry(
+  task: { id: string; description?: string; created_at: number; expires_at?: number },
+  type: TermCardType,
+  parsed: Record<string, unknown>,
+): InboxEntry {
+  const base = {
+    id: task.id,
+    kind: type,
+    description: task.description ?? '',
+    createdAt: task.created_at,
+    ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
+  };
+  const slot = str(parsed.resource_ref);
+  switch (type) {
+    case 'term_stranger_request':
+      return {
+        ...base,
+        capability: 'shelf slot',
+        serviceName: 'A brand asks about a slot',
+        requesterDID: str(parsed.buyer_did),
+        paramsPreview: `${categoryLabel(str(parsed.tag))} · ${slot} · ${str(parsed.start).slice(0, 10)} to ${str(parsed.end).slice(0, 10)}`,
+      };
+    case 'term_floor_approval': {
+      const currency = str(parsed.currency);
+      const asked = (parsed.asked ?? {}) as Record<string, unknown>;
+      const offered = (parsed.offered ?? {}) as Record<string, unknown>;
+      const part = (values: Record<string, unknown>): string =>
+        [
+          typeof values.fee === 'string' ? `rent ${moneyText(currency, values.fee)}` : '',
+          typeof values.share_bps === 'string' ? `share ${bpsText(values.share_bps)}` : '',
+        ]
+          .filter((x) => x !== '')
+          .join(', ');
+      return {
+        ...base,
+        capability: 'slot terms',
+        serviceName: 'Terms past your automatic limit',
+        requesterDID: str(parsed.buyer_did),
+        paramsPreview: `${slot}: asks ${part(asked)} (offered now: ${part(offered)})`,
+      };
+    }
+    case 'term_agreement_proposal':
+      return {
+        ...base,
+        capability: 'slot agreement',
+        serviceName: 'A store’s offer is ready',
+        requesterDID: str(parsed.seller_did),
+        paramsPreview: `${slot} · ${termsLine(parsed)}\n${conditionsLine(parsed)}${typeof parsed.valid_until === 'string' ? `\noffer good until ${parsed.valid_until.slice(0, 10)}` : ''}`,
+      };
+    case 'term_agreement_decision': {
+      const holding = (parsed.holding ?? {}) as {
+        tag?: unknown;
+        already_held?: unknown;
+        premium_bps_per_count?: unknown;
+      };
+      const held =
+        typeof holding.already_held === 'number' &&
+        holding.already_held > 0 &&
+        typeof holding.premium_bps_per_count === 'number'
+          ? ` · ${String(holding.already_held)} ${categoryLabel(str(holding.tag))} brand(s) already here, +${bpsText(holding.premium_bps_per_count)} each`
+          : '';
+      return {
+        ...base,
+        capability: 'slot agreement',
+        serviceName: 'A brand proposes a slot agreement',
+        requesterDID: str(parsed.vendor_did),
+        paramsPreview: `${slot} · ${termsLine(parsed)}${held}\n${conditionsLine(parsed)}`,
+      };
+    }
+    case 'term_delivery_failed':
+      // `why`: the other side never answered, or answered with a refusal — so a
+      // termination, settlement or decision took effect on neither side.
+      return {
+        ...base,
+        capability: 'shelf space',
+        serviceName: parsed.why === 'refused' ? 'Refused by the other side' : 'Message not delivered',
+        requesterDID: str(parsed.counterparty_did),
+        paramsPreview:
+          parsed.why === 'refused'
+            ? 'The other side refused it, so it did not take effect. Send it again if it still stands.'
+            : 'The other side did not answer before the deadline.',
+      };
   }
 }

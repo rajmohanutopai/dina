@@ -46,6 +46,17 @@ jest.mock('../../src/services/wrapped_seed_store', () => ({
   loadWrappedSeed: async () => wrappedSeed,
 }));
 
+/**
+ * What the DECIDING node says about presence (`presenceAvailable`): the
+ * shelf-space binding cards ask it, not this device's keychain. Null: no
+ * owner client (every other card's tests).
+ */
+let mockPresenceAnswer: (() => Promise<{ available: boolean }>) | null = null;
+jest.mock('../../src/services/owner_commerce_client', () => ({
+  getOwnerCommerceClient: () =>
+    mockPresenceAnswer === null ? null : { presenceAvailable: () => mockPresenceAnswer?.() },
+}));
+
 jest.mock('expo-router', () => ({
   useRouter: () => ({ push: (path: string): void => void pushed.push(path) }),
   useLocalSearchParams: () => ({}),
@@ -310,6 +321,130 @@ function disclosureReviewTask(id: string, createdAt: number): WorkflowTask {
     updated_at: createdAt,
   };
 }
+
+describe('a shelf-space card (SHELF_SPACE_NEGOTIATION §7.2)', () => {
+  it('asks the binding question with the terms in the owner’s words, names the brand, and keeps Deny / Approve', async () => {
+    const task: WorkflowTask = {
+      ...disclosureReviewTask('term-decision-1', 1_000),
+      description: 'A brand proposes a slot agreement.',
+      payload: JSON.stringify({
+        type: 'term_agreement_decision',
+        card_id: 'term-decision-1',
+        vendor_did: 'did:plc:juicebrand',
+        resource_ref: 'slot-3',
+        general: {
+          tag: 'beverages.juice',
+          currency: 'INR',
+          period: 'monthly',
+          cash_handler: 'vendor',
+          start: '2027-02-01T00:00:00Z',
+          end: '2027-08-01T00:00:00Z',
+          exit_notice_days: 30,
+        },
+        terms: [
+          { name: 'fee', value: '195000' },
+          { name: 'share_bps', value: '800' },
+        ],
+      }),
+    };
+    const stub = stubClient({ pending: [task] });
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText('Accept this slot agreement?')).toBeTruthy());
+    expect(screen.getByText(/INR 1950\.00 a month \+ 8% of sales/)).toBeTruthy();
+    // The requester line names the other party by role: the brand.
+    expect(screen.getByText(/^brand did:plc:/)).toBeTruthy();
+    // And the card shows everything the yes binds, beyond the rent and share.
+    expect(screen.getByText(/the brand keeps the takings · 30 days' notice to end/)).toBeTruthy();
+    expect(screen.getByTestId('approvals-deny-term-decision-1')).toBeTruthy();
+  });
+
+  it('a refused follow-up says so in its headline, not "not delivered"', async () => {
+    const task: WorkflowTask = {
+      ...disclosureReviewTask('term-refused-9', 1_000),
+      payload: JSON.stringify({
+        type: 'term_delivery_failed',
+        card_id: 'term-refused-9',
+        counterparty_did: 'did:plc:store',
+        kind: 'term_termination',
+        why: 'refused',
+      }),
+    };
+    const stub = stubClient({ pending: [task] });
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByText('Refused by the other side')).toBeTruthy());
+    expect(screen.queryByText(/not delivered/i)).toBeNull();
+  });
+
+  const bindingCard = (id: string): WorkflowTask => ({
+    ...disclosureReviewTask(id, 1_000),
+    payload: JSON.stringify({
+      type: 'term_agreement_decision',
+      card_id: id,
+      vendor_did: 'did:plc:juicebrand',
+      resource_ref: 'slot-3',
+    }),
+  });
+  const showBindingCard = async (id: string) => {
+    const stub = stubClient({ pending: [bindingCard(id)] });
+    setInboxCoreClient(stub.client);
+    const screen = render(<NotificationsScreen />);
+    await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
+    fireEvent.press(screen.getByTestId('filter-needs_action'));
+    await waitFor(() => expect(screen.getByTestId(`approvals-approve-${id}`)).toBeTruthy());
+    return { screen, stub };
+  };
+
+  it('when the deciding node cannot check presence, the binding card still offers a yes, and warns', async () => {
+    // This device's own keychain has no say: it is the deciding node that answers.
+    mockPresenceAnswer = async () => ({ available: false });
+    try {
+      const { screen, stub } = await showBindingCard('term-decision-2');
+      await waitFor(() =>
+        expect(screen.getByTestId('approvals-presence-unchecked-term-decision-2')).toBeTruthy(),
+      );
+      expect(screen.getByText(/cannot check that it is you agreeing/)).toBeTruthy();
+      expect(screen.queryByTestId('approvals-presence-unavailable-term-decision-2')).toBeNull();
+      // Saying no needs no presence.
+      expect(screen.getByTestId('approvals-deny-term-decision-2')).toBeTruthy();
+      // The yes goes straight to Core once confirmed, with no presence sheet in the way.
+      const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
+        void (buttons ?? []).find((b) => b.text !== 'Cancel')?.onPress?.();
+      });
+      try {
+        fireEvent.press(screen.getByTestId('approvals-approve-term-decision-2'));
+        await waitFor(() => expect(stub.approve).toHaveBeenCalled());
+        expect(screen.queryByTestId('presence-sheet')).toBeNull();
+      } finally {
+        alertSpy.mockRestore();
+      }
+    } finally {
+      mockPresenceAnswer = null;
+    }
+  });
+
+  it.each([
+    ['the deciding node can check presence', async () => ({ available: true })],
+    ['its answer has not come yet', () => new Promise<{ available: boolean }>(() => undefined)],
+    ['asking it failed', async (): Promise<{ available: boolean }> => Promise.reject(new Error('down'))],
+  ])('no warning when %s', async (_why, answer) => {
+    mockPresenceAnswer = answer;
+    wrappedSeed = null; // and this device's own keychain does not matter
+    try {
+      const { screen } = await showBindingCard('term-decision-3');
+      await act(async () => undefined);
+      expect(screen.queryByTestId('approvals-presence-unchecked-term-decision-3')).toBeNull();
+    } finally {
+      mockPresenceAnswer = null;
+      wrappedSeed = { v: 1 };
+    }
+  });
+});
 
 describe('Approval inbox inline in Activity — a refused decision is shown on the card', () => {
   it("Core's refusal reason lands on the card instead of vanishing (an Alert is a no-op on the web)", async () => {

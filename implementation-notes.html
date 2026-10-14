@@ -110,6 +110,368 @@
     </p>
 
     <!-- ============================================================ -->
+    <h1 id="shelf">Shelf-space negotiation (Zeev) <span class="status wip">STEPS 1–10 BUILT, REVIEWED, ALL SUITES GREEN</span></h1>
+    <p class="meta">Spec: <code>docs/SHELF_SPACE_NEGOTIATION.md</code> (draft 6, four review rounds). Build order follows its §10.
+      General Core pieces first; the Slot Pack and phone screens after.</p>
+
+    <h2 id="shelf-decisions">Design decisions (where the spec left room)</h2>
+    <ul>
+      <li><strong>The request asks only for tag, currency, start and end.</strong> §5.3 gives <code>TermRequest</code> a
+        <code>general</code> block but §5.2 fixes the block within a chain. Reading both: the buyer asks for the tag and
+        dates it wants; the seller's first offer must keep those and sets the rest (period, cash handler, trial, exit
+        notice, stock duties). From then on the whole block is fixed (<code>verifyTermOfferRevision</code>).</li>
+      <li><strong>A terms list names every table term once, sorted, as canonical integer strings.</strong> A rent-only
+        deal states <code>share_bps: "0"</code> instead of leaving it out, so one set of terms has one spelling and one
+        digest.</li>
+      <li><strong>Term documents refuse unknown fields.</strong> Other commerce documents tolerate them (minor versions
+        are additive). For term documents the spec's compatibility rule is "a node that knows the kind reads all of
+        it", and the listing's leakage rule is a closed vocabulary, so strict validators are the simpler reading.</li>
+      <li><strong>The listing has no free text.</strong> Size is structured numbers (width, height, depth, shelves);
+        kind and tags are ids. Free text in a public record could carry a price, so the vocabulary leaves no place
+        for one.</li>
+      <li><strong>The listing URI is fixed by the listing</strong>: <code>at://&lt;seller&gt;/com.dinakernel.commerce.termListing/&lt;listing_id&gt;</code>,
+        and a request's URI and digest must both match it.</li>
+      <li><strong><code>TermOffer</code> carries <code>issued_at</code></strong> (the spec's shape omits it), so
+        <code>valid_until</code> can be bounded to 7 days after issue, as for counters.</li>
+      <li><strong>The term's own <code>end</code> also cuts the last regular period</strong>, prorated against its full
+        calendar length, the same rule as an early termination.</li>
+      <li><strong><code>fee_due</code> is an optional field on the existing <code>SettlementNote</code></strong>, refused on
+        revenue-share agreements, so the decision, termination, settlement and acknowledgement documents are reused
+        unchanged as §5.5 says. On the wire they travel under their own push kinds (<code>term_decision</code>,
+        <code>term_termination</code>, <code>term_settlement</code>, <code>term_settlement_ack</code>), so a term follow-up
+        is never routed to the revenue-share ledger by mistake.</li>
+      <li><strong>The store's offer conditions live in the policy.</strong> §5.4's <code>termPolicy</code> names asking
+        terms and floors but not the period, cash handler, trial, exit notice or stock duties the offer must carry. Each
+        resource now has <code>conditions</code>; the trial is given in days and cut at the term's end.</li>
+      <li><strong>Who may ask is a policy-wide setting</strong> (<code>access: contacts_or_card | anyone</code>), not per
+        listing: the listing is a closed public record with no field for it. The stranger card admits one request
+        only; it does not add a contact.</li>
+      <li><strong>The gate is binding, not a scope table.</strong> A stranger's term document crosses only when it
+        names something this node already holds with that peer (a request it sent, an offer it made, a proposal, a
+        note), or, for a first request, a listing this node publishes. That is the "request-scoped counterparty" of
+        §5.3 without a second table to keep in step; scope ends when the bound records stop admitting documents.</li>
+      <li><strong>The first offer never asks the owner.</strong> Asking terms below a premium-raised floor are raised
+        to the automatic limit; only a revision can raise a floor card.</li>
+      <li><strong>Acceptance re-checks against the HARD floor</strong> with the premium in force: the owner is present
+        and approving, so the automatic limit is not the line there.</li>
+      <li><strong>A revision never retreats</strong> from a term the buyer already holds; if the owner has since raised
+        a floor above the head, the store holds instead of revising around it.</li>
+      <li><strong>Settlements may be issued for any scheduled period</strong>, ended or not, as revenue-share notes
+        are today; the spec does not require the period to have passed.</li>
+    </ul>
+
+    <h2 id="shelf-deviations">Deviations</h2>
+    <ul>
+      <li><strong>The term runner runs in process, with no workflow task.</strong> The goods runner claims tasks over
+        Core's routes because an outside runner must authenticate as a device. The term handler is Core's own
+        first-party code configured only by the pack's bounded parameters, so the hop adds latency and no authority.
+        The runner still only proposes; <code>clampTerm</code> decides. Each install still gets a runner device,
+        because a runner-mode install cannot activate without one. An outside runner for third-party packs is Q6.</li>
+      <li><strong>The Slot Pack declares no <code>config_schema</code>; the runner's step is pinned in
+        <code>FIRST_PARTY_PACKS</code>.</strong> §4 puts the default rules and the runner's step in
+        <code>config_schema</code>. But a <code>config_schema</code> derives the <code>config</code> feature, which this node
+        does not ship (P2-9: there is no store for config values), so the install gate refused both halves with
+        <code>needs_newer_dina</code>. The term tests never saw it: their harness hands the engine an active pack directly.
+        The step (50%) now sits on the store's row of the build's pack table, beside the manifest bytes it travels with;
+        the rule form's suggestion (15% a brand, at most four) is the phone's own default. Move both into
+        <code>config_schema</code> when the config store lands. A manifest test now checks every Slot feature against
+        <code>NODE_SUPPORTED_FEATURES</code>, and a route test installs both halves through the real door.</li>
+      <li><strong>The term engine sends through Core's D2D sender, not the Commerce Pack's dispatcher.</strong> It is a
+        general Core piece (§5); importing the pack's money module would cross the §5.B1 money line.</li>
+      <li><strong>Agreement documents resend for 33 days, not §5.3's 30.</strong> The receiver refuses a held document 30
+        days after it ARRIVED; arrival trails sending by up to two days. With both clocks at 30, one lost final receipt
+        left the sender telling its owner "not delivered" for a document the other side had. The sender now outlasts
+        the hold by two days of delivery delay and one daily resend.</li>
+      <li><strong>A termination's notice is checked against its arrival.</strong> §5.5 judges the notice from the sender's
+        own <code>terminated_at</code>, so a party could backdate it and skip the notice. The receiver now refuses one
+        dated more than 3 days before it arrived (a day in the relay, then resends) or in the future. A refused
+        document never takes effect on either side: both folds skip what the other side refused, so the two keep the
+        same end date; the owner terminates again, with notice from now.</li>
+      <li><strong>The listing region is closed.</strong> §6.1 closes the listing's vocabulary, but its region was the
+        generic shape (extra keys, a custom scheme with an issuer, free text up to the length limit). Now: scheme and
+        value only; country, admin area, postcode or geohash, each in its code's shape. A postcode-shaped word still
+        fits a postcode (a few capitals and digits); that is the residual.</li>
+      <li><strong>The Slot Pack's begin route is its own</strong> (<code>POST /v1/commerce/terms/install/begin</code>,
+        <code>side: seller | buyer</code>); binding Core's runner and consent reuse the Commerce Pack's two routes, which
+        already serve every first-party pack in the table. §4 names the pack but no way to turn it on; without this route
+        no owner could activate either half.</li>
+      <li><strong>Proration is by milliseconds, not seconds.</strong> Instants carry optional milliseconds; for whole-second
+        instants the ratio is identical, and for others milliseconds is the exact one.</li>
+    </ul>
+
+    <h2 id="shelf-tradeoffs">Tradeoffs</h2>
+    <ul>
+      <li><strong>Strict term validators vs additive minors.</strong> Strict is chosen (see decisions); the cost is that a
+        later field on a term document is a new kind or a major, not a minor.</li>
+      <li><strong>Single-statement writes inside one transaction per act.</strong> Every store write is one statement
+        (<code>INSERT OR IGNORE</code>, conditional <code>UPDATE</code>), and every act that changes state runs inside
+        the runtime's one <code>CommerceTransaction</code> through the re-entrant <code>ctx.atomically</code> (see the
+        next item).</li>
+      <li><strong>One transaction per act, effects after the commit.</strong> An ingest (replay check to answer), a held
+        retry, a stranger yes, a decision or proposal with its send intent: each commits whole or not at all, and the
+        sends, receipts and card raises it queued run only after the commit. Before, a crash between writes could
+        store a request with no answer (a resend then minted a second offer) or approve a card whose proposal was never
+        queued.</li>
+      <li><strong>A brand's limits carry a period</strong> (<code>TermBuyerPolicy.period</code>, monthly when absent).
+        The spec gives the request no period and the store chooses one; the brand's rents were compared with no regard
+        for it. The loop restates the brand's money limits in each offer's period (a year is 12 months or 52 weeks,
+        rounded down, the brand's safe side) and ranks every offer in the brand's own period. The request's
+        <code>wanted_terms</code> stay in the brand's period: the store never acts on them.</li>
+      <li><strong>A settlement for a period an early end removed counts for nothing</strong> — rent and sales alike, as
+        one arriving after the end is refused (the schedule no longer holds it). A note spanning the end counts the cut
+        fee, as before.</li>
+      <li><strong>Turning renting off, or removing a slot's terms, withdraws its listings</strong>, here at once and then
+        from the directory; a listing cannot be published while renting is off. A listing whose directory removal failed
+        stays marked <code>record_public</code> (v71, unreleased, extended in place) and the phone offers a retry.</li>
+      <li><strong>The Slot Pack opens no money store and serves no tool.</strong> Its rows in the pack table no longer
+        open the Commerce Pack's money routes, and its capabilities, though consented as tools, are left out of Brain's
+        tool list and refused by every invocation: Core's own routes are the only door into a negotiation.</li>
+      <li><strong>On the phone, Brain's half has its own Core client.</strong> The phone gave Brain and the owner's inbox
+        one in-process client with no caller type, so the workflow routes read Brain's calls as the owner's: owner-only
+        cards (term cards, price asks) reached Brain unredacted, and the "Brain cannot decide this" guard never fired.
+        The fix is the narrow one: <code>InProcessTransport</code> takes a <code>workflowCaller</code>, and the phone
+        builds a second client with it set to <code>brain</code> for Brain's half — the service runtime's event
+        consumer, the staging drain, chat remember, the watch poller, the ask loop and <code>delegate_to_agent</code>.
+        Only workflow calls are stamped, so every other route sees Brain exactly as before; the workflow routes now
+        see it as they see the server's signed Brain. The owner's inbox, commands and settings keep the unstamped
+        client. Alternative not taken: stamping all of Brain's calls — wider than this boundary needs, and every other
+        route's in-process behaviour would have to be re-proved.</li>
+      <li><strong>Term cards in the inbox are owner-only, like the price ask.</strong> All five map to plain-word previews
+        (rent, share, dates, category, brands already placed) and a "no" is a plain cancel that the term engine hears.
+        On a surface that decides through Brain the card says where to decide instead of offering a button Core
+        refuses. The words live in <code>shelf_labels.ts</code>, so the inbox does not load the AppView client.</li>
+      <li><strong>"Sent" and "delivered" show on the request and agreement rows, not on the decided card.</strong>
+        §5.3 wants the sender's card to read "sent", "waiting on the other side", then "delivered" or "refused".
+        A decided workflow card is final and cannot change afterwards, so the phone shows the delivery state of
+        the document the owner's yes sent (the brand's proposal, the store's decision) on the row the owner
+        already watches. It reads the term outbox, so it stays true across resends and restarts.</li>
+      <li><strong>Holdings are a section of Terms and rules, not a screen of their own.</strong> §10 names "the
+        holdings screen". A manual holding is part of the store's policy and is saved by the same
+        presence-gated call, so a separate screen would need a second save path for one list. A new holding is
+        named <code>holding-N</code> on save (never clashing with a kept one), and the form refuses an unknown
+        category, a slot the store does not have, and dates out of order before any presence prompt.</li>
+      <li><strong>The shop screen hides each side's tools until its half is on.</strong> A turn-on card stands in
+        their place; it runs begin → bind → consent behind one person-present check, and a refused attempt leaves
+        nothing staged.</li>
+      <li><strong>A refused-on-arrival request vs a held one when the pack is paused.</strong> A paused or absent seller
+        half refuses requests ("not offered"); agreement follow-ups (settlements, terminations) are still accepted, so a
+        paused store's obligations keep settling.</li>
+    </ul>
+
+    <h2 id="shelf-open">Open questions</h2>
+    <ul>
+      <li><strong>Decided by the owner (2026-10-14): a convenience-mode phone can approve a deal.</strong> The two
+        agreement cards no longer fail closed when presence cannot be established; they fall open like every other gated
+        card, and the phone's card warns that anyone holding the unlocked phone could agree. Spec §7.2 now says so.</li>
+      <li><strong>Confirmed by the owner (2026-10-14):</strong> the 33-day agreement resend horizon and the 3-day
+        termination arrival window. Both now stand in the spec too (§5.3, §5.5).</li>
+      <li><strong>Accepted by the owner (2026-10-14):</strong> the spec's recommendations for Q1–Q7 (Zeev's app, Zeev's
+        fee, Zeev contributing content, scope changes and the pilot access default, one resource per deal, third-party
+        publishers, payment records), which the build follows.</li>
+      <li><strong>Changed at the owner's word (2026-10-14):</strong> the shelf screen's card for a record that may still
+        stand now reads "a public record may still show", with a Remove button — true whether the listing was withdrawn
+        or a first publish failed.</li>
+    </ul>
+
+    <h2 id="shelf-followups">Follow-up work (decided later by the owner, 2026-10-14)</h2>
+    <ul>
+      <li>Reminders from a signed deal: start, trial end, settlement periods, exit-notice deadline.</li>
+      <li>PeerLens trust (and a name) on the Dina app's Find list and the store's stranger card.</li>
+      <li>A chat path with no numbers: list slot deals and dates, open the screen.</li>
+      <li>Zeev's questions in spec §11 stay with Zeev; the build follows the spec's recommendations, which the owner
+        accepted.</li>
+    </ul>
+    <p>No open question remains for the owner.</p>
+
+    <h3>Checked against dina_details.md (2026-10-14)</h3>
+    <p>The build agrees with dina_details.md on transport (D2D over MsgBox), the AppView directory, strangers reaching a
+      public listing, egress gates, owner-only Core-minted cards, presence, Silence First and price secrecy. Where it
+      differs:</p>
+    <ul>
+      <li><strong>"known_only" means something else here.</strong> dina_details.md:261/296 uses it for services: a
+        contact the owner explicitly GRANTED. The term policy's <code>known_only</code> admits every unblocked contact,
+        plus strangers one card at a time (spec §6.2). Same word, two meanings. <strong>Owner decision (2026-10-14):</strong> renamed to
+        <code>contacts_or_card</code>; behaviour unchanged. The policy is local, and the build is unshipped, so no stored
+        policy needed migrating. A check of the rename (verifier and refuter) found no code
+        fault; one stale line here was corrected.</li>
+      <li><strong>Core bargains itself.</strong> dina_details.md:12 says anything beyond the listed functions goes to an
+        agent (OpenClaw). The store's negotiator runs in Core, deterministic, proposing only, with
+        <code>clampTerm</code> deciding (deliberate, see Deviations). <strong>Confirmed by the owner (2026-10-14)</strong>: commerce is a
+        Core function of its own.</li>
+      <li><strong>Trust plays no part yet.</strong> dina_details.md:16–17 has the services manager use PeerLens to pick
+        the best provider. Term listings sort by time only, the Find list names no store, and the store's stranger card
+        shows a shortened DID with no name or rating. Spec §6.3 leaves ratings to Zeev's app. Follow-up work (owner,
+        2026-10-14: not now): PeerLens trust on the Dina app's Find list and the stranger card.</li>
+      <li><strong>Chat cannot reach shelf space.</strong> dina_details.md:10, :17 describe services asked for in chat.
+        The Slot Pack stays out of Brain's tools so numbers never reach a cloud model (spec §7.4); agreements are not
+        written to the vault. A chat path without numbers (list deals and dates, open the screen) would fit §7.4.
+        Follow-up work (owner, 2026-10-14: not now).</li>
+      <li><strong>No reminders.</strong> dina_details.md:11, :13 expect reminders from events. A signed deal's start,
+        trial end, settlement periods and exit-notice deadline create none. Not covered by the spec. Follow-up work (owner, 2026-10-14:
+        not now).</li>
+      <li><strong>No private slot listing (found by an independent re-check).</strong> dina_details.md:262 gives service
+        listings four levels, including unlisted (link only) and granted-only. A slot listing is always public in the
+        AppView; <code>contacts_or_card</code> limits who may negotiate, not who may see the slot.
+        <strong>Owner decision (2026-10-14):</strong> slots stay public only — they exist to be found by brands.</li>
+      <li><strong>A stranger's door stays open for the deal's life.</strong> dina_details.md:144–156 describes "one
+        reply" for strangers. The term gate admits a stranger's term documents only while a request, offer chain or
+        agreement binds them, never other message types (deliberate, spec §5.3, §9). Consistent in spirit.</li>
+    </ul>
+
+    <p>An independent re-check (2026-10-14) tried to refute all six and upheld each as correctly described; it found
+      the private-listing gap above, and two stale statements in these notes, now corrected.</p>
+
+    <h2 id="shelf-iterations">Iterations</h2>
+    <ul>
+      <li><strong>Step 1, protocol</strong> (<code>packages/commerce-protocol/src/term.ts</code>, <code>revenue_share.ts</code>):
+        the term table, the general block, anchored month arithmetic, six documents under
+        <code>dina:commerce:term:v1:</code>, the pairwise chain rules, the period schedule with proration, settlement rules
+        and the signed fold. 76 tests with golden digests; package 670/670 green. Review added the listing-URI binding.
+        Next: Core transport.</li>
+      <li><strong>Steps 2–7, Core</strong> (<code>packages/core/src/commerce/term/</code>, migration v71): store, policy,
+        runner, seller, buyer, agreements, follow-ups, engine (ingress with stored/held/refused receipts, the binding
+        gate, the sweep), workflow cards (presence on the two agreement cards, falling open with a warning on a node that cannot establish it; Core-minted, Brain-redacted), owner
+        routes, the first-party pack table (runner binding and money gate), the Slot Pack manifests, the listing repo
+        seam (both hosts), the term sweeper (both hosts). Boundary rules kept rather than exempted: one rehydration
+        module, the one transaction coordinator, the money line. Tests: protocol 670, term 52 (two real engines through
+        both gates; 27 scenarios), core full suite green apart from two deliberate count updates, home-node 120,
+        core-server 3026, mobile green after the timer count update (a plugins-screen flake under load passes alone).
+        Review fixes: counters ordered by round (creation order was arbitrary), requests now spend probing budget,
+        cards re-raised if the inbox was missing, a regex workaround in the fold replaced by the schedule, store
+        transactions removed. Next: AppView indexing, then phone screens.</li>
+      <li><strong>Step 8, AppView</strong>: <code>com.dinakernel.commerce.termListing</code> subscribed (lexicons and the
+        compose allowlist), gated by the protocol's own <code>validateTermListing</code> (shared reader, digest-bound so
+        the record's own bytes reach the handler), indexed only from the seller's own repo under its own id, an older
+        repo revision never replacing a newer one; table <code>term_listings</code> (migration 0030);
+        <code>searchTermListings</code> (tag, kind, region, a covered window, pack, seller) and <code>getTermListing</code>
+        (for Zeev's deep link). 12 new tests; AppView unit suite green after the collection count moved 24 → 25.
+        The Postgres integration path was run later, on a local <code>dina_trust</code> created at the owner's word
+        (test plan V-06). Accepted risk, recorded in the handler: no deletion tombstone, so a replayed older create can bring a
+        withdrawn listing back into the index; the store's node still refuses any request for it. Next: phone screens.</li>
+      <li><strong>Step 9, phone</strong>: four screens (Shelf space, Terms and rules, Ask for a slot, Slot agreement), the
+        deep link (a listing address and nothing else), the five term cards in the inbox, and turning each half of the
+        Slot Pack on. Building the turn-on path found two faults the earlier steps missed: no route could begin the
+        Slot Pack, and its manifests could not pass the install gate (see deviations). Both fixed and tested through the
+        real routes (route test, and the phone's install service over the in-process owner dispatcher). Tests: 11 + 2
+        screen renders, 19 form/label units, 3 inbox mappings, 1 inbox render, 1 install ceremony. A test-only fault
+        fixed on the way: a <code>Switch</code> answers a value change, not a press. Next: the fleet story.</li>
+      <li><strong>Step 10, the fleet story</strong> (<code>term_fleet_story.test.ts</code>): six engines through both
+        gates. Two juice brands are placed by real agreements; a third juice brand and a snack brand then bargain at
+        once and both owners approve both. Every number checked by hand: A meets 180000, B 207000 (one deal in force,
+        +15%), C 234000 (two, +30%) with its share floor 650 and one floor card asking 210000; the snack brand's rent
+        halves down 200000 → 185000 → 177500 → 173750, untouched. Both sides hold the same agreement and fold the same
+        statement; the listings carry none of the store's numbers. My first draft claimed one floor card per counter;
+        the engine keeps one open card per negotiation (silence first), so the test now pins exactly one.</li>
+      <li><strong>Review round (workflow, 20 agents).</strong> Six agents wrote tests for every gap in
+        <code>docs/SHELF_SPACE_TEST_PLAN.md</code>, each checked by a verifier; four reviewers read the code by area,
+        each checked by a refuter. Confirmed and fixed: 1 bug found by a new test (an unknown push kind spooled, not
+        refused, while the money line was closed); 25 of 34 review findings (23 distinct: two areas found the
+        backdated termination and the dropped decision outcome alike), among them the four above on timing,
+        transactions and periods, a backdated termination, settlements after an early end, a paused store still
+        accepting proposals, a late yes still binding, blocked peers passing the term gate, refused yeses recorded as
+        decided, the Slot Pack opening money routes and serving tools, term tables missing from the move archive,
+        cards that hid bound terms, withdrawals that hid a still-public record, and no way to correct a disputed
+        period. Refuted: 9 (style, latent, or deliberate and sound). Verifier test issues fixed: weak or hollow assertions in five places.
+        The phone's Brain caller type, first left open, is fixed (design decisions). Earlier fixes made the same day: the Slot Pack had no
+        install route and its manifests failed the install gate (deviations); a prettier run on two existing files was
+        undone hunk by hunk.</li>
+      <li><strong>Second review round (workflow, 8 agents, read-only)</strong> over the first round's fixes: 26 of 30
+        findings upheld by the refuters, all fixed and tested (<code>term_second_review.test.ts</code>, 11 cases, plus
+        phone and route tests). The heaviest: an owner's yes that the inbox committed but the engine never heard (a
+        crash between the two) is now acted on by the next sweep, which reads the inbox task
+        (<code>TermCardPort.answer</code>/<code>finish</code>); six more two-write acts became one transaction each
+        (sweep step, brand decline/expiry/lapse, floor yes, receipt+close, give-up+card, hold expiry+answer); a body that
+        fails shape can no longer change an answer its digest already has; a trial termination counts as one only if
+        it arrives before the trial ends (otherwise a party could date one into the trial inside the 3-day window — spec
+        §5.5 now says so); a refused termination, settlement, acknowledgement or decision tells its owner (a "refused"
+        card) instead of silently not counting; a stranger yes that was then refused is no longer reported decided; a
+        revision delivered after the brand's card supersedes it and the loop raises one for the newer offer; a failed
+        send retries within a minute and a near deadline gets its first resend before it; ranking never compares costs
+        in different periods; the sweeper withdraws listings nothing backs (renting off, slot removed, store half off)
+        and retries directory removals, whose flag now clears only for the listing removed; refusal reasons carry no
+        figure (they reach the audit log); the test-only publish shortcut is gone (the harness publishes as the route
+        does). Phone: an empty sales field no longer signs a zero; the two binding cards show no yes on a phone without a
+        passphrase; the slot period is a choice on the terms form; a listing keeps its Withdraw while the store's half
+        is off; Brain's client is now required in the phone's bootstrap and pinned by a boot test. Tooling: the safe
+        runner's lock is linked in whole and a stale one is cleared only if it is still the dead holder's. Refuted: 4.
+        Residual, recorded: a cut note that arrives AFTER its termination was refused waits out the 30-day hold (the
+        refused termination's body is not kept to recognise it); one that arrived first is refused with it at once.</li>
+      <li><strong>Third review (workflow, 4 agents, read-only) over the second round's fixes:</strong> 9 of 11 findings
+        upheld, all fixed and tested. A PAUSED store half no longer has its listings withdrawn by the sweeper — a pause
+        (owner, advisory, or the one every restore applies) deletes nothing; only a revoked or uninstalled half, renting
+        off, or a slot without terms withdraws (the engine now tells "held" from "active", <code>packHeld</code>). A
+        directory removal re-reads the row first, so a listing republished meanwhile keeps its record. Every path that
+        refuses a termination (first arrival, a held one re-run, hold expiry) releases its cut notes. Only a FIRST failed
+        send is pulled forward, so a peer that always fails keeps the normal schedule; the write after a send can no
+        longer raise an unhandled rejection. The refused card's headline says "Refused by the other side". The phone's
+        service runtime and watch poller went back to the owner-side client — on the server they run inside core-server
+        unstamped — leaving the Brain stamp on what IS Brain there (staging drain, chat remember, the ask loop,
+        <code>delegate_to_agent</code>); a bootstrap test now keeps the two clients apart. The safe runner clears a
+        stale lock through an exclusive "clearing" marker, removing it only while the dead holder still owns it.
+        Refuted: 2 (a crash between the engine's commit and the inbox finish — two back-to-back calls with no I/O between;
+        an unreadable lock file — the runner cannot write one).</li>
+      <li><strong>Fourth review (2 agents, read-only) over the third round's fixes:</strong> 3 of 3 upheld, all fixed and
+        tested. Directory writes for one listing id now run one at a time through a per-id queue
+        (<code>withListingWrite</code>) shared by publish and removal — the earlier re-read could not stop a removal
+        from deleting a record a republish was still writing. A half held for a revoked device counts as gone (no resume
+        lifts that hold), so its listings are withdrawn; an owner, advisory or restore pause still keeps them. The
+        bootstrap test now also shows the staging drain claiming through Brain's client, not the owner's.
+        <strong>Owner decision (2026-10-14):</strong> the residual — a cut note arriving after its termination was
+        refused waits out the 30-day hold — is accepted and stays recorded.</li>
+      <li><strong>Rounds 5–9 (one verifier and one refuter each, read-only) over the listing write path:</strong> 9 of 16
+        findings upheld (round 9's one was a missing test: a failed republish must leave a live listing live), all fixed and tested. The per-id queue from round 4 left gaps: a withdrawal's local step ran
+        outside it, a publish was checked against the policy before it waited, and a policy save could slip between a
+        publish's record and its row. <strong>Decision:</strong> one lock (<code>withListingsLock</code>) now covers
+        every change to a store's listings — publish (composed again inside the lock), withdrawal and record removal
+        (<code>withdrawEverywhere</code>), a policy save with the withdrawals it causes
+        (<code>savePolicyWithdrawing</code>), and the sweeper's upkeep. <em>Tradeoff:</em> per-id queues allow more
+        overlap, but a policy change touches many ids at once; these are owner acts plus a one-minute sweep, so one at a
+        time costs nothing that matters and leaves no interleaving to reason about. Before a publish sends its record, the
+        listing is noted as withdrawn with its record possibly public (<code>markRecordMayStand</code>); success
+        overwrites the note, while a failed write that landed anyway, or a node stopping mid-write, leaves it for the
+        sweeper to remove (removing a record that never landed is harmless). Round 8 moved this note from after a
+        failure to before the write, and extended it to listings withdrawn earlier. Refuted: a "hung PDS call wedges the lock for good" claim —
+        both hosts' fetch implementations time out a stalled body. Route-level tests now drive the real endpoints with a
+        slow directory.</li>
+      <li><strong>Round 10, the last (owner's choice: one round after the decisions, then stop):</strong> 7 of 8 findings
+        upheld, all fixed. The card's warning had read this device's own keychain; on the web the deciding node is the
+        server, so the two could disagree. Core now answers <code>GET /v1/commerce/catalog/drafts/presence</code>
+        (<code>{ available }</code>, owner-only) and the card asks the node that decides it; no warning while the answer
+        is pending or the call fails. Stale "strict" wording removed from the term workflow, the live script, the test
+        plan (M-16) and a screen comment; the approve tests now assert a 200. Refuted: a "convenience phone stuck at
+        the passphrase prompt" claim — every native phone keeps its seed wrapped, so convenience mode is a server-side
+        state, reached from the web.</li>
+      <li><strong>Round 11, over round 10's fixes:</strong> 2 of 3 findings upheld, neither a behaviour fault: the new
+        route's comment had stacked onto the passphrase route's, and the route lacked tests that it answers
+        <code>available: true</code> on a node that can check and refuses every non-owner caller. Both fixed. A
+        round-12 check of those two changes confirmed both and found one test gap (an owner presenting the wrong
+        capability, on both presence routes), now covered. Round 13 checked those last assertions and upheld nothing, so no
+        code changed after it: review ends with a clean round on the final code.</li>
+      <li><strong>Final run</strong> (<code>scripts/test/safe_test.mjs</code>, one suite at a time, 2 workers, memory
+        watchdog), re-run after the fourth review's fixes: all 23 workspace suites green — core 12,678, mobile 3,995, core-server 3,026 (its shutdown-budget timing test failed once under load and passed alone; a further full run on the final, unchanged code then passed all 23 suites in one pass). An earlier pass caught a clock read inside the new inbox-finish path; the clock is now injected. mobile 3,988, AppView 2,308, core-server 3,026,
+        brain 3,925, protocol 775, commerce-protocol 692 and the rest; highest peak 3.2 GB. The live test-fleet run (21 steps, with search) passed again on this code. The first full run caught one
+        regression of mine: refusing an unknown push kind before the spool also skipped the drain an open line runs
+        on every arrival; the refusal now applies only where the push would have been spooled. Lint clean on every
+        shelf file (the earlier term tests' non-null assertions replaced by a <code>must()</code> helper).
+        Postgres (the owner's go-ahead, 2026-10-14): created <code>dina_trust</code> on the local server, migrated it
+        from scratch (0030 applies cleanly), added a term-listing integration test (6 cases on the real handler and
+        queries), and ran AppView's whole integration suite: 36 files green, after one fix of mine — the schema test's
+        table list lacked <code>term_listings</code>, which no unit test could see. Search no longer accepts a
+        <code>custom</code> region, which no listing can carry.</li>
+      <li><strong>Live test fleet (W-02, 2026-10-14)</strong>, <code>scripts/scenarios/shelf_live.ts</code>: two local Core
+        nodes, each with its own did:plc on the test PDS and in security mode, meeting only through the test MsgBox.
+        All 20 steps passed on the first run: Slot Pack on (both), terms saved, a listing on the PDS with none of the
+        store's numbers, the stranger admitted, rent bargained 2500 → 2100 → 1900 (above the 1800 automatic limit),
+        share 10% → 8% → 7%, both owners approved with presence, both answers delivered, February settled
+        (₹20,000 sales → ₹1,400 share + ₹1,900 rent = ₹3,300 owed) and accepted, both statements equal, the listing
+        withdrawn and gone from the PDS. With the owner's OK the test AppView was then deployed with this build
+        (migration 0030 applied, health checks green), and the run repeated with <code>--appview</code>: all 21 steps
+        passed, the listing found through the test AppView's search. One run in between failed only the "no numbers in
+        the public record" check, which scanned the whole record as text, digest included — a hex digest can spell
+        "fee". That record was already withdrawn, so the cause could not be read back; the check now inspects field
+        names and values, digest and DIDs aside, and names what it matches (nothing, on the next run).</li>
+    </ul>
+
     <h1 id="ucp">UCP buyer (Universal Commerce Protocol) <span class="status wip">IN PROGRESS — U0 BUILT AND REVIEWED, U6 UNDER WAY</span></h1>
     <p class="meta">Plan: <code>docs/UCP_IMPLEMENTATION_PLAN.md</code> (reviewed; all decisions S1–S22 settled 2026-10-04).
       Spec pin: UCP v2026-08-25 only (tag <code>cd78fb38</code>). Order: U0 → U6 → U1 → U2 → U3 → U4 → U5 → U7.

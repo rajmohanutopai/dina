@@ -73,6 +73,7 @@ import {
   makeServiceQueryReconcileSend,
   installCatalogRecordReader,
   installCatalogRecordWriter,
+  installTermListingRepo,
   installCommerceObserver,
   installImageEgressBroker,
   installImageReencoder,
@@ -125,6 +126,7 @@ import {
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
+  termWorkflowHooks,
   orderAttachmentWorkflowHooks,
   wireGroupCoordinationOfferReplay,
   defaultPluginCompletionHandler,
@@ -158,6 +160,7 @@ import {
   ensureA2ACardKey,
   kvPresenceStateStore,
   makeCatalogRepoAccess,
+  makeTermListingRepo,
   makeResolveSender,
   ServicePresenceWriter,
 } from '@dina/home-node';
@@ -821,6 +824,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           integrationWorkflowHooks(),
           orderAttachmentWorkflowHooks(),
           negotiationWorkflowHooks(),
+          termWorkflowHooks(),
           a2aWorkflowHooks(getA2ARuntime),
           ucpWorkflowHooks(),
         ),
@@ -1002,6 +1006,15 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         });
         installCatalogRecordWriter(catalogRepo.writer);
         installCatalogRecordReader(catalogRepo.reader);
+        // SHELF_SPACE_NEGOTIATION §6.1 — the store's slot listings, into the
+        // same repo under the same identity re-check.
+        installTermListingRepo(
+          makeTermListingRepo({
+            pds: catalogPds,
+            ownerDid: catalogDid,
+            authenticate: () => catalogPds.authenticate(),
+          }),
+        );
         // §16.2 — the commerce restore fence. The epoch record lives in this
         // node's OWN repo, outside every backup, and nothing may be signed
         // until it is published. A node with no PDS has no repo to publish

@@ -52,6 +52,26 @@ import type { PresenceSheetProps } from './PresenceSheet';
 export type { InboxEntry, ResolvedInboxEntry };
 
 /** The buyer's order cards: Core names the supplier by DID only. */
+
+/**
+ * SHELF_SPACE_NEGOTIATION — what each term card asks, and who the other party
+ * is to this owner. The two agreement cards bind a deal, so their yes needs a
+ * person present (Core enforces it; the presence sheet appears on refusal).
+ */
+const TERM_CARD_HEADLINES: Readonly<Partial<Record<string, string>>> = {
+  term_stranger_request: 'Let a new brand negotiate?',
+  term_floor_approval: 'Offer terms past your automatic limit?',
+  term_agreement_proposal: 'Send this slot proposal?',
+  term_agreement_decision: 'Accept this slot agreement?',
+};
+const TERM_CARD_PARTY: Readonly<Partial<Record<string, string>>> = {
+  term_stranger_request: 'brand',
+  term_floor_approval: 'brand',
+  term_agreement_proposal: 'store',
+  term_agreement_decision: 'brand',
+  term_delivery_failed: 'with',
+};
+
 const SUPPLIER_CARD_KINDS: ReadonlySet<string> = new Set([
   'order_checkout_link',
   'payment_evidence_record',
@@ -80,6 +100,30 @@ function usePresenceProvable(): boolean | null {
       live = false;
     };
   }, []);
+  return value;
+}
+
+/**
+ * Whether the node that DECIDES a card can check presence at all — asked of
+ * that node, since on the web it is the server, not this tab. Null while
+ * unknown or on an error, so no warning shows on a guess.
+ */
+function useDecidingNodeChecksPresence(wanted: boolean): boolean | null {
+  const [value, setValue] = useState<boolean | null>(null);
+  useEffect(() => {
+    const client = wanted ? getOwnerCommerceClient() : null;
+    if (client === null) return;
+    let live = true;
+    void client
+      .presenceAvailable()
+      .then((r) => {
+        if (live) setValue(r.available);
+      })
+      .catch(() => undefined);
+    return () => {
+      live = false;
+    };
+  }, [wanted]);
   return value;
 }
 
@@ -507,6 +551,13 @@ export function ApprovalActionCard({
   // A hand-off's or a link's yes needs a person present; a phone that cannot prove it (no
   // passphrase) offers no yes: its own card says to set one, a mirrored hand-off to decide on
   // the server. A link opens only here, so it always says to set one.
+  // The two shelf-space cards that bind a deal stay approvable on a node that cannot check
+  // presence (the owner's decision, 2026-10-14): Core lets the yes through, and the card
+  // warns — asking the deciding node, not this device's keychain.
+  const bindsADeal =
+    item.kind === 'term_agreement_proposal' || item.kind === 'term_agreement_decision';
+  const nodeChecksPresence = useDecidingNodeChecksPresence(bindsADeal);
+  const unprovenDeal = bindsADeal && nodeChecksPresence === false;
   const gated = item.ucpCheckout?.card === 'handoff' || item.ucpCheckout?.card === 'link';
   const approvable = !gated || provable !== false;
   const presenceNote =
@@ -544,6 +595,13 @@ export function ApprovalActionCard({
   const isTenderReady = item.kind === 'tender_ready';
   // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's order attachment
   // asks the buyer two things: open this payment link? record this as paid?
+  // SHELF_SPACE_NEGOTIATION — Core-minted and the owner's alone, like the
+  // price ask; a lookup rather than more branches in the headline chain.
+  // The delivery card says which happened — never answered, or refused — so
+  // its headline is the entry's own.
+  const termHeadline =
+    item.kind === 'term_delivery_failed' ? item.serviceName : TERM_CARD_HEADLINES[item.kind];
+  const isTermCard = termHeadline !== undefined;
   const isCheckoutLink = item.kind === 'order_checkout_link';
   const isPaymentEvidence = item.kind === 'payment_evidence_record';
   const checkoutUrl = isCheckoutLink ? safeHttpsUrl(item.linkUrl) : null;
@@ -559,7 +617,8 @@ export function ApprovalActionCard({
       !isCheckoutLink &&
       !isPaymentEvidence &&
       !isPriceAsk &&
-      !isTenderReady) ||
+      !isTenderReady &&
+      !isTermCard) ||
     OWNER_DECIDES_ON_THIS_SURFACE;
   // PLG-29 #1: a vault_read approval covers both the persona-guard READ request
   // and an agent persona-access request, which may ask for read OR write. Show
@@ -567,7 +626,7 @@ export function ApprovalActionCard({
   // masquerade as ordinary read access. accessMode is only set for
   // agent_persona_access; a plain read request leaves it undefined → "read".
   const isVaultWrite = isVaultRead && item.accessMode === 'write';
-  const headline = isIntent
+  const otherHeadline = isIntent
     ? intentHeadline(item)
     : isDisclosure
       ? 'Share a household need?'
@@ -590,6 +649,7 @@ export function ApprovalActionCard({
                       : isVaultRead
                         ? 'Vault read approval'
                         : item.serviceName || 'Unnamed service';
+  const headline = termHeadline ?? otherHeadline;
   const tagText =
     isIntent && item.riskLevel !== undefined
       ? item.riskLevel
@@ -602,7 +662,7 @@ export function ApprovalActionCard({
       : (isIntent || isPlugin) && item.riskLevel === 'MODERATE'
         ? [styles.capability, styles.riskModerate]
         : styles.capability;
-  const requesterPrefix = isIntent
+  const otherRequesterPrefix = isIntent
     ? intentRequesterPrefix(item)
     : isSettingsProposal
       ? 'proposed by'
@@ -615,6 +675,7 @@ export function ApprovalActionCard({
             : isVaultRead
               ? 'requester'
               : 'from';
+  const requesterPrefix = TERM_CARD_PARTY[item.kind] ?? otherRequesterPrefix;
   const riskHint =
     item.ownerRequest === true
       ? null
@@ -712,7 +773,10 @@ export function ApprovalActionCard({
           style={styles.paramsPreview}
           // The exact outbound params are the gate (§11.5): never clipped.
           // A price ask is never clipped either: its yes covers every line shown.
-          numberOfLines={item.kind === 'agent_action' || isPlugin || isPriceAsk ? undefined : 3}
+          // Nor is a shelf-space card: the agreement cards bind every term on it.
+          numberOfLines={
+            item.kind === 'agent_action' || isPlugin || isPriceAsk || isTermCard ? undefined : 3
+          }
           testID={isPlugin ? `approvals-plugin-params-${item.id}` : undefined}
         >
           {item.paramsPreview}
@@ -809,6 +873,12 @@ export function ApprovalActionCard({
           {!approvable ? (
             <Text style={styles.riskHint} testID={`approvals-presence-unavailable-${item.id}`}>
               {presenceNote}
+            </Text>
+          ) : null}
+          {unprovenDeal ? (
+            <Text style={styles.riskHint} testID={`approvals-presence-unchecked-${item.id}`}>
+              Your Dina has no passphrase, so it cannot check that it is you agreeing: anyone who
+              can open this could. Set a passphrase to require one.
             </Text>
           ) : null}
           {approvable ? (

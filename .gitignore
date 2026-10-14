@@ -390,3 +390,6 @@ jiffy-strategy/
 # Real-life scenario fleet (scripts/scenarios/fleet.ts): node state, keys, logs
 scripts/scenarios/.fleet/
 scripts/scenarios/reports/
+
+# Memory-safe test runner (scripts/test/safe_test.mjs): lock, logs, last run
+scripts/test/.safe_test/

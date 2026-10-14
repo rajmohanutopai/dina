@@ -193,6 +193,22 @@ const IDENTITY_TABLES = [
   // configuration, portable in the same sense as `service_configs`.
   'commerce_settings',
   'commerce_catalog_pointers',
+  // SHELF_SPACE_NEGOTIATION: the term engine's whole state is the owner's —
+  // the store's private floors and holdings (policy), every signed document
+  // and the answers given (a restored node must answer a resend as it did
+  // before, never decide it afresh), documents held for a prerequisite, the
+  // open send intents (an agreement document still owed its receipt), the
+  // brand's negotiations, cards and floor authorisations. Leaving any out
+  // would make a moved node re-decide, re-send or forget a deal it signed.
+  'commerce_term_documents',
+  'commerce_term_outbox',
+  'commerce_term_answers',
+  'commerce_term_held',
+  'commerce_term_policy',
+  'commerce_term_listings',
+  'commerce_term_negotiations',
+  'commerce_term_cards',
+  'commerce_term_floor_authorizations',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */

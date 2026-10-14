@@ -27,6 +27,7 @@ import {
   getCommerceEpochService,
   getCommerceServiceQueryDispatch,
   installCatalogRecordReader,
+  installTermListingRepo,
   installCatalogRecordWriter,
   installCommerceObserver,
   installOwnerPresenceVerifier,
@@ -35,7 +36,12 @@ import {
 } from '@dina/core';
 
 import { loadWrappedSeed } from './wrapped_seed_store';
-import { makeCatalogRepoAccess, wireCommerceEpoch } from '@dina/home-node';
+import {
+  makeCatalogRepoAccess,
+  makeTermListingRepo,
+  wireCommerceEpoch,
+  type TermListingRepoClient,
+} from '@dina/home-node';
 
 import { installMobilePhotoPipeline, uninstallMobilePhotoPipeline } from './photo_pipeline';
 
@@ -49,7 +55,8 @@ export interface MobileCommercePlaneOptions {
   /** Tier-0 adapter — the restore-fence marker and the fence's own writes. */
   adapter: DatabaseAdapter;
   /** This node's own repo client; absent on a node with no PDS session. */
-  pds: EpochRepoClient | undefined;
+  /** The node's own repo client; it also deletes, for withdrawing a slot listing. */
+  pds: (EpochRepoClient & Pick<TermListingRepoClient, 'deleteRecord'>) | undefined;
   /** The acting Business DID. */
   businessDid: string;
   /** The ONE Tier-0 transaction runner. */
@@ -107,6 +114,8 @@ export async function startMobileCommercePlane(options: MobileCommercePlaneOptio
     });
     installCatalogRecordWriter(catalogRepo.writer);
     installCatalogRecordReader(catalogRepo.reader);
+    // SHELF_SPACE_NEGOTIATION §6.1 — slot listings, into the same own repo.
+    installTermListingRepo(makeTermListingRepo({ pds: options.pds, ownerDid: options.businessDid }));
   } else {
     options.log({ event: 'commerce.epoch_skipped', reason: 'no_pds_repo' });
   }
@@ -213,6 +222,7 @@ export function stopMobileCommercePlane(): void {
   // per-write identity check exists to catch, arriving from our own boot.
   installCatalogRecordWriter(null);
   installCatalogRecordReader(null);
+  installTermListingRepo(null);
   installCommerceObserver(null);
   uninstallMobilePhotoPipeline();
   installOwnerPresenceVerifier(null);

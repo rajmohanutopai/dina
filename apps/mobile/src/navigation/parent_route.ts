@@ -79,6 +79,11 @@ const SECTION_PARENTS: Record<string, string> = {
   tender: '/trade',
   'ask-quotes': '/trade',
   invites: '/trade',
+  // SHELF_SPACE_NEGOTIATION: the hub opens from Settings; the rest return to it.
+  'shelf-space': '/settings',
+  'shelf-terms': '/shelf-space',
+  'shelf-request': '/shelf-space',
+  'shelf-agreement': '/shelf-space',
   'order-draft': '/orders',
   'catalog-draft': '/catalog',
   'contact-trade-details': '/people',

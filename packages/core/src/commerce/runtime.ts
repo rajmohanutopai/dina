@@ -60,6 +60,7 @@ import { CommerceOrderStore } from './commerce_order';
 import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
 import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
 import { SQLiteDeclineDocumentRepository } from './decline_documents';
+import { firstPartyPack } from './first_party_packs';
 import {
   SQLiteIdempotencyEvidenceRepository,
   type IdempotencyEvidenceRepository,
@@ -100,7 +101,6 @@ import { QuoteFamilyStore } from './quote_family';
 import { SQLiteCommerceQuoteLedgerRepository } from './quote_ledger';
 import { SQLiteCommerceReceiptRepository } from './receipts';
 import { CommerceReconciliationService } from './reconciliation_service';
-import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
 import {
   SQLiteRevshareDocumentRepository,
   type RevshareDocumentRepository,
@@ -119,6 +119,7 @@ import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository 
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
 import { SQLiteTenderRepository } from './tender';
+import { createTermEngine } from './term/term_runtime';
 import { installTradeContextSources } from './trade_context_sources';
 import { isOrderCounterparty } from './trade_counterparty';
 import { applyInboundTradeDocument } from './trade_ingress';
@@ -133,6 +134,7 @@ import type { LifecycleEngineDeps } from './lifecycle_engine';
 import type { NegotiationRepository } from './negotiation_store';
 import type { CommerceReceiptRepository } from './receipts';
 import type { TenderRepository } from './tender';
+import type { TermEngine } from './term/term_engine';
 import type { TradeDocumentRepository } from './trade_ledger';
 import type { CommerceEpochWatermarkRepository } from './watermarks';
 import type { DatabaseAdapter } from '../storage/db_adapter';
@@ -375,6 +377,12 @@ export interface CommerceRuntime {
   /** Why commerce cannot act right now, if it cannot. See below. */
   availability: () => CommerceAvailability;
   /**
+   * SHELF_SPACE_NEGOTIATION — term negotiation: listings, offers, counters,
+   * agreements and their settlements, on both the seller's and the buyer's
+   * side. It answers only while a first-party term pack half is active.
+   */
+  terms: TermEngine;
+  /**
    * §16.4 — how many commercial obligations are still open.
    *
    * A cross-store question (undecided orders live in one store, unfinished
@@ -449,10 +457,6 @@ export type CommerceMoneyAccess =
   | { available: true; stores: CommerceMoneyStores; installId: string }
   | { available: false; reason: CommerceMoneyUnavailableReason; detail: string };
 
-const COMMERCE_PACK_IDS: ReadonlySet<string> = new Set([
-  SUPPLIER_REFERENCE_MANIFEST.plugin_id,
-  BUYER_REFERENCE_MANIFEST.plugin_id,
-]);
 
 /**
  * Resolve the money line from the plugin registry: an `active` first-party
@@ -483,7 +487,8 @@ export function resolveCommerceMoney(stores: CommerceMoneyStores): CommerceMoney
     .list()
     .filter(
       (install) =>
-        COMMERCE_PACK_IDS.has(install.pluginId) && install.trustAnchor.kind === 'local_publisher_key',
+        firstPartyPack(install.pluginId)?.opensMoneyStores === true &&
+        install.trustAnchor.kind === 'local_publisher_key',
     );
   const active = packs.find((install) => install.status === 'active');
   if (active !== undefined) return { available: true, stores, installId: active.installId };
@@ -630,6 +635,7 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     admission,
     lifecycle,
     pendingDecisions,
+    terms: createTermEngine({ adapter: inputs.adapter, transaction, nodeDid: inputs.supplierDid, now }),
     inFlightCount: (installId?: string) => {
       // Undecided orders: the supplier owes an answer it has not given.
       // Unfinished chains: the supplier owes an outcome it has not reached.
@@ -732,7 +738,16 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
   // there. When the engine moves to the Commerce Pack this line moves with
   // it — the seam stays in Core, the knowledge does not.
   setTradeDocumentIngress(value === null ? null : (args) => applyInboundTradeDocument(args));
-  setTradeCounterpartyCheck(value === null ? null : (did, kind) => isOrderCounterparty(value, did, kind));
+  // Item 8's order counterparties, and SHELF_SPACE_NEGOTIATION §5.3's term
+  // binding: a term document crosses for a non-contact only when it binds to
+  // something this node holds with that peer (or names a listing it publishes).
+  setTradeCounterpartyCheck(
+    value === null
+      ? null
+      : (did, kind, context) =>
+          isOrderCounterparty(value, did, kind) ||
+          value.terms.gateAllows({ peerDid: did, kind, document: context.document, direction: context.direction }),
+  );
   // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's attachment that
   // reached the buyer before the acceptance did waits, retained, for it.
   setAcceptanceObserver(

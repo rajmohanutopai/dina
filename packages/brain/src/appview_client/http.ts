@@ -783,6 +783,29 @@ export class AppViewClient {
   }
 
   /**
+   * Search open term listings — a store's slots (`com.dinakernel.commerce
+   * .searchTermListings`, SHELF_SPACE_NEGOTIATION §6.1). The records carry no
+   * price; each listing comes back whole, for the brand's node to re-validate
+   * (its digest covers it) and bind a request to. Rows that are not objects are
+   * dropped here; validity is the node's to judge, not this client's.
+   */
+  async searchTermListings(params: SearchTermListingsParams): Promise<TermListingCandidate[]> {
+    const query: Record<string, string> = {};
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== '') query[key] = String(value);
+    }
+    const body = await this.get('/xrpc/com.dinakernel.commerce.searchTermListings', query);
+    const rows = (body as { listings?: unknown }).listings;
+    return Array.isArray(rows) ? rows.map(coerceTermListingCandidate).filter((c): c is TermListingCandidate => c !== null) : [];
+  }
+
+  /** One term listing by its URI — the deep link from a directory's app (§6.3). Null when not indexed. */
+  async getTermListing(uri: string): Promise<TermListingCandidate | null> {
+    const body = await this.get('/xrpc/com.dinakernel.commerce.getTermListing', { uri });
+    return coerceTermListingCandidate((body as { listing?: unknown }).listing);
+  }
+
+  /**
    * Search PUBLISHED supplier catalogs for a product
    * (`com.dinakernel.commerce.searchCatalog`, §10.5). Returns bounded,
    * INDICATIVE candidate references — nothing here is a commitment, and the
@@ -1069,4 +1092,38 @@ function normalizeProfile(input: ServiceProfile): ServiceProfile {
   }
   if (!mutated) return p;
   return { ...p, capabilitySchemas: normalized };
+}
+
+/** Filters for `searchTermListings`; each one narrows, none is required. */
+export interface SearchTermListingsParams {
+  tag?: string;
+  kind?: string;
+  region_scheme?: 'country' | 'admin_area' | 'postal_area' | 'geohash' | 'custom';
+  region_value?: string;
+  available_from?: string;
+  available_to?: string;
+  pack_id?: string;
+  seller?: string;
+  limit?: number;
+}
+
+/** A listing as AppView returns it: where it lives, who publishes it, the record whole. */
+export interface TermListingCandidate {
+  uri: string;
+  cid: string | null;
+  sellerDid: string;
+  listing: Record<string, unknown>;
+}
+
+function coerceTermListingCandidate(value: unknown): TermListingCandidate | null {
+  if (value === null || typeof value !== 'object') return null;
+  const v = value as { uri?: unknown; cid?: unknown; seller_did?: unknown; listing?: unknown };
+  if (typeof v.uri !== 'string' || typeof v.seller_did !== 'string') return null;
+  if (v.listing === null || typeof v.listing !== 'object' || Array.isArray(v.listing)) return null;
+  return {
+    uri: v.uri,
+    cid: typeof v.cid === 'string' ? v.cid : null,
+    sellerDid: v.seller_did,
+    listing: v.listing as Record<string, unknown>,
+  };
 }

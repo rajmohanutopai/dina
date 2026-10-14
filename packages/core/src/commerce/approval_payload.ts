@@ -44,6 +44,11 @@ import type {
   Money,
   PurchaseOrderProposal,
   Quantity,
+  Term,
+  TermAgreementProposal,
+  TermGeneral,
+  TermOffer,
+  TermPackRef,
 } from '@dina/commerce-protocol';
 
 /**
@@ -63,6 +68,10 @@ const APPROVAL_PREFIX = 'dina:commerce:approval:v1:';
  */
 export const BUYER_ORDER_AUTHORITY_DOMAIN = 'buyer.order_submission';
 export const SUPPLIER_ORDER_AUTHORITY_DOMAIN = 'supplier.order_acceptance';
+/** SHELF_SPACE_NEGOTIATION §7.2 — the buyer's yes that sends a term proposal. */
+export const TERM_PROPOSAL_AUTHORITY_DOMAIN = 'term.agreement_proposal';
+/** §7.2 — the seller's yes that accepts one. */
+export const TERM_DECISION_AUTHORITY_DOMAIN = 'term.agreement_decision';
 
 /** Who approved, and under what authority (§7.2, §15.2). */
 export interface ApprovingPrincipal {
@@ -195,7 +204,35 @@ export interface SupplierApprovalPayload {
   attribution?: ApprovalAttribution;
 }
 
-export type ApprovalPayload = BuyerApprovalPayload | SupplierApprovalPayload;
+/**
+ * SHELF_SPACE_NEGOTIATION §7.2 — a term agreement as the owner's card showed
+ * it. EVERY bound field of the agreement is inside the payload (and so the
+ * digest): parties, pack, resource, the whole general block and every term,
+ * plus the offer the deal comes from. The buyer's kind binds the proposal it
+ * is about to mint; the seller's kind also binds the proposal digest it is
+ * about to accept. A change to any of them needs a new approval.
+ */
+export interface TermAgreementApprovalPayload {
+  kind: 'term_agreement_proposal' | 'term_agreement_decision';
+  actingBusinessDid: string;
+  principal: ApprovingPrincipal;
+  counterpartyDid: string;
+  offerDigest: string;
+  /** The agreement's bound fields, exactly as they will be signed. */
+  agreement: {
+    host_did: string;
+    vendor_did: string;
+    pack: TermPackRef;
+    resource_ref: string;
+    general: TermGeneral;
+    terms: Term[];
+    replaces_proposal_digest: string | null;
+  };
+  /** The proposal being decided; '' on the buyer's proposal approval. */
+  proposalDigest: string;
+}
+
+export type ApprovalPayload = BuyerApprovalPayload | SupplierApprovalPayload | TermAgreementApprovalPayload;
 
 /**
  * The protocol's own canonicalizer, imported rather than rewritten.
@@ -446,5 +483,59 @@ export function buildSupplierApprovalPayload(
     install: context.install,
     cancellation: context.cancellation ?? null,
     ...(context.attribution === undefined ? {} : { attribution: context.attribution }),
+  };
+}
+
+/**
+ * SHELF_SPACE_NEGOTIATION §7.2 — the buyer's approval of the proposal it is
+ * about to send, built from the offer it accepts. The proposal's fields are
+ * the offer's (host = seller, vendor = buyer), so this is also what Core
+ * checks the minted proposal against.
+ */
+export function buildTermProposalApprovalPayload(args: {
+  principal: ApprovingPrincipal;
+  offer: TermOffer;
+  replacesProposalDigest?: string;
+}): TermAgreementApprovalPayload {
+  return {
+    kind: 'term_agreement_proposal',
+    actingBusinessDid: args.offer.buyer_did,
+    principal: args.principal,
+    counterpartyDid: args.offer.seller_did,
+    offerDigest: args.offer.offer_digest,
+    agreement: {
+      host_did: args.offer.seller_did,
+      vendor_did: args.offer.buyer_did,
+      pack: args.offer.pack,
+      resource_ref: args.offer.resource_ref,
+      general: args.offer.general,
+      terms: args.offer.terms,
+      replaces_proposal_digest: args.replacesProposalDigest ?? null,
+    },
+    proposalDigest: '',
+  };
+}
+
+/** §7.2 — the seller's approval of the proposal it is about to accept. */
+export function buildTermDecisionApprovalPayload(args: {
+  principal: ApprovingPrincipal;
+  proposal: TermAgreementProposal;
+}): TermAgreementApprovalPayload {
+  return {
+    kind: 'term_agreement_decision',
+    actingBusinessDid: args.proposal.host_did,
+    principal: args.principal,
+    counterpartyDid: args.proposal.vendor_did,
+    offerDigest: args.proposal.offer_digest,
+    agreement: {
+      host_did: args.proposal.host_did,
+      vendor_did: args.proposal.vendor_did,
+      pack: args.proposal.pack,
+      resource_ref: args.proposal.resource_ref,
+      general: args.proposal.general,
+      terms: args.proposal.terms,
+      replaces_proposal_digest: args.proposal.replaces_proposal_digest ?? null,
+    },
+    proposalDigest: args.proposal.proposal_digest,
   };
 }

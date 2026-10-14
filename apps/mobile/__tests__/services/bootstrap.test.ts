@@ -161,7 +161,10 @@ const BUS_CONFIG: ServiceConfig = {
 
 function baseOptions(overrides: Partial<CreateNodeOptions> = {}): CreateNodeOptions {
   const { client } = stubCoreClient();
+  // These tests watch one stub for every call; Brain's half uses it too unless a test says otherwise.
+  const core = overrides.coreClient ?? client;
   return {
+    brainCoreClient: core,
     did: DID,
     signingKeypair: TEST_KEYPAIR,
     pdsSession: TEST_SESSION,
@@ -263,6 +266,46 @@ describe('createNode — lifecycle', () => {
     // Both runners ran: event consumer listed events, reconciler listed tasks.
     expect(state.eventsList).toBeDefined();
     await node.dispose();
+  });
+
+  it('keeps Brain’s client and the Core-side client apart, as on the server', async () => {
+    const core = stubCoreClient();
+    const brain = stubCoreClient();
+    const sched = fakeScheduler();
+    const node = await createNode(
+      baseOptions({
+        coreClient: core.client,
+        brainCoreClient: brain.client,
+        nowMsFn: sched.now,
+        setInterval: sched.setInterval,
+        clearInterval: sched.clearInterval,
+      }),
+    );
+    try {
+      expect(node.coreClient).toBe(core.client);
+      expect(node.brainCoreClient).toBe(brain.client);
+      await node.drainOnce();
+      // The service runtime's event consumer and reconciler run Core-side on the
+      // server (core-server's own client): here they use the owner-side client,
+      // never Brain's.
+      expect(core.state.listCalls.length).toBeGreaterThan(0);
+      expect(brain.state.listCalls).toEqual([]);
+      // And the staging drain IS Brain on the server: its claim goes through
+      // Brain's client, so owner-only cards reach it redacted.
+      const claims = { core: 0, brain: 0 };
+      (core.client as unknown as Record<string, unknown>).stagingClaim = async () => {
+        claims.core += 1;
+        return { items: [], count: 0 };
+      };
+      (brain.client as unknown as Record<string, unknown>).stagingClaim = async () => {
+        claims.brain += 1;
+        return { items: [], count: 0 };
+      };
+      await node.runners.stagingDrain?.runTick();
+      expect(claims).toEqual({ core: 0, brain: 1 });
+    } finally {
+      await node.dispose();
+    }
   });
 });
 

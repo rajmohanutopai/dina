@@ -42,6 +42,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { pluginLane, type PluginCapabilityDecl } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
+import { servedByCore } from '../commerce/first_party_packs';
 import { evaluatePluginIntent, type PluginPublisherRing, type RiskLevel } from '../gatekeeper/intent';
 import { getPersona } from '../persona/service';
 import { WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
@@ -137,6 +138,7 @@ export type InvokeRefusalCode =
   | 'install_not_active'
   | 'capability_not_consented'
   | 'not_a_tool'
+  | 'served_by_core'
   | 'blocked'
   | 'params_invalid'
   | 'registry_unavailable';
@@ -285,6 +287,13 @@ export function invokeToolCapability(
       ok: false,
       code: 'not_a_tool',
       message: `capability ${args.capabilityId} is not consented as a tool`,
+    };
+  }
+  if (servedByCore(install)) {
+    return {
+      ok: false,
+      code: 'served_by_core',
+      message: `${install.pluginId} is served by Core's own routes, not by invocation`,
     };
   }
   const approvedScopeHash = install.capabilityHashes[args.capabilityId] ?? '';

@@ -59,14 +59,14 @@ export interface SendRequest {
   messageId?: string;
 }
 
-/** A `commerce.trade` body's document kind ('' otherwise) — what the contact gate's waiver binds to. */
-function tradeKindOf(req: SendRequest): string {
-  if (req.messageType !== 'commerce.trade') return '';
+/** A `commerce.trade` body's kind and document ('' / null otherwise) — what the contact gate's waiver binds to. */
+function tradeOf(req: SendRequest): { kind: string; document: unknown } {
+  if (req.messageType !== 'commerce.trade') return { kind: '', document: null };
   try {
-    const kind = (JSON.parse(req.body) as { kind?: unknown }).kind;
-    return typeof kind === 'string' ? kind : '';
+    const body = JSON.parse(req.body) as { kind?: unknown; document?: unknown };
+    return { kind: typeof body.kind === 'string' ? body.kind : '', document: body.document ?? null };
   } catch {
-    return '';
+    return { kind: '', document: null };
   }
 }
 
@@ -169,11 +169,13 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
 
   // 2. Egress 4-gate check (skipped when the service bypass allowed the send).
   if (!serviceAllowBypass) {
+    const trade = tradeOf(req);
     const gateResult = checkEgressGates(
       req.recipientDID,
       req.messageType,
       req.dataCategories ?? [],
-      tradeKindOf(req),
+      trade.kind,
+      trade.document,
     );
 
     if (!gateResult.allowed) {

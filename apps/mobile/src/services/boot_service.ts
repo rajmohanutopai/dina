@@ -451,6 +451,12 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
   // it into the MsgBox ingress adapter for the sender-side
   // signed-response path. Normal Brain/Core calls use CoreClient.
   const coreClient = new InProcessTransport(router);
+  // The same router for Brain's half (staging drain, chat remember, the ask
+  // loop, delegate_to_agent): its workflow calls are stamped `brain`, so
+  // owner-only cards reach Brain redacted and never decided by it — as on the
+  // server. Core-side parts (the service runtime, the watch poller) and the
+  // owner's inbox and commands keep `coreClient`, as on the server.
+  const brainCoreClient = new InProcessTransport(router, undefined, { workflowCaller: 'brain' });
   void signedDispatch; // kept in scope for MsgBox / response-bridge wiring below
 
   // --- Persistence (issues #6, #7) --------------------------------------
@@ -847,6 +853,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     pdsSession: inputs.pdsSession ?? makeStubPDSSession(inputs.did),
     sendD2D: demoSendD2D,
     coreClient,
+    brainCoreClient,
     appViewClient,
     pdsPublisher: inputs.pdsPublisher,
     pdsSessionReachable: inputs.pdsSessionReachable,

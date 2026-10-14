@@ -3880,6 +3880,140 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE agent_persona_grants ADD COLUMN granted_tier TEXT;
     `,
   },
+  {
+    // SHELF_SPACE_NEGOTIATION §5 — term negotiation. Documents keep the
+    // revenue-share table's shape (digest-PK idempotency, answer linkage,
+    // envelope evidence) plus the request each one belongs to, which is
+    // what binds a stranger's later documents to a first contact (§5.3).
+    // The outbox, the answers this node gave, and the held table are the
+    // delivery rules; policy, listings, negotiations, cards and floor
+    // authorisations are each side's state.
+    version: 71,
+    name: 'commerce_term_negotiation',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_term_documents (
+        record_digest TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN
+          ('term_request', 'term_offer', 'term_counter', 'term_agreement_proposal',
+           'agreement_decision', 'agreement_termination', 'settlement_note', 'settlement_ack')),
+        counterparty_did TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        proposal_digest TEXT NOT NULL DEFAULT '',
+        answers_digest TEXT NOT NULL DEFAULT '',
+        direction TEXT NOT NULL CHECK (direction IN ('inbound', 'outbound')),
+        record_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_term_docs_request
+        ON commerce_term_documents(request_id, kind);
+      CREATE INDEX IF NOT EXISTS idx_term_docs_proposal
+        ON commerce_term_documents(proposal_digest, kind);
+      CREATE INDEX IF NOT EXISTS idx_term_docs_answers
+        ON commerce_term_documents(answers_digest, kind);
+      CREATE INDEX IF NOT EXISTS idx_term_docs_counterparty
+        ON commerce_term_documents(counterparty_did, kind);
+
+      CREATE TABLE IF NOT EXISTS commerce_term_outbox (
+        record_digest TEXT PRIMARY KEY,
+        to_did TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        document_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        next_attempt_at INTEGER NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        stop_at INTEGER NOT NULL,
+        receipt_outcome TEXT CHECK (receipt_outcome IS NULL OR receipt_outcome IN ('stored', 'held', 'refused')),
+        receipt_at INTEGER,
+        gave_up_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_term_outbox_due
+        ON commerce_term_outbox(next_attempt_at);
+
+      CREATE TABLE IF NOT EXISTS commerce_term_answers (
+        of_digest TEXT PRIMARY KEY,
+        sender_did TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('stored', 'held', 'refused')),
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_term_held (
+        record_digest TEXT PRIMARY KEY,
+        sender_did TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        request_id TEXT NOT NULL DEFAULT '',
+        proposal_digest TEXT NOT NULL DEFAULT '',
+        reason TEXT NOT NULL CHECK (reason IN ('prerequisite', 'owner_card')),
+        body_json TEXT NOT NULL,
+        evidence_json TEXT NOT NULL DEFAULT '{}',
+        received_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_term_held_sender ON commerce_term_held(sender_did);
+      CREATE INDEX IF NOT EXISTS idx_term_held_request ON commerce_term_held(request_id);
+      CREATE INDEX IF NOT EXISTS idx_term_held_proposal ON commerce_term_held(proposal_digest);
+
+      CREATE TABLE IF NOT EXISTS commerce_term_policy (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        policy_json TEXT NOT NULL,
+        revision INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_term_listings (
+        listing_id TEXT PRIMARY KEY,
+        resource_ref TEXT NOT NULL,
+        record_json TEXT NOT NULL,
+        listing_digest TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('published', 'withdrawn')),
+        -- 1 while the directory may still hold the public record: a listing
+        -- withdrawn here whose removal there failed stays 1 until a retry lands.
+        record_public INTEGER NOT NULL DEFAULT 1 CHECK (record_public IN (0, 1)),
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS commerce_term_negotiations (
+        request_id TEXT PRIMARY KEY,
+        seller_did TEXT NOT NULL,
+        listing_json TEXT NOT NULL,
+        policy_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('negotiating', 'ready', 'proposed', 'agreed', 'closed')),
+        close_reason TEXT NOT NULL DEFAULT '',
+        deadline_at INTEGER NOT NULL,
+        next_action_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_term_negotiations_due
+        ON commerce_term_negotiations(state, next_action_at);
+
+      CREATE TABLE IF NOT EXISTS commerce_term_cards (
+        card_id TEXT PRIMARY KEY,
+        card_type TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        ref_digest TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'approved', 'declined', 'lapsed')),
+        material_json TEXT NOT NULL,
+        description TEXT NOT NULL DEFAULT '',
+        payload_json TEXT NOT NULL DEFAULT '{}',
+        decide_by INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        decided_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS idx_term_cards_request ON commerce_term_cards(request_id, card_type);
+      CREATE INDEX IF NOT EXISTS idx_term_cards_open ON commerce_term_cards(state, decide_by);
+
+      CREATE TABLE IF NOT EXISTS commerce_term_floor_authorizations (
+        request_id TEXT NOT NULL,
+        term_name TEXT NOT NULL,
+        value TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (request_id, term_name)
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

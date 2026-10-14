@@ -152,6 +152,8 @@ export function checkEgressGates(
   dataCategories: string[],
   /** `commerce.trade` only: the document's kind, which the counterparty waiver binds to. */
   tradeKind = '',
+  /** `commerce.trade` only: the document itself — a term document's waiver binds to its content (§5.3). */
+  tradeDocument: unknown = null,
 ): EgressCheckResult {
   // Pre-gate: Blocked destination list — always denied
   if (isDestinationBlocked(recipientDID)) {
@@ -180,7 +182,7 @@ export function checkEgressGates(
   const tradeCounterparty =
     messageType === MsgTypeCommerceTrade &&
     tradeKind !== '' &&
-    isTradeCounterparty(recipientDID, tradeKind);
+    isTradeCounterparty(recipientDID, tradeKind, { document: tradeDocument, direction: 'outbound' });
   if (
     messageType !== MsgTypeCommerceInvite &&
     !tradeCounterparty &&

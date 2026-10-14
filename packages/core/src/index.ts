@@ -965,6 +965,7 @@ export {
   BUYER_REFERENCE_MANIFEST,
   SUPPLIER_REFERENCE_MANIFEST,
 } from './commerce/reference_manifests';
+export { SLOT_BUYER_MANIFEST, SLOT_SELLER_MANIFEST } from './commerce/slot_pack_manifests';
 // §6 (photo lanes) — the photograph as a defined artifact: bounded ingest,
 // two-phase decode, EXIF-stripped storage, draft-tied erasure, retention.
 export {
@@ -1601,6 +1602,13 @@ export type {
   TradeInboxItemDto,
   TradeReminderAnswer,
   TradeStatementAnswer,
+  // SHELF_SPACE_NEGOTIATION — the term views the phone renders.
+  RankedTermOffer,
+  TermAgreementDetail,
+  TermAgreementSummary,
+  TermBuyerPolicy,
+  TermNegotiationView,
+  TermPolicy,
 } from './client/owner-commerce-client';
 export type { CatalogDraft, DraftRow } from './commerce/catalog_draft_store';
 export type {

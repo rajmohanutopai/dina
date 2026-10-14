@@ -39,3 +39,4 @@ export * from './trade_documents';
 export * from './order_attachment';
 export * from './negotiation';
 export * from './trade_fold';
+export * from './term';

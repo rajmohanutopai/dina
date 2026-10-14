@@ -12,6 +12,9 @@
  * Plan traceability: UNIT_TEST_PLAN.md §2
  */
 
+import { createHash } from 'node:crypto'
+
+import { sealTermRecord } from '@dina/commerce-protocol'
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import pino from 'pino'
 
@@ -244,6 +247,23 @@ function minimalRecordForCollection(collection: string): Record<string, unknown>
       object: { scheme: 'gtin', value: '05012345678917' },
       issuer_did: 'did:plc:chairmaker99',
     },
+    // SHELF_SPACE_NEGOTIATION §6.1: digest-sealed, so built by the protocol.
+    'com.dinakernel.commerce.termListing': sealTermRecord(
+      'term_listing',
+      {
+        protocol_version: '1.0',
+        listing_id: 'slot-1',
+        seller_did: 'did:plc:cornerstore01',
+        pack: { plugin_id: 'com.dinakernel.slot', schema_major: 1 },
+        resource_ref: 'slot-1',
+        kind: 'shelf',
+        region: { scheme: 'country', value: 'IN' },
+        available: { from: '2027-01-01T00:00:00Z', to: '2027-12-31T00:00:00Z' },
+        tags: ['snacks'],
+        published_at: '2026-12-01T00:00:00Z',
+      },
+      (data: Uint8Array) => new Uint8Array(createHash('sha256').update(data).digest()),
+    ),
   }
   return map[collection] ?? {}
 }
@@ -666,8 +686,8 @@ describe('§2.1 Record Validator', () => {
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0111", "section": "01", "sectionName": "General", "title": "UT-RV-034: all 24 collection types \u2014 valid minimal records"}
-  it('UT-RV-034: all 24 collection types — valid minimal records', () => {
-    // Input: Minimal valid record for each of the 24 collections
+  it('UT-RV-034: all 25 collection types — valid minimal records', () => {
+    // Input: Minimal valid record for each of the 25 collections
     // Expected: All return success = true
     for (const collection of TRUST_COLLECTIONS) {
       const record = minimalRecordForCollection(collection)
@@ -1847,12 +1867,13 @@ describe('§2.4 Handler Router', () => {
   })
 
   // TRACE: {"suite": "APPVIEW", "case": "0140", "section": "01", "sectionName": "General", "title": "UT-HR-003: routeHandler \u2014 all 23 collections registered"}
-  it('UT-HR-003: routeHandler — all 24 collections registered', () => {
+  it('UT-HR-003: routeHandler — all 25 collections registered', () => {
     // Input: Iterate TRUST_COLLECTIONS (19 peerlens records + service.profile +
-    // service.presence (REAL_LIFE_FIXES §14) + the commerce records)
+    // service.presence (REAL_LIFE_FIXES §14) + the commerce records, the term
+    // listing (SHELF_SPACE_NEGOTIATION §6.1) among them)
     // Expected: All return non-null handler
     const registered = getRegisteredCollections()
-    expect(registered).toHaveLength(24)
+    expect(registered).toHaveLength(25)
 
     for (const collection of TRUST_COLLECTIONS) {
       const handler = routeHandler(collection)

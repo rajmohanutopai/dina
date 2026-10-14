@@ -1008,6 +1008,40 @@ export default function RootLayout() {
                   name="invites"
                   options={{ title: 'Invites', href: null, headerLeft: renderHeaderBackButton }}
                 />
+                {/* SHELF_SPACE_NEGOTIATION — renting shelf space: the hub, the
+                    store's private terms, asking for a slot (also the deep-link
+                    target from a directory's app), and one agreement. */}
+                <Tabs.Screen
+                  name="shelf-space"
+                  options={{ title: 'Shelf space', href: null, headerLeft: renderHeaderBackButton }}
+                />
+                <Tabs.Screen
+                  name="shelf-terms"
+                  options={{
+                    title: 'Terms and rules',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                    tabBarStyle: { display: 'none' },
+                  }}
+                />
+                <Tabs.Screen
+                  name="shelf-request"
+                  options={{
+                    title: 'Ask for a slot',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                    tabBarStyle: { display: 'none' },
+                  }}
+                />
+                <Tabs.Screen
+                  name="shelf-agreement"
+                  options={{
+                    title: 'Slot agreement',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                    tabBarStyle: { display: 'none' },
+                  }}
+                />
                 <Tabs.Screen
                   name="staff-grants"
                   options={{ title: 'Staff', href: null, headerLeft: renderHeaderBackButton }}

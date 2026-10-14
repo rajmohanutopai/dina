@@ -87,7 +87,17 @@ export function applyInboundTradeDocumentVia(
  * by the commerce runtime, which the transport may not import; with nothing
  * registered the answer is no.
  */
-export type TradeCounterpartyCheck = (senderDid: string, kind: string) => boolean;
+export type TradeCounterpartyCheck = (
+  peerDid: string,
+  kind: string,
+  /**
+   * The push's document and which way it is crossing. SHELF_SPACE_NEGOTIATION
+   * §5.3 — a term document is admitted for a non-contact only when it binds to
+   * something this node already holds WITH THAT PEER (or, for a first request,
+   * to a listing this node publishes), so the check must see the document.
+   */
+  context: { document: unknown; direction: 'inbound' | 'outbound' },
+) => boolean;
 
 let counterparty: TradeCounterpartyCheck | null = null;
 
@@ -95,10 +105,14 @@ export function setTradeCounterpartyCheck(next: TradeCounterpartyCheck | null): 
   counterparty = next;
 }
 
-export function isTradeCounterparty(senderDid: string, kind: string): boolean {
+export function isTradeCounterparty(
+  peerDid: string,
+  kind: string,
+  context: { document: unknown; direction: 'inbound' | 'outbound' } = { document: null, direction: 'inbound' },
+): boolean {
   if (counterparty === null) return false;
   try {
-    return counterparty(senderDid, kind);
+    return counterparty(peerDid, kind, context);
   } catch {
     return false;
   }

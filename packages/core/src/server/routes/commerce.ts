@@ -325,6 +325,7 @@ import { getPluginInstallRepository, type PluginInstall } from '../../plugins/re
 import { WorkflowTaskState } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
 
+import { registerTermRoutes } from './commerce_terms';
 import { getD2DSender } from './d2d_msg';
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 import { teardownResponse } from './plugin_install';
@@ -742,6 +743,8 @@ export function registerCommerceRoutes(router: CoreRouter, ownerCapability?: str
   registerEffectRoutes(router, ownerCapability);
   registerTrustRoutes(router, ownerCapability);
   registerIntegrationRoutes(router, ownerCapability);
+  // SHELF_SPACE_NEGOTIATION — listings, negotiations and term agreements.
+  registerTermRoutes(router, ownerCapability);
 
   router.get('/v1/commerce/reconciliation', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
@@ -5803,6 +5806,17 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           status: outcome.refusal === 'no_such_draft' ? 404 : 409,
           body: { ok: false, error: outcome.refusal, detail: outcome.error },
         };
+
+  /**
+   * Whether THIS node can check the owner's presence at all. The surface that
+   * shows a card asks the node that decides it: a node that cannot (no
+   * passphrase) lets presence-gated cards through, and the card says so.
+   */
+  router.get('/v1/commerce/catalog/drafts/presence', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    return { status: 200, body: { available: ownerPresenceCanBeEstablished() } };
+  });
 
   /**
    * §10 item 9 — prove a person is here, so the next step can bind.

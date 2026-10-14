@@ -1,4 +1,4 @@
-import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID } from '@dina/commerce-protocol'
+import { CATALOG_POINTER_NSID, CATALOG_SNAPSHOT_NSID, TERM_LISTING_COLLECTION } from '@dina/commerce-protocol'
 import type { DrizzleDB } from '@/db/connection.js'
 import type { Logger } from '@/shared/utils/logger.js'
 import type { Metrics } from '@/shared/utils/metrics.js'
@@ -93,6 +93,7 @@ import {
   commerceCatalogSnapshotHandler,
 } from './commerce-catalog.js'
 import { commerceRelationshipClaimHandler } from './commerce-relationship.js'
+import { commerceTermListingHandler } from './commerce-term-listing.js'
 
 const handlers: Record<string, RecordHandler> = {
   'com.dinakernel.peerlens.attestation': attestationHandler,
@@ -121,6 +122,8 @@ const handlers: Record<string, RecordHandler> = {
   [CATALOG_POINTER_NSID]: commerceCatalogPointerHandler,
   [CATALOG_SNAPSHOT_NSID]: commerceCatalogSnapshotHandler,
   'com.dinakernel.commerce.relationshipClaim': commerceRelationshipClaimHandler,
+  // SHELF_SPACE_NEGOTIATION §6.1 — a store's open slots.
+  [TERM_LISTING_COLLECTION]: commerceTermListingHandler,
 }
 
 /**

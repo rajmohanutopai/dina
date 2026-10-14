@@ -14,6 +14,7 @@ import { getPublicKey } from '../../../core/src/crypto/ed25519';
 import { getMemoryService, setMemoryService } from '../../../core/src/memory/service';
 import { getReviewPublishRepository } from '../../../core/src/review/publish_job_repository';
 import { InMemoryDatabaseAdapter } from '../../../core/src/storage/db_adapter';
+import { setWorkflowService } from '../../../core/src/workflow/service';
 import { bootAppNode, type BootServiceInputs } from '../../src/services/boot_service';
 
 const SEED = TEST_ED25519_SEED;
@@ -56,6 +57,51 @@ describe('bootAppNode — boots + returns a live node', () => {
       expect(codes).not.toContain('identity.did_key');
       expect(codes).not.toContain('discovery.stub');
     } finally {
+      await node.dispose();
+    }
+  });
+
+  it('gives Brain its own Core client: owner-only cards reach Brain redacted, the owner whole (R-10)', async () => {
+    const { node } = await bootAppNode(baseInputs());
+    // The router reads the global service, which start() installs; this test
+    // does not start the node, so it installs the node's own for its length.
+    setWorkflowService(node.workflowService);
+    try {
+      expect(node.brainCoreClient).not.toBe(node.coreClient);
+      // An owner-only card in the node's own inbox.
+      const payload = {
+        type: 'term_floor_approval',
+        card_id: 'term-floor-boot-1',
+        request_id: 'treq-boot',
+        buyer_did: 'did:plc:juicebrand',
+        resource_ref: 'slot-3',
+        currency: 'INR',
+        asked: { fee: '210000' },
+        offered: { fee: '234000', share_bps: '800' },
+      };
+      node.workflowService.create({
+        id: 'term-floor-boot-1',
+        kind: 'approval',
+        description: 'A brand asks for terms past your automatic limit.',
+        payload: JSON.stringify(payload),
+        initialState: 'pending_approval',
+      });
+      const filter = { kind: 'approval' as const, state: 'pending_approval' as const };
+      const asBrain = (await node.brainCoreClient.listWorkflowTasks(filter)).find(
+        (t) => t.id === 'term-floor-boot-1',
+      );
+      const asOwner = (await node.coreClient.listWorkflowTasks(filter)).find(
+        (t) => t.id === 'term-floor-boot-1',
+      );
+      expect(JSON.parse(asBrain?.payload ?? '{}')).toEqual({
+        type: 'term_floor_approval',
+        card_id: 'term-floor-boot-1',
+        request_id: 'treq-boot',
+        redacted: 'owner_only',
+      });
+      expect(JSON.parse(asOwner?.payload ?? '{}')).toEqual(payload);
+    } finally {
+      setWorkflowService(null);
       await node.dispose();
     }
   });

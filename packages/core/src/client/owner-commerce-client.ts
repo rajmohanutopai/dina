@@ -21,7 +21,11 @@ import {
 import type { OwnerDispatcher } from './owner-dispatch';
 import type { CatalogDraft } from '../commerce/catalog_draft_store';
 import type { OrderConversation, OrderDraft, OrderDraftLine } from '../commerce/order_draft_store';
+import type { RankedTermOffer } from '../commerce/term/term_buyer';
+import type { TermEngine, TermListingView } from '../commerce/term/term_engine';
+import type { TermBuyerPolicy, TermPolicy } from '../commerce/term/term_policy';
 import type { CoreResponse } from '../server/router';
+import type { TermListing } from '@dina/commerce-protocol';
 
 export interface PhotoCaptureResult {
   ok: true;
@@ -131,6 +135,15 @@ export class OwnerCommerceClient {
   /** §10 item 9 — prove a person is here. Never stored, never echoed. */
   async provePresence(passphrase: string): Promise<{ ok: true }> {
     return this.post('/v1/commerce/catalog/drafts/presence', { passphrase }, 'provePresence');
+  }
+
+  /** Whether this node can check presence at all (no passphrase: it cannot). */
+  async presenceAvailable(): Promise<{ available: boolean }> {
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/catalog/drafts/presence',
+    });
+    return expectOk(res, 'presenceAvailable');
   }
 
   async confirm(draftId: string): Promise<DraftAnswer> {
@@ -776,6 +789,116 @@ export class OwnerCommerceClient {
   async revokeStaffGrants(deviceDid: string): Promise<{ ok: true }> {
     return this.post('/v1/commerce/staff-grants/revoke', { device_did: deviceDid }, 'revokeStaffGrants');
   }
+  // --- SHELF_SPACE_NEGOTIATION: term negotiation --------------------------------
+
+  /** The store's term policy (§5.4). */
+  async termPolicy(): Promise<{ policy: TermPolicy }> {
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/policy' });
+    return expectOk(res, 'termPolicy');
+  }
+
+  /** Replace the store's term policy. Presence-gated: throws `no_user_presence` until proven. */
+  /**
+   * Save the store's terms. `withdrawn` names the listings the new terms no
+   * longer back (renting off, a slot's terms removed), each taken down here
+   * and, when `record_removed`, from the directory too.
+   */
+  async saveTermPolicy(policy: TermPolicy): Promise<{
+    ok: true;
+    revision: number;
+    withdrawn: { listing_id: string; record_removed: boolean }[];
+  }> {
+    const res = await this.dispatcher.dispatch({ method: 'PUT', path: '/v1/commerce/terms/policy', body: { policy } });
+    return expectOk(res, 'saveTermPolicy');
+  }
+
+  async termListings(): Promise<{ listings: TermListingView[] }> {
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/listings' });
+    return expectOk(res, 'termListings');
+  }
+
+  /** Publish a slot listing (no money field exists to send). Presence-gated. */
+  async publishTermListing(args: {
+    listing_id?: string;
+    resource_ref: string;
+    kind: string;
+    size?: TermListing['size'];
+    region: TermListing['region'];
+    tags: string[];
+  }): Promise<{ ok: true; listing: TermListing; uri: string }> {
+    return this.post('/v1/commerce/terms/listings', args as unknown as Record<string, unknown>, 'publishTermListing');
+  }
+
+  /** Withdraw a listing. Presence-gated. */
+  async withdrawTermListing(listingId: string): Promise<{ ok: true; record_removed: boolean }> {
+    const res = await this.dispatcher.dispatch({
+      method: 'DELETE',
+      path: `/v1/commerce/terms/listings/${encodeURIComponent(listingId)}`,
+    });
+    return expectOk(res, 'withdrawTermListing');
+  }
+
+  /** Ask a store for a slot (§7.1 step 1). `listing` is the record fetched from AppView. */
+  async startTermNegotiation(args: {
+    listing: unknown;
+    listing_uri: string;
+    tag: string;
+    attributes: Record<string, string | number | boolean>;
+    start: string;
+    end: string;
+    policy: TermBuyerPolicy;
+  }): Promise<{ ok: true; request_id: string }> {
+    return this.post('/v1/commerce/terms/negotiations', args as unknown as Record<string, unknown>, 'startTermNegotiation');
+  }
+
+  async termNegotiations(): Promise<{ negotiations: TermNegotiationView[]; ranked: RankedTermOffer[] }> {
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/negotiations' });
+    return expectOk(res, 'termNegotiations');
+  }
+
+  async termAgreements(): Promise<{ agreements: TermAgreementSummary[] }> {
+    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/agreements' });
+    return expectOk(res, 'termAgreements');
+  }
+
+  async termAgreement(proposalDigest: string): Promise<TermAgreementDetail> {
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: `/v1/commerce/terms/agreements/${encodeURIComponent(proposalDigest)}`,
+    });
+    return expectOk(res, 'termAgreement');
+  }
+
+  /** End an agreement, with notice after the trial (§5.5). Presence-gated. */
+  async terminateTermAgreement(proposalDigest: string, effectiveAt?: string): Promise<{ ok: true }> {
+    return this.post(
+      `/v1/commerce/terms/agreements/${encodeURIComponent(proposalDigest)}/terminate`,
+      effectiveAt === undefined ? {} : { effective_at: effectiveAt },
+      'terminateTermAgreement',
+    );
+  }
+
+  /** Settle one scheduled period — the cash handler's act; Core derives share and fee (§5.6). */
+  async issueTermSettlement(
+    proposalDigest: string,
+    args: { period_start: string; period_end: string; gross_minor: string; replaces_settlement_digest?: string },
+  ): Promise<{ ok: true }> {
+    return this.post(
+      `/v1/commerce/terms/agreements/${encodeURIComponent(proposalDigest)}/settlements`,
+      args as unknown as Record<string, unknown>,
+      'issueTermSettlement',
+    );
+  }
+
+  /** Accept or dispute a period's figures — never a record of payment (§5.6). */
+  async acknowledgeTermSettlement(settlementDigest: string, kind: 'accepted' | 'disputed'): Promise<{ ok: true }> {
+    return this.post(
+      `/v1/commerce/terms/settlements/${encodeURIComponent(settlementDigest)}/ack`,
+      { kind },
+      'acknowledgeTermSettlement',
+    );
+  }
+
 }
 
 export interface OrderDraftAnswer {
@@ -1124,3 +1247,18 @@ export interface StaffGrantEntry {
 }
 
 export type { OrderConversation, OrderDraft, OrderDraftLine };
+
+/**
+ * One of the brand's negotiations, and one agreement either side holds, as the
+ * term routes report them: the engine's own views, so a field the engine adds
+ * reaches the client without a second copy to keep in step.
+ */
+export type TermNegotiationView = ReturnType<TermEngine['negotiations']>[number];
+export type TermAgreementSummary = ReturnType<TermEngine['agreements']>[number];
+
+/** One agreement as `GET /v1/commerce/terms/agreements/:digest` reports it. */
+export type TermAgreementDetail = ReturnType<TermEngine['agreement']> & {
+  schedule: ReturnType<TermEngine['schedule']>;
+};
+
+export type { RankedTermOffer, TermBuyerPolicy, TermPolicy };

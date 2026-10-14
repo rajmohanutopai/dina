@@ -135,6 +135,7 @@ async function composeNode(opts?: {
         sent.push({ to, body });
       }),
     coreClient,
+    brainCoreClient: coreClient,
     appViewClient: stubAppView(),
     workflowRepository: repo,
     serviceConfigRepository: configRepo,

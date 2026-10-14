@@ -61,6 +61,7 @@ import {
   getA2ARuntime,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
+  termWorkflowHooks,
   orderAttachmentWorkflowHooks,
   wireGroupCoordinationOfferReplay,
   registerDevice as registerDeviceDID,
@@ -292,6 +293,17 @@ export interface CreateNodeOptions {
    * there is no parallel Brain-owned Core client surface.
    */
   coreClient: CoreClient;
+  /**
+   * The same Core, for the parts of this node that ARE Brain on the server —
+   * the staging drain, chat remember, the ask loop and `delegate_to_agent` —
+   * stamped so the workflow routes treat them as the server treats its signed
+   * Brain (owner-only cards redacted, never decided by Brain). What runs
+   * inside core-server on the server — the service runtime with its
+   * workflow-event consumer, the watch poller — and the owner's surfaces keep
+   * `coreClient`, as there. Required, so no Brain path can fall back to the
+   * owner's client by leaving it out.
+   */
+  brainCoreClient: CoreClient;
   appViewClient: Pick<AppViewClient, 'searchServices'>;
   pdsPublisher?: PDSPublisher;
   /**
@@ -498,6 +510,8 @@ export interface DinaNode extends HomeNodeLifecycle {
    */
   role: NodeRole;
   coreClient: CoreClient;
+  /** Core for Brain's half of the node (`CreateNodeOptions.brainCoreClient`). */
+  brainCoreClient: CoreClient;
   /**
    * Authed PDS publisher (lazy session). Present for every role when PDS
    * credentials exist — providers use it for the service profile; every node
@@ -555,6 +569,8 @@ export const CONTACT_SERVICE_PREFLIGHT_ACK =
 
 export async function createNode(options: CreateNodeOptions): Promise<DinaNode> {
   validate(options);
+  // Brain's half of this node speaks to Core as Brain (`brainCoreClient`).
+  const brainCore = options.brainCoreClient;
 
   const log =
     options.logger ??
@@ -782,6 +798,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       integrationWorkflowHooks({ nowMs: nowMsFn }),
       orderAttachmentWorkflowHooks({ nowMs: nowMsFn }),
       negotiationWorkflowHooks({ nowMs: nowMsFn }),
+      termWorkflowHooks({ nowMs: nowMsFn }),
       // A2A Lane 1 is server-only in M1a (plan D6): the phone installs no
       // Lane 1 runtime, so this handler finds none and does nothing. Composed
       // anyway so the two boots carry the same hooks.
@@ -979,6 +996,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // the option surface (custom `deliver`, `inboundNotifier`,
   // `directResponder` that wraps `options.sendD2D`).
   const serviceRuntime = buildHomeNodeServiceRuntime({
+    // Core-side on the server (core-server's own unstamped client): same here.
     core: options.coreClient,
     // The node's own service: the global is installed only at start().
     workflow: workflowService,
@@ -1089,7 +1107,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // `HttpCoreTransport` on the server — same interface, different wire.
   const stagingDrain = stagingDrainEnabled
     ? new StagingDrainScheduler({
-        core: options.coreClient,
+        core: brainCore,
         drain: drainOptions,
         intervalMs: options.stagingDrainIntervalMs,
         logger: log,
@@ -1368,7 +1386,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // do that (Core lives in another process) and omits the lookup.
     if (stagingDrain !== null) {
       const chatRuntime = wireChatRememberRuntime({
-        core: options.coreClient,
+        core: brainCore,
         stagingDrain,
         lookupPendingApproval: stagingGetItem,
       });
@@ -1425,6 +1443,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     did: options.did,
     role: options.role,
     coreClient: options.coreClient,
+    brainCoreClient: brainCore,
     pdsPublisher: options.pdsPublisher,
     workflowService,
     orchestrator,
@@ -1940,6 +1959,7 @@ function validate(o: CreateNodeOptions): void {
   if (!o.pdsSession) throw new Error('createNode: pdsSession is required');
   if (!o.sendD2D) throw new Error('createNode: sendD2D is required');
   if (!o.coreClient) throw new Error('createNode: coreClient is required');
+  if (!o.brainCoreClient) throw new Error('createNode: brainCoreClient is required');
   if (!o.appViewClient) throw new Error('createNode: appViewClient is required');
   if (!o.workflowRepository) throw new Error('createNode: workflowRepository is required');
   // readConfig is optional — bootstrap falls back to Core's global

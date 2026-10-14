@@ -31,6 +31,7 @@ import {
   verifyInboundSettlementNote,
 } from './revshare_ledger';
 import { getCommerceRuntime, type CommerceMoneyStores, type CommerceRuntime } from './runtime';
+import { isTermPushKind, TERM_PUSH_KINDS, type TermPushKind } from './term/term_engine';
 import {
   verifyInboundDeliveryNote,
   verifyInboundDeliveryReceipt,
@@ -56,7 +57,8 @@ export const REVSHARE_KINDS = [
 export type TradePushKind =
   | (typeof INBOUND_AT_BUYER)[number]
   | (typeof INBOUND_AT_SUPPLIER)[number]
-  | (typeof REVSHARE_KINDS)[number];
+  | (typeof REVSHARE_KINDS)[number]
+  | TermPushKind;
 
 export interface TradePushBody {
   kind: TradePushKind;
@@ -67,7 +69,7 @@ export interface TradePushBody {
 export function readTradePushBody(value: unknown): TradePushBody | string {
   if (value === null || typeof value !== 'object') return 'trade push: body must be an object';
   const b = value as Partial<TradePushBody>;
-  const kinds: readonly string[] = [...INBOUND_AT_BUYER, ...INBOUND_AT_SUPPLIER, ...REVSHARE_KINDS];
+  const kinds: readonly string[] = [...INBOUND_AT_BUYER, ...INBOUND_AT_SUPPLIER, ...REVSHARE_KINDS, ...TERM_PUSH_KINDS];
   if (typeof b.kind !== 'string' || !kinds.includes(b.kind)) {
     return 'trade push: kind must name a khata document';
   }
@@ -81,7 +83,16 @@ export type TradeIngressOutcome =
   | TradeIngest
   | { outcome: 'unavailable' | 'unreadable'; detail?: string }
   /** Held in the spool for a closed money line; replayed when it opens. */
-  | { outcome: 'spooled' };
+  | { outcome: 'spooled' }
+  /** SHELF_SPACE_NEGOTIATION §5.3 — a term document kept durably, answered `held`. */
+  | { outcome: 'held' }
+  | { outcome: 'refused'; detail?: string };
+
+function readTermPush(body: unknown): { kind: TermPushKind; document: unknown } | null {
+  if (body === null || typeof body !== 'object') return null;
+  const b = body as { kind?: unknown; document?: unknown };
+  return typeof b.kind === 'string' && isTermPushKind(b.kind) ? { kind: b.kind, document: b.document ?? null } : null;
+}
 
 /** How many spooled documents one drain replays at most. */
 const TRADE_SPOOL_DRAIN_BATCH = 200;
@@ -108,8 +119,32 @@ export function applyInboundTradeDocument(args: {
 }): TradeIngressOutcome & { kind?: TradePushKind } {
   const runtime = getCommerceRuntime();
   if (runtime === null) return { outcome: 'unavailable' };
+  // SHELF_SPACE_NEGOTIATION §5.3 — term documents are the term engine's, which
+  // keeps and answers each one itself (stored, held or refused) and checks its
+  // own pack half: they never wait in the Commerce Pack's money spool.
+  const term = readTermPush(args.body);
+  if (term !== null) {
+    const settled = runtime.terms.ingest({
+      senderDid: args.senderDid,
+      kind: term.kind,
+      document: term.document,
+      evidenceJson: args.evidenceJson,
+    });
+    return {
+      outcome: settled.outcome,
+      kind: term.kind,
+      ...(settled.detail !== undefined ? { detail: settled.detail } : {}),
+    } as TradeIngressOutcome & { kind?: TradePushKind };
+  }
   const money = runtime.money();
   if (!money.available) {
+    // A push of a kind this build does not know is refused now (§5.3
+    // "Compatibility": a node without the kind refuses it). Spooled, it would
+    // only be dropped as unreadable on drain, holding a spool place and telling
+    // the sender nothing in between. With the line open, `applyOne` refuses it
+    // the same way — after the drain, which any arrival triggers.
+    const readable = readTradePushBody(args.body);
+    if (typeof readable === 'string') return { outcome: 'unreadable', detail: readable };
     const held = runtime.tradeSpool.put({
       senderDid: args.senderDid,
       bodyJson: JSON.stringify(args.body ?? null),
@@ -268,5 +303,9 @@ function applyOne(
         ...verifyInboundSettlementAck({ ...revshared, ack: read.document }),
         kind: read.kind,
       };
+    default:
+      // Term documents go to the term engine before the money line and are
+      // never spooled; one reaching here was not routed, and is not guessed at.
+      return { outcome: 'unreadable', detail: 'a term document outside the term engine', kind: read.kind };
   }
 }

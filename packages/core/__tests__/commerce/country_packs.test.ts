@@ -211,6 +211,8 @@ describe('the country pack manifests (§5.D)', () => {
       'com.dinakernel.commerce.supplier',
       'com.dinakernel.country.in',
       'com.dinakernel.country.us',
+      'com.dinakernel.slot.buyer',
+      'com.dinakernel.slot.seller',
     ]);
     const begun = beginFirstPartyInstall({
       pluginId: 'com.acme.widget' as FirstPartyPluginId,

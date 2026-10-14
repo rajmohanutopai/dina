@@ -19,7 +19,7 @@
  *
  * FIRST-PARTY ONLY, BY CONSTRUCTION. A shipped plugin id is the whole
  * input; the manifest comes from the compiled-in table (`FIRST_PARTY_MANIFESTS`:
- * the two commerce packs, the two country packs). No caller-supplied manifest
+ * the two commerce packs, the two country packs, the two Slot Pack halves). No caller-supplied manifest
  * can reach this path, so it cannot become a side door around the P0
  * third-party install flow (repo proofs, marketplace consent screens) — the
  * same reason `beginInstallVerified` stays off the package surface.
@@ -38,6 +38,7 @@ import {
 
 import { COUNTRY_PACK_IDS, INDIA_PACK_MANIFEST, USA_PACK_MANIFEST } from './country_packs';
 import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
+import { SLOT_BUYER_MANIFEST, SLOT_SELLER_MANIFEST } from './slot_pack_manifests';
 
 import type { CommerceRole } from './install_plan';
 import type { PluginManifest } from '@dina/protocol';
@@ -51,6 +52,9 @@ export const FIRST_PARTY_MANIFESTS = {
   [SUPPLIER_REFERENCE_MANIFEST.plugin_id]: SUPPLIER_REFERENCE_MANIFEST,
   [COUNTRY_PACK_IDS.in]: INDIA_PACK_MANIFEST,
   [COUNTRY_PACK_IDS.us]: USA_PACK_MANIFEST,
+  // SHELF_SPACE_NEGOTIATION §4 — the Slot Pack's two halves.
+  [SLOT_SELLER_MANIFEST.plugin_id]: SLOT_SELLER_MANIFEST,
+  [SLOT_BUYER_MANIFEST.plugin_id]: SLOT_BUYER_MANIFEST,
 } as const satisfies Readonly<Record<string, PluginManifest>>;
 
 export type FirstPartyPluginId = keyof typeof FIRST_PARTY_MANIFESTS;

@@ -59,6 +59,7 @@ import {
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
   negotiationWorkflowHooks,
+  termWorkflowHooks,
   orderAttachmentWorkflowHooks,
   transformInboundOrderResult,
   type ServiceQueryBody,
@@ -226,6 +227,7 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
       integrationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       orderAttachmentWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       negotiationWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
+      termWorkflowHooks(opts.nowMsFn === undefined ? {} : { nowMs: opts.nowMsFn }),
       // A2A Lane 1: mints the permit and dispatch child when the owner approves
       // a consent card (a no-op where Lane 1 is not installed).
       a2aWorkflowHooks(getA2ARuntime),

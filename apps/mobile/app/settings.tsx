@@ -318,6 +318,17 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Trade</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* SHELF_SPACE_NEGOTIATION — rent out shelf space, or rent it. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/shelf-space')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Shelf space"
+          testID="settings-row-shelf-space"
+        >
+          <Text style={styles.rowLabel}>Shelf space</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* §5.D — the node's own business on paper: what a country pack's
             filing prints (an e-way bill names YOUR GSTIN as well as theirs). */}
         <TouchableOpacity

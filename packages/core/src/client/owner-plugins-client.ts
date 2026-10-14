@@ -261,6 +261,21 @@ export class OwnerPluginsClient {
     return res.body as CommercePackBegin;
   }
 
+  /**
+   * SHELF_SPACE_NEGOTIATION §4 — begin the Slot Pack for one side (the store
+   * rents out, the brand rents). Bind and consent are the same two calls as
+   * the Commerce Pack's.
+   */
+  async beginSlotPack(side: 'seller' | 'buyer'): Promise<CommercePackBegin> {
+    const res = await this.send({
+      method: 'POST',
+      path: '/v1/commerce/terms/install/begin',
+      body: { side },
+    });
+    if (res.status !== 200) throw refused(res, 'beginSlotPack');
+    return res.body as CommercePackBegin;
+  }
+
   /** Core mints and binds the pack's first-party runner (needs a person present). */
   async bindReferenceRunner(installId: string): Promise<{ device_did: string }> {
     const res = await this.send({

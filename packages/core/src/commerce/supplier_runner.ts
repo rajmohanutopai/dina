@@ -53,8 +53,9 @@ import { completePairing, generatePairingCode } from '../pairing/ceremony';
 import { getPluginInstallRepository } from '../plugins/registry';
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
+import { firstPartyPack, type FirstPartyPackRole } from './first_party_packs';
 import { findPublishedItem, publishedCatalogItems } from './published_catalog';
-import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
+import { SUPPLIER_REFERENCE_MANIFEST } from './reference_manifests';
 import { rehydrateAcknowledgement } from './rehydrate';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
 
@@ -69,6 +70,19 @@ export async function referenceRunnerDevice(): Promise<string | null> {
 export async function rememberReferenceRunnerDevice(deviceDid: string): Promise<void> {
   await kvSet(REFERENCE_RUNNER_KEY, deviceDid);
 }
+
+/**
+ * The device name each first-party role pairs under. Only the goods supplier's
+ * device claims tasks (`SupplierReferenceRunner`); the others exist so the
+ * runner-mode install can activate — the buyer pack's tools are the owner's
+ * own, and the Slot Pack's term handler runs in process (term/term_runner.ts).
+ */
+const RUNNER_DEVICE_NAMES: Readonly<Record<FirstPartyPackRole, string>> = {
+  commerce_supplier: 'commerce-reference-runner',
+  commerce_buyer: 'commerce-buyer-runner',
+  term_seller: 'slot-seller-runner',
+  term_buyer: 'slot-buyer-runner',
+};
 
 export type BindReferenceRunnerOutcome =
   | { ok: true; deviceDid: string }
@@ -97,15 +111,19 @@ export async function bindReferenceRunner(installId: string): Promise<BindRefere
   const installs = getPluginInstallRepository();
   const install = installs?.getById(installId) ?? null;
   if (install === null) return { ok: false, refusal: 'install_not_found' };
-  const supplier = install.pluginId === SUPPLIER_REFERENCE_MANIFEST.plugin_id;
-  if (!supplier && install.pluginId !== BUYER_REFERENCE_MANIFEST.plugin_id) {
+  // The Core-owned table decides which first-party packs Core may mint a
+  // runner device for; the install's own trust anchor (checked by the money
+  // line and the claim guard) decides whether this install IS that pack.
+  const entry = firstPartyPack(install.pluginId);
+  if (entry === null || !entry.bindsRunnerDevice || install.trustAnchor.kind !== 'local_publisher_key') {
     return { ok: false, refusal: 'not_a_first_party_pack' };
   }
+  const supplier = entry.role === 'commerce_supplier';
   if (install.status !== 'pending') return { ok: false, refusal: 'install_not_pending' };
   const seed = randomBytes(32);
   const publicKey = getPublicKey(seed);
   seed.fill(0);
-  const deviceName = supplier ? 'commerce-reference-runner' : 'commerce-buyer-runner';
+  const deviceName = RUNNER_DEVICE_NAMES[entry.role];
   try {
     const { code } = generatePairingCode({
       deviceName,

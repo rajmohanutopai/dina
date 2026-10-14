@@ -16,7 +16,14 @@
  * is the read side the screen gates on.
  */
 
-import { BUYER_REFERENCE_MANIFEST, OwnerPluginsHttpError } from '@dina/core';
+import {
+  BUYER_REFERENCE_MANIFEST,
+  OwnerPluginsHttpError,
+  SLOT_BUYER_MANIFEST,
+  SLOT_SELLER_MANIFEST,
+  type CommercePackBegin,
+  type OwnerPluginsClient,
+} from '@dina/core';
 
 import { getOwnerPluginsClient } from './owner_plugins_client';
 
@@ -25,7 +32,31 @@ export type BuyerInstallStatus =
   | { state: 'absent' }
   | { state: 'unavailable'; reason: string };
 
-export async function buyerInstallStatus(): Promise<BuyerInstallStatus> {
+export function buyerInstallStatus(): Promise<BuyerInstallStatus> {
+  return installStatus(BUYER_REFERENCE_MANIFEST.plugin_id);
+}
+
+/**
+ * SHELF_SPACE_NEGOTIATION §4 — the Slot Pack's two halves: the store's
+ * (`seller`, renting out) and the brand's (`buyer`, renting). Each is its own
+ * install and consent, through the same ceremony as the buyer pack.
+ */
+export type SlotSide = 'seller' | 'buyer';
+
+const SLOT_PLUGIN_IDS: Readonly<Record<SlotSide, string>> = {
+  seller: SLOT_SELLER_MANIFEST.plugin_id,
+  buyer: SLOT_BUYER_MANIFEST.plugin_id,
+};
+
+export function slotPackStatus(side: SlotSide): Promise<BuyerInstallStatus> {
+  return installStatus(SLOT_PLUGIN_IDS[side]);
+}
+
+export function activateSlotPack(side: SlotSide): Promise<ActivateOutcome> {
+  return activatePack((client) => client.beginSlotPack(side));
+}
+
+async function installStatus(pluginId: string): Promise<BuyerInstallStatus> {
   const client = getOwnerPluginsClient();
   if (client === null) return { state: 'unavailable', reason: 'Dina is still starting up.' };
   let view;
@@ -36,7 +67,7 @@ export async function buyerInstallStatus(): Promise<BuyerInstallStatus> {
   }
   if (!view.registry_available) return { state: 'unavailable', reason: 'plugin registry not wired' };
   const active = view.installs.find(
-    (install) => install.plugin_id === BUYER_REFERENCE_MANIFEST.plugin_id && install.status === 'active',
+    (install) => install.plugin_id === pluginId && install.status === 'active',
   );
   return active === undefined ? { state: 'absent' } : { state: 'active', installId: active.install_id };
 }
@@ -58,12 +89,18 @@ export type ActivateOutcome = { ok: true; installId: string } | { ok: false; err
  * leaves nothing staged. A presence refusal is raised, not returned, so the
  * screen can ask and run it again from the start.
  */
-export async function activateBuyerInstall(): Promise<ActivateOutcome> {
+export function activateBuyerInstall(): Promise<ActivateOutcome> {
+  return activatePack((client) => client.beginCommercePack('buyer'));
+}
+
+async function activatePack(
+  begin: (client: OwnerPluginsClient) => Promise<CommercePackBegin>,
+): Promise<ActivateOutcome> {
   const client = getOwnerPluginsClient();
   if (client === null) return { ok: false, error: 'Dina is still starting up.' };
   let installId: string;
   try {
-    const begun = await client.beginCommercePack('buyer');
+    const begun = await begin(client);
     if (begun.status === 'active') return { ok: true, installId: begun.install_id };
     installId = begun.install_id;
   } catch (err) {
