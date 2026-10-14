@@ -97,11 +97,35 @@ export function readTermListingJson(json: string): TermListing | null {
   return validateTermListing(value, hash) === null ? (value as TermListing) : null;
 }
 
-/** The store's policy: a row that no longer validates reads as OFF — a floor read wrong is a floor broken. */
+/**
+ * The store's policy: a row that no longer validates reads as OFF — a floor
+ * read wrong is a floor broken. A policy saved before who-may-ask moved onto
+ * each listing (schema v72) still carries a store-wide `access`; it is read
+ * without it, and the engine's boot sweep moves it onto the listings
+ * (`adoptLegacyAccess`), so an upgrade or an old archive keeps renting on.
+ */
 export function readTermPolicyJson(json: string | null): TermPolicy {
   if (json === null) return DEFAULT_TERM_POLICY;
-  const value = parse(json);
+  const value = withoutLegacyAccess(parse(json));
   return validateTermPolicy(value) === null ? (value as TermPolicy) : { ...DEFAULT_TERM_POLICY };
+}
+
+/** The store-wide `access` a pre-v72 policy carried, if any, and the policy without it. */
+export function legacyTermAccess(json: string): 'contacts_or_card' | 'anyone' | null {
+  const value = parse(json);
+  if (value === null || typeof value !== 'object' || !('access' in value)) return null;
+  return (value as { access?: unknown }).access === 'anyone' ? 'anyone' : 'contacts_or_card';
+}
+
+/** A stored pre-v72 policy's JSON with its store-wide `access` dropped (`adoptLegacyAccess`). */
+export function termPolicyJsonWithoutAccess(json: string): string {
+  return JSON.stringify(withoutLegacyAccess(parse(json)));
+}
+
+function withoutLegacyAccess(value: unknown): unknown {
+  if (value === null || typeof value !== 'object' || !('access' in value)) return value;
+  const { access: _legacy, ...rest } = value as Record<string, unknown>;
+  return rest;
 }
 
 /** The brand's policy for one negotiation; unreadable reads as absent (the loop closes it). */

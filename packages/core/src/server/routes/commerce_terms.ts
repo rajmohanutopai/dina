@@ -26,6 +26,7 @@ import {
   withdrawEverywhere,
   withListingsLock,
 } from '../../commerce/term/term_listing_repo';
+import { TERM_LISTING_ACCESS, type TermListingAccess } from '../../commerce/term/term_policy';
 import { getNodeDID } from '../../pairing/ceremony';
 import { getPluginInstallRepository } from '../../plugins/registry';
 
@@ -147,6 +148,9 @@ export function registerTermRoutes(router: CoreRouter, ownerCapability?: string)
     ) {
       return { status: 400, body: { error: 'resource_ref, kind, region and tags are required' } };
     }
+    // Who may ask about this listing (§6.2), kept here and never published.
+    if (b.access !== undefined && !TERM_LISTING_ACCESS.includes(b.access as TermListingAccess))
+      return { status: 400, body: { error: 'access must be contacts_or_card or anyone' } };
     const input = {
       listingId: typeof b.listing_id === 'string' ? b.listing_id : b.resource_ref,
       resourceRef: b.resource_ref,
@@ -179,7 +183,13 @@ export function registerTermRoutes(router: CoreRouter, ownerCapability?: string)
       } catch {
         return { status: 502, body: { error: 'listing_write_failed' } } as const;
       }
-      terms.storeListing(composed.listing);
+      // A republish keeps the listing's setting unless the owner sent one.
+      const access =
+        (b.access as TermListingAccess | undefined) ??
+        terms.listings().find((l) => l.listing.listing_id === composed.listing.listing_id)
+          ?.access ??
+        'contacts_or_card';
+      terms.storeListing(composed.listing, access);
       return {
         status: 200,
         body: { ok: true, listing: composed.listing, uri: composed.uri },

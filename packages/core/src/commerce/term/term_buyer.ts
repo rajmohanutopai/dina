@@ -46,7 +46,7 @@ import {
 import { termPackEntry } from '../first_party_packs';
 
 import { termAgreementStatus } from './term_agreements';
-import { hash, iso, mintId, TERM_TIMINGS, type TermContext } from './term_context';
+import { HOUR_MS, hash, iso, mintId, TERM_TIMINGS, type TermContext } from './term_context';
 import {
   buyerLimitsIn,
   buyerMoneyIn,
@@ -322,6 +322,25 @@ function outboundCounters(
 export function stepTermNegotiation(ctx: TermContext, requestId: string): void {
   const negotiation = ctx.store.getNegotiation(requestId);
   if (negotiation === null || negotiation.state !== 'negotiating') return;
+  // A paused or removed brand half authors nothing: no counter, no card (§4).
+  // A paused one keeps its place and goes on from here once resumed.
+  if (ctx.deps.activePack('term_buyer') === null) {
+    const nowMs = ctx.now();
+    if (!ctx.deps.packHeld('term_buyer')) {
+      // Removed or revoked, not paused: nothing can carry this one on.
+      ctx.store.moveNegotiation({
+        requestId,
+        from: ['negotiating'],
+        to: 'closed',
+        nowMs,
+        closeReason: 'pack_removed',
+      });
+      return;
+    }
+    // Paused: looked at again within the hour, or at its deadline if sooner.
+    ctx.store.setNextAction(requestId, Math.min(nowMs + HOUR_MS, negotiation.deadlineAt), nowMs);
+    return;
+  }
   const policy = readTermBuyerPolicyJson(negotiation.policyJson);
   const nowMs = ctx.now();
   if (policy === null) {
@@ -473,7 +492,13 @@ function toReady(
     return;
   }
   if (!ctx.store.moveNegotiation({ requestId, from: ['negotiating'], to: 'ready', nowMs })) return;
-  const cardId = `term-proposal-${head.offer_digest.slice(0, 32)}`;
+  // One card per head — and a fresh one when an earlier card for the same
+  // head lapsed (a yes refused while the brand half was paused).
+  const base = `term-proposal-${head.offer_digest.slice(0, 32)}`;
+  const earlier = ctx.store
+    .cardsForRequest(requestId, TERM_PROPOSAL_CARD)
+    .filter((c) => c.cardId === base || c.cardId.startsWith(`${base}-`)).length;
+  const cardId = earlier === 0 ? base : `${base}-${String(earlier + 1)}`;
   const binding = buildTermProposalApprovalPayload({
     principal: PENDING_PRINCIPAL,
     offer: head,
@@ -518,7 +543,9 @@ export type ProposeOutcome =
         | 'already_decided'
         | 'binding_failed'
         | 'offer_expired'
-        | 'unbuildable';
+        | 'unbuildable'
+        | 'pack_inactive'
+        | 'pack_removed';
     };
 
 /**
@@ -536,6 +563,39 @@ export function decideTermProposalCard(
     return { ok: false, refusal: 'unknown_card' };
   if (card.state !== 'pending') return { ok: false, refusal: 'already_decided' };
   const nowMs = ctx.now();
+  // No proposal leaves while the brand half is paused or removed (§4). The
+  // inbox task this yes came through cannot reopen, so the card lapses and
+  // the negotiation steps back: once the half is resumed, the next sweep
+  // raises a fresh card on the same head for the owner to answer. A no
+  // still closes the negotiation, paused or not.
+  if (args.approve && ctx.deps.activePack('term_buyer') === null) {
+    if (!ctx.deps.packHeld('term_buyer')) {
+      // Removed or revoked: no resume can bring a card back, so the card and
+      // the negotiation close together and the owner is told plainly.
+      ctx.atomically('removed_proposal', () => {
+        if (!ctx.store.decideCard(args.cardId, 'lapsed', nowMs)) return;
+        ctx.store.moveNegotiation({
+          requestId: card.requestId,
+          from: ['ready'],
+          to: 'closed',
+          nowMs,
+          closeReason: 'pack_removed',
+        });
+      });
+      return { ok: false, refusal: 'pack_removed' };
+    }
+    ctx.atomically('paused_proposal', () => {
+      if (!ctx.store.decideCard(args.cardId, 'lapsed', nowMs)) return;
+      ctx.store.moveNegotiation({
+        requestId: card.requestId,
+        from: ['ready'],
+        to: 'negotiating',
+        nowMs,
+      });
+      ctx.store.setNextAction(card.requestId, nowMs, nowMs);
+    });
+    return { ok: false, refusal: 'pack_inactive' };
+  }
   if (!args.approve) {
     // The card and the negotiation close together, or a crash between them
     // leaves a `ready` negotiation no card or sweep can move again.

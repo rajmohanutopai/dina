@@ -23,7 +23,6 @@ import {
 function filledForm(over: Partial<TermsForm['slots'][number]> = {}): TermsForm {
   return {
     enabled: true,
-    access: 'contacts_or_card',
     maxRounds: '3',
     rules: [{ tag: 'beverages.juice', premiumPercent: '15', maxBrands: '4' }],
     holdings: [],
@@ -67,7 +66,9 @@ describe('the store’s terms form', () => {
     expect(built.policy.holding_rules).toEqual([
       { tag: 'beverages.juice', premium_bps_per_count: 1500, max_count: 4 },
     ]);
-    expect(built.policy.access).toBe('contacts_or_card');
+    // Who may ask is set per listing (§6.2); the policy carries no such field.
+    expect('access' in built.policy).toBe(false);
+    expect(validateTermPolicy(built.policy)).toBeNull();
     // Everything the form does not edit comes from the stored policy.
     expect(DEFAULT_TERM_POLICY).toBeDefined();
     expect(built.policy.windowSeconds).toBe(DEFAULT_TERM_POLICY.windowSeconds);
@@ -80,6 +81,36 @@ describe('the store’s terms form', () => {
       trialDays: '14',
     });
     expect(back.rules[0]).toEqual({ tag: 'beverages.juice', premiumPercent: '15', maxBrands: '4' });
+  });
+
+  it('saving an unrelated change keeps what the form does not show: the automatic share limit and stock duties', () => {
+    const built = formToPolicy(filledForm(), DEFAULT_TERM_POLICY);
+    if (!built.ok) throw new Error(built.problem);
+    const stored = {
+      ...built.policy,
+      resources: built.policy.resources.map((r) => ({
+        ...r,
+        floors: { ...r.floors, share_bps: { hard: '500', auto: '800' } },
+        conditions: { ...r.conditions, stock_duties: { min_skus: 4, restock_days: 7 } },
+      })),
+    };
+    expect(validateTermPolicy(stored)).toBeNull();
+    // The owner opens the form and changes only the notice period.
+    const form = policyToForm(stored);
+    const edited = { ...form, slots: form.slots.map((slot) => ({ ...slot, exitNoticeDays: '45' })) };
+    const saved = formToPolicy(edited, stored);
+    if (!saved.ok) throw new Error(saved.problem);
+    const [slot] = saved.policy.resources;
+    expect(slot?.floors.share_bps).toEqual({ hard: '500', auto: '800' });
+    expect(slot?.conditions.stock_duties).toEqual({ min_skus: 4, restock_days: 7 });
+    expect(slot?.conditions.exit_notice_days).toBe(45);
+    // Raising the lowest share past the old automatic limit leaves no limit below it.
+    const raised = formToPolicy(
+      { ...form, slots: form.slots.map((s2) => ({ ...s2, floorSharePercent: '9' })) },
+      stored,
+    );
+    if (!raised.ok) throw new Error(raised.problem);
+    expect(raised.policy.resources[0]?.floors.share_bps).toEqual({ hard: '900' });
   });
 
   it.each<[Partial<TermsForm['slots'][number]>, RegExp]>([

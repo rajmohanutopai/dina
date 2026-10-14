@@ -53,6 +53,13 @@ export type TermAgreementStatus =
       acceptedAt: string;
       /** When it ends, or ended: `end`, or an earlier termination's effect. */
       endsAt: string;
+      /**
+       * Until when it holds the slot for new deals: as `endsAt`, except that a
+       * termination this node sent counts only once the other side stored it.
+       * Until then a refusal could still restore the deal, so the slot stays
+       * taken and no second agreement can overlap it (§7.1).
+       */
+      heldUntil: string;
       /** A termination is on record (it may take effect later). */
       terminated: boolean;
     };
@@ -84,12 +91,18 @@ export function termAgreementStatus(store: TermStore, proposalDigest: string): T
   if (decision === null) return { state: 'proposed', proposal, row };
   if (decision.kind === 'rejected') return { state: 'rejected', proposal, row };
   let endsAt = Date.parse(proposal.general.end);
+  let heldUntil = endsAt;
   let terminated = false;
   for (const tRow of store.answersTo(proposalDigest, 'agreement_termination')) {
     const termination = readTermTerminationRow(tRow);
     if (termination === null || refusedByPeer(store, tRow)) continue;
     terminated = true;
-    endsAt = Math.min(endsAt, Date.parse(termination.effective_at));
+    const effective = Date.parse(termination.effective_at);
+    endsAt = Math.min(endsAt, effective);
+    const confirmed =
+      tRow.direction === 'inbound' ||
+      store.getOutbox(tRow.recordDigest)?.receiptOutcome === 'stored';
+    if (confirmed) heldUntil = Math.min(heldUntil, effective);
   }
   return {
     state: 'accepted',
@@ -97,6 +110,7 @@ export function termAgreementStatus(store: TermStore, proposalDigest: string): T
     row,
     acceptedAt: decision.decided_at,
     endsAt: new Date(endsAt).toISOString(),
+    heldUntil: new Date(heldUntil).toISOString(),
     terminated,
   };
 }
@@ -174,8 +188,8 @@ export function termHoldingCount(args: {
   const chains = new Set<string>();
   for (const status of hostAgreements(args.store, args.selfDid)) {
     if (status.proposal.general.tag !== args.tag) continue;
-    if (Date.parse(status.endsAt) <= args.nowMs) continue; // ended
-    if (!overlaps(Date.parse(status.proposal.general.start), Date.parse(status.endsAt), start, end))
+    if (Date.parse(status.heldUntil) <= args.nowMs) continue; // ended
+    if (!overlaps(Date.parse(status.proposal.general.start), Date.parse(status.heldUntil), start, end))
       continue;
     const root = lineageRoot(args.store, status.proposal.proposal_digest);
     if (root !== excluded) chains.add(root);
@@ -209,8 +223,8 @@ export function termResourceFree(args: {
   for (const status of hostAgreements(args.store, args.selfDid)) {
     if (status.proposal.resource_ref !== args.resourceRef) continue;
     if (status.proposal.proposal_digest === args.renews) continue;
-    if (Date.parse(status.endsAt) <= args.nowMs) continue;
-    if (overlaps(Date.parse(status.proposal.general.start), Date.parse(status.endsAt), start, end))
+    if (Date.parse(status.heldUntil) <= args.nowMs) continue;
+    if (overlaps(Date.parse(status.proposal.general.start), Date.parse(status.heldUntil), start, end))
       return false;
   }
   for (const holding of args.manualHoldings) {

@@ -72,12 +72,14 @@ import {
   terminateTermAgreement,
   termAgreementView,
 } from './term_followups';
-import { validateTermPolicy, type TermPolicy } from './term_policy';
+import { validateTermPolicy, type TermListingAccess, type TermPolicy } from './term_policy';
 import {
+  legacyTermAccess,
   readStoredTermBody,
   readTermCardPayloadJson,
   readTermListingJson,
   readTermProposalRow,
+  termPolicyJsonWithoutAccess,
 } from './term_rehydrate';
 import {
   admitTermCounter,
@@ -207,6 +209,8 @@ export interface TermListingView {
   listing: TermListing;
   state: 'published' | 'withdrawn';
   recordPublic: boolean;
+  /** Who may ask about it (§6.2); the owner's own setting, never published. */
+  access: TermListingAccess;
 }
 
 export class TermEngine {
@@ -589,8 +593,8 @@ export class TermEngine {
     return composeTermListing(this.ctx, args);
   }
 
-  storeListing(listing: TermListing): void {
-    storeTermListing(this.ctx, listing);
+  storeListing(listing: TermListing, access: TermListingAccess): void {
+    storeTermListing(this.ctx, listing, access);
   }
 
   // -------------------------------------------------------------------------
@@ -601,7 +605,8 @@ export class TermEngine {
     const out: TermListingView[] = [];
     for (const row of this.ctx.store.listListings()) {
       const listing = readTermListingJson(row.recordJson);
-      if (listing !== null) out.push({ listing, state: row.state, recordPublic: row.recordPublic });
+      if (listing !== null)
+        out.push({ listing, state: row.state, recordPublic: row.recordPublic, access: row.access });
     }
     return out;
   }
@@ -616,7 +621,8 @@ export class TermEngine {
    * answers the owner with an error.
    */
   markRecordMayStand(listing: TermListing): void {
-    if (this.ctx.store.getListing(listing.listing_id)?.state === 'published') return;
+    const existing = this.ctx.store.getListing(listing.listing_id);
+    if (existing?.state === 'published') return;
     this.ctx.store.putListing({
       listingId: listing.listing_id,
       resourceRef: listing.resource_ref,
@@ -624,7 +630,28 @@ export class TermEngine {
       listingDigest: listing.listing_digest,
       state: 'withdrawn',
       recordPublic: true,
+      // A withdrawn row answers no request, so this only keeps what was set.
+      access: existing?.access ?? 'contacts_or_card',
       updatedAt: this.ctx.now(),
+    });
+  }
+
+  /**
+   * A policy saved before schema v72 (or restored from such an archive)
+   * carries one store-wide `access`. Move it onto every listing this store
+   * has — `anyone` stays `anyone` — and save the policy without it. Run by
+   * the sweep, so the first boot after an upgrade or a restore does it; a
+   * no-op once done.
+   */
+  adoptLegacyAccess(): void {
+    const stored = this.ctx.store.getPolicy();
+    if (stored === null) return;
+    const legacy = legacyTermAccess(stored.policyJson);
+    if (legacy === null) return;
+    this.ctx.atomically('adopt_access', () => {
+      for (const row of this.ctx.store.listListings())
+        this.ctx.store.putListing({ ...row, access: legacy });
+      this.ctx.store.putPolicy(termPolicyJsonWithoutAccess(stored.policyJson), this.ctx.now());
     });
   }
 
@@ -729,6 +756,21 @@ export class TermEngine {
     kind: string;
     feeDueMinor: string;
     settlementDigest: string | null;
+    /**
+     * That note's own figures — what the owner accepts or disputes, so they
+     * are shown before either (owner-only, like the rest of this view).
+     */
+    figures: {
+      grossSalesMinor: string;
+      computedShareMinor: string;
+      feeDueMinor: string | null;
+      /**
+       * The note's own end. Later than the period's `end` when a termination
+       * cut the period after the note was sent: the note then needs a
+       * correction to the cut instant (§5.6), whether or not it was accepted.
+       */
+      periodEnd: string;
+    } | null;
     /** How the other side answered that note; a disputed one may be corrected. */
     answer: 'accepted' | 'disputed' | null;
   }[] {
@@ -741,15 +783,24 @@ export class TermEngine {
       terms: status.proposal.terms,
       ...(endedAt !== undefined ? { endedAt } : {}),
     }).map((slot) => {
-      const digest =
-        live.find((e) => Date.parse(e.note.period_start) === Date.parse(slot.start))?.note
-          .settlement_digest ?? null;
+      const note =
+        live.find((e) => Date.parse(e.note.period_start) === Date.parse(slot.start))?.note ?? null;
+      const digest = note?.settlement_digest ?? null;
       return {
         start: slot.start,
         end: slot.end,
         kind: slot.kind,
         feeDueMinor: slot.fee_due_minor,
         settlementDigest: digest,
+        figures:
+          note === null
+            ? null
+            : {
+                grossSalesMinor: note.gross_sales.minor_units,
+                computedShareMinor: note.computed_share.minor_units,
+                feeDueMinor: note.fee_due?.minor_units ?? null,
+                periodEnd: note.period_end,
+              },
         answer: digest === null ? null : settlementAnswer(this.ctx.store, digest),
       };
     });
@@ -794,6 +845,10 @@ export class TermEngine {
     switch (args.kind) {
       case 'term_request': {
         if (str('buyer_did') !== args.peerDid) return false;
+        // A resend of a request this node already answered for that peer only
+        // replays the stored receipt (§5.3), whatever became of the listing
+        // since: a lost receipt must not turn into "not delivered".
+        if (store.getAnswer(str('request_digest'))?.senderDid === args.peerDid) return true;
         if (
           publishedListingFor(this.ctx, {
             listing_uri: str('listing_uri'),
@@ -849,16 +904,27 @@ export class TermEngine {
   // -------------------------------------------------------------------------
 
   /**
-   * An owner decision on a card the engine raised (through the presence-gated
-   * approval route). Returns false for a card that is not the engine's.
-   */
-  /**
    * The owner's answer on a card, and what came of it. `ok: false` means the
    * answer did not do what the owner asked — the deal was no longer available,
    * the offer had expired, the card had lapsed — and says why, so the inbox
    * can show it rather than a plain "decided".
+   *
+   * One transaction from the decision to the record of what a yes came to
+   * (`yes_outcome`): a crash before the inbox task is closed leaves the sweep
+   * that outcome to close it with, never a "decided" card left to expire.
    */
   decideCard(cardId: string, approve: boolean): TermCardDecision {
+    return this.ctx.atomically('decide_card', () => {
+      const outcome = this.decideCardNow(cardId, approve);
+      const recordable =
+        outcome.ok || (outcome.refusal !== 'already_decided' && outcome.refusal !== 'unknown_card');
+      if (approve && recordable)
+        this.ctx.store.setCardYesOutcome(cardId, outcome.ok ? 'ok' : outcome.refusal);
+      return outcome;
+    });
+  }
+
+  private decideCardNow(cardId: string, approve: boolean): TermCardDecision {
     const card = this.ctx.store.getCard(cardId);
     if (card === null) return { ok: false, refusal: 'unknown_card' };
     switch (card.cardType) {
@@ -944,6 +1010,7 @@ export class TermEngine {
 
   /** One pass of everything the clock drives. Safe to run at any time, and at every start. */
   sweep(): { resent: number; gaveUp: number; released: number; lapsed: number; stepped: number } {
+    this.adoptLegacyAccess();
     const nowMs = this.ctx.now();
     let resent = 0;
     let gaveUp = 0;
@@ -1013,6 +1080,14 @@ export class TermEngine {
           expiresAtMs: card.decideBy,
         });
       }
+    }
+    // A yes the engine acted on whose inbox task was never closed (a crash
+    // between the two): close it now with what the yes came to.
+    for (const card of this.ctx.store.cardsWithYesSince(nowMs - TERM_TIMINGS.heldForMs)) {
+      if (this.ctx.deps.cards.answer?.(card.cardId) !== 'approved') continue;
+      const outcome: TermCardDecision =
+        card.yesOutcome === 'ok' ? { ok: true } : { ok: false, refusal: card.yesOutcome };
+      this.ctx.deps.cards.finish?.(card.cardId, outcome, this.ctx.now());
     }
     let lapsed = 0;
     for (const card of this.ctx.store.lapsedCards(nowMs)) {

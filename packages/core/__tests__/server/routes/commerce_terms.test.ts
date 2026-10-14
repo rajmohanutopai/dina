@@ -402,6 +402,41 @@ describe('the owner’s term routes', () => {
     expect(records.size).toBe(0);
   });
 
+  it('who may ask is set per listing on publish, kept on a republish, and never on the policy', async () => {
+    await present();
+    await router.handle(owner('/v1/commerce/terms/policy', { policy: juicePolicy() }, 'PUT'));
+    installTermListingRepo({ put: async () => ({ cid: 'bafy' }), remove: async () => undefined });
+    const listingBody = {
+      resource_ref: 'slot-3',
+      kind: 'shelf',
+      region: { scheme: 'postal_area', value: 'IN-560034' },
+      tags: ['snacks'],
+    };
+    const accessOf = () => store.engine.listings().map((l) => l.access);
+    // No setting sent: the default, contacts_or_card.
+    expect((await router.handle(owner('/v1/commerce/terms/listings', listingBody))).status).toBe(200);
+    expect(accessOf()).toEqual(['contacts_or_card']);
+    const opened = await router.handle(
+      owner('/v1/commerce/terms/listings', { ...listingBody, access: 'anyone' }),
+    );
+    expect(opened.status).toBe(200);
+    expect(accessOf()).toEqual(['anyone']);
+    // The setting is the owner's own: the public record does not carry it.
+    expect(JSON.stringify((opened.body as { listing: unknown }).listing)).not.toMatch(/anyone|access/);
+    // A republish that sends none keeps it.
+    expect((await router.handle(owner('/v1/commerce/terms/listings', listingBody))).status).toBe(200);
+    expect(accessOf()).toEqual(['anyone']);
+    const bad = await router.handle(
+      owner('/v1/commerce/terms/listings', { ...listingBody, access: 'friends' }),
+    );
+    expect(bad.status).toBe(400);
+    // A policy still carrying the old store-wide setting is refused, so a stale client learns.
+    const stale = await router.handle(
+      owner('/v1/commerce/terms/policy', { policy: { ...juicePolicy(), access: 'anyone' } }, 'PUT'),
+    );
+    expect(stale.status).toBe(400);
+  });
+
   it('a listing with a category outside the pack, or for a resource without terms, is refused', async () => {
     await present();
     await router.handle(owner('/v1/commerce/terms/policy', { policy: juicePolicy() }, 'PUT'));

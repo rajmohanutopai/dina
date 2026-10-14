@@ -230,8 +230,25 @@ describe('Shelf space', () => {
       kind: 'chiller',
       region: { scheme: 'postal_area', value: '560034' },
       tags: ['beverages.juice'],
+      // Strangers need the owner's yes unless the owner turns that off for this listing.
+      access: 'contacts_or_card',
     });
     expect(JSON.stringify(sent)).not.toMatch(/fee|share|minor/);
+  });
+
+  it('lets one listing take any brand without the owner’s yes', async () => {
+    mockClient.publishTermListing.mockResolvedValue({ ok: true, listing: LISTING, uri: URI });
+    const view = render(<ShelfSpaceScreen />);
+    await waitFor(() => expect(view.getByTestId('shelf-space-screen')).toBeTruthy());
+    fireEvent.press(view.getByTestId('shelf-publish-slot-slot-3'));
+    fireEvent.changeText(view.getByTestId('shelf-publish-postal'), '560034');
+    fireEvent.press(view.getByTestId('shelf-publish-tag-beverages.juice'));
+    fireEvent(view.getByTestId('shelf-publish-contacts-or-card'), 'valueChange', false);
+    fireEvent.press(view.getByTestId('shelf-publish'));
+    await waitFor(() => expect(mockClient.publishTermListing).toHaveBeenCalledTimes(1));
+    expect(mockClient.publishTermListing.mock.calls[0]?.[0]).toEqual(
+      expect.objectContaining({ access: 'anyone' }),
+    );
   });
 
   it('finds slots and opens a request on one', async () => {
@@ -350,7 +367,7 @@ describe('Shelf space', () => {
 describe('Shelf space — a listing whose public record still stands', () => {
   it('a record that may still stand in the directory: it says so and offers to remove it', async () => {
     mockClient.termListings.mockResolvedValue({
-      listings: [{ listing: LISTING, state: 'withdrawn', recordPublic: true }],
+      listings: [{ listing: LISTING, state: 'withdrawn', recordPublic: true, access: 'contacts_or_card' }],
     });
     mockClient.withdrawTermListing.mockResolvedValue({ ok: true, record_removed: true });
     const view = render(<ShelfSpaceScreen />);
@@ -366,7 +383,7 @@ describe('Shelf space — a listing whose public record still stands', () => {
 
   it('a listing withdrawn and removed everywhere shows nothing', async () => {
     mockClient.termListings.mockResolvedValue({
-      listings: [{ listing: LISTING, state: 'withdrawn', recordPublic: false }],
+      listings: [{ listing: LISTING, state: 'withdrawn', recordPublic: false, access: 'contacts_or_card' }],
     });
     const view = render(<ShelfSpaceScreen />);
     await waitFor(() => expect(view.getByTestId('shelf-space-screen')).toBeTruthy());
@@ -378,11 +395,13 @@ describe('Shelf space — a listing whose public record still stands', () => {
       side === 'seller' ? { state: 'absent' } : { state: 'active', installId: 'inst' },
     );
     mockClient.termListings.mockResolvedValue({
-      listings: [{ listing: LISTING, state: 'published', recordPublic: true }],
+      listings: [{ listing: LISTING, state: 'published', recordPublic: true, access: 'anyone' }],
     });
     const view = render(<ShelfSpaceScreen />);
     await waitFor(() => expect(view.getByTestId('shelf-turn-on-seller-card')).toBeTruthy());
     expect(view.getByTestId('shelf-withdraw-slot-3')).toBeTruthy();
+    // Each listing says who may ask about it.
+    expect(view.getByTestId('shelf-listing-slot-3-access')).toHaveTextContent('Any brand may ask');
   });
 
   it('with renting off, no slot can be listed', async () => {
@@ -541,6 +560,7 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: 'c'.repeat(64),
+          figures: { grossSalesMinor: '2000000', computedShareMinor: '160000', feeDueMinor: '195000', periodEnd: '2027-03-01T00:00:00.000Z' },
         },
         {
           start: '2027-03-01T00:00:00.000Z',
@@ -548,6 +568,7 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: null,
+          figures: null,
         },
       ],
     });
@@ -578,12 +599,56 @@ describe('Slot agreement', () => {
     const view = render(<ShelfAgreementScreen />);
     await waitFor(() => expect(view.getByTestId('period-2027-02-01-accept')).toBeTruthy());
     expect(view.getByText(/does not mark it paid/)).toBeTruthy();
+    // The note's own figures are on the card the owner answers.
+    expect(view.getByTestId('period-2027-02-01-figures')).toHaveTextContent(
+      'Sales INR 20000.00 · share INR 1600.00 · rent INR 1950.00',
+    );
+    expect(view.queryByTestId('period-2027-03-01-figures')).toBeNull();
     expect(view.getByTestId('shelf-agreement-statement').props.children).toBe(
       'You are owed INR 3550.00 for the periods accepted so far.',
     );
     fireEvent.press(view.getByTestId('period-2027-02-01-dispute'));
     await waitFor(() =>
       expect(mockClient.acknowledgeTermSettlement).toHaveBeenCalledWith('c'.repeat(64), 'disputed'),
+    );
+  });
+
+  it('an accepted note for a period a termination cut is corrected to the cut, replacing it', async () => {
+    agreement('vendor');
+    mockClient.termAgreement.mockResolvedValue({
+      status: 'accepted',
+      statement: { ok: false, error: 'nothing accepted yet' },
+      unanswered: [],
+      schedule: [
+        {
+          start: '2027-02-01T00:00:00.000Z',
+          end: '2027-02-20T00:00:00.000Z',
+          kind: 'regular',
+          feeDueMinor: '127419',
+          settlementDigest: 'e'.repeat(64),
+          figures: {
+            grossSalesMinor: '1500000',
+            computedShareMinor: '120000',
+            feeDueMinor: '195000',
+            periodEnd: '2027-03-01T00:00:00.000Z',
+          },
+          answer: 'accepted',
+        },
+      ],
+    });
+    mockClient.issueTermSettlement.mockResolvedValue({ ok: true });
+    const view = render(<ShelfAgreementScreen />);
+    await waitFor(() => expect(view.getByTestId('period-2027-02-01-gross')).toBeTruthy());
+    expect(view.getByText('Send corrected figures')).toBeTruthy();
+    fireEvent.changeText(view.getByTestId('period-2027-02-01-gross'), '9000');
+    fireEvent.press(view.getByTestId('period-2027-02-01-settle'));
+    await waitFor(() =>
+      expect(mockClient.issueTermSettlement).toHaveBeenCalledWith(DIGEST, {
+        period_start: '2027-02-01T00:00:00.000Z',
+        period_end: '2027-02-20T00:00:00.000Z',
+        gross_minor: '900000',
+        replaces_settlement_digest: 'e'.repeat(64),
+      }),
     );
   });
 
@@ -600,6 +665,7 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: 'd'.repeat(64),
+          figures: { grossSalesMinor: '1500000', computedShareMinor: '120000', feeDueMinor: '195000', periodEnd: '2027-03-01T00:00:00.000Z' },
           answer: 'disputed',
         },
       ],
@@ -634,6 +700,7 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: 'd'.repeat(64),
+          figures: { grossSalesMinor: '1500000', computedShareMinor: '120000', feeDueMinor: '195000', periodEnd: '2027-03-01T00:00:00.000Z' },
           answer: 'disputed',
         },
       ],

@@ -194,6 +194,14 @@ export function admitTermSettlement(
     return { outcome: 'refused', detail: `settlement under a ${status.state} agreement` };
   if (args.senderDid !== cashHandlerDid(status.proposal))
     return { outcome: 'refused', detail: 'only the cash handler issues settlements' };
+  // A correction that overtook the note it corrects waits for it (§5.3): a
+  // note this node has never seen is "not yet arrived". One it holds and has
+  // since seen superseded is checked, and refused, below.
+  if (
+    note.replaces_settlement_digest !== undefined &&
+    ctx.store.getDocument(note.replaces_settlement_digest) === null
+  )
+    return held(ctx, proposalRow.requestId, note.proposal_digest);
   const rule = checkTermSettlement({ store: ctx.store, note, status });
   if (rule !== null) {
     // A note cut at an end this node has not heard of yet waits for that

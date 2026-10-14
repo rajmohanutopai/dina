@@ -825,6 +825,8 @@ export class OwnerCommerceClient {
     size?: TermListing['size'];
     region: TermListing['region'];
     tags: string[];
+    /** Who may ask (§6.2); kept by Core, never published. Omitted: kept as set, or contacts_or_card. */
+    access?: 'contacts_or_card' | 'anyone';
   }): Promise<{ ok: true; listing: TermListing; uri: string }> {
     return this.post('/v1/commerce/terms/listings', args as unknown as Record<string, unknown>, 'publishTermListing');
   }

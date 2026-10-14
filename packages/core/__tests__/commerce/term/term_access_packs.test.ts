@@ -364,6 +364,100 @@ describe('access, paused packs and lapsed cards', () => {
     });
   });
 
+  describe('a paused brand half (§4)', () => {
+    it('authors no counter while paused, and goes on from where it stood once resumed', () => {
+      const { listing, uri } = setUpStore(fleet);
+      const brand = fleet.add(BRAND_DID);
+      const request = ask(brand, listing, uri);
+      brand.packActive.buyer = false;
+      fleet.pump();
+      // The store's first offer arrived and is kept; no counter went out.
+      expect(offers(brand, request.request_id)).toHaveLength(1);
+      expect(brand.store.listByRequest(request.request_id, 'term_counter')).toEqual([]);
+      brand.engine.sweep();
+      fleet.pump();
+      expect(brand.store.listByRequest(request.request_id, 'term_counter')).toEqual([]);
+      // Resumed: the next sweep (within the hour) counters the offer it holds.
+      brand.packActive.buyer = true;
+      fleet.advance(HOUR);
+      brand.engine.sweep();
+      fleet.pump();
+      expect(brand.store.listByRequest(request.request_id, 'term_counter').length).toBeGreaterThan(0);
+    });
+
+    it('a yes while paused lapses the card with the reason; resumed, a fresh card asks again and its yes is sent', () => {
+      const { listing, uri } = setUpStore(fleet);
+      const brand = fleet.add(BRAND_DID);
+      const request = ask(brand, listing, uri);
+      fleet.pump();
+      const first = mustCard(brand, TERM_PROPOSAL_CARD, request.request_id);
+      brand.packActive.buyer = false;
+      expect(brand.engine.decideCard(first.cardId, true)).toEqual({
+        ok: false,
+        refusal: 'pack_inactive',
+      });
+      // Nothing was proposed; the card lapsed (its inbox task cannot reopen).
+      expect(brand.store.listByRequest(request.request_id, 'term_agreement_proposal')).toEqual([]);
+      expect(brand.store.getCard(first.cardId)?.state).toBe('lapsed');
+      // Still paused: no new card.
+      fleet.advance(2 * HOUR);
+      brand.engine.sweep();
+      expect(mustCard(brand, TERM_PROPOSAL_CARD, request.request_id).cardId).toBe(first.cardId);
+      // Resumed: the next sweep raises a fresh card on the same offer.
+      brand.packActive.buyer = true;
+      fleet.advance(HOUR);
+      brand.engine.sweep();
+      const fresh = mustCard(brand, TERM_PROPOSAL_CARD, request.request_id);
+      expect(fresh.cardId).not.toBe(first.cardId);
+      expect(fresh.payload.terms).toEqual(first.payload.terms);
+      expect(brand.engine.decideCard(fresh.cardId, true)).toEqual({ ok: true });
+      expect(brand.store.listByRequest(request.request_id, 'term_agreement_proposal')).toHaveLength(1);
+    });
+
+    it('a no while paused still closes the negotiation', () => {
+      const { listing, uri } = setUpStore(fleet);
+      const brand = fleet.add(BRAND_DID);
+      const request = ask(brand, listing, uri);
+      fleet.pump();
+      const proposalCard = mustCard(brand, TERM_PROPOSAL_CARD, request.request_id);
+      brand.packActive.buyer = false;
+      expect(brand.engine.decideCard(proposalCard.cardId, false)).toEqual({ ok: true });
+      expect(brand.store.getNegotiation(request.request_id)?.state).toBe('closed');
+    });
+
+    it('a yes after the brand half was removed closes the card and the deal, and says so plainly', () => {
+      const { listing, uri } = setUpStore(fleet);
+      const brand = fleet.add(BRAND_DID);
+      const request = ask(brand, listing, uri);
+      fleet.pump();
+      const proposalCard = mustCard(brand, TERM_PROPOSAL_CARD, request.request_id);
+      brand.packActive.buyer = false;
+      brand.packRemoved.buyer = true;
+      expect(brand.engine.decideCard(proposalCard.cardId, true)).toEqual({
+        ok: false,
+        refusal: 'pack_removed',
+      });
+      expect(brand.store.getCard(proposalCard.cardId)?.state).toBe('lapsed');
+      expect(brand.store.getNegotiation(request.request_id)).toEqual(
+        expect.objectContaining({ state: 'closed', closeReason: 'pack_removed' }),
+      );
+      expect(brand.store.listByRequest(request.request_id, 'term_agreement_proposal')).toEqual([]);
+    });
+
+    it('a removed brand half closes its open negotiations at the next sweep', () => {
+      const { listing, uri } = setUpStore(fleet);
+      const brand = fleet.add(BRAND_DID);
+      const request = ask(brand, listing, uri);
+      brand.packActive.buyer = false;
+      brand.packRemoved.buyer = true;
+      fleet.pump();
+      brand.engine.sweep();
+      expect(brand.store.getNegotiation(request.request_id)).toEqual(
+        expect.objectContaining({ state: 'closed', closeReason: 'pack_removed' }),
+      );
+    });
+  });
+
   describe('G-07 the brand’s proposal card lapses (§7.1 steps 4–5)', () => {
     function toBrandCard(): { store: Node; brand: Node; requestId: string; cardId: string } {
       const { store, listing, uri } = setUpStore(fleet);

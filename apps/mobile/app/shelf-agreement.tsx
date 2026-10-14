@@ -150,6 +150,10 @@ export default function ShelfAgreementScreen(): React.ReactElement {
           const key = slot.start;
           const unanswered =
             slot.settlementDigest !== null && detail.unanswered.includes(slot.settlementDigest);
+          // The deal ended inside this period after its note went out: the
+          // note still runs to the old end and is corrected to the cut (§5.6).
+          const cutShort =
+            slot.figures !== null && Date.parse(slot.figures.periodEnd) > Date.parse(slot.end);
           return (
             <View key={key} style={styles.card} testID={`period-${key.slice(0, 10)}`}>
               <Text style={styles.cardTitle}>
@@ -159,14 +163,25 @@ export default function ShelfAgreementScreen(): React.ReactElement {
               <Text style={styles.cardLine}>
                 Rent due {formatMoney({ currency, minor_units: slot.feeDueMinor })}
               </Text>
-              {holdsTakings && (slot.settlementDigest === null || slot.answer === 'disputed') && (
+              {slot.figures !== null && (
+                <Text style={styles.cardLine} testID={`period-${key.slice(0, 10)}-figures`}>
+                  Sales {formatMoney({ currency, minor_units: slot.figures.grossSalesMinor })} ·
+                  share {formatMoney({ currency, minor_units: slot.figures.computedShareMinor })}
+                  {slot.figures.feeDueMinor !== null
+                    ? ` · rent ${formatMoney({ currency, minor_units: slot.figures.feeDueMinor })}`
+                    : ''}
+                </Text>
+              )}
+              {holdsTakings && (slot.settlementDigest === null || slot.answer === 'disputed' || cutShort) && (
                 <View style={styles.row}>
                   <TextInput
                     style={[styles.input, styles.flex]}
                     value={gross[key] ?? ''}
                     onChangeText={(v) => setGross({ ...gross, [key]: v })}
                     placeholder={
-                      slot.answer === 'disputed' ? 'Corrected sales this period' : 'Sales this period'
+                      slot.answer === 'disputed' || cutShort
+                        ? 'Corrected sales this period'
+                        : 'Sales this period'
                     }
                     placeholderTextColor={colors.textMuted}
                     keyboardType="decimal-pad"
@@ -188,9 +203,10 @@ export default function ShelfAgreementScreen(): React.ReactElement {
                         setProblem('Sales is an amount, like 25000.');
                         return;
                       }
-                      // A disputed note is replaced by a correction (§5.6), never edited.
+                      // A disputed note, or one a termination cut short, is replaced
+                      // by a correction (§5.6), never edited.
                       const replaces =
-                        slot.answer === 'disputed' && slot.settlementDigest !== null
+                        (slot.answer === 'disputed' || cutShort) && slot.settlementDigest !== null
                           ? { replaces_settlement_digest: slot.settlementDigest }
                           : {};
                       void act(
@@ -206,7 +222,7 @@ export default function ShelfAgreementScreen(): React.ReactElement {
                     }}
                   >
                     <Text style={styles.buttonText}>
-                      {slot.answer === 'disputed' ? 'Send corrected figures' : 'Settle'}
+                      {slot.answer === 'disputed' || cutShort ? 'Send corrected figures' : 'Settle'}
                     </Text>
                   </Pressable>
                 </View>

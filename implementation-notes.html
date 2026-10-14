@@ -143,9 +143,11 @@
       <li><strong>The store's offer conditions live in the policy.</strong> §5.4's <code>termPolicy</code> names asking
         terms and floors but not the period, cash handler, trial, exit notice or stock duties the offer must carry. Each
         resource now has <code>conditions</code>; the trial is given in days and cut at the term's end.</li>
-      <li><strong>Who may ask is a policy-wide setting</strong> (<code>access: contacts_or_card | anyone</code>), not per
-        listing: the listing is a closed public record with no field for it. The stranger card admits one request
-        only; it does not add a contact.</li>
+      <li><strong>Who may ask is set per listing</strong> (<code>contacts_or_card</code> by default, or
+        <code>anyone</code>), as spec §6.2 says, kept privately on the listing's row (migration v72) and never in the
+        public record. It is set when publishing; a republish that sends none keeps it. The build first made it one
+        policy-wide setting; a dual review flagged the departure and the owner chose per listing (2026-10-14). The
+        stranger card admits one request only; it does not add a contact.</li>
       <li><strong>The gate is binding, not a scope table.</strong> A stranger's term document crosses only when it
         names something this node already holds with that peer (a request it sent, an offer it made, a proposal, a
         note), or, for a first request, a listing this node publishes. That is the "request-scoped counterparty" of
@@ -447,6 +449,17 @@
         round-12 check of those two changes confirmed both and found one test gap (an owner presenting the wrong
         capability, on both presence routes), now covered. Round 13 checked those last assertions and upheld nothing, so no
         code changed after it: review ends with a clean round on the final code.</li>
+      <li><strong>Dual review of the code (2026-10-14, 4 rounds, Claude continuity reviewer + one Codex thread):</strong>
+        19 findings fixed and tested (8, then 6, then 2, then 1 open). Among them: a floor-card yes now reaches the brand
+        as a revision of the head (and never supersedes an offer the brand already proposed on, nor carries a term
+        below a hard floor); a termination this node sent holds the slot until stored; the settlement card shows the
+        note's figures; a correction that overtakes its note waits for it; a paused or removed brand half authors
+        nothing; who may ask is per listing (owner decision; migration v72; pre-v72 policies keep renting on);
+        a yes's outcome is recorded with the decision so a crash cannot leave its inbox task open.
+        <strong>Open (Codex, round 4, medium):</strong> if the node stays down past a card's deadline after the engine
+        committed a yes, the workflow's expiry sweep (which runs before the term sweep at boot) marks the inbox task
+        "expired" first, and recovery only reopens tasks still queued and decided within 30 days. The deal itself
+        stands; only the inbox line is wrong.</li>
       <li><strong>Final run</strong> (<code>scripts/test/safe_test.mjs</code>, one suite at a time, 2 workers, memory
         watchdog), re-run after the fourth review's fixes: all 23 workspace suites green — core 12,678, mobile 3,995, core-server 3,026 (its shutdown-budget timing test failed once under load and passed alone; a further full run on the final, unchanged code then passed all 23 suites in one pass). An earlier pass caught a clock read inside the new inbox-finish path; the clock is now injected. mobile 3,988, AppView 2,308, core-server 3,026,
         brain 3,925, protocol 775, commerce-protocol 692 and the rest; highest peak 3.2 GB. The live test-fleet run (21 steps, with search) passed again on this code. The first full run caught one

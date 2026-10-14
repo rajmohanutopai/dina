@@ -133,6 +133,7 @@ function teeCards(node: Node): void {
 function setUpStore(
   fleet: Fleet,
   policy: TermPolicy = juicePolicy(),
+  access: 'contacts_or_card' | 'anyone' = 'anyone',
 ): { store: Node; listing: TermListing; uri: string } {
   const store = fleet.add(STORE_DID);
   const set = store.engine.setPolicy(policy);
@@ -143,7 +144,7 @@ function setUpStore(
     kind: 'shelf',
     region: { scheme: 'postal_area', value: 'IN-560034' },
     tags: ['beverages.juice', 'snacks'],
-  });
+  }, access);
   if (!published.ok) throw new Error(published.refusal);
   return { store, listing: published.listing, uri: published.uri };
 }
@@ -197,7 +198,8 @@ function raiseAllFive(fleets: Fleet[]): Map<string, Raised> {
   // Stranger: under contacts_or_card an unknown brand is held and the owner asked.
   {
     const fleet = fresh();
-    const { store, listing, uri } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+    const { store, listing, uri } = setUpStore(fleet, juicePolicy(),
+        'contacts_or_card');
     teeCards(store);
     ask(fleet.add(BRAND_DID), listing, uri, 3);
     fleet.pump();

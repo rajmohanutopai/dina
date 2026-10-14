@@ -4014,6 +4014,21 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // SHELF_SPACE_NEGOTIATION §6.2 — who may ask is set per listing, privately
+    // on its row here (never in the public record); it was one policy-wide
+    // setting before. Every listing starts as `contacts_or_card`, the default.
+    version: 72,
+    name: 'commerce_term_listing_access_and_card_outcome',
+    sql: `
+      ALTER TABLE commerce_term_listings ADD COLUMN access TEXT NOT NULL DEFAULT 'contacts_or_card'
+        CHECK (access IN ('contacts_or_card', 'anyone'));
+      -- What came of the owner's yes on a card ('ok', or the refusal), written
+      -- in the same transaction as the decision, so a crash before the inbox
+      -- task is closed leaves the sweep the outcome to close it with.
+      ALTER TABLE commerce_term_cards ADD COLUMN yes_outcome TEXT NOT NULL DEFAULT '';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

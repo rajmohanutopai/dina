@@ -186,12 +186,11 @@ async function main(): Promise<void> {
     step('store turns the Slot Pack (store) on', await turnOn(store, 'seller'));
     step('brand turns the Slot Pack (brand) on', await turnOn(brand, 'buyer'));
 
-    // 2. The store's private terms: ₹2500 asking, ₹1500 floor, ₹1800 automatic; strangers need a yes.
+    // 2. The store's private terms: ₹2500 asking, ₹1500 floor, ₹1800 automatic.
     await present(store);
     const policy = await call(store, 'PUT', '/v1/commerce/terms/policy', {
       policy: {
         enabled: true,
-        access: 'contacts_or_card',
         maxRounds: 3,
         windowSeconds: 7 * 24 * 60 * 60,
         maxCountersPerBuyerPerDay: 20,
@@ -218,6 +217,8 @@ async function main(): Promise<void> {
       kind: 'shelf',
       region: { scheme: 'postal_area', value: 'IN-560034' },
       tags: ['beverages.juice', 'snacks'],
+      // Strangers asking about this listing need the store owner's yes (§6.2).
+      access: 'contacts_or_card',
     });
     step('store publishes the listing', published.status === 200, `HTTP ${published.status}`);
     const uri = String(published.body.uri);

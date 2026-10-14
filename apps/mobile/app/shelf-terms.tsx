@@ -193,16 +193,6 @@ export default function ShelfTermsScreen(): React.ReactElement {
             testID="shelf-terms-enabled"
           />
         </View>
-        <View style={styles.row}>
-          <Text style={[styles.label, styles.flex]}>
-            Brands you do not know need your yes first
-          </Text>
-          <Switch
-            value={form.access === 'contacts_or_card'}
-            onValueChange={(on) => setForm({ ...form, access: on ? 'contacts_or_card' : 'anyone' })}
-            testID="shelf-terms-contacts-or-card"
-          />
-        </View>
         <Field
           label="Rounds of bargaining"
           value={form.maxRounds}

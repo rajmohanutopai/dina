@@ -20,6 +20,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -77,6 +78,8 @@ export default function ShelfSpaceScreen(): React.ReactElement {
   const [kind, setKind] = useState('shelf');
   const [postal, setPostal] = useState('');
   const [wanted, setWanted] = useState<string[]>([]);
+  // Who may ask about the listing (§6.2): strangers need the owner's yes by default.
+  const [vetStrangers, setVetStrangers] = useState(true);
   // Find form
   const [findTag, setFindTag] = useState<string | null>(null);
   const [findPostal, setFindPostal] = useState('');
@@ -164,6 +167,7 @@ export default function ShelfSpaceScreen(): React.ReactElement {
           kind,
           region: { scheme: 'postal_area', value: postal.trim().toUpperCase() },
           tags: wanted,
+          access: vetStrangers ? 'contacts_or_card' : 'anyone',
         });
         setNotice('Listed. Brands can now find this slot; they never see your terms.');
         await load();
@@ -172,7 +176,7 @@ export default function ShelfSpaceScreen(): React.ReactElement {
         setError(ownerErrorText(err));
       }
     });
-  }, [kind, load, postal, runGated, slotRef, wanted]);
+  }, [kind, load, postal, runGated, slotRef, vetStrangers, wanted]);
 
   const withdraw = useCallback(
     (listingId: string) => {
@@ -263,7 +267,7 @@ export default function ShelfSpaceScreen(): React.ReactElement {
               </Pressable>
             </View>
           ))}
-        {published.map(({ listing }) => (
+        {published.map(({ listing, access }) => (
           <View
             key={listing.listing_id}
             style={styles.card}
@@ -276,6 +280,11 @@ export default function ShelfSpaceScreen(): React.ReactElement {
             <Text style={styles.cardLine}>Wants: {listing.tags.map(categoryLabel).join(', ')}</Text>
             <Text style={styles.cardLine}>
               Free {listing.available.from.slice(0, 10)} to {listing.available.to.slice(0, 10)}
+            </Text>
+            <Text style={styles.cardLine} testID={`shelf-listing-${listing.listing_id}-access`}>
+              {access === 'anyone'
+                ? 'Any brand may ask'
+                : 'Brands you do not know need your yes first'}
             </Text>
             <Pressable
               onPress={() => withdraw(listing.listing_id)}
@@ -292,7 +301,7 @@ export default function ShelfSpaceScreen(): React.ReactElement {
           <>
             <Text style={styles.sub}>
               {state.policy.enabled
-                ? `Renting out ${String(state.policy.resources.length)} slot(s). Brands ${state.policy.access === 'anyone' ? 'may ask without an introduction' : 'you do not know need your yes first'}.`
+                ? `Renting out ${String(state.policy.resources.length)} slot(s).`
                 : 'Renting out slots is off.'}
             </Text>
             <Pressable
@@ -352,8 +361,19 @@ export default function ShelfSpaceScreen(): React.ReactElement {
                     </Pressable>
                   ))}
                 </View>
+                <View style={styles.row}>
+                  <Text style={[styles.cardLine, styles.flex]}>
+                    Brands you do not know need your yes first
+                  </Text>
+                  <Switch
+                    value={vetStrangers}
+                    onValueChange={setVetStrangers}
+                    testID="shelf-publish-contacts-or-card"
+                  />
+                </View>
                 <Text style={styles.small}>
-                  The listing is public. It carries no rent, share or rule of yours.
+                  The listing is public. It carries no rent, share or rule of yours, and not who
+                  may ask.
                 </Text>
                 <Pressable
                   style={styles.button}

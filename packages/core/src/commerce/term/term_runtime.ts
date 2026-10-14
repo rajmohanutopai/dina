@@ -126,6 +126,8 @@ const TERM_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   already_decided: 'already decided',
   binding_failed: 'the terms changed after you saw them',
   unbuildable: 'could not be sent',
+  pack_inactive: 'the Slot Pack is paused; resume it and a new card will ask again',
+  pack_removed: 'the Slot Pack (brand) was removed; this deal can no longer be sent',
 };
 
 /**

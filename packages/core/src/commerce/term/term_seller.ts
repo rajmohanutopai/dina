@@ -54,6 +54,7 @@ import {
   clampTerm,
   sellerAtLeast,
   termBounds,
+  type TermListingAccess,
   type TermPolicy,
   type TermResourcePolicy,
 } from './term_policy';
@@ -122,7 +123,11 @@ export interface TermListingInput {
 }
 
 /** Record a listing as published here — after its repo write landed, when there is a repo. */
-export function storeTermListing(ctx: TermContext, listing: TermListing): void {
+export function storeTermListing(
+  ctx: TermContext,
+  listing: TermListing,
+  access: TermListingAccess,
+): void {
   ctx.store.putListing({
     listingId: listing.listing_id,
     resourceRef: listing.resource_ref,
@@ -130,6 +135,7 @@ export function storeTermListing(ctx: TermContext, listing: TermListing): void {
     listingDigest: listing.listing_digest,
     state: 'published',
     recordPublic: true,
+    access,
     updatedAt: ctx.now(),
   });
 }
@@ -205,17 +211,21 @@ export function listingsOutsidePolicy(ctx: TermContext): string[] {
     .map((row) => row.listingId);
 }
 
-/** The listing a request names, if this node publishes it now (§5.3 first contact). */
+/**
+ * The listing a request names, if this node publishes it now (§5.3 first
+ * contact), with who may ask about it (§6.2).
+ */
 export function publishedListingFor(
   ctx: TermContext,
   request: { listing_uri: string; listing_digest: string },
-): TermListing | null {
+): { listing: TermListing; access: TermListingAccess } | null {
   const prefix = `at://${ctx.self()}/${TERM_LISTING_COLLECTION}/`;
   if (!request.listing_uri.startsWith(prefix)) return null;
   const row = ctx.store.getListing(request.listing_uri.slice(prefix.length));
   if (row === null || row.state !== 'published' || row.listingDigest !== request.listing_digest)
     return null;
-  return readTermListingJson(row.recordJson);
+  const listing = readTermListingJson(row.recordJson);
+  return listing === null ? null : { listing, access: row.access };
 }
 
 // ---------------------------------------------------------------------------
@@ -267,8 +277,9 @@ export function admitTermRequest(
   if (pack === null || entry === null || entry.pluginId !== pack.entry.pluginId) {
     return refused('this node does not answer that pack');
   }
-  const listing = publishedListingFor(ctx, request);
-  if (listing === null) return refused('the request names no listing this node publishes');
+  const published = publishedListingFor(ctx, request);
+  if (published === null) return refused('the request names no listing this node publishes');
+  const { listing, access } = published;
   const listingError = verifyTermRequestAgainstListing(request, listing);
   if (listingError !== null) return refused(listingError);
   const vocabulary = entry.term?.vocabulary;
@@ -315,11 +326,11 @@ export function admitTermRequest(
   // again.
   if (args.ownerApproved !== true && !ctx.deps.spendProbing(args.senderDid, nowMs))
     return refused('not now');
-  // §6.2 — a stranger under `contacts_or_card` waits for the owner's card.
+  // §6.2 — a stranger asking about a `contacts_or_card` listing waits for the owner's card.
   if (
     args.ownerApproved !== true &&
     !ctx.deps.isContact(args.senderDid) &&
-    policy.access === 'contacts_or_card'
+    access === 'contacts_or_card'
   ) {
     return {
       outcome: 'held',
@@ -573,6 +584,16 @@ function answerCounter(
     resendHead(ctx, head);
     return;
   }
+  signRevision(ctx, head, signed, counter.counter_digest);
+}
+
+/** Sign, store and send revision N+1 of `head` with these values. */
+function signRevision(
+  ctx: TermContext,
+  head: TermOffer,
+  signed: Record<TermName, bigint>,
+  answers: string,
+): void {
   const nowMs = ctx.now();
   const { offer_digest: _d, previous_offer_digest: _p, ...rest } = head;
   const draft = {
@@ -588,7 +609,7 @@ function answerCounter(
     ctx.log('term.revision_unbuildable', { request: head.request_id });
     return;
   }
-  storeAndSendOffer(ctx, next, counter.counter_digest);
+  storeAndSendOffer(ctx, next, answers);
 }
 
 function resendHead(ctx: TermContext, head: TermOffer): void {
@@ -634,11 +655,18 @@ function raiseFloorCard(
   });
 }
 
-/** The owner's yes authorises the asked values for the buyer's next counter. */
+/**
+ * The owner's yes authorises the asked values, and the store offers them at
+ * once: a revision of the current head with each asked term moved to its
+ * authorised value and every other term as it stands. The yes must reach the
+ * brand, who may have stopped countering by now (it reads a resent head as a
+ * hold, and its rounds may be spent); a brand that already took the older
+ * offer to its owner lets that card lapse for the newer one.
+ */
 export function decideFloorCard(ctx: TermContext, cardId: string, approve: boolean): boolean {
   const card = ctx.store.getCard(cardId);
   if (card === null || card.cardType !== TERM_FLOOR_CARD) return false;
-  // The yes and every value it authorises land together.
+  // The yes, every value it authorises and the revision it allows land together.
   return ctx.atomically('floor_decision', () => {
     if (!ctx.store.decideCard(cardId, approve ? 'approved' : 'declined', ctx.now())) return false;
     if (!approve) return true;
@@ -652,8 +680,69 @@ export function decideFloorCard(ctx: TermContext, cardId: string, approve: boole
         createdAt: ctx.now(),
       });
     }
+    offerAuthorised(ctx, card.requestId);
     return true;
   });
+}
+
+/**
+ * Revise the head to the values the owner authorised, under the floors in
+ * force now. Nothing is sent when the negotiation can no longer move (renting
+ * off, the slot gone, the store's half not held, the window closed) or when
+ * the head already gives the brand as much.
+ */
+function offerAuthorised(ctx: TermContext, requestId: string): void {
+  const chain = offerChain(ctx, requestId, 'outbound');
+  const head = chain[chain.length - 1]?.offer;
+  const first = chain[0]?.offer;
+  if (head === undefined || first === undefined) return;
+  const policy = currentTermPolicy(ctx);
+  const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
+  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null)
+    return;
+  if (ctx.now() > Date.parse(first.issued_at) + policy.windowSeconds * 1000) return;
+  // The brand already proposed on this head: the deal goes ahead on it, and a
+  // revision now would only make that proposal stale.
+  if (
+    ctx.store
+      .listByRequest(requestId, 'term_agreement_proposal')
+      .some((row) => readTermProposalRow(row)?.offer_digest === head.offer_digest)
+  )
+    return;
+  const bounds = boundsFor(ctx, policy, resource, head.general);
+  const authorised = ctx.store.floorAuthorizations(requestId);
+  const current = termValues(head.terms);
+  const signed = { ...current };
+  for (const name of TERM_NAMES) {
+    const value = authorised.get(name);
+    // Only a concession the owner allowed.
+    if (value !== undefined && !sellerAtLeast(name, value, current[name])) signed[name] = value;
+  }
+  if (TERM_NAMES.every((name) => signed[name] === current[name])) return;
+  // Every term of what is signed — moved or carried over — clears the hard
+  // floor in force now (a floor raised since the head was signed holds it).
+  if (!TERM_NAMES.every((name) => sellerAtLeast(name, signed[name], bounds[name].hard))) return;
+  signRevision(ctx, head, signed, head.offer_digest);
+}
+
+/**
+ * The offer a brand's proposal may bind: the chain's head — or the one just
+ * before it when the head was signed on the owner's floor-card yes. A brand
+ * that proposed on the older offer while the yes was being sent (its
+ * proposal in flight, or its phone offline) still has a deal: the older offer
+ * is at least as good for the store on every term, since a yes only concedes.
+ */
+function bindsAsHead(ctx: TermContext, offer: TermOffer): boolean {
+  const chain = offerChain(ctx, offer.request_id, 'outbound');
+  const head = chain[chain.length - 1];
+  if (head === undefined) return false;
+  if (head.offer.offer_digest === offer.offer_digest) return true;
+  // `signRevision` records a yes-revision as answering the offer it revises;
+  // a counter's revision answers the counter.
+  return (
+    head.offer.previous_offer_digest === offer.offer_digest &&
+    head.row.answersDigest === offer.offer_digest
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -795,9 +884,7 @@ function arrivalFailure(
   // A paused or removed store half makes no new deals; follow-ups to deals it
   // already made still land (their admitters do not ask).
   if (ctx.deps.activePack('term_seller') === null) return 'not offered';
-  const chain = offerChain(ctx, offer.request_id, 'outbound');
-  const head = chain[chain.length - 1];
-  if (head === undefined || head.offer.offer_digest !== offer.offer_digest) return 'not the head';
+  if (!bindsAsHead(ctx, offer)) return 'not the head';
   if (offer.buyer_did !== proposal.vendor_did) return 'addressed to another buyer';
   const pair = verifyTermProposalAgainstOffer(proposal, offer);
   if (pair !== null) return pair;
@@ -956,8 +1043,7 @@ function acceptanceFailure(
   const offerRow = ctx.store.getDocument(proposal.offer_digest);
   const offer = readTermOfferRow(offerRow);
   if (offer === null) return 'offer gone';
-  const chain = offerChain(ctx, offer.request_id, 'outbound');
-  if (chain[chain.length - 1]?.offer.offer_digest !== offer.offer_digest) return 'not the head';
+  if (!bindsAsHead(ctx, offer)) return 'not the head';
   const policy = currentTermPolicy(ctx);
   const resource = policy.resources.find((r) => r.resource_ref === proposal.resource_ref);
   if (!policy.enabled || resource === undefined) return 'not offered';

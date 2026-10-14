@@ -30,6 +30,7 @@ import type { TermListing, TermOffer } from '@dina/commerce-protocol';
 function setUpStore(
   fleet: Fleet,
   policy: TermPolicy = juicePolicy(),
+  access: 'contacts_or_card' | 'anyone' = 'anyone',
 ): { store: Node; listing: TermListing; uri: string } {
   const store = fleet.add(STORE_DID);
   const set = store.engine.setPolicy(policy);
@@ -40,7 +41,7 @@ function setUpStore(
     kind: 'shelf',
     region: { scheme: 'postal_area', value: 'IN-560034' },
     tags: ['beverages.juice', 'snacks'],
-  });
+  }, access);
   if (!published.ok) throw new Error(published.refusal);
   return { store, listing: published.listing, uri: published.uri };
 }
@@ -167,8 +168,9 @@ describe('term negotiation scenarios', () => {
       fleet.pump();
       expect(offers(brand, requestId)).toHaveLength(0);
       expect(
-        brand.store.getOutbox(must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest)
-          ?.receiptOutcome,
+        brand.store.getOutbox(
+          must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest,
+        )?.receiptOutcome,
       ).toBe('refused');
       expect(brand.store.getNegotiation(requestId)?.state).toBe('closed');
       expect(brand.store.getNegotiation(requestId)?.closeReason).toBe('refused');
@@ -231,13 +233,66 @@ describe('term negotiation scenarios', () => {
   });
 
   describe('strangers (§5.3, §6.2)', () => {
+    it('who may ask is per listing: one slot vets strangers, another lets anyone ask', () => {
+      const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
+      const open = publishListing(
+        store,
+        {
+          listingId: 'slot-4',
+          resourceRef: 'slot-4',
+          kind: 'shelf',
+          region: { scheme: 'postal_area', value: 'IN-560034' },
+          tags: ['snacks'],
+        },
+        'anyone',
+      );
+      if (!open.ok) throw new Error(open.refusal);
+      expect(store.engine.listings().map((l) => [l.listing.listing_id, l.access])).toEqual([
+        ['slot-3', 'contacts_or_card'],
+        ['slot-4', 'anyone'],
+      ]);
+      // Two strangers: one asks about the open slot and gets an offer at once.
+      const first = fleet.add(BRAND_DID);
+      const openRequest = first.engine.startNegotiation({
+          listing: open.listing,
+          listingUri: open.uri,
+          tag: 'snacks',
+          attributes: { skus: 2 },
+          start: '2027-02-01T00:00:00Z',
+          end: '2027-08-01T00:00:00Z',
+          policy: {
+            currency: 'INR',
+            targets: { fee: '170000', share_bps: '0' },
+            ceilings: { fee: '300000', share_bps: '0' },
+            max_rounds: 3,
+            deadline_seconds: (3 * DAY) / 1000,
+          },
+        });
+      if (!openRequest.ok) throw new Error(openRequest.refusal);
+      fleet.pump();
+      expect(offers(first, openRequest.request.request_id).length).toBeGreaterThan(0);
+      expect(card(store, TERM_STRANGER_CARD)).toBeUndefined();
+      // The other asks about the vetted slot and waits for the owner's card.
+      const second = fleet.add(BRAND2_DID);
+      const vetted = ask(second, listing, uri);
+      fleet.pump();
+      expect(offers(second, vetted)).toHaveLength(0);
+      expect(card(store, TERM_STRANGER_CARD)?.payload.request_id).toBe(vetted);
+    });
+
     it('under contacts_or_card a stranger is held, the owner is asked once, and a yes lets the request run', () => {
-      const { store, listing, uri } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+      const { store, listing, uri } = setUpStore(
+        fleet,
+        juicePolicy(),
+        'contacts_or_card',
+      );
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
       fleet.pump();
       // The receipt still reached the stranger: `held`, not silence.
-      const requestDigest = must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest;
+      const requestDigest = must(
+        brand.store.listByRequest(requestId, 'term_request')[0],
+      ).recordDigest;
       expect(brand.store.getOutbox(requestDigest)?.receiptOutcome).toBe('held');
       const stranger = card(store, TERM_STRANGER_CARD);
       expect(stranger).toBeDefined();
@@ -256,19 +311,29 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a no refuses the request and the brand learns it', () => {
-      const { store, listing, uri } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+      const { store, listing, uri } = setUpStore(
+        fleet,
+        juicePolicy(),
+        'contacts_or_card',
+      );
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
       fleet.pump();
       store.engine.decideCard(must(card(store, TERM_STRANGER_CARD)).cardId, false);
       fleet.pump();
-      const requestDigest = must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest;
+      const requestDigest = must(
+        brand.store.listByRequest(requestId, 'term_request')[0],
+      ).recordDigest;
       expect(brand.store.getOutbox(requestDigest)?.receiptOutcome).toBe('refused');
       expect(brand.store.getNegotiation(requestId)?.state).toBe('closed');
     });
 
     it('a contact skips the card even under contacts_or_card', () => {
-      const { store, listing, uri } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+      const { store, listing, uri } = setUpStore(
+        fleet,
+        juicePolicy(),
+        'contacts_or_card',
+      );
       store.contacts.add(BRAND_DID);
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
@@ -278,14 +343,20 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a stranger the owner never answers is refused when its request expires', () => {
-      const { store, listing, uri } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+      const { store, listing, uri } = setUpStore(
+        fleet,
+        juicePolicy(),
+        'contacts_or_card',
+      );
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
       fleet.pump();
       fleet.advance(3 * DAY + HOUR);
       store.engine.sweep();
       fleet.pump();
-      const requestDigest = must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest;
+      const requestDigest = must(
+        brand.store.listByRequest(requestId, 'term_request')[0],
+      ).recordDigest;
       expect(brand.store.getOutbox(requestDigest)?.receiptOutcome).toBe('refused');
       expect(store.closed).toContain(must(card(store, TERM_STRANGER_CARD)).cardId);
     });
@@ -304,7 +375,11 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a card raised before the inbox existed is raised by the next sweep', () => {
-      const { store, listing, uri } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+      const { store, listing, uri } = setUpStore(
+        fleet,
+        juicePolicy(),
+        'contacts_or_card',
+      );
       const brand = fleet.add(BRAND_DID);
       // The inbox is not there yet: the raise is lost, the card is kept.
       const raise = store.engine.ctx.deps.cards.raise;
@@ -496,7 +571,34 @@ describe('term negotiation scenarios', () => {
   });
 
   describe('the owner between the floors (§5.4)', () => {
-    it('a yes on the floor card authorises the asked value for the next counter', () => {
+    /** The brand's newest offer for the request, and its pending proposal card. */
+    const brandSide = (brand: Node, requestId: string) => {
+      const offers = brand.store
+        .listByRequest(requestId, 'term_offer')
+        .map(
+          (row) =>
+            JSON.parse(row.recordJson) as {
+              revision: number;
+              terms: { name: string; value: string }[];
+            },
+        )
+        .sort((x, y) => x.revision - y.revision);
+      const head = must(offers.at(-1), 'an offer');
+      const pending = brand.cards.find(
+        (c) =>
+          c.type === TERM_PROPOSAL_CARD &&
+          c.payload.request_id === requestId &&
+          brand.store.getCard(c.cardId)?.state === 'pending',
+      );
+      const fee = (terms: { name: string; value: string }[]) =>
+        terms.find((t) => t.name === 'fee')?.value;
+      return {
+        headFee: fee(head.terms),
+        cardFee: fee((pending?.payload.terms ?? []) as { name: string; value: string }[]),
+      };
+    };
+
+    it('a yes on the floor card reaches the brand as a revision at the asked value, and its card binds it', () => {
       const policy = juicePolicy();
       must(policy.resources[0]).floors.fee = { hard: '150000', auto: '240000' };
       const { store, listing, uri } = setUpStore(fleet, policy);
@@ -504,10 +606,91 @@ describe('term negotiation scenarios', () => {
       const requestId = ask(brand, listing, uri, { maxRounds: 2 });
       fleet.pump();
       // Round 1: halfway to 210000 is below the automatic 240000 → 240000 offered, owner asked.
+      // Round 2 meets the open card and gets the head back; the brand's rounds are spent.
       const floorCard = card(store, TERM_FLOOR_CARD, requestId);
       expect(floorCard?.payload.asked).toEqual({ fee: '210000' });
+      expect(brandSide(brand, requestId)).toEqual({ headFee: '240000', cardFee: '240000' });
       store.engine.decideCard(must(floorCard).cardId, true);
+      fleet.pump();
       expect(store.store.floorAuthorizations(requestId).get('fee')).toBe(210000n);
+      // The yes reached the brand: a revision at 210000, and the card it sends binds that offer.
+      expect(brandSide(brand, requestId)).toEqual({ headFee: '210000', cardFee: '210000' });
+    });
+
+    /** The S-06 negotiation, run to the point where the brand holds a card and the store a floor card. */
+    const toFloorCard = () => {
+      const policy = juicePolicy();
+      must(policy.resources[0]).floors.fee = { hard: '150000', auto: '240000' };
+      const { store, listing, uri } = setUpStore(fleet, policy);
+      const brand = fleet.add(BRAND_DID);
+      const requestId = ask(brand, listing, uri, { maxRounds: 2 });
+      fleet.pump();
+      return { store, brand, requestId, policy, floorCard: must(card(store, TERM_FLOOR_CARD, requestId)) };
+    };
+    const brandApproves = (brand: Node, requestId: string) => {
+      const proposalCard = must(card(brand, TERM_PROPOSAL_CARD, requestId));
+      expect(brand.engine.decideCard(proposalCard.cardId, true)).toEqual({ ok: true });
+      return must(brand.store.listByRequest(requestId, 'term_agreement_proposal')[0]).recordDigest;
+    };
+
+    it('a yes after the brand proposed on the head sends no revision: the deal both owners approved goes ahead', () => {
+      const { store, brand, requestId, floorCard } = toFloorCard();
+      const proposal = brandApproves(brand, requestId);
+      fleet.pump();
+      store.engine.decideCard(floorCard.cardId, true);
+      fleet.pump();
+      expect(brandSide(brand, requestId).headFee).toBe('240000');
+      storeDecides(store, proposal, true);
+      fleet.pump();
+      for (const node of [store, brand])
+        expect(node.engine.agreement(proposal).status).toBe('accepted');
+    });
+
+    it('a proposal still in flight when the yes goes out binds the offer it named', () => {
+      const { store, brand, requestId, floorCard } = toFloorCard();
+      const proposal = brandApproves(brand, requestId);
+      // The yes is given before the brand's proposal arrives; its revision follows it out.
+      store.engine.decideCard(floorCard.cardId, true);
+      fleet.pump();
+      expect(brandSide(brand, requestId).headFee).toBe('210000');
+      // The store took the proposal on the offer just before its yes-revision.
+      storeDecides(store, proposal, true);
+      fleet.pump();
+      for (const node of [store, brand])
+        expect(node.engine.agreement(proposal).status).toBe('accepted');
+    });
+
+    it('a yes signs nothing while another term sits below a hard floor raised since', () => {
+      const { store, brand, requestId, policy, floorCard } = toFloorCard();
+      // The head's share is 700; the owner raises its hard floor to 800 while the fee card is open.
+      must(policy.resources[0]).floors.share_bps = { hard: '800' };
+      expect(store.engine.setPolicy(policy).ok).toBe(true);
+      store.engine.decideCard(floorCard.cardId, true);
+      fleet.pump();
+      expect(brandSide(brand, requestId).headFee).toBe('240000');
+      expect(store.store.listByRequest(requestId, 'term_offer')).toHaveLength(3);
+    });
+
+    it('a yes reaches the brand when the store was already at its automatic limit', () => {
+      const policy = juicePolicy();
+      // The asking fee IS the automatic limit: every counter is answered with the same head.
+      must(policy.resources[0]).floors.fee = { hard: '150000', auto: '250000' };
+      const { store, listing, uri } = setUpStore(fleet, policy);
+      const brand = fleet.add(BRAND_DID);
+      const requestId = ask(brand, listing, uri, { maxRounds: 2 });
+      fleet.pump();
+      const floorCard = must(card(store, TERM_FLOOR_CARD, requestId));
+      const asked = (floorCard.payload.asked as { fee: string }).fee;
+      expect(brandSide(brand, requestId).headFee).toBe('250000');
+      // The brand waits out its counter's window and takes the old head to its owner.
+      fleet.advance(13 * HOUR);
+      brand.engine.sweep();
+      fleet.pump();
+      expect(brandSide(brand, requestId).cardFee).toBe('250000');
+      store.engine.decideCard(floorCard.cardId, true);
+      fleet.pump();
+      // The revision supersedes the stale card; the new one binds the asked fee.
+      expect(brandSide(brand, requestId)).toEqual({ headFee: asked, cardFee: asked });
     });
   });
 

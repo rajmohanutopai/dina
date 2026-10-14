@@ -16,6 +16,7 @@
  * (`CommerceTransaction`) from the engine instead.
  */
 
+import type { TermListingAccess } from './term_policy';
 import type { DatabaseAdapter, DBRow } from '../../storage/db_adapter';
 import type { TermReceiptOutcome } from '@dina/commerce-protocol';
 
@@ -97,6 +98,8 @@ export interface TermListingRow {
   state: 'published' | 'withdrawn';
   /** The directory may still hold the public record (a withdrawal not yet removed there). */
   recordPublic: boolean;
+  /** Who may ask about it (§6.2); private to this node, never in the record. */
+  access: TermListingAccess;
   updatedAt: number;
 }
 
@@ -130,6 +133,8 @@ export interface TermCardRow {
   decideBy: number;
   createdAt: number;
   decidedAt: number | null;
+  /** What came of the owner's yes: '' (no yes), 'ok', or the refusal. */
+  yesOutcome: string;
 }
 
 export interface TermFloorAuthorizationRow {
@@ -223,6 +228,7 @@ function cardFromDb(row: DBRow): TermCardRow {
     decideBy: num(row.decide_by),
     createdAt: num(row.created_at),
     decidedAt: numOrNull(row.decided_at),
+    yesOutcome: str(row.yes_outcome),
   };
 }
 
@@ -552,11 +558,12 @@ export class TermStore {
 
   putListing(row: TermListingRow): void {
     this.db.run(
-      `INSERT INTO commerce_term_listings (listing_id, resource_ref, record_json, listing_digest, state, record_public, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO commerce_term_listings (listing_id, resource_ref, record_json, listing_digest, state, record_public, access, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(listing_id) DO UPDATE SET resource_ref = excluded.resource_ref,
          record_json = excluded.record_json, listing_digest = excluded.listing_digest,
-         state = excluded.state, record_public = excluded.record_public, updated_at = excluded.updated_at`,
+         state = excluded.state, record_public = excluded.record_public, access = excluded.access,
+         updated_at = excluded.updated_at`,
       [
         row.listingId,
         row.resourceRef,
@@ -564,6 +571,7 @@ export class TermStore {
         row.listingDigest,
         row.state,
         row.recordPublic ? 1 : 0,
+        row.access,
         row.updatedAt,
       ],
     );
@@ -596,6 +604,7 @@ export class TermStore {
           listingDigest: str(row.listing_digest),
           state: str(row.state) as 'published' | 'withdrawn',
           recordPublic: num(row.record_public) === 1,
+          access: str(row.access) === 'anyone' ? 'anyone' : 'contacts_or_card',
           updatedAt: num(row.updated_at),
         };
   }
@@ -691,7 +700,7 @@ export class TermStore {
 
   // --- owner cards --------------------------------------------------------------
 
-  putCard(row: Omit<TermCardRow, 'decidedAt'>): boolean {
+  putCard(row: Omit<TermCardRow, 'decidedAt' | 'yesOutcome'>): boolean {
     return (
       this.db.run(
         `INSERT OR IGNORE INTO commerce_term_cards
@@ -738,6 +747,24 @@ export class TermStore {
         [state, nowMs, cardId],
       ) > 0
     );
+  }
+
+  /** Record what came of the owner's yes on a card (`TermEngine.decideCard`). */
+  setCardYesOutcome(cardId: string, outcome: string): void {
+    this.db.run(`UPDATE commerce_term_cards SET yes_outcome = ? WHERE card_id = ?`, [
+      outcome,
+      cardId,
+    ]);
+  }
+
+  /** Cards with a recorded yes decided since `sinceMs`: their inbox task may still be open. */
+  cardsWithYesSince(sinceMs: number): TermCardRow[] {
+    return this.db
+      .query(
+        `SELECT * FROM commerce_term_cards WHERE yes_outcome != '' AND decided_at >= ? ORDER BY decided_at`,
+        [sinceMs],
+      )
+      .map(cardFromDb);
   }
 
   pendingCards(): TermCardRow[] {

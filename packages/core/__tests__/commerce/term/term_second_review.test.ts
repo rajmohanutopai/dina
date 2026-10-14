@@ -50,6 +50,7 @@ function setUpStore(
   fleet: Fleet,
   policy: TermPolicy = juicePolicy(),
   did = STORE_DID,
+  access: 'contacts_or_card' | 'anyone' = 'anyone',
 ): { store: Node } & Published {
   const store = fleet.add(did);
   const set = store.engine.setPolicy(policy);
@@ -60,7 +61,7 @@ function setUpStore(
     kind: 'shelf',
     region: { scheme: 'postal_area', value: 'IN-560034' },
     tags: ['beverages.juice', 'snacks'],
-  });
+  }, access);
   if (!published.ok) throw new Error(published.refusal);
   return { store, listing: published.listing, uri: published.uri };
 }
@@ -198,8 +199,88 @@ describe('second review fixes', () => {
     expect(pending(store, TERM_DECISION_CARD)).toHaveLength(1);
   });
 
+  it('a stranger’s resend of an answered request still reaches its receipt after the listing is withdrawn', () => {
+    const { store, ...at } = setUpStore(fleet);
+    const brand = fleet.add(BRAND_DID);
+    const requestId = ask(brand, at);
+    const requestDigest = must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest;
+    // The request lands and is answered; the receipt and the offer are lost on the way back.
+    fleet.pump(1);
+    dropInFlight(fleet, 'term_receipt');
+    dropInFlight(fleet, 'term_offer');
+    expect(store.engine.withdrawListing('slot-3')).toBe(true);
+    // The brand resends; the store replays the answer it gave, not "unknown".
+    fleet.advance(7 * HOUR);
+    brand.engine.sweep();
+    fleet.pump();
+    expect(fleet.outcomes('term_request')).toEqual(['applied', 'duplicate']);
+    expect(brand.store.getOutbox(requestDigest)?.receiptOutcome).toBe('stored');
+    // A NEW request naming the withdrawn listing is still turned away at the gate.
+    const fresh = brand.engine.startNegotiation({
+      listing: at.listing,
+      listingUri: at.uri,
+      tag: 'snacks',
+      attributes: { skus: 2 },
+      start: '2027-03-01T00:00:00Z',
+      end: '2027-09-01T00:00:00Z',
+      policy: BRAND_POLICY,
+    });
+    expect(fresh.ok).toBe(true);
+    fleet.pump();
+    expect(fleet.outcomes('term_request').at(-1)).toBe('ingress_denied');
+  });
+
+  it('a policy saved before who-may-ask moved onto listings keeps renting on, and its setting moves onto the listings', async () => {
+    const { store } = setUpStore(fleet);
+    // As a v71 node (or its archive) left it: one store-wide `access`, the listing's column at its default.
+    store.store.putPolicy(JSON.stringify({ ...juicePolicy(), access: 'anyone' }), fleet.nowMs);
+    store.store.putListing({ ...must(store.store.getListing('slot-3')), access: 'contacts_or_card' });
+    // Read before any sweep: still on, its slots intact.
+    expect(store.engine.policy().enabled).toBe(true);
+    expect(store.engine.policy().resources.map((r) => r.resource_ref)).toEqual(['slot-3', 'slot-4']);
+    // The boot sweep moves the setting onto the listing and saves the policy without it.
+    store.engine.sweep();
+    expect(store.engine.listings().map((l) => [l.state, l.access])).toEqual([['published', 'anyone']]);
+    expect(JSON.parse(must(store.store.getPolicy()).policyJson)).not.toHaveProperty('access');
+    // And the directory upkeep leaves the listing alone.
+    installTermListingRepo({ put: async () => ({ cid: 'x' }), remove: async () => undefined });
+    await reconcileTermListings(store.engine);
+    expect(store.engine.listings().map((l) => l.state)).toEqual(['published']);
+    // Done once: a second sweep changes nothing.
+    const revision = must(store.store.getPolicy()).revision;
+    store.engine.sweep();
+    expect(must(store.store.getPolicy()).revision).toBe(revision);
+  });
+
+  it.each([
+    ['acted on', true, { ok: true }],
+    ['refused while paused', false, { ok: false, refusal: 'pack_inactive' }],
+  ] as const)(
+    'a yes %s just before a crash: the restarted sweep closes its inbox task with what it came to, once',
+    (_what, active, expected) => {
+      const { store: _store, ...at } = setUpStore(fleet);
+      const brand = fleet.add(BRAND_DID);
+      const requestId = ask(brand, at);
+      fleet.pump();
+      const proposalCard = must(pending(brand, TERM_PROPOSAL_CARD)[0]);
+      brand.packActive.buyer = active;
+      // The engine commits the yes; the process dies before the inbox task is closed.
+      brand.engine.decideCard(proposalCard.cardId, true);
+      brand.inboxAnswers.set(proposalCard.cardId, 'approved');
+      brand.restart();
+      brand.engine.sweep();
+      expect(brand.finished).toEqual([{ cardId: proposalCard.cardId, ...expected }]);
+      // Nothing was authored twice, and a later sweep closes nothing again.
+      expect(brand.store.listByRequest(requestId, 'term_agreement_proposal')).toHaveLength(
+        active ? 1 : 0,
+      );
+      brand.engine.sweep();
+      expect(brand.finished).toHaveLength(1);
+    },
+  );
+
   it('a corrupted resend never changes the answer its digest already has', () => {
-    const { store, ...at } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+    const { store, ...at } = setUpStore(fleet, juicePolicy(), STORE_DID, 'contacts_or_card');
     const brand = fleet.add(BRAND_DID);
     const requestId = ask(brand, at);
     fleet.pump();
@@ -241,7 +322,7 @@ describe('second review fixes', () => {
   });
 
   it('a stranger yes whose request is then refused reads as refused, not decided', () => {
-    const { store, ...at } = setUpStore(fleet, juicePolicy({ access: 'contacts_or_card' }));
+    const { store, ...at } = setUpStore(fleet, juicePolicy(), STORE_DID, 'contacts_or_card');
     const brand = fleet.add(BRAND_DID);
     ask(brand, at);
     fleet.pump();
@@ -348,7 +429,7 @@ describe('second review fixes', () => {
     if (!composed.ok) throw new Error(composed.refusal);
     const republish = withListingsLock(async () => {
       records.add(composed.listing.listing_id);
-      store.engine.storeListing(composed.listing);
+      store.engine.storeListing(composed.listing, 'anyone');
     });
     releaseRemove();
     await Promise.all([removal, republish]);

@@ -26,7 +26,7 @@ import { TERM_PROPOSAL_CARD } from '../../../src/commerce/term/term_buyer';
 import { TERM_DECISION_CARD } from '../../../src/commerce/term/term_seller';
 
 import { publishListing } from './term_harness';
-import { BRAND_DID, Fleet, juicePolicy, STORE_DID, type Node } from './term_harness';
+import { BRAND_DID, DAY, Fleet, juicePolicy, must, STORE_DID, type Node } from './term_harness';
 
 function setUpStore(fleet: Fleet): { store: Node; listing: TermListing; uri: string } {
   const store = fleet.add(STORE_DID);
@@ -146,6 +146,117 @@ describe('the end of a term agreement (§5.5–5.6)', () => {
   });
   afterEach(() => fleet.closeAll());
 
+  it.each([false, true])(
+    'a correction that overtakes the note it corrects waits for it, and then stands (store restarts between: %s)',
+    (restartBetween) => {
+      const { store, brand, digest } = agreedDeal(fleet);
+      fleet.nowMs = Date.parse('2027-03-20T00:00:00Z');
+      const first = brand.engine.issueSettlement({
+        proposalDigest: digest,
+        periodStart: FEB.start,
+        periodEnd: FEB.end,
+        grossMinor: '800000',
+      });
+      if (!first.ok) throw new Error(first.refusal);
+      const fix = brand.engine.issueSettlement({
+        proposalDigest: digest,
+        periodStart: FEB.start,
+        periodEnd: FEB.end,
+        grossMinor: '850000',
+        replacesSettlementDigest: first.document.settlement_digest,
+      });
+      if (!fix.ok) throw new Error(fix.refusal);
+      // The relay delivers the correction first.
+      fleet.inFlight.reverse();
+      fleet.pump(1);
+      expect(fleet.outcomes('term_settlement')).toEqual(['held']);
+      if (restartBetween) {
+        store.restart();
+        store.engine.sweep();
+      }
+      fleet.pump();
+      // The original arrived and released the correction; the correction is the live note.
+      expect(fleet.outcomes('term_settlement')).toEqual(['held', 'applied']);
+      expect(store.engine.schedule(digest)[1]?.settlementDigest).toBe(
+        fix.document.settlement_digest,
+      );
+      expect(store.engine.schedule(digest)[1]?.figures?.grossSalesMinor).toBe('850000');
+    },
+  );
+
+  it('an accepted note for a period a later termination cuts is flagged, and its correction to the cut stands', () => {
+    const { store, brand, digest } = agreedDeal(fleet);
+    const parties = { store, brand, digest };
+    // April's full period, settled and accepted early (the brand settles ahead).
+    fleet.nowMs = Date.parse('2027-03-20T00:00:00Z');
+    const april = { start: '2027-04-15T00:00:00.000Z', end: '2027-05-15T00:00:00.000Z' };
+    const first = settle(fleet, parties, { ...april, gross: '600000' }, 'accepted');
+    // Then notice that ends the deal on 25 April, inside that period.
+    expect(brand.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-25T00:00:00Z' }).ok).toBe(true);
+    fleet.pump();
+    const cut = must(brand.engine.schedule(digest).find((p) => p.start === april.start));
+    expect(cut.end).toBe('2027-04-25T00:00:00.000Z');
+    expect(cut.figures?.periodEnd).toBe(april.end);
+    // The correction to the cut instant replaces the accepted note.
+    const fixed = settle(
+      fleet,
+      parties,
+      { start: april.start, end: cut.end, gross: '200000', replaces: first },
+      'accepted',
+    );
+    const after = must(store.engine.schedule(digest).find((p) => p.start === april.start));
+    expect(after.settlementDigest).toBe(fixed);
+    expect(after.figures?.periodEnd).toBe(cut.end);
+  });
+
+  it('a termination the store sent holds the slot until the brand stores it; a refused one leaves the deal whole', () => {
+    const { store, brand, digest } = agreedDeal(fleet);
+    const mayToAugust = {
+      store: store.store,
+      selfDid: STORE_DID,
+      manualHoldings: [],
+      resourceRef: 'slot-3',
+      start: '2027-05-01T00:00:00Z',
+      end: '2027-08-01T00:00:00Z',
+    };
+    fleet.nowMs = Date.parse('2027-03-20T00:00:00Z');
+    // The brand's phone is off; the store's notice cannot be delivered yet.
+    fleet.unreachable.add(BRAND_DID);
+    const notice = store.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-25T00:00:00Z' });
+    expect(notice.ok).toBe(true);
+    fleet.pump();
+    // The store's own record shows the end, but the slot is not free to re-let:
+    // the brand may still refuse the notice.
+    expect(termAgreementStatus(store.store, digest)).toEqual(
+      expect.objectContaining({ endsAt: '2027-04-25T00:00:00.000Z', terminated: true }),
+    );
+    expect(termResourceFree({ ...mayToAugust, nowMs: fleet.nowMs })).toBe(false);
+    expect(
+      termHoldingCount({ ...mayToAugust, tag: 'beverages.juice', nowMs: fleet.nowMs }),
+    ).toBe(1);
+
+    // Four days later the phone is back; the notice arrives past its window and is refused.
+    fleet.advance(4 * DAY);
+    fleet.unreachable.delete(BRAND_DID);
+    store.engine.sweep();
+    fleet.pump();
+    expect(fleet.outcomes('term_termination')).toContain('refused');
+    // The deal stands to its end on both sides, and the slot was never let twice.
+    for (const node of [store, brand]) {
+      expect(termAgreementStatus(node.store, digest)).toEqual(
+        expect.objectContaining({ endsAt: '2027-08-01T00:00:00.000Z', terminated: false }),
+      );
+    }
+    expect(termResourceFree({ ...mayToAugust, nowMs: fleet.nowMs })).toBe(false);
+
+    // A notice the brand stores frees the slot from its effective date.
+    const again = store.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-30T00:00:00Z' });
+    expect(again.ok).toBe(true);
+    fleet.pump();
+    expect(fleet.outcomes('term_termination').at(-1)).toBe('applied');
+    expect(termResourceFree({ ...mayToAugust, nowMs: fleet.nowMs })).toBe(true);
+  });
+
   it('G-10: notice after the trial ends the deal on its date; the cut last period is settled after the end', () => {
     const { store, brand, digest, fee, shareBps } = agreedDeal(fleet);
     const parties = { store, brand, digest };
@@ -164,6 +275,14 @@ describe('the end of a term agreement (§5.5–5.6)', () => {
     expect(termResourceFree({ ...holdingArgs, nowMs: fleet.nowMs })).toBe(false);
     settle(fleet, parties, { ...TRIAL, gross: '1000000' }, 'accepted');
     settle(fleet, parties, { ...FEB, gross: '800000' }, 'accepted');
+    // The store's schedule carries each live note's own figures, for the owner to read.
+    expect(store.engine.schedule(digest)[1]?.figures).toEqual({
+      grossSalesMinor: '800000',
+      computedShareMinor: share(800000n, shareBps).toString(),
+      feeDueMinor: fee.toString(),
+      periodEnd: FEB.end,
+    });
+    expect(store.engine.schedule(digest)[2]?.figures).toBeNull();
 
     // The brand gives notice: 36 days, more than the 30 the deal requires.
     const notice = brand.engine.terminate({

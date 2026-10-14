@@ -25,7 +25,7 @@ import { applyMigrations } from '../../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../../src/storage/schemas';
 
 import type { TermCardSpec } from '../../../src/commerce/term/term_context';
-import type { TermPolicy } from '../../../src/commerce/term/term_policy';
+import type { TermListingAccess, TermPolicy } from '../../../src/commerce/term/term_policy';
 import type { TermListing } from '@dina/commerce-protocol';
 
 export const STORE_DID = 'did:plc:cornerstore000000000000000';
@@ -299,7 +299,6 @@ export const HOUR = 60 * 60 * 1000;
 export function juicePolicy(overrides: Partial<TermPolicy> = {}): TermPolicy {
   return {
     enabled: true,
-    access: 'anyone',
     maxRounds: 3,
     windowSeconds: 7 * 24 * 60 * 60,
     maxCountersPerBuyerPerDay: 20,
@@ -346,10 +345,12 @@ export function must<T>(value: T | null | undefined, what = 'value'): T {
 export function publishListing(
   node: Node,
   input: Parameters<TermEngine['composeListing']>[0],
+  /** Who may ask (§6.2): the tests' stores take anyone unless a test says otherwise. */
+  access: TermListingAccess = 'anyone',
 ): { ok: true; listing: TermListing; uri: string } | { ok: false; refusal: string } {
   const composed = node.engine.composeListing(input);
   if (!composed.ok) return composed;
   node.directory.set(composed.uri, composed.listing);
-  node.engine.storeListing(composed.listing);
+  node.engine.storeListing(composed.listing, access);
   return composed;
 }

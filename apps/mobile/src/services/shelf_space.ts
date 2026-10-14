@@ -93,7 +93,6 @@ export interface HoldingForm {
 
 export interface TermsForm {
   enabled: boolean;
-  access: 'contacts_or_card' | 'anyone';
   slots: SlotForm[];
   rules: RuleForm[];
   holdings: HoldingForm[];
@@ -150,7 +149,6 @@ function dayToInstant(day: string): string | null {
 export function policyToForm(policy: TermPolicy): TermsForm {
   return {
     enabled: policy.enabled,
-    access: policy.access,
     maxRounds: String(policy.maxRounds),
     slots: policy.resources.map((r) => ({
       resourceRef: r.resource_ref,
@@ -255,13 +253,22 @@ export function formToPolicy(
       }
       trial = { days, fee_minor: fee };
     }
+    // What the form does not show is kept as the policy had it for this slot:
+    // the automatic share limit (while it still sits above the lowest share)
+    // and the stock duties. Saving an unrelated change must not drop them.
+    const before = base.resources.find((r) => r.resource_ref === ref);
+    const shareAuto = before?.floors.share_bps.auto;
+    const keptShareAuto =
+      shareAuto !== undefined && BigInt(shareAuto) >= BigInt(floorShare) ? shareAuto : undefined;
+    const duties = before?.conditions.stock_duties;
     resources.push({
       resource_ref: ref,
       currency: slot.currency,
       asking: { fee: asking, share_bps: askingShare },
       floors: {
         fee: auto === null ? { hard: floor } : { hard: floor, auto },
-        share_bps: { hard: floorShare },
+        share_bps:
+          keptShareAuto === undefined ? { hard: floorShare } : { hard: floorShare, auto: keptShareAuto },
       },
       available: { from, to },
       conditions: {
@@ -269,6 +276,7 @@ export function formToPolicy(
         cash_handler: slot.cashHandler,
         exit_notice_days: notice,
         ...(trial !== undefined ? { trial } : {}),
+        ...(duties !== undefined ? { stock_duties: duties } : {}),
       },
     });
   }
@@ -334,7 +342,6 @@ export function formToPolicy(
     policy: {
       ...base,
       enabled: form.enabled,
-      access: form.access,
       maxRounds: rounds,
       resources,
       holding_rules: holdingRules,

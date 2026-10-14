@@ -91,9 +91,16 @@ export interface TermPolicy {
   /** How long a chain stays open to counters, from its first offer. */
   windowSeconds: number;
   maxCountersPerBuyerPerDay: number;
-  /** Who may ask (§6.2): known contacts, or anyone with a stranger card. */
-  access: 'contacts_or_card' | 'anyone';
 }
+
+/**
+ * Who may ask about one listing (§6.2), kept privately on the listing's row
+ * here and never in the public record: a contact always may; a stranger needs
+ * the owner's card (`contacts_or_card`, the default) or not (`anyone`).
+ */
+export type TermListingAccess = 'contacts_or_card' | 'anyone';
+
+export const TERM_LISTING_ACCESS: readonly TermListingAccess[] = ['contacts_or_card', 'anyone'];
 
 export const TERM_POLICY_LIMITS = {
   maxRounds: [1, 10],
@@ -118,7 +125,6 @@ export const DEFAULT_TERM_POLICY: TermPolicy = {
   maxRounds: 3,
   windowSeconds: 7 * 24 * 60 * 60,
   maxCountersPerBuyerPerDay: 20,
-  access: 'contacts_or_card',
 };
 
 function intIn(
@@ -232,8 +238,8 @@ export function validateTermPolicy(value: unknown): string | null {
   if (value === null || typeof value !== 'object') return 'term policy: must be an object';
   const p = value as Partial<TermPolicy>;
   if (typeof p.enabled !== 'boolean') return 'enabled: must be a boolean';
-  if (p.access !== 'contacts_or_card' && p.access !== 'anyone')
-    return 'access: must be contacts_or_card or anyone';
+  // Who may ask is set per listing (§6.2), not here.
+  if ('access' in p) return 'access: who may ask is set on each listing, not on the policy';
   const limits =
     intIn(p.maxRounds, TERM_POLICY_LIMITS.maxRounds, 'maxRounds') ??
     intIn(p.windowSeconds, TERM_POLICY_LIMITS.windowSeconds, 'windowSeconds') ??

@@ -85,6 +85,14 @@ node scripts/test/safe_test.mjs --only commerce-protocol -- __tests__/term
 | T-21 | A send that fails outright retries within a minute; a near deadline gets its first resend before it | covered | `term_second_review` |
 | T-22 | A refused termination releases the cut notes held for it at once, on every refusal path (first arrival, re-run, hold expiry); residual (accepted by the owner 2026-10-14): a note arriving after the refusal waits 30 days | covered | `term_second_review` |
 | T-23 | Only a first failed send is pulled forward; repeated failures keep the normal schedule | covered | `term_second_review` |
+| G-18 | A termination this node sent holds the slot for new deals until the other side stores it; a refused one leaves the deal whole and the slot was never let twice | covered | `term_agreement_end` |
+| G-19 | A correction that overtakes the note it corrects waits for it and then stands, across a restart | covered | `term_agreement_end` |
+| G-20 | The settlement card shows the note's own sales, share and rent before Accept / Dispute | covered | `term_agreement_end`, `screens/shelf_space.render` |
+| G-21 | An accepted note for a period a later termination cuts is flagged and corrected to the cut, on Core and on the phone | covered | `term_agreement_end`, `screens/shelf_space.render` |
+| G-22 | A policy saved before who-may-ask moved onto listings (or restored from such an archive) keeps renting on; its setting moves onto the listings at the boot sweep | covered | `term_second_review` |
+| G-23 | A yes the engine committed just before a crash (acted on, or refused while paused) has its inbox task closed by the restarted sweep with what it came to, once, and nothing re-authored | covered | `term_second_review` |
+| K-09 | A paused brand half authors no counter and no proposal: a yes lapses the card with the reason, and once resumed a fresh card asks again; a no still closes; a removed half closes its negotiations, and a yes after removal closes the card and the deal with words that say so | covered | `term_access_packs` |
+| M-18 | Saving the terms form keeps what it does not show: the automatic share limit and stock duties | covered | `services/shelf_space` |
 | G-14 | A trial termination arriving after the trial ended is refused; both keep the deal | covered | `term_second_review` |
 | G-15 | A revision delivered after the brand's card supersedes it; the newer offer gets a card that binds | covered | `term_second_review` |
 | G-16 | A stranger yes whose request is then refused reads as refused | covered | `term_second_review` |
@@ -102,7 +110,7 @@ node scripts/test/safe_test.mjs --only commerce-protocol -- __tests__/term
 | S-03 | The cap: with four placed, a fifth is refused and told nothing | covered | `term_scenarios` |
 | S-04 | A snack brand is untouched by the juice rule | covered | `term_scenarios`, `term_fleet_story` |
 | S-05 | A manual holding naming the slot blocks it; one naming another slot does not | covered | `term_scenarios` |
-| S-06 | Floor card: a yes authorises the asked value for the next counter | covered | `term_scenarios` |
+| S-06 | Floor card: a yes reaches the brand at once as a revision at the asked value (only the asked terms move, never past a hard floor), and the brand's card binds it — also when the store was already at its automatic limit and the brand had stopped countering; no revision once the brand proposed on the head, and a proposal in flight still binds the offer it named; no revision while any term sits below a hard floor raised since | covered | `term_scenarios` |
 | S-07 | One open floor card per negotiation | covered | `term_fleet_story` |
 | S-08 | A rule tightened after the offer: acceptance re-checks and says no longer available | covered | `term_scenarios` |
 | S-09 | Policy validation: every refusal reason of `validateTermPolicy` | covered | `term_policy` |
@@ -118,6 +126,8 @@ node scripts/test/safe_test.mjs --only commerce-protocol -- __tests__/term
 | A-04 | A stranger the owner never answers is refused when the request expires | covered | `term_scenarios` |
 | A-05 | `anyone`: a stranger gets a first offer with no card, end to end, and a decline closes it | covered | `term_access_packs` |
 | A-06 | A request spends probing budget; with none left it is refused | covered | `term_scenarios` |
+| A-07 | Who may ask is per listing: on one store, a stranger asking about an `anyone` listing gets an offer while one asking about a `contacts_or_card` listing waits for the card; the setting is private, kept on republish, and refused on the policy | covered | `term_scenarios`, `commerce_terms`, `screens/shelf_space.render` |
+| A-08 | A stranger's resend of an answered request reaches its stored receipt after the listing is withdrawn; a new request naming it is still refused | covered | `term_second_review` |
 
 ## 5. Agreements
 
