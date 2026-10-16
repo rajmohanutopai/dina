@@ -5,7 +5,7 @@
  * WHAT IT DECIDES, AND WHAT IT DOES NOT. It proposes terms: the first offer
  * from the store's private asking terms, and each revision a step toward the
  * buyer's targets. It signs nothing and knows no floor — Core clamps every
- * proposal to the owner's floors afterwards (`clampTerm`), so a runner bug
+ * proposal to the owner's floors afterwards (`reviseWithinLimits`), so a runner bug
  * cannot sell below a floor. The split mirrors the goods runner
  * (`supplier_runner.ts`): the runner proposes, Core decides.
  *
@@ -17,7 +17,9 @@
  * out-of-process runner for third-party packs is the spec's Q6.
  */
 
-import { TERM_NAMES, TERM_TABLE, type TermName } from '@dina/commerce-protocol';
+import { TERM_NAMES, type TermName } from '@dina/commerce-protocol';
+
+import { termPart } from './term_policy';
 
 /** The runner's parameters, pinned per pack in `FIRST_PARTY_PACKS`. */
 export interface TermRunnerParams {
@@ -48,7 +50,8 @@ export function proposeRevision(args: {
     const target = args.targets[name];
     if (target === undefined) continue;
     const current = args.current[name];
-    const lower = TERM_TABLE[name].buyerFavours === 'lower';
+    // The buyer pays every part it bargains down: lower is its side.
+    const lower = termPart(name).payer === 'buyer';
     const gap = lower ? current - target : target - current;
     if (gap <= 0n) continue; // already at or past what the buyer asked
     const step = (gap * BigInt(args.params.stepPercent)) / 100n; // floors toward current

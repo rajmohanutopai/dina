@@ -48,6 +48,7 @@ import {
   validateQuoteRequest,
   validateSignedQuote,
   productRefsEqual,
+  projectionPincode,
   type Money,
   type ProductRef,
   type Quantity,
@@ -55,9 +56,16 @@ import {
   type SignedQuote,
   type SignedQuoteLine,
   type QuoteRequest,
+  computeTotal,
+  type Charge,
+  type QuoteAlternative,
 } from '@dina/commerce-protocol';
 
+import { openSmallerDeals } from '../commitment/option_handler';
+import { ownerTimeZoneIfRead } from '../settings/owner_settings';
+
 import { authorQuoteDecline, rehydrateDeclineDocument } from './decline_documents';
+import { costLedAlternatives } from './goods_seller_alternatives';
 import { publishedCatalogItems } from './published_catalog';
 import { getCommerceRuntime } from './runtime';
 
@@ -121,6 +129,11 @@ function readRunnerTerms(
   validUntil?: string;
   maxUses?: string;
   paymentTerms?: Record<string, unknown>;
+  /** The runner's own charges (delivery and the like) and delivery estimate. */
+  charges?: Charge[];
+  estimatedDeliveryAt?: string;
+  /** Other versions: the same lines, delivered on another date for other charges. */
+  alternatives?: { alternative_id: string; charges: Charge[]; estimated_delivery_at: string }[];
 } | null {
   let parsed: unknown;
   try {
@@ -141,6 +154,25 @@ function readRunnerTerms(
     };
   }
   if (!Array.isArray(record.lines)) return null;
+  // Fields the runner states must be well formed: one that is present and
+  // malformed refuses the terms, never silently drops (COMMITMENT_KERNEL §6).
+  if (record.charges !== undefined && !Array.isArray(record.charges)) return null;
+  if (record.estimated_delivery_at !== undefined && typeof record.estimated_delivery_at !== 'string')
+    return null;
+  if (record.alternatives !== undefined) {
+    if (!Array.isArray(record.alternatives)) return null;
+    for (const alt of record.alternatives as unknown[]) {
+      if (alt === null || typeof alt !== 'object' || Array.isArray(alt)) return null;
+      const a = alt as Record<string, unknown>;
+      if (
+        Object.keys(a).sort().join(',') !== 'alternative_id,charges,estimated_delivery_at' ||
+        typeof a.alternative_id !== 'string' ||
+        !Array.isArray(a.charges) ||
+        typeof a.estimated_delivery_at !== 'string'
+      )
+        return null;
+    }
+  }
   const lines: RunnerLine[] = [];
   for (const entry of record.lines) {
     if (entry === null || typeof entry !== 'object') return null;
@@ -173,7 +205,66 @@ function readRunnerTerms(
     !Array.isArray(record.payment_terms)
       ? { paymentTerms: record.payment_terms as Record<string, unknown> }
       : {}),
+    // COMMITMENT_KERNEL §6, §15 step 6 — charges, a delivery estimate and
+    // alternatives are the runner's to state. Read as given, never trimmed:
+    // a malformed field refuses the terms (above), and `validateSignedQuote`
+    // re-checks every value that remains.
+    ...(record.charges !== undefined ? { charges: record.charges as Charge[] } : {}),
+    ...(record.estimated_delivery_at !== undefined
+      ? { estimatedDeliveryAt: record.estimated_delivery_at as string }
+      : {}),
+    ...(record.alternatives !== undefined
+      ? {
+          alternatives: record.alternatives as {
+            alternative_id: string;
+            charges: Charge[];
+            estimated_delivery_at: string;
+          }[],
+        }
+      : {}),
   };
+}
+
+/**
+ * The quote's alternatives, priced by Core from the quote's own line
+ * subtotals: each one's total and terms digest are computed here, never taken
+ * from the runner. Offered only to a buyer who asked at minor 1.3 or later
+ * (§9.13: answered in the buyer's language); otherwise none.
+ */
+export function priceQuoteAlternatives(
+  draft: Omit<SignedQuote, 'terms_digest' | 'quote_digest' | 'alternatives'>,
+  alternatives: readonly {
+    alternative_id: string;
+    charges: Charge[];
+    estimated_delivery_at: string;
+    /** A version resting on a shipper's option (minor 1.4): kept as given. */
+    partner_run?: true;
+    offer_ends_at?: string;
+  }[],
+): QuoteAlternative[] | null {
+  const minor = Number(String(draft.protocol_version).split('.')[1] ?? '0');
+  if (alternatives.length === 0 || !Number.isFinite(minor) || minor < 3) return [];
+  const subtotals = draft.lines.map((l) => l.line_subtotal);
+  const out: QuoteAlternative[] = [];
+  for (const alt of [...alternatives].sort((a, b) => (a.alternative_id < b.alternative_id ? -1 : 1))) {
+    const total = computeTotal(draft.total.currency, subtotals, alt.charges);
+    if (total.error || !total.value) return null;
+    out.push({
+      alternative_id: alt.alternative_id,
+      charges: alt.charges,
+      estimated_delivery_at: alt.estimated_delivery_at,
+      total: total.value,
+      terms_digest: commerceRecordDigest(
+        'terms',
+        termsDigestInput({ ...draft, charges: alt.charges, estimated_delivery_at: alt.estimated_delivery_at }),
+        hash,
+      ),
+      ...(alt.partner_run === true && alt.offer_ends_at !== undefined
+        ? { partner_run: true as const, offer_ends_at: alt.offer_ends_at }
+        : {}),
+    });
+  }
+  return out;
 }
 
 /**
@@ -308,8 +399,16 @@ export function settleInboundQuote(args: {
     });
   }
 
-  const total = sumLineSubtotals(lines);
-  if (total === null) return { kind: 'withhold', refusal: 'terms_unusable' };
+  const charges = terms.charges ?? [];
+  const subtotalsTotal = sumLineSubtotals(lines);
+  if (subtotalsTotal === null) return { kind: 'withhold', refusal: 'terms_unusable' };
+  const withCharges = computeTotal(
+    subtotalsTotal.currency,
+    lines.map((l) => l.line_subtotal),
+    charges,
+  );
+  if (withCharges.error || !withCharges.value) return { kind: 'withhold', refusal: 'terms_unusable' };
+  const total = withCharges.value;
 
   const issuedAt = new Date(args.nowMs).toISOString();
   const validUntil = terms.validUntil ?? new Date(args.nowMs + DEFAULT_QUOTE_VALIDITY_MS).toISOString();
@@ -327,24 +426,71 @@ export function settleInboundQuote(args: {
     // preferred. The buyer re-derives this and refuses a mismatch.
     priced_delivery_projection_digest: request.delivery.projection.projection_digest,
     lines,
-    charges: [],
+    charges,
     total,
+    ...(terms.estimatedDeliveryAt === undefined
+      ? {}
+      : { estimated_delivery_at: terms.estimatedDeliveryAt }),
     issued_at: issuedAt,
     valid_until: validUntil,
     supplier_epoch: supplierEpoch,
     ...(terms.maxUses === undefined ? {} : { max_uses: terms.maxUses }),
     ...(terms.paymentTerms === undefined ? {} : { payment_terms: terms.paymentTerms }),
   };
+  // The runner's own alternatives, or, when it states none, the days the
+  // seller's own costs make cheaper (COMMITMENT_KERNEL §15 step 6). Those are
+  // offered only from the whole model: none while a persona holding the
+  // seller's entries is closed (a sealed never-rule may forbid a day), and
+  // none before the owner's time zone is known (the day is the owner's day).
+  const pricedDraft = draft as unknown as Omit<
+    SignedQuote,
+    'terms_digest' | 'quote_digest' | 'alternatives'
+  >;
+  let alternatives: QuoteAlternative[] | null;
+  let madeUp = false;
+  if (terms.alternatives !== undefined) {
+    alternatives = priceQuoteAlternatives(pricedDraft, terms.alternatives);
+    if (alternatives === null) return { kind: 'withhold', refusal: 'terms_unusable' };
+  } else {
+    const seller = runtime.goodsSellerModel?.() ?? null;
+    const zone = ownerTimeZoneIfRead();
+    const offered =
+      seller === null || seller.closedPersonas.length > 0 || zone === null
+        ? []
+        : costLedAlternatives({
+            model: seller.model,
+            deliveryAt: terms.estimatedDeliveryAt,
+            charges,
+            currency: total.currency,
+            totalMinor: BigInt(total.minor_units),
+            nowMs: args.nowMs,
+            timeZone: zone,
+          });
+    // A cheaper day Core made up never costs the buyer the quote itself.
+    alternatives = priceQuoteAlternatives(pricedDraft, offered) ?? [];
+    madeUp = alternatives.length > 0;
+  }
   const terms_digest = commerceRecordDigest('terms', termsDigestInput(draft), hash);
-  const withTerms = { ...draft, terms_digest };
-  const quote: SignedQuote = {
-    ...withTerms,
-    quote_digest: commerceRecordDigest('quote', withTerms as unknown as Record<string, unknown>, hash),
+  const assemble = (alts: readonly QuoteAlternative[]): SignedQuote => {
+    const withTerms = {
+      ...draft,
+      ...(alts.length > 0 ? { alternatives: [...alts] } : {}),
+      terms_digest,
+    };
+    const assembled: SignedQuote = {
+      ...withTerms,
+      quote_digest: commerceRecordDigest('quote', withTerms as unknown as Record<string, unknown>, hash),
+    };
+    return assembled;
   };
+  let quote = assemble(alternatives);
 
   // Core validates its OWN output before it can be registered or sent. An
   // invalid quote registered here would be a live family the buyer cannot
   // accept — decided on this side, unusable on theirs, and unreconcilable.
+  // Cheaper days Core made up that break the quote (one charge too many) are
+  // dropped and the quote checked again: they never cost the buyer the quote.
+  if (validateSignedQuote(quote, hash) !== null && madeUp) quote = assemble([]);
   if (validateSignedQuote(quote, hash) !== null) {
     return { kind: 'withhold', refusal: 'quote_invalid' };
   }
@@ -360,6 +506,29 @@ export function settleInboundQuote(args: {
     expectedBuyerDid: args.buyerDid,
   });
   if (refused !== null) return { kind: 'withhold', refusal: 'registration_refused' };
+
+  // COMMITMENT_KERNEL §6 step 0, §15 step 7: with the buyer's grant, ask this
+  // seller's known shippers for a firm run on the delivery day. Only the
+  // pincode leaves, and only under the grant; a held option becomes a
+  // version in the next revision. Off this path: the quote is already out.
+  const postalCode = projectionPincode(request.delivery.projection);
+  if (
+    request.onward_sharing !== undefined &&
+    postalCode !== undefined &&
+    quote.estimated_delivery_at !== undefined
+  ) {
+    void openSmallerDeals({
+      dealRef: quote.quote_id,
+      grant: {
+        fields: request.onward_sharing.fields,
+        recipientRole: request.onward_sharing.recipient_role,
+      },
+      postalCode,
+      serviceAt: quote.estimated_delivery_at,
+      crates: 1,
+      nowMs: args.nowMs,
+    }).catch(() => undefined);
+  }
 
   return { kind: 'signed', quoteJson: JSON.stringify(quote) };
 }

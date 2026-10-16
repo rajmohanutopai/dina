@@ -63,14 +63,28 @@ const QUOTE = {
     },
   ],
   charges: [
-    { kind: 'delivery', label: 'freight', amount: { currency: 'INR', minor_units: '50000' }, operation: 'add' },
-    { kind: 'tax', label: 'gst', amount: { currency: 'INR', minor_units: '22500' }, operation: 'add' },
+    {
+      kind: 'delivery',
+      label: 'freight',
+      amount: { currency: 'INR', minor_units: '50000' },
+      operation: 'add',
+    },
+    {
+      kind: 'tax',
+      label: 'gst',
+      amount: { currency: 'INR', minor_units: '22500' },
+      operation: 'add',
+    },
   ],
   total: { currency: 'INR', minor_units: '522500' },
   payment_terms: { credit_days: 30, due_basis: 'from_delivery' },
 } as unknown as SignedQuote;
 
-function makeSide(did: string): {
+function makeSide(
+  did: string,
+  order: PurchaseOrderProposal = ORDER,
+  quote: SignedQuote = QUOTE,
+): {
   service: TradeLedgerService;
   repo: InMemoryTradeDocumentRepository;
 } {
@@ -79,10 +93,10 @@ function makeSide(did: string): {
     documents: repo,
     nodeDid: () => did,
     now: () => T0,
-    readOrder: (_counterparty, id) => (id === 'po-1' ? ORDER : null),
+    readOrder: (_counterparty, id) => (id === 'po-1' ? order : null),
     readAcceptance: (_counterparty, id) =>
       id === 'po-1' ? { acceptedAt: '2026-08-07T13:00:00.000Z' } : null,
-    readBoundQuote: (_counterparty, id) => (id === 'po-1' ? QUOTE : null),
+    readBoundQuote: (_counterparty, id) => (id === 'po-1' ? quote : null),
     listAcceptedOrderIds: (counterparty) =>
       counterparty === (did === BUYER ? SUPPLIER : BUYER) ? ['po-1'] : [],
   });
@@ -426,7 +440,11 @@ describe('derived dues (§4.5)', () => {
       currency: 'INR',
       role: 'supplier',
     });
-    const buyerDues = buyer.service.dues({ counterpartyDid: SUPPLIER, currency: 'INR', role: 'buyer' });
+    const buyerDues = buyer.service.dues({
+      counterpartyDid: SUPPLIER,
+      currency: 'INR',
+      role: 'buyer',
+    });
     expect(supplierDues).toEqual(buyerDues);
     expect(supplierDues.dues).toEqual([
       {
@@ -448,12 +466,17 @@ describe('derived dues (§4.5)', () => {
       readOrder: (_c, id) => (id === 'po-1' ? ORDER : null),
       readBoundQuote: (_c, id) =>
         id === 'po-1'
-          ? ({ ...(QUOTE as unknown as Record<string, unknown>), payment_terms: { credit_days: 30 } } as never)
+          ? ({
+              ...(QUOTE as unknown as Record<string, unknown>),
+              payment_terms: { credit_days: 30 },
+            } as never)
           : null,
       listAcceptedOrderIds: () => ['po-1'],
       readAcceptance: () => ({ acceptedAt: '2026-08-07T13:00:00.000Z' }),
     });
-    expect(service.dues({ counterpartyDid: BUYER, currency: 'INR', role: 'supplier' }).dues).toEqual([]);
+    expect(
+      service.dues({ counterpartyDid: BUYER, currency: 'INR', role: 'supplier' }).dues,
+    ).toEqual([]);
   });
 
   it('from_acceptance: one clock from the acknowledgement for the whole order', () => {
@@ -474,7 +497,9 @@ describe('derived dues (§4.5)', () => {
       readAcceptance: (_c, id) =>
         id === 'po-1' ? { acceptedAt: '2026-08-07T13:00:00.000Z' } : null,
     });
-    expect(service.dues({ counterpartyDid: BUYER, currency: 'INR', role: 'supplier' }).dues).toEqual([
+    expect(
+      service.dues({ counterpartyDid: BUYER, currency: 'INR', role: 'supplier' }).dues,
+    ).toEqual([
       {
         purchase_order_id: 'po-1',
         basis: 'from_acceptance',
@@ -482,5 +507,87 @@ describe('derived dues (§4.5)', () => {
         amount: { currency: 'INR', minor_units: '522500' },
       },
     ]);
+  });
+});
+
+describe('an order on an alternative (COMMITMENT_KERNEL §6, §15 step 6)', () => {
+  it('the khata accrues the charges of the version the order took', () => {
+    // The supplier's other offer: delivery on its van's day, ₹100 not ₹500.
+    const tuesday = { currency: 'INR', minor_units: '482500' };
+    const quote = {
+      ...QUOTE,
+      alternatives: [
+        {
+          alternative_id: 'tue',
+          charges: [
+            {
+              kind: 'delivery',
+              label: 'freight',
+              amount: { currency: 'INR', minor_units: '10000' },
+              operation: 'add',
+            },
+            {
+              kind: 'tax',
+              label: 'gst',
+              amount: { currency: 'INR', minor_units: '22500' },
+              operation: 'add',
+            },
+          ],
+          estimated_delivery_at: '2026-08-11T10:00:00Z',
+          total: tuesday,
+          terms_digest: 'e'.repeat(64),
+        },
+      ],
+    } as unknown as SignedQuote;
+    const order = {
+      ...ORDER,
+      alternative_id: 'tue',
+      approved_total: tuesday,
+    } as PurchaseOrderProposal;
+    const supplier = makeSide(SUPPLIER, order, quote);
+    const buyer = makeSide(BUYER, order, quote);
+    const note = supplier.service.issueDeliveryNote({
+      counterpartyDid: BUYER,
+      purchaseOrderId: 'po-1',
+      supplierOrderId: 'so-1',
+      lines: [{ line_id: 'line-1', delivered_quantity: { value: '10', unit_code: 'each' } }],
+    });
+    if (!note.ok) throw new Error(note.refusal);
+    verifyInboundDeliveryNote({
+      senderDid: SUPPLIER,
+      selfDid: BUYER,
+      note: note.document,
+      repository: buyer.repo,
+      readOrder: (id) => (id === 'po-1' ? order : null),
+      evidenceJson: '{}',
+      nowMs: T0,
+    });
+    const receipt = buyer.service.issueDeliveryReceipt({
+      deliveryNoteDigest: note.document.note_digest,
+      lines: [{ line_id: 'line-1', accepted_quantity: { value: '10', unit_code: 'each' } }],
+    });
+    if (!receipt.ok) throw new Error(receipt.refusal);
+    verifyInboundDeliveryReceipt({
+      senderDid: BUYER,
+      selfDid: SUPPLIER,
+      receipt: receipt.document,
+      repository: supplier.repo,
+      readOrder: (id) => (id === 'po-1' ? order : null),
+      evidenceJson: '{}',
+      nowMs: T0,
+    });
+    const fromBuyer = buyer.service.statement({
+      counterpartyDid: SUPPLIER,
+      currency: 'INR',
+      role: 'buyer',
+    });
+    const fromSupplier = supplier.service.statement({
+      counterpartyDid: BUYER,
+      currency: 'INR',
+      role: 'supplier',
+    });
+    expect(fromBuyer).toEqual(fromSupplier);
+    // Everything delivered and accepted: the debt is exactly what the buyer signed.
+    expect(fromBuyer.ok && fromBuyer.goods_owed_minor).toBe(tuesday.minor_units);
   });
 });

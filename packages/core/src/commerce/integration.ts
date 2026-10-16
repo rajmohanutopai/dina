@@ -37,7 +37,10 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { quoteVersion } from '@dina/commerce-protocol';
 import { canonicalJson } from '@dina/protocol';
+
+import { fallbackApplied, getOrderFallbackStore } from '../commitment/option_handler';
 
 import { findPublishedItem, publishedCatalogItems } from './published_catalog';
 import {
@@ -62,6 +65,7 @@ import type {
   DeliveryProjection,
   Money,
   ProductRef,
+  Charge,
   Quantity,
 } from '@dina/commerce-protocol';
 
@@ -288,6 +292,13 @@ export interface OrderDecisionEvent {
   supplierOrderId?: string;
   externalRef?: string;
   /**
+   * COMMITMENT_KERNEL §6 step 6 — when set, this event says the order's
+   * partner run ended without fault at this time, and the order now stands on
+   * its quote's own terms (the `order` below is priced so). A reader that took
+   * the order earlier updates it; nothing is cancelled.
+   */
+  fallbackAppliedAt?: number;
+  /**
    * The accepted order as Core retained it. Null when the decision is a
    * rejection, and null when the order record is not in the receipt store —
    * the event still says a decision happened; it never invents the terms.
@@ -296,6 +307,11 @@ export interface OrderDecisionEvent {
     totals: Money;
     lines: AcceptedOrderLine[];
     deliveryProjection: DeliveryProjection;
+    /**
+     * COMMITMENT_KERNEL §6 — the quote's other offer the buyer took, when it
+     * took one: the delivery date the supplier is bound to and its charges.
+     */
+    version?: { alternativeId: string; deliveryAt?: string; charges: Charge[] };
   } | null;
 }
 
@@ -326,8 +342,30 @@ function readOrderRecord(
   if (quote !== null && quote.ok) {
     for (const line of quote.value.lines) unitPrices.set(line.line_id, line.unit_price);
   }
+  // The version the order took, so a connector fulfils the delivery date it
+  // was bought on, not the quote's own.
+  // An order whose partner run ended without fault stands on the quote's own
+  // terms (COMMITMENT_KERNEL §6 step 6): exported so, never as the run.
+  const alt = fallbackApplied(order.value.buyer_did, order.value.purchase_order_id)
+    ? undefined
+    : order.value.alternative_id;
+  const version = alt === undefined || quote === null || !quote.ok ? null : quoteVersion(quote.value, alt);
+  const taken =
+    alt === undefined
+      ? null
+      : {
+          alternativeId: alt,
+          charges: version?.charges ?? [],
+          ...(version?.estimated_delivery_at === undefined
+            ? {}
+            : { deliveryAt: version.estimated_delivery_at }),
+        };
   return {
-    totals: order.value.approved_total,
+    // On the fallback the order stands on the quote's own total, not the one approved for the run.
+    totals:
+      alt === undefined && order.value.alternative_id !== undefined && quote !== null && quote.ok
+        ? quote.value.total
+        : order.value.approved_total,
     lines: order.value.accepted_lines.map((line) => {
       const unitPrice = unitPrices.get(line.line_id);
       const item = findPublishedItem(catalog, line.product);
@@ -340,6 +378,7 @@ function readOrderRecord(
       };
     }),
     deliveryProjection: order.value.delivery,
+    ...(taken === null ? {} : { version: taken }),
   };
 }
 
@@ -395,12 +434,67 @@ export function listOrderDecisionEvents(
       order: accepted ? readOrderRecord(runtime, ref, catalog) : null,
     });
   }
-  return {
-    events,
-    nextCursor:
-      last === null || last.decidedAt === null
+  // COMMITMENT_KERNEL §6 step 6: fallbacks applied after the cursor come as
+  // events of their own, in time order with the decisions, so a reader that
+  // already took an order learns its terms moved. Keyed by the order's
+  // digest like its decision: a fallback comes at least two days after the
+  // decision (the grace), so the two never share a moment.
+  const fallbacks = getOrderFallbackStore();
+  if (fallbacks !== null) {
+    // Fallbacks strictly after the cursor, in the events' own order (the
+    // moment, then the order's digest): the query applies the whole cursor
+    // before its limit, so no page spends itself on rows already passed.
+    const after =
+      page.after === null
         ? null
-        : encodeOrdersCursor({ decidedAt: last.decidedAt, orderDigest: last.orderDigest }),
+        : { appliedAt: page.after.decidedAt, orderDigest: page.after.orderDigest };
+    for (const f of fallbacks.appliedAfter(after, page.limit)) {
+      const ref = runtime.orders.load(f.buyerDid, f.purchaseOrderId)?.ref;
+      if (ref === undefined || ref.acknowledgementJson === null) continue;
+      const read = rehydrateAcknowledgement(ref.acknowledgementJson, sha256);
+      if (!read.ok || read.value.kind !== 'accepted') continue;
+      events.push({
+        eventId: hexDigest(`${ref.orderDigest}\nfallback`),
+        decidedAt: f.appliedAt,
+        decision: 'accepted',
+        buyerDid: ref.buyerDid,
+        purchaseOrderId: ref.purchaseOrderId,
+        orderDigest: ref.orderDigest,
+        quoteDigest: ref.quoteDigest,
+        acknowledgementDigest: read.value.acknowledgement_digest,
+        supplierOrderId: read.value.supplier_order_id,
+        fallbackAppliedAt: f.appliedAt,
+        order: readOrderRecord(runtime, ref, catalog),
+      });
+    }
+  }
+  events.sort((a, b) =>
+    a.decidedAt !== b.decidedAt ? a.decidedAt - b.decidedAt : a.orderDigest < b.orderDigest ? -1 : 1,
+  );
+  const kept = events.slice(0, page.limit);
+  // The cursor is the last event kept when the page was cut; otherwise the
+  // later of that and the last order read (an unreadable order is still
+  // passed, so it is not read again for ever).
+  const cut = kept.length < events.length;
+  const lastEvent = kept.at(-1);
+  const lastRead =
+    last === null || last.decidedAt === null
+      ? undefined
+      : { decidedAt: last.decidedAt, orderDigest: last.orderDigest };
+  const end =
+    cut || lastRead === undefined
+      ? lastEvent
+      : lastEvent === undefined ||
+          lastEvent.decidedAt < lastRead.decidedAt ||
+          (lastEvent.decidedAt === lastRead.decidedAt && lastEvent.orderDigest < lastRead.orderDigest)
+        ? lastRead
+        : lastEvent;
+  return {
+    events: kept,
+    nextCursor:
+      end === undefined
+        ? null
+        : encodeOrdersCursor({ decidedAt: end.decidedAt, orderDigest: end.orderDigest }),
     unreadable,
   };
 }

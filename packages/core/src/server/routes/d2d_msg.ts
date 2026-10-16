@@ -31,6 +31,24 @@ export interface D2DSendOutcome {
   queued: boolean;
 }
 
+/**
+ * What a host's sender returned, as an outcome Core can judge: a result that
+ * says delivered/buffered/queued is passed on whole, so a message that went
+ * nowhere is never counted as sent; one that says nothing gives undefined.
+ * Every host adapter registering a D2D sender passes its result through this.
+ */
+export function sendOutcomeOf(result: unknown): D2DSendOutcome | undefined {
+  if (result === null || typeof result !== 'object') return undefined;
+  const r = result as Record<string, unknown>;
+  if (typeof r.delivered !== 'boolean') return undefined;
+  return {
+    messageId: typeof r.messageId === 'string' ? r.messageId : '',
+    delivered: r.delivered,
+    buffered: r.buffered === true,
+    queued: r.queued === true,
+  };
+}
+
 export type D2DSender = (
   recipientDID: string,
   messageType: string,

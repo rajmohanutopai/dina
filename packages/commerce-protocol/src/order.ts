@@ -25,7 +25,7 @@ import { verifyCommerceRecordDigest, type Sha256Fn } from './digests';
 import { validateMoney, type Money } from './money';
 import { productRefsEqual, validateProductRef, type ProductRef } from './product';
 import { validateQuantity, type Quantity } from './quantity';
-import { MAX_QUOTE_LINES, type SignedQuote } from './quote';
+import { MAX_QUOTE_LINES, quoteVersion, type SignedQuote } from './quote';
 import { projectionExtends, validateDeliveryProjection, type DeliveryProjection } from './region';
 
 export interface PurchaseOrderLine {
@@ -77,6 +77,8 @@ export interface PurchaseOrderProposal {
   delivery: DeliveryProjection;
   approved_total: Money;
   accepted_terms_digest: string;
+  /** The quote's alternative this order takes (COMMITMENT_KERNEL §6); absent: the quote's own terms. */
+  alternative_id?: string;
   buyer_reference?: string;
   idempotency_key: string;
   submitted_at: string;
@@ -127,6 +129,12 @@ export function validatePurchaseOrderProposal(order: unknown, sha256: Sha256Fn):
 
   const linesError = validatePurchaseOrderLines(order.accepted_lines, 'order.accepted_lines');
   if (linesError !== null) return linesError;
+  if (order.alternative_id !== undefined) {
+    if (typeof order.alternative_id !== 'string' || !/^[a-z][a-z0-9_]{0,15}$/.test(order.alternative_id))
+      return 'order.alternative_id: lowercase id';
+    const minor = Number(String(order.protocol_version).split('.')[1] ?? '0');
+    if (!Number.isFinite(minor) || minor < 3) return 'order.alternative_id: requires protocol minor >= 1.3';
+  }
 
   if (order.buyer_reference !== undefined) {
     if (
@@ -201,14 +209,17 @@ export function verifyOrderAgainstQuote(
     }
   }
 
+  // The version taken: the quote's own terms, or the alternative named.
+  const version = quoteVersion(quote, order.alternative_id);
+  if (version === null) return 'order: alternative_id names no alternative of this quote';
   if (
-    order.approved_total.currency !== quote.total.currency ||
-    order.approved_total.minor_units !== quote.total.minor_units
+    order.approved_total.currency !== version.total.currency ||
+    order.approved_total.minor_units !== version.total.minor_units
   ) {
-    return 'order: approved_total does not equal the quote total';
+    return 'order: approved_total does not equal the total of the version taken';
   }
-  if (order.accepted_terms_digest !== quote.terms_digest) {
-    return 'order: accepted_terms_digest does not equal the quote terms_digest';
+  if (order.accepted_terms_digest !== version.terms_digest) {
+    return 'order: accepted_terms_digest does not equal the terms of the version taken';
   }
 
   const extendsError = projectionExtends(

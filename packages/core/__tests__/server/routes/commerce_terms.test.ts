@@ -11,7 +11,9 @@ import {
   OWNER_IN_PROCESS_PRINCIPAL,
   proveOwnerPresence,
 } from '../../../src/commerce/owner_presence';
+import { SQLiteRevshareDocumentRepository } from '../../../src/commerce/revshare_ledger';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import { termAgreementStatus } from '../../../src/commerce/term/term_agreements';
 import { TERM_PROPOSAL_CARD } from '../../../src/commerce/term/term_buyer';
 import {
   installTermListingRepo,
@@ -26,7 +28,14 @@ import { setNodeDID } from '../../../src/pairing/ceremony';
 import { createCoreRouter } from '../../../src/server/core_server';
 import { InMemoryWorkflowRepository } from '../../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../../src/workflow/service';
-import { Fleet, juicePolicy, STORE_DID, type Node } from '../../commerce/term/term_harness';
+import {
+  BRAND_DID,
+  Fleet,
+  juicePolicy,
+  publishListing,
+  STORE_DID,
+  type Node,
+} from '../../commerce/term/term_harness';
 
 import type { CoreRequest, CoreResponse } from '../../../src/server/router';
 import type { TermListing } from '@dina/commerce-protocol';
@@ -67,7 +76,11 @@ beforeEach(() => {
   fleet = new Fleet();
   store = fleet.add(STORE_DID);
   setNodeDID(STORE_DID);
-  installCommerceRuntime({ terms: store.engine } as unknown as CommerceRuntime);
+  // A Slot-only node: the term engine, and no Commerce Pack behind `money()`.
+  installCommerceRuntime({
+    terms: store.engine,
+    money: () => ({ available: false, reason: 'pack_not_installed', detail: 'none' }),
+  } as unknown as CommerceRuntime);
   written = [];
   removed = [];
   installTermListingRepo({
@@ -477,14 +490,68 @@ describe('the owner’s term routes', () => {
       const res = await router.handle(owner(path, { proposal_digest: 'a'.repeat(64) }));
       expect([404, 405]).toContain(res.status);
     }
-    // The revenue-share routes cannot reach a term proposal: it is not in their store.
+  });
+
+  it('the revenue-share routes cannot reach a term proposal: it is not in their store', async () => {
+    // A real term proposal, stored at the store from a brand's yes.
+    const set = store.engine.setPolicy(juicePolicy());
+    if (!set.ok) throw new Error(set.refusal);
+    const published = publishListing(store, {
+      listingId: 'slot-3',
+      resourceRef: 'slot-3',
+      kind: 'shelf',
+      region: { scheme: 'postal_area', value: 'IN-560034' },
+      tags: ['beverages.juice'],
+    });
+    if (!published.ok) throw new Error(published.refusal);
+    const brand = fleet.add(BRAND_DID);
+    const started = brand.engine.startNegotiation({
+      listing: published.listing,
+      listingUri: published.uri,
+      tag: 'beverages.juice',
+      attributes: { skus: 4 },
+      start: '2027-02-01T00:00:00Z',
+      end: '2027-08-01T00:00:00Z',
+      policy: {
+        currency: 'INR',
+        targets: { fee: '170000', share_bps: '600' },
+        ceilings: { fee: '300000', share_bps: '1000' },
+        max_rounds: 3,
+        deadline_seconds: 3 * 24 * 60 * 60,
+      },
+    });
+    if (!started.ok) throw new Error(started.refusal);
+    fleet.pump();
+    const card = brand.cards.find((c) => c.type === TERM_PROPOSAL_CARD);
+    if (card === undefined) throw new Error('no proposal card');
+    expect(brand.engine.decideCard(card.cardId, true)).toEqual({ ok: true });
+    fleet.pump();
+    const proposal = store.store.listByKind('term_agreement_proposal', 'inbound')[0];
+    if (proposal === undefined) throw new Error('no proposal at the store');
+    // With the Commerce Pack's stores open, the revenue-share ledger is asked and knows nothing.
+    installCommerceRuntime({
+      terms: store.engine,
+      nodeDid: () => STORE_DID,
+      now: () => fleet.nowMs,
+      // The money routes drain the spooled trade mail first; there is none.
+      tradeSpool: { oldest: () => [] },
+      money: () => ({
+        available: true,
+        installId: 'inst-commerce',
+        stores: { revshareDocuments: new SQLiteRevshareDocumentRepository(store.db()) },
+      }),
+    } as unknown as CommerceRuntime);
     const decide = await router.handle(
       owner('/v1/commerce/trade/revshare/decide', {
-        proposal_digest: 'a'.repeat(64),
+        proposal_digest: proposal.recordDigest,
         kind: 'accepted',
       }),
     );
-    expect(decide.status).not.toBe(200);
+    expect(decide).toEqual({
+      status: 409,
+      body: { error: 'no retained proposal with that digest' },
+    });
+    expect(termAgreementStatus(store.store, proposal.recordDigest).state).toBe('proposed');
   });
 });
 

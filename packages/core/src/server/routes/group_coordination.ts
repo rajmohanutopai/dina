@@ -209,7 +209,12 @@ export function registerGroupCoordinationRoutes(router: CoreRouter, ownerCapabil
     '/v1/coordination/plans/:id',
     guarded(async (req) => {
       const result = await deleteGroupPlan(String(req.params.id ?? ''));
-      if (!result.ok) return j(503, { error: result.refusal, detail: result.detail });
+      if (!result.ok)
+        // A booked guest not yet told: the plan stays; deleting again tries again.
+        return j(result.refusal === 'cancellations_pending' ? 409 : 503, {
+          error: result.refusal,
+          detail: result.detail,
+        });
       return result.removed ? j(200, { removed: true }) : j(404, { error: 'not_found' });
     }),
   );

@@ -699,6 +699,16 @@ export interface CoreClient {
   forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult>;
   /** Raised each time a forget finishes; Brain reloads its thread copies when it moves. */
   forgetEpoch(): Promise<number>;
+
+  // ─── The owner's value model, Brain's door (COMMITMENT_KERNEL §15 step 5) ──
+  /** What Brain may see of the model for a kind of deal: never the Core form. */
+  commitmentBrainView(kind: string): Promise<CommitmentBrainView>;
+  /** Propose up to four changes from one turn of the owner's; Core raises one card. */
+  commitmentProposeChanges(input: {
+    kind: string;
+    proof: OwnerWordsProof;
+    changes: readonly Record<string, unknown>[];
+  }): Promise<CommitmentProposeResult>;
   /**
    * Prepare the owner's readable export (REAL_LIFE_FIXES_2 §5): the
    * manifest and an id only. Only the owner's device can fetch the document.
@@ -1732,6 +1742,18 @@ export type ForgetRequestBody =
   | { person: string }
   | { persona: string; keep_item_ids?: string[] }
   | { item_ids: string[] };
+
+export interface CommitmentBrainView {
+  kind: string;
+  holder: string;
+  vocabulary: Record<string, unknown>;
+  values_on: boolean;
+  entries: Record<string, unknown>[];
+}
+
+export type CommitmentProposeResult =
+  | { status: 'pending_owner'; task_id: string }
+  | { status: 'refused'; reason: string };
 
 export type ForgetProposeResult =
   | { status: 'confirm_pending'; task_id: string; summary: string }

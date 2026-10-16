@@ -9,11 +9,19 @@
  *   eta_only      → only ETA/arrival time (location-scoped)
  *   free_busy     → only free/busy status (calendar-scoped)
  *   exact_location → full location data (location-scoped)
+ *   pincode_only  → a pincode and nothing finer (location-scoped); set on
+ *                   purpose, per contact (COMMITMENT_KERNEL §11)
+ *
+ * DURABLE (COMMITMENT_KERNEL §11): with a store installed
+ * (`installSharingPolicyStore`, at boot), every policy is written through to
+ * the identity database and read back at the next boot; reads stay in memory.
  *
  * Default-deny: unknown contacts and unknown categories get 'none'.
  *
  * Source: core/internal/adapter/gatekeeper/sharing.go
  */
+
+import type { DatabaseAdapter } from '../storage/db_adapter';
 
 export type SharingTier =
   | 'none'
@@ -22,7 +30,8 @@ export type SharingTier =
   | 'locked'
   | 'eta_only'
   | 'free_busy'
-  | 'exact_location';
+  | 'exact_location'
+  | 'pincode_only';
 
 /** Valid sharing tier values for validation. */
 const VALID_SHARING_TIERS = new Set<string>([
@@ -33,7 +42,21 @@ const VALID_SHARING_TIERS = new Set<string>([
   'eta_only',
   'free_busy',
   'exact_location',
+  'pincode_only',
 ]);
+
+/**
+ * Sharing categories: the persona data categories, and `location` (a pincode,
+ * an address, a live position), which has its own tiers (§11).
+ */
+export const SHARING_CATEGORIES = [
+  'general',
+  'health',
+  'financial',
+  'professional',
+  'social',
+  'location',
+] as const;
 
 export interface SharingDecision {
   allowed: boolean;
@@ -49,6 +72,36 @@ export interface SharingDecision {
 
 /** Per-contact, per-category sharing tiers. */
 const policies = new Map<string, Map<string, SharingTier>>();
+
+/** Where policies persist; null keeps them in memory only (tests, no persistence). */
+let durable: DatabaseAdapter | null = null;
+
+/**
+ * Install the identity database as the policy store: load every saved policy
+ * into memory, and write each change through from now on.
+ */
+export function installSharingPolicyStore(db: DatabaseAdapter | null): void {
+  durable = db;
+  if (db === null) return;
+  policies.clear();
+  for (const row of db.query(`SELECT contact_did, category, tier FROM sharing_policies`)) {
+    const tier = String(row.tier);
+    if (!VALID_SHARING_TIERS.has(tier)) continue;
+    let contactPolicy = policies.get(String(row.contact_did));
+    if (!contactPolicy) {
+      contactPolicy = new Map();
+      policies.set(String(row.contact_did), contactPolicy);
+    }
+    contactPolicy.set(String(row.category), tier as SharingTier);
+  }
+}
+
+function persist(contactDID: string, category: string, tier: SharingTier): void {
+  durable?.execute(
+    `INSERT OR REPLACE INTO sharing_policies (contact_did, category, tier, updated_at) VALUES (?, ?, ?, ?)`,
+    [contactDID, category, tier, Date.now()],
+  );
+}
 
 /**
  * Set sharing policy for a contact + category.
@@ -68,6 +121,7 @@ export function setSharingPolicy(contactDID: string, category: string, tier: Sha
     policies.set(contactDID, contactPolicy);
   }
   contactPolicy.set(category, tier);
+  persist(contactDID, category, tier);
 }
 
 /** Validate a sharing tier value. Returns null if valid, error message otherwise. */
@@ -95,16 +149,18 @@ export function setBulkPolicy(category: string, tier: SharingTier): number {
   }
 
   let updated = 0;
-  for (const [, contactPolicy] of policies) {
+  for (const [contactDID, contactPolicy] of policies) {
     contactPolicy.set(category, tier);
+    persist(contactDID, category, tier);
     updated++;
   }
   return updated;
 }
 
-/** Clear all policies (for testing). */
+/** Clear all policies (for testing): memory only, and detach the store. */
 export function clearSharingPolicies(): void {
   policies.clear();
+  durable = null;
 }
 
 // ---------------------------------------------------------------
@@ -130,7 +186,10 @@ export function checkSharingPolicy(contactDID: string, categories: string[]): Sh
       lowestTier = 'none';
     } else if (tier === 'summary' && lowestTier === 'full') {
       lowestTier = 'summary';
-    } else if ((tier === 'eta_only' || tier === 'free_busy') && lowestTier === 'full') {
+    } else if (
+      (tier === 'eta_only' || tier === 'free_busy' || tier === 'pincode_only') &&
+      lowestTier === 'full'
+    ) {
       lowestTier = tier;
     }
   }
@@ -198,9 +257,16 @@ export function filterByTier(
     return pickFields(data, ['status', 'free_busy', 'start_time', 'end_time', 'id', 'type']);
   }
 
+  if (tier === 'pincode_only') {
+    // A pincode and nothing finer: never an address or a position.
+    return pickFields(data, PINCODE_FIELDS);
+  }
+
   // 'full' and 'exact_location' — keep everything
   return { ...data };
 }
+
+const PINCODE_FIELDS = ['pincode', 'postal_code', 'id', 'type'];
 
 /** Pick only the specified fields from a data object. */
 function pickFields(data: Record<string, unknown>, fields: string[]): Record<string, unknown> {
@@ -275,5 +341,6 @@ export function selectPayloadTier(
       'id',
       'type',
     ]);
+  if (tier === 'pincode_only') return pickFields(payload.full, PINCODE_FIELDS);
   return payload.full; // 'full' and 'exact_location'
 }

@@ -29,6 +29,9 @@
  * `setInterval` costs in machinery.
  */
 
+import { EvidenceSweeper } from '../commitment/evidence_handler';
+import { OptionLinkSweeper } from '../commitment/option_handler';
+
 import { CommerceAdmissionSweeper } from './admission_sweeper';
 import { NegotiationSweeper, type NegotiationSweeperOptions } from './buyer_negotiation';
 import { ContinuityReleaseSweeper } from './continuity_release_sweeper';
@@ -114,6 +117,8 @@ export interface CommerceSweepers {
   supplierRunner: SupplierReferenceRunner | null;
   negotiation: NegotiationSweeper;
   term: TermSweeper;
+  optionLinks: OptionLinkSweeper;
+  evidence: EvidenceSweeper;
   /** Stops every tick. Idempotent, so a teardown that runs twice is harmless. */
   stop: () => void;
 }
@@ -156,6 +161,10 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
       : new SupplierReferenceRunner({ ...options.supplierRunner, ...timers });
   const negotiation = new NegotiationSweeper({ ...(options.negotiation ?? {}), ...timers });
   const term = new TermSweeper({ ...(options.term ?? {}), ...timers });
+  // COMMITMENT_KERNEL §6 step 7: the seller resends, then asks, after options it took up.
+  const optionLinks = new OptionLinkSweeper({ ...timers });
+  // §13, §15 step 8: "did it happen?" about what fell due, and lapses recorded.
+  const evidence = new EvidenceSweeper({ ...timers });
   admission.start();
   epoch.start();
   reconcile?.start();
@@ -165,6 +174,8 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
   supplierRunner?.start();
   negotiation.start();
   term.start();
+  optionLinks.start();
+  evidence.start();
   healSupplierListingName();
   return {
     admission,
@@ -176,6 +187,8 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
     supplierRunner,
     negotiation,
     term,
+    optionLinks,
+    evidence,
     stop: () => {
       supplierRunner?.stop();
       // All stopped even if an earlier one throws: a teardown that abandons a
@@ -202,7 +215,15 @@ export function startCommerceSweepers(options: CommerceSweeperOptions): Commerce
                   try {
                     negotiation.stop();
                   } finally {
-                    term.stop();
+                    try {
+                      term.stop();
+                    } finally {
+                      try {
+                        optionLinks.stop();
+                      } finally {
+                        evidence.stop();
+                      }
+                    }
                   }
                 }
               }

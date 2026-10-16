@@ -25,6 +25,7 @@ import { sha256 } from '@noble/hashes/sha2.js';
 
 import {
   commerceRecordDigest,
+  projectionPincode,
   validateQuoteRequest,
   type DeliveryProjection,
   type ProductRef,
@@ -95,6 +96,13 @@ export async function requestQuote(args: {
   projection: DeliveryProjection;
   requiredBy?: string;
   currency?: string;
+  /**
+   * The owner's per-deal onward-sharing grant (COMMITMENT_KERNEL §6 step 0):
+   * the supplier may pass the delivery pincode, and nothing else, to its own
+   * known shippers. Only set by the owner's own choice; ignored without a
+   * pincode in the projection.
+   */
+  sharePincodeWithShippers?: boolean;
   nowMs: number;
   ttlSeconds?: number;
 }): Promise<QuoteRequestOutcome> {
@@ -111,7 +119,13 @@ export async function requestQuote(args: {
     //
     // NEGOTIATION_PLAN §4.6 — a requirement line exists only from 1.2, so a
     // request carrying one asks at 1.2; every other request stays at 1.1.
-    protocol_version: args.lines.some((line) => line.requirement !== undefined) ? '1.2' : '1.1',
+    //
+    // COMMITMENT_KERNEL §6, §15 steps 6 and 7 — alternatives (1.3) and the
+    // onward-sharing grant with partner runs (1.4) are offered only to a
+    // buyer asking at that minor. Minors are additive and a supplier on an
+    // earlier build answers in the request's dialect with none, so every
+    // request asks at 1.4.
+    protocol_version: '1.4',
     request_id: args.requestId,
     buyer_did: runtime.nodeDid(),
     supplier_did: args.supplierDid,
@@ -142,6 +156,14 @@ export async function requestQuote(args: {
       ...(args.requiredBy === undefined ? {} : { required_by: args.requiredBy }),
     },
     ...(args.currency === undefined ? {} : { requested_terms: { currency: args.currency } }),
+    ...(args.sharePincodeWithShippers === true && projectionPincode(args.projection) !== undefined
+      ? {
+          onward_sharing: {
+            fields: ['postal_code'] as ['postal_code'],
+            recipient_role: 'shipper' as const,
+          },
+        }
+      : {}),
     issued_at: new Date(args.nowMs).toISOString(),
     expires_at: new Date(args.nowMs + DEFAULT_REQUEST_VALIDITY_MS).toISOString(),
     idempotency_key: args.idempotencyKey,

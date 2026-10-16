@@ -719,6 +719,27 @@ describe('the money line (§5.B1 Cut 3): money() follows the Commerce Pack insta
     expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
   });
 
+  it('names open shelf deals before the last Commerce Pack goes, and lets it go (COMMITMENT_KERNEL §12)', async () => {
+    const installs = new SQLitePluginInstallRepository(fixture.adapter);
+    setPluginInstallRepository(installs);
+    const runtime = build();
+    installCommerceRuntime(runtime);
+    const first = stageBuyerPack(installs);
+    expect(installs.activate(first, 'did:key:zbuyerrunner', now)).toBe(true);
+    jest.spyOn(runtime.terms, 'openShelfDeals').mockReturnValue(2);
+    // The warning, on the last Commerce Pack only; never an obligation.
+    expect(runtime.openShelfDeals(first)).toBe(2);
+    expect(runtime.inFlightCount()).toBe(0);
+    const second = stagePack(installs, { manifest: SUPPLIER_REFERENCE_MANIFEST });
+    expect(installs.activate(second, 'did:key:zsupplierrunner', now)).toBe(true);
+    expect(runtime.openShelfDeals(first)).toBe(0);
+    // The owner decides: both go, open deals or not.
+    await uninstall(first, now, async () => ({ durable: true }));
+    expect(runtime.openShelfDeals(second)).toBe(2);
+    await uninstall(second, now, async () => ({ durable: true }));
+    expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_not_installed' });
+  });
+
   it('a second, closed pack does not shut an active one', () => {
     const installs = new SQLitePluginInstallRepository(fixture.adapter);
     setPluginInstallRepository(installs);

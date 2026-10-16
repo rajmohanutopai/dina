@@ -31,6 +31,8 @@
 
 import { PLUGIN_NSIDS, type PluginManifest } from '@dina/protocol';
 
+import type { NumberPartSpec } from '../commitment/parts';
+
 /** The id term documents name this pack by, shared by both halves (§4). */
 export const SLOT_PACK_ID = 'com.dinakernel.slot';
 export const SLOT_PACK_SCHEMA_MAJOR = 1;
@@ -195,10 +197,53 @@ export interface TermPackVocabulary {
   tags: readonly string[];
   kinds: readonly string[];
   requestParamsSchema: unknown;
+  /**
+   * The parts a deal under this pack is made of, in the kernel's kinds
+   * (COMMITMENT_KERNEL §6), sorted by name. Direction comes from who pays.
+   * The wire still states exactly the `TERM_TABLE` terms; a boundary test
+   * holds the two equal until documents pin a vocabulary of their own.
+   */
+  parts: readonly NumberPartSpec[];
+  /**
+   * The promises a deal under this pack may carry (COMMITMENT_KERNEL §6):
+   * who keeps each, and each dimension's values — a whole number with the
+   * better way named, or one of a closed set of words.
+   */
+  promises: Readonly<Record<string, TermPackPromise>>;
 }
+
+export interface TermPackPromise {
+  by: 'buyer' | 'seller';
+  dimensions: Readonly<
+    Record<string, { order: 'higher_better' | 'lower_better' } | { order: 'exact'; values: readonly string[] }>
+  >;
+}
+
+/**
+ * The brand carries the store's stock from a wholesaler on its own run: how
+ * many crates, on which day, how often (every so many days).
+ */
+export const SLOT_PACK_PROMISES: Readonly<Record<string, TermPackPromise>> = {
+  stock_run: {
+    by: 'buyer',
+    dimensions: {
+      crates: { order: 'higher_better' },
+      day: { order: 'exact', values: ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] },
+      every_days: { order: 'lower_better' },
+    },
+  },
+};
+
+/** Shelf space: the brand pays the store rent and a share of sales. */
+export const SLOT_PACK_PARTS: readonly NumberPartSpec[] = [
+  { name: 'fee', kind: 'money', payer: 'buyer', payee: 'seller' },
+  { name: 'share_bps', kind: 'ratio_bps', payer: 'buyer', payee: 'seller' },
+];
 
 export const SLOT_PACK_VOCABULARY: TermPackVocabulary = {
   tags: [...SLOT_PACK_CATEGORIES],
   kinds: [...SLOT_PACK_KINDS],
   requestParamsSchema: TERM_REQUEST_PARAMS,
+  parts: SLOT_PACK_PARTS,
+  promises: SLOT_PACK_PROMISES,
 };

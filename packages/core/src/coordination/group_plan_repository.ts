@@ -117,6 +117,26 @@ function isFold(v: unknown): v is FoldResult {
  * that admitted the plan are re-checked, so a hand-edited row cannot carry a
  * ninth guest past the ceiling the transitions enforce.
  */
+/** What each guest was last told about a settled plan (group_booking.ts): one per guest. */
+function isBookings(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  const entries = Object.entries(v);
+  return (
+    entries.length <= MAX_GROUP_GUESTS &&
+    entries.every(
+      ([did, told]) =>
+        did.startsWith('did:') &&
+        isRecord(told) &&
+        (told.state === 'booked' || told.state === 'cancelled') &&
+        isMeetingSlot(told.slot) &&
+        typeof told.seq === 'number' &&
+        Number.isInteger(told.seq) &&
+        told.seq >= 1 &&
+        typeof told.sent === 'boolean',
+    )
+  );
+}
+
 export function rehydrateGroupPlan(json: string): GroupPlan | null {
   let parsed: unknown;
   try {
@@ -149,7 +169,8 @@ export function rehydrateGroupPlan(json: string): GroupPlan | null {
     !(p.fold === null || isFold(p.fold)) ||
     !(p.chosen === null || isMeetingSlot(p.chosen)) ||
     typeof p.state !== 'string' ||
-    !STATES.has(p.state)
+    !STATES.has(p.state) ||
+    !(p.bookings === undefined || isBookings(p.bookings))
   ) {
     return null;
   }

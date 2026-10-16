@@ -36,6 +36,11 @@ export interface PluginInstallRow {
   plugin_id: string;
   status: string;
   execution_mode: 'interpreted' | 'runner';
+  /**
+   * The last active Commerce Pack only: shelf deals with settlement work still
+   * open. The owner may remove the pack all the same; this is for the warning.
+   */
+  open_shelf_deals?: number;
 }
 
 export interface PluginInstallsView {

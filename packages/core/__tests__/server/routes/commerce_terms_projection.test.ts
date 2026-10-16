@@ -110,6 +110,7 @@ function productionCardPort() {
     transaction: {} as unknown as TermTransaction,
     nodeDid: () => '',
     now: () => 0,
+    moneyAvailable: () => true,
   }).ctx.deps.cards;
 }
 

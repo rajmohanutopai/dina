@@ -26,6 +26,8 @@ import {
   type TermFoldResult,
 } from '@dina/commerce-protocol';
 
+import { judgeEndingArrival, trialWaiverArrivedLate } from '../../commitment';
+
 import {
   cashHandlerDid,
   checkTermSettlement,
@@ -38,6 +40,7 @@ import {
 } from './term_agreements';
 import { noteTermDecision } from './term_buyer';
 import { hash, iso, mintId, TERM_TIMINGS, type TermContext } from './term_context';
+import { COMMERCE_PACK_NEEDED, settlesHere } from './term_money';
 import { readTermSettlementRow } from './term_rehydrate';
 
 import type { TermVerdict } from './term_seller';
@@ -110,10 +113,15 @@ export function admitTermTermination(
   },
 ): TermVerdict {
   const { termination } = args;
-  const issued = Date.parse(termination.terminated_at);
-  if (issued > args.receivedAt + TERM_TIMINGS.clockDriftMs)
+  const arrival = judgeEndingArrival({
+    signedAtMs: Date.parse(termination.terminated_at),
+    receivedAtMs: args.receivedAt,
+    windowMs: TERM_TIMINGS.terminationArrivalWindowMs,
+    driftMs: TERM_TIMINGS.clockDriftMs,
+  });
+  if (arrival === 'dated_after_arrival')
     return { outcome: 'refused', detail: 'termination dated after it arrived' };
-  if (issued < args.receivedAt - TERM_TIMINGS.terminationArrivalWindowMs)
+  if (arrival === 'dated_too_early')
     return { outcome: 'refused', detail: 'termination dated too long before it arrived' };
   const proposalRow = ctx.store.getDocument(termination.proposal_digest);
   if (proposalRow === null || proposalRow.kind !== 'term_agreement_proposal') {
@@ -134,9 +142,12 @@ export function admitTermTermination(
   // deal again, with notice.
   const trialEnd = status.state === 'accepted' ? status.proposal.general.trial?.end : undefined;
   if (
-    trialEnd !== undefined &&
-    Date.parse(termination.terminated_at) < Date.parse(trialEnd) &&
-    args.receivedAt - TERM_TIMINGS.clockDriftMs >= Date.parse(trialEnd)
+    trialWaiverArrivedLate({
+      signedAtMs: Date.parse(termination.terminated_at),
+      trialEndMs: trialEnd === undefined ? undefined : Date.parse(trialEnd),
+      receivedAtMs: args.receivedAt,
+      driftMs: TERM_TIMINGS.clockDriftMs,
+    })
   ) {
     return { outcome: 'refused', detail: 'a trial termination arrived after the trial ended' };
   }
@@ -194,6 +205,9 @@ export function admitTermSettlement(
     return { outcome: 'refused', detail: `settlement under a ${status.state} agreement` };
   if (args.senderDid !== cashHandlerDid(status.proposal))
     return { outcome: 'refused', detail: 'only the cash handler issues settlements' };
+  // Money waits for the Commerce Pack (§12): held, so it lands once the pack
+  // is active, or is refused when the hold runs out.
+  if (!settlesHere(ctx)) return held(ctx, proposalRow.requestId, note.proposal_digest);
   // A correction that overtook the note it corrects waits for it (§5.3): a
   // note this node has never seen is "not yet arrived". One it holds and has
   // since seen superseded is checked, and refused, below.
@@ -253,6 +267,7 @@ export function admitTermSettlementAck(
   if (ctx.store.answersTo(ack.settlement_digest, 'settlement_ack').length > 0) {
     return { outcome: 'refused', detail: 'the settlement already has an acknowledgement' };
   }
+  if (!settlesHere(ctx)) return held(ctx, noteRow.requestId, noteRow.proposalDigest);
   ctx.store.putDocument({
     recordDigest: ack.settlement_ack_digest,
     kind: 'settlement_ack',
@@ -370,6 +385,7 @@ export function issueTermSettlement(
     return { ok: false, refusal: `settlement under a ${status.state} agreement` };
   if (ctx.self() !== cashHandlerDid(status.proposal))
     return { ok: false, refusal: 'only the cash handler issues settlements' };
+  if (!settlesHere(ctx)) return { ok: false, refusal: COMMERCE_PACK_NEEDED };
   if (!/^(0|[1-9]\d{0,14})$/.test(args.grossMinor))
     return { ok: false, refusal: 'gross must be a minor-unit integer' };
   const currency = status.proposal.general.currency;
@@ -442,6 +458,7 @@ export function acknowledgeTermSettlement(
       refusal: 'the settlement already has an acknowledgement — the first answer stands',
     };
   }
+  if (!settlesHere(ctx)) return { ok: false, refusal: COMMERCE_PACK_NEEDED };
   const draft = {
     protocol_version: note.protocol_version,
     settlement_ack_id: mintId('tsack'),

@@ -351,7 +351,8 @@ describe('createNode — built-in reasoning backend', () => {
     expect(binding).not.toBeNull();
     expect(binding).toMatchObject({
       kind: 'internal_brain',
-      allowedTaskKinds: ['answer.compose'],
+      // COMMITMENT_KERNEL §11: the built-in Brain also fills the strategy slot.
+      allowedTaskKinds: ['answer.compose', 'negotiate.move'],
       availability: 'always_on',
       selectedByOwnerDid: DID,
       policyVersion: 1,

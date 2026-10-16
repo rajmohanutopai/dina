@@ -63,6 +63,8 @@ export interface InstalledPlugin {
   pluginId: string;
   status: string;
   executionMode: 'interpreted' | 'runner';
+  /** Shelf deals with settlement work open, on the last active Commerce Pack. */
+  openShelfDeals: number;
 }
 
 export interface PluginsView {
@@ -80,6 +82,7 @@ export async function loadPlugins(): Promise<PluginsView> {
       pluginId: row.plugin_id,
       status: row.status,
       executionMode: row.execution_mode,
+      openShelfDeals: row.open_shelf_deals ?? 0,
     })),
     thirdPartyAvailable: view.third_party_available,
   };

@@ -63,6 +63,18 @@ export function checkEgress(data: EgressData, contactDID: string): EgressResult 
   if (tier === 'summary') {
     // Summary tier: strip body, keep only text (L0/L1 summaries)
     filteredBody = undefined;
+  } else if (tier === 'pincode_only') {
+    // Free text cannot be cut down to a pincode with any certainty: a line
+    // about a place may hold an address. Structured fields go through
+    // `filterByTier`; free text under this tier does not leave (§11).
+    return {
+      allowed: false,
+      filteredText: '',
+      scrubbed: false,
+      blockedCategories: data.categories,
+      appliedTier: tier,
+      reason: 'pincode_only admits a pincode field, not free text',
+    };
   } else if (tier === 'none' || tier === 'locked') {
     // Should have been caught by sharing check, but defense-in-depth
     return {

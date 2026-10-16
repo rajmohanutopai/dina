@@ -32,6 +32,7 @@ import {
   type CommerceOrderRefRepository,
   type NewCommerceOrderRef,
 } from '../../src/commerce/order_refs';
+import { priceQuoteAlternatives } from '../../src/commerce/quote_issuance';
 import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
 import { InMemoryCommerceSettingsRepository } from '../../src/commerce/settings_store';
 import {
@@ -41,6 +42,7 @@ import {
   SQLiteStaffGrantRepository,
   validateStaffGrantInput,
 } from '../../src/commerce/staff_grants';
+import { getOrderFallbackStore, installOptionStores } from '../../src/commitment/option_handler';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -543,6 +545,229 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
         `${order.order_digest}\n${JSON.parse(acceptedAck(order.purchase_order_id, order.order_digest)).acknowledgement_digest}`,
       ),
     );
+  });
+
+  it('an accepted order on an alternative exports the version: its delivery date and charges', () => {
+    const request = makeQuoteRequest({ protocol_version: '1.3' });
+    const base = makeSignedQuote(request);
+    const alternatives = priceQuoteAlternatives(base, [
+      { alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' },
+    ]);
+    if (alternatives === null) throw new Error('fixture: alternatives');
+    const quote = makeSignedQuote(request, { alternatives });
+    const order = makeOrder(quote, request.delivery.projection, {
+      protocol_version: '1.3',
+      alternative_id: 'tue',
+      approved_total: alternatives[0]?.total,
+      accepted_terms_digest: alternatives[0]?.terms_digest,
+    });
+    for (const [digest, domain, json] of [
+      [order.order_digest, 'order', JSON.stringify(order)],
+      [quote.quote_digest, 'quote', JSON.stringify(quote)],
+    ] as const)
+      receipts.put({
+        recordDigest: digest,
+        domain,
+        buyerDid: BUYER_DID,
+        quoteId: quote.quote_id,
+        purchaseOrderId: domain === 'order' ? order.purchase_order_id : '',
+        recordJson: json,
+        evidenceJson: '{}',
+        createdAt: T0,
+      });
+    orders.createReserved(
+      reservedRef(order.purchase_order_id, order.order_digest, {
+        quoteId: quote.quote_id,
+        quoteDigest: quote.quote_digest,
+      }),
+    );
+    loaded(order.purchase_order_id).decide({
+      acknowledgementJson: acceptedAck(order.purchase_order_id, order.order_digest),
+      decidedAt: T0 + 5,
+    });
+    const { events } = listOrderDecisionEvents({ orders, receipts }, { after: null, limit: 10 });
+    expect(events[0]?.order).toMatchObject({
+      version: { alternativeId: 'tue', deliveryAt: '2026-08-11T10:00:00Z', charges: [] },
+    });
+  });
+
+  it('a partner run that ends without fault comes as a later event, priced on the quote\'s own terms', () => {
+    const request = makeQuoteRequest({ protocol_version: '1.4' });
+    // ₹500 of goods and ₹120 delivery: ₹620 on the quote's own terms.
+    const base = makeSignedQuote(request, {
+      charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '12000' }, operation: 'add' }],
+      total: { currency: 'INR', minor_units: '62000' },
+    } as never);
+    const alternatives = priceQuoteAlternatives(base, [
+      {
+        alternative_id: 'partner_00112233',
+        charges: [
+          { kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '12000' }, operation: 'add' },
+          { kind: 'discount', label: 'Delivery by a partner run', amount: { currency: 'INR', minor_units: '3500' }, operation: 'subtract' },
+        ],
+        estimated_delivery_at: '2026-08-11T10:00:00Z',
+        partner_run: true,
+        offer_ends_at: '2026-08-08T09:00:00.000Z',
+      },
+    ]);
+    if (alternatives === null) throw new Error('fixture: alternatives');
+    const quote = makeSignedQuote(request, { alternatives, charges: base.charges, total: base.total } as never);
+    const order = makeOrder(quote, request.delivery.projection, {
+      protocol_version: '1.4',
+      alternative_id: 'partner_00112233',
+      approved_total: alternatives[0]?.total,
+      accepted_terms_digest: alternatives[0]?.terms_digest,
+    });
+    for (const [digest, domain, json] of [
+      [order.order_digest, 'order', JSON.stringify(order)],
+      [quote.quote_digest, 'quote', JSON.stringify(quote)],
+    ] as const)
+      receipts.put({
+        recordDigest: digest,
+        domain,
+        buyerDid: BUYER_DID,
+        quoteId: quote.quote_id,
+        purchaseOrderId: domain === 'order' ? order.purchase_order_id : '',
+        recordJson: json,
+        evidenceJson: '{}',
+        createdAt: T0,
+      });
+    orders.createReserved(
+      reservedRef(order.purchase_order_id, order.order_digest, {
+        quoteId: quote.quote_id,
+        quoteDigest: quote.quote_digest,
+      }),
+    );
+    loaded(order.purchase_order_id).decide({
+      acknowledgementJson: acceptedAck(order.purchase_order_id, order.order_digest),
+      decidedAt: T0 + 5,
+    });
+    // The connector reads the accepted order, on the run's version.
+    const first = listOrderDecisionEvents({ orders, receipts }, { after: null, limit: 10 });
+    expect(first.events[0]?.order?.totals).toEqual(alternatives[0]?.total);
+    // Later the run ends without fault: the order falls back.
+    const { adapter, close: closeDb } = sqliteAdapter();
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    installOptionStores(adapter);
+    try {
+      getOrderFallbackStore()?.record({
+        buyerDid: BUYER_DID,
+        purchaseOrderId: order.purchase_order_id,
+        supplierDid: 'self',
+        quoteId: quote.quote_id,
+        alternativeId: 'partner_00112233',
+        role: 'seller',
+        appliedAt: T0 + 100,
+        orderDigest: order.order_digest,
+      });
+      const cursor = first.nextCursor === null ? null : parseOrdersCursor(first.nextCursor);
+      const later = listOrderDecisionEvents({ orders, receipts }, { after: cursor, limit: 10 });
+      expect(later.events).toHaveLength(1);
+      expect(later.events[0]).toMatchObject({
+        purchaseOrderId: order.purchase_order_id,
+        orderDigest: order.order_digest,
+        fallbackAppliedAt: T0 + 100,
+        order: { totals: quote.total },
+      });
+      expect(later.events[0]?.order).not.toHaveProperty('version');
+      // Read again from there: nothing more.
+      const after = later.nextCursor === null ? null : parseOrdersCursor(later.nextCursor);
+      expect(listOrderDecisionEvents({ orders, receipts }, { after, limit: 10 }).events).toEqual([]);
+    } finally {
+      installOptionStores(null);
+      closeDb();
+    }
+  });
+
+  it('fallback events page one at a time without skipping any', () => {
+    const request = makeQuoteRequest({ protocol_version: '1.4' });
+    const charges = [
+      { kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '12000' }, operation: 'add' },
+    ];
+    const base = makeSignedQuote(request, { charges, total: { currency: 'INR', minor_units: '62000' } } as never);
+    const alternatives = priceQuoteAlternatives(base, [
+      {
+        alternative_id: 'partner_00112233',
+        charges: [
+          ...charges,
+          { kind: 'discount', label: 'Delivery by a partner run', amount: { currency: 'INR', minor_units: '3500' }, operation: 'subtract' },
+        ] as never,
+        estimated_delivery_at: '2026-08-11T10:00:00Z',
+        partner_run: true,
+        offer_ends_at: '2026-08-08T09:00:00.000Z',
+      },
+    ]);
+    if (alternatives === null) throw new Error('fixture: alternatives');
+    const quote = makeSignedQuote(request, { alternatives, charges, total: base.total } as never);
+    receipts.put({
+      recordDigest: quote.quote_digest,
+      domain: 'quote',
+      buyerDid: BUYER_DID,
+      quoteId: quote.quote_id,
+      purchaseOrderId: '',
+      recordJson: JSON.stringify(quote),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+    const digests = new Map<string, string>();
+    const place = (po: string) => {
+      const order = makeOrder(quote, request.delivery.projection, {
+        purchase_order_id: po,
+        idempotency_key: `idem-${po}`,
+        protocol_version: '1.4',
+        alternative_id: 'partner_00112233',
+        approved_total: alternatives[0]?.total,
+        accepted_terms_digest: alternatives[0]?.terms_digest,
+      });
+      receipts.put({
+        recordDigest: order.order_digest,
+        domain: 'order',
+        buyerDid: BUYER_DID,
+        quoteId: quote.quote_id,
+        purchaseOrderId: po,
+        recordJson: JSON.stringify(order),
+        evidenceJson: '{}',
+        createdAt: T0,
+      });
+      orders.createReserved(reservedRef(po, order.order_digest, { quoteId: quote.quote_id, quoteDigest: quote.quote_digest }));
+      loaded(po).decide({ acknowledgementJson: acceptedAck(po, order.order_digest), decidedAt: T0 + 5 });
+      digests.set(po, order.order_digest);
+    };
+    place('po-a');
+    place('po-b');
+    const { adapter, close: closeDb } = sqliteAdapter();
+    applyMigrations(adapter, IDENTITY_MIGRATIONS);
+    installOptionStores(adapter);
+    try {
+      // Two fallbacks: one at the same moment as the other's decision page cut, one later.
+      for (const [po, at] of [
+        ['po-a', T0 + 100],
+        ['po-b', T0 + 100],
+      ] as const)
+        getOrderFallbackStore()?.record({
+          buyerDid: BUYER_DID,
+          purchaseOrderId: po,
+          supplierDid: 'self',
+          quoteId: quote.quote_id,
+          alternativeId: 'partner_00112233',
+          role: 'seller',
+          appliedAt: at,
+          orderDigest: digests.get(po) ?? '',
+        });
+      const seen: string[] = [];
+      let cursor = null as ReturnType<typeof parseOrdersCursor>;
+      for (let i = 0; i < 10; i += 1) {
+        const page = listOrderDecisionEvents({ orders, receipts }, { after: cursor, limit: 1 });
+        if (page.events.length === 0) break;
+        for (const e of page.events)
+          seen.push(`${e.purchaseOrderId}:${e.fallbackAppliedAt === undefined ? 'decided' : 'fallback'}`);
+        cursor = page.nextCursor === null ? null : parseOrdersCursor(page.nextCursor);
+      }
+      expect(seen.sort()).toEqual(['po-a:decided', 'po-a:fallback', 'po-b:decided', 'po-b:fallback']);
+    } finally {
+      installOptionStores(null);
+      closeDb();
+    }
   });
 
   it('respects the page limit bound the routes enforce', () => {

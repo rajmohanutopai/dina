@@ -26,7 +26,6 @@ import * as path from 'node:path';
 import { readQuoteDecline, validateSignedQuote, type SignedQuote } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
 import { SUPPLIER_REFERENCE_MANIFEST } from '../../src/commerce/reference_manifests';
 import {
@@ -34,6 +33,8 @@ import {
   installCommerceRuntime,
   type CommerceRuntime,
 } from '../../src/commerce/runtime';
+import { ValueModelStore } from '../../src/commitment/model_store';
+import { setOwnerTimeZone } from '../../src/settings/owner_settings';
 import { validatePluginResult } from '../../src/plugins/dispatch';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -74,7 +75,13 @@ afterEach(() => {
 function runnerTerms(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     can_supply: true,
-    lines: [{ line_id: 'l1', unit_price: { currency: 'INR', minor_units: '500' }, quantity: { value: '100', unit_code: 'each' } }],
+    lines: [
+      {
+        line_id: 'l1',
+        unit_price: { currency: 'INR', minor_units: '500' },
+        quantity: { value: '100', unit_code: 'each' },
+      },
+    ],
     ...overrides,
   });
 }
@@ -97,9 +104,7 @@ describe('a quote is born on the production seam', () => {
 
     // The runner's answer is REPLACED, not passed through.
     expect(decision.kind).toBe('replace');
-    const quote = JSON.parse(
-      (decision as { kind: 'replace'; json: string }).json,
-    ) as SignedQuote;
+    const quote = JSON.parse((decision as { kind: 'replace'; json: string }).json) as SignedQuote;
 
     // A real record: Core's own validator accepts it, digests and all.
     expect(validateSignedQuote(quote, hash)).toBeNull();
@@ -143,9 +148,9 @@ describe('a quote is born on the production seam', () => {
     const issued = answerQuoteRequest(request, runnerTerms());
     const quote = JSON.parse((issued as { kind: 'replace'; json: string }).json) as SignedQuote;
 
-    expect(runtime.admission.admitOrder(makeOrder(quote, request.delivery.projection), BUYER_DID).kind).toBe(
-      'reserved',
-    );
+    expect(
+      runtime.admission.admitOrder(makeOrder(quote, request.delivery.projection), BUYER_DID).kind,
+    ).toBe('reserved');
     const second = runtime.admission.admitOrder(
       makeOrder(quote, request.delivery.projection, { purchase_order_id: 'po-second' }),
       BUYER_DID,
@@ -170,7 +175,7 @@ describe('a quote is born on the production seam', () => {
 });
 
 describe('what the seam refuses', () => {
-  it('§4.5 — the runner\'s payment terms ride the quote and its terms digest', () => {
+  it("§4.5 — the runner's payment terms ride the quote and its terms digest", () => {
     const request = makeQuoteRequest({ protocol_version: '1.1' });
     const decision = answerQuoteRequest(
       request,
@@ -235,7 +240,9 @@ describe('what the seam refuses', () => {
     );
 
     expect(decision.kind).toBe('replace');
-    const wire = JSON.parse((decision as { kind: 'replace'; json: string }).json) as { decline: unknown };
+    const wire = JSON.parse((decision as { kind: 'replace'; json: string }).json) as {
+      decline: unknown;
+    };
     const read = readQuoteDecline(wire.decline, hash);
     expect(read.ok).toBe(true);
     if (!read.ok) return;
@@ -257,7 +264,9 @@ describe('what the seam refuses', () => {
       request,
       JSON.stringify({ can_supply: false, decline_reason: 'still out of stock' }),
     );
-    const againWire = JSON.parse((again as { kind: 'replace'; json: string }).json) as { decline: { decline_digest: string } };
+    const againWire = JSON.parse((again as { kind: 'replace'; json: string }).json) as {
+      decline: { decline_digest: string };
+    };
     expect(againWire.decline.decline_digest).toBe(read.decline.decline_digest);
     expect(runtime.declineDocuments.answersTo(request.request_digest)).toHaveLength(1);
   });
@@ -271,7 +280,12 @@ describe('what the seam refuses', () => {
     );
     if (requestQuote === undefined) throw new Error('reference manifest lost request-quote');
     const pinned = requestQuote.result_schema;
-    expect(validatePluginResult(JSON.stringify({ can_supply: false, decline_reason: 'out of stock' }), pinned).ok).toBe(true);
+    expect(
+      validatePluginResult(
+        JSON.stringify({ can_supply: false, decline_reason: 'out of stock' }),
+        pinned,
+      ).ok,
+    ).toBe(true);
     expect(validatePluginResult(JSON.stringify({ can_supply: false }), pinned).ok).toBe(true);
     // A supply still needs its lines — the bound moved to Core, not away.
     expect(answerQuoteRequest(makeQuoteRequest(), JSON.stringify({ can_supply: true }))).toEqual({
@@ -282,14 +296,22 @@ describe('what the seam refuses', () => {
 
   it('a request already DECLINED is never quoted afterwards — the retained decline replays', () => {
     const request = makeQuoteRequest();
-    const declined = answerQuoteRequest(request, JSON.stringify({ can_supply: false, decline_reason: 'capacity' }));
+    const declined = answerQuoteRequest(
+      request,
+      JSON.stringify({ can_supply: false, decline_reason: 'capacity' }),
+    );
     expect(declined.kind).toBe('replace');
-    const first = JSON.parse((declined as { kind: 'replace'; json: string }).json) as { decline: { decline_digest: string } };
+    const first = JSON.parse((declined as { kind: 'replace'; json: string }).json) as {
+      decline: { decline_digest: string };
+    };
 
     // The runner changes its mind on a redelivered request.
     const later = answerQuoteRequest(request, runnerTerms());
     expect(later.kind).toBe('replace');
-    const wire = JSON.parse((later as { kind: 'replace'; json: string }).json) as { decline?: { decline_digest: string }; quote_id?: string };
+    const wire = JSON.parse((later as { kind: 'replace'; json: string }).json) as {
+      decline?: { decline_digest: string };
+      quote_id?: string;
+    };
     expect(wire.decline?.decline_digest).toBe(first.decline.decline_digest);
     expect(wire.quote_id).toBeUndefined();
     expect(runtime.families.load(`q:${request.request_digest.slice(0, 32)}`)).toBeNull();
@@ -298,7 +320,9 @@ describe('what the seam refuses', () => {
   it('a decline with no stated reason, or an over-long one, still seals within the wire bound', () => {
     const bare = answerQuoteRequest(makeQuoteRequest(), JSON.stringify({ can_supply: false }));
     expect(bare.kind).toBe('replace');
-    const bareWire = JSON.parse((bare as { kind: 'replace'; json: string }).json) as { decline: { reason_code: string } };
+    const bareWire = JSON.parse((bare as { kind: 'replace'; json: string }).json) as {
+      decline: { reason_code: string };
+    };
     expect(bareWire.decline.reason_code).toBe('declined');
 
     const long = answerQuoteRequest(
@@ -306,7 +330,9 @@ describe('what the seam refuses', () => {
       JSON.stringify({ can_supply: false, decline_reason: 'x'.repeat(500) }),
     );
     expect(long.kind).toBe('replace');
-    const longWire = JSON.parse((long as { kind: 'replace'; json: string }).json) as { decline: { reason_code: string } };
+    const longWire = JSON.parse((long as { kind: 'replace'; json: string }).json) as {
+      decline: { reason_code: string };
+    };
     expect(longWire.decline.reason_code).toHaveLength(64);
   });
 
@@ -330,3 +356,159 @@ describe('what the seam refuses', () => {
     });
   });
 });
+
+describe('a quote with another delivery day (COMMITMENT_KERNEL §6, §15 step 6)', () => {
+  const delivery = (minor: string) => ({
+    kind: 'delivery',
+    label: 'Delivery',
+    amount: { currency: 'INR', minor_units: minor },
+    operation: 'add',
+  });
+  const tuesdayTerms = () =>
+    runnerTerms({
+      charges: [delivery('10000')],
+      estimated_delivery_at: '2026-08-14T10:00:00Z',
+      // "My van passes your way on Tuesday: ₹40 less if you take it then."
+      alternatives: [
+        {
+          alternative_id: 'tue',
+          charges: [delivery('6000')],
+          estimated_delivery_at: '2026-08-11T10:00:00Z',
+        },
+      ],
+    });
+
+  it("Core prices the alternative and the buyer's order takes it", () => {
+    const request = makeQuoteRequest({ protocol_version: '1.3' });
+    const issued = answerQuoteRequest(request, tuesdayTerms());
+    const quote = JSON.parse((issued as { kind: 'replace'; json: string }).json) as SignedQuote;
+    expect(validateSignedQuote(quote, hash)).toBeNull();
+    expect(quote.total.minor_units).toBe('60000');
+    expect(quote.alternatives).toEqual([
+      expect.objectContaining({
+        alternative_id: 'tue',
+        total: { currency: 'INR', minor_units: '56000' },
+        estimated_delivery_at: '2026-08-11T10:00:00Z',
+      }),
+    ]);
+    const tue = quote.alternatives?.[0];
+    const order = makeOrder(quote, request.delivery.projection, {
+      protocol_version: '1.3',
+      alternative_id: 'tue',
+      approved_total: tue?.total,
+      accepted_terms_digest: tue?.terms_digest,
+    });
+    expect(runtime.admission.admitOrder(order, BUYER_DID).kind).toBe('reserved');
+  });
+
+  it('a buyer who asked at 1.0 gets no alternatives', () => {
+    const request = makeQuoteRequest();
+    const issued = answerQuoteRequest(request, tuesdayTerms());
+    const quote = JSON.parse((issued as { kind: 'replace'; json: string }).json) as SignedQuote;
+    expect(validateSignedQuote(quote, hash)).toBeNull();
+    expect(quote.alternatives).toBeUndefined();
+  });
+
+  it('a malformed field the runner states withholds the quote, never drops the field', () => {
+    for (const bad of [
+      { charges: delivery('10000') },
+      { estimated_delivery_at: 20260811 },
+      { alternatives: { alternative_id: 'tue' } },
+      { alternatives: [{ alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z', extra: 1 }] },
+    ]) {
+      const decision = answerQuoteRequest(makeQuoteRequest({ protocol_version: '1.3' }), runnerTerms(bad));
+      expect(decision.kind).not.toBe('replace');
+    }
+  });
+});
+
+describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, §15 step 6)', () => {
+  beforeEach(async () => {
+    await setOwnerTimeZone('UTC');
+  });
+
+  /** The seller's day costs, and a Friday quote of ₹650 (₹150 of it delivery). */
+  function quoteWithCosts(costs: readonly (readonly [string, bigint])[]): SignedQuote {
+    const model = new ValueModelStore(adapter);
+    for (const [day, rupees] of costs)
+      model.putEntry(
+        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees } },
+        NOW,
+      );
+    const issued = answerQuoteRequest(
+      makeQuoteRequest({ protocol_version: '1.3' }),
+      runnerTerms({
+        charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '15000' }, operation: 'add' }],
+        estimated_delivery_at: '2030-08-16T10:00:00Z', // a Friday
+      }),
+    );
+    expect(issued.kind).toBe('replace');
+    const quote = JSON.parse((issued as { kind: 'replace'; json: string }).json) as SignedQuote;
+    expect(validateSignedQuote(quote, hash)).toBeNull();
+    return quote;
+  }
+
+  it('a persona holding the seller\'s rules is closed: the quote goes out, with no cheaper day', () => {
+    const real = runtime.goodsSellerModel;
+    runtime.goodsSellerModel = () => ({ model: real?.()?.model ?? null, closedPersonas: ['health'] });
+    expect(quoteWithCosts([['fri', -120n], ['tue', -40n]]).alternatives).toBeUndefined();
+  });
+
+  it('a quote already at the charge limit: the cheaper day is dropped, the quote goes out', () => {
+    const model = new ValueModelStore(adapter);
+    for (const [day, rupees] of [['fri', -120n], ['tue', -40n]] as const)
+      model.putEntry(
+        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees } },
+        NOW,
+      );
+    const charges = Array.from({ length: 20 }, (_, i) => ({
+      kind: 'delivery',
+      label: `Leg ${String(i + 1)}`,
+      amount: { currency: 'INR', minor_units: '1000' },
+      operation: 'add',
+    }));
+    const issued = answerQuoteRequest(
+      makeQuoteRequest({ protocol_version: '1.3' }),
+      runnerTerms({ charges, estimated_delivery_at: '2030-08-16T10:00:00Z' }),
+    );
+    expect(issued.kind).toBe('replace');
+    const quote = JSON.parse((issued as { kind: 'replace'; json: string }).json) as SignedQuote;
+    expect(validateSignedQuote(quote, hash)).toBeNull();
+    expect(quote.alternatives).toBeUndefined();
+  });
+
+  it('a saving larger than the order: the quote still goes out, without that day', () => {
+    // Half of ₹4,900 is more than the whole order.
+    const quote = quoteWithCosts([['fri', -5000n], ['tue', -100n]]);
+    expect(quote.alternatives).toBeUndefined();
+  });
+
+  it('Friday is quoted; Tuesday, which saves the seller ₹80, is offered ₹40 cheaper', () => {
+    const model = new ValueModelStore(adapter);
+    for (const [day, rupees] of [['fri', -120n], ['tue', -40n]] as const)
+      model.putEntry(
+        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees } },
+        NOW,
+      );
+    const request = makeQuoteRequest({ protocol_version: '1.3' });
+    const issued = answerQuoteRequest(
+      request,
+      runnerTerms({
+        charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '15000' }, operation: 'add' }],
+        // Days ahead of the real clock this seam reads.
+        estimated_delivery_at: '2030-08-16T10:00:00Z', // a Friday
+      }),
+    );
+    const quote = JSON.parse((issued as { kind: 'replace'; json: string }).json) as SignedQuote;
+    expect(validateSignedQuote(quote, hash)).toBeNull();
+    expect(quote.total.minor_units).toBe('65000');
+    expect(quote.alternatives).toEqual([
+      expect.objectContaining({
+        alternative_id: 'tue',
+        estimated_delivery_at: '2030-08-13T10:00:00Z', // that Tuesday
+        total: { currency: 'INR', minor_units: '61000' },
+      }),
+    ]);
+  });
+});
+

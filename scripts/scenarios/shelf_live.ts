@@ -10,9 +10,10 @@
  * through the test MsgBox. Every owner call is signed by a paired owner device
  * and carries the owner capability, as the phone's and the web app's are.
  *
- * Steps: turn the Slot Pack on (each side), set the store's private terms,
- * publish a listing (a real record on the test PDS: checked to hold no money),
- * the brand asks for it (the store's owner admits the stranger), Dina bargains,
+ * Steps: turn the Slot Pack and the Commerce Pack on (each side), set the
+ * store's private terms, publish a listing (a real record on the test PDS:
+ * checked to hold no money), the brand asks for it (the store's owner admits
+ * the stranger), Dina bargains,
  * both owners approve, the brand settles a period and the store accepts it,
  * both statements agree; then the listing is withdrawn. State lives under
  * scripts/scenarios/.fleet/shelf-* (git-ignored). Nothing secret is printed.
@@ -122,9 +123,23 @@ async function present(n: Node): Promise<void> {
 }
 
 async function turnOn(n: Node, side: 'seller' | 'buyer'): Promise<boolean> {
+  return runCeremony(n, '/v1/commerce/terms/install/begin', { side });
+}
+
+/**
+ * Shelf money goes through the Commerce Pack (COMMITMENT_KERNEL §12), so no
+ * shelf deal binds without it. The buyer half is enough: either half opens
+ * the money stores.
+ */
+async function turnOnCommerce(n: Node): Promise<boolean> {
+  return runCeremony(n, '/v1/commerce/install/begin', { role: 'buyer' });
+}
+
+async function runCeremony(n: Node, beginPath: string, beginBody: unknown): Promise<boolean> {
   await present(n);
-  const begun = await call(n, 'POST', '/v1/commerce/terms/install/begin', { side });
+  const begun = await call(n, 'POST', beginPath, beginBody);
   if (begun.status !== 200) return false;
+  if (begun.body.status === 'active') return true;
   const installId = String(begun.body.install_id);
   const bound = await call(n, 'POST', '/v1/commerce/install/bind_reference_runner', { install_id: installId });
   if (bound.status !== 200) return false;
@@ -185,6 +200,8 @@ async function main(): Promise<void> {
     // 1. Each side turns its half of the Slot Pack on.
     step('store turns the Slot Pack (store) on', await turnOn(store, 'seller'));
     step('brand turns the Slot Pack (brand) on', await turnOn(brand, 'buyer'));
+    step('store turns the Commerce Pack on', await turnOnCommerce(store));
+    step('brand turns the Commerce Pack on', await turnOnCommerce(brand));
 
     // 2. The store's private terms: ₹2500 asking, ₹1500 floor, ₹1800 automatic.
     await present(store);

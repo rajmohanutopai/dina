@@ -51,9 +51,12 @@ const BUSINESS_DID = 'did:plc:chairmakermobile000';
  * and with no policy anywhere it ticks quietly. The eighth is the
  * SHELF_SPACE_NEGOTIATION term sweep: resends until a receipt, held
  * documents, lapsed cards and the brand's loop — a store's phone is the
- * pilot's main node, so its clock must run there.
+ * pilot's main node, so its clock must run there. The ninth is
+ * COMMITMENT_KERNEL §6's option-link tick: a seller resends, then asks,
+ * after a shipper's run it took up. The tenth is §13's evidence tick: "did
+ * it happen?" about what fell due.
  */
-const COMMERCE_TICKS = 8;
+const COMMERCE_TICKS = 10;
 
 /** A fake AT Protocol repo: one record, CAS on the CID we handed out. */
 class FakeRepo {

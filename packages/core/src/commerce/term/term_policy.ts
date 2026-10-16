@@ -9,11 +9,11 @@
  * plugin can move a floor. A runner proposes terms; this module decides what
  * Core may sign. No refusal or answer ever names a floor.
  *
- * DIRECTION COMES FROM THE TERM TABLE. Every term in v1 favours the buyer
- * when lower, so a "floor" is the lowest value the seller accepts; the
- * functions below read `TERM_TABLE[name].buyerFavours` instead of assuming
- * it, so a later term that favours the buyer when HIGHER gets a ceiling with
- * the same code.
+ * DIRECTION AND ARITHMETIC ARE THE KERNEL'S. Each term is a part of the
+ * Slot Pack's vocabulary (`SLOT_PACK_PARTS`), and its direction comes from
+ * who pays it (COMMITMENT_KERNEL §6). The premium and the clamp are the
+ * kernel's per-part limits (`commitment/limits.ts`); this module names the
+ * store as the holder and keeps the shelf-specific rules around them.
  */
 
 import {
@@ -23,16 +23,37 @@ import {
   MAX_MONEY_MINOR_UNIT_DIGITS,
   MAX_STOCK_DUTY,
   TERM_NAMES,
+  MAX_TERM_ALTERNATIVES,
   TERM_PERIODS,
-  TERM_TABLE,
-  termMeetsBuyerTarget,
   validateCanonicalInteger,
+  validateTermPromise,
   validateId,
   validateIsoUtc,
   type CashHandler,
   type TermName,
   type TermPeriod,
+  type TermPromise,
 } from '@dina/commerce-protocol';
+
+import { applyPremium, atLeastFor, type NumberPartSpec, type PartBounds } from '../../commitment';
+import { SLOT_PACK_PARTS, SLOT_PACK_PROMISES } from '../slot_pack_manifests';
+
+const PARTS = new Map<string, NumberPartSpec>(SLOT_PACK_PARTS.map((part) => [part.name, part]));
+
+/** The terms as the Slot Pack's parts, in table order (boundary-tested). */
+export const TERM_PARTS: readonly NumberPartSpec[] = SLOT_PACK_PARTS;
+
+/** The Slot Pack's part for a term. Every table term is one (boundary-tested). */
+export function termPart(name: TermName): NumberPartSpec {
+  const part = PARTS.get(name);
+  if (part === undefined) throw new Error(`term ${name} is not a part of the Slot Pack`);
+  return part;
+}
+
+/** The buyer's side of a term: is `a` at least as good for the buyer as `b`? */
+export function buyerAtLeast(name: TermName, a: bigint, b: bigint): boolean {
+  return atLeastFor(termPart(name), 'buyer', a, b);
+}
 
 // ---------------------------------------------------------------------------
 // Shape
@@ -66,6 +87,37 @@ export interface TermResourcePolicy {
   floors: Record<TermName, TermFloor>;
   available: { from: string; to: string };
   conditions: TermOfferConditions;
+  /**
+   * Other versions the owner offers beside the asking terms (COMMITMENT_KERNEL
+   * §6, "Alternatives"), entered here, on the presence-gated form: a change to
+   * the rent, and the promise it asks for ("₹200 less rent if your run comes
+   * on Tuesday"). Each offer carries them, moved with its rent.
+   */
+  alternatives?: TermPolicyAlternative[];
+}
+
+export interface TermPolicyAlternative {
+  alternative_id: string;
+  /** Added to the offer's rent, minor units; negative lowers it. */
+  fee_delta: string;
+  promises: TermPromise[];
+}
+
+/** Is a promise one the Slot Pack's vocabulary declares, in full? */
+export function promiseProblem(promise: TermPromise, field: string): string | null {
+  const declared = SLOT_PACK_PROMISES[promise.name];
+  if (declared === undefined) return `${field}.name: not a promise of this pack`;
+  if (promise.by !== declared.by) return `${field}.by: the pack says ${declared.by} keeps it`;
+  const dims = Object.keys(declared.dimensions);
+  const given = Object.keys(promise.dimensions);
+  if (given.length !== dims.length || dims.some((d) => !(d in promise.dimensions)))
+    return `${field}.dimensions: exactly ${dims.join(', ')}`;
+  for (const [d, spec] of Object.entries(declared.dimensions)) {
+    const v = promise.dimensions[d] as string;
+    if (spec.order === 'exact' ? !spec.values.includes(v) : !/^[1-9]\d{0,5}$/.test(v))
+      return `${field}.dimensions.${d}: ${spec.order === 'exact' ? spec.values.join(' | ') : 'a whole number'}`;
+  }
+  return null;
 }
 
 export interface TermHoldingRule {
@@ -139,7 +191,7 @@ function intIn(
 
 function termValue(name: TermName, value: unknown, field: string): string | null {
   if (typeof value !== 'string') return `${field}: must be a canonical integer string`;
-  if (TERM_TABLE[name].kind === 'money') {
+  if (termPart(name).kind === 'money') {
     const err = validateCanonicalInteger(value, MAX_MONEY_MINOR_UNIT_DIGITS);
     return err === null ? null : `${field}: ${err}`;
   }
@@ -150,7 +202,7 @@ function termValue(name: TermName, value: unknown, field: string): string | null
 
 /** The seller's side of a term: is `a` at least as good for the seller as `b`? */
 export function sellerAtLeast(name: TermName, a: bigint, b: bigint): boolean {
-  return TERM_TABLE[name].buyerFavours === 'lower' ? a >= b : a <= b;
+  return atLeastFor(termPart(name), 'seller', a, b);
 }
 
 function validateResource(r: unknown, i: number): string | null {
@@ -229,6 +281,27 @@ function validateResource(r: unknown, i: number): string | null {
   // A rent-only resource (asking share 0, floor share 0) must let the brand hold the takings (§5.6).
   if (BigInt(res.asking.share_bps) === 0n && c.cash_handler !== 'vendor') {
     return `${f}.conditions.cash_handler: a rent-only resource has the vendor hold the takings`;
+  }
+  if (res.alternatives !== undefined) {
+    if (!Array.isArray(res.alternatives) || res.alternatives.length > MAX_TERM_ALTERNATIVES)
+      return `${f}.alternatives: at most ${String(MAX_TERM_ALTERNATIVES)}`;
+    let last = '';
+    for (const [i, alt] of res.alternatives.entries()) {
+      const g = `${f}.alternatives[${String(i)}]`;
+      const bad =
+        validateId(alt?.alternative_id, `${g}.alternative_id`) ??
+        (/^(0|-?[1-9]\d{0,14})$/.test(String(alt.fee_delta)) ? null : `${g}.fee_delta: a whole number of minor units`);
+      if (bad !== null) return bad;
+      if (alt.alternative_id <= last) return `${f}.alternatives: sorted by id, unique`;
+      last = alt.alternative_id;
+      if (!Array.isArray(alt.promises) || alt.promises.length === 0 || alt.promises.length > 8)
+        return `${g}.promises: 1 to 8`;
+      for (const [j, promise] of alt.promises.entries()) {
+        const h = `${g}.promises[${String(j)}]`;
+        const problem = validateTermPromise(promise, h) ?? promiseProblem(promise, h);
+        if (problem !== null) return problem;
+      }
+    }
   }
   return null;
 }
@@ -318,20 +391,11 @@ export function applyHoldingPremium(
   count: number,
   premiumBps: number,
 ): bigint {
-  if (count <= 0 || premiumBps <= 0) return value;
-  const numerator = value * BigInt(10_000 + count * premiumBps);
-  const lower = TERM_TABLE[name].buyerFavours === 'lower';
-  // Seller favour: round UP when the seller wants higher, DOWN when lower.
-  let moved = lower ? (numerator + 9_999n) / 10_000n : numerator / 10_000n;
-  if (TERM_TABLE[name].kind === 'bps' && moved > BigInt(MAX_BPS)) moved = BigInt(MAX_BPS);
-  return moved;
+  return applyPremium(termPart(name), 'seller', value, count, premiumBps);
 }
 
 /** One term's floors after the holding premium. */
-export interface TermBounds {
-  hard: bigint;
-  auto: bigint;
-}
+export type TermBounds = PartBounds;
 
 export function termBounds(
   resource: TermResourcePolicy,
@@ -343,37 +407,6 @@ export function termBounds(
   const hard = applyHoldingPremium(name, BigInt(floor.hard), heldCount, premiumBps);
   const auto = applyHoldingPremium(name, BigInt(floor.auto ?? floor.hard), heldCount, premiumBps);
   return { hard, auto };
-}
-
-export type TermClamp =
-  /** Within what Core signs alone. */
-  | { value: bigint; needsOwner: false }
-  /** The runner asked past the automatic limit but not past the hard floor. */
-  | { value: bigint; needsOwner: true; asked: bigint };
-
-/**
- * Where a runner's proposal for one term lands (§5.4): an owner-authorised
- * value between the floors is honoured; otherwise the proposal is moved to
- * the automatic limit, and a proposal between the floors is reported so the
- * owner can be asked. Nothing is ever past the hard floor.
- */
-export function clampTerm(
-  name: TermName,
-  proposed: bigint,
-  bounds: TermBounds,
-  ownerAuthorised: bigint | null,
-): TermClamp {
-  const authorisedUsable =
-    ownerAuthorised !== null &&
-    sellerAtLeast(name, ownerAuthorised, bounds.hard) &&
-    !sellerAtLeast(name, ownerAuthorised, bounds.auto);
-  const lowestAllowed = authorisedUsable ? ownerAuthorised : bounds.auto;
-  if (sellerAtLeast(name, proposed, lowestAllowed)) return { value: proposed, needsOwner: false };
-  if (!authorisedUsable && bounds.hard !== bounds.auto) {
-    const asked = sellerAtLeast(name, proposed, bounds.hard) ? proposed : bounds.hard;
-    return { value: bounds.auto, needsOwner: true, asked };
-  }
-  return { value: lowestAllowed, needsOwner: false };
 }
 
 // ---------------------------------------------------------------------------
@@ -419,7 +452,7 @@ export function buyerLimitsIn(
   for (const name of TERM_NAMES) {
     const value = BigInt(policy[which][name]);
     out[name] =
-      TERM_TABLE[name].kind === 'money'
+      termPart(name).kind === 'money'
         ? buyerMoneyIn(value, policy.period ?? 'monthly', period)
         : value;
   }
@@ -437,7 +470,7 @@ export function validateTermBuyerPolicy(value: unknown): string | null {
       termValue(name, p.ceilings[name], `ceilings.${name}`);
     if (bad !== null) return bad;
     // A target the ceiling does not allow could never be met.
-    if (!termMeetsBuyerTarget(name, BigInt(p.targets[name]), BigInt(p.ceilings[name]))) {
+    if (!buyerAtLeast(name, BigInt(p.targets[name]), BigInt(p.ceilings[name]))) {
       return `targets.${name}: must be within the ceiling`;
     }
   }

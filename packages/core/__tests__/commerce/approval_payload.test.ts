@@ -450,3 +450,37 @@ describe('§6.4 — attribution rides INSIDE the integrity digest', () => {
     expect(verifyApprovalBinding(byStaff, byStaff).ok).toBe(true);
   });
 });
+
+describe('an order on an alternative (COMMITMENT_KERNEL §6, §9)', () => {
+  it('the payload names the version, its delivery date and its charges', () => {
+    const base = order();
+    const onTuesday = { ...base, alternative_id: 'tue' } as PurchaseOrderProposal;
+    const payload = built(
+      onTuesday,
+      context({
+        charges: [{ code: '+delivery:Delivery', amount: { currency: 'INR', minor_units: '6000' } }],
+        estimatedDeliveryAt: '2026-08-11T10:00:00Z',
+      }),
+    );
+    expect(payload).toMatchObject({
+      alternativeId: 'tue',
+      estimatedDeliveryAt: '2026-08-11T10:00:00Z',
+      charges: [{ code: '+delivery:Delivery', amount: { currency: 'INR', minor_units: '6000' } }],
+    });
+    // The quote's own terms: no version named.
+    expect(built(base, context())).not.toHaveProperty('alternativeId');
+    // A version resting on a partner's run: the card names its end and its fallback.
+    const partnerRun = {
+      offerEndsAt: '2026-08-08T09:00:00.000Z',
+      fallbackTotal: { currency: 'INR', minor_units: '62000' },
+      fallbackDeliveryAt: '2026-08-12T10:00:00Z',
+    };
+    expect(built(onTuesday, context({ estimatedDeliveryAt: '2026-08-11T10:00:00Z', partnerRun }))).toMatchObject({
+      partnerRun,
+    });
+    expect(built(onTuesday, context({ estimatedDeliveryAt: '2026-08-11T10:00:00Z' }))).not.toHaveProperty(
+      'partnerRun',
+    );
+  });
+});
+

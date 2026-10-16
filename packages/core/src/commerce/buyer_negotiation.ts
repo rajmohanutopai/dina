@@ -33,10 +33,14 @@ import {
 } from '@dina/commerce-protocol';
 
 import { appendAudit } from '../audit/service';
+import { meetsHardLimits, type NeverCondition, type NumberPartSpec, type ValueModel } from '../commitment';
+import { getValueModelStore } from '../commitment/model_store';
+import { getOwnerTimeZone, ownerTimeZoneNow } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
 import { getCommerceServiceQueryDispatch } from './buyer_sender';
+import { deliveryDayOf } from './deal_kinds';
 import { formatMoneyAmount } from './money_display';
 import { TENDER_READY_TYPE } from './negotiation_policy';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
@@ -329,6 +333,11 @@ async function resendCounter(
 // Tender policy and ranking
 // ---------------------------------------------------------------------------
 
+/** The goods buyer's one limited part: the tender's total, which the buyer pays. */
+const BUYER_TOTAL_PART: readonly NumberPartSpec[] = [
+  { name: 'total', kind: 'money', payer: 'buyer', payee: 'seller' },
+];
+
 export interface TenderPolicyInput {
   currency: string;
   targetTotalMinor: string;
@@ -391,6 +400,16 @@ export interface RankedTenderOffer {
   credit_days: number;
   valid_until: string;
   revision: string;
+  /** The quote's alternative this entry ranks (COMMITMENT_KERNEL §6); absent: its own terms. */
+  alternative_id?: string;
+  /** When this version is delivered, if the quote says. */
+  estimated_delivery_at?: string;
+  /**
+   * COMMITMENT_KERNEL §6, §9 — this version rests on a partner's run of the
+   * supplier's: the card says until when it can be taken, and what the order
+   * becomes if the run falls through after binding (the quote's own terms).
+   */
+  partner_run?: { offer_ends_at: string; fallback_total_minor: string; fallback_delivery_at?: string };
 }
 
 export type ExclusionReason =
@@ -398,7 +417,9 @@ export type ExclusionReason =
   | 'declined'
   | 'expired'
   | 'currency_mismatch'
-  | 'over_budget';
+  | 'over_budget'
+  /** Every version falls on a day, or at a total, a never-rule of the owner's refuses. */
+  | 'ruled_out';
 
 export interface TenderExcludedOffer {
   supplier_did: string;
@@ -424,7 +445,17 @@ export function rankTender(args: {
   /** Absent: the tender's own policy ceiling, else no ceiling. Empty: no ceiling. */
   budgetCeilingMinor?: string;
   currency?: string;
+  /**
+   * The owner's model for buying goods (`goods.buyer`): what each delivery
+   * day is worth and which are ruled out. Absent: the one the negotiation
+   * tick last loaded; null: rank on price alone.
+   */
+  valueModel?: ValueModel | null;
+  /** The owner's time zone; absent: as last read. */
+  timeZone?: string;
 }): { ok: true; ranking: TenderRanking } | { ok: false; refusal: string } {
+  const model = args.valueModel === undefined ? goodsBuyerModel : args.valueModel;
+  const zone = args.timeZone ?? ownerTimeZoneNow();
   const runtime = getCommerceRuntime();
   if (runtime === null) return { ok: false, refusal: 'commerce_unavailable' };
   if (runtime.tenders.getTender(args.tenderId) === null)
@@ -476,31 +507,81 @@ export function rankTender(args: {
       excluded.push(out('currency_mismatch'));
       continue;
     }
-    const total = moneyMinorUnits(head.total);
-    if (ceiling !== null && total > ceiling) {
-      excluded.push(out('over_budget'));
-      continue;
+    // Each version of the quote is ranked on its own: its own terms, and
+    // each alternative (another delivery date for other charges). A version
+    // over the ceiling is not offered; the quote is excluded only when every
+    // version is.
+    const versions = [
+      { id: undefined as string | undefined, total: head.total, deliveryAt: head.estimated_delivery_at },
+      ...(head.alternatives ?? []).map((alt) => ({
+        id: alt.alternative_id as string | undefined,
+        total: alt.total,
+        deliveryAt: alt.estimated_delivery_at as string | undefined,
+        // A version resting on a shipper's option is offered only until its
+        // own end (COMMITMENT_KERNEL §6 step 4), before the quote's.
+        offerEndsAt: alt.offer_ends_at,
+        partnerRun: alt.partner_run === true,
+      })),
+    ];
+    let kept = 0;
+    let ruledOut = 0;
+    for (const version of versions) {
+      const offerEndsAt = 'offerEndsAt' in version ? version.offerEndsAt : undefined;
+      if (offerEndsAt !== undefined && Date.parse(offerEndsAt) <= args.nowMs) continue;
+      const total = moneyMinorUnits(version.total);
+      // COMMITMENT_KERNEL §7, §15 step 6: the owner's own values choose among
+      // versions — a day a never-rule refuses is not offered; a day's worth
+      // to the owner moves its cost.
+      const judged = judgeVersion(model, version.deliveryAt, total, head.total.currency, zone);
+      if (judged === 'ruled_out') {
+        ruledOut += 1;
+        continue;
+      }
+      // COMMITMENT_KERNEL §15 step 6: the budget ceiling is the goods buyer's
+      // hard limit on the total, checked by the kernel's own rule.
+      if (
+        ceiling !== null &&
+        !meetsHardLimits(BUYER_TOTAL_PART, 'buyer', { total }, { total: { hard: ceiling, auto: ceiling } })
+      )
+        continue;
+      const creditDays = head.payment_terms?.credit_days ?? 0;
+      const benefit = financingBenefitMinor(total, rateBps, creditDays);
+      ranked.push({
+        supplier_did: member.supplierDid,
+        quote_id: head.quote_id,
+        service_rkey: member.serviceRkey,
+        total_minor: total.toString(10),
+        currency: head.total.currency,
+        comparison_cost_minor: (total - benefit - judged.worthMinor).toString(10),
+        credit_days: creditDays,
+        valid_until: offerEndsAt ?? head.valid_until,
+        revision: head.quote_revision,
+        ...(version.id !== undefined ? { alternative_id: version.id } : {}),
+        ...(version.deliveryAt !== undefined ? { estimated_delivery_at: version.deliveryAt } : {}),
+        ...('partnerRun' in version && version.partnerRun && offerEndsAt !== undefined
+          ? {
+              partner_run: {
+                offer_ends_at: offerEndsAt,
+                fallback_total_minor: moneyMinorUnits(head.total).toString(10),
+                ...(head.estimated_delivery_at !== undefined
+                  ? { fallback_delivery_at: head.estimated_delivery_at }
+                  : {}),
+              },
+            }
+          : {}),
+      });
+      kept += 1;
     }
-    const creditDays = head.payment_terms?.credit_days ?? 0;
-    const benefit = financingBenefitMinor(total, rateBps, creditDays);
-    ranked.push({
-      supplier_did: member.supplierDid,
-      quote_id: head.quote_id,
-      service_rkey: member.serviceRkey,
-      total_minor: total.toString(10),
-      currency: head.total.currency,
-      comparison_cost_minor: (total - benefit).toString(10),
-      credit_days: creditDays,
-      valid_until: head.valid_until,
-      revision: head.quote_revision,
-    });
+    if (kept === 0) excluded.push(out(ruledOut === versions.length ? 'ruled_out' : 'over_budget'));
   }
   ranked.sort((a, b) => {
     const cost = BigInt(a.comparison_cost_minor) - BigInt(b.comparison_cost_minor);
     if (cost !== 0n) return cost < 0n ? -1 : 1;
     const total = BigInt(a.total_minor) - BigInt(b.total_minor);
     if (total !== 0n) return total < 0n ? -1 : 1;
-    return a.supplier_did.localeCompare(b.supplier_did);
+    const by = a.supplier_did.localeCompare(b.supplier_did);
+    if (by !== 0) return by;
+    return (a.alternative_id ?? '').localeCompare(b.alternative_id ?? '');
   });
   return { ok: true, ranking: { ranked, excluded } };
 }
@@ -513,6 +594,8 @@ export function rankTender(args: {
 export async function runNegotiationTick(nowMs: number): Promise<number> {
   const runtime = getCommerceRuntime();
   if (runtime === null) return 0;
+  // The owner's values among versions, as they stand for this pass.
+  await refreshGoodsBuyerModel();
   // ONE clock for the whole tick: time spent awaiting a send, in any tender,
   // moves it on, so every deadline and window is judged at the moment the
   // next message would leave, not when the tick began.
@@ -772,11 +855,15 @@ function markReady(
   if (!moved) return;
   const ranking = rankTender({ tenderId: tender.tenderId, nowMs });
   const ranked = ranking.ok ? ranking.ranking.ranked : [];
+  // Offers are counted by supplier: one supplier's several versions are one offer.
+  const suppliers = new Set(ranked.map((r) => r.supplier_did)).size;
+  const ruledOut =
+    ranking.ok && ranking.ranking.excluded.some((e) => e.reason === 'ruled_out');
   appendAudit(
     'negotiation',
     'tender_ready',
     tender.tenderId,
-    `reason=${reason} offers=${String(ranked.length)}`,
+    `reason=${reason} offers=${String(suppliers)}`,
   );
   const workflow = getWorkflowService();
   if (workflow === null) return;
@@ -787,7 +874,7 @@ function markReady(
     type: TENDER_READY_TYPE,
     tender_id: tender.tenderId,
     reason,
-    offers: ranked.length,
+    offers: suppliers,
     best_total_minor: best === undefined ? null : best.total_minor,
     currency: tender.currency,
   };
@@ -799,8 +886,10 @@ function markReady(
       // "minor units": this line is the card's and the Activity title.
       description:
         best === undefined
-          ? `Your tender for ${subject} closed with no offer within budget.`
-          : `Your tender for ${subject} is ready: ${String(ranked.length)} offer(s) within budget, best ${moneyText(tender.currency, best.total_minor)}. Award it from the tender screen.`,
+          ? ruledOut
+            ? `Your tender for ${subject} closed with no offer your own rules allow: every one fell on a day or a price you ruled out.`
+            : `Your tender for ${subject} closed with no offer within budget.`
+          : `Your tender for ${subject} is ready: ${String(suppliers)} offer(s) within budget, best ${moneyText(tender.currency, best.total_minor)}. Award it from the tender screen.`,
       payload: JSON.stringify(payload),
       idempotencyKey: `tender_ready:${tender.tenderId}`,
       correlationId: tender.tenderId,
@@ -1015,4 +1104,58 @@ export class NegotiationSweeper {
       this.running = false;
     }
   }
+}
+
+// ---------------------------------------------------------------------------
+// The owner's values among versions (COMMITMENT_KERNEL §7, §15 step 6)
+// ---------------------------------------------------------------------------
+
+/** The goods-buyer model the negotiation tick last loaded; null before it has. */
+let goodsBuyerModel: ValueModel | null = null;
+
+/** Load the owner's goods-buyer model for the next ranking (the tick, each pass). */
+export async function refreshGoodsBuyerModel(): Promise<void> {
+  try {
+    const store = await getValueModelStore();
+    goodsBuyerModel = store === null ? null : store.load('goods.buyer', ['delivery_day', 'total']).model;
+    await getOwnerTimeZone(); // refreshes the zone ownerTimeZoneNow() reads
+  } catch {
+    goodsBuyerModel = null;
+  }
+}
+
+/**
+ * One version as the owner's model sees it: ruled out by a never-rule, or
+ * worth so much more or less to the owner (in the quote's minor units). A
+ * day's value is in rupees, so it counts only for a quote in rupees; a
+ * version with no delivery date has no day to judge.
+ */
+export function judgeVersion(
+  model: ValueModel | null,
+  deliveryAt: string | undefined,
+  totalMinor: bigint,
+  currency: string,
+  /** The owner's time zone: the day is the owner's day. */
+  timeZone: string,
+): 'ruled_out' | { worthMinor: bigint } {
+  if (model === null) return { worthMinor: 0n };
+  const at = deliveryAt === undefined ? Number.NaN : Date.parse(deliveryAt);
+  const day = deliveryDayOf(at, timeZone);
+  const holds = (c: NeverCondition): boolean => {
+    if (c.part === 'delivery_day') {
+      if ('choice' in c) return day === c.choice;
+      if ('present' in c) return day !== null;
+      return false;
+    }
+    if (c.part === 'total') {
+      // Every version has a total.
+      if ('present' in c) return true;
+      if ('below' in c) return totalMinor < c.below;
+      if ('above' in c) return totalMinor > c.above;
+    }
+    return false;
+  };
+  if (model.never.some((rule) => rule.all.length > 0 && rule.all.every(holds))) return 'ruled_out';
+  const rupees = day === null ? undefined : model.choiceValues.delivery_day?.[day];
+  return { worthMinor: rupees !== undefined && currency === 'INR' ? rupees * 100n : 0n };
 }

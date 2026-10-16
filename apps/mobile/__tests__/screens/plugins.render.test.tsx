@@ -248,6 +248,7 @@ describe('PluginsScreen — uninstall', () => {
     pluginId: 'com.acme.widget',
     status: 'active' as const,
     executionMode: 'runner' as const,
+    openShelfDeals: 0,
   };
 
   it('confirms, uninstalls, and re-reads the list', async () => {
@@ -267,6 +268,21 @@ describe('PluginsScreen — uninstall', () => {
     );
     await waitFor(() => expect(loadMock.mock.calls.length).toBeGreaterThan(reads));
     await waitFor(() => expect(screen.queryByTestId('plugin-row-inst-1')).toBeNull());
+  });
+
+  it('names open shelf deals before the Commerce Pack goes, and lets the owner go on', async () => {
+    installs([{ ...ROW, openShelfDeals: 2 }]);
+    uninstallMock.mockResolvedValue({ ok: true });
+    const screen = render(<PluginsScreen />);
+    await waitFor(() => expect(screen.getByTestId('plugin-uninstall-inst-1')).toBeTruthy());
+    fireEvent.press(screen.getByTestId('plugin-uninstall-inst-1'));
+    await waitFor(() => expect(uninstallMock).toHaveBeenCalledWith('inst-1'));
+    expect(mockConfirm).toHaveBeenCalledWith(
+      expect.stringMatching(/Uninstall/),
+      expect.stringMatching(/2 shelf deals still have open settlements/),
+      'Uninstall',
+      true,
+    );
   });
 
   it('a no on the question uninstalls nothing', async () => {

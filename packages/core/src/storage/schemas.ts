@@ -4029,6 +4029,225 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       ALTER TABLE commerce_term_cards ADD COLUMN yes_outcome TEXT NOT NULL DEFAULT '';
     `,
   },
+  {
+    // COMMITMENT_KERNEL §7 — the owner's value model. The Core form (walk-away
+    // point, auto-sign worth, limits, totals, asking terms, firm or subject to
+    // a card) per deal kind; the entries no persona holds (values, never-rules);
+    // and the index of what each persona's own entries cover (part kinds and
+    // data categories, never a value, limit or rule). Entries tagged with a
+    // persona live in that persona's vault file (persona migration 5).
+    version: 73,
+    name: 'commitment_value_model',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_model_forms (
+        kind TEXT PRIMARY KEY,
+        version INTEGER NOT NULL,
+        form_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commitment_value_entries (
+        kind TEXT NOT NULL,
+        entry_id TEXT NOT NULL,
+        entry_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, entry_id)
+      );
+      CREATE TABLE IF NOT EXISTS commitment_value_index (
+        persona TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        entry_id TEXT NOT NULL,
+        covers TEXT NOT NULL,
+        PRIMARY KEY (persona, kind, entry_id, covers)
+      );
+    `,
+  },
+  {
+    // COMMITMENT_KERNEL §11 — per-contact, per-category sharing tiers, durable:
+    // they lived only in memory and were lost on restart.
+    version: 74,
+    name: 'sharing_policies',
+    sql: `
+      CREATE TABLE IF NOT EXISTS sharing_policies (
+        contact_did TEXT NOT NULL,
+        category TEXT NOT NULL,
+        tier TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (contact_did, category)
+      );
+    `,
+  },  {
+    // COMMITMENT_KERNEL §11 — the strategy slot. Per deal kind: who fills it
+    // (the pack's fixed style, or Brain) and whether Brain's brief carries
+    // values and costs (on by default, §16 item 3). Verdict budgets, kept
+    // durably so no restart, new negotiation or counterparty resets them: one
+    // per owner per kind (the threshold), one per negotiation.
+    version: 75,
+    name: 'commitment_strategy',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_strategy (
+        kind TEXT PRIMARY KEY,
+        strategy TEXT NOT NULL CHECK (strategy IN ('fixed', 'brain')),
+        values_on INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commitment_owner_budget (
+        kind TEXT PRIMARY KEY,
+        owner_left INTEGER NOT NULL,
+        refilled_at INTEGER NOT NULL,
+        threshold_version INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commitment_negotiation_budget (
+        kind TEXT NOT NULL,
+        negotiation_id TEXT NOT NULL,
+        drawn INTEGER NOT NULL,
+        PRIMARY KEY (kind, negotiation_id)
+      );
+    `,
+  },  {
+    // COMMITMENT_KERNEL §11 — a shelf negotiation's turns handed to the
+    // strategy slot: one row per round, so a move is asked for once, applied
+    // once, and the fixed style takes the round when the strategy does not
+    // answer in time or its budget is spent.
+    version: 76,
+    name: 'commerce_term_strategy_turns',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_term_strategy_turns (
+        request_id TEXT NOT NULL,
+        turn INTEGER NOT NULL,
+        task_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'fallen_back')),
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (request_id, turn)
+      );
+    `,
+  },
+  {
+    // COMMITMENT_KERNEL §15 step 6: on a guest's node, the record of a group
+    // plan's pair as the organiser sent it, and the reminder it set.
+    version: 77,
+    name: 'coordination_bookings',
+    sql: `
+      CREATE TABLE IF NOT EXISTS coordination_bookings (
+        organiser_did TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('booked', 'cancelled')),
+        title TEXT NOT NULL,
+        slot_json TEXT NOT NULL,
+        issued_at TEXT NOT NULL,
+        reminder_id TEXT,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (organiser_did, record_id)
+      );
+    `,
+  },
+  {
+    // COMMITMENT_KERNEL §6 "How linked deals bind", §15 step 7. On a
+    // shipper's node, each firm option it issued, keyed by the seller's
+    // request, with its one stored answer; on a seller's node, each option it
+    // asked for, holds, or took up.
+    version: 78,
+    name: 'commitment_options',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_options (
+        seller_did TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        option_id TEXT NOT NULL,
+        option_json TEXT NOT NULL,
+        service_day TEXT NOT NULL,
+        crates INTEGER NOT NULL,
+        hold_until INTEGER NOT NULL,
+        answer_json TEXT,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (seller_did, request_id)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS commitment_options_by_id
+        ON commitment_options (seller_did, option_id);
+      CREATE TABLE IF NOT EXISTS commitment_option_links (
+        request_id TEXT PRIMARY KEY,
+        shipper_did TEXT NOT NULL,
+        deal_ref TEXT NOT NULL,
+        request_json TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN
+          ('asked', 'held', 'declined', 'accepted', 'bound', 'lapsed_no_fault')),
+        option_json TEXT,
+        cleared_at INTEGER,
+        order_ref TEXT,
+        accepted_at INTEGER,
+        last_sent_at INTEGER,
+        answer_json TEXT,
+        card_raised INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commitment_order_fallbacks (
+        buyer_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        supplier_did TEXT NOT NULL,
+        quote_id TEXT NOT NULL,
+        alternative_id TEXT NOT NULL,
+        role TEXT NOT NULL CHECK (role IN ('seller', 'buyer')),
+        applied_at INTEGER NOT NULL,
+        notice_sent INTEGER NOT NULL DEFAULT 0,
+        -- The order's digest: the export's cursor orders by (applied_at, it).
+        order_digest TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (buyer_did, purchase_order_id)
+      );
+      CREATE INDEX IF NOT EXISTS commitment_order_fallbacks_by_time
+        ON commitment_order_fallbacks (applied_at, order_digest);
+    `,
+  },
+  {
+    // COMMITMENT_KERNEL §13, §15 step 8: evidence for promises and broken
+    // links, and each owner's per-relationship consent to share a summary.
+    version: 79,
+    name: 'commitment_evidence',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_evidence (
+        evidence_id TEXT PRIMARY KEY,
+        counterparty_did TEXT NOT NULL,
+        deal_ref TEXT NOT NULL,
+        subject TEXT NOT NULL CHECK (subject IN ('promise', 'run')),
+        item TEXT NOT NULL,
+        occurrence TEXT NOT NULL,
+        outcome TEXT NOT NULL CHECK (outcome IN ('kept', 'broken', 'no_fault')),
+        fault TEXT NOT NULL CHECK (fault IN ('counterparty', 'none')),
+        source TEXT NOT NULL CHECK (source IN ('owner', 'protocol')),
+        note TEXT NOT NULL,
+        facts_json TEXT NOT NULL,
+        recorded_at INTEGER NOT NULL,
+        amended_at INTEGER
+      );
+      CREATE INDEX IF NOT EXISTS commitment_evidence_by_counterparty
+        ON commitment_evidence (counterparty_did);
+      -- The "did it happen?" cards raised and not yet settled: what the tick
+      -- reconciles after a crash, however many other cards the node holds.
+      CREATE TABLE IF NOT EXISTS commitment_evidence_asks (
+        card_id TEXT PRIMARY KEY,
+        payload_json TEXT NOT NULL,
+        asked_at INTEGER NOT NULL
+      );
+      CREATE TABLE IF NOT EXISTS commitment_evidence_consent (
+        counterparty_did TEXT PRIMARY KEY,
+        self_on INTEGER NOT NULL DEFAULT 0,
+        peer_on INTEGER NOT NULL DEFAULT 0,
+        -- Whether the other side has been told this node's current switch.
+        told INTEGER NOT NULL DEFAULT 0,
+        -- Each switch's revision: this node's rises on every change; the
+        -- other side's is the newest heard, so an older word never undoes it.
+        self_rev INTEGER NOT NULL DEFAULT 0,
+        peer_rev INTEGER NOT NULL DEFAULT 0,
+        -- After a restore: the other side's word is not trusted until they
+        -- repeat it, so the next message asks them to.
+        ask_peer INTEGER NOT NULL DEFAULT 0,
+        -- The challenge a restored node asks with; only a reply echoing it
+        -- counts as the other side's word again.
+        ask_nonce TEXT NOT NULL DEFAULT '',
+        -- The other side's challenge this node owes an answer to.
+        echo_nonce TEXT NOT NULL DEFAULT '',
+        updated_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------
@@ -4208,6 +4427,21 @@ export const PERSONA_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_vault_items_owner_memory
         ON vault_items(owner_memory_key, data_scope)
         WHERE owner_memory_key IS NOT NULL;
+    `,
+  },  {
+    // COMMITMENT_KERNEL §7 — value-model entries tagged with this persona: sealed
+    // with its vault file, read only while it is open. Never a vault item, so
+    // no search and no Brain read reaches them.
+    version: 5,
+    name: 'commitment_value_entries',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_value_entries (
+        kind TEXT NOT NULL,
+        entry_id TEXT NOT NULL,
+        entry_json TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, entry_id)
+      );
     `,
   },
 ];

@@ -585,6 +585,33 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('forgetPropose', [input], () => ({ ...this.forgetProposeResult }));
   }
 
+  commitmentBrainViewResult = {
+    kind: 'shelf_space.vendor',
+    holder: 'buyer',
+    vocabulary: {},
+    values_on: true,
+    entries: [] as Record<string, unknown>[],
+  };
+
+  async commitmentBrainView(kind: string): Promise<typeof this.commitmentBrainViewResult> {
+    return this.dispatch('commitmentBrainView', [kind], () => ({ ...this.commitmentBrainViewResult }));
+  }
+
+  commitmentProposeChangesResult:
+    | { status: 'pending_owner'; task_id: string }
+    | { status: 'refused'; reason: string } = {
+    status: 'pending_owner',
+    task_id: 'cmc-1',
+  };
+
+  async commitmentProposeChanges(input: {
+    kind: string;
+    proof: OwnerWordsProof;
+    changes: readonly Record<string, unknown>[];
+  }): Promise<typeof this.commitmentProposeChangesResult> {
+    return this.dispatch('commitmentProposeChanges', [input], () => ({ ...this.commitmentProposeChangesResult }));
+  }
+
   ownerExportPrepareResult = { id: 'exp-1', manifest: { personas: [], people: 0, contacts: 0, reminders: 0 } };
 
   async ownerExportPrepare(): Promise<{ id: string; manifest: { personas: { persona: string; tier: string; included: boolean; why?: string; items: number }[]; people: number; contacts: number; reminders: number } }> {

@@ -104,6 +104,7 @@ import {
   createSearchUcpCatalogTool,
   type UcpToolCoreClient,
 } from '../reasoning/ucp_tools';
+import { createProposeDealValuesTool, createReadDealValuesTool } from '../reasoning/value_model_tools';
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -485,6 +486,17 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
           createSpendAllowanceTool({
             thread: ownerChatThread,
             core: spendCore as Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>,
+          }),
+        );
+      }
+      // COMMITMENT_KERNEL §15 step 5: drawing out the owner's deal values; every change is a card.
+      const valuesCore = input.coreClient as Partial<Pick<CoreClient, 'commitmentBrainView' | 'commitmentProposeChanges'>>;
+      if (typeof valuesCore.commitmentBrainView === 'function' && typeof valuesCore.commitmentProposeChanges === 'function') {
+        reg.register(createReadDealValuesTool({ core: valuesCore as Pick<CoreClient, 'commitmentBrainView'> }));
+        reg.register(
+          createProposeDealValuesTool({
+            thread: ownerChatThread,
+            core: valuesCore as Pick<CoreClient, 'commitmentProposeChanges'>,
           }),
         );
       }

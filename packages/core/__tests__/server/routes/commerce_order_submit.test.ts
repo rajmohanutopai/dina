@@ -50,8 +50,9 @@ import {
   proveOwnerPresence,
   OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
+import { priceQuoteAlternatives } from '../../../src/commerce/quote_issuance';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
-import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import { getCommerceRuntime, installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import * as ceremony from '../../../src/pairing/ceremony';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import {
@@ -1220,3 +1221,37 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
     expect(sent.length).toBe(0);
   });
 });
+
+describe('an order on an alternative (COMMITMENT_KERNEL §6, §9)', () => {
+  it('prepare binds the version\'s delivery date and charges, read from the held quote', async () => {
+    const request = makeQuoteRequest({ protocol_version: '1.3' });
+    const base = makeSignedQuote(request, { quote_id: 'q-alt' });
+    const alternatives = priceQuoteAlternatives(base, [
+      { alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' },
+    ]);
+    if (alternatives === null) throw new Error('fixture: alternatives');
+    const quote = makeSignedQuote(request, { quote_id: 'q-alt', alternatives });
+    const tue = alternatives[0];
+    const order = makeOrder(quote, request.delivery.projection, {
+      protocol_version: '1.3',
+      alternative_id: 'tue',
+      approved_total: tue?.total,
+      accepted_terms_digest: tue?.terms_digest,
+    });
+    // Not held yet: the version cannot be read, so nothing is bound.
+    const unheld = await router.handle(owner('/v1/commerce/orders/prepare', { order, context: CONTEXT }));
+    expect(unheld.status).toBe(409);
+    getCommerceRuntime()?.buyerQuotes.append({
+      supplierDid: quote.supplier_did,
+      quoteId: quote.quote_id,
+      quote,
+      acceptedAt: T0,
+    });
+    const resp = await router.handle(owner('/v1/commerce/orders/prepare', { order, context: CONTEXT }));
+    expect(resp.status).toBe(200);
+    const approvalId = (resp.body as { approval_id: string }).approval_id;
+    const retained = approvals.get(approvalId);
+    expect(retained?.payload).toMatchObject({ alternativeId: 'tue', estimatedDeliveryAt: '2026-08-11T10:00:00Z' });
+  });
+});
+

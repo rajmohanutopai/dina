@@ -272,9 +272,15 @@ export default function PluginsScreen(): React.ReactElement {
   const handleUninstall = useCallback(
     (plugin: InstalledPlugin) => {
       void (async () => {
+        // Shelf deals settle through the Commerce Pack: say what removing it
+        // leaves waiting. The owner decides; nothing here refuses.
+        const shelf =
+          plugin.openShelfDeals > 0
+            ? ` ${plugin.openShelfDeals === 1 ? '1 shelf deal still has' : `${plugin.openShelfDeals} shelf deals still have`} open settlements. Their records stay, but you can’t send or answer settlements without the pack, and what the other side sends is refused if the pack is not back within 30 days.`
+            : '';
         const uninstall = await confirmDecision(
           `Uninstall "${plugin.pluginId}"?`,
-          'The plugin loses access immediately. A runner plugin’s paired device is revoked. Reinstalling requires the publisher’s release again.',
+          `The plugin loses access immediately. A runner plugin’s paired device is revoked. Reinstalling requires the publisher’s release again.${shelf}`,
           'Uninstall',
           true,
         );

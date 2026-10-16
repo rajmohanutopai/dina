@@ -52,7 +52,7 @@ The cost is honest: the organizer's Dina becomes a hub that knows every guest's 
 
 ## 4. The exchange
 
-Two rounds, each a fan-out of the **existing** 1:1 capability. No new message types.
+Two rounds, each a fan-out of the **existing** 1:1 capability. The one message added since is the per-pair `coordination.booked` record after a plan settles (below).
 
 ```
 ROUND 1 — propose
@@ -80,6 +80,17 @@ ROUND 2 — confirm
   bookings on the organizer's — each behind its own owner's gate. Not a
   service.query (1:1 doc §6.3).
 ```
+
+**The booked record (2026-10-16, COMMITMENT_KERNEL §15 step 6).** When the
+plan settles, the organiser's Core sends each guest who accepted the chosen
+slot a `coordination.booked` message about that pair alone: the slot, the
+plan's title as the guest was asked, the organiser and that guest. The
+guest's Core keeps it and sets the reminder. If the plan is widened or
+abandoned after it settled, or deleted, the same record goes again as
+`cancelled` and the guest's Core ends it. It is still a star: nothing is held
+by many nodes, and no guest learns who else was asked or answered. What is new
+is that both sides of each pair hold the same record of what they agreed
+(`packages/core/src/coordination/group_booking.ts`).
 
 **Convergence is code, and this is where the 1:1 design's open decision closes.** The 1:1 doc left convergence to agent reasoning, escalating to set-intersection only "if the sim shows fumbling" (§6.2, §14.2). With three or more parties the escalation trigger is met before the sim runs: four agents each countering in prose is combinatorial, and a fold that depends on which reply arrived first is a fold that gives different answers on different days. So the fold is a deterministic intersection over **structured slots** — `{start, end?}` as `MeetingSlotSchema` already defines them — computed on the organizer's node, order-independent, and unit-testable with no LLM in the loop. The agents still do what agents are for: turning "a Saturday this month" into candidates, turning a guest's calendar into an answer, and turning an empty intersection into a sentence the organizer can act on.
 

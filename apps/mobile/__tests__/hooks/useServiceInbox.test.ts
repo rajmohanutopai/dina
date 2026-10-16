@@ -547,6 +547,53 @@ describe('useServiceInbox', () => {
     });
   });
 
+  it('a binding card shows Core’s own list: what binds, the risks, what changed (COMMITMENT_KERNEL §9)', async () => {
+    const general = {
+      tag: 'beverages.juice',
+      currency: 'INR',
+      period: 'monthly',
+      cash_handler: 'vendor',
+      start: '2027-02-01T00:00:00Z',
+      end: '2027-08-01T00:00:00Z',
+      exit_notice_days: 30,
+    };
+    const legibility = {
+      binds: [
+        { part: 'fee', core: '₹1700 a month, paid by you to the store' },
+        { part: 'share_bps', core: '7% of sales, paid by you to the store', pack: '“a small admin fee” (the pack’s words)' },
+        { part: 'stock_run', core: 'a promise you must keep: stock_run (crates: 2, day: wed, every_days: 7)' },
+      ],
+      risks: ['You promise: stock_run (crates: 2, day: wed, every_days: 7).'],
+      changed: ['stock_run: was day tue; now day wed'],
+    };
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'term-proposal-2',
+          payload: JSON.stringify({
+            type: 'term_agreement_proposal',
+            card_id: 'term-proposal-2',
+            seller_did: 'did:plc:store',
+            resource_ref: 'slot-3',
+            general,
+            terms: [
+              { name: 'fee', value: '170000' },
+              { name: 'share_bps', value: '700' },
+            ],
+            alternative_id: 'tue_run',
+            legibility,
+            valid_until: '2027-01-13T09:00:00.000Z',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const preview = (await listPendingApprovals())[0]?.paramsPreview ?? '';
+    expect(preview).toContain('binds: ₹1700 a month, paid by you to the store; 7% of sales, paid by you to the store “a small admin fee” (the pack’s words); a promise you must keep');
+    expect(preview).toContain('You promise: stock_run (crates: 2, day: wed, every_days: 7).');
+    expect(preview).toContain('changed: stock_run: was day tue; now day wed');
+  });
+
   it('a “no” on a term card is a plain cancel — the term engine answers the other side itself', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);
@@ -554,6 +601,30 @@ describe('useServiceInbox', () => {
     await denyPending('term-proposal-1', 'denied_by_operator', 'term_agreement_proposal');
     expect(calls.responded).toEqual([]);
     expect(calls.cancelled.map((c) => c.id)).toEqual(['term-decision-1', 'term-proposal-1']);
+  });
+
+  it('the run cards read in Core’s words, whole; a “no” is a plain cancel (COMMITMENT_KERNEL §15 step 7)', async () => {
+    const clear = 'A shipper can run one of your orders on 2026-11-10 for ₹300, held until 2026-11-05 09:00 UTC. Offer the buyer that day, passing on your chosen share of what it saves you? A yes the buyer gives in time binds the run.';
+    const lapsed = 'A shipper’s run for one of your orders ended without fault: your acceptance reached them after the time agreed. The order now stands on the quote’s own terms (standard shipping), and the buyer has been told.';
+    const { client, calls } = stubClient({
+      list: [
+        makeTask({ id: 'option-clear-req-1', description: clear, payload: JSON.stringify({ type: 'option_clear', request_id: 'req-1' }) }),
+        makeTask({ id: 'option-link-lapsed-req-1', description: lapsed, payload: JSON.stringify({ type: 'option_link', state: 'lapsed', deal_ref: 'q-1' }) }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const entries = await listPendingApprovals();
+    const byId = new Map(entries.map((e) => [e.id, e]));
+    expect(byId.get('option-clear-req-1')).toMatchObject({
+      kind: 'option_clear',
+      serviceName: 'Offer a partner’s delivery run to the buyer?',
+      paramsPreview: clear,
+    });
+    expect(byId.get('option-link-lapsed-req-1')).toMatchObject({ kind: 'option_link', paramsPreview: lapsed });
+    expect(entries.every((e) => e.serviceName !== 'Unnamed service')).toBe(true);
+    await denyPending('option-clear-req-1', 'denied_by_operator', 'option_clear');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled.map((c) => c.id)).toEqual(['option-clear-req-1']);
   });
 
   it('denyPending on either negotiation card is a plain cancel — neither has a D2D requester to answer', async () => {

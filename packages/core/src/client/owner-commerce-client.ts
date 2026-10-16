@@ -368,13 +368,19 @@ export class OwnerCommerceClient {
   }
 
   /** Award the best offer, or the one named. Presence is checked by Core. */
-  async awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome> {
+  async awardTender(args: {
+    tenderId: string;
+    supplierDid?: string;
+    /** The version named (COMMITMENT_KERNEL §6); absent: the quote's own terms. */
+    alternativeId?: string;
+  }): Promise<TenderAwardOutcome> {
     const res = await this.dispatcher.dispatch({
         method: 'POST',
         path: '/v1/commerce/trade/tender/award',
         body: {
           tender_id: args.tenderId,
           ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
+          ...(args.alternativeId === undefined ? {} : { alternative_id: args.alternativeId }),
         },
       });
     const outcome = readTenderAward(res.status, res.body);

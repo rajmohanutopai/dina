@@ -61,6 +61,18 @@ export interface SendRequest {
 
 /** A `commerce.trade` body's kind and document ('' / null otherwise) — what the contact gate's waiver binds to. */
 function tradeOf(req: SendRequest): { kind: string; document: unknown } {
+  // COMMITMENT_KERNEL §6 step 6: a run's fallback notice is order-bound like a
+  // trade document; its waiver binds to the order it names.
+  if (req.messageType === 'commitment.option') {
+    try {
+      const body = JSON.parse(req.body) as { kind?: unknown };
+      return body.kind === 'fallback'
+        ? { kind: 'option_fallback', document: body }
+        : { kind: '', document: null };
+    } catch {
+      return { kind: '', document: null };
+    }
+  }
   if (req.messageType !== 'commerce.trade') return { kind: '', document: null };
   try {
     const body = JSON.parse(req.body) as { kind?: unknown; document?: unknown };

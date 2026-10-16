@@ -23,7 +23,7 @@
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
+import { bytesToHex, hexToBytes, randomBytes } from '@noble/hashes/utils.js';
 
 import {
   canonicalJson,
@@ -209,6 +209,32 @@ const IDENTITY_TABLES = [
   'commerce_term_negotiations',
   'commerce_term_cards',
   'commerce_term_floor_authorizations',
+  // COMMITMENT_KERNEL §11: turns handed to the strategy slot.
+  'commerce_term_strategy_turns',
+  // COMMITMENT_KERNEL §7: the owner's value model — the Core form, entries no
+  // persona holds, and the index of what each persona's entries cover.
+  'commitment_model_forms',
+  'commitment_value_entries',
+  'commitment_value_index',
+  // COMMITMENT_KERNEL §11: per-contact sharing tiers, the owner's own choices.
+  'sharing_policies',
+  // COMMITMENT_KERNEL §15 step 6: the group plans this node is booked into.
+  'coordination_bookings',
+  // COMMITMENT_KERNEL §11: who fills the strategy slot, and the verdict
+  // budgets (a restore must not hand a strategy a fresh budget).
+  'commitment_strategy',
+  'commitment_owner_budget',
+  'commitment_negotiation_budget',
+  // COMMITMENT_KERNEL §15 step 7: options this node issued (and the one answer
+  // it gave each) or took up, and orders that fell back to the quote's terms —
+  // a restore must give a resend the same answer and price the order alike.
+  'commitment_options',
+  'commitment_option_links',
+  'commitment_order_fallbacks',
+  // §15 step 8: evidence, and each relationship's consent to share a summary.
+  'commitment_evidence',
+  'commitment_evidence_asks',
+  'commitment_evidence_consent',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */
@@ -220,6 +246,8 @@ const PERSONA_TABLES = [
   'vault_item_subjects',
   'topic_salience',
   'topic_aliases',
+  // COMMITMENT_KERNEL §7: value-model entries this persona holds.
+  'commitment_value_entries',
 ] as const;
 
 /** kv keys whose values are secrets — never exported. */
@@ -794,7 +822,23 @@ export async function importArchive(
                       r.created_at >= 0
                     );
                   })
-                : (UCP_ARCHIVE_TABLES as readonly string[]).includes(table)
+                : table === 'commitment_evidence_consent'
+                  ? // COMMITMENT_KERNEL §13: the other side's word on sharing may
+                    // have changed since the backup. It is not trusted until they
+                    // repeat it: forgotten here, and the next message asks.
+                    // The owner's own word is renumbered past anything the
+                    // other side may hold from after the backup was taken.
+                    rows.map((r) => ({
+                      ...r,
+                      peer_on: 0,
+                      peer_rev: 0,
+                      told: 0,
+                      ask_peer: 1,
+                      ask_nonce: bytesToHex(randomBytes(16)),
+                      echo_nonce: '',
+                      self_rev: Math.max(Number(r.self_rev ?? 0) + 1, Date.now()),
+                    }))
+                  : (UCP_ARCHIVE_TABLES as readonly string[]).includes(table)
                   ? // The archive is the importer's file: UCP rows are put in their
                     // restored form again here, whatever it says.
                     ucpRowsForArchive(table, rows, Date.now())

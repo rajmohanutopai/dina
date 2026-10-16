@@ -56,6 +56,7 @@ import {
   createReasoningCommitBridge,
   createReasoningPolicySnapshotResolver,
   createServiceReasoningCommitter,
+  commitTermStrategyMove,
   createCoreRouter,
   deriveDIDKey,
   ensureReasoningBackendForBoot,
@@ -125,6 +126,9 @@ import {
   type PublisherSchedule,
   coordinationWorkflowHooks,
   integrationWorkflowHooks,
+  modelChangeWorkflowHooks,
+  optionWorkflowHooks,
+  evidenceWorkflowHooks,
   negotiationWorkflowHooks,
   termWorkflowHooks,
   orderAttachmentWorkflowHooks,
@@ -822,6 +826,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         ...composeWorkflowHooks(
           coordinationWorkflowHooks(),
           integrationWorkflowHooks(),
+          // COMMITMENT_KERNEL §15 step 5: the owner's yes to a value-model change.
+          modelChangeWorkflowHooks(),
+          // COMMITMENT_KERNEL §15 step 7: the owner's clearance of a version resting on a run.
+          optionWorkflowHooks(),
+          // §15 step 8: the owner's answer to "did it happen?" is the evidence.
+          evidenceWorkflowHooks(),
           orderAttachmentWorkflowHooks(),
           negotiationWorkflowHooks(),
           termWorkflowHooks(),
@@ -1305,7 +1315,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         backendId: 'dina.internal-brain',
         kind: 'internal_brain',
         principalDid: brainDid,
-        allowedTaskKinds: ['answer.compose'],
+        allowedTaskKinds: ['answer.compose', 'negotiate.move'],
         maxSensitivity: 'sensitive',
         availability: 'always_on',
         modelClass: 'dina-internal-brain',
@@ -1346,6 +1356,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         getSessionRegistry().clearAuthorityOrigin(sessionId, principalDid, authorityOrigin).ok,
       outputGuard: createReasoningOutputGuard(),
       commitValidatedProposal: createReasoningCommitBridge({
+        // COMMITMENT_KERNEL §11 — a strategy's move goes to the term engine.
+        commitNegotiationMove: commitTermStrategyMove,
         ...(wiredWorkflow === undefined
           ? {}
           : {

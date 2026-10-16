@@ -34,6 +34,14 @@ export interface ReasoningCommitBridgeOptions {
   commitServiceResponse?: (
     input: ReasoningServiceCommitInput,
   ) => Promise<ReasoningCommitReceipt> | ReasoningCommitReceipt;
+  /**
+   * COMMITMENT_KERNEL §11 — a strategy's move goes to the negotiation's engine,
+   * which runs the envelope, charges the verdict budget and signs, cards or
+   * refuses. Absent wiring fails closed.
+   */
+  commitNegotiationMove?: (
+    input: ReasoningServiceCommitInput,
+  ) => Promise<ReasoningCommitReceipt> | ReasoningCommitReceipt;
 }
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -167,6 +175,18 @@ export function createReasoningCommitBridge(
           throw new Error('service response commit bridge is unavailable');
         }
         return options.commitServiceResponse({
+          taskId: proposal.task.id,
+          ownerDid: proposal.envelope.ownerDid,
+          authorityOrigin: proposal.envelope.authorityOrigin,
+          input: proposal.input,
+          result: proposal.result,
+          evidenceIds: proposal.evidenceIds,
+        });
+      case 'negotiate.move':
+        if (options.commitNegotiationMove === undefined) {
+          throw new Error('negotiation move commit bridge is unavailable');
+        }
+        return options.commitNegotiationMove({
           taskId: proposal.task.id,
           ownerDid: proposal.envelope.ownerDid,
           authorityOrigin: proposal.envelope.authorityOrigin,

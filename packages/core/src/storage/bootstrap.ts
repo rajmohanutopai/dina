@@ -10,6 +10,11 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { setCommitmentPersonaDB } from '../commitment/model_store';
+import { installEvidenceStore } from '../commitment/evidence_handler';
+import { installOptionStores } from '../commitment/option_handler';
+import { BookingStore, installBookingStore } from '../coordination/group_booking';
+import { installSharingPolicyStore } from '../gatekeeper/sharing';
 import { fireHeldReplay } from '../run/replay_registry';
 
 import { setDBProvider, resetDBProvider } from './db_provider';
@@ -35,6 +40,13 @@ export async function bootstrapPersistence(provider: DBProvider): Promise<Databa
   // Open and migrate identity database
   const identityDB = await provider.openIdentityDB();
   applyMigrations(identityDB, IDENTITY_MIGRATIONS);
+  // COMMITMENT_KERNEL §11 — sharing tiers survive a restart.
+  installSharingPolicyStore(identityDB);
+  installBookingStore(new BookingStore(identityDB));
+  // COMMITMENT_KERNEL §15 step 7 — options issued and taken up survive a restart.
+  installOptionStores(identityDB);
+  // COMMITMENT_KERNEL §15 step 8 — evidence and each relationship's consent.
+  installEvidenceStore(identityDB);
 
   return identityDB;
 }
@@ -51,6 +63,9 @@ export async function openPersonaVault(
 ): Promise<DatabaseAdapter> {
   const personaDB = await provider.openPersonaDB(persona);
   applyMigrations(personaDB, PERSONA_MIGRATIONS);
+  // COMMITMENT_KERNEL §7 — value-model entries this persona holds are read
+  // from its own file, and only while the persona is open.
+  setCommitmentPersonaDB(persona, personaDB);
   // R5-01 (§7 unlock-commit) — this is the SHARED persona-unlock choke point
   // for both boots (mobile `openPersonaDB`, lite `openVaultDB`, the agent
   // locked-persona unlock hook). The provider registered the DEK during

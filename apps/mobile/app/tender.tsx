@@ -74,7 +74,11 @@ export interface TenderBackend {
    * the owner's reviews are not theirs to read, so only PeerLens applies.
    */
   ownReviews?(): Promise<ReadonlyMap<string, OwnReview>>;
-  awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome>;
+  awardTender(args: {
+    tenderId: string;
+    supplierDid?: string;
+    alternativeId?: string;
+  }): Promise<TenderAwardOutcome>;
   sendHeldOrder(approvalId: string): Promise<OrderSendOutcome>;
   provePresence(secret: string): Promise<unknown>;
 }
@@ -171,6 +175,11 @@ function money(minor: string, currency: string): string {
     const amount = `${padded.slice(0, -2)}.${padded.slice(-2)}`;
     return currency === '' ? amount : `${currency} ${amount}`;
   }
+}
+
+/** A test id's suffix for a version other than the quote's own terms. */
+function versionSuffix(offer: { alternative_id?: string }): string {
+  return offer.alternative_id === undefined ? '' : `-${offer.alternative_id}`;
 }
 
 export default function TenderScreen(): React.ReactElement {
@@ -360,11 +369,15 @@ export default function TenderScreen(): React.ReactElement {
   );
 
   const award = useCallback(
-    (supplierDid: string) =>
+    (supplierDid: string, alternativeId?: string) =>
       withPresence(async () => {
         const client = await backend();
         if (client === null) return;
-        const outcome = await client.awardTender({ tenderId, supplierDid });
+        const outcome = await client.awardTender({
+          tenderId,
+          supplierDid,
+          ...(alternativeId === undefined ? {} : { alternativeId }),
+        });
         if (outcome.kind === 'pending_approval') {
           setNotice(
             'This order is over your limit, so the owner has to approve it. Award again once they do.',
@@ -444,7 +457,7 @@ export default function TenderScreen(): React.ReactElement {
    * owner may still award. The check never rests on trust still loading in
    * the background: a supplier with no answer yet is looked up here first.
    */
-  const awardChecked = async (supplierDid: string): Promise<void> => {
+  const awardChecked = async (supplierDid: string, alternativeId?: string): Promise<void> => {
     const client = await backend();
     if (client === null) return;
     let rated = trust.get(supplierDid);
@@ -481,7 +494,7 @@ export default function TenderScreen(): React.ReactElement {
       );
       if (!ok) return;
     }
-    await award(supplierDid);
+    await award(supplierDid, alternativeId);
   };
   const heading = useMemo(() => {
     if (view === null) return '';
@@ -532,9 +545,10 @@ export default function TenderScreen(): React.ReactElement {
             )}
             {view.ranked.map((offer, index) => (
               <View
-                key={offer.supplier_did}
+                // One supplier may rank in several versions (COMMITMENT_KERNEL §6).
+                key={`${offer.supplier_did}:${offer.alternative_id ?? ''}`}
                 style={styles.offer}
-                testID={`tender-offer-${offer.supplier_did}`}
+                testID={`tender-offer-${offer.supplier_did}${versionSuffix(offer)}`}
               >
                 <View style={styles.offerText}>
                   <Text style={styles.offerTitle}>
@@ -569,6 +583,21 @@ export default function TenderScreen(): React.ReactElement {
                       ? ` · revised ${String(Number(offer.revision) - 1)}×`
                       : ''}
                   </Text>
+                  {offer.estimated_delivery_at !== undefined && (
+                    <Text style={styles.meta} testID={`tender-delivery-${offer.supplier_did}${versionSuffix(offer)}`}>
+                      Delivered {offer.estimated_delivery_at.slice(0, 10)}
+                    </Text>
+                  )}
+                  {offer.partner_run !== undefined && (
+                    <Text style={styles.meta} testID={`tender-partner-run-${offer.supplier_did}${versionSuffix(offer)}`}>
+                      On a partner&apos;s delivery run. Award by {offer.partner_run.offer_ends_at.slice(0, 16).replace('T', ' ')} UTC. If the run
+                      falls through, standard delivery
+                      {offer.partner_run.fallback_delivery_at !== undefined
+                        ? ` on ${offer.partner_run.fallback_delivery_at.slice(0, 10)}`
+                        : ''}{' '}
+                      at {money(offer.partner_run.fallback_total_minor, offer.currency)}.
+                    </Text>
+                  )}
                   {offer.comparison_cost_minor !== offer.total_minor && (
                     <Text style={styles.meta}>
                       Costs you {money(offer.comparison_cost_minor, offer.currency)} after the
@@ -580,8 +609,8 @@ export default function TenderScreen(): React.ReactElement {
                   <Pressable
                     style={[styles.awardButton, busy && styles.disabled]}
                     disabled={busy}
-                    onPress={() => void awardChecked(offer.supplier_did)}
-                    testID={`tender-award-${offer.supplier_did}`}
+                    onPress={() => void awardChecked(offer.supplier_did, offer.alternative_id)}
+                    testID={`tender-award-${offer.supplier_did}${versionSuffix(offer)}`}
                     accessibilityRole="button"
                   >
                     <Text style={styles.awardLabel}>Award</Text>

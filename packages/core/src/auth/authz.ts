@@ -357,6 +357,13 @@ const AUTHZ_RULES: {
     allowed: new Set(['brain', 'owner', 'admin', 'device']),
   },
   { prefix: '/v1/coordination', allowed: new Set(['owner']) },
+  // COMMITMENT_KERNEL §7, §15 step 5 — Brain's own door: its view of the model
+  // (never the Core form) and changes it proposes, each a card for the owner.
+  // Before the owner-only rule below, which it narrows.
+  { prefix: '/v1/commitment/brain', allowed: new Set(['brain']) },
+  // COMMITMENT_KERNEL §7 — the owner's value model and its Core form. Owner
+  // only: Brain never reads the walk-away point, limits, totals or asking terms.
+  { prefix: '/v1/commitment', allowed: new Set(['owner']) },
   // Connected-agent policy is owner-only in-handler. Signed access is limited
   // to the node's own admin/device DID; the handler verifies the exact DID.
   { prefix: '/v1/owner/agent-policies', allowed: new Set(['owner', 'admin', 'device']) },

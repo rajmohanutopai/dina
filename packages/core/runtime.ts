@@ -46,6 +46,10 @@ export {
   wireGroupCoordinationOfferReplay,
 } from './src/coordination/group_coordination_service';
 export { coordinationWorkflowHooks } from './src/coordination/disclosure_egress';
+// COMMITMENT_KERNEL §15 step 5 — the owner's yes to a value-model change.
+export { modelChangeWorkflowHooks } from './src/commitment/model_changes';
+export { optionWorkflowHooks } from './src/commitment/option_handler';
+export { evidenceWorkflowHooks } from './src/commitment/evidence_handler';
 // A2A Lane 1 (docs/A2A_GATEWAY_ARCHITECTURE.md §6.2): the decision hook every
 // host composes, and the runtime it reads (null where Lane 1 is not installed).
 export { a2aWorkflowHooks } from './src/a2a/permits';
@@ -89,7 +93,7 @@ export type {
 } from './src/reasoning/backend_worker';
 export type { AskRouteHandler } from './src/server/core_server';
 export { createInProcessDispatch } from './src/server/in_process_dispatch';
-export { setD2DSender } from './src/server/routes/d2d_msg';
+export { sendOutcomeOf, setD2DSender } from './src/server/routes/d2d_msg';
 export { setServiceQuerySender } from './src/server/routes/service_query';
 export { setServiceRespondSender } from './src/server/routes/service_respond';
 export type { CoreRouter } from './src/server/router';

@@ -46,6 +46,7 @@ import {
   getPluginInstallRepository,
   buildWatchPollHandler,
   makeServiceResponseBridgeSender,
+  sendOutcomeOf,
   setD2DSender,
   setServiceQuerySender,
   setServiceRespondSender,
@@ -275,9 +276,10 @@ export function wireWorkflowPlane(opts: WireWorkflowPlaneOptions): WiredWorkflow
   // (D) Core's D2D sender registry — all three setters point at the
   //     same `sendD2D` so we have ONE outbound code path, ONE set of
   //     gates, ONE audit trail.
-  setD2DSender(async (to, type, body) => {
-    await opts.sendD2D(to, type, body);
-  });
+  setD2DSender(async (to, type, body) =>
+    // What the sender reports, passed on: a message that went nowhere is not sent.
+    sendOutcomeOf(await opts.sendD2D(to, type, body)),
+  );
   setServiceQuerySender(async (to, _type, body: ServiceQueryBody) => {
     await opts.sendD2D(to, 'service.query', body as unknown as Record<string, unknown>);
   });

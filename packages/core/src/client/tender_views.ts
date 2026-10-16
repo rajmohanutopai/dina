@@ -18,6 +18,12 @@ export interface TenderOfferView {
   credit_days: number;
   valid_until: string;
   revision: string;
+  /** The quote's version this row ranks (COMMITMENT_KERNEL §6); absent: its own terms. */
+  alternative_id?: string;
+  /** When this version is delivered, if the quote says. */
+  estimated_delivery_at?: string;
+  /** This version rests on a partner's run: until when, and what the order becomes if it falls through. */
+  partner_run?: { offer_ends_at: string; fallback_total_minor: string; fallback_delivery_at?: string };
 }
 
 export type TenderExclusionReason =

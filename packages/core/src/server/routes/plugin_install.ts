@@ -33,6 +33,7 @@
 import { COUNTRY_PACK_IDS, isCountryPack } from '../../commerce/country_packs';
 import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { beginFirstPartyInstall } from '../../commerce/reference_install';
+import { getCommerceRuntime } from '../../commerce/runtime';
 import { revokePluginDeviceForTeardown } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
 import { buildAgentSetupCode } from '../../pairing/setup_code';
@@ -206,15 +207,21 @@ export function registerPluginInstallRoutes(
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
     const installs = getPluginInstallRepository();
+    const commerce = getCommerceRuntime();
     return {
       status: 200,
       body: {
-        installs: (installs?.list() ?? []).map((install) => ({
-          install_id: install.installId,
-          plugin_id: install.pluginId,
-          status: install.status,
-          execution_mode: install.executionMode,
-        })),
+        installs: (installs?.list() ?? []).map((install) => {
+          // Shown before the owner removes the last Commerce Pack; never a block.
+          const openShelfDeals = commerce?.openShelfDeals(install.installId) ?? 0;
+          return {
+            install_id: install.installId,
+            plugin_id: install.pluginId,
+            status: install.status,
+            execution_mode: install.executionMode,
+            ...(openShelfDeals > 0 ? { open_shelf_deals: openShelfDeals } : {}),
+          };
+        }),
         registry_available: installs !== null,
         // A build with no repo-proof verifier cannot take a third-party
         // release at all; the screen says so instead of offering a retry.

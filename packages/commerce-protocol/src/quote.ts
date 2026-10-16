@@ -38,7 +38,7 @@ import { validateMoney, type Money } from './money';
 import { validateCanonicalPositiveInteger } from './numeric';
 import { productRefsEqual, validateProductRef, type ProductRef } from './product';
 import { validateQuantity, type Quantity } from './quantity';
-import { validateDeliveryProjection, type DeliveryProjection } from './region';
+import { projectionPincode, validateDeliveryProjection, type DeliveryProjection } from './region';
 
 export const MAX_QUOTE_LINES = 50;
 export const MAX_CHARGES = 20;
@@ -90,7 +90,22 @@ export interface QuoteRequest {
   issued_at: string;
   expires_at: string;
   idempotency_key: string;
+  /** The buyer's onward-sharing grant (§6 step 0). From protocol minor 1.4. */
+  onward_sharing?: OnwardSharingGrant;
   request_digest: string;
+}
+
+/**
+ * The buyer's per-deal onward-sharing grant (COMMITMENT_KERNEL §6 step 0,
+ * §11): which of the buyer's fields the supplier may pass on, and to which
+ * kind of recipient, to open a smaller deal beneath this one. Only the
+ * delivery pincode, and only to the supplier's own known shippers, in this
+ * minor. The buyer cannot enforce what the supplier's node does; the grant
+ * is the supplier's promise, and a breach is evidence. From minor 1.4.
+ */
+export interface OnwardSharingGrant {
+  fields: ['postal_code'];
+  recipient_role: 'shipper';
 }
 
 const SUBSTITUTIONS: ReadonlySet<string> = new Set(['none', 'equivalent', 'supplier_may_propose']);
@@ -100,6 +115,28 @@ function validateLineIds(lines: readonly { line_id: string }[]): string | null {
   for (const line of lines) {
     if (seen.has(line.line_id)) return `lines: duplicate line_id "${line.line_id}"`;
     seen.add(line.line_id);
+  }
+  return null;
+}
+
+function validateOnwardSharing(grant: unknown, protocolVersion: unknown): string | null {
+  const minor = Number(String(protocolVersion).split('.')[1] ?? '0');
+  if (!Number.isFinite(minor) || minor < 4) {
+    return 'quoteRequest.onward_sharing: requires protocol minor >= 1.4';
+  }
+  if (!isRecord(grant)) return 'quoteRequest.onward_sharing: must be an object';
+  if (Object.keys(grant).sort().join(',') !== 'fields,recipient_role') {
+    return 'quoteRequest.onward_sharing: exactly fields, recipient_role';
+  }
+  if (
+    !Array.isArray(grant.fields) ||
+    grant.fields.length !== 1 ||
+    grant.fields[0] !== 'postal_code'
+  ) {
+    return 'quoteRequest.onward_sharing.fields: ["postal_code"]';
+  }
+  if (grant.recipient_role !== 'shipper') {
+    return 'quoteRequest.onward_sharing.recipient_role: "shipper"';
   }
   return null;
 }
@@ -155,6 +192,15 @@ export function validateQuoteRequest(request: unknown, sha256: Sha256Fn): string
   if (request.delivery.required_by !== undefined) {
     const err = validateIsoUtc(request.delivery.required_by, 'quoteRequest.delivery.required_by');
     if (err) return err;
+  }
+
+  if (request.onward_sharing !== undefined) {
+    const err = validateOnwardSharing(request.onward_sharing, request.protocol_version);
+    if (err) return err;
+    const projection = (request.delivery as Record<string, unknown>).projection as DeliveryProjection;
+    if (projectionPincode(projection) === undefined) {
+      return 'quoteRequest.onward_sharing: grants a pincode the projection does not carry';
+    }
   }
 
   if (request.requested_terms !== undefined) {
@@ -259,6 +305,34 @@ export interface QuoteReservation {
   expires_at: string; // must not exceed valid_until; advisory in v1
 }
 
+/**
+ * Another version of the same quote (COMMITMENT_KERNEL §6, §15 step 6): the
+ * same lines at the same prices, delivered on another date for other
+ * charges — "₹X any day; ₹40 less shipping if delivery is on day Z". The
+ * buyer's order takes at most one version, named by `alternative_id`; the
+ * quote's own fields are the version taken when none is named. Its own total
+ * and terms digest are what an order taking it approves. From protocol minor
+ * 1.3.
+ */
+export interface QuoteAlternative {
+  alternative_id: string;
+  charges: Charge[];
+  estimated_delivery_at: string;
+  total: Money;
+  terms_digest: string;
+  /**
+   * From minor 1.4: this version rests on a firm option from one of the
+   * supplier's shippers (COMMITMENT_KERNEL §6). An order must name it before
+   * `offer_ends_at`; if the shipper's run is lost after binding, the quote's
+   * own terms (standard shipping) apply — the fallback. Both or neither.
+   */
+  partner_run?: true;
+  offer_ends_at?: string;
+}
+
+/** At most this many alternatives beside the quote's own terms. */
+export const MAX_QUOTE_ALTERNATIVES = 3;
+
 export interface SignedQuote {
   protocol_version: string;
   quote_id: string;
@@ -282,8 +356,38 @@ export interface SignedQuote {
   max_uses?: string; // default "1"
   reservations?: QuoteReservation[];
   catalog_snapshot_ref?: string;
+  /** Other versions the buyer may take instead (sorted by id, unique). From minor 1.3. */
+  alternatives?: QuoteAlternative[];
   terms_digest: string;
   quote_digest: string;
+}
+
+/**
+ * The version an order takes: the quote's own total and terms, or those of
+ * the alternative it names. Null when the quote has no such alternative.
+ */
+export function quoteVersion(
+  quote: SignedQuote,
+  alternativeId?: string,
+): { total: Money; terms_digest: string; charges: Charge[]; estimated_delivery_at?: string } | null {
+  if (alternativeId === undefined)
+    return {
+      total: quote.total,
+      terms_digest: quote.terms_digest,
+      charges: quote.charges,
+      ...(quote.estimated_delivery_at !== undefined
+        ? { estimated_delivery_at: quote.estimated_delivery_at }
+        : {}),
+    };
+  const alt = (quote.alternatives ?? []).find((a) => a.alternative_id === alternativeId);
+  return alt === undefined
+    ? null
+    : {
+        total: alt.total,
+        terms_digest: alt.terms_digest,
+        charges: alt.charges,
+        estimated_delivery_at: alt.estimated_delivery_at,
+      };
 }
 
 /**
@@ -534,6 +638,11 @@ export function validateSignedQuote(quote: unknown, sha256: Sha256Fn): string | 
     if (err) return err;
   }
 
+  if (quote.alternatives !== undefined) {
+    const err = validateQuoteAlternatives(quote, currency, subtotals, sha256);
+    if (err) return err;
+  }
+
   // Digests last: terms, then the quote digest over everything else.
   const termsError = validateHex64(quote.terms_digest, 'quote.terms_digest');
   if (termsError) return termsError;
@@ -546,6 +655,92 @@ export function validateSignedQuote(quote: unknown, sha256: Sha256Fn): string | 
     return 'quote.terms_digest: does not match the canonical terms recomputation';
   }
   return verifyCommerceRecordDigest('quote', quote, sha256);
+}
+
+const ALTERNATIVE_ID = /^[a-z][a-z0-9_]{0,15}$/;
+
+/**
+ * Each alternative: an id (sorted, unique), a delivery date, charges, and a
+ * total that is the quote's line subtotals with ITS charges (§9.1), and a
+ * terms digest over the quote's terms with its charges and delivery date.
+ */
+function validateQuoteAlternatives(
+  quote: Record<string, unknown>,
+  currency: string,
+  subtotals: Money[],
+  sha256: Sha256Fn,
+): string | null {
+  const minor = Number(String(quote.protocol_version).split('.')[1] ?? '0');
+  if (!Number.isFinite(minor) || minor < 3) {
+    return 'quote.alternatives: requires protocol minor >= 1.3';
+  }
+  const alternatives = quote.alternatives;
+  if (!Array.isArray(alternatives) || alternatives.length === 0) {
+    return 'quote.alternatives: must be a non-empty array when present';
+  }
+  if (alternatives.length > MAX_QUOTE_ALTERNATIVES) {
+    return `quote.alternatives: exceeds ${MAX_QUOTE_ALTERNATIVES}`;
+  }
+  let previous = '';
+  for (const [i, raw] of alternatives.entries()) {
+    const path = `quote.alternatives[${String(i)}]`;
+    if (!isRecord(raw)) return `${path}: must be an object`;
+    const keys = Object.keys(raw).sort().join(',');
+    const partnerRun =
+      keys === 'alternative_id,charges,estimated_delivery_at,offer_ends_at,partner_run,terms_digest,total';
+    if (keys !== 'alternative_id,charges,estimated_delivery_at,terms_digest,total' && !partnerRun) {
+      return `${path}: exactly alternative_id, charges, estimated_delivery_at, total, terms_digest (and from 1.4, partner_run with offer_ends_at)`;
+    }
+    if (partnerRun) {
+      if (minor < 4) return `${path}.partner_run: requires protocol minor >= 1.4`;
+      if (raw.partner_run !== true) return `${path}.partner_run: true`;
+      const endsErr = validateIsoUtc(raw.offer_ends_at, `${path}.offer_ends_at`);
+      if (endsErr) return endsErr;
+      const ends = Date.parse(raw.offer_ends_at as string);
+      if (
+        ends <= Date.parse(String(quote.issued_at)) ||
+        ends > Date.parse(String(quote.valid_until))
+      ) {
+        return `${path}.offer_ends_at: after the quote is issued, and no later than valid_until`;
+      }
+    }
+    if (typeof raw.alternative_id !== 'string' || !ALTERNATIVE_ID.test(raw.alternative_id)) {
+      return `${path}.alternative_id: lowercase id`;
+    }
+    if (raw.alternative_id <= previous) return `${path}.alternative_id: sorted and unique`;
+    previous = raw.alternative_id;
+    const dateErr = validateIsoUtc(raw.estimated_delivery_at, `${path}.estimated_delivery_at`);
+    if (dateErr) return dateErr;
+    if (!Array.isArray(raw.charges) || raw.charges.length > MAX_CHARGES) {
+      return `${path}.charges: an array of at most ${MAX_CHARGES}`;
+    }
+    for (const charge of raw.charges) {
+      const err = validateCharge(charge);
+      if (err) return `${path}.${err}`;
+    }
+    const moneyErr = validateMoney(raw.total);
+    if (moneyErr) return `${path}.${moneyErr}`;
+    const total = raw.total as Money;
+    if (total.currency !== currency) return `${path}.total: currency differs from the quote`;
+    const recomputed = computeTotal(currency, subtotals, raw.charges as Charge[]);
+    if (recomputed.error) return `${path}.total: ${recomputed.error}`;
+    if (recomputed.value?.minor_units !== total.minor_units) {
+      return `${path}.total: does not equal the §9.1 recomputation`;
+    }
+    const expected = commerceRecordDigest(
+      'terms',
+      termsDigestInput({
+        ...(quote as unknown as SignedQuote),
+        charges: raw.charges as Charge[],
+        estimated_delivery_at: raw.estimated_delivery_at as string,
+      }),
+      sha256,
+    );
+    if (raw.terms_digest !== expected) {
+      return `${path}.terms_digest: does not match its terms`;
+    }
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

@@ -29,6 +29,8 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { getSellerOptionStore, runOptionLinkTick } from '../commitment/option_handler';
+
 import {
   buildSupplierApprovalPayload,
   verifyApprovalBinding,
@@ -39,6 +41,7 @@ import {
 } from './approval_payload';
 import { isCommerceCapability } from './capability_names';
 import { settleInboundCounter } from './negotiation_supplier';
+import { orderTakesClearedRun } from './partner_run';
 import { settleInboundQuote } from './quote_issuance';
 import { rehydrateOrderStatus } from './rehydrate';
 import { getCommerceRuntime } from './runtime';
@@ -201,7 +204,23 @@ export function settleInboundOrderDecision(args: {
   // A settings row that does not VALIDATE fails closed. "I cannot read your
   // policy" must not read as "you said auto" on the one decision that spends
   // money.
-  if (decision.kind === 'accepted' && args.approval === undefined) {
+  // COMMITMENT_KERNEL §6 step 3: a version resting on a shipper's option was
+  // cleared by the owner before it went out, and binds on the buyer's yes. A
+  // card now could outlast the hold, so the order-review card is never asked.
+  // Asked only when this node holds a cleared option at all.
+  const optionStore = getSellerOptionStore();
+  const clearedRun =
+    decision.kind === 'accepted' &&
+    optionStore !== null &&
+    optionStore.forState(['held']).some((link) => link.clearedAt !== null) &&
+    orderTakesClearedRun({
+      store: optionStore,
+      orders: runtime.orders,
+      receipts: runtime.receipts,
+      buyerDid: args.buyerDid,
+      purchaseOrderId: args.purchaseOrderId,
+    });
+  if (decision.kind === 'accepted' && args.approval === undefined && !clearedRun) {
     const settings = runtime.settings.readSupplier();
     if (!settings.ok && !settings.absent) {
       return {
@@ -280,6 +299,14 @@ export function settleInboundOrderDecision(args: {
   if ('error' in decided) {
     return { ok: false, refusal: 'decision_refused', error: decided.error };
   }
+  // COMMITMENT_KERNEL §6 step 5: an option taken up in that transaction is
+  // told to its shipper now, not at the next tick; the tick resends if this
+  // is lost.
+  if (
+    decided.acknowledgement.kind === 'accepted' &&
+    (getSellerOptionStore()?.forState(['accepted']).length ?? 0) > 0
+  )
+    void runOptionLinkTick(runtime.now()).catch(() => undefined);
   return { ok: true, acknowledgementJson: JSON.stringify(decided.acknowledgement) };
 }
 

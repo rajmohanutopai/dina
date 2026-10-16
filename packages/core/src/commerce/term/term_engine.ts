@@ -23,6 +23,7 @@ import {
   validateSettlementAcknowledgement,
   validateSettlementNote,
   validateTermAgreementProposal,
+  renderTermMessage,
   validateTermCounter,
   validateTermOffer,
   validateTermReceipt,
@@ -35,6 +36,7 @@ import {
   type Term,
   type TermCounter,
   type TermGeneral,
+  type TermPromise,
   type TermListing,
   type TermOffer,
   type TermReceipt,
@@ -42,6 +44,8 @@ import {
   type TermRequest,
   checkProtocolVersion,
 } from '@dina/commerce-protocol';
+
+import { deliveryState, type DeliveryState, type StrategyMove } from '../../commitment';
 
 import {
   endedEarlyAt,
@@ -60,6 +64,11 @@ import {
   TERM_PROPOSAL_CARD,
   type RankedTermOffer,
   type StartTermOutcome,
+  applyStrategyMove,
+  endProposalWait,
+  fallBackStaleTurns,
+  resumeProposal,
+  TERM_STRATEGY_CARD,
 } from './term_buyer';
 import { hash, iso, mintId, TermContext, TERM_TIMINGS, type TermEngineDeps } from './term_context';
 import {
@@ -72,6 +81,13 @@ import {
   terminateTermAgreement,
   termAgreementView,
 } from './term_followups';
+import { openShelfDeals } from './term_money';
+import {
+  endPersonaWait,
+  resumePersonaCard,
+  TERM_PERSONA_CARD,
+  type PersonaResumers,
+} from './term_persona';
 import { validateTermPolicy, type TermListingAccess, type TermPolicy } from './term_policy';
 import {
   legacyTermAccess,
@@ -100,11 +116,30 @@ import {
   listingsOutsidePolicy,
   type TermListingInput,
   type TermVerdict,
+  endDecisionWait,
+  applySellerStrategyMove,
+  fallBackStaleSellerTurns,
+  resumeConcession,
+  resumeCounter,
+  resumeDecision,
+  resumeFirstOffer,
 } from './term_seller';
 
 import type { TermHeldRow, TermOutboxRow } from './term_store';
 
 /** Every `commerce.trade` kind the term engine owns. */
+
+/** What each step waiting for a persona does once it is open. */
+const PERSONA_RESUMERS: PersonaResumers = {
+  first_offer: resumeFirstOffer,
+  counter: resumeCounter,
+  concession: resumeConcession,
+  decision: resumeDecision,
+  proposal: resumeProposal,
+  endDecision: endDecisionWait,
+  endProposal: endProposalWait,
+};
+
 export const TERM_PUSH_KINDS = [
   'term_request',
   'term_offer',
@@ -132,6 +167,8 @@ export const TERM_CARD_TYPES: readonly string[] = [
   TERM_DECISION_CARD,
   TERM_PROPOSAL_CARD,
   TERM_DELIVERY_FAILED_CARD,
+  TERM_PERSONA_CARD,
+  TERM_STRATEGY_CARD,
 ];
 
 /** Documents that follow an agreement; a refusal of one is the owner's to hear about. */
@@ -192,14 +229,10 @@ export interface TermIngressResult {
  * answered; held by the other side ("waiting on the other side"); delivered;
  * refused; or not delivered once resends ran out without a final receipt.
  */
-export type TermDelivery = 'sent' | 'waiting' | 'delivered' | 'refused' | 'not_delivered';
+export type TermDelivery = DeliveryState;
 
 export function termDelivery(row: TermOutboxRow | null): TermDelivery | null {
-  if (row === null) return null;
-  if (row.receiptOutcome === 'stored') return 'delivered';
-  if (row.receiptOutcome === 'refused') return 'refused';
-  if (row.gaveUpAt !== null) return 'not_delivered';
-  return row.receiptOutcome === 'held' ? 'waiting' : 'sent';
+  return deliveryState(row);
 }
 
 export type TermCardDecision = { ok: true } | { ok: false; refusal: string };
@@ -472,23 +505,24 @@ export class TermEngine {
     const shape = validateTermReceipt(document, hash);
     if (shape !== null) return { outcome: 'unreadable', kind: 'term_receipt', detail: shape };
     const receipt = document as TermReceipt;
-    const sent = this.ctx.store.getOutbox(receipt.of_digest);
-    if (sent === null || sent.toDid !== senderDid) {
+    // The receipt and what a refusal closes land together.
+    const taken = this.ctx.atomically('receipt', () => {
+      const row = this.ctx.outbox.takeReceipt({
+        senderDid,
+        ofDigest: receipt.of_digest,
+        outcome: receipt.outcome,
+      });
+      if (row !== null && row !== 'unknown' && row.receiptOutcome === 'refused')
+        this.onRefused(row.kind, receipt.of_digest);
+      return row;
+    });
+    if (taken === 'unknown') {
       return {
         outcome: 'refused',
         kind: 'term_receipt',
         detail: 'a receipt for nothing this node sent that peer',
       };
     }
-    const nowMs = this.ctx.now();
-    const next =
-      receipt.outcome === 'held' ? nowMs + TERM_TIMINGS.heldResendEveryMs : sent.nextAttemptAt;
-    // The receipt and what a refusal closes land together.
-    this.ctx.atomically('receipt', () => {
-      const row = this.ctx.store.recordReceipt(receipt.of_digest, receipt.outcome, nowMs, next);
-      if (row !== null && row.receiptOutcome === 'refused')
-        this.onRefused(row.kind, receipt.of_digest);
-    });
     return { outcome: 'applied', kind: 'term_receipt' };
   }
 
@@ -579,6 +613,21 @@ export class TermEngine {
     kind: 'accepted' | 'disputed';
   }): ReturnType<typeof acknowledgeTermSettlement> {
     return acknowledgeTermSettlement(this.ctx, args);
+  }
+
+  /** A move the strategy returned, through the reasoning commit bridge (COMMITMENT_KERNEL §11). */
+  applyStrategyMove(args: { requestId: string; turn: number; move: StrategyMove }): { outcome: string } {
+    // The brand keeps a negotiation row for its requests; the store does not.
+    return this.ctx.atomically('strategy_move', () =>
+      this.ctx.store.getNegotiation(args.requestId) !== null
+        ? applyStrategyMove(this.ctx, args)
+        : applySellerStrategyMove(this.ctx, args),
+    );
+  }
+
+  /** Shelf deals with settlement work open here, for the pack's removal warning. */
+  openShelfDeals(): number {
+    return openShelfDeals(this.ctx);
   }
 
   agreement(proposalDigest: string): ReturnType<typeof termAgreementView> {
@@ -672,6 +721,8 @@ export class TermEngine {
       terms: Term[];
       general: TermGeneral;
       validUntil: string;
+      /** The store's message beside this offer, in Core's own words (§11). */
+      said?: string;
     } | null;
     pendingCardId: string | null;
     /** The brand's proposal, once the owner said yes (§5.3 "sent" → "delivered"). */
@@ -698,6 +749,7 @@ export class TermEngine {
                 terms: head.terms,
                 general: head.general,
                 validUntil: head.valid_until,
+                ...(head.message !== undefined ? { said: renderTermMessage(head.message) } : {}),
               },
         pendingCardId: pending?.cardId ?? null,
         proposalDelivery:
@@ -717,6 +769,8 @@ export class TermEngine {
     resourceRef: string;
     general: TermGeneral;
     terms: Term[];
+    /** What each side promised (COMMITMENT_KERNEL §6): kept or broken is evidence (§13). */
+    promises: TermPromise[];
     endsAt: string | null;
     /**
      * The document this side's yes sent: the vendor's proposal, or the host's
@@ -742,6 +796,7 @@ export class TermEngine {
         resourceRef: status.proposal.resource_ref,
         general: status.proposal.general,
         terms: status.proposal.terms,
+        promises: status.proposal.promises ?? [],
         endsAt: status.state === 'accepted' ? status.endsAt : null,
         delivery: sent === undefined ? null : termDelivery(this.ctx.store.getOutbox(sent)),
       });
@@ -942,6 +997,16 @@ export class TermEngine {
         const outcome = decideTermProposalCard(this.ctx, { cardId, approve });
         return outcome.ok ? { ok: true } : { ok: false, refusal: outcome.refusal };
       }
+      case TERM_PERSONA_CARD: {
+        if (!approve)
+          return endPersonaWait(this.ctx, card, 'declined', PERSONA_RESUMERS)
+            ? { ok: true }
+            : { ok: false, refusal: 'already_decided' };
+        return resumePersonaCard(this.ctx, card, PERSONA_RESUMERS)
+          ? { ok: true }
+          : { ok: false, refusal: 'persona_closed' };
+      }
+      case TERM_STRATEGY_CARD:
       case TERM_DELIVERY_FAILED_CARD:
         return this.ctx.store.decideCard(cardId, approve ? 'approved' : 'declined', this.ctx.now())
           ? { ok: true }
@@ -962,6 +1027,8 @@ export class TermEngine {
     else if (card.cardType === TERM_PROPOSAL_CARD) lapseProposalCard(this.ctx, cardId);
     // A stranger the owner never answered is refused (§6.2).
     else if (card.cardType === TERM_STRANGER_CARD) this.decideStranger(cardId, false);
+    else if (card.cardType === TERM_PERSONA_CARD)
+      endPersonaWait(this.ctx, card, 'lapsed', PERSONA_RESUMERS);
     else this.ctx.store.decideCard(cardId, 'lapsed', this.ctx.now());
   }
 
@@ -1012,30 +1079,18 @@ export class TermEngine {
   sweep(): { resent: number; gaveUp: number; released: number; lapsed: number; stepped: number } {
     this.adoptLegacyAccess();
     const nowMs = this.ctx.now();
-    let resent = 0;
-    let gaveUp = 0;
-    for (const row of this.ctx.store.dueOutbox(nowMs, 100)) {
-      if (nowMs > row.stopAt) {
-        this.ctx.atomically('give_up', () => {
-          this.ctx.store.giveUp(row.recordDigest, nowMs);
-          this.raiseDeliveryFailed(row.recordDigest, row.kind, 'unanswered');
-        });
-        gaveUp += 1;
-        continue;
-      }
-      const document = readStoredTermBody(row.documentJson);
+    const { resent, gaveUp } = this.ctx.outbox.sweep({
+      limit: 100,
       // Re-checked before it leaves again: a queued body edited after writing
       // is given up on, never resent.
-      if (!isTermPushKind(row.kind) || SHAPE[row.kind](document) !== null) {
-        this.ctx.store.giveUp(row.recordDigest, nowMs);
-        continue;
-      }
-      const every =
-        row.receiptOutcome === 'held' ? TERM_TIMINGS.heldResendEveryMs : TERM_TIMINGS.resendEveryMs;
-      this.ctx.store.markAttempt(row.recordDigest, nowMs + every);
-      this.ctx.resend(row.toDid, row.kind, document, row.recordDigest);
-      resent += 1;
-    }
+      readable: (row) => {
+        const document = readStoredTermBody(row.documentJson);
+        return isTermPushKind(row.kind) && SHAPE[row.kind](document) === null
+          ? document
+          : undefined;
+      },
+      onGiveUp: (row) => this.raiseDeliveryFailed(row.recordDigest, row.kind, 'unanswered'),
+    });
     let released = 0;
     for (const row of this.ctx.store.listHeld()) {
       if (row.expiresAt <= nowMs) {
@@ -1064,6 +1119,15 @@ export class TermEngine {
       // An answer the inbox committed and the engine never heard (a crash
       // between the two): act on it now, then close the inbox task.
       const answered = this.ctx.deps.cards.answer?.(card.cardId) ?? null;
+      // A yes the engine already acted on (its outcome is kept with the card)
+      // is never acted on twice: its inbox task is closed with that outcome.
+      // A yes that waited for a persona stays waiting on its persona card.
+      if (answered === 'approved' && card.yesOutcome !== '') {
+        const kept: TermCardDecision =
+          card.yesOutcome === 'ok' ? { ok: true } : { ok: false, refusal: card.yesOutcome };
+        this.ctx.deps.cards.finish?.(card.cardId, kept, this.ctx.now());
+        continue;
+      }
       if (answered !== null) {
         const outcome = this.decideCard(card.cardId, answered === 'approved');
         if (answered === 'approved')
@@ -1081,6 +1145,13 @@ export class TermEngine {
         });
       }
     }
+    // A deal waiting for a closed persona goes on once it is open — after the
+    // answers the inbox already holds, so a decline recorded before a crash
+    // ends the wait instead of being overtaken by it.
+    for (const card of this.ctx.store.pendingCards()) {
+      if (card.cardType === TERM_PERSONA_CARD && card.decideBy > nowMs)
+        resumePersonaCard(this.ctx, card, PERSONA_RESUMERS);
+    }
     // A yes the engine acted on whose inbox task was never closed (a crash
     // between the two): close it now with what the yes came to.
     for (const card of this.ctx.store.cardsWithYesSince(nowMs - TERM_TIMINGS.heldForMs)) {
@@ -1095,6 +1166,9 @@ export class TermEngine {
       this.lapseCard(card.cardId);
       this.ctx.deps.cards.close(card.cardId, 'lapsed');
     }
+    // A round the strategy did not answer in time: the fixed style plays it.
+    fallBackStaleTurns(this.ctx);
+    fallBackStaleSellerTurns(this.ctx);
     let stepped = 0;
     for (const negotiation of this.ctx.store.dueNegotiations(nowMs)) {
       // A step that moves the loop to `ready` keeps the owner's card with it.

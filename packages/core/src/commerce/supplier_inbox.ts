@@ -125,6 +125,12 @@ export function buildSupplierInbox(args: {
    * one scan per order.
    */
   cancellationsAwaitingReview?: ReadonlySet<string>;
+  /**
+   * COMMITMENT_KERNEL §6, §9 — the quote's version an order took, when it took
+   * an alternative: the delivery date the supplier is now bound to. Looked up
+   * by the caller (this projection does no I/O).
+   */
+  versionOf?: (ref: CommerceOrderRef) => { alternativeId: string; deliveryAt?: string } | null;
   nowMs: number;
 }): SupplierInbox {
   const items: InboxItem[] = [];
@@ -179,9 +185,11 @@ export function buildSupplierInbox(args: {
       headline: overdue
         ? 'An order is past its decision deadline.'
         : 'An order is waiting for your decision.',
-      detail: overdue
-        ? 'The buyer has heard nothing and their quote hold is expiring.'
-        : 'Accept or reject it. If nobody does, the order lapses at its decision deadline.',
+      detail:
+        (overdue
+          ? 'The buyer has heard nothing and their quote hold is expiring.'
+          : 'Accept or reject it. If nobody does, the order lapses at its decision deadline.') +
+        versionLine(args.versionOf?.(ref) ?? null),
       urgency: overdue ? URGENCY.ORDER_PAST_DEADLINE : URGENCY.ORDER_WAITING,
       // RESTORED, now that something serves them. These were stripped when
       // §15.2b had no owner decision route: the projection offered commands
@@ -305,4 +313,12 @@ export function buildSupplierInbox(args: {
   );
 
   return { items, clear: items.length === 0 };
+}
+
+/** The version line an order on an alternative carries: what accepting binds. */
+function versionLine(version: { alternativeId: string; deliveryAt?: string } | null): string {
+  if (version === null) return '';
+  return version.deliveryAt === undefined
+    ? ` The buyer took your other offer (${version.alternativeId}).`
+    : ` The buyer took your other offer (${version.alternativeId}): delivery on ${version.deliveryAt.slice(0, 10)}. Accepting binds you to that date.`;
 }

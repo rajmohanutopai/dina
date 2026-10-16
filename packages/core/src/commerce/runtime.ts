@@ -21,6 +21,9 @@
  * before the epoch exists must fail, not silently sign at a guessed epoch.
  */
 
+import { ValueModelStore } from '../commitment/model_store';
+import { installFallbackNoticeCheck, installOrderDigestLookup } from '../commitment/option_handler';
+import { SellerOptionStore } from '../commitment/options';
 import { setTradeCounterpartyCheck, setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
 import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
 import { tier0TxRunner } from '../run/tx';
@@ -91,6 +94,7 @@ import {
 } from './order_draft_store';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
 import { installStaffPresenceVerifier } from './owner_presence';
+import { checkFallbackNotice, retainedQuote, takeUpForOrderInTx } from './partner_run';
 import {
   SQLitePendingSupplierDecisionRepository,
   type PendingSupplierDecisionRepository,
@@ -137,6 +141,7 @@ import type { TenderRepository } from './tender';
 import type { TermEngine } from './term/term_engine';
 import type { TradeDocumentRepository } from './trade_ledger';
 import type { CommerceEpochWatermarkRepository } from './watermarks';
+import type { ValueModel } from '../commitment';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /**
@@ -197,6 +202,13 @@ export interface CommerceRuntimeInputs {
  * subsystem was wired up to its own doorstep and no further.
  */
 export interface CommerceRuntime {
+  /**
+   * COMMITMENT_KERNEL §15 step 6 — the owner's model for selling goods
+   * (`goods.seller`): what delivering on each day costs, and the personas
+   * whose entries could not be read because they are closed. Read at
+   * issuance; absent or null: no cost-led alternatives.
+   */
+  goodsSellerModel?: () => { model: ValueModel | null; closedPersonas: string[] } | null;
   families: QuoteFamilyStore;
   chains: StatusChainStore;
   orders: CommerceOrderStore;
@@ -392,6 +404,11 @@ export interface CommerceRuntime {
    * uninstall on a multi-plugin node because a DIFFERENT pack has work open.
    */
   inFlightCount: (installId?: string) => number;
+  /**
+   * Shelf deals with settlement work open, if this install is the last active
+   * Commerce Pack: shown before the owner removes it, never a block.
+   */
+  openShelfDeals: (installId: string) => number;
 }
 
 /**
@@ -575,6 +592,15 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     // depended on which of two transactions had landed.
     createAcceptedGenesisInTx: (buyerDid, purchaseOrderId, openAt) =>
       lifecycleEngine.createAcceptedGenesisInTx(buyerDid, purchaseOrderId, openAt),
+    // COMMITMENT_KERNEL §6 step 5: on this same database, so the option is
+    // taken up in the transaction that accepts the order, or not at all.
+    takeUpOptionInTx: (order, nowMs) =>
+      takeUpForOrderInTx({
+        store: new SellerOptionStore(inputs.adapter),
+        quote: retainedQuote(receipts, order.quote_digest),
+        order,
+        nowMs,
+      }),
   });
   const admission = new CommerceAdmissionService({ transaction, engine: admissionEngine });
   const lifecycle = new CommerceReconciliationService({ transaction, engine: lifecycleEngine });
@@ -590,7 +616,48 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     orderAttachments: new SQLiteOrderAttachmentRepository(inputs.adapter),
   };
 
+  const terms = createTermEngine({
+    adapter: inputs.adapter,
+    transaction,
+    nodeDid: inputs.supplierDid,
+    now,
+    // Shelf settlements go through the Commerce Pack (COMMITMENT_KERNEL §12).
+    moneyAvailable: () => resolveCommerceMoney(moneyStores).available,
+  });
+  /**
+   * Shelf deals with settlement work still open, for the warning before the
+   * owner removes this install: only for a Commerce Pack with no other active
+   * one beside it. Information, never a block (COMMITMENT_KERNEL §12).
+   */
+  const openShelfDeals = (installId: string): number => {
+    const opensMoney = (pluginId: string): boolean =>
+      firstPartyPack(pluginId)?.opensMoneyStores === true;
+    const installs = getPluginInstallRepository()?.list() ?? [];
+    const self = installs.find((install) => install.installId === installId);
+    if (self === undefined || !opensMoney(self.pluginId)) return 0;
+    const another = installs.some(
+      (install) =>
+        install.installId !== installId &&
+        install.status === 'active' &&
+        install.trustAnchor.kind === 'local_publisher_key' &&
+        opensMoney(install.pluginId),
+    );
+    return another ? 0 : terms.openShelfDeals();
+  };
+
   return {
+    goodsSellerModel: () => {
+      try {
+        const loaded = new ValueModelStore(inputs.adapter).load('goods.seller', [
+          'delivery_day',
+          'saving_share',
+          'total',
+        ]);
+        return { model: loaded.model, closedPersonas: loaded.closedPersonas };
+      } catch {
+        return null;
+      }
+    },
     families,
     chains,
     orders,
@@ -635,7 +702,8 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     admission,
     lifecycle,
     pendingDecisions,
-    terms: createTermEngine({ adapter: inputs.adapter, transaction, nodeDid: inputs.supplierDid, now }),
+    terms,
+    openShelfDeals,
     inFlightCount: (installId?: string) => {
       // Undecided orders: the supplier owes an answer it has not given.
       // Unfinished chains: the supplier owes an outcome it has not reached.
@@ -706,6 +774,16 @@ let runtime: CommerceRuntime | null = null;
 /** Install at boot; pass null on shutdown/lock. */
 export function installCommerceRuntime(value: CommerceRuntime | null): void {
   runtime = value;
+  // COMMITMENT_KERNEL §6 step 6: a supplier's fallback notice is checked
+  // against this node's own orders and quotes before it is kept.
+  installFallbackNoticeCheck(
+    value === null ? null : (args) => checkFallbackNotice(value, args),
+  );
+  installOrderDigestLookup(
+    value === null
+      ? null
+      : (buyerDid, purchaseOrderId) => value.orders.load(buyerDid, purchaseOrderId)?.ref.orderDigest ?? null,
+  );
   // §20.10 — the probing window lives and dies with the runtime. Composed
   // HERE rather than at each boot because there are two boots and the defence
   // is worthless on the one that forgets: an unwired ledger fails closed, so

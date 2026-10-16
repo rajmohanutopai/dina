@@ -71,6 +71,10 @@ export const KNOWN_REJECTION_REASONS = [
   'quote_voided',
   'projection_mismatch',
   'decision_timeout',
+  // From 1.4 (COMMITMENT_KERNEL §6 step 5): the order took a version resting
+  // on a shipper's firm option whose hold had ended when it arrived; nothing
+  // bound.
+  'option_lapsed',
 ] as const;
 
 export const MAX_REASON_CODE_LENGTH = 64;

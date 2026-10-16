@@ -643,6 +643,7 @@ export {
   getSharingPolicy,
   getSharingTier,
   setSharingPolicy,
+  SHARING_CATEGORIES,
 } from './gatekeeper/sharing';
 export type { SharingTier, SharingDecision } from './gatekeeper/sharing';
 // Pure-value constants (durations, sizes, multicodec prefixes,
@@ -1813,6 +1814,11 @@ export * from './reasoning/broker';
 export * from './reasoning/commit_bridge';
 export * from './reasoning/service_execution';
 export * from './reasoning/job_projection';
+// COMMITMENT_KERNEL §11 — a strategy's move on a shelf negotiation, for the reasoning commit bridge.
+export { modelChangeWorkflowHooks } from './commitment/model_changes';
+export { optionWorkflowHooks } from './commitment/option_handler';
+export { evidenceWorkflowHooks } from './commitment/evidence_handler';
+export { commitTermStrategyMove } from './commerce/term/term_runtime';
 
 // Commerce Pack Core stores (docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §23)
 export * from './commerce';

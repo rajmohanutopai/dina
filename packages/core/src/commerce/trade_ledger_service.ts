@@ -51,7 +51,11 @@ import {
   type Sha256Fn,
   type SignedQuote,
   type TradeFoldResult,
+  quoteVersion,
 } from '@dina/commerce-protocol';
+
+
+import { fallbackApplied } from '../commitment/option_handler';
 
 import {
   checkCumulativeDelivery,
@@ -473,6 +477,15 @@ export class TradeLedgerService {
         }
       }
 
+      // The order's own version of the quote (COMMITMENT_KERNEL §6): an order
+      // on an alternative accrues ITS charges, not the quote's own. One whose
+      // version cannot be found is not priced at all. An order whose partner
+      // run ended without fault stands on the quote's own terms (§6 step 6).
+      const version = quoteVersion(
+        quote,
+        fallbackApplied(order.buyer_did, purchaseOrderId) ? undefined : order.alternative_id,
+      );
+      if (version === null) continue;
       orders.push({
         purchase_order_id: purchaseOrderId,
         lines: order.accepted_lines.flatMap((line) => {
@@ -488,7 +501,7 @@ export class TradeLedgerService {
                 },
               ];
         }),
-        charges: quote.charges,
+        charges: version.charges,
         receipted,
       });
     }

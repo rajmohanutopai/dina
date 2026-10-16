@@ -45,7 +45,7 @@ describe('Contact Detail Hook (6.17)', () => {
       expect(detail!.trustLevel).toBe('verified');
       expect(detail!.aliases).toEqual([]);
       expect(detail!.sharingPolicy).toBeDefined();
-      expect(Object.keys(detail!.sharingPolicy)).toHaveLength(5);
+      expect(Object.keys(detail!.sharingPolicy)).toHaveLength(6);
     });
 
     it('returns null for missing contact', () => {
@@ -142,15 +142,16 @@ describe('Contact Detail Hook (6.17)', () => {
   });
 
   describe('options', () => {
-    it('getSharingCategories returns 5', () => {
-      expect(getSharingCategories()).toHaveLength(5);
+    it('getSharingCategories returns 6, location among them', () => {
+      expect(getSharingCategories()).toHaveLength(6);
       expect(getSharingCategories()).toContain('health');
+      expect(getSharingCategories()).toContain('location');
     });
 
-    it('getSharingTierOptions returns 4', () => {
+    it('getSharingTierOptions returns 5, pincode_only last', () => {
       const opts = getSharingTierOptions();
-      expect(opts).toHaveLength(4);
-      expect(opts.map((o) => o.value)).toEqual(['none', 'summary', 'full', 'locked']);
+      expect(opts).toHaveLength(5);
+      expect(opts.map((o) => o.value)).toEqual(['none', 'summary', 'full', 'locked', 'pincode_only']);
     });
   });
 });

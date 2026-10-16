@@ -34,11 +34,17 @@ import {
   proveStaffPresence,
   OWNER_IN_PROCESS_PRINCIPAL,
 } from '../../../src/commerce/owner_presence';
+import { priceQuoteAlternatives } from '../../../src/commerce/quote_issuance';
 import {
   createCommerceRuntime,
   installCommerceRuntime,
   type CommerceRuntime,
 } from '../../../src/commerce/runtime';
+import {
+  assemble,
+  installValueModelStore,
+  type ValueModelStore,
+} from '../../../src/commitment/model_store';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
@@ -192,6 +198,155 @@ function quotesArrive(unitBySupplier: Record<string, string>): void {
     runtime.tenders.setMemberQuote(request.request_id, quote.quote_id);
   }
 }
+
+describe("the owner's values choose among versions (COMMITMENT_KERNEL §7, §15 step 6)", () => {
+  /** Supplier A: ₹540 with Friday delivery, or ₹500 if it comes Tuesday. B: ₹520. */
+  function quotesWithTuesday(): void {
+    for (const wire of sent.filter(
+      (w) => w.body.capability === 'com.dinakernel.commerce.request_quote',
+    )) {
+      const request = wire.body.params as QuoteRequest;
+      const product = request.lines[0]?.product;
+      if (product === undefined) throw new Error('request has no line');
+      const a = wire.toDid === SUPPLIER_A;
+      const unit = a ? '500' : '520';
+      const line = {
+        line_id: 'l1',
+        requested_product: product,
+        offered_product: product,
+        quantity: { value: '100', unit_code: 'each' },
+        price_basis: { value: '1', unit_code: 'each' },
+        unit_price: { currency: 'INR', minor_units: unit },
+        line_subtotal: { currency: 'INR', minor_units: String(Number(unit) * 100) },
+        stock_status: 'available' as const,
+      };
+      const delivery = (minor: string) => [
+        {
+          kind: 'delivery' as const,
+          label: 'Delivery',
+          amount: { currency: 'INR', minor_units: minor },
+          operation: 'add' as const,
+        },
+      ];
+      const base = makeSignedQuote(request, {
+        quote_id: `q-${wire.toDid.slice(-4)}`,
+        valid_until: '2036-01-01T00:00:00.000Z',
+        lines: [line],
+        charges: a ? delivery('4000') : [],
+        total: { currency: 'INR', minor_units: a ? '54000' : '52000' },
+        estimated_delivery_at: '2026-08-14T10:00:00Z',
+        // Alternatives exist from protocol minor 1.3.
+        ...(a ? { protocol_version: '1.3' } : {}),
+      });
+      const alternatives = a
+        ? (priceQuoteAlternatives(base, [
+            { alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' },
+          ]) ?? [])
+        : [];
+      const quote = a
+        ? makeSignedQuote(request, {
+            quote_id: base.quote_id,
+            valid_until: base.valid_until,
+            lines: base.lines,
+            charges: base.charges,
+            total: base.total,
+            estimated_delivery_at: base.estimated_delivery_at,
+            protocol_version: '1.3',
+            alternatives,
+          })
+        : base;
+      runtime.buyerQuotes.append({
+        supplierDid: wire.toDid,
+        quoteId: quote.quote_id,
+        quote,
+        acceptedAt: Date.now(),
+      });
+      runtime.tenders.setMemberQuote(request.request_id, quote.quote_id);
+    }
+  }
+  const order = async (tenderId: string) => {
+    const res = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    expect(res.status).toBe(200);
+    return (res.body as { ranked: { supplier_did: string; alternative_id?: string }[] }).ranked.map(
+      (r) =>
+        `${r.supplier_did === SUPPLIER_A ? 'A' : 'B'}${r.alternative_id === undefined ? '' : `:${r.alternative_id}`}`,
+    );
+  };
+  const withModel = (entries: Parameters<typeof assemble>[3]) =>
+    installValueModelStore({
+      load: () => ({
+        model: assemble(
+          'goods.buyer',
+          1,
+          { limits: {}, totals: {}, asking: {}, binding: 'card' },
+          entries,
+        ),
+        closedPersonas: [],
+      }),
+    } as unknown as ValueModelStore);
+  afterEach(() => installValueModelStore(null));
+
+  it('on price alone the cheaper Tuesday wins; a Tuesday that costs the owner ₹100 loses; never Tuesday drops it', async () => {
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quotesWithTuesday();
+    withModel([]);
+    expect(await order(tenderId)).toEqual(['A:tue', 'B', 'A']);
+    withModel([
+      {
+        id: 'd1',
+        kind: 'goods.buyer',
+        covers: ['delivery_day'],
+        body: { type: 'choice', part: 'delivery_day', option: 'tue', rupees: -100n },
+      },
+    ]);
+    expect(await order(tenderId)).toEqual(['B', 'A', 'A:tue']);
+    withModel([
+      {
+        id: 'n1',
+        kind: 'goods.buyer',
+        covers: ['delivery_day'],
+        body: {
+          type: 'never',
+          label: 'not on Tuesdays',
+          all: [{ part: 'delivery_day', choice: 'tue' }],
+        },
+      },
+    ]);
+    expect(await order(tenderId)).toEqual(['B', 'A']);
+  });
+
+  it('a rule kept in a closed persona: the ranking says so, and the award waits until it is open', async () => {
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quotesWithTuesday();
+    installValueModelStore({
+      load: () => ({
+        model: assemble(
+          'goods.buyer',
+          1,
+          { limits: {}, totals: {}, asking: {}, binding: 'card' },
+          [],
+        ),
+        closedPersonas: ['health'],
+      }),
+    } as unknown as ValueModelStore);
+    const ranking = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    expect(ranking.body).toMatchObject({ closed_personas: ['health'] });
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    const award = await router.handle(
+      call('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
+    );
+    expect(award).toMatchObject({
+      status: 409,
+      body: { error: 'persona_closed', personas: ['health'] },
+    });
+  });
+});
 
 describe('the owner client starts a tender (ASK_FOR_QUOTES_PLAN §2)', () => {
   const client = (): OwnerCommerceClient =>
@@ -754,11 +909,42 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     expect(card?.status).toBe('pending_approval');
     // The card line is the Activity title: named by what was asked for and
     // priced in money — never `tnd_…`, never "minor units".
-    expect(card?.description).toMatch(/^Your tender for “.+” is ready: 2 offer\(s\) within budget, best /);
+    expect(card?.description).toMatch(
+      /^Your tender for “.+” is ready: 2 offer\(s\) within budget, best /,
+    );
     expect(card?.description).not.toContain(tenderId);
     expect(card?.description).not.toContain('minor units');
     return { tenderId, start };
   }
+
+  it('when the owner\'s own rules rule out every offer, the ready card says so, not "over budget"', async () => {
+    installValueModelStore({
+      load: () => ({
+        model: assemble('goods.buyer', 1, { limits: {}, totals: {}, asking: {}, binding: 'card' }, [
+          {
+            id: 'n1',
+            kind: 'goods.buyer',
+            covers: ['total'],
+            body: { type: 'never', label: 'never over ₹400', all: [{ part: 'total', above: 40_000n }] },
+          },
+        ]),
+        closedPersonas: [],
+      }),
+    } as unknown as ValueModelStore);
+    try {
+      const opened = await openTender({ target_total: '42000', budget_ceiling: '60000' });
+      const tenderId = String(opened.body.tender_id);
+      quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '480' });
+      const start = Date.now();
+      await runNegotiationTick(start);
+      clockOffset = 100_000;
+      await runNegotiationTick(start + 100_000);
+      const card = workflow.store().getById(`tender-ready-${tenderId}`);
+      expect(card?.description).toMatch(/no offer your own rules allow/);
+    } finally {
+      installValueModelStore(null);
+    }
+  });
 
   it('reaching ready tells each countered supplier no more counters are coming', async () => {
     const mark = sent.length;

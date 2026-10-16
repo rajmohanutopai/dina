@@ -15,6 +15,12 @@
  *   - cards: the workflow inbox (term_workflow.ts).
  */
 
+import { TERM_MESSAGE_KINDS, type TermMessageKind } from '@dina/commerce-protocol';
+
+import { validateNumberParts, type DealVersion, type StrategyMove } from '../../commitment';
+import { ValueModelStore } from '../../commitment/model_store';
+import { StrategyStore } from '../../commitment/strategy_store';
+import { createNegotiationSubmitter } from '../../commitment/strategy_submit';
 import { getContact } from '../../contacts/directory';
 import { getPluginInstallRepository } from '../../plugins/registry';
 import { getD2DSender } from '../../server/routes/d2d_msg';
@@ -23,6 +29,7 @@ import { getWorkflowService } from '../../workflow/service';
 import { firstPartyPack } from '../first_party_packs';
 import { getQuoteAttemptLedger } from '../probing_ledger';
 import { admitQuoteRequest, type CounterpartyStanding } from '../probing_resistance';
+import { getCommerceRuntime } from '../runtime';
 
 import { TermEngine } from './term_engine';
 import { TermStore } from './term_store';
@@ -37,6 +44,10 @@ export function activeTermPack(role: 'term_seller' | 'term_buyer'): ActiveTermPa
     const entry = firstPartyPack(install.pluginId);
     if (entry === null || entry.role !== role) continue;
     if (install.status !== 'active' || install.trustAnchor.kind !== 'local_publisher_key') continue;
+    // The kernel's check on the pack's parts (payer and payee are the two
+    // parties, kinds known): a vocabulary that fails it binds nothing.
+    const parts = entry.term?.vocabulary.parts;
+    if (parts === undefined || validateNumberParts(parts) !== null) continue;
     return { entry, installId: install.installId };
   }
   return null;
@@ -128,6 +139,10 @@ const TERM_REFUSAL_WORDS: Readonly<Record<string, string>> = {
   unbuildable: 'could not be sent',
   pack_inactive: 'the Slot Pack is paused; resume it and a new card will ask again',
   pack_removed: 'the Slot Pack (brand) was removed; this deal can no longer be sent',
+  commerce_pack_needed: 'install the Commerce Pack first: shelf deals settle through it',
+  ruled_out: 'one of your rules rules this deal out',
+  no_room: 'your runs cannot carry this promise beside the ones you already made',
+  persona_closed: 'open the persona your rule is kept in, and a new card will ask again',
 };
 
 /**
@@ -174,6 +189,8 @@ export function createTermEngine(args: {
   transaction: TermTransaction;
   nodeDid: () => string;
   now: () => number;
+  /** Is the Commerce Pack active (`runtime.money()`)? */
+  moneyAvailable: () => boolean;
 }): TermEngine {
   return new TermEngine({
     store: new TermStore(args.adapter),
@@ -182,6 +199,18 @@ export function createTermEngine(args: {
     now: args.now,
     activePack: activeTermPack,
     packHeld: termPackHeld,
+    moneyAvailable: args.moneyAvailable,
+    // The owner's value model for shelf kinds: never-rules and persona entries.
+    valueModels: (kind, touches) => new ValueModelStore(args.adapter).load(kind, touches),
+    // COMMITMENT_KERNEL §11 — the strategy slot: who plays, the budgets, and
+    // the door to the owner's reasoning backend.
+    strategy: {
+      settings: (kind) => new StrategyStore(args.adapter).settings(kind),
+      charge: (charge) => new StrategyStore(args.adapter).charge(charge),
+      submit: createNegotiationSubmitter({ ownerDid: args.nodeDid, nowMs: args.now }),
+      canSpend: (check) => new StrategyStore(args.adapter).canSpend(check),
+      brainModel: (kind) => new ValueModelStore(args.adapter).loadForBrain(kind),
+    },
     isContact: isKeptContact,
     isBlocked: (did) => getContact(did)?.trustLevel === 'blocked',
     // Core's own transport, as a `commerce.trade` push. The term engine is a
@@ -204,4 +233,54 @@ export function createTermEngine(args: {
     cards: termCardPort(),
     spendProbing,
   });
+}
+
+/**
+ * COMMITMENT_KERNEL §11 — the reasoning commit bridge's door for a strategy's
+ * move on a shelf negotiation. The move's ids come from Core's own input
+ * (hash-bound to the job), never from the model's answer; the term engine
+ * runs the envelope and the budgets, and sends, cards or refuses.
+ */
+export function commitTermStrategyMove(input: {
+  input: unknown;
+  result: unknown;
+}): { state: 'committed'; receipt: Record<string, unknown> } {
+  const engine = getCommerceRuntime()?.terms ?? null;
+  if (engine === null) throw new Error('term engine unavailable');
+  const brief = input.input as { kind?: unknown; ref?: { negotiationId?: unknown; turn?: unknown } };
+  if (brief.kind !== 'shelf_space.vendor' && brief.kind !== 'shelf_space.host')
+    throw new Error('not a shelf negotiation move');
+  const requestId = brief.ref?.negotiationId;
+  const turn = brief.ref?.turn;
+  if (typeof requestId !== 'string' || typeof turn !== 'number') throw new Error('negotiation move: no ref');
+  const move = readMove((input.result as { move?: unknown } | null)?.move);
+  const { outcome } = engine.applyStrategyMove({ requestId, turn, move });
+  return { state: 'committed', receipt: { outcome } };
+}
+
+/** The model's move, read as data: numbers stay strings until Core parses them. */
+function readMove(value: unknown): StrategyMove {
+  const m = (value ?? {}) as { kind?: unknown; versions?: unknown; message?: unknown; part?: unknown };
+  if (m.kind === 'stop') return { kind: 'stop' };
+  // A message the wire carries: a fixed kind and a part (the engine checks
+  // the part is on the table). Anything else asked of the other side lets
+  // the fixed style play the round.
+  if (
+    m.kind === 'ask_other' &&
+    (TERM_MESSAGE_KINDS as readonly unknown[]).includes(m.message) &&
+    typeof m.part === 'string'
+  )
+    return { kind: 'ask_other', message: m.message as TermMessageKind, part: m.part };
+  if (m.kind !== 'propose' || !Array.isArray(m.versions)) return { kind: 'ask_other', message: 'decline' };
+  const versions = m.versions.slice(0, 8).map((v): DealVersion => {
+    const terms = Array.isArray((v as { terms?: unknown }).terms) ? (v as { terms: unknown[] }).terms : [];
+    const parts = terms.flatMap((t) => {
+      const term = t as { name?: unknown; value?: unknown };
+      return typeof term.name === 'string' && typeof term.value === 'string' && /^(0|[1-9]\d{0,17})$/.test(term.value)
+        ? [{ kind: 'number' as const, name: term.name, value: BigInt(term.value) }]
+        : [];
+    });
+    return { parts, months: 1 };
+  });
+  return { kind: 'propose', versions };
 }

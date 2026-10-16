@@ -35,6 +35,9 @@ export {
   MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
   MSG_TYPE_COMMERCE_TRADE as MsgTypeCommerceTrade,
   MSG_TYPE_COMMERCE_INVITE as MsgTypeCommerceInvite,
+  MSG_TYPE_COORDINATION_BOOKED as MsgTypeCoordinationBooked,
+  MSG_TYPE_COMMITMENT_OPTION as MsgTypeCommitmentOption,
+  MSG_TYPE_COMMITMENT_CONSENT as MsgTypeCommitmentConsent,
 } from '@dina/protocol';
 import {
   MSG_TYPE_PRESENCE_SIGNAL as MsgTypePresenceSignal,
@@ -51,6 +54,9 @@ import {
   MSG_TYPE_SERVICE_GRANT_REQUEST as MsgTypeServiceGrantRequest,
   MSG_TYPE_COMMERCE_TRADE as MsgTypeCommerceTrade,
   MSG_TYPE_COMMERCE_INVITE as MsgTypeCommerceInvite,
+  MSG_TYPE_COORDINATION_BOOKED as MsgTypeCoordinationBooked,
+  MSG_TYPE_COMMITMENT_OPTION as MsgTypeCommitmentOption,
+  MSG_TYPE_COMMITMENT_CONSENT as MsgTypeCommitmentConsent,
  D2D_SCENARIOS } from '@dina/protocol';
 
 import type { VaultItemType } from '../vault/validation';
@@ -95,6 +101,9 @@ const V1_TYPES_LIST: readonly D2DMessageType[] = [
   MsgTypeServiceGrantRequest,
   MsgTypeCommerceTrade,
   MsgTypeCommerceInvite,
+  MsgTypeCoordinationBooked,
+  MsgTypeCommitmentOption,
+  MsgTypeCommitmentConsent,
 ];
 const V1_TYPES = new Set<string>(V1_TYPES_LIST);
 
@@ -153,6 +162,12 @@ const EPHEMERAL_TYPES_LIST: readonly EphemeralD2DType[] = [
   MsgTypeCommerceTrade,
   // commerce.invite is retained in `commerce_invites` by its handler.
   MsgTypeCommerceInvite,
+  // coordination.booked is retained in `coordination_bookings` by its handler.
+  MsgTypeCoordinationBooked,
+  // commitment.option is retained in `commitment_options` / `_links` by its handler.
+  MsgTypeCommitmentOption,
+  // commitment.consent is retained in `commitment_evidence_consent` by its handler.
+  MsgTypeCommitmentConsent,
 ];
 const EPHEMERAL_TYPES = new Set<string>(EPHEMERAL_TYPES_LIST);
 
@@ -187,6 +202,9 @@ const TYPE_TO_SCENARIO: Record<D2DMessageType, D2DScenario> = {
   [MsgTypeServiceGrantRequest]: 'service',
   [MsgTypeCommerceTrade]: 'service',
   [MsgTypeCommerceInvite]: 'service',
+  [MsgTypeCoordinationBooked]: 'coordination',
+  [MsgTypeCommitmentOption]: 'coordination',
+  [MsgTypeCommitmentConsent]: 'coordination',
 };
 
 /** Maximum D2D message body size in bytes (256 KB). */

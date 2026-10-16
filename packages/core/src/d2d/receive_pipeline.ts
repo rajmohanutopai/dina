@@ -25,7 +25,15 @@ import {
 import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
 import { getInviteService } from '../commerce/invite_compose';
+import { handleConsentMessage } from '../commitment/evidence_handler';
+import { handleOptionMessage } from '../commitment/option_handler';
 import { getServiceOfferRepository } from '../contacts/service_offers_repository';
+import {
+  admitBooked,
+  getBookingStore,
+  reconcileBookingReminders,
+} from '../coordination/group_booking';
+import { getNodeDID } from '../pairing/ceremony';
 import {
   evaluateServiceIngressBypass,
   type ServiceBypassDecision,
@@ -54,6 +62,9 @@ import {
   MsgTypeServiceGrantRequest,
   MsgTypeCommerceTrade,
   MsgTypeCommerceInvite,
+  MsgTypeCoordinationBooked,
+  MsgTypeCommitmentOption,
+  MsgTypeCommitmentConsent,
   MsgTypeTalkMessageV1,
 } from './families';
 import { checkScenarioGate } from './gates';
@@ -627,6 +638,135 @@ export function receiveD2D(
       signatureValid: true,
       bypassedBody: offerBody,
       reason: 'service.offer stored as contact metadata',
+    };
+  }
+
+  // coordination.booked — a group plan's organiser telling this node what the
+  // two of them agreed (COMMITMENT_KERNEL §15 step 6). From a contact only,
+  // naming this node as the guest and the sender as the organiser; kept in
+  // `coordination_bookings` with a reminder, never vaulted. Data, never an
+  // instruction.
+  if (message.type === MsgTypeCoordinationBooked) {
+    const store = getBookingStore();
+    // The guest is the node this was delivered to — the transport's word, or
+    // this node's own DID — never the sender-chosen inner `to`; an inner `to`
+    // naming anyone else is a spoof.
+    const self = options.authenticatedToDID ?? getNodeDID();
+    const innerTo = Array.isArray(message.to) ? message.to : [message.to];
+    let parsedBooking: unknown = null;
+    try {
+      parsedBooking = JSON.parse(message.body);
+    } catch {
+      parsedBooking = null;
+    }
+    const why = !isContact
+      ? 'not_contact'
+      : store === null || self === null
+        ? 'not_wired'
+        : innerTo.length !== 1 || innerTo[0] !== self
+          ? 'inner_to_mismatch'
+          : null;
+    const admitted =
+      why !== null || store === null || self === null
+        ? null
+        : admitBooked({
+            store,
+            fromDid: message.from,
+            selfDid: self,
+            body: parsedBooking,
+            nowMs: Date.now(),
+          });
+    if (admitted === null || admitted.outcome === 'refused') {
+      appendAudit(
+        message.from,
+        'd2d_recv_booking_refused',
+        message.to,
+        `reason=${why ?? (admitted?.outcome === 'refused' ? admitted.reason : '')}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'coordination.booked not kept',
+      };
+    }
+    // The record is stored; its reminder follows it, durably, off this path.
+    if (store !== null) void reconcileBookingReminders(store, Date.now()).catch(() => undefined);
+    return {
+      action: 'bypassed',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason:
+        admitted.outcome === 'stale'
+          ? 'coordination.booked older than the record held'
+          : `coordination.booked kept (${admitted.state})`,
+    };
+  }
+
+  // commitment.consent — the other owner's word on sharing a summary of the
+  // promises kept between us (COMMITMENT_KERNEL §13, §15 step 8). From a
+  // contact only; kept in `commitment_evidence_consent`, never vaulted.
+  if (message.type === MsgTypeCommitmentConsent) {
+    let parsedConsent: unknown = null;
+    try {
+      parsedConsent = JSON.parse(message.body);
+    } catch {
+      parsedConsent = null;
+    }
+    const kept = isContact ? handleConsentMessage(message.from, parsedConsent, Date.now()) : 'refused';
+    if (kept === 'refused')
+      appendAudit(message.from, 'd2d_recv_consent_refused', message.to, `contact=${String(isContact)}`);
+    return {
+      action: kept === 'kept' ? 'bypassed' : 'dropped',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason: `commitment.consent ${kept}`,
+    };
+  }
+
+  // commitment.option — a smaller deal beneath a larger one (COMMITMENT_KERNEL
+  // §6, §15 step 7): from a contact only; each kind checked against what this
+  // node asked for or issued, kept in its own tables, never vaulted. The
+  // handler answers on its own path (an option, a receipt).
+  if (message.type === MsgTypeCommitmentOption) {
+    let parsedOption: unknown = null;
+    try {
+      parsedOption = JSON.parse(message.body);
+    } catch {
+      parsedOption = null;
+    }
+    // A run's fallback notice may come from the supplier of an order this
+    // node placed through the AppView, contact or not; the handler keeps it
+    // only for this node's own order from that supplier.
+    const orderBound =
+      parsedOption !== null &&
+      typeof parsedOption === 'object' &&
+      (parsedOption as { kind?: unknown }).kind === 'fallback';
+    if (!isContact && !orderBound) {
+      appendAudit(message.from, 'd2d_recv_option_refused', message.to, 'reason=not_contact');
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType: message.type,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'commitment.option from a stranger',
+      };
+    }
+    void handleOptionMessage(message.from, parsedOption, Date.now()).catch(() => undefined);
+    return {
+      action: 'bypassed',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason: 'commitment.option routed to the option handler',
     };
   }
 

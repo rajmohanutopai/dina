@@ -28,6 +28,8 @@ export const REASONING_TASK_KINDS = [
   'service.respond',
   'review.summarize',
   'reminder.extract',
+  /** COMMITMENT_KERNEL §11 — the strategy slot: the next move in a negotiation. */
+  'negotiate.move',
 ] as const;
 export type ReasoningTaskKind = (typeof REASONING_TASK_KINDS)[number];
 

@@ -31,12 +31,14 @@ import {
   commerceRecordDigest,
   computeLineSubtotal,
   computeTotal,
+  MAX_QUOTE_ALTERNATIVES,
   readCounterOffer,
   termsDigestInput,
   validateQuoteOutcomeNotice,
   validateSignedQuote,
   type CounterOffer,
   type Money,
+  type QuoteAlternative,
   type QuoteOutcomeNotice,
   type Sha256Fn,
   type SignedQuote,
@@ -44,16 +46,20 @@ import {
 } from '@dina/commerce-protocol';
 
 import { appendAudit } from '../audit/service';
+import { clampPart, type NumberPartSpec } from '../commitment';
+import { getSellerOptionStore } from '../commitment/option_handler';
 import { getContact } from '../contacts/directory';
+import { ownerTimeZoneIfRead } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
 import {
-  clampProposal,
   lineBounds,
   NEGOTIATION_PRICE_APPROVAL_TYPE,
   TENDER_READY_TYPE,
 } from './negotiation_policy';
+import { partnerRunAlternatives } from './partner_run';
+import { priceQuoteAlternatives } from './quote_issuance';
 import { rehydrateSignedQuote } from './rehydrate';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
 
@@ -440,6 +446,14 @@ export function settleInboundCounter(args: {
   return { ok: true, json: COUNTER_REFUSED_ANSWER };
 }
 
+/** A goods line's unit price: money the buyer pays and the seller holds. */
+const GOODS_LINE_PRICE: NumberPartSpec = {
+  name: 'unit_price',
+  kind: 'money',
+  payer: 'buyer',
+  payee: 'seller',
+};
+
 function settleCounterTerms(args: {
   params: unknown;
   buyerDid: string;
@@ -471,6 +485,13 @@ function settleCounterTerms(args: {
       authorised.set(question.lineId, BigInt(question.askedMinorUnits));
   }
 
+  // COMMITMENT_KERNEL §15 step 6: each line's price is a money part the
+  // seller holds, floors from the first quote by the declared rule
+  // (`lineBounds`), clamped by the kernel's own rule. The loop around it is
+  // goods' own and unchanged, so the same terms are signed and the same
+  // questions asked as before: the proposal is first capped at the price the
+  // buyer holds; every line's question is collected, even while one line
+  // holds the whole revision under a floor the owner has raised.
   const toAsk: { lineId: string; asked: bigint; signed: bigint; current: bigint }[] = [];
   const lines: SignedQuoteLine[] = [];
   let moved = false;
@@ -483,13 +504,19 @@ function settleCounterTerms(args: {
     const proposal = proposals === 'hold' ? current : (proposals.get(line.line_id) ?? current);
     // Never raise a price the buyer holds.
     const wanted = proposal > current ? current : proposal;
-    const bounds = lineBounds(policy, line.offered_product, firstPrice);
-    const clamped = clampProposal(wanted, bounds, authorised.get(line.line_id) ?? null);
-    const price = clamped.price > current ? current : clamped.price;
+    const floors = lineBounds(policy, line.offered_product, firstPrice);
+    const clamped = clampPart(
+      GOODS_LINE_PRICE,
+      'seller',
+      wanted,
+      { hard: floors.hardFloor, auto: floors.autoFloor },
+      authorised.get(line.line_id) ?? null,
+    );
+    const price = clamped.value > current ? current : clamped.value;
     if (clamped.needsOwner)
       toAsk.push({ lineId: line.line_id, asked: clamped.asked, signed: price, current });
     if (price < current) moved = true;
-    if (price < bounds.hardFloor) belowFloor = true;
+    if (price < floors.hardFloor) belowFloor = true;
     const unitPrice: Money = {
       currency: line.unit_price.currency,
       minor_units: price.toString(10),
@@ -531,9 +558,10 @@ function settleCounterTerms(args: {
     quote_digest: _headDigest,
     terms_digest: _headTerms,
     replaces_quote_digest: _replaces,
+    alternatives: headAlternatives,
     ...headFields
   } = head;
-  const draft = {
+  const base = {
     ...headFields,
     quote_revision: (BigInt(head.quote_revision) + 1n).toString(10),
     previous_quote_digest: head.quote_digest,
@@ -543,16 +571,48 @@ function settleCounterTerms(args: {
     valid_until: new Date(validUntil).toISOString(),
     supplier_epoch: epoch,
   };
-  const terms_digest = commerceRecordDigest('terms', termsDigestInput(draft), hash);
-  const withTerms = { ...draft, terms_digest };
-  const revision: SignedQuote = {
-    ...withTerms,
-    quote_digest: commerceRecordDigest(
-      'quote',
-      withTerms as unknown as Record<string, unknown>,
-      hash,
-    ),
+  // COMMITMENT_KERNEL §6: the head's alternatives keep their delivery dates
+  // and charges, priced again over the revised lines — never their old totals.
+  // Versions resting on a shipper's option are not carried: they are made
+  // again from the options this seller holds now (§15 step 7), so one whose
+  // hold is too near, or whose option is gone, is no longer offered.
+  const ownAlternatives = (headAlternatives ?? []).filter((a) => a.partner_run !== true);
+  const alternatives = priceQuoteAlternatives(base, ownAlternatives);
+  if (alternatives === null) return { ok: false, refusal: 'revision_refused' };
+  const partner = partnerRunAlternatives({
+    store: getSellerOptionStore(),
+    dealRef: head.quote_id,
+    seller: runtime.goodsSellerModel?.() ?? null,
+    protocolVersion: head.protocol_version,
+    charges: head.charges,
+    currency: head.total.currency,
+    totalMinor: BigInt(total.value.minor_units),
+    validUntilMs: validUntil,
+    nowMs: args.nowMs,
+    timeZone: ownerTimeZoneIfRead(),
+  });
+  const assemble = (alts: readonly QuoteAlternative[]): SignedQuote => {
+    const draft = { ...base, ...(alts.length > 0 ? { alternatives: [...alts] } : {}) };
+    const terms_digest = commerceRecordDigest('terms', termsDigestInput(draft), hash);
+    const withTerms = { ...draft, terms_digest };
+    return {
+      ...withTerms,
+      quote_digest: commerceRecordDigest(
+        'quote',
+        withTerms as unknown as Record<string, unknown>,
+        hash,
+      ),
+    };
   };
+  // Partner runs first, within the protocol's cap; if they break the quote,
+  // the revision goes out without them.
+  const withPartner =
+    partner.length === 0
+      ? null
+      : priceQuoteAlternatives(base, [...partner, ...ownAlternatives].slice(0, MAX_QUOTE_ALTERNATIVES));
+  let revision = assemble(withPartner ?? alternatives);
+  if (withPartner !== null && validateSignedQuote(revision, hash) !== null)
+    revision = assemble(alternatives);
   if (validateSignedQuote(revision, hash) !== null)
     return { ok: false, refusal: 'revision_refused' };
   // The revision and the answer the buyer may replay are written together:

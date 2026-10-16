@@ -15,7 +15,12 @@
  * Source: core/internal/service/transport.go (SendMessage egress)
  */
 
-import { MsgTypeCommerceInvite, MsgTypeCommerceTrade, alwaysPasses } from './families';
+import {
+  MsgTypeCommerceInvite,
+  MsgTypeCommerceTrade,
+  MsgTypeCommitmentOption,
+  alwaysPasses,
+} from './families';
 import { isTradeCounterparty } from './trade_ingress_seam';
 
 export interface EgressCheckResult {
@@ -183,9 +188,17 @@ export function checkEgressGates(
     messageType === MsgTypeCommerceTrade &&
     tradeKind !== '' &&
     isTradeCounterparty(recipientDID, tradeKind, { document: tradeDocument, direction: 'outbound' });
+  // COMMITMENT_KERNEL §6 step 6 — a run's fallback notice to the buyer of an
+  // order this node recorded a fallback for, contact or not (a buyer found on
+  // the AppView has no contact row). Nothing else in the family passes.
+  const fallbackCounterparty =
+    messageType === MsgTypeCommitmentOption &&
+    tradeKind === 'option_fallback' &&
+    (fallbackRecipientCheck?.(recipientDID, tradeDocument) ?? false);
   if (
     messageType !== MsgTypeCommerceInvite &&
     !tradeCounterparty &&
+    !fallbackCounterparty &&
     !checkContactGate(recipientDID)
   ) {
     return { allowed: false, deniedAt: 'contact', reason: 'Recipient is not a known contact' };
@@ -213,6 +226,15 @@ export function checkEgressGates(
   // In production: appendAudit('d2d_send', recipientDID, messageType, ...)
 
   return { allowed: true };
+}
+
+/** May a run's fallback notice go to this recipient? Installed by the option family. */
+let fallbackRecipientCheck: ((recipientDID: string, notice: unknown) => boolean) | null = null;
+
+export function setFallbackRecipientCheck(
+  check: ((recipientDID: string, notice: unknown) => boolean) | null,
+): void {
+  fallbackRecipientCheck = check;
 }
 
 /**

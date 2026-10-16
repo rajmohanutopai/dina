@@ -20,6 +20,11 @@ import {
   type TermReceiptOutcome,
 } from '@dina/commerce-protocol';
 
+import { AfterCommit, DELIVERY_TIMINGS, Outbox } from '../../commitment';
+
+import type { OwnerCardPort, OwnerCardSpec, ValueModel } from '../../commitment';
+import type { StrategySettings } from '../../commitment/strategy_store';
+import type { NegotiationSubmitter } from '../../commitment/strategy_submit';
 import type { FirstPartyPackEntry } from '../first_party_packs';
 import type { TermStore } from './term_store';
 
@@ -28,20 +33,9 @@ export const hash: Sha256Fn = (data) => sha256(data);
 export const HOUR_MS = 60 * 60 * 1000;
 export const DAY_MS = 24 * HOUR_MS;
 
-/** §5.3 / §9 timings. */
+/** §5.3 / §9 timings. The resend schedule is the kernel's (`DELIVERY_TIMINGS`). */
 export const TERM_TIMINGS = {
-  /** Resend every 6 hours until a final receipt. */
-  resendEveryMs: 6 * HOUR_MS,
-  /**
-   * The first resend comes at 6 hours or at half the time left before the
-   * document's stop point, whichever is sooner, but no sooner than this — so a
-   * request with a near `respond_by` is not given up having been sent once.
-   */
-  firstResendFloorMs: 5 * 60 * 1000,
-  /** A send that failed outright (no sender yet, relay down) is tried again this soon. */
-  failedSendRetryMs: 60 * 1000,
-  /** Once the other side answers `held`, check once a day. */
-  heldResendEveryMs: DAY_MS,
+  ...DELIVERY_TIMINGS,
   /**
    * Agreement documents stop resending after 33 days, not §5.3's 30. The
    * receiver may hold a document for 30 days from its ARRIVAL (`heldForMs`)
@@ -86,37 +80,9 @@ export function iso(ms: number): string {
   return new Date(ms).toISOString();
 }
 
-/** An owner card the engine raises (the workflow service implements it). */
-export interface TermCardSpec {
-  cardId: string;
-  /** The payload `type` the inbox, the presence gate and the Brain redaction key on. */
-  type: string;
-  /** One line for the inbox. Never a price: Brain may read descriptions. */
-  description: string;
-  /** The owner-facing payload (prices included; redacted for Brain by type). */
-  payload: Record<string, unknown>;
-  expiresAtMs: number;
-}
-
-export interface TermCardPort {
-  /** Raise a card; false when one with this id already exists. */
-  raise(card: TermCardSpec): boolean;
-  /** Take a card down without an owner decision (it was answered elsewhere). */
-  close(cardId: string, reason: string): void;
-  /**
-   * The owner's answer the inbox holds for a card, when the engine may not
-   * have heard it: the workflow commits the yes, then tells the engine in a
-   * second step, and a crash between the two leaves the yes with no effect.
-   * The sweep asks, and acts on what it hears. Null: no answer, or none to act on.
-   */
-  answer?(cardId: string): 'approved' | 'declined' | null;
-  /** Close the inbox task once the engine acted on the owner's yes, with the outcome. */
-  finish?(
-    cardId: string,
-    outcome: { ok: true } | { ok: false; refusal: string },
-    nowMs: number,
-  ): void;
-}
+/** An owner card the engine raises: the kernel's card port (`commitment/cards.ts`). */
+export type TermCardSpec = OwnerCardSpec;
+export type TermCardPort = OwnerCardPort;
 
 /** The term half this node has active. Its pinned parameters are on `entry`. */
 export interface ActiveTermPack {
@@ -145,6 +111,40 @@ export interface TermEngineDeps {
    * resuming makes them live again. Only a gone half's listings are withdrawn.
    */
   packHeld: (role: 'term_seller' | 'term_buyer') => boolean;
+  /**
+   * Is the Commerce Pack active on this node (`runtime.money()`)? Shelf
+   * settlements go through it, so a new shelf deal binds only when it is
+   * (COMMITMENT_KERNEL §12; `term_money.ts`).
+   */
+  moneyAvailable: () => boolean;
+  /**
+   * The owner's value model for a deal kind (COMMITMENT_KERNEL §7), and the
+   * personas, closed now, whose entries cover a part in `touches`. Absent or
+   * null: no model beyond the shelf limits.
+   */
+  valueModels?: (kind: string, touches: readonly string[]) => { model: ValueModel; closedPersonas: string[] } | null;
+  /**
+   * The strategy slot (COMMITMENT_KERNEL §11): who fills it per kind, the
+   * verdict budgets, and the door to the reasoning backend. Absent: the
+   * pack's fixed style plays every turn, as before.
+   */
+  strategy?: {
+    settings: (kind: string) => StrategySettings;
+    charge: (args: {
+      kind: string;
+      negotiationId: string;
+      count: number;
+      nowMs: number;
+      thresholdVersion: number;
+    }) => { ok: true } | { ok: false; spent: 'negotiation' | 'owner' };
+    submit: NegotiationSubmitter;
+    /** Any budget left, checked before Brain is asked (a spent one retires Brain). */
+    canSpend: (args: { kind: string; negotiationId: string; nowMs: number; thresholdVersion: number }) =>
+      | { ok: true }
+      | { ok: false; spent: 'negotiation' | 'owner' };
+    /** The model as Brain may see it: untagged entries and Brain-readable personas only. */
+    brainModel: (kind: string) => ValueModel | null;
+  };
   /** Is this DID one of the owner's contacts? (§6.2 — contacts skip the stranger card.) */
   isContact: (did: string) => boolean;
   /** Has the owner blocked this DID? A blocked peer passes no term gate. */
@@ -160,17 +160,25 @@ export interface TermEngineDeps {
 
 /** Shared helpers over the deps. */
 export class TermContext {
-  constructor(readonly deps: TermEngineDeps) {}
-
   /**
    * Effects outside this node's database — a send, a receipt, a card raised in
-   * the workflow — wait here while a transaction is open, and run only once it
-   * commits. A rolled-back act therefore never told the other side, or the
-   * owner, about rows that do not exist; and every effect has a durable row
-   * behind it (an outbox intent, an answer, a kept card) that the sweep can
-   * act on again if the process dies before the effect runs.
+   * the workflow — wait for the open transaction to commit (`AfterCommit`).
+   * Every effect has a durable row behind it (an outbox intent, an answer, a
+   * kept card) that the sweep can act on again if the process dies first.
    */
-  private pending: (() => void)[] | null = null;
+  private readonly effects: AfterCommit;
+  readonly outbox: Outbox;
+
+  constructor(readonly deps: TermEngineDeps) {
+    this.effects = new AfterCommit(deps.transaction, 'term');
+    this.outbox = new Outbox({
+      outbox: deps.store,
+      effects: this.effects,
+      // Through `deps` at call time: a test may swap the sender after building.
+      send: (toDid, kind, document) => this.deps.send(toDid, kind, document),
+      now: () => this.deps.now(),
+    });
+  }
 
   get store(): TermStore {
     return this.deps.store;
@@ -186,25 +194,12 @@ export class TermContext {
    * both or neither.
    */
   atomically<T>(label: string, body: () => T): T {
-    if (this.pending !== null) return body();
-    this.pending = [];
-    let result: T;
-    try {
-      result = this.deps.transaction.atomically(`term:${label}`, body);
-    } catch (err) {
-      this.pending = null;
-      throw err;
-    }
-    const effects = this.pending;
-    this.pending = null;
-    for (const effect of effects) effect();
-    return result;
+    return this.effects.atomically(label, body);
   }
 
   /** Run an outside effect now, or after the open transaction commits. */
   private afterCommit(effect: () => void): void {
-    if (this.pending === null) effect();
-    else this.pending.push(effect);
+    this.effects.run(effect);
   }
 
   self(): string {
@@ -222,11 +217,7 @@ export class TermContext {
     return { plugin_id: term.packId, schema_major: term.schemaMajor };
   }
 
-  /**
-   * Record a send intent and try once now (§5.3). The document is already
-   * retained by the caller; a send that fails un-authors nothing — the
-   * outbox sweep resends until a final receipt or the stop point.
-   */
+  /** Record a send intent and try once now (§5.3), through the kernel's outbox. */
   enqueue(args: {
     toDid: string;
     kind: string;
@@ -234,37 +225,7 @@ export class TermContext {
     document: unknown;
     stopAtMs: number;
   }): void {
-    const nowMs = this.now();
-    const firstResend =
-      nowMs +
-      Math.min(
-        TERM_TIMINGS.resendEveryMs,
-        Math.max(TERM_TIMINGS.firstResendFloorMs, Math.floor((args.stopAtMs - nowMs) / 2)),
-      );
-    this.store.putOutbox({
-      recordDigest: args.digest,
-      toDid: args.toDid,
-      kind: args.kind,
-      documentJson: JSON.stringify(args.document),
-      createdAt: nowMs,
-      nextAttemptAt: firstResend,
-      stopAt: args.stopAtMs,
-    });
-    this.store.markAttempt(args.digest, firstResend);
-    this.afterCommit(() => this.sendNow(args.toDid, args.kind, args.document, args.digest));
-  }
-
-  /** One best-effort send; one that fails outright brings its next attempt forward. */
-  private sendNow(toDid: string, kind: string, document: unknown, digest?: string): void {
-    void this.deps
-      .send(toDid, kind, document)
-      .catch(() => false)
-      .then((sent) => {
-        if (!sent && digest !== undefined)
-          this.store.pullAttemptForward(digest, this.now() + TERM_TIMINGS.failedSendRetryMs);
-      })
-      // The store may be closed by a shutdown while a send was in flight.
-      .catch(() => undefined);
+    this.outbox.enqueue(args);
   }
 
   /**
@@ -272,7 +233,7 @@ export class TermContext {
    * head answering a stale counter). Best effort, after any open transaction.
    */
   resend(toDid: string, kind: string, document: unknown, digest?: string): void {
-    this.afterCommit(() => this.sendNow(toDid, kind, document, digest));
+    this.outbox.resend(toDid, kind, document, digest);
   }
 
   /** Take a card down from the inbox, after any open transaction commits. */
@@ -339,8 +300,6 @@ export class TermContext {
       },
       hash,
     ) as unknown as TermReceipt;
-    this.afterCommit(() => {
-      void this.deps.send(args.toDid, 'term_receipt', receipt).catch(() => false);
-    });
+    this.outbox.sendOnce(args.toDid, 'term_receipt', receipt);
   }
 }

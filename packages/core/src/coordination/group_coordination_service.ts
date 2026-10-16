@@ -41,6 +41,7 @@ import {
   type ServiceOfferRepository,
 } from '../contacts/service_offers_repository';
 import { onServiceOfferReceived } from '../d2d/service_offer_events';
+import { getNodeDID } from '../pairing/ceremony';
 import { getD2DSender, type D2DSender } from '../server/routes/d2d_msg';
 import {
   getServiceQuerySender,
@@ -58,6 +59,7 @@ import {
   tierAdmitsDisclosure,
   type DisclosureTierResolver,
 } from './disclosure_policy';
+import { syncBookings } from './group_booking';
 import { isMeetingSlot, type MeetingSlot, type SpokeReply } from './group_fold';
 import {
   MAX_DISCLOSURE_CHARS,
@@ -123,7 +125,9 @@ export interface GroupCoordinationDeps {
   newId: () => string;
 }
 
-type Resolved = { ok: true; deps: GroupCoordinationDeps } | { ok: false; refusal: 'not_wired'; detail: string };
+type Resolved =
+  | { ok: true; deps: GroupCoordinationDeps }
+  | { ok: false; refusal: 'not_wired'; detail: string };
 
 function resolveDeps(over: Partial<GroupCoordinationDeps>): Resolved {
   const plans = over.plans ?? getGroupPlanRepository();
@@ -133,7 +137,8 @@ function resolveDeps(over: Partial<GroupCoordinationDeps>): Resolved {
   const workflow = over.workflow ?? getWorkflowService();
   if (workflow === null) return { ok: false, refusal: 'not_wired', detail: 'workflow service' };
   const querySender = over.querySender ?? getServiceQuerySender();
-  if (querySender === null) return { ok: false, refusal: 'not_wired', detail: 'service-query sender' };
+  if (querySender === null)
+    return { ok: false, refusal: 'not_wired', detail: 'service-query sender' };
   const sendD2D = over.sendD2D ?? getD2DSender();
   if (sendD2D === null) return { ok: false, refusal: 'not_wired', detail: 'D2D sender' };
   return {
@@ -230,14 +235,24 @@ export function toSpokeReply(value: unknown): SpokeReply | null {
   if (message === null) return null;
   switch (value.status) {
     case 'accepted': {
-      const slots = value.accepted_slots === undefined ? undefined : sanitiseSlots(value.accepted_slots);
+      const slots =
+        value.accepted_slots === undefined ? undefined : sanitiseSlots(value.accepted_slots);
       if (slots === null) return null;
-      return { status: 'accepted', ...(slots !== undefined ? { accepted_slots: slots } : {}), ...(message !== undefined ? { message } : {}) };
+      return {
+        status: 'accepted',
+        ...(slots !== undefined ? { accepted_slots: slots } : {}),
+        ...(message !== undefined ? { message } : {}),
+      };
     }
     case 'counter': {
-      const slots = value.counter_slots === undefined ? undefined : sanitiseSlots(value.counter_slots);
+      const slots =
+        value.counter_slots === undefined ? undefined : sanitiseSlots(value.counter_slots);
       if (slots === null) return null;
-      return { status: 'counter', ...(slots !== undefined ? { counter_slots: slots } : {}), ...(message !== undefined ? { message } : {}) };
+      return {
+        status: 'counter',
+        ...(slots !== undefined ? { counter_slots: slots } : {}),
+        ...(message !== undefined ? { message } : {}),
+      };
     }
     case 'needs_more_info':
       return { status: 'needs_more_info', ...(message !== undefined ? { message } : {}) };
@@ -263,23 +278,38 @@ function readAnswer(
   contactDid: string,
   holdTier: DisclosureTierResolver,
 ): Answer | null {
-  if (task === null || task.status !== WorkflowTaskState.Completed || typeof task.result !== 'string') {
+  if (
+    task === null ||
+    task.status !== WorkflowTaskState.Completed ||
+    typeof task.result !== 'string'
+  ) {
     return null;
   }
   let body: unknown;
   try {
     body = JSON.parse(task.result);
   } catch {
-    appendAudit('group_plan', 'group_plan_reply_malformed', planId, `task=${task.id} reason=not_json`);
+    appendAudit(
+      'group_plan',
+      'group_plan_reply_malformed',
+      planId,
+      `task=${task.id} reason=not_json`,
+    );
     return null;
   }
   if (!isRecord(body) || body.status !== 'success') return null;
   const reply = toSpokeReply(body.result);
   if (reply === null) {
-    appendAudit('group_plan', 'group_plan_reply_malformed', planId, `task=${task.id} reason=result`);
+    appendAudit(
+      'group_plan',
+      'group_plan_reply_malformed',
+      planId,
+      `task=${task.id} reason=result`,
+    );
     return null;
   }
-  const raw = isRecord(body.result) && Array.isArray(body.result.disclosures) ? body.result.disclosures : [];
+  const raw =
+    isRecord(body.result) && Array.isArray(body.result.disclosures) ? body.result.disclosures : [];
   const disclosures: Disclosure[] = [];
   let dropped = 0;
   let refused = 0;
@@ -296,10 +326,20 @@ function readAnswer(
     }
   }
   if (dropped > 0) {
-    appendAudit('group_plan', 'group_plan_disclosure_dropped', planId, `task=${task.id} dropped=${dropped}`);
+    appendAudit(
+      'group_plan',
+      'group_plan_disclosure_dropped',
+      planId,
+      `task=${task.id} dropped=${dropped}`,
+    );
   }
   if (refused > 0) {
-    appendAudit('group_plan', 'group_plan_disclosure_refused', planId, `task=${task.id} refused=${refused}`);
+    appendAudit(
+      'group_plan',
+      'group_plan_disclosure_refused',
+      planId,
+      `task=${task.id} refused=${refused}`,
+    );
   }
   // The same rule the guest's gate applies on the way out (§6, §13): a
   // disclosure the organizer will not hold is not held in prose either. The
@@ -313,16 +353,28 @@ function availabilityOnly(reply: SpokeReply): SpokeReply {
     slots?.map((s) => ({ start: s.start, ...(s.end !== undefined ? { end: s.end } : {}) }));
   switch (reply.status) {
     case 'accepted':
-      return { status: 'accepted', ...(reply.accepted_slots !== undefined ? { accepted_slots: bare(reply.accepted_slots) } : {}) };
+      return {
+        status: 'accepted',
+        ...(reply.accepted_slots !== undefined
+          ? { accepted_slots: bare(reply.accepted_slots) }
+          : {}),
+      };
     case 'counter':
-      return { status: 'counter', ...(reply.counter_slots !== undefined ? { counter_slots: bare(reply.counter_slots) } : {}) };
+      return {
+        status: 'counter',
+        ...(reply.counter_slots !== undefined ? { counter_slots: bare(reply.counter_slots) } : {}),
+      };
     default:
       return { status: 'needs_more_info' };
   }
 }
 
 /** A stored, unexpired offer from this guest for the capability, newest first. */
-function liveOffer(offers: ServiceOfferRepository, contactDid: string, nowSec: number): ServiceOffer | null {
+function liveOffer(
+  offers: ServiceOfferRepository,
+  contactDid: string,
+  nowSec: number,
+): ServiceOffer | null {
   return (
     offers
       .findByProviderDidAndCapability(contactDid, GROUP_COORDINATION_CAPABILITY)
@@ -348,7 +400,9 @@ function describeSlot(slot: MeetingSlot): string {
 }
 
 function taskIdOf(body: unknown): string | null {
-  return isRecord(body) && typeof body.task_id === 'string' && body.task_id !== '' ? body.task_id : null;
+  return isRecord(body) && typeof body.task_id === 'string' && body.task_id !== ''
+    ? body.task_id
+    : null;
 }
 
 /** Send the round's question to one guest through the 1:1 lane, and record the spoke. */
@@ -396,11 +450,17 @@ async function querySpoke(
     // The send failed; the task is named and failed. It resolves with the window.
     appendAudit('group_plan', 'group_plan_spoke_send_failed', plan.planId, `status=${res.status}`);
   }
-  return must(recordSpoke(plan, guest.contactDid, { stage: 'queried', taskId, queryId }, deps.nowMs()));
+  return must(
+    recordSpoke(plan, guest.contactDid, { stage: 'queried', taskId, queryId }, deps.nowMs()),
+  );
 }
 
 /** Ask a guest with no stored offer for reach — the 1:1 preflight — and record the spoke. */
-async function preflightSpoke(plan: GroupPlan, guest: GuestRecord, deps: GroupCoordinationDeps): Promise<GroupPlan> {
+async function preflightSpoke(
+  plan: GroupPlan,
+  guest: GuestRecord,
+  deps: GroupCoordinationDeps,
+): Promise<GroupPlan> {
   const requestId = deps.newId();
   const body: ServiceGrantRequestBody = {
     request_id: requestId,
@@ -409,15 +469,30 @@ async function preflightSpoke(plan: GroupPlan, guest: GuestRecord, deps: GroupCo
     intent: plan.intent,
   };
   try {
-    await deps.sendD2D(guest.contactDid, MSG_TYPE_SERVICE_GRANT_REQUEST, body as unknown as Record<string, unknown>);
+    await deps.sendD2D(
+      guest.contactDid,
+      MSG_TYPE_SERVICE_GRANT_REQUEST,
+      body as unknown as Record<string, unknown>,
+    );
   } catch {
     // Resolves with the window like every other negative path.
-    appendAudit('group_plan', 'group_plan_preflight_send_failed', plan.planId, `round=${plan.round}`);
+    appendAudit(
+      'group_plan',
+      'group_plan_preflight_send_failed',
+      plan.planId,
+      `round=${plan.round}`,
+    );
   }
-  return must(recordSpoke(plan, guest.contactDid, { stage: 'grant_requested', requestId }, deps.nowMs()));
+  return must(
+    recordSpoke(plan, guest.contactDid, { stage: 'grant_requested', requestId }, deps.nowMs()),
+  );
 }
 
-async function sendSpoke(plan: GroupPlan, guest: GuestRecord, deps: GroupCoordinationDeps): Promise<GroupPlan> {
+async function sendSpoke(
+  plan: GroupPlan,
+  guest: GuestRecord,
+  deps: GroupCoordinationDeps,
+): Promise<GroupPlan> {
   const offer = liveOffer(deps.offers, guest.contactDid, Math.floor(deps.nowMs() / 1000));
   return offer === null ? preflightSpoke(plan, guest, deps) : querySpoke(plan, guest, offer, deps);
 }
@@ -429,7 +504,11 @@ async function sendSpoke(plan: GroupPlan, guest: GuestRecord, deps: GroupCoordin
  * guest while the window is open, and the window closes them like any other
  * silence if it never succeeds. Nothing here throws a plan half-sent.
  */
-async function trySendSpoke(plan: GroupPlan, guest: GuestRecord, deps: GroupCoordinationDeps): Promise<GroupPlan> {
+async function trySendSpoke(
+  plan: GroupPlan,
+  guest: GuestRecord,
+  deps: GroupCoordinationDeps,
+): Promise<GroupPlan> {
   try {
     return await sendSpoke(plan, guest, deps);
   } catch (error) {
@@ -482,7 +561,10 @@ function cancelLiveSpokes(plan: GroupPlan, deps: GroupCoordinationDeps, reason: 
  * a guest whose offer arrived while the window was open, close the window
  * for whoever is still waiting once it has passed, and fold.
  */
-async function settleRound(plan: GroupPlan, deps: GroupCoordinationDeps): Promise<{ plan: GroupPlan; changed: boolean }> {
+async function settleRound(
+  plan: GroupPlan,
+  deps: GroupCoordinationDeps,
+): Promise<{ plan: GroupPlan; changed: boolean }> {
   if (plan.state === 'settled' || plan.state === 'abandoned') return { plan, changed: false };
   const closesAt = windowClosesAt(plan);
   if (closesAt === null) return { plan, changed: false };
@@ -527,7 +609,13 @@ async function settleRound(plan: GroupPlan, deps: GroupCoordinationDeps): Promis
           ? readAnswer(task, plan.planId, contactDid, deps.holdTier)
           : null;
       if (answer !== null) {
-        plan = must(recordReply(plan, { contactDid, reply: answer.reply, disclosures: answer.disclosures }, now));
+        plan = must(
+          recordReply(
+            plan,
+            { contactDid, reply: answer.reply, disclosures: answer.disclosures },
+            now,
+          ),
+        );
         changed = true;
         continue;
       }
@@ -554,8 +642,31 @@ async function loadSettled(planId: string, deps: GroupCoordinationDeps): Promise
   const stored = deps.plans.get(planId);
   if (stored === null) return null;
   const { plan, changed } = await settleRound(stored, deps);
-  if (changed) deps.plans.put(plan);
-  return plan;
+  // A settled plan books each guest who accepted; a send that failed before is
+  // tried again on every read.
+  const booked = await syncPlanBookings(plan, deps);
+  if (changed || booked.changed) deps.plans.put(booked.plan);
+  return booked.plan;
+}
+
+/**
+ * COMMITMENT_KERNEL §15 step 6: tell each guest what the two of them now hold
+ * — "booked" when the plan settles with them, "cancelled" when it no longer
+ * does (group_booking.ts). Skipped until the node knows its own DID.
+ */
+async function syncPlanBookings(
+  plan: GroupPlan,
+  deps: GroupCoordinationDeps,
+): Promise<{ plan: GroupPlan; changed: boolean; pending: boolean }> {
+  const selfDid = getNodeDID();
+  if (selfDid === null) return { plan, changed: false, pending: false };
+  return syncBookings(plan, {
+    sendD2D: deps.sendD2D,
+    selfDid,
+    nowMs: deps.nowMs,
+    // Each word is saved before it goes out (group_booking.ts).
+    persist: (p) => deps.plans.put(p),
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -625,7 +736,9 @@ export async function readGroupPlan(
 }
 
 /** Every open plan, each folded as of now, newest first. */
-export async function listGroupPlans(over: Partial<GroupCoordinationDeps> = {}): Promise<GroupPlan[] | null> {
+export async function listGroupPlans(
+  over: Partial<GroupCoordinationDeps> = {},
+): Promise<GroupPlan[] | null> {
   const resolved = resolveDeps(over);
   if (!resolved.ok) return null;
   const out: GroupPlan[] = [];
@@ -643,7 +756,9 @@ export const MAX_PLAN_HANDLES = 20;
  * The recent plans as handles (§11) — id, intent, state, chosen — each
  * folded as of now so a settled plan reads as settled. Nothing about guests.
  */
-export async function listGroupPlanHandles(over: Partial<GroupCoordinationDeps> = {}): Promise<GroupPlan[] | null> {
+export async function listGroupPlanHandles(
+  over: Partial<GroupCoordinationDeps> = {},
+): Promise<GroupPlan[] | null> {
   const resolved = resolveDeps(over);
   if (!resolved.ok) return null;
   const out: GroupPlan[] = [];
@@ -688,7 +803,9 @@ export async function widenPlan(
     const widened = widen(plan, candidates, deps.nowMs());
     if (!widened.ok) return widened;
     cancelLiveSpokes(plan, deps, 'superseded by a wider round');
-    return { ok: true, plan: await fanOut(widened.plan, deps) };
+    // A plan widened after it settled no longer books anyone: tell them.
+    const unbooked = await syncPlanBookings(widened.plan, deps);
+    return { ok: true, plan: await fanOut(unbooked.plan, deps) };
   });
 }
 
@@ -706,8 +823,10 @@ export async function makeGuestOptional(
     if (plan === null) return { ok: false, refusal: 'not_found' };
     const result = makeOptional(plan, contactDid, deps.nowMs());
     if (!result.ok) return result;
-    deps.plans.put(result.plan);
-    return result;
+    // Dropping a guest from required may settle the plan: book who accepted.
+    const booked = await syncPlanBookings(result.plan, deps);
+    deps.plans.put(booked.plan);
+    return { ...result, plan: booked.plan };
   });
 }
 
@@ -725,8 +844,9 @@ export async function abandonPlan(
     const result = abandon(plan, deps.nowMs());
     if (!result.ok) return result;
     cancelLiveSpokes(plan, deps, 'plan abandoned');
-    deps.plans.put(result.plan);
-    return result;
+    const unbooked = await syncPlanBookings(result.plan, deps);
+    deps.plans.put(unbooked.plan);
+    return { ...result, plan: unbooked.plan };
   });
 }
 
@@ -734,13 +854,31 @@ export async function abandonPlan(
 export async function deleteGroupPlan(
   planId: string,
   over: Partial<GroupCoordinationDeps> = {},
-): Promise<{ ok: true; removed: boolean } | { ok: false; refusal: 'not_wired'; detail: string }> {
+): Promise<
+  | { ok: true; removed: boolean }
+  | { ok: false; refusal: 'not_wired' | 'cancellations_pending'; detail: string }
+> {
   const resolved = resolveDeps(over);
   if (!resolved.ok) return resolved;
   const { deps } = resolved;
   return withPlan(planId, async () => {
     const plan = deps.plans.get(planId);
     if (plan === null) return { ok: true, removed: false };
+    // A guest keeps no booking for a plan its organiser deleted. The owner's
+    // word is saved first — the plan stops (abandoned, nothing chosen), so no
+    // later read books anyone again — then every cancellation is handed over.
+    // One that cannot be leaves the stopped plan for the owner to delete again.
+    const unbooked = await syncPlanBookings({ ...plan, state: 'abandoned', chosen: null }, deps);
+    if (unbooked.pending) {
+      deps.plans.put(unbooked.plan);
+      // The owner is deleting it: no guest is asked about it any more.
+      cancelLiveSpokes(plan, deps, 'plan being deleted');
+      return {
+        ok: false,
+        refusal: 'cancellations_pending',
+        detail: 'a booked guest could not be told yet',
+      };
+    }
     cancelLiveSpokes(plan, deps, 'plan deleted');
     // What a guest disclosed lives in two places: the plan row, and the
     // completed spoke task that carried the reply. Deleting the plan scrubs
@@ -775,7 +913,9 @@ export async function replayOfferForOpenPlans(
   const { deps } = resolved;
   let sent = 0;
   for (const open of deps.plans.listOpen()) {
-    const waiting = open.guests.find((g) => g.contactDid === providerDID && g.outcome === 'waiting');
+    const waiting = open.guests.find(
+      (g) => g.contactDid === providerDID && g.outcome === 'waiting',
+    );
     if (waiting === undefined) continue;
     await withPlan(open.planId, async () => {
       // Re-read under the lock: `settleRound` sends for a `grant_requested`
@@ -783,7 +923,8 @@ export async function replayOfferForOpenPlans(
       // reached — which is exactly this case; a guest already queried is
       // left alone.
       const before = deps.plans.get(open.planId);
-      const stage = before === null ? null : currentSpoke(guestOf(before, providerDID), before.round)?.stage;
+      const stage =
+        before === null ? null : currentSpoke(guestOf(before, providerDID), before.round)?.stage;
       if (stage === 'queried') return;
       const plan = await loadSettled(open.planId, deps);
       if (plan === null) return;
@@ -795,7 +936,9 @@ export async function replayOfferForOpenPlans(
 }
 
 /** Subscribe the replay to inbound offers. Returns the disposer. Hosts call this at boot. */
-export function wireGroupCoordinationOfferReplay(over: Partial<GroupCoordinationDeps> = {}): () => void {
+export function wireGroupCoordinationOfferReplay(
+  over: Partial<GroupCoordinationDeps> = {},
+): () => void {
   return onServiceOfferReceived((event) => {
     if (event.capability !== GROUP_COORDINATION_CAPABILITY) return;
     void replayOfferForOpenPlans(event.providerDID, over).catch(() => {

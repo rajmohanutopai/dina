@@ -185,17 +185,18 @@ describe('startCommerceSweepers', () => {
       setInterval: timers.setInterval,
       clearInterval: timers.clearInterval,
     });
-    // Six timers — admission, epoch, the §5.1 dispatch-intent replay
+    // Eight timers — admission, epoch, the §5.1 dispatch-intent replay
     // (PC-7), the §8 invite sweep, the NEGOTIATION_PLAN §4.5 tender loop
-    // and the SHELF_SPACE_NEGOTIATION term sweep — every one deliberately NOT
+    // the SHELF_SPACE_NEGOTIATION term sweep, COMMITMENT_KERNEL §6's
+    // option-link resend and §13's evidence ask (eight) — every one deliberately NOT
     // optional: each resolves its runtime/service per tick and a node
     // with none ticks quietly, while an optional duty is a tick a
     // composition root eventually forgets. Separate timers, because they
     // have different clocks and different failure meanings; one call
     // site, so no root can start some and not others.
-    expect(timers.ticks).toHaveLength(6);
+    expect(timers.ticks).toHaveLength(8);
     sweepers.stop();
-    expect(timers.cleared).toBe(6);
+    expect(timers.cleared).toBe(8);
   });
 
   it('stops the second tick even when the first stop throws', () => {

@@ -180,13 +180,19 @@ export class StaffCoreClient {
   }
 
   /** §4.7 — award inside the cap; over it, the owner's card (a typed outcome). */
-  async awardTender(args: { tenderId: string; supplierDid?: string }): Promise<TenderAwardOutcome> {
+  async awardTender(args: {
+    tenderId: string;
+    supplierDid?: string;
+    /** The version named (COMMITMENT_KERNEL §6); absent: the quote's own terms. */
+    alternativeId?: string;
+  }): Promise<TenderAwardOutcome> {
     return this.decided(
       'POST',
       '/v1/commerce/trade/tender/award',
       {
         tender_id: args.tenderId,
         ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
+        ...(args.alternativeId === undefined ? {} : { alternative_id: args.alternativeId }),
       },
       readTenderAward,
     );

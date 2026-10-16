@@ -31,7 +31,7 @@ export interface SpanProof {
   end: number;
 }
 
-export type SpanProofKind = 'remember' | 'send' | 'forget' | 'standing_reply' | 'spend_allowance';
+export type SpanProofKind = 'remember' | 'send' | 'forget' | 'standing_reply' | 'spend_allowance' | 'value_model';
 
 export type SpanProofResult =
   | { ok: true; span: string; turnText: string }

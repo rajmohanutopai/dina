@@ -123,6 +123,41 @@ describe('the tender screen', () => {
     expect(b.sendHeldOrder).toHaveBeenCalledWith('oap_1');
   });
 
+  it('one supplier in two versions: each its own row; a partner run says its end and its fallback', async () => {
+    const own = RANKING.ranked[0];
+    const partner = {
+      ...own,
+      total_minor: '44500',
+      comparison_cost_minor: '44500',
+      alternative_id: 'partner_00112233',
+      estimated_delivery_at: '2026-08-18T09:00:00Z',
+      partner_run: {
+        offer_ends_at: '2026-08-08T09:00:00.000Z',
+        fallback_total_minor: '48000',
+        fallback_delivery_at: '2026-08-20T09:00:00Z',
+      },
+    };
+    const b = backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner, own] })) });
+    setTenderBackendForTest(b);
+    const view = render(<TenderScreen />);
+    await waitFor(() => expect(view.getByTestId(`tender-offer-${B}-partner_00112233`)).toBeTruthy());
+    expect(view.getByTestId(`tender-offer-${B}`)).toBeTruthy();
+    expect(view.getByTestId(`tender-delivery-${B}-partner_00112233`)).toBeTruthy();
+    const words = JSON.stringify(view.getByTestId(`tender-partner-run-${B}-partner_00112233`).props.children);
+    expect(words).toMatch(/partner/);
+    expect(words).toMatch(/2026-08-08 09:00/);
+    expect(words).toMatch(/2026-08-20/);
+    expect(words).toMatch(/480\.00/);
+    fireEvent.press(view.getByTestId(`tender-award-${B}-partner_00112233`));
+    await waitFor(() =>
+      expect(b.awardTender).toHaveBeenCalledWith({
+        tenderId: 'tnd-1',
+        supplierDid: B,
+        alternativeId: 'partner_00112233',
+      }),
+    );
+  });
+
   it('a clerk over the cap reads "waiting for the owner", and no order is held', async () => {
     params = { tender_id: 'tnd-1', as: 'staff' };
     setTenderBackendForTest(

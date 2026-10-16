@@ -31,14 +31,29 @@ import {
   validateAgreementDecision,
   type AgreementDecision,
   type TermAgreementProposal,
+  type TermAlternative,
   type TermCounter,
   type TermGeneral,
   type TermListing,
   type TermName,
   type TermOffer,
   type TermRequest,
+  partsOnOffer,
+  renderTermMessage,
+  type TermMessage,
 } from '@dina/commerce-protocol';
 
+import {
+  bindableDigests,
+  firstWithinLimits,
+  judgeLateness,
+  ownerConcession,
+  projectModel,
+  reviseWithinLimits,
+  type DealVersion,
+  type PartBounds,
+  type StrategyMove,
+} from '../../commitment';
 import { validateAgainstSchema } from '../../plugins/schema_validate';
 import {
   buildTermDecisionApprovalPayload,
@@ -47,12 +62,23 @@ import {
   type ApprovingPrincipal,
 } from '../approval_payload';
 import { termPackEntry } from '../first_party_packs';
+import { SLOT_PACK_PARTS } from '../slot_pack_manifests';
 
 import { termAgreementStatus, termHoldingCount, termResourceFree } from './term_agreements';
 import { DAY_MS, hash, iso, mintId, TERM_TIMINGS, type TermContext } from './term_context';
 import {
-  clampTerm,
-  sellerAtLeast,
+  SHELF_HOST_KIND,
+  shelfBindingCard,
+  shelfEnvelope,
+  shelfSigningBlocked,
+  shelfWorth,
+  raiseStrategyNotice,
+  strategyBudgetLeft,
+  tableMessage,
+} from './term_model';
+import { closedPersonasFor, raisePersonaCard } from './term_persona';
+import {
+  TERM_PARTS,
   termBounds,
   type TermListingAccess,
   type TermPolicy,
@@ -66,6 +92,7 @@ import {
   readTermOfferRow,
   readTermPolicyJson,
   readTermProposalRow,
+  readTermRequestRow,
 } from './term_rehydrate';
 import { DEFAULT_TERM_RUNNER_PARAMS, proposeFirstOffer, proposeRevision } from './term_runner';
 
@@ -419,12 +446,31 @@ function issueFirstOffer(
   const bounds = boundsFor(ctx, policy, resource, general);
   // The first offer never asks the owner: anything short of the automatic
   // limit (asking terms below a premium-raised floor) is simply raised to it.
-  const signed = {} as Record<TermName, bigint>;
-  for (const name of TERM_NAMES) {
-    signed[name] = sellerAtLeast(name, proposed[name], bounds[name].auto)
-      ? proposed[name]
-      : bounds[name].auto;
+  const signed = firstWithinLimits(TERM_PARTS, 'seller', proposed, bounds);
+  // A never-rule stops Core signing alone: no offer goes out, and the brand's
+  // request lapses like any other unanswered one. A rule kept in a closed
+  // persona asks the owner to open it, and the request waits (term_persona.ts).
+  const verdict = shelfEnvelope(ctx, {
+    kind: SHELF_HOST_KIND,
+    holder: 'seller',
+    limits: bounds,
+    terms: termsFromValues(signed),
+    general,
+    approvedInPerson: false,
+  });
+  if (shelfSigningBlocked(verdict)) {
+    const closed = closedPersonasFor(ctx, SHELF_HOST_KIND);
+    if (verdict.outcome === 'card' && closed.length > 0)
+      raisePersonaCard(ctx, {
+        step: 'first_offer',
+        requestId: request.request_id,
+        refDigest: request.request_digest,
+        personas: closed,
+      });
+    ctx.log('term.offer_withheld', { request: request.request_id });
+    return null;
   }
+  const alternatives = alternativesFor(ctx, resource, bounds, general, signed);
   const draft = {
     protocol_version: request.protocol_version,
     offer_id: mintId('toff'),
@@ -437,6 +483,7 @@ function issueFirstOffer(
     attributes: request.attributes,
     general,
     terms: termsFromValues(signed),
+    ...(alternatives.length > 0 ? { alternatives } : {}),
     issued_at: iso(nowMs),
     valid_until: iso(nowMs + TERM_TIMINGS.offerValidForMs),
     revision: 1,
@@ -551,9 +598,23 @@ export function admitTermCounter(
 
 function answerCounter(
   ctx: TermContext,
-  args: { counter: TermCounter; head: TermOffer; policy: TermPolicy; resource: TermResourcePolicy },
+  args: {
+    counter: TermCounter;
+    head: TermOffer;
+    policy: TermPolicy;
+    resource: TermResourcePolicy;
+    /** The strategy's proposal (COMMITMENT_KERNEL §11); absent: the pack's fixed style. */
+    proposed?: Record<TermName, bigint>;
+    /** The fixed style plays this round whatever the owner chose (a fallback). */
+    fixedStyle?: boolean;
+    /** A message beside the revision (the conversation channel, §11). */
+    message?: TermMessage;
+  },
 ): void {
   const { counter, head, policy, resource } = args;
+  // When the owner chose Brain, it takes the round (§11).
+  if (args.proposed === undefined && args.fixedStyle !== true && handSellerTurn(ctx, counter, head))
+    return;
   const params =
     ctx.deps.activePack('term_seller')?.entry.term?.runner ?? DEFAULT_TERM_RUNNER_PARAMS;
   const current = termValues(head.terms);
@@ -562,48 +623,141 @@ function answerCounter(
     const t = counter.targets[name];
     if (t !== undefined) targets[name] = BigInt(t);
   }
-  const proposed = proposeRevision({ current, targets, params });
+  const proposed = args.proposed ?? proposeRevision({ current, targets, params });
   const bounds = boundsFor(ctx, policy, resource, head.general);
-  const authorised = ctx.store.floorAuthorizations(head.request_id);
-  const signed = {} as Record<TermName, bigint>;
-  const asked: Partial<Record<TermName, bigint>> = {};
-  for (const name of TERM_NAMES) {
-    // The owner raised a floor since the head was signed: the head no longer
-    // stands for that term, so hold rather than revise around it.
-    if (!sellerAtLeast(name, current[name], bounds[name].hard)) {
-      resendHead(ctx, head);
-      return;
-    }
-    const clamp = clampTerm(name, proposed[name], bounds[name], authorised.get(name) ?? null);
-    // A revision never retreats from what the buyer already holds.
-    signed[name] = sellerAtLeast(name, clamp.value, current[name]) ? current[name] : clamp.value;
-    if (clamp.needsOwner) asked[name] = clamp.asked;
-  }
-  if (Object.keys(asked).length > 0) raiseFloorCard(ctx, { head, asked, signed });
-  if (TERM_NAMES.every((name) => signed[name] === current[name])) {
+  const revision = reviseWithinLimits({
+    parts: TERM_PARTS,
+    holder: 'seller',
+    current,
+    proposed,
+    bounds,
+    authorised: ctx.store.floorAuthorizations(head.request_id),
+  });
+  // The owner raised a floor since the head was signed: the head no longer
+  // stands for that term, so hold rather than revise around it.
+  if (revision.kind === 'hold') {
     resendHead(ctx, head);
     return;
   }
-  signRevision(ctx, head, signed, counter.counter_digest);
+  const { signed, asked } = revision;
+  if (Object.keys(asked).length > 0) raiseFloorCard(ctx, { head, asked, signed });
+  // A revision never retreats from what the buyer already holds.
+  if (revision.unchanged) {
+    resendHead(ctx, head);
+    return;
+  }
+  // A never-rule or a closed persona stops Core signing alone: the head
+  // stands. A closed persona asks the owner to open it, and the counter is
+  // answered again once it is open (term_persona.ts).
+  const verdict = shelfEnvelope(ctx, {
+    kind: SHELF_HOST_KIND,
+    holder: 'seller',
+    limits: bounds,
+    terms: termsFromValues(signed),
+    general: head.general,
+    approvedInPerson: false,
+    authorised: ctx.store.floorAuthorizations(head.request_id),
+  });
+  if (shelfSigningBlocked(verdict)) {
+    const closed = closedPersonasFor(ctx, SHELF_HOST_KIND);
+    if (verdict.outcome === 'card' && closed.length > 0)
+      raisePersonaCard(ctx, {
+        step: 'counter',
+        requestId: head.request_id,
+        refDigest: counter.counter_digest,
+        personas: closed,
+      });
+    resendHead(ctx, head);
+    return;
+  }
+  signRevision(ctx, head, signed, counter.counter_digest, args.message);
 }
 
 /** Sign, store and send revision N+1 of `head` with these values. */
+/**
+ * The owner's alternatives for a resource, moved with this version's rent
+ * (COMMITMENT_KERNEL §6). Core signs an offer alone, so an alternative goes
+ * out only when its terms sit within the automatic limits, as for any offer
+ * (§7, §8 step 6), and it passes the owner's rules with its promise (the
+ * owner entered that promise, which is its value). One past an automatic or
+ * hard limit, against a never-rule, or needing a closed persona is left out.
+ */
+function alternativesFor(
+  ctx: TermContext,
+  resource: TermResourcePolicy,
+  bounds: Record<TermName, PartBounds>,
+  general: TermGeneral,
+  base: Record<TermName, bigint>,
+): TermAlternative[] {
+  const out: TermAlternative[] = [];
+  for (const alt of resource.alternatives ?? []) {
+    const values = { ...base, fee: base.fee + BigInt(alt.fee_delta) };
+    if (values.fee < 0n) continue;
+    const terms = termsFromValues(values);
+    const promises = [...alt.promises].sort((a, b) => (a.name < b.name ? -1 : 1));
+    const alone = shelfEnvelope(ctx, {
+      kind: SHELF_HOST_KIND,
+      holder: 'seller',
+      limits: bounds,
+      terms,
+      general,
+      approvedInPerson: false,
+    });
+    if (alone.outcome !== 'sign') continue;
+    const rules = shelfEnvelope(ctx, {
+      kind: SHELF_HOST_KIND,
+      holder: 'seller',
+      limits: bounds,
+      terms,
+      promises,
+      general,
+      approvedInPerson: true,
+    });
+    if (rules.outcome === 'refused') continue;
+    out.push({ alternative_id: alt.alternative_id, terms, promises });
+  }
+  return out;
+}
+
+/** The alternatives a version of an offer carries, from the policy in force now. */
+function alternativesForHead(
+  ctx: TermContext,
+  head: TermOffer,
+  base: Record<TermName, bigint>,
+): TermAlternative[] {
+  const policy = currentTermPolicy(ctx);
+  const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
+  if (resource === undefined) return [];
+  return alternativesFor(ctx, resource, boundsFor(ctx, policy, resource, head.general), head.general, base);
+}
+
 function signRevision(
   ctx: TermContext,
   head: TermOffer,
   signed: Record<TermName, bigint>,
   answers: string,
+  message?: TermMessage,
 ): void {
   const nowMs = ctx.now();
-  const { offer_digest: _d, previous_offer_digest: _p, ...rest } = head;
+  // The head's own message stays with the head: a revision says only its own.
+  const {
+    offer_digest: _d,
+    previous_offer_digest: _p,
+    alternatives: _a,
+    message: _m,
+    ...rest
+  } = head;
+  const alternatives = alternativesForHead(ctx, head, signed);
   const draft = {
     ...rest,
+    ...(alternatives.length > 0 ? { alternatives } : {}),
     terms: termsFromValues(signed),
     issued_at: iso(nowMs),
     valid_until: iso(nowMs + TERM_TIMINGS.offerValidForMs),
     revision: head.revision + 1,
     previous_offer_digest: head.offer_digest,
   };
+  if (message !== undefined && partsOnOffer(draft).includes(message.part)) Object.assign(draft, { message });
   const next = sealTermRecord('term_offer', draft, hash) as unknown as TermOffer;
   if (validateTermOffer(next, hash) !== null || verifyTermOfferRevision(head, next) !== null) {
     ctx.log('term.revision_unbuildable', { request: head.request_id });
@@ -709,19 +863,42 @@ function offerAuthorised(ctx: TermContext, requestId: string): void {
       .some((row) => readTermProposalRow(row)?.offer_digest === head.offer_digest)
   )
     return;
+  // Only a concession the owner allowed, and every term of what is signed —
+  // moved or carried over — clears the hard floor in force now (a floor
+  // raised since the head was signed holds it).
   const bounds = boundsFor(ctx, policy, resource, head.general);
-  const authorised = ctx.store.floorAuthorizations(requestId);
-  const current = termValues(head.terms);
-  const signed = { ...current };
-  for (const name of TERM_NAMES) {
-    const value = authorised.get(name);
-    // Only a concession the owner allowed.
-    if (value !== undefined && !sellerAtLeast(name, value, current[name])) signed[name] = value;
+  const signed = ownerConcession({
+    parts: TERM_PARTS,
+    holder: 'seller',
+    current: termValues(head.terms),
+    authorised: ctx.store.floorAuthorizations(requestId),
+    bounds,
+  });
+  if (signed === null) return;
+  // The owner approved in person, but the model may have changed since the
+  // card was raised: a never-rule added, a persona closed. Its hard checks
+  // run now, as at any binding (§8).
+  const verdict = shelfEnvelope(ctx, {
+    kind: SHELF_HOST_KIND,
+    holder: 'seller',
+    limits: bounds,
+    terms: termsFromValues(signed),
+    general: head.general,
+    approvedInPerson: true,
+  });
+  if (verdict.outcome === 'refused') {
+    // A rule sealed in a closed persona: the owner is asked to open it, and
+    // the concession they approved is signed once it is (term_persona.ts).
+    if (verdict.reason === 'persona_closed')
+      raisePersonaCard(ctx, {
+        step: 'concession',
+        requestId,
+        refDigest: head.offer_digest,
+        personas: closedPersonasFor(ctx, SHELF_HOST_KIND),
+      });
+    ctx.log('term.concession_withheld', { request: requestId });
+    return;
   }
-  if (TERM_NAMES.every((name) => signed[name] === current[name])) return;
-  // Every term of what is signed — moved or carried over — clears the hard
-  // floor in force now (a floor raised since the head was signed holds it).
-  if (!TERM_NAMES.every((name) => sellerAtLeast(name, signed[name], bounds[name].hard))) return;
   signRevision(ctx, head, signed, head.offer_digest);
 }
 
@@ -733,16 +910,14 @@ function offerAuthorised(ctx: TermContext, requestId: string): void {
  * is at least as good for the store on every term, since a yes only concedes.
  */
 function bindsAsHead(ctx: TermContext, offer: TermOffer): boolean {
-  const chain = offerChain(ctx, offer.request_id, 'outbound');
-  const head = chain[chain.length - 1];
-  if (head === undefined) return false;
-  if (head.offer.offer_digest === offer.offer_digest) return true;
   // `signRevision` records a yes-revision as answering the offer it revises;
   // a counter's revision answers the counter.
-  return (
-    head.offer.previous_offer_digest === offer.offer_digest &&
-    head.row.answersDigest === offer.offer_digest
-  );
+  const chain = offerChain(ctx, offer.request_id, 'outbound').map(({ row, offer: o }) => ({
+    digest: o.offer_digest,
+    ...(o.previous_offer_digest !== undefined ? { previousDigest: o.previous_offer_digest } : {}),
+    answersDigest: row.answersDigest,
+  }));
+  return bindableDigests(chain).includes(offer.offer_digest);
 }
 
 // ---------------------------------------------------------------------------
@@ -889,10 +1064,14 @@ function arrivalFailure(
   const pair = verifyTermProposalAgainstOffer(proposal, offer);
   if (pair !== null) return pair;
   // Judged on the signed `proposed_at` (§7.1 step 5), bounded by a 7-day arrival window.
-  if (Date.parse(proposal.proposed_at) > Date.parse(offer.valid_until))
-    return 'proposed after the offer expired';
-  if (nowMs > Date.parse(offer.valid_until) + TERM_TIMINGS.proposalArrivalGraceMs)
-    return 'arrived too late';
+  const lateness = judgeLateness({
+    signedAtMs: Date.parse(proposal.proposed_at),
+    validUntilMs: Date.parse(offer.valid_until),
+    nowMs,
+    graceMs: TERM_TIMINGS.proposalArrivalGraceMs,
+  });
+  if (lateness === 'signed_after_expiry') return 'proposed after the offer expired';
+  if (lateness === 'arrived_too_late') return 'arrived too late';
   if (proposal.replaces_proposal_digest !== undefined) {
     const renewed = termAgreementStatus(ctx.store, proposal.replaces_proposal_digest);
     if (renewed.state !== 'accepted' || renewed.proposal.host_did !== ctx.self())
@@ -909,11 +1088,17 @@ const PENDING_PRINCIPAL: ApprovingPrincipal = {
   policyRevision: null,
 };
 
-function raiseDecisionCard(ctx: TermContext, proposal: TermAgreementProposal, nowMs: number): void {
-  const cardId = `term-decision-${proposal.proposal_digest.slice(0, 32)}`;
-  const decideBy = nowMs + TERM_TIMINGS.decideByMs;
+function raiseDecisionCard(
+  ctx: TermContext,
+  proposal: TermAgreementProposal,
+  nowMs: number,
+  again?: { cardId: string; decideBy: number },
+): void {
+  const cardId = again?.cardId ?? `term-decision-${proposal.proposal_digest.slice(0, 32)}`;
+  const decideBy = again?.decideBy ?? nowMs + TERM_TIMINGS.decideByMs;
   const binding = buildTermDecisionApprovalPayload({ principal: PENDING_PRINCIPAL, proposal });
   const policy = currentTermPolicy(ctx);
+  const resourceFor = policy.resources.find((r) => r.resource_ref === proposal.resource_ref);
   const rule = holdingRuleFor(policy, proposal.general.tag);
   const held = heldCountFor(ctx, policy, {
     tag: proposal.general.tag,
@@ -932,9 +1117,32 @@ function raiseDecisionCard(ctx: TermContext, proposal: TermAgreementProposal, no
     resource_ref: proposal.resource_ref,
     general: proposal.general,
     terms: proposal.terms,
+    ...(proposal.alternative_id !== undefined
+      ? { alternative_id: proposal.alternative_id, promises: proposal.promises ?? [] }
+      : {}),
+    // §9 — Core's own list of what binds and where the risk is.
+    legibility: shelfBindingCard({
+      holder: 'seller',
+      terms: proposal.terms,
+      promises: proposal.promises ?? [],
+      general: proposal.general,
+      ...(resourceFor !== undefined
+        ? shelfWorth(ctx, {
+            kind: SHELF_HOST_KIND,
+            holder: 'seller',
+            limits: boundsFor(ctx, policy, resourceFor, proposal.general, proposal.replaces_proposal_digest),
+            terms: proposal.terms,
+            promises: proposal.promises ?? [],
+            general: proposal.general,
+          })
+        : {}),
+    }),
     // How the holding rule moved the price (§7.1): the count and the rate, never a floor.
     holding: { tag: proposal.general.tag, already_held: held, premium_bps_per_count: rule.premium },
     decide_by: iso(decideBy),
+    // A yes binds only with the Commerce Pack (`term_money.ts`): the card says
+    // so while it is missing, so the owner can install it before deciding.
+    ...(ctx.deps.moneyAvailable() ? {} : { needs_commerce_pack: true }),
   };
   ctx.raiseCard({
     cardId,
@@ -942,7 +1150,9 @@ function raiseDecisionCard(ctx: TermContext, proposal: TermAgreementProposal, no
     requestId: payload.request_id,
     refDigest: proposal.proposal_digest,
     material: binding,
-    description: 'A brand proposes a slot agreement. Accept it?',
+    description: ctx.deps.moneyAvailable()
+      ? 'A brand proposes a slot agreement. Accept it?'
+      : 'A brand proposes a slot agreement. Install the Commerce Pack before you accept: shelf deals settle through it.',
     payload,
     decideBy,
   });
@@ -961,7 +1171,9 @@ export type TermDecisionOutcome =
         | 'already_decided'
         | 'binding_failed'
         | 'no_longer_available'
-        | 'lapsed';
+        | 'lapsed'
+        | 'commerce_pack_needed'
+        | 'persona_closed';
     };
 
 /**
@@ -1012,7 +1224,32 @@ export function decideTermProposal(
       result.outcome = { ok: false, refusal: 'binding_failed' };
       return;
     }
+    // A rule this yes must check is sealed in a closed persona: nothing binds
+    // and nothing is refused yet. The owner is asked to open it, and the
+    // decision card is raised again once it is open (term_persona.ts).
+    const closed = closedPersonasFor(ctx, SHELF_HOST_KIND);
+    if (closed.length > 0) {
+      raisePersonaCard(ctx, {
+        step: 'decision',
+        requestId: card.requestId,
+        refDigest: proposal.proposal_digest,
+        personas: closed,
+      });
+      result.outcome = { ok: false, refusal: 'persona_closed' };
+      return;
+    }
     if (!ctx.store.decideCard(args.cardId, 'approved', nowMs)) return;
+    // A shelf deal settles through the Commerce Pack, so none binds without
+    // it (COMMITMENT_KERNEL §12): the brand gets the usual rejection, and the
+    // owner is told to install the pack.
+    if (!ctx.deps.moneyAvailable()) {
+      const decision = authorDecision(ctx, proposal, 'rejected');
+      result.outcome =
+        decision === null
+          ? { ok: false, refusal: 'already_decided' }
+          : { ok: false, refusal: 'commerce_pack_needed' };
+      return;
+    }
     if (acceptanceFailure(ctx, proposal, nowMs) !== null) {
       const decision = authorDecision(ctx, proposal, 'rejected');
       result.outcome =
@@ -1051,10 +1288,18 @@ function acceptanceFailure(
   // The owner is present and approving these terms, so the HARD floor (with
   // the premium for what is held now) is the line, not the automatic one.
   const bounds = boundsFor(ctx, policy, resource, proposal.general, renews);
-  const values = termValues(proposal.terms);
-  for (const name of TERM_NAMES) {
-    if (!sellerAtLeast(name, values[name], bounds[name].hard)) return 'below the floor in force';
-  }
+  // The envelope's hard checks: the hard floors (with the premium), and the
+  // owner's never-rules and closed personas for shelf deals (§8).
+  const verdict = shelfEnvelope(ctx, {
+    kind: SHELF_HOST_KIND,
+    holder: 'seller',
+    limits: bounds,
+    terms: proposal.terms,
+    promises: proposal.promises ?? [],
+    general: proposal.general,
+    approvedInPerson: true,
+  });
+  if (verdict.outcome === 'refused') return verdict.reason === 'past_hard_limit' ? 'below the floor in force' : verdict.reason;
   const rule = holdingRuleFor(policy, proposal.general.tag);
   const held = heldCountFor(ctx, policy, {
     tag: proposal.general.tag,
@@ -1085,4 +1330,239 @@ export function lapseDecisionCard(ctx: TermContext, cardId: string): void {
     const proposal = readTermProposalRow(ctx.store.getDocument(card.refDigest));
     if (proposal !== null) authorDecision(ctx, proposal, 'rejected');
   });
+}
+
+// ---------------------------------------------------------------------------
+// Going on once a closed persona is open (term_persona.ts)
+// ---------------------------------------------------------------------------
+
+/** The request waited for a persona: sign its first offer now, if none went out. */
+export function resumeFirstOffer(ctx: TermContext, requestDigest: string): void {
+  const row = ctx.store.getDocument(requestDigest);
+  if (row === null || row.kind !== 'term_request' || row.direction !== 'inbound') return;
+  const request = readTermRequestRow(row);
+  if (request === null) return;
+  if (ctx.store.listByRequest(request.request_id, 'term_offer').length > 0) return;
+  if (Date.parse(request.respond_by) <= ctx.now()) return;
+  const pack = ctx.deps.activePack('term_seller');
+  const policy = currentTermPolicy(ctx);
+  const resource = policy.resources.find((r) => r.resource_ref === request.resource_ref);
+  if (pack === null || !policy.enabled || resource === undefined) return;
+  issueFirstOffer(ctx, { request, policy, resource, pack });
+}
+
+/**
+ * The owner's yes waited for a persona: the decision card, whose inbox task
+ * that yes already closed, is put to the owner again with the same decide-by.
+ */
+export function resumeDecision(ctx: TermContext, proposalDigest: string): void {
+  const proposal = readTermProposalRow(ctx.store.getDocument(proposalDigest));
+  if (proposal === null || termAgreementStatus(ctx.store, proposalDigest).state !== 'proposed') return;
+  const requestId = ctx.store.requestOf(proposalDigest) ?? '';
+  const base = `term-decision-${proposalDigest.slice(0, 32)}`;
+  const cards = ctx.store
+    .cardsForRequest(requestId, TERM_DECISION_CARD)
+    .filter((c) => c.cardId === base || c.cardId.startsWith(`${base}-`));
+  const live = cards.find((c) => c.state === 'pending');
+  if (live === undefined || live.decideBy <= ctx.now()) return;
+  // Retired without a rejection: the proposal is still undecided.
+  ctx.store.decideCard(live.cardId, 'lapsed', ctx.now());
+  raiseDecisionCard(ctx, proposal, ctx.now(), {
+    cardId: `${base}-${String(cards.length + 1)}`,
+    decideBy: live.decideBy,
+  });
+}
+
+/** A counter waited for a persona: answer it now, if it still answers the head. */
+export function resumeCounter(ctx: TermContext, counterDigest: string): void {
+  const counter = readTermCounterRow(ctx.store.getDocument(counterDigest));
+  if (counter === null) return;
+  const offer = readTermOfferRow(ctx.store.getDocument(counter.offer_digest));
+  if (offer === null) return;
+  const head = offerChain(ctx, offer.request_id, 'outbound').at(-1)?.offer;
+  if (head === undefined || head.offer_digest !== counter.offer_digest) return;
+  if (Date.parse(head.valid_until) <= ctx.now()) return;
+  const policy = currentTermPolicy(ctx);
+  const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
+  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null) return;
+  answerCounter(ctx, { counter, head, policy, resource });
+}
+
+/** A floor-card yes waited for a persona: sign the concession now. */
+export function resumeConcession(ctx: TermContext, requestId: string): void {
+  offerAuthorised(ctx, requestId);
+}
+
+/** The wait for a persona ended unopened: the brand gets the uniform rejection. */
+export function endDecisionWait(ctx: TermContext, proposalDigest: string): void {
+  const proposal = readTermProposalRow(ctx.store.getDocument(proposalDigest));
+  if (proposal === null || termAgreementStatus(ctx.store, proposalDigest).state !== 'proposed') return;
+  const requestId = ctx.store.requestOf(proposalDigest) ?? '';
+  for (const card of ctx.store.cardsForRequest(requestId, TERM_DECISION_CARD)) {
+    if (card.refDigest === proposalDigest && card.state === 'pending')
+      ctx.store.decideCard(card.cardId, 'lapsed', ctx.now());
+  }
+  authorDecision(ctx, proposal, 'rejected');
+}
+
+// ---------------------------------------------------------------------------
+// The strategy slot on the store's side (COMMITMENT_KERNEL §11)
+// ---------------------------------------------------------------------------
+
+/** How long the store's round waits for the strategy before the fixed style plays it. */
+const SELLER_STRATEGY_WAIT_MS = 20 * 60 * 1000;
+
+/**
+ * Hand the store's answer to a counter to Brain, when the owner chose it for
+ * shelf deals. True when Brain has the round. Brain proposes what the runner
+ * would: a revision, which then goes through the same clamp, floor card, hold
+ * and envelope as the runner's.
+ */
+function handSellerTurn(ctx: TermContext, counter: TermCounter, head: TermOffer): boolean {
+  const strategy = ctx.deps.strategy;
+  if (strategy === undefined) return false;
+  const settings = strategy.settings(SHELF_HOST_KIND);
+  if (settings.strategy !== 'brain') return false;
+  const requestId = head.request_id;
+  const turn = ctx.store.getTurn(requestId, counter.round);
+  if (turn !== null) return turn.state === 'pending';
+  if (!strategyBudgetLeft(ctx, SHELF_HOST_KIND, requestId)) return false;
+  const chain = offerChain(ctx, requestId, 'outbound').map(({ offer }) => ({
+    by: 'us',
+    revision: offer.revision,
+    terms: offer.terms,
+  }));
+  const counters = ctx.store
+    .listByRequest(requestId, 'term_counter')
+    .flatMap((row) => {
+      const c = readTermCounterRow(row);
+      return c === null
+        ? []
+        : [
+            {
+              by: 'them',
+              round: c.round,
+              targets: c.targets,
+              // Core's own sentence for the brand's message: never the brand's words.
+              ...(c.message !== undefined ? { said: renderTermMessage(c.message) } : {}),
+            },
+          ];
+    });
+  // Only what Brain may read now: untagged entries and Brain-readable personas.
+  const model = strategy.brainModel(SHELF_HOST_KIND) ?? undefined;
+  const policy = currentTermPolicy(ctx);
+  const submitted = strategy.submit({
+    kind: SHELF_HOST_KIND,
+    ref: { negotiationId: requestId, turn: counter.round },
+    side: 'seller',
+    parts: SLOT_PACK_PARTS.map((p) => ({ ...p })),
+    table: {
+      terms: head.terms,
+      general: {
+        currency: head.general.currency,
+        period: head.general.period,
+        start: head.general.start,
+        end: head.general.end,
+      },
+    },
+    history: [...chain, ...counters],
+    model: model === undefined ? { constrained: [] } : { ...projectModel(model, { valuesOn: settings.valuesOn, firstOfferOut: true }) },
+    roundsLeft: Math.max(0, policy.maxRounds - head.revision),
+    deadlineAt: head.valid_until,
+    rules: [
+      'You speak for the store, which is paid rent (fee, minor units) and a share of sales (share_bps).',
+      'Propose the next revision of your offer, one version; Core never lets it fall below the owner’s floors.',
+      'Never set a price for anyone outside the deal.',
+    ],
+  });
+  if (submitted === null) return false;
+  ctx.store.putTurn({ requestId, turn: counter.round, taskId: submitted.taskId, createdAt: ctx.now() });
+  return true;
+}
+
+/** The counter a store's turn answers, and the offer it countered, if it still stands. */
+function sellerTurnTarget(
+  ctx: TermContext,
+  requestId: string,
+  turn: number,
+): { counter: TermCounter; head: TermOffer; policy: TermPolicy; resource: TermResourcePolicy } | null {
+  const counter = ctx.store
+    .listByRequest(requestId, 'term_counter')
+    .map((row) => readTermCounterRow(row))
+    .find((c): c is TermCounter => c !== null && c.round === turn);
+  const head = offerChain(ctx, requestId, 'outbound').at(-1)?.offer;
+  if (counter === undefined || head === undefined || head.offer_digest !== counter.offer_digest) return null;
+  if (Date.parse(head.valid_until) <= ctx.now()) return null;
+  const policy = currentTermPolicy(ctx);
+  const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
+  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null) return null;
+  return { counter, head, policy, resource };
+}
+
+/**
+ * Apply the store's strategy move. Charged first, one verdict per version; the
+ * first version stands in for the runner's proposal. A spent budget, a stop,
+ * or a move the shelf wire cannot carry lets the fixed style answer.
+ */
+export function applySellerStrategyMove(
+  ctx: TermContext,
+  args: { requestId: string; turn: number; move: StrategyMove },
+): { outcome: string } {
+  const turn = ctx.store.getTurn(args.requestId, args.turn);
+  if (turn === null || turn.state !== 'pending') return { outcome: 'already_applied' };
+  const target = sellerTurnTarget(ctx, args.requestId, args.turn);
+  if (target === null) {
+    ctx.store.closeTurn(args.requestId, args.turn, 'applied');
+    return { outcome: 'negotiation_moved_on' };
+  }
+  const fixed = (outcome: string): { outcome: string } => {
+    ctx.store.closeTurn(args.requestId, args.turn, 'fallen_back');
+    answerCounter(ctx, { ...target, fixedStyle: true });
+    return { outcome };
+  };
+  const strategy = ctx.deps.strategy;
+  // The owner went back to the fixed style meanwhile: it answers, with no message.
+  if (strategy === undefined || strategy.settings(SHELF_HOST_KIND).strategy !== 'brain')
+    return fixed('fixed_style');
+  // A question for the brand rides on the fixed style's revision; no verdict, no budget.
+  if (args.move.kind === 'ask_other') {
+    const message = tableMessage(args.move, target.head);
+    ctx.store.closeTurn(args.requestId, args.turn, message === null ? 'fallen_back' : 'applied');
+    answerCounter(ctx, { ...target, fixedStyle: true, ...(message !== null ? { message } : {}) });
+    return { outcome: message === null ? 'fixed_style' : 'sent_with_message' };
+  }
+  if (args.move.kind !== 'propose' || args.move.versions.length === 0) return fixed('fixed_style');
+  const charged = strategy.charge({
+    kind: SHELF_HOST_KIND,
+    negotiationId: args.requestId,
+    count: args.move.versions.length,
+    nowMs: ctx.now(),
+    thresholdVersion: ctx.deps.valueModels?.(SHELF_HOST_KIND, [])?.model.version ?? 0,
+  });
+  if (!charged.ok) {
+    raiseStrategyNotice(ctx, args.requestId, charged.spent);
+    return fixed('budget_spent');
+  }
+  const proposed = termValues(target.head.terms);
+  for (const part of (args.move.versions[0] as DealVersion).parts)
+    if (part.kind === 'number' && (TERM_NAMES as readonly string[]).includes(part.name))
+      proposed[part.name as TermName] = part.value;
+  ctx.store.closeTurn(args.requestId, args.turn, 'applied');
+  answerCounter(ctx, { ...target, proposed });
+  return { outcome: 'answered' };
+}
+
+/** A store's round the strategy did not answer in time: the fixed style answers. */
+export function fallBackStaleSellerTurns(ctx: TermContext): number {
+  let n = 0;
+  for (const turn of ctx.store.staleTurns(ctx.now() - SELLER_STRATEGY_WAIT_MS)) {
+    if (ctx.store.getNegotiation(turn.requestId) !== null) continue; // the brand's own turn
+    ctx.atomically('seller_strategy_stale', () => {
+      if (!ctx.store.closeTurn(turn.requestId, turn.turn, 'fallen_back')) return;
+      const target = sellerTurnTarget(ctx, turn.requestId, turn.turn);
+      if (target !== null) answerCounter(ctx, { ...target, fixedStyle: true });
+      n += 1;
+    });
+  }
+  return n;
 }

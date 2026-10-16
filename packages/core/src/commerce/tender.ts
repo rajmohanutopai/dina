@@ -329,6 +329,8 @@ export interface CreateTenderInput {
   projection: DeliveryProjection;
   currency?: string;
   requiredBy?: string;
+  /** The owner's onward-sharing grant for this tender (COMMITMENT_KERNEL §6 step 0). */
+  sharePincodeWithShippers?: boolean;
   nowMs: number;
 }
 
@@ -381,6 +383,7 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
       projection: input.projection,
       ...(input.currency === undefined ? {} : { currency: input.currency }),
       ...(input.requiredBy === undefined ? {} : { requiredBy: input.requiredBy }),
+      ...(input.sharePincodeWithShippers === true ? { sharePincodeWithShippers: true } : {}),
       nowMs: input.nowMs,
     });
     if (outcome.kind === 'refused') {

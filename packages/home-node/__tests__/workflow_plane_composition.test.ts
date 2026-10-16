@@ -25,6 +25,16 @@ describe('wireWorkflowPlane composition', () => {
       expect(repository?.[2]).toBe('workflowService');
     }
   });
+
+  it('passes the D2D sender\'s outcome to Core, so a message that went nowhere is not counted as sent', () => {
+    // COMMITMENT_KERNEL §15 step 6: the booked record marks a guest told only
+    // when the sender took the message; an adapter that dropped the result
+    // would mark a lost one as sent.
+    const source = readFileSync(PLANE, 'utf8');
+    const at = source.indexOf('setD2DSender(');
+    expect(at).toBeGreaterThan(0);
+    expect(source.slice(at, at + 200)).toMatch(/sendOutcomeOf\(await opts\.sendD2D\(/);
+  });
 });
 
 function balancedArgument(source: string, open: number): string | null {

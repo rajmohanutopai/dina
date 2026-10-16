@@ -67,6 +67,7 @@ const DEFAULT_PURPOSE: Readonly<Record<ReasoningTaskKind, string>> = {
   'service.respond': 'Propose a response to an authorized service request',
   'review.summarize': 'Summarize authorized review evidence',
   'reminder.extract': 'Extract reminder candidates from owner-provided text',
+  'negotiate.move': 'Propose the next move in a negotiation, inside the owner’s envelope',
 };
 
 const MINIMUM_SENSITIVITY: Readonly<Record<ReasoningTaskKind, ReasoningSensitivity>> = {
@@ -76,6 +77,7 @@ const MINIMUM_SENSITIVITY: Readonly<Record<ReasoningTaskKind, ReasoningSensitivi
   'service.respond': 'sensitive',
   'review.summarize': 'personal',
   'reminder.extract': 'personal',
+  'negotiate.move': 'personal',
 };
 
 const OWNER_SUBMITTABLE_TASKS = new Set<ReasoningTaskKind>([

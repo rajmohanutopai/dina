@@ -36,10 +36,10 @@ export interface ContactDetailState {
   scenarioDeny: string[];
 }
 
-import { DATA_CATEGORIES } from '@dina/core';
+import { SHARING_CATEGORIES } from '@dina/core';
 
 /** Standard data categories for sharing policy editor (from canonical names). */
-const CATEGORIES = [...DATA_CATEGORIES];
+const CATEGORIES = [...SHARING_CATEGORIES];
 
 /** Scenario deny list state (per contact). */
 const scenarioDenyLists = new Map<string, string[]>();
@@ -163,6 +163,8 @@ export function getSharingTierOptions(): { value: PolicyTier; label: string }[] 
     { value: 'summary', label: 'Summary. Headlines only.' },
     { value: 'full', label: 'Full. Complete content.' },
     { value: 'locked', label: 'Locked. Never shared.' },
+    // Location only: the area, never the address (COMMITMENT_KERNEL §11).
+    { value: 'pincode_only', label: 'Pincode only. Your area, never your address.' },
   ];
 }
 

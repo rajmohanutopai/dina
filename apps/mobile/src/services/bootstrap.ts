@@ -60,6 +60,9 @@ import {
   coordinationWorkflowHooks,
   getA2ARuntime,
   integrationWorkflowHooks,
+  modelChangeWorkflowHooks,
+  optionWorkflowHooks,
+  evidenceWorkflowHooks,
   negotiationWorkflowHooks,
   termWorkflowHooks,
   orderAttachmentWorkflowHooks,
@@ -70,6 +73,7 @@ import {
   resetCallerTypeState,
   resetMiddlewareState,
   resetServiceConfigState,
+  sendOutcomeOf,
   setD2DSender,
   setDeviceRoleResolver,
   setDeviceScopeResolver,
@@ -181,6 +185,7 @@ import {
   createReasoningCommitBridge,
   createReasoningPolicySnapshotResolver,
   createServiceReasoningCommitter,
+  commitTermStrategyMove,
   createServiceReasoningSubmitter,
   deriveLocalServiceIdentity,
   ensureReasoningBackendForBoot,
@@ -699,9 +704,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     };
     setServiceRespondSender(serviceRespondSender);
 
-    setD2DSender(async (to, type, body) => {
-      await options.sendD2D(to, type, body);
-    });
+    setD2DSender(async (to, type, body) =>
+      // What the sender reports, passed on: a message that went nowhere is not sent.
+      sendOutcomeOf(await options.sendD2D(to, type, body)),
+    );
 
     // §8 — the invite ceremony, composed HERE because its four app facts
     // (signing key, DID resolution, relay route) live at this boot. Core
@@ -796,6 +802,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     ...composeWorkflowHooks(
       coordinationWorkflowHooks({ nowMs: nowMsFn }),
       integrationWorkflowHooks({ nowMs: nowMsFn }),
+      // COMMITMENT_KERNEL §15 step 5: the owner's yes to a value-model change.
+      modelChangeWorkflowHooks({ nowMs: nowMsFn }),
+      optionWorkflowHooks({ nowMs: nowMsFn }),
+      evidenceWorkflowHooks({ nowMs: nowMsFn }),
       orderAttachmentWorkflowHooks({ nowMs: nowMsFn }),
       negotiationWorkflowHooks({ nowMs: nowMsFn }),
       termWorkflowHooks({ nowMs: nowMsFn }),
@@ -861,6 +871,8 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
             commitServiceResponse: createServiceReasoningCommitter({
               workflowService,
             }),
+            // COMMITMENT_KERNEL §11 — a strategy's move goes to the term engine.
+            commitNegotiationMove: commitTermStrategyMove,
           }),
         })
       : null;
@@ -879,7 +891,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       backendId: INTERNAL_REASONING_BACKEND_ID,
       kind: 'internal_brain',
       principalDid: identity.did,
-      allowedTaskKinds: ['answer.compose'],
+      allowedTaskKinds: ['answer.compose', 'negotiate.move'],
       maxSensitivity: 'sensitive',
       availability: 'always_on',
       modelClass: 'dina-internal-brain',

@@ -130,6 +130,38 @@ export const MSG_TYPE_COMMERCE_TRADE = 'commerce.trade' as const;
  * retained in `commerce_invites`. Protocol v1.2 (additive).
  */
 export const MSG_TYPE_COMMERCE_INVITE = 'commerce.invite' as const;
+/**
+ * `coordination.booked` — after a group plan settles, the organiser's Dina
+ * tells each confirmed guest, one guest at a time, what the two of them
+ * agreed: the slot, the plan's title as the guest was asked, the organiser
+ * and that guest — never who else comes (COMMITMENT_KERNEL §15 step 6). A
+ * later one with `state: 'cancelled'` ends it. Accepted only from a contact;
+ * never vaulted — retained in `coordination_bookings` by its handler.
+ * Protocol v1.3 (additive).
+ */
+export const MSG_TYPE_COORDINATION_BOOKED = 'coordination.booked' as const;
+/**
+ * `commitment.option` — a smaller deal beneath a larger one, between known
+ * partners (COMMITMENT_KERNEL §6 "How linked deals bind", §15 step 7): a
+ * seller asks a shipper for a firm option (`request`, carrying only what the
+ * buyer's onward-sharing grant allows), the shipper issues one (`option`) or
+ * says no (`decline`), the seller takes it up (`acceptance`), and the shipper
+ * answers with its one stored answer (`receipt`), also given to a later
+ * `status_query`. As `{v, kind, ...}`. Accepted only from a contact; never
+ * vaulted — retained in `commitment_options` / `commitment_option_links`.
+ * Protocol v1.4 (additive).
+ */
+export const MSG_TYPE_COMMITMENT_OPTION = 'commitment.option' as const;
+/**
+ * `commitment.consent` — one owner tells the other whether they agree to a
+ * summary of the promises kept between them ("kept 11 of 12") being shared
+ * as trust data (COMMITMENT_KERNEL §13, §16 item 6): `{v: 1, on, rev, at}`;
+ * `rev` rises with every change, and a receiver keeps only a newer one. Only
+ * when both have said yes may a summary leave either node, and never a
+ * deal's terms. Accepted only from a contact; never vaulted. Protocol v1.4
+ * (additive).
+ */
+export const MSG_TYPE_COMMITMENT_CONSENT = 'commitment.consent' as const;
 
 /** Union of all V1 D2D message type strings. */
 export type D2DMessageType =
@@ -146,7 +178,10 @@ export type D2DMessageType =
   | typeof MSG_TYPE_SERVICE_OFFER
   | typeof MSG_TYPE_SERVICE_GRANT_REQUEST
   | typeof MSG_TYPE_COMMERCE_TRADE
-  | typeof MSG_TYPE_COMMERCE_INVITE;
+  | typeof MSG_TYPE_COMMERCE_INVITE
+  | typeof MSG_TYPE_COORDINATION_BOOKED
+  | typeof MSG_TYPE_COMMITMENT_OPTION
+  | typeof MSG_TYPE_COMMITMENT_CONSENT;
 
 /**
  * Types that the protocol guarantees are NEVER staged into the persona vault.
@@ -164,7 +199,13 @@ export type EphemeralD2DType =
   // Persisted in the TRADE LEDGER (identity.sqlite), never the vault.
   | typeof MSG_TYPE_COMMERCE_TRADE
   // Persisted in `commerce_invites`, never the vault.
-  | typeof MSG_TYPE_COMMERCE_INVITE;
+  | typeof MSG_TYPE_COMMERCE_INVITE
+  // Persisted in `coordination_bookings`, never the vault.
+  | typeof MSG_TYPE_COORDINATION_BOOKED
+  // Persisted in `commitment_options` / `commitment_option_links`, never the vault.
+  | typeof MSG_TYPE_COMMITMENT_OPTION
+  // Persisted in `commitment_evidence_consent`, never the vault.
+  | typeof MSG_TYPE_COMMITMENT_CONSENT;
 
 /**
  * Types that DO persist into the vault. Computed from `D2DMessageType`

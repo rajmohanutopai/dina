@@ -312,6 +312,9 @@ Mapping (frozen):
 | `presence.signal`       | `presence`     |
 | `coordination.request`  | `coordination` |
 | `coordination.response` | `coordination` |
+| `coordination.booked`   | `coordination` |
+| `commitment.option`     | `coordination` |
+| `commitment.consent`    | `coordination` |
 | `social.update`         | `social`       |
 | `safety.alert`          | `safety`       |
 | `trust.vouch.request`   | `trust`        |
@@ -414,6 +417,50 @@ MUST pass its L1–L3 subset against those vectors; L4 vectors
 describe the network-level exchange but require a live loopback.
 
 ## 15. Changelog to this document
+
+- **2026-10-16** — **`commitment.consent` (additive).** One owner tells the
+  other whether they agree to a summary of the promises kept between them
+  being shared as trust data: `{v: 1, on, rev, at}`. `rev` rises with
+  every change of the sender's switch (the change's time in milliseconds, or
+  one past the last, whichever is larger, so a restore never numbers backwards); a receiver keeps only a `rev`
+  newer than the last it kept, so a delayed or replayed message never undoes
+  a newer one. An optional `ask` (32 lowercase hex), sent after the sender
+  restored from a backup and forgot the receiver's word, asks the receiver to
+  send its own switch again with `reply_to` set to that challenge; until such
+  a reply comes, the restored sender keeps no word of the receiver's (a
+  delayed message from before the restore never stands in for it). A summary may leave either
+  node only when both have said yes, and it is counts alone, never a deal's
+  terms. Scenario `coordination`; contact-only on receipt; never vaulted.
+  COMMITMENT_KERNEL §13, §15 step 8.
+- **2026-10-16** — **`commitment.option` (additive).** Smaller deals beneath
+  a larger one, between known partners (COMMITMENT_KERNEL §6, §15 step 7):
+  `{v: 1, kind, ...}` with kind `request` (`request_id, service_at, crates`,
+  and `postal_code` only under the buyer's onward-sharing grant), `option`
+  (a firm option: `option_id, request_id, service_at, crates, fee_minor,
+  currency: INR, issued_at, hold_until, lead_time_s, model_version`; the fee is
+  the shipper's own asking price), `decline` (`request_id, reason: no_run |
+  no_price | full | too_soon | closed`), `acceptance` (`option_id,
+  accepted_at`), `receipt` (`option_id, answer: admitted |
+  arrived_after_grace, at` — the shipper's one stored answer, the same to
+  every resend), `status_query` (`option_id`), and `fallback` (seller to
+  buyer: `purchase_order_id, quote_id, alternative_id, at` — the run the order
+  took ended without fault, and the order stands on the quote's own terms;
+  the buyer keeps it only for its own order that named that partner-run
+  version, from that order's supplier). An acceptance arriving by the hold's
+  end plus 48 hours is admitted; later, the option has ended without fault. Scenario `coordination`; contact-only on receipt; never
+  vaulted. A node on an earlier build refuses the unknown type, and nothing
+  else changes.
+- **2026-10-16** — **`coordination.booked` (additive).** A group plan's
+  organiser tells each confirmed guest what the two of them agreed:
+  `{v: 1, record_id, seq, state: booked | cancelled, title, slot,
+  organiser_did, guest_did, issued_at}` — one pair only, never another
+  guest; organiser and guest differ. `seq` rises by one each time the
+  organiser's word for the pair changes; a receiver keeps the highest it has
+  seen, a cancellation included, and ignores the rest. The receiver binds
+  `guest_did` to the DID the message was delivered to, never the inner `to`.
+  Scenario `coordination`; contact-only on receipt; never vaulted (the
+  receiver keeps it with a reminder). A node on an earlier build refuses the unknown type,
+  and nothing else changes. COMMITMENT_KERNEL §15 step 6.
 
 - **2026-07-12** — **plugin `presentation_hash` now covers `icon`,
   `homepage`, and `source_url`** (5th plugin adversarial review, #9). These

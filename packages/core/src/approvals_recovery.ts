@@ -8,6 +8,8 @@
  * part is safe to repeat.
  */
 
+import { reconcileModelChangesAtBoot } from './commitment/model_changes';
+import { getBookingStore, reconcileBookingReminders } from './coordination/group_booking';
 import { resumeForgetJobs } from './forget/forget';
 import { reconcileSpend } from './spend/allowance';
 import { reconcileStandingReplies } from './standing/standing_replies';
@@ -18,5 +20,10 @@ export async function recoverOwnerApprovals(): Promise<{ ran: boolean }> {
   await resumeForgetJobs();
   await reconcileSpend();
   await reconcileStandingReplies();
+  // COMMITMENT_KERNEL §15 step 5: value-model changes the owner approved.
+  await reconcileModelChangesAtBoot();
+  // COMMITMENT_KERNEL §15 step 6: each group booking's reminder follows its record.
+  const bookings = getBookingStore();
+  if (bookings !== null) await reconcileBookingReminders(bookings, Date.now());
   return { ran: true };
 }

@@ -907,7 +907,14 @@ describe('an owner-initiated reminder asks the active pack (§5.D)', () => {
     setPeopleRepository(new SQLitePeopleRepository(identityAdapter));
     setContactRepository(new SQLiteContactRepository(identityAdapter));
     resetContactDirectory();
-    addContact(BUYER_DID, 'Buyer Traders', 'verified');
+    // The contact is a year old at T0, whatever today's date is: the context
+    // test below expects the "older" bucket.
+    const clock = jest.spyOn(Date, 'now').mockReturnValue(T0 - 365 * 24 * 3600 * 1000);
+    try {
+      addContact(BUYER_DID, 'Buyer Traders', 'verified');
+    } finally {
+      clock.mockRestore();
+    }
     if (channels.phone !== undefined || channels.email !== undefined) {
       expect(setContactChannels(BUYER_DID, channels)).toEqual([]);
     }
@@ -974,9 +981,9 @@ describe('an owner-initiated reminder asks the active pack (§5.D)', () => {
           display_name: 'Buyer Traders',
           channel_kind: 'both',
           trust_level: 'verified',
-          // When the contact was made, as a BUCKET. The rig writes the row on
-          // the real clock and asks at a fixed T0 well after it, so the honest
-          // answer here is "older" — and the instant itself never travels.
+          // When the contact was made, as a BUCKET. The rig makes the contact a
+          // year before the fixed T0 it asks at, so the honest answer here is
+          // "older" — and the instant itself never travels.
           known_since_class: 'older',
         },
       },

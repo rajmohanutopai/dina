@@ -16,6 +16,7 @@ import * as path from 'node:path';
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { commerceRecordDigest } from '@dina/commerce-protocol';
 import { computePluginDigests, normalizePluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
@@ -24,6 +25,8 @@ import {
   isCommerceRestorePending,
   markCommerceRestorePending,
 } from '../../src/commerce/restore_marker';
+import { EvidenceStore } from '../../src/commitment/evidence';
+import { OrderFallbackStore, SellerOptionStore, ShipperOptionStore } from '../../src/commitment/options';
 import {
   buildArchivePayload,
   clearsOnRestore,
@@ -36,8 +39,6 @@ import {
   type ArchiveDataSource,
   type ArchivePersonaSource,
 } from '../../src/export/archive';
-import { commerceRecordDigest } from '@dina/commerce-protocol';
-
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS, PERSONA_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -313,6 +314,89 @@ describe('real export → clean-install import', () => {
       // ISSUED grant EXCLUDED — active authority must NOT ride a backup (v10),
       // same posture as agent_persona_grants. The table exists (migrated) but is empty.
       expect(dest.id.query('SELECT 1 FROM service_grants')).toHaveLength(0);
+    } finally {
+      closeBundle(dest);
+    }
+  });
+
+  it('COMMITMENT_KERNEL §15 steps 7–8: options, links, fallbacks, evidence and consent travel', async () => {
+    const option = {
+      v: 1 as const,
+      kind: 'option' as const,
+      option_id: 'opt-1',
+      request_id: 'req-0011223344556677',
+      service_at: '2026-11-10T09:00:00Z',
+      crates: 1,
+      fee_minor: '30000',
+      currency: 'INR' as const,
+      issued_at: '2026-11-02T09:00:00.000Z',
+      hold_until: '2026-11-05T09:00:00.000Z',
+      lead_time_s: 86_400,
+      model_version: 1,
+    };
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    try {
+      // The shipper's issued option and its one answer.
+      const shipper = new ShipperOptionStore(src.id);
+      shipper.issue('did:plc:seller', option, '2026-11-10', 1);
+      shipper.answer('did:plc:seller', 'opt-1', { answer: 'admitted', atMs: 2 });
+      // The seller's bound link and a fallback on an order.
+      const seller = new SellerOptionStore(src.id);
+      const request = { v: 1 as const, kind: 'request' as const, request_id: option.request_id, service_at: option.service_at, crates: 1 };
+      seller.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: 'q-1', request }, 1);
+      seller.settleAsk(request.request_id, option, 1);
+      seller.clear(request.request_id, 1);
+      seller.takeUp(request.request_id, 'did:plc:buyer po-1', 2);
+      seller.receipt(request.request_id, { answer: 'admitted', atMs: 3 }, 3);
+      new OrderFallbackStore(src.id).record({
+        buyerDid: 'did:plc:buyer',
+        purchaseOrderId: 'po-9',
+        supplierDid: 'self',
+        quoteId: 'q-9',
+        alternativeId: 'partner_00112233',
+        role: 'seller',
+        appliedAt: 4,
+      });
+      const evidence = new EvidenceStore(src.id);
+      evidence.record({
+        counterpartyDid: 'did:plc:brand',
+        dealRef: 'deal-1',
+        subject: 'promise',
+        item: 'stock_run',
+        occurrence: '2026-11-04',
+        outcome: 'kept',
+        fault: 'none',
+        source: 'owner',
+        note: '',
+        facts: {},
+        recordedAt: 5,
+      });
+      evidence.setOwnConsent('did:plc:brand', true, 6);
+      evidence.setPeerConsent('did:plc:brand', true, 1, '', 6);
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      await importArchive(archive, PASS);
+      // A resend after the restore gets the same answer.
+      expect(new ShipperOptionStore(dest.id).byOption('did:plc:seller', 'opt-1')?.answer).toEqual({ answer: 'admitted', atMs: 2 });
+      expect(new SellerOptionStore(dest.id).get('req-0011223344556677')).toMatchObject({ state: 'bound', orderRef: 'did:plc:buyer po-1' });
+      expect(new OrderFallbackStore(dest.id).get('did:plc:buyer', 'po-9')?.alternativeId).toBe('partner_00112233');
+      const evidence = new EvidenceStore(dest.id);
+      expect(evidence.forCounterparty('did:plc:brand')).toMatchObject([{ outcome: 'kept', occurrence: '2026-11-04' }]);
+      // The owner's own switch travels; the other side's word is forgotten
+      // until they repeat it, and the next message asks them to.
+      expect(evidence.consent('did:plc:brand')).toEqual({ self: true, peer: false });
+      expect(evidence.untold()).toMatchObject([
+        { counterpartyDid: 'did:plc:brand', on: true, ask: expect.stringMatching(/^[0-9a-f]{32}$/) },
+      ]);
+      // Renumbered past anything the other side kept after the backup.
+      expect(evidence.untold()[0]?.rev ?? 0).toBeGreaterThan(Date.now() - 60_000);
     } finally {
       closeBundle(dest);
     }

@@ -59,6 +59,54 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **Additive at minor 1.4 (COMMITMENT_KERNEL §6, §11, §15 step 7)** — goods
+  versions resting on a shipper's firm option. `QuoteRequest.onward_sharing`
+  (optional): the buyer's per-deal grant, `{fields: ["postal_code"],
+  recipient_role: "shipper"}`, only with a projection that carries a pincode;
+  without it the supplier asks no shipper. `QuoteAlternative.partner_run:
+  true` with `offer_ends_at` (both or neither): this version rests on a firm
+  option; an order must name it before `offer_ends_at` (no later than the
+  quote's `valid_until`), and if the run is lost after binding, the quote's
+  own terms apply. A new known rejection reason, `option_lapsed`: the option's
+  hold had ended when the order arrived, and nothing bound. Conversations at
+  1.0–1.3 are unchanged.
+- **Additive at minor 1.3 (COMMITMENT_KERNEL §6, §15 step 6)** — alternatives
+  on goods quotes. `SignedQuote.alternatives` (optional, 1 to 3, sorted unique
+  `alternative_id`): the same lines at the same prices, delivered on
+  `estimated_delivery_at` for its own `charges` — "₹40 less delivery if it
+  comes on Tuesday". Each carries its `total` (the quote's line subtotals with
+  its charges, §9.1) and its `terms_digest` (the quote's terms with its
+  charges and delivery date); a validator recomputes both. A quote below minor
+  1.3 carries none. `PurchaseOrderProposal.alternative_id` (optional, minor
+  1.3) names the version an order takes; `verifyOrderAgainstQuote` checks
+  `approved_total` and `accepted_terms_digest` against that version, and an
+  order naming none takes the quote's own terms as before. `quoteVersion`
+  gives either. Conversations at 1.0–1.2 are unchanged.
+- **BREAK for older term nodes (COMMITMENT_KERNEL §11, §15 step 4)** — the
+  conversation channel. `TermCounter.message` and `TermOffer.message`
+  (optional, never on revision 1): `{kind, part}` with `kind` one of
+  `ask_about_part` or `explain_change` and `part` a part on the table (the
+  offer's terms and its alternatives' promises; a counter's part must be on
+  the offer it counters). A message carries no words: each side renders the
+  fixed sentence with `renderTermMessage`, so no counterparty text reaches an
+  owner, a model or a log. A message never binds. A node on an earlier build
+  refuses a record carrying `message` (a `refused` receipt); records without
+  one are byte-identical to before.
+- **BREAK for older term nodes (COMMITMENT_KERNEL §6, §15 step 3)** — promises
+  and alternatives on term deals. Term documents refuse unknown fields, so a
+  node on an earlier build refuses an offer carrying `alternatives` and a
+  proposal carrying `alternative_id` or `promises` (a `refused` receipt); an
+  offer without alternatives is byte-identical to before and both read it.
+  Pre-freeze, this lands without a version bump. `TermOffer.alternatives` (optional, 1 to 7, sorted unique
+  `alternative_id`): other versions the buyer may take instead of the offer's
+  own terms, each a full terms list and its `promises`. A `TermPromise` is
+  `{name, by: buyer | seller, dimensions}` with 1 to 12 structured dimensions
+  (lowercase ids and values, no free text); promises in a version are sorted
+  by name, one of each. `TermAgreementProposal.alternative_id` and `.promises`
+  (optional): the version the proposal takes; `verifyTermProposalAgainstOffer`
+  checks the terms and promises equal that alternative's exactly, and that the
+  offer's own terms carry no promises.
+
 - **ADDITIVE (SHELF_SPACE_NEGOTIATION §5)** — term negotiation: a general way
   to offer, counter and agree on named terms for a resource. Six documents,
   each digest-sealed under its own domain in a NEW family,

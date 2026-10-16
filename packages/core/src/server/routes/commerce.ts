@@ -58,6 +58,7 @@ import {
   computeProjectionDigest,
   conversationSnapshotDigest,
   extractionCommitmentDigest,
+  quoteVersion,
   verifyOrderAgainstQuote,
   validateApprovalSourceBinding,
   validateCatalogItem,
@@ -87,6 +88,7 @@ import {
   SUPPLIER_ORDER_AUTHORITY_DOMAIN,
   type ApprovingPrincipal,
   type BuyerApprovalContext,
+  type PartnerRunTerms,
 } from '../../commerce/approval_payload';
 import { buildSupplierApprovalPayload } from '../../commerce/approval_payload';
 import { enumerateV1Records } from '../../commerce/attribution_boundary';
@@ -258,7 +260,11 @@ import { makeServiceQueryReconcileSend } from '../../commerce/reconcile_sweeper'
 import { buildReconciliationCensus } from '../../commerce/reconciliation_census';
 import { beginReferenceInstall } from '../../commerce/reference_install';
 import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from '../../commerce/reference_manifests';
-import { rehydrateQuoteRequest } from '../../commerce/rehydrate';
+import {
+  rehydratePurchaseOrder,
+  rehydrateQuoteRequest,
+  rehydrateSignedQuote,
+} from '../../commerce/rehydrate';
 import {
   describeDisagreement,
   mayAuthorizeSubstitution,
@@ -312,6 +318,7 @@ import {
 } from '../../commerce/trade_ledger';
 import { TradeLedgerService } from '../../commerce/trade_ledger_service';
 import { tradeRelationshipReaders, tradeOrientations } from '../../commerce/trade_readers';
+import { getValueModelStore } from '../../commitment/model_store';
 import { getContact } from '../../contacts/directory';
 import { getDeviceByDID, revokePluginDeviceForTeardown } from '../../devices/registry';
 import { getNodeDID } from '../../pairing/ceremony';
@@ -322,6 +329,7 @@ import {
   uninstall,
 } from '../../plugins/install_service';
 import { getPluginInstallRepository, type PluginInstall } from '../../plugins/registry';
+import { getOwnerTimeZone } from '../../settings/owner_settings';
 import { WorkflowTaskState } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
 
@@ -336,6 +344,7 @@ import type {
   CatalogDraftRepository,
   ProvenanceClass,
 } from '../../commerce/catalog_draft_store';
+import type { ValueModel } from '../../commitment';
 import type { CoreRouter, CoreResponse, CoreRequest } from '../router';
 
 const hash: Sha256Fn = (data) => sha256(data);
@@ -658,7 +667,7 @@ type StaffPurchaseGate =
 function staffPurchaseGate(
   runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
   caller: CommerceRouteCaller,
-  order: { supplierDid: string; quoteId: string; total: Money },
+  order: { supplierDid: string; quoteId: string; total: Money; alternativeId?: string },
 ): StaffPurchaseGate {
   if (caller.kind !== 'staff') return { kind: 'go', approvedCard: null };
   const gate = checkStaffOperation({
@@ -675,7 +684,11 @@ function staffPurchaseGate(
   const escalated = escalateStaffOperation({
     deviceDid: caller.deviceDid,
     scope: 'commerce_submit',
-    subject: `quote:${order.supplierDid}:${order.quoteId}`,
+    // The version is part of what the owner approves (COMMITMENT_KERNEL §6):
+    // a yes to one version clears no other.
+    subject: `quote:${order.supplierDid}:${order.quoteId}${
+      order.alternativeId === undefined ? '' : `:${order.alternativeId}`
+    }`,
     value: order.total,
     reason: gate.reason,
     nowMs: Date.now(),
@@ -1018,7 +1031,19 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       const quoteId = typeof body.quote_id === 'string' ? body.quote_id : '';
       const head = runtime.buyerQuotes.chain(supplierDid, quoteId).at(-1);
       if (head === undefined) return { status: 404, body: { error: 'no_such_quote' } };
-      const gate = staffPurchaseGate(runtime, caller, { supplierDid, quoteId, total: head.total });
+      // The clerk's cap and the owner's yes are judged on the version taken.
+      const alternativeId =
+        typeof body.alternative_id === 'string' && body.alternative_id !== ''
+          ? body.alternative_id
+          : undefined;
+      const version = quoteVersion(head, alternativeId);
+      if (version === null) return { status: 409, body: { error: 'no_such_alternative' } };
+      const gate = staffPurchaseGate(runtime, caller, {
+        supplierDid,
+        quoteId,
+        total: version.total,
+        ...(alternativeId !== undefined ? { alternativeId } : {}),
+      });
       if (gate.kind === 'stop') return gate.response;
       const held = holdOrderFromQuote(runtime, body, vouchedByFor(caller));
       if (held.status !== 200 || gate.approvedCard === null) return held;
@@ -1154,6 +1179,18 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         return { status: 400, body: { error: 'invalid_source_binding', detail: badBinding } };
       }
     }
+    // COMMITMENT_KERNEL §6, §9 — an order on an alternative binds that
+    // version's delivery date and charges: read them from the held quote the
+    // order names, never from the caller, and refuse one this node cannot
+    // find.
+    let version: ReturnType<typeof quoteVersion> = null;
+    if (order.alternative_id !== undefined) {
+      const held = getCommerceRuntime()
+        ?.buyerQuotes.chain(order.supplier_did, order.quote_id)
+        .find((q) => q.quote_digest === order.quote_digest);
+      version = held === undefined ? null : quoteVersion(held, order.alternative_id);
+      if (version === null) return { status: 409, body: { error: 'no_such_alternative' } };
+    }
     const namedContext: BuyerApprovalContext = {
       actingBusinessDid: self,
       principal,
@@ -1161,7 +1198,16 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       displayedLabels: claimedContext.displayedLabels,
       productKeys: claimedContext.productKeys,
       linePrices: claimedContext.linePrices,
-      charges: claimedContext.charges,
+      charges:
+        version === null
+          ? claimedContext.charges
+          : version.charges.map((charge) => ({
+              code: `${charge.operation === 'subtract' ? '-' : '+'}${charge.kind}:${charge.label}`,
+              amount: charge.amount,
+            })),
+      ...(version?.estimated_delivery_at === undefined
+        ? {}
+        : { estimatedDeliveryAt: version.estimated_delivery_at }),
       quoteRevision: claimedContext.quoteRevision,
       quoteExpiresAt: claimedContext.quoteExpiresAt,
       install: claimedContext.install,
@@ -1271,6 +1317,9 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
           supplierDid: approval.order.supplier_did,
           quoteId: approval.order.quote_id,
           total: approval.payload.approvedTotal,
+          ...(approval.order.alternative_id === undefined
+            ? {}
+            : { alternativeId: approval.order.alternative_id }),
         });
         if (gate.kind === 'stop') return gate.response;
         if (gate.approvedCard !== null) {
@@ -2913,6 +2962,8 @@ function buildOrderFromHeldQuote(
   quote: SignedQuote,
   suppliedProjectionRaw: unknown,
   nowMs: number,
+  /** The quote's alternative the owner takes (COMMITMENT_KERNEL §6); absent: its own terms. */
+  alternativeId?: string,
 ): { ok: true; order: PurchaseOrderProposal } | { ok: false; response: CoreResponse } {
   const refuse = (status: number, body: Record<string, unknown>) => ({
     ok: false as const,
@@ -2934,6 +2985,8 @@ function buildOrderFromHeldQuote(
   if (invalidProjection !== null) {
     return refuse(400, { error: 'invalid_projection', detail: invalidProjection });
   }
+  const version = quoteVersion(quote, alternativeId);
+  if (version === null) return refuse(409, { error: 'no_such_alternative' });
   const purchaseOrderId = `po_${bytesToHex(randomBytes(12))}`;
   const orderDraftBody = {
     protocol_version: quote.protocol_version,
@@ -2948,8 +3001,9 @@ function buildOrderFromHeldQuote(
       quantity: line.quantity,
     })),
     delivery: projection as Record<string, unknown>,
-    approved_total: quote.total,
-    accepted_terms_digest: quote.terms_digest,
+    approved_total: version.total,
+    accepted_terms_digest: version.terms_digest,
+    ...(alternativeId !== undefined ? { alternative_id: alternativeId } : {}),
     idempotency_key: purchaseOrderId,
     submitted_at: new Date(nowMs).toISOString(),
   };
@@ -3003,7 +3057,15 @@ function holdOrderFromQuote(
   if (activeBuyerInstall === undefined) {
     return { status: 403, body: { error: 'buyer_pack_not_installed' } };
   }
-  const built = buildOrderFromHeldQuote(runtime, quote, body.projection, Date.now());
+  const built = buildOrderFromHeldQuote(
+    runtime,
+    quote,
+    body.projection,
+    Date.now(),
+    typeof body.alternative_id === 'string' && body.alternative_id !== ''
+      ? body.alternative_id
+      : undefined,
+  );
   if (!built.ok) return built.response;
   const order = built.order;
   const resolved = resolveActingInstall(
@@ -3016,6 +3078,7 @@ function holdOrderFromQuote(
       ...(typeof body.service_rkey === 'string' && body.service_rkey !== ''
         ? { serviceRkey: body.service_rkey }
         : {}),
+      ...(order.alternative_id === undefined ? {} : { alternativeId: order.alternative_id }),
     }),
     BUYER_REFERENCE_MANIFEST.plugin_id,
   );
@@ -3055,6 +3118,24 @@ function holdOrderFromQuote(
   };
 }
 
+/** The partner-run terms of a quote's version, when it rests on one. */
+function partnerRunOf(
+  quote: SignedQuote,
+  alternativeId: string | undefined,
+): { partnerRun: PartnerRunTerms } | null {
+  const alt = (quote.alternatives ?? []).find((a) => a.alternative_id === alternativeId);
+  if (alt?.partner_run !== true || alt.offer_ends_at === undefined) return null;
+  return {
+    partnerRun: {
+      offerEndsAt: alt.offer_ends_at,
+      fallbackTotal: quote.total,
+      ...(quote.estimated_delivery_at === undefined
+        ? {}
+        : { fallbackDeliveryAt: quote.estimated_delivery_at }),
+    },
+  };
+}
+
 /** The approval context for an order built from a held quote — one shape for both lanes. */
 function buyerApprovalContextFor(args: {
   self: string;
@@ -3065,8 +3146,13 @@ function buyerApprovalContextFor(args: {
   attributionActive: boolean;
   /** The listing the quote came from; `self` when the caller names none. */
   serviceRkey?: string;
+  /** The quote's alternative the order takes; absent: its own terms. */
+  alternativeId?: string;
 }): BuyerApprovalContext {
   const { quote } = args;
+  // The version the order takes: its charges and delivery date are what the
+  // owner approves, shown whole (COMMITMENT_KERNEL §6, §9).
+  const version = quoteVersion(quote, args.alternativeId) ?? quoteVersion(quote);
   return {
     actingBusinessDid: args.self,
     principal: {
@@ -3085,7 +3171,15 @@ function buyerApprovalContextFor(args: {
       ]),
     ),
     linePrices: Object.fromEntries(quote.lines.map((line) => [line.line_id, line.unit_price])),
-    charges: [],
+    charges: (version?.charges ?? []).map((charge) => ({
+      code: `${charge.operation === 'subtract' ? '-' : '+'}${charge.kind}:${charge.label}`,
+      amount: charge.amount,
+    })),
+    ...(version?.estimated_delivery_at === undefined
+      ? {}
+      : { estimatedDeliveryAt: version.estimated_delivery_at }),
+    // A version resting on a partner's run says so, with its fallback (§6, §9).
+    ...(partnerRunOf(quote, args.alternativeId) ?? {}),
     quoteRevision: Number(quote.quote_revision),
     quoteExpiresAt: quote.valid_until,
     install: {
@@ -3423,6 +3517,31 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
       status: 200,
       body: buildSupplierInbox({
         undecided: reserved,
+        // The version each order took, read from the stored order and quote
+        // through the ingress validators.
+        versionOf: (ref) => {
+          // Never the reason an inbox cannot be built: a lookup that fails
+          // shows the order without its version line.
+          try {
+            const orderReceipt = runtime.receipts.get(ref.orderDigest);
+            const order =
+              orderReceipt === null ? null : rehydratePurchaseOrder(orderReceipt.recordJson, hash);
+            if (order === null || !order.ok || order.value.alternative_id === undefined) return null;
+            const quoteReceipt = runtime.receipts.get(ref.quoteDigest);
+            const quote =
+              quoteReceipt === null ? null : rehydrateSignedQuote(quoteReceipt.recordJson, hash);
+            const version =
+              quote === null || !quote.ok ? null : quoteVersion(quote.value, order.value.alternative_id);
+            return {
+              alternativeId: order.value.alternative_id,
+              ...(version?.estimated_delivery_at === undefined
+                ? {}
+                : { deliveryAt: version.estimated_delivery_at }),
+            };
+          } catch {
+            return null;
+          }
+        },
         // Settings that do not validate are treated as ABSENT here rather than
         // failing the whole inbox: an operator with a broken settings row still
         // needs to see the orders waiting on them, and the settings route is
@@ -5264,6 +5383,19 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
                     ...(l.unitPrice !== undefined ? { unit_price: l.unitPrice } : {}),
                   })),
                   delivery_projection: e.order.deliveryProjection,
+                  // COMMITMENT_KERNEL §6: the supplier's other offer the buyer
+                  // took — the date the connector must deliver on, and its charges.
+                  ...(e.order.version === undefined
+                    ? {}
+                    : {
+                        version: {
+                          alternative_id: e.order.version.alternativeId,
+                          ...(e.order.version.deliveryAt === undefined
+                            ? {}
+                            : { delivery_at: e.order.version.deliveryAt }),
+                          charges: e.order.version.charges,
+                        },
+                      }),
                 },
         })),
         next_cursor: page.nextCursor,
@@ -7306,6 +7438,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       projection: completeProjection(body.projection as Record<string, unknown>) as never,
       ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
       ...(typeof body.required_by === 'string' ? { requiredBy: body.required_by } : {}),
+      // COMMITMENT_KERNEL §6 step 0: the owner's own grant, per tender —
+      // suppliers may pass the pincode, and nothing else, to their shippers.
+      ...(body.share_pincode_with_shippers === true ? { sharePincodeWithShippers: true } : {}),
       nowMs: runtime.now(),
     });
     if (created.ok && negotiation !== null) {
@@ -7325,7 +7460,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
   });
 
   // NEGOTIATION_PLAN §4.5 — the offers a tender holds, filtered then ordered.
-  router.get('/v1/commerce/trade/tender/ranking', (req): CoreResponse => {
+  router.get('/v1/commerce/trade/tender/ranking', async (req): Promise<CoreResponse> => {
     const caller = purchasingCaller(req, ownerOnlyGuard, { presence: false });
     if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
@@ -7338,10 +7473,13 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (ceiling !== undefined && !/^(0|[1-9][0-9]{0,17})$/.test(ceiling)) {
       return { status: 400, body: { error: 'budget_ceiling must be whole minor units' } };
     }
+    const values = await goodsBuyerModelNow();
     const ranked = rankTender({
       tenderId,
       nowMs: runtime.now(),
       ...(ceiling === undefined ? {} : { budgetCeilingMinor: ceiling }),
+      valueModel: values.model,
+      timeZone: values.timeZone,
     });
     if (!ranked.ok) {
       return { status: ranked.refusal === 'no_such_tender' ? 404 : 409, body: { error: ranked.refusal } };
@@ -7375,6 +7513,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           : {}),
         ranked: ranked.ranking.ranked,
         excluded: ranked.ranking.excluded,
+        // Rules of the owner's kept in a closed persona: this ranking could not
+        // read them, and the award waits until they are open.
+        ...(values.closedPersonas.length > 0 ? { closed_personas: values.closedPersonas } : {}),
         not_asked: runtime.tenders.listNotAsked(tenderId).map((n) => ({
           supplier_did: n.supplierDid,
           service_rkey: n.serviceRkey,
@@ -7465,11 +7606,33 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (policy !== null && policy.state === 'closed') {
       return { status: 409, body: { error: 'tender_closed' } };
     }
-    const ranked = rankTender({ tenderId, nowMs: runtime.now() });
+    // The owner's rules decide among versions; one kept in a closed persona
+    // must be read before anything is awarded (COMMITMENT_KERNEL §7, §8).
+    const values = await goodsBuyerModelNow();
+    if (values.closedPersonas.length > 0)
+      return {
+        status: 409,
+        body: { error: 'persona_closed', personas: values.closedPersonas },
+      };
+    const ranked = rankTender({
+      tenderId,
+      nowMs: runtime.now(),
+      valueModel: values.model,
+      timeZone: values.timeZone,
+    });
     if (!ranked.ok) return { status: 404, body: { error: ranked.refusal } };
+    // COMMITMENT_KERNEL §6: a supplier's quote may rank in several versions;
+    // the owner names the one taken (no alternative_id: the quote's own terms).
+    const wantedAlternative =
+      typeof body.alternative_id === 'string' && body.alternative_id !== ''
+        ? body.alternative_id
+        : undefined;
     const pick =
       typeof body.supplier_did === 'string'
-        ? ranked.ranking.ranked.find((offer) => offer.supplier_did === body.supplier_did)
+        ? ranked.ranking.ranked.find(
+            (offer) =>
+              offer.supplier_did === body.supplier_did && offer.alternative_id === wantedAlternative,
+          )
         : ranked.ranking.ranked[0];
     if (pick === undefined) {
       return {
@@ -7490,10 +7653,13 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // BEFORE anything changes, and the same yes later lets the send through.
     const pickHead = runtime.buyerQuotes.chain(pick.supplier_did, pick.quote_id).at(-1);
     if (pickHead === undefined) return { status: 409, body: { error: 'no_awardable_offer' } };
+    const pickVersion = quoteVersion(pickHead, pick.alternative_id);
+    if (pickVersion === null) return { status: 409, body: { error: 'no_awardable_offer' } };
     const gate = staffPurchaseGate(runtime, caller, {
       supplierDid: pick.supplier_did,
       quoteId: pick.quote_id,
-      total: pickHead.total,
+      total: pickVersion.total,
+      ...(pick.alternative_id !== undefined ? { alternativeId: pick.alternative_id } : {}),
     });
     if (gate.kind === 'stop') return gate.response;
     const held = holdOrderFromQuote(
@@ -7502,6 +7668,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         supplier_did: pick.supplier_did,
         quote_id: pick.quote_id,
         service_rkey: pick.service_rkey,
+        ...(pick.alternative_id !== undefined ? { alternative_id: pick.alternative_id } : {}),
         ...(body.projection === undefined ? {} : { projection: body.projection }),
       },
       vouchedByFor(caller),
@@ -8152,4 +8319,25 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     runtime.staffPins.remove(body.device_did);
     return { status: 200, body: { ok: true } };
   });
+}
+
+/**
+ * The owner's model for buying goods, as it stands now (COMMITMENT_KERNEL §7),
+ * the personas whose rules it could not read because they are closed, and the
+ * owner's time zone (the delivery day is the owner's day).
+ */
+async function goodsBuyerModelNow(): Promise<{
+  model: ValueModel | null;
+  closedPersonas: string[];
+  timeZone: string;
+}> {
+  const timeZone = (await getOwnerTimeZone()).timezone;
+  try {
+    const store = await getValueModelStore();
+    if (store === null) return { model: null, closedPersonas: [], timeZone };
+    const loaded = store.load('goods.buyer', ['delivery_day', 'total']);
+    return { model: loaded.model, closedPersonas: loaded.closedPersonas, timeZone };
+  } catch {
+    return { model: null, closedPersonas: [], timeZone };
+  }
 }

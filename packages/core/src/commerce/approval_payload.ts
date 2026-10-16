@@ -49,6 +49,7 @@ import type {
   TermGeneral,
   TermOffer,
   TermPackRef,
+  TermPromise,
 } from '@dina/commerce-protocol';
 
 /**
@@ -74,6 +75,13 @@ export const TERM_PROPOSAL_AUTHORITY_DOMAIN = 'term.agreement_proposal';
 export const TERM_DECISION_AUTHORITY_DOMAIN = 'term.agreement_decision';
 
 /** Who approved, and under what authority (§7.2, §15.2). */
+/** A version resting on a partner's run: until when it can be taken, and its fallback. */
+export interface PartnerRunTerms {
+  offerEndsAt: string;
+  fallbackTotal: Money;
+  fallbackDeliveryAt?: string;
+}
+
 export interface ApprovingPrincipal {
   /** The human. Absent when policy auto-approved — see `policyRevision`. */
   principalDid: string | null;
@@ -154,6 +162,19 @@ export interface BuyerApprovalPayload {
   charges: { code: string; amount: Money }[];
   currency: string;
   approvedTotal: Money;
+  /**
+   * The quote's version the order takes (COMMITMENT_KERNEL §6) and when it
+   * is delivered: the card says what the lower price depends on.
+   */
+  alternativeId?: string;
+  estimatedDeliveryAt?: string;
+  /**
+   * The version rests on a partner's run of the supplier's (COMMITMENT_KERNEL
+   * §6, §9): the owner sees until when it can be taken, and what the order
+   * becomes if the run falls through after binding — the quote's own total
+   * and delivery date.
+   */
+  partnerRun?: PartnerRunTerms;
   /** The §9.0 projection digest, not the address — the card showed a place. */
   deliveryProjectionDigest: string;
   quoteId: string;
@@ -227,6 +248,9 @@ export interface TermAgreementApprovalPayload {
     general: TermGeneral;
     terms: Term[];
     replaces_proposal_digest: string | null;
+    /** Present only when a version other than the offer's own is taken. */
+    alternative_id?: string;
+    promises?: TermPromise[];
   };
   /** The proposal being decided; '' on the buyer's proposal approval. */
   proposalDigest: string;
@@ -282,6 +306,10 @@ export interface BuyerApprovalContext {
    */
   linePrices: Record<string, Money | null>;
   charges: { code: string; amount: Money }[];
+  /** When the version the order takes is delivered, if the quote says. */
+  estimatedDeliveryAt?: string;
+  /** When that version rests on a partner's run: its end, and its fallback. */
+  partnerRun?: PartnerRunTerms;
   quoteRevision: number;
   quoteExpiresAt: string;
   install: ActingInstall;
@@ -344,6 +372,11 @@ export function buildBuyerApprovalPayload(
       charges: context.charges,
       currency: order.approved_total.currency,
       approvedTotal: order.approved_total,
+      ...(order.alternative_id === undefined ? {} : { alternativeId: order.alternative_id }),
+      ...(context.estimatedDeliveryAt === undefined
+        ? {}
+        : { estimatedDeliveryAt: context.estimatedDeliveryAt }),
+      ...(context.partnerRun === undefined ? {} : { partnerRun: context.partnerRun }),
       deliveryProjectionDigest: order.delivery.projection_digest,
       quoteId: order.quote_id,
       quoteDigest: order.quote_digest,
@@ -496,7 +529,13 @@ export function buildTermProposalApprovalPayload(args: {
   principal: ApprovingPrincipal;
   offer: TermOffer;
   replacesProposalDigest?: string;
+  /** The alternative the owner is asked about; absent: the offer's own terms. */
+  alternativeId?: string;
 }): TermAgreementApprovalPayload {
+  const chosen =
+    args.alternativeId === undefined
+      ? undefined
+      : (args.offer.alternatives ?? []).find((a) => a.alternative_id === args.alternativeId);
   return {
     kind: 'term_agreement_proposal',
     actingBusinessDid: args.offer.buyer_did,
@@ -509,8 +548,11 @@ export function buildTermProposalApprovalPayload(args: {
       pack: args.offer.pack,
       resource_ref: args.offer.resource_ref,
       general: args.offer.general,
-      terms: args.offer.terms,
+      terms: chosen?.terms ?? args.offer.terms,
       replaces_proposal_digest: args.replacesProposalDigest ?? null,
+      ...(args.alternativeId !== undefined
+        ? { alternative_id: args.alternativeId, promises: chosen?.promises ?? [] }
+        : {}),
     },
     proposalDigest: '',
   };
@@ -535,6 +577,9 @@ export function buildTermDecisionApprovalPayload(args: {
       general: args.proposal.general,
       terms: args.proposal.terms,
       replaces_proposal_digest: args.proposal.replaces_proposal_digest ?? null,
+      ...(args.proposal.alternative_id !== undefined
+        ? { alternative_id: args.proposal.alternative_id, promises: args.proposal.promises ?? [] }
+        : {}),
     },
     proposalDigest: args.proposal.proposal_digest,
   };

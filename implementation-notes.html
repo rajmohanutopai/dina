@@ -110,6 +110,462 @@
     </p>
 
     <!-- ============================================================ -->
+    <h1 id="commitment">Commitment kernel <span class="status wip">STEP 1 BUILT, NOT YET REVIEWED</span></h1>
+    <p class="meta">Design: <code>docs/COMMITMENT_KERNEL.md</code> (dual-reviewed, both reviewers pass;
+      a third cold audit was not run). Build order follows its §15. Step 1 is split into slices: 1a to 1c
+      keep behaviour as it was; 1d changes it as the note's §12 says.</p>
+    <ul>
+      <li><b>1a (built):</b> <code>packages/core/src/commitment/</code> holds the kernel's number
+        parts (direction from payer and payee) and per-part limits (premium, clamp). The Slot Pack
+        declares <code>fee</code> and <code>share_bps</code> as its parts; the term policy, runner and
+        buyer call the kernel. The wire still fixes the terms in <code>TERM_TABLE</code>; a test holds
+        the pack's parts equal to it.</li>
+      <li><b>1b (built):</b> the kernel holds the limit-only revision rules
+        (<code>commitment/revision.ts</code>: first offer raised to the automatic limit, no retreat,
+        hold when a hard limit moved past the head, the owner's concession, the hard check at
+        approval), the chain rules (<code>commitment/chain.ts</code>: which offers a yes may bind,
+        lateness on the signed time) and the owner-card port (<code>commitment/cards.ts</code>). The
+        store's side calls them; <code>clampTerm</code> is gone (its tests call the kernel clamp).
+        Digests stay in <code>@dina/commerce-protocol</code>: they are the wire, which step 1 keeps
+        as it is.</li>
+      <li><b>1c (built):</b> delivery and the agreement's life are kernel modules. <code>commitment/delivery.ts</code>
+        holds the resend schedule, the receipt rule (a final answer is never replaced), where a sent
+        document stands, effects that wait for the commit (<code>AfterCommit</code>) and the outbox's
+        acts over a port (<code>Outbox</code>); <code>TermContext</code> and the engine's sweep and
+        receipt intake call them. <code>commitment/agreement.ts</code> holds the ending rules: a
+        termination's date judged near its arrival, the trial's waiver only for one that arrived in the
+        trial, and the end folded from the endings on record. Amendment is not built today and was not
+        added: a renewal is a new agreement. Dispute today is a settlement acknowledgement, which is
+        money and stays with 1d.</li>
+      <li><b>1d (built):</b> shelf money goes through the Commerce Pack (<code>term/term_money.ts</code>).
+        <code>TermEngineDeps.moneyAvailable</code> is <code>runtime.money().available</code>. A shelf deal
+        binds only with the pack: a brand without it starts no negotiation, and one that loses it midway
+        sends no counter and raises no card (a yes already asked lapses), looks again hourly and closes at
+        its deadline. A store without it may negotiate; its decision card says the pack must be installed
+        first, and a yes without it sends the usual rejection. Settlements and acknowledgements are refused
+        to author and held on arrival without the pack (released by the sweep once it is active, refused
+        after the usual 30 days). Terminations are kernel and need no pack.</li>
+      <li><b>No frozen path (owner, 2026-10-15):</b> there are no users yet, so no agreements from before
+        the change and no upgrade. The note's §12 exception for older agreements was dropped, and with it
+        the cutover stamp and its restore handling.</li>
+      <li><b>Removing the Commerce Pack (owner, 2026-10-15):</b> never blocked by shelf deals. Dina serves
+        the owner, and the two sides may settle a month between themselves. The Plugins screen's list
+        carries <code>open_shelf_deals</code> on the last active Commerce Pack
+        (<code>runtime.openShelfDeals</code>), and the uninstall question names them. What the other side sends
+        meanwhile is held for 30 days and lands if the pack is back by then; after that it is refused. The
+        block for open orders (§16.4) is unchanged.</li>
+      <li><b>Interpretation:</b> "settlements move behind the <code>money()</code> adapter" is built as
+        a gate on <code>money()</code>. The settlement rows stay in the term tables
+        (<code>commerce_term_documents</code>); moving them into the pack's stores would change the
+        archive and the restore path for no change in who may act.</li>
+      <li><b>Tests:</b> kernel K-20 to K-24 (delivery) and K-30 to K-32 (agreement), and
+        <code>term_money_line.test.ts</code> M-01 to M-08: renewals refused on a Slot-only node; renewals
+        settling only through the pack, with held settlements and acknowledgements released once it is
+        back; a brand that waits with no card until its pack returns, and closes at its deadline; a
+        store's card naming the pack; what the removal warning counts. <code>runtime.test.ts</code> and
+        <code>plugins.render.test.tsx</code> cover the warning and an uninstall that goes ahead.</li>
+      <li><b>Review:</b> a Claude reviewer (four rounds, PASS) and Codex (two rounds). Fixed on the way:
+        a brand without the pack got a fresh card every sweep; the store's card gave no warning; the
+        kernel's parts check ran nowhere (now in <code>activeTermPack</code>); an unused helper; a route
+        test that proved nothing. The uninstall guard the reviews asked for was later replaced by the
+        warning above, and the cutover fixes went with the frozen path. Round 5 reviewed both removals
+        and the warning: one finding, the words "settlements wait until the pack is back" did not match
+        the 30-day hold; the note, the phone's question and the comment now say what the code does.</li>
+      <li><b>Test fixes on the way:</b> <code>country_rails.test.ts</code> made its contact on the real
+        clock against a fixed T0, so a date bucket flipped on 2026-10-15; the contact is now made a year
+        before T0. <code>commerce_terms.test.ts</code> stubbed a runtime with no <code>money()</code>, so
+        its "no revenue-share route decides a term proposal" check passed on a 500; the stub now
+        answers "not installed" and the check expects the 409 refusal.</li>
+      <li><b>Step 2 (built, reviewed: Claude PASS, Codex PASS):</b> the value model in its simple form.
+        <ul>
+          <li><b>2a</b> <code>commitment/value_model.ts</code>, <code>envelope.ts</code>: deal parts
+            (number, choice, flag, promise, price to a non-party), worth in rupees a month (weekly at
+            52/12, one-off spread over whole months, each part floored against the owner), promise
+            matching dimension by dimension, never-rules as all-of conditions, and the envelope's steps
+            0, 1, 2, 3, 6, 8, 9 plus closed personas. Steps 4, 5 and 7 come with the phases that bring
+            conditions, dependent deals and outbound disclosure. Approved in person, only the hard
+            checks run.</li>
+          <li><b>2b</b> <code>commitment/model_store.ts</code>: the Core form per deal kind and untagged
+            entries in the identity store (migration 73); entries tagged with a persona in that persona's
+            own file (persona migration 5), read only while it is open; an index of what each persona's
+            entries cover, with no value, limit or rule. The persona file is registered where every vault
+            opens (<code>openPersonaVault</code>). All three tables travel in the export archive.</li>
+          <li><b>2c</b> <code>/v1/commitment/models/:kind</code>: owner only (authz and handler); the form
+            needs the owner present; entries are checked against the kind's vocabulary. Deal kinds are the
+            packs' data (<code>commerce/deal_kinds.ts</code>: <code>shelf_space.host</code>,
+            <code>shelf_space.vendor</code>).</li>
+          <li><b>2d</b> <code>term/term_model.ts</code>: shelf floors (per resource, on the shelf policy)
+            and the brand's ceilings (per negotiation) stay where the owner enters them and become the
+            limits of a limit-only model; the kind's model adds never-rules and persona entries. The
+            store's yes and the brand's yes run the envelope's hard checks; the store's first offer and
+            revisions are not signed alone past a never-rule or a closed persona. With no entries the
+            shelf suites run unchanged, which is the migration replay; V-01 compares a run with an empty
+            model to one with none.</li>
+          <li><b>2e</b> sharing tiers are durable (migration 74, loaded at boot, written through);
+            <code>pincode_only</code> admits a pincode and nothing finer; a <code>location</code> sharing
+            category; <code>commitment/disclosure.ts</code> says which tier admits which field. No existing
+            tier changes meaning.</li>
+          <li><b>Closed personas (review round 1):</b> <code>term/term_persona.ts</code>. A shelf deal that
+            touches a rule kept in a closed persona raises a card naming the persona and waits, 24 hours at
+            most: the store signs no first offer; the store's yes binds nothing and refuses nothing, and
+            the decision card is put again (same decide-by) once the persona is open; the brand's loop
+            raises no proposal card and closes at its deadline. The sweep retries each waiting card, and a
+            yes on it retries at once. A revision the store would sign past such a rule keeps the head.</li>
+          <li><b>Other round-1 fixes:</b> the walk-away point is never judged on a partial worth (any
+            unvalued part goes to the owner); money in another currency is unvalued in a model with values
+            even with limits; a promise must name every declared dimension, on both sides; entries are keyed
+            by (kind, id), a re-put moves the old copy out of wherever it was (refused if that persona is
+            closed), and index rows are written before an entry and removed after it; the form refuses every
+            field a kind's engine does not apply (shelf kinds: all but never-rules, through entries);
+            a floor-card yes runs the hard checks before signing; Core signs a shelf offer alone only when
+            the only card reason is an automatic limit; <code>checkEgress</code> lets no free text through
+            under <code>pincode_only</code>.</li>
+          <li><b>Round 2–3 fixes:</b> the persona card also covers a counter the store would answer and a
+            floor-card concession the owner approved (both resume once the persona is open). The card is
+            registered with the other term cards (workflow routing, Brain redaction, the phone's inbox). A
+            declined or lapsed persona card ends its step: the store's decision sends the uniform rejection,
+            the brand's loop closes; nothing resumes after its decide-by, and the sweep honours a decline the
+            inbox recorded before a crash before it resumes anything. Each closing of a persona raises a fresh
+            card. A re-put entry writes its new copy before removing the old one, so a crash never loses a
+            rule. A yes the engine already acted on is never run again by the restart sweep; its inbox task
+            is closed with the kept outcome. Claude reviewer: PASS on round 3; Codex: PASS on round 5.</li>
+          <li><b>Kept as is:</b> a foreign-currency money part with limits in a limit-only model still signs
+            within its limits: limit-only models keep today's behaviour exactly (§7), and the card for
+            another currency applies to models with values.</li>
+          <li><b>Note amended:</b> the goods half of step 2's replay moved to step 6, where goods move onto the
+            engine (§15). Undo if the owner disagrees.</li>
+          <li><b>Interpretations:</b> shelf floors are not copied into the per-kind form (two sources for
+            one number). The firm-or-card
+            setting is on the form; shelf kinds stay subject to a card on both sides. Goods floors and
+            the goods buyer migrate with goods onto the engine (step 6). A restore loads sharing tiers
+            at the next boot.</li>
+        </ul></li>
+      <li><b>Step 3 (built, reviewed: Claude PASS, Codex PASS):</b> promises, alternatives and legibility on binding cards.
+        <ul>
+          <li><b>3a</b> <code>commitment/legibility.ts</code>: Core's own "what binds" list, each part
+            rendered from its kind, unit and direction ("₹1700 a month, paid by you to the store"), a pack's
+            label beside it in quotes as the pack's words; where the risk is (who keeps each promise, how the
+            deal ends); what changed; worth only on the owner's copy; a notice that Core does not vouch for an
+            agent's words, and a check that an agent's note carries no part value.</li>
+          <li><b>3b</b> the wire (<code>@dina/commerce-protocol</code>, pre-freeze 1.x, changelog entry):
+            <code>TermOffer.alternatives</code> (1 to 7 versions, each terms and structured promises, no
+            free text) and <code>TermAgreementProposal.alternative_id</code>/<code>promises</code>; a proposal
+            takes one version exactly.</li>
+          <li><b>3c</b> the shelf engine: the Slot Pack declares its <code>stock_run</code> promise (crates,
+            day, every so many days); the store's owner enters alternatives per slot on the presence-gated
+            shelf form (a rent change and the promise asked for); every offer and revision carries those that
+            pass the store's hard checks; the brand gets one card per version within its ceilings and rules,
+            a yes binds exactly that version and closes the others, and the last no closes the negotiation;
+            the store's decision card names the version; both binding cards carry Core's list; a brand's
+            capacity entry ("my runs carry two crates") refuses a version past it. Approval payloads add the
+            version only when an alternative is taken, so plain offers bind exactly as before.</li>
+          <li><b>3d</b> <code>commitment/capacity.ts</code> counts promises across a bundle's members and
+            live deals. Multi-slot shelf bundles (one request, offer and agreement over several slots) are
+            moved to step 9 in the note: a change to listings, holdings, schedules and settlements of its own.</li>
+          <li><b>Review round 1 fixes:</b> capacity counts only deals overlapping in dates (an agreement
+            while it holds its slot, so a renewal never counts against itself) and, when the promise names a
+            day, on the same day; the brand checks each version on its own (it closes only when none passes:
+            above its ceiling, or ruled out by its own rules) and goes to cards when any version meets its
+            targets; an alternative is offered alone only within the store's automatic floors, and passes the
+            owner's rules with its promise; a promise's "better" is read from the owner's side (a heavier run
+            the owner keeps is not valued like a lighter one); a promise the pack does not declare in full
+            never reaches a card; a card set retires together and a proposal needs the negotiation ready;
+            the agent-note check knows percentages; promise values can be entered on the owner's route; binding
+            cards carry worth and the walk-away point when the model has values; the changelog says plainly
+            that older term nodes refuse the new fields. Note amended: multi-slot shelf bundles moved to step 9
+            (flagged to the owner).</li>
+          <li><b>Review rounds 2–3 fixes:</b> card sets are numbered from every card for the head, and a
+            negotiation with no card raised steps back instead of waiting for good; a kind declares whether it
+            takes values and capacity (the store, which signs offers alone, takes no values yet; the brand,
+            which never signs alone, takes both); capacity is the peak of what runs at one time, checked only
+            for the promise kinds a version carries; a card shows "worth not known" when a part has no value;
+            the envelope tells a part with no value (<code>unvalued_part</code>) from a valued one nothing
+            weighs (<code>needs_walk_away</code>); promise values must use the pack's words for a day.</li>
+          <li><b>Interpretations:</b> "what changed since the last version the owner saw" compares with the
+            offer the head revised (the brand's owner sees its first card only at the end of the bargaining).
+            Promise values and capacities are owner entries on the model's route.</li>
+          <li><b>Tests:</b> L-01 to L-05, P-30/P-31, K-60 to K-62, A-01 to A-05 (lorry case end to end, card
+            checks, a valued promise with no walk-away to the owner, capacity, an alternative past the hard
+            floor), and the phone's card text.</li>
+        </ul></li>
+      <li><b>Step 4 (built, under review):</b> the strategy slot.
+        <ul>
+          <li><b>Kernel</b> <code>commitment/strategy.ts</code>: moves (propose versions with a note,
+            ask the other side, ask the owner, stop); verdicts that say only which side of a threshold a
+            proposal fell (a never-rule named, otherwise "not enough"); messages Core renders from fixed
+            kinds about parts on the table; the strategy's own words need the owner's yes; verdict budgets
+            (per negotiation, and per owner per kind with a monthly refill and a fresh budget when the
+            threshold changes); the one projection (never the walk-away point, the comfort zone, limits,
+            totals or asking terms; values only when the owner switched them on).</li>
+          <li><b>Durable state</b> (identity migrations 75, 76): who fills the slot per kind (the pack's
+            fixed style until the owner turns Brain on; values on by default), the budgets, and the shelf
+            turns handed to the strategy, one per round.</li>
+          <li><b>Brain</b> through Core's reasoning broker: a <code>negotiate.move</code> task kind with
+            strict input and result schemas; the built-in Brain answers it on both hosts (the boots allow
+            the kind), its output guard screens only the owner's note; Core's commit bridge hands the move to
+            the term engine, which charges the budget, runs the envelope, and sends the counter or lets the
+            fixed style play.</li>
+          <li><b>Shelf, brand's side:</b> with Brain chosen, a round goes to Brain with the projected brief
+            and waits up to 20 minutes; Brain's proposal becomes the counter after the brand's ceilings and
+            rules; a spent budget, a refusal, a move the shelf wire cannot carry yet, or no answer in time
+            lets the fixed style play the round, and a spent budget raises a notice card for the owner.</li>
+          <li><b>Owner's switch:</b> <code>/v1/commitment/strategy/:kind</code>, owner only, presence to
+            change, answering in plain words what Brain and its provider will see.</li>
+          <li><b>Shelf, store's side:</b> with Brain chosen, the store's answer to a counter goes to Brain;
+            its proposal stands in for the step-halfway runner's and goes through the same clamp, floor card,
+            hold and envelope; no answer in time, a spent budget or a stop lets the runner answer.</li>
+          <li><b>Conversation channel</b> (Dina to Dina): <code>TermCounter.message</code> and
+            <code>TermOffer.message</code> carry a fixed kind (<code>ask_about_part</code>,
+            <code>explain_change</code>) and a part on the table, never words. Each Core renders the sentence
+            itself, so nothing a counterparty writes reaches an owner, a model or a log. Brain's "ask the other
+            side" rides on the fixed style's counter or revision and draws no verdict. The strategy's own words
+            are dropped: they never go out (an owner-approval path for them is later work). The brand's owner
+            sees the store's message in Core's words on the negotiation view; Brain's brief history carries the
+            same sentences. Protocol changelog: a BREAK for older term nodes, pre-freeze.</li>
+          <li><b>Budget tests:</b> through the engine with the durable store
+            (<code>term_strategy_budget.test.ts</code>): a probe for the brand's never-rule figure across new
+            negotiations, values off, a relaunch in the middle, gets at most the owner's budget in answers —
+            past it the fixed style plays and Brain learns nothing (E-01, E-02); two moves at once draw two
+            verdicts and a replay none (E-03); counters from many brands charge the store nothing (E-04); a
+            spent store answers in its fixed style and tells its owner (G-15). The store's arithmetic has its
+            own tests (B-10 to B-13). <b>Owed:</b> a count of what Brain could observe from agreements, cards
+            and reminders against the 1.6 × (N + I) bound.</li>
+          <li><b>Channel review fixes:</b> the brand refuses an offer whose promises are not the pack's, so
+            every name on the table, and so every part a message can name, is the pack's own (G-16); the
+            store checks the owner still chose Brain before Brain's question goes out (G-17).</li>
+          <li><b>Tests:</b> S-01 to S-04, S-10/S-11, G-01 to G-05, the bridge, Brain's executor and guard
+            (B-01 to B-03), the owner's switch (C-06), the store's side (G-06 to G-08), the review fixes
+            (G-09 to G-12, K-55 to K-57), the channel (G-13, G-14, P-40 to P-42), budgets (B-10 to B-13,
+            G-15).</li>
+          <li><b>Review round 1 fixes:</b> the brief holds untagged entries and default or standard
+            personas only (a sensitive persona open for the owner stays out); never-rules reach Brain as part
+            names, never the owner's wording; any failure to hand a turn over lets the fixed style play; a spent
+            budget stops Brain being asked, on both sides, with the owner told; only the built-in Brain fills
+            the slot; the gates (pack, money, choice, round, deadline) are checked again when a move lands; a
+            counter that asks for nothing is no move.</li>
+          <li><b>Review rounds 2–5 fixes:</b> the owner's notice names the budget that ran out (this deal,
+            or the month); Brain's view of the model carries none of the owner's form; an entry filed under a
+            persona Brain may not read is withheld in every copy, and the store deletes every old copy before
+            the index rows that protect it, so a crash part-way through a move, a replacement or a delete never
+            hands Brain a copy that lost its protection (K-55, K-57).</li>
+          <li><b>Interpretation:</b> Brain's counter gets the hard checks only, as the fixed style's does. A
+            counter binds nothing; whatever the store answers meets the full envelope and the owner's card at
+            the proposal step.</li>
+        </ul></li>
+      <li><b>Step 4:</b> closed — both reviewers pass every slice (2026-10-16).</li>
+      <li><b>Step 5 (closed 2026-10-16; both reviewers pass the final version):</b> drawing out the value model with an agent.
+        <ul>
+          <li><b>Brain's door</b> (<code>/v1/commitment/brain/*</code>, Brain only, before the owner-only
+            rule): a view of the kind's vocabulary and the entries Brain may read now — never the Core form,
+            and no values when the owner switched them off; and proposals.</li>
+          <li><b>Proposals</b> (<code>commitment/model_changes.ts</code>): up to four changes from one turn
+            of the owner's, proven by the same span proof as forget (once per turn), become one card. Each
+            entry passes the owner's own entry rules, and Brain's narrower ones: no never-rule with a figure
+            (a hard limit in words belongs on the form), no entry filed under a persona Brain may not read,
+            no change to an entry Brain cannot see, no values when values are off.</li>
+          <li><b>The card</b> is Core-minted (Brain cannot answer it) and says each change in plain words from
+            the exact entries; it carries what each entry replaces, so a yes after the owner changed one
+            applies nothing (out of date); a no changes nothing.</li>
+          <li><b>Brain's tools</b> <code>read_deal_values</code> and <code>propose_deal_values</code>, for the
+            owner's chat turns only; the descriptions tell Brain never to ask for the walk-away point,
+            limits, totals or asking terms, and to send the owner to the deal settings for those.</li>
+          <li><b>Phone:</b> the inbox shows the card with Core's description; the step 4 notice card gets its
+            headline.</li>
+          <li><b>Past decisions (closed 2026-10-16):</b> Brain's view of a shelf kind now carries the owner's past
+            deals in that role (newest ten): state, the other party and dates always; terms and notice only with
+            values on (R-07). Goods kinds show none yet.</li>
+          <li><b>Review round 1 fixes:</b> one list (<code>brainVisibleEntries</code>) bounds Brain's view
+            and what it may name — no never-rule with a figure, never-rules as their parts only (not the
+            owner's wording), no values or capacities with values off; a hidden id answers as a missing one;
+            the card is redacted for Brain on every workflow read; figures on a card read in their unit (₹
+            from paise, % from basis points); a turn is spent on one card through the card's own idempotency
+            key, so a restart cannot replay a proof, and the proof is checked last so a refused proposal
+            spends nothing; a later turn may propose again after a no; an approved card a crash left is finished by
+            the boot recovery; the phone shows the card whole.</li>
+          <li><b>Applying a card (review rounds 3–5):</b> the run claims the task before any write, so no two
+            runs apply one card and an ended card is never applied. It marks the card's own row started before
+            its first write. Until then, a closed persona or a changed entry ends the card with nothing
+            written. Once started, the batch only goes forward — the owner approved every change — and every
+            change is written again (safe to repeat; it clears a stale copy a crash inside a move left);
+            whatever blocks it leaves the card running for the next boot. No rollback.</li>
+          <li><b>Left as it was:</b> the in-memory record of used proofs for the other proof kinds (remember,
+            send, forget, standing replies, budgets) is older than this step; value-model cards no longer
+            depend on it.</li>
+          <li><b>Tests:</b> M-01 to M-11, R-01 to R-05, V-01 to V-03.</li>
+        </ul></li>
+      <li><b>Step 6 (in progress):</b> goods and group coordination onto the engine.
+        <ul>
+          <li><b>Goods, seller:</b> each line's price is clamped by the kernel's <code>clampPart</code> (a money
+            part the seller holds; floors from the first quote by <code>lineBounds</code>). The loop around it is
+            goods' own and unchanged — the proposal capped at the price the buyer holds, every line's question
+            collected while one line holds — so the same terms are signed and the same cards raised.
+            <code>clampProposal</code> is gone.</li>
+          <li><b>Goods, buyer:</b> the budget ceiling is the buyer's hard limit on the total, checked with the
+            kernel's <code>meetsHardLimits</code>.</li>
+          <li><b>Replay:</b> the ₹900 / ₹800 / ₹950 / ₹850 case end to end — first quote ₹1,000, head moved to
+            ₹900, automatic floor raised to ₹950, runner proposes ₹850: the head stays at ₹900 (no new revision)
+            and the owner is asked about ₹850. The existing goods suites replay every other recorded case.</li>
+          <li><b>One kernel difference, with no owner-visible effect:</b> an earlier yes that falls outside floors
+            the owner has since raised — the kernel's clamp asks about the floor now in force, where goods' old
+            clamp stayed silent; goods' <code>askOwner</code> asks nothing on a line that already holds an
+            approved answer, so the cards are as before.</li>
+          <li><b>Group coordination (owner decision 2026-10-16):</b> after a plan settles, the organiser's Core
+            sends each confirmed guest a signed "booked" record of their own pair only (slot, organiser, that
+            guest); the guest's Core stores it. A cancel or a dropped guest ends it the same way. One new message
+            type; no shared object; no guest learns of another. Building.</li>
+          <li><b>Group record: closed</b> (both reviewers pass the final version, 2026-10-16).</li>
+          <li><b>"₹40 less on day Z", part 1 — alternatives on goods quotes (closed 2026-10-16; both reviewers pass):</b>
+            <code>SignedQuote.alternatives</code> (minor 1.3): the same lines and prices, another delivery date
+            for its own charges, with its own total and terms digest (recomputed by every validator). The
+            runner may state charges, a delivery estimate and alternatives; Core prices each alternative from
+            the quote's lines, and offers none to a buyer who asked below 1.3. A counter's revision keeps each
+            alternative's date and charges and prices it again over the revised lines. The buyer's order
+            names the version it takes (<code>alternative_id</code>), checked against that version's total
+            and terms; ranking lists each version on its own cost (a version over the ceiling drops out); the
+            award names the version. <b>Review round 1 fixes:</b> the khata folds each order with the
+            charges of the version it took; the clerk's cap and the owner's approval are judged on the version
+            taken, and bound to it (a yes to one version clears no other); the buyer's approval payload names
+            the version, its delivery date and its charges; the supplier's inbox says which version an order
+            took and the date accepting binds; a malformed charge, date or alternative from the runner withholds
+            the quote instead of being dropped. Tests: Q-40 to Q-42 (protocol), the issuance journey (an order
+            taking Tuesday is admitted; a 1.0 buyer gets none; malformed fields withhold), the khata (debt equals
+            the price signed), the supplier inbox and the approval payload. <b>Rounds 2–4:</b> the clerk's cap at submit
+            names the version too; prepare reads the version from the held quote the order names; the
+            connector export (domain and route) carries the version, its date and its charges. <b>Next:</b> part 2 — the buyer's Dina choosing
+            between versions with its own values; part 3 — Brain on the seller's side proposing the cheaper
+            day from the seller's own costs.</li>
+          <li><b>"₹40 less on day Z", part 2 — the buyer chooses with its own values:</b> a built-in
+            <code>goods.buyer</code> deal kind (the total; the delivery day, Monday to Sunday) taking values. The
+            tender ranking judges each version with the owner's model (<code>judgeVersion</code>): a never-rule
+            on a day, or on the total, rules a version out (a quote whose every version is ruled out is excluded
+            as <code>ruled_out</code>); a day's value moves the version's cost (rupees, so only for a quote in
+            rupees; no delivery date, no day to judge). The award with no supplier named takes the top of that
+            ranking, so the owner's values choose the version. Values are set on the owner's own entries route
+            or drawn out by Brain (step 5's cards). The routes load the model on each call; the negotiation tick
+            loads it each pass for the "ready" card. A rule kept in a closed persona does not shape the ranking
+            (the order is still the owner's card). Tests: V-20; the ranking route (price alone: Tuesday first; a
+            Tuesday worth −₹100: last; never Tuesday: gone).</li>
+          <li><b>Part 2, review round 1 fixes:</b> the day is the owner's day (the owner's time zone, cached for
+            callers that cannot wait); "present" on the total holds; a rule kept in a closed persona is no longer
+            skipped — the ranking says which personas it could not read and the award refuses
+            (<code>persona_closed</code>) until they are open; a never-rule's tests must fit their parts (a figure
+            on a number, an option of the choice's own, a flag on a flag), on the owner's route and Brain's door
+            alike; the ready card counts suppliers, not versions, and says when the owner's own rules ruled every
+            offer out.</li>
+          <li><b>"₹40 less on day Z", part 3a — the seller's own costs make the cheaper day:</b> a
+            <code>goods.seller</code> kind (the delivery day; a value is what delivering that day costs). When the
+            runner states no alternatives, Core offers each day within three of the quote's own delivery day that
+            costs the seller less, passing on half the saving (the even split, §16) as a discount — the seller's
+            costs never leave Core, only the change. Days ruled out, past, or in a quote not in rupees are not
+            offered. Tests: S-30 to S-32, and the issuance journey (Friday quoted; Tuesday, which saves the seller
+            ₹80, offered ₹40 cheaper).</li>
+          <li><b>Part 3b — Brain sets the share (owner decision 2026-10-16):</b> goods counters are answered
+            synchronously by the supplier's runner, so Brain does not bargain turn by turn on goods. Instead Brain
+            draws out the seller's <code>saving_share</code> (a third, half or most of what a cheaper day saves)
+            and its day costs through step 5's tools; the owner confirms each on a card; Core's fixed style makes
+            the offers with that share (half when none is chosen). Brain's value tools now know the goods kinds.
+            Test: S-33 (a third of ₹80 is ₹26; the card reads "pass on a third of what a cheaper delivery day
+            saves you").</li>
+          <li><b>Parts 2 and 3 closed (2026-10-16)</b> after three review rounds, both reviewers passing the same
+            version. Round fixes in short: the seller's model is read whole and no cheaper day is offered while a
+            persona holding its entries is closed, or before the owner's time zone is read since start; never-rules
+            are judged against the whole version (day, share, total); a day whose discount would take the total
+            below zero, or that breaks the quote's checks, is dropped and never withholds the quote; the share is
+            one setting under the reserved id <code>saving_share</code>, which Brain may raise or replace through
+            a card.</li>
+          <li><b>Step 7 started:</b> <code>commitment/dependent.ts</code> holds §6's timing and binding rules as pure
+            functions (dates fit, the upper offer ends 25 hours before the hold, one act binds both or the named
+            second choice or neither, arrival within the grace decides the shipper's one stored answer, expiry
+            needs no message); tests D-01 to D-05 build the worked timeline and its edges. Reviewed with part 3.
+            Wire: one D2D type <code>commitment.option</code> (protocol v1.4, additive) with kinds request,
+            option, decline, acceptance, receipt, status_query, between known partners only.</li>
+          <li><b>Step 7 closed (2026-10-16), both reviewers passing the same version:</b>
+            <ul>
+              <li><b>Engine</b> (<code>commitment/options.ts</code>, <code>option_handler.ts</code>; identity
+                migration 78): the shipper issues a firm option from its own <code>delivery.shipper</code> model (a
+                run's cost each day, crates a run carries, the least fee Core agrees alone), records the model
+                version, and gives a resent request the same option; declines a day with no run, a full run, a run
+                too soon, or while a persona is closed. Its one stored answer to an acceptance never changes;
+                expiry needs no message and frees the crates. The seller asks only known shippers (contacts, not
+                blocked, preferred for shipping) and only under the buyer's grant (the pincode, nothing finer);
+                resends its acceptance hourly until the hold's end plus the grace, then only asks; a link still
+                unknown at the lead time before the run raises one card; a lapse with no fault raises one card
+                (standard shipping applies).</li>
+              <li><b>Goods:</b> the owner opts in per tender ("share pincode with shippers"); the request then
+                carries the grant (commerce protocol minor 1.4). The seller asks its shippers after issuing; a held
+                option becomes a <code>partner_run</code> version in the next revision, priced from the seller's
+                own saving at the owner's share, offered until <code>offer_ends_at</code>; the buyer's order for it
+                takes the option up inside the transaction that accepts the order, or is refused
+                <code>option_lapsed</code>. The quote's own terms are the fallback (checked when issued).</li>
+              <li><b>Found on the way (a step 6 gap):</b> buyers asked at minor 1.1, so no real buyer was ever
+                offered an alternative. Every request now asks at 1.4 (minors are additive; a supplier on an older
+                build answers in the request's dialect with none).</li>
+              <li><b>Review round 1 fixes:</b> a held option is offered only once the seller's owner clears it
+                (a card; at once when the owner made <code>goods.seller</code> firm), and an order for a cleared
+                run binds on the buyer's yes with no order-review card; the shipper's fee is its owner's asking
+                price (never worked out from its costs), held to what Core may agree alone, and its never-rules
+                are judged against that fee; one option serves one order (the order is recorded at take-up); a
+                version rests on a run only if the quote marks it <code>partner_run</code>, never by its name; a
+                shipper the owner's sharing rules keep pincodes from is not asked (one card says so); an
+                unanswered request is sent again hourly until too late, then closed; the unknown-delivery card is
+                marked only once it exists; a run that ends without fault after binding puts the order on the
+                quote's own terms on both nodes (a <code>fallback</code> notice the buyer checks against its own
+                order and quote), and the ledger and the integration export follow it.</li>
+              <li><b>Review round 2 fixes:</b> the option cards are Core's alone (Brain may neither mint nor
+                decide one) and the clearance needs a person present; the owner can set what the paths need on
+                the form (a shipper's asking fee, a seller's firm rule); the tick repairs a held option with no
+                clearance card and a lapsed run with no fallback; a fallback notice counts as told only when the
+                sender took it; it may reach a buyer who is no contact (an order-bound waiver on both sides);
+                the order export reports a fallback as a later event, priced on the quote's own terms; the
+                buyer's tender screen and approval payload show a version resting on a run, its end and its
+                fallback; the phone shows the run cards in Core's words. (Also found: the tender screen keyed
+                rows by supplier only, so a supplier's several versions collided and only its own terms could be
+                awarded — each version is now its own row and award.)</li>
+              <li><b>Not in this build:</b> a second-choice version named by the buyer's yes (§6 step 5 makes it
+                optional; it needs an order field and an acknowledgement naming another version); evidence for
+                broken links (step 8).</li>
+              <li><b>Tests:</b> D-01 to D-05, O-01 to O-10 (two nodes, each case through a restart), H-01 to H-04
+                (handlers end to end), P-01 to P-04 (goods version, binding in one transaction, lapse, rollback),
+                Q-50 to Q-52 (wire).</li>
+            </ul>
+          </li>
+          <li><b>Step 8 closed (2026-10-16), both reviewers passing the same version: evidence for promises and broken links</b> (<code>commitment/evidence.ts</code>,
+            <code>evidence_handler.ts</code>, routes <code>/v1/commitment/evidence*</code>; identity migration 79; one D2D
+            type <code>commitment.consent</code>, v1.4 additive). Each run this node took up, a day after it, and each
+            promise the other side owes under a live shelf agreement, on each day it fell due within the last 14 days,
+            raises one "did it happen?" card; the owner's yes records it kept, a no records it broken against the other
+            side, a card left to lapse records nothing; the owner may amend their own answer later. A run that ended
+            without fault is recorded on both nodes, against nobody, with the facts each kept (the seller's acceptance
+            time, last send, the shipper's answer). The summary ("kept N of M"; no-fault lapses count neither way) is
+            shareable only once both owners turned it on for that relationship (turning it on needs a person present;
+            each side tells the other). <b>Owner decision 2026-10-16:</b> nothing is published to PeerLens yet; a new
+            record kind and its AppView ingestion come as a later step. Nothing about deals is written to the vault in
+            this build, so Brain's vault search finds no withheld number; past deals stay in Core's stores (Brain's
+            projection of them is the step 5 owed item). Tests: E-01 to E-04, EH-01 to EH-06, ER-01 to ER-03.
+            Review fixes: the five tables of steps 7 and 8 travel in the archive (a restored shipper gives a resend
+            the same answer; fallbacks and evidence survive a move); consent carries a revision so a delayed older
+            word never undoes a newer one, and is resent until the sender takes it; a yes on a clearance card, or
+            an answer on a "did it happen?" card, that a crash kept from applying is finished by the next tick;
+            fallback events page correctly at any page size (the query applies the whole cursor, each fallback
+            carrying its order's digest). Consent changes are numbered by their own time, so a restore never
+            numbers backwards; a restored node forgets the other side's word and asks them to repeat it
+            (<code>ask</code>); answered "did it happen?" cards are recovered from the workflow itself, however
+            long ago their day was. Last rounds: after a restore the other side's newer words are kept but
+            count as no until a reply echoes the challenge, and the newest word stands; an ask is listed before
+            its card is made and dropped only once its answer is kept and its card closed.</li>
+          <li><b>What remains after step 8 (all recorded, none started):</b> publishing the promise summary to
+            PeerLens (a new record kind and AppView ingestion; owner decision); a buyer-named second-choice
+            version (§6 step 5, optional); past deals for goods kinds in Brain's view; device runs on the phone;
+            step 9 (bundles, conditions, loops, standing deals).</li>
+          <li><b>Step 4 owed item closed:</b> E-05 in <code>term_strategy_budget.test.ts</code> counts what Brain could
+            observe — cards raised and agreements formed — under real per-counterparty probing budgets, and checks it
+            against N + I and the 1.6 × (N + I) bit bound.</li>
+          <li><b>Open question (owner, 2026-10-16):</b> Brain in goods' strategy slot, as shelf has it since step
+            4 — goods today lets its plugin-lane runner propose freely inside the floors.</li>
+        </ul></li>
+    </ul>
+
+    <!-- ============================================================ -->
     <h1 id="shelf">Shelf-space negotiation (Zeev) <span class="status wip">STEPS 1–10 BUILT, REVIEWED, ALL SUITES GREEN</span></h1>
     <p class="meta">Spec: <code>docs/SHELF_SPACE_NEGOTIATION.md</code> (draft 6, four review rounds). Build order follows its §10.
       General Core pieces first; the Slot Pack and phone screens after.</p>

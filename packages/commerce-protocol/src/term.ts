@@ -550,6 +550,44 @@ export type TermRequest = {
   request_digest: string;
 };
 
+/**
+ * A promise one party makes inside a deal (COMMITMENT_KERNEL §6): who keeps
+ * it, which kind of promise in the pack's vocabulary, and its dimensions
+ * (how much, how often, which day), all as structured strings. No free text:
+ * the pack's vocabulary says what each dimension means.
+ */
+export type TermPromise = {
+  name: string;
+  by: 'buyer' | 'seller';
+  dimensions: Record<string, string>;
+};
+
+/**
+ * Another version of an offer (COMMITMENT_KERNEL §6, "Alternatives"): a full
+ * set of terms and the promises that go with them. The other side accepts at
+ * most one version: the offer's own terms, or one alternative by its id.
+ */
+export type TermAlternative = {
+  alternative_id: string;
+  terms: Term[];
+  promises: TermPromise[];
+};
+
+/** At most 7 alternatives beside the offer's own terms: 8 versions in all. */
+export const MAX_TERM_ALTERNATIVES = 7;
+export const MAX_PROMISE_DIMENSIONS = 12;
+
+/**
+ * A short message beside an offer or counter (COMMITMENT_KERNEL §11, the
+ * conversation channel). It carries no words: a fixed kind and the part it
+ * names, which must be on the table. Each side renders the words itself, so
+ * nothing a counterparty writes reaches an owner, a model or a log as text.
+ * It never binds.
+ */
+export const TERM_MESSAGE_KINDS = ['ask_about_part', 'explain_change'] as const;
+export type TermMessageKind = (typeof TERM_MESSAGE_KINDS)[number];
+export type TermMessage = { kind: TermMessageKind; part: string };
+
 export type TermOffer = {
   protocol_version: string;
   offer_id: string;
@@ -566,6 +604,10 @@ export type TermOffer = {
   valid_until: string;
   revision: number;
   previous_offer_digest?: string;
+  /** Other versions the buyer may take instead (sorted by id, unique). */
+  alternatives?: TermAlternative[];
+  /** A message beside this revision (never on revision 1). */
+  message?: TermMessage;
   offer_digest: string;
 };
 
@@ -578,6 +620,8 @@ export type TermCounter = {
   seller_did: string;
   round: number;
   targets: Partial<Record<TermName, string>>;
+  /** A message beside the counter; its part must be on the countered offer. */
+  message?: TermMessage;
   issued_at: string;
   respond_by: string;
   counter_digest: string;
@@ -608,6 +652,10 @@ export type TermAgreementProposal = {
   resource_ref: string;
   general: TermGeneral;
   terms: Term[];
+  /** The alternative this proposal takes; absent: the offer's own terms. */
+  alternative_id?: string;
+  /** The chosen version's promises, exactly as the offer stated them. */
+  promises?: TermPromise[];
   replaces_proposal_digest?: string;
   proposed_at: string;
   proposal_digest: string;
@@ -817,8 +865,73 @@ const OFFER_FIELDS = [
   'valid_until',
   'revision',
   'previous_offer_digest',
+  'alternatives',
+  'message',
   'offer_digest',
 ] as const;
+
+const PART_ID = /^[a-z][a-z0-9_]{0,31}$/;
+
+/** A promise's shape: a name, who keeps it, and bounded structured dimensions. */
+export function validateTermPromise(value: unknown, field: string): string | null {
+  if (!isRecord(value)) return `${field}: must be an object`;
+  const unknownField = keysWithin(value, ['name', 'by', 'dimensions'], field);
+  if (unknownField !== null) return unknownField;
+  if (typeof value.name !== 'string' || !PART_ID.test(value.name))
+    return `${field}.name: a part id`;
+  if (value.by !== 'buyer' && value.by !== 'seller') return `${field}.by: buyer | seller`;
+  if (!isRecord(value.dimensions)) return `${field}.dimensions: must be an object`;
+  const keys = Object.keys(value.dimensions);
+  if (keys.length === 0 || keys.length > MAX_PROMISE_DIMENSIONS)
+    return `${field}.dimensions: 1 to ${String(MAX_PROMISE_DIMENSIONS)}`;
+  for (const key of keys) {
+    const v = value.dimensions[key];
+    if (!PART_ID.test(key)) return `${field}.dimensions.${key}: a dimension id`;
+    if (typeof v !== 'string' || v.length === 0 || v.length > 64 || !/^[a-z0-9_.-]+$/.test(v))
+      return `${field}.dimensions.${key}: lowercase letters, digits, _ . - (1 to 64)`;
+  }
+  return null;
+}
+
+function validatePromises(value: unknown, field: string): string | null {
+  if (!Array.isArray(value) || value.length > 8) return `${field}: up to 8 promises`;
+  const names: string[] = [];
+  for (const [i, p] of value.entries()) {
+    const bad = validateTermPromise(p, `${field}[${String(i)}]`);
+    if (bad !== null) return bad;
+    names.push((p as TermPromise).name);
+  }
+  for (let i = 1; i < names.length; i += 1)
+    if ((names[i - 1] as string) >= (names[i] as string))
+      return `${field}: sorted by name, one of each`;
+  return null;
+}
+
+/** An offer's alternatives: 1 to 7, sorted unique ids, each a full version. */
+export function validateTermAlternatives(
+  value: unknown,
+  general: TermGeneral,
+  field: string,
+): string | null {
+  if (!Array.isArray(value) || value.length === 0 || value.length > MAX_TERM_ALTERNATIVES)
+    return `${field}: 1 to ${String(MAX_TERM_ALTERNATIVES)} alternatives`;
+  let last = '';
+  for (const [i, a] of value.entries()) {
+    const f = `${field}[${String(i)}]`;
+    if (!isRecord(a)) return `${f}: must be an object`;
+    const unknownField = keysWithin(a, ['alternative_id', 'terms', 'promises'], f);
+    if (unknownField !== null) return unknownField;
+    const bad =
+      validateId(a.alternative_id, `${f}.alternative_id`) ??
+      validateTerms(a.terms, `${f}.terms`) ??
+      validateTermsAgainstGeneral(a.terms as Term[], general) ??
+      validatePromises(a.promises, `${f}.promises`);
+    if (bad !== null) return bad;
+    if ((a.alternative_id as string) <= last) return `${field}: sorted by id, unique`;
+    last = a.alternative_id as string;
+  }
+  return null;
+}
 
 export function validateTermOffer(value: unknown, sha256: Sha256Fn): string | null {
   if (!isRecord(value)) return 'offer: must be an object';
@@ -853,6 +966,14 @@ export function validateTermOffer(value: unknown, sha256: Sha256Fn): string | nu
   return (
     chain ??
     validateTermsAgainstGeneral(o.terms as Term[], o.general as TermGeneral) ??
+    (o.alternatives === undefined
+      ? null
+      : validateTermAlternatives(o.alternatives, o.general as TermGeneral, 'offer.alternatives')) ??
+    (o.message === undefined
+      ? null
+      : o.revision === 1
+        ? 'offer.message: a first offer carries none'
+        : validateTermMessage(o.message, partsOnOffer(o as TermOffer), 'offer.message')) ??
     deadlineWithin(o.issued_at as string, o.valid_until as string, 'offer.valid_until') ??
     validateHex64(o.offer_digest, 'offer.offer_digest') ??
     digestMismatch('term_offer', o, sha256)
@@ -868,6 +989,7 @@ const COUNTER_FIELDS = [
   'seller_did',
   'round',
   'targets',
+  'message',
   'issued_at',
   'respond_by',
   'counter_digest',
@@ -888,6 +1010,7 @@ export function validateTermCounter(value: unknown, sha256: Sha256Fn): string | 
     (c.buyer_did !== c.seller_did ? null : 'counter: buyer and seller must differ') ??
     boundedInt(c.round, 'counter.round', 1, 1_000) ??
     validateTermTargets(c.targets, 'counter.targets') ??
+    (c.message === undefined ? null : validateTermMessage(c.message, null, 'counter.message')) ??
     validateIsoUtc(c.issued_at, 'counter.issued_at') ??
     validateIsoUtc(c.respond_by, 'counter.respond_by') ??
     deadlineWithin(c.issued_at as string, c.respond_by as string, 'counter.respond_by') ??
@@ -938,6 +1061,8 @@ const PROPOSAL_FIELDS = [
   'resource_ref',
   'general',
   'terms',
+  'alternative_id',
+  'promises',
   'replaces_proposal_digest',
   'proposed_at',
   'proposal_digest',
@@ -960,6 +1085,10 @@ export function validateTermAgreementProposal(value: unknown, sha256: Sha256Fn):
     validateTermGeneral(p.general, 'term proposal.general') ??
     validateTerms(p.terms, 'term proposal.terms') ??
     validateTermsAgainstGeneral(p.terms as Term[], p.general as TermGeneral) ??
+    (p.alternative_id === undefined
+      ? null
+      : validateId(p.alternative_id, 'term proposal.alternative_id')) ??
+    (p.promises === undefined ? null : validatePromises(p.promises, 'term proposal.promises')) ??
     (p.replaces_proposal_digest === undefined
       ? null
       : validateHex64(p.replaces_proposal_digest, 'term proposal.replaces_proposal_digest')) ??
@@ -1078,7 +1207,45 @@ export function verifyTermCounterAgainstOffer(
   if (counter.buyer_did !== offer.buyer_did || counter.seller_did !== offer.seller_did) {
     return 'counter: parties differ from the offer';
   }
+  if (counter.message !== undefined && !partsOnOffer(offer).includes(counter.message.part)) {
+    return 'counter.message: names a part that is not on the offer';
+  }
   return null;
+}
+
+/** The parts on an offer's table: its terms and its alternatives' promises. */
+export function partsOnOffer(offer: Pick<TermOffer, 'terms' | 'alternatives'>): string[] {
+  const names = new Set<string>(offer.terms.map((t) => t.name));
+  for (const alt of offer.alternatives ?? []) for (const p of alt.promises) names.add(p.name);
+  return [...names].sort();
+}
+
+/** A message's shape; `onTable` (when known) the parts it may name. */
+export function validateTermMessage(
+  value: unknown,
+  onTable: readonly string[] | null,
+  path: string,
+): string | null {
+  if (!isRecord(value)) return `${path}: must be an object`;
+  const unknownField = keysWithin(value, ['kind', 'part'] as const, path);
+  if (unknownField !== null) return unknownField;
+  if (!(TERM_MESSAGE_KINDS as readonly string[]).includes(value.kind as string))
+    return `${path}.kind: must be ask_about_part or explain_change`;
+  if (typeof value.part !== 'string' || !PART_ID.test(value.part))
+    return `${path}.part: must be a part name`;
+  if (onTable !== null && !onTable.includes(value.part))
+    return `${path}.part: names a part that is not on the table`;
+  return null;
+}
+
+/**
+ * The words a Core shows for a message. Both sides render the same fixed
+ * sentence; no counterparty text is ever shown.
+ */
+export function renderTermMessage(message: TermMessage): string {
+  return message.kind === 'ask_about_part'
+    ? `Could you move on ${message.part}?`
+    : `This version changes ${message.part}.`;
 }
 
 /**
@@ -1102,7 +1269,22 @@ export function verifyTermProposalAgainstOffer(
     return 'term proposal: resource differs from the offer';
   if (!sameJson(proposal.general, offer.general))
     return 'term proposal: general differs from the offer';
-  if (!sameJson(proposal.terms, offer.terms)) return 'term proposal: terms differ from the offer';
+  // The version it takes: the offer's own terms (no promises), or one
+  // alternative, its terms and promises exactly as the offer stated them.
+  if (proposal.alternative_id === undefined) {
+    if (!sameJson(proposal.terms, offer.terms)) return 'term proposal: terms differ from the offer';
+    if (proposal.promises !== undefined && proposal.promises.length > 0)
+      return 'term proposal: the offer’s own terms carry no promises';
+    return null;
+  }
+  const chosen = (offer.alternatives ?? []).find(
+    (a) => a.alternative_id === proposal.alternative_id,
+  );
+  if (chosen === undefined) return 'term proposal: names no alternative of the offer';
+  if (!sameJson(proposal.terms, chosen.terms))
+    return 'term proposal: terms differ from the alternative';
+  if (!sameJson(proposal.promises ?? [], chosen.promises))
+    return 'term proposal: promises differ from the alternative';
   return null;
 }
 

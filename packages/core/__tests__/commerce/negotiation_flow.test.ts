@@ -49,6 +49,10 @@ import {
 } from '../../src/commerce/runtime';
 import { answerCounterOffer, answerQuoteRequest } from '../../src/commerce/supplier_runner';
 import { createTender } from '../../src/commerce/tender';
+import { ValueModelStore } from '../../src/commitment/model_store';
+import { installOptionStores } from '../../src/commitment/option_handler';
+import { SellerOptionStore } from '../../src/commitment/options';
+import { setOwnerTimeZone } from '../../src/settings/owner_settings';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
@@ -305,6 +309,8 @@ async function negotiatingPair(
   policy: SupplierNegotiationPolicy = POLICY,
   /** Wire the supplier's owner-decision handler, as production does. */
   withDecisionHandler = false,
+  /** The first quote's unit price, in paise. */
+  unitMinor = '500',
 ): Promise<Pair> {
   const buyer = openRuntime(BUYER_DID);
   const supplier = openRuntime(SUPPLIER_DID);
@@ -325,7 +331,7 @@ async function negotiatingPair(
   setWorkflowService(workflow);
   expect(supplier.settings.writeSupplier(supplierSettings(policy)).ok).toBe(true);
   const request = await buyerAsks(buyer);
-  const quote = supplierQuotes(supplier, request);
+  const quote = supplierQuotes(supplier, request, unitMinor);
   installCommerceRuntime(buyer);
   expect(
     applyInboundBuyerResponse({
@@ -406,6 +412,62 @@ function headPrice(pair: Pair): string {
   return head.lines[0]?.unit_price.minor_units ?? '';
 }
 
+describe('COMMITMENT_KERNEL §15 step 7 — a held option becomes a partner-run version', () => {
+  afterEach(() => {
+    installOptionStores(null);
+  });
+
+  it('the next revision offers the run, at the owner\'s share of the saving, and the buyer keeps it', async () => {
+    const pair = await negotiatingPair();
+    expect(pair.quote.protocol_version).toBe('1.4');
+    // The seller's own delivery costs ₹120 any day; its shipper's run, ₹50.
+    const models = new ValueModelStore(adapter);
+    for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+      models.putEntry(
+        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n } },
+        NOW,
+      );
+    await setOwnerTimeZone('UTC');
+    installOptionStores(adapter);
+    const links = new SellerOptionStore(adapter);
+    const request = { v: 1 as const, kind: 'request' as const, request_id: 'req-0011223344556677', service_at: '2026-08-18T09:00:00Z', crates: 1, postal_code: '682001' };
+    links.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: pair.quote.quote_id, request }, NOW);
+    links.settleAsk(
+      request.request_id,
+      {
+        v: 1,
+        kind: 'option',
+        option_id: 'opt-1',
+        request_id: request.request_id,
+        service_at: request.service_at,
+        crates: 1,
+        fee_minor: '5000',
+        currency: 'INR',
+        issued_at: '2026-08-07T11:00:00.000Z',
+        hold_until: '2026-08-10T11:00:00.000Z',
+        lead_time_s: 86_400,
+        model_version: 1,
+      },
+      NOW,
+    );
+    // The seller's owner cleared offering it (§6 step 3).
+    links.clear(request.request_id, NOW);
+    const counter = await buyerCounters(pair, '40000');
+    const answer = supplierAnswers(pair, counter);
+    if (!('json' in answer)) throw new Error(answer.refused);
+    const revision = (JSON.parse(answer.json) as { quote: SignedQuote }).quote;
+    expect(revision.alternatives).toEqual([
+      expect.objectContaining({
+        alternative_id: 'partner_00112233',
+        partner_run: true,
+        estimated_delivery_at: '2026-08-18T09:00:00Z',
+        total: { currency: 'INR', minor_units: '41500' }, // 45000 less half of the ₹70 saved
+      }),
+    ]);
+    expect(buyerReceives(pair, counter, answer.json)).toBe('applied');
+  });
+});
+
 describe('items 2-5 — a counter becomes revision N+1, never below the floor', () => {
   it('round 1 moves halfway to the target; round 2 at the floor holds; the buyer checks every revision', async () => {
     const pair = await negotiatingPair();
@@ -480,6 +542,45 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
     });
     expect(buyerReceives(pair, third, r3.json)).toBe('applied');
     expect(headPrice(pair)).toBe('425');
+  });
+
+  it('COMMITMENT_KERNEL §7 replay: ₹900 held, hard ₹800, automatic newly raised to ₹950, proposal ₹850 — the offer stays at ₹900 and the owner is asked', async () => {
+    // First quoted at ₹1,000 a unit, so floors up to ₹1,000 can take effect.
+    const pair = await negotiatingPair(
+      { ...POLICY, items: [{ product: GTIN, floorMinorUnits: '80000', autoFloorMinorUnits: '80000' }] },
+      false,
+      '100000',
+    );
+    // The buyer wants ₹800 a unit (100 units); the runner steps halfway: ₹900.
+    const first = await buyerCounters(pair, '8000000');
+    const r1 = supplierAnswers(pair, first) as { json: string };
+    expect(buyerReceives(pair, first, r1.json)).toBe('applied');
+    expect(headPrice(pair)).toBe('90000');
+    const headAt900 = pair.supplier.families.load(pair.quote.quote_id)?.headDigest;
+
+    // The owner raises the automatic floor to ₹950; the hard floor stays ₹800.
+    installCommerceRuntime(pair.supplier);
+    expect(
+      pair.supplier.settings.writeSupplier(
+        supplierSettings({
+          ...POLICY,
+          items: [{ product: GTIN, floorMinorUnits: '80000', autoFloorMinorUnits: '95000' }],
+        }),
+      ).ok,
+    ).toBe(true);
+
+    // The runner now steps from ₹900 toward ₹800: ₹850.
+    const second = await buyerCounters(pair, '8000000');
+    const r2 = supplierAnswers(pair, second) as { json: string };
+    expect(JSON.parse(r2.json)).toMatchObject({ outcome: 'held', pending_owner: true });
+    expect(buyerReceives(pair, second, r2.json)).toBe('no_change');
+    expect(headPrice(pair)).toBe('90000');
+    installCommerceRuntime(pair.supplier);
+    expect(pair.supplier.negotiation.questionsForQuote(pair.quote.quote_id)).toEqual([
+      expect.objectContaining({ lineId: 'l1', askedMinorUnits: '85000', state: 'pending' }),
+    ]);
+    // No new revision: a yes to the ₹900 offer still binds it.
+    expect(pair.supplier.families.load(pair.quote.quote_id)?.headDigest).toBe(headAt900);
   });
 
   it('a buyer\'s "no more counters" closes the owner\'s price card without closing the quote or counting as a no', async () => {
@@ -695,7 +796,7 @@ async function buyerNeeds(buyer: CommerceRuntime, text: string): Promise<QuoteRe
 }
 
 describe("item 1 — a need answered with the supplier's own item", () => {
-  it('the request goes at 1.2 with a buyer placeholder; the runner matches; Core signs the substitute; the buyer accepts it', async () => {
+  it('the request goes at 1.4 (a requirement line needs 1.2) with a buyer placeholder; the runner matches; Core signs the substitute; the buyer accepts it', async () => {
     const buyer = openRuntime(BUYER_DID);
     const supplier = withCatalogue(openRuntime(SUPPLIER_DID), [
       item({}),
@@ -707,7 +808,9 @@ describe("item 1 — a need answered with the supplier's own item", () => {
       }),
     ]);
     const request = await buyerNeeds(buyer, 'Floral celebration cake, 20 servings');
-    expect(request.protocol_version).toBe('1.2');
+    // Every request asks at 1.4 now (alternatives and partner runs); 1.2 is
+    // the least a requirement line needs.
+    expect(request.protocol_version).toBe('1.4');
     expect(request.lines[0]).toMatchObject({
       product: { scheme: 'custom', value: 'req:l1', issuer_did: BUYER_DID },
       acceptable_substitutions: 'supplier_may_propose',

@@ -145,6 +145,25 @@ export interface TermFloorAuthorizationRow {
   createdAt: number;
 }
 
+export interface TermStrategyTurn {
+  requestId: string;
+  turn: number;
+  taskId: string;
+  state: 'pending' | 'applied' | 'fallen_back';
+  createdAt: number;
+}
+
+function turnFromDb(row: DBRow): TermStrategyTurn {
+  const state = String(row.state);
+  return {
+    requestId: String(row.request_id),
+    turn: Number(row.turn),
+    taskId: String(row.task_id),
+    state: state === 'applied' || state === 'fallen_back' ? state : 'pending',
+    createdAt: Number(row.created_at),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // The store
 // ---------------------------------------------------------------------------
@@ -314,6 +333,44 @@ export class TermStore {
   requestOf(recordDigest: string): string | null {
     const row = this.getDocument(recordDigest);
     return row === null ? null : row.requestId;
+  }
+
+  // --- strategy turns (COMMITMENT_KERNEL §11) --------------------------------
+
+  getTurn(requestId: string, turn: number): TermStrategyTurn | null {
+    const row = this.db.query(
+      `SELECT * FROM commerce_term_strategy_turns WHERE request_id = ? AND turn = ?`,
+      [requestId, turn],
+    )[0];
+    return row === undefined ? null : turnFromDb(row);
+  }
+
+  /** Record a turn handed to the strategy; false when the turn was asked already. */
+  putTurn(row: Omit<TermStrategyTurn, 'state'>): boolean {
+    return (
+      this.db.run(
+        `INSERT OR IGNORE INTO commerce_term_strategy_turns (request_id, turn, task_id, state, created_at)
+         VALUES (?, ?, ?, 'pending', ?)`,
+        [row.requestId, row.turn, row.taskId, row.createdAt],
+      ) > 0
+    );
+  }
+
+  /** Close a pending turn; false when it was already closed (a replayed commit). */
+  closeTurn(requestId: string, turn: number, state: 'applied' | 'fallen_back'): boolean {
+    return (
+      this.db.run(
+        `UPDATE commerce_term_strategy_turns SET state = ? WHERE request_id = ? AND turn = ? AND state = 'pending'`,
+        [state, requestId, turn],
+      ) > 0
+    );
+  }
+
+  /** Turns still pending that were asked before `beforeMs`. */
+  staleTurns(beforeMs: number): TermStrategyTurn[] {
+    return this.db
+      .query(`SELECT * FROM commerce_term_strategy_turns WHERE state = 'pending' AND created_at < ?`, [beforeMs])
+      .map(turnFromDb);
   }
 
   // --- outbox (§5.3 delivery) -----------------------------------------------

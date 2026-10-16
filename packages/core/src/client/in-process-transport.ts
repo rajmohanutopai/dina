@@ -62,6 +62,8 @@ import {
 
 import type {
   OwnerExportManifest,
+  CommitmentBrainView,
+  CommitmentProposeResult,
   ForgetProposeResult,
   ForgetRequestBody,
   A2ACallableAgent,
@@ -675,6 +677,38 @@ export class InProcessTransport implements CoreClient {
   }
 
   // ─── Staging inbox ────────────────────────────────────────────────────
+
+  async commitmentBrainView(kind: string): Promise<CommitmentBrainView> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: `/v1/commitment/brain/${encodeURIComponent(kind)}`, params: { kind } }),
+    );
+    return expectOk<CommitmentBrainView>(res, 'commitmentBrainView');
+  }
+
+  async commitmentProposeChanges(input: {
+    kind: string;
+    proof: OwnerWordsProof;
+    changes: readonly Record<string, unknown>[];
+  }): Promise<CommitmentProposeResult> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: `/v1/commitment/brain/${encodeURIComponent(input.kind)}/changes`,
+        params: { kind: input.kind },
+        body: {
+          changes: input.changes,
+          proof: {
+            release_session: input.proof.releaseSession,
+            turn_id: input.proof.turnId,
+            turn_text: input.proof.turnText,
+            start: input.proof.start,
+            end: input.proof.end,
+          },
+        },
+      }),
+    );
+    return expectOk<CommitmentProposeResult>(res, 'commitmentProposeChanges');
+  }
 
   async forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult> {
     const res = await this.router.handle(

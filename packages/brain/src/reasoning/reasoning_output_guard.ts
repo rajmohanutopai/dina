@@ -186,6 +186,18 @@ export function createReasoningOutputGuard(): (
         }
         return { ok: true, result: { ...body, result: cleaned.value } };
       }
+      case 'negotiate.move': {
+        // The move's structure is checked by its schema and by Core's
+        // envelope; only the strategy's own note is text, and it goes to the
+        // owner, never out on its own (COMMITMENT_KERNEL §11).
+        const body = record(input.result);
+        const move = record(body?.move);
+        if (body === null || move === null) return { ok: false, error: 'negotiation move is not an object' };
+        if (typeof move.note !== 'string') return { ok: true, result: input.result };
+        const cleaned = await sanitizeJsonStrings({ note: move.note }, input);
+        if (!cleaned.ok) return { ok: false, error: 'negotiation note was removed by output policy' };
+        return { ok: true, result: { ...body, move: { ...move, ...record(cleaned.value) } } };
+      }
       case 'memory.structure':
       case 'intent.route':
       case 'reminder.extract':

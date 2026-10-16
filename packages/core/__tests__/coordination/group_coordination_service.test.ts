@@ -31,6 +31,7 @@ import {
 import { MAX_PLAN_ROUNDS, currentSpoke, windowClosesAt, type GroupPlan } from '../../src/coordination/group_plan';
 import { InMemoryGroupPlanRepository } from '../../src/coordination/group_plan_repository';
 import { emitServiceOfferReceived, resetServiceOfferReceivedListeners } from '../../src/d2d/service_offer_events';
+import { setNodeDID } from '../../src/pairing/ceremony';
 import { submitServiceQuery } from '../../src/server/routes/service_query';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
@@ -693,16 +694,58 @@ describe('a settled plan can be reopened or stopped (§13)', () => {
     ok(await readGroupPlan(plan.planId, h.deps));
     const confirming = ok(await chooseSlot(plan.planId, SAT_26, h.deps));
     for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    setNodeDID('did:plc:mikeorganiser0000000000');
     const settled = ok(await readGroupPlan(plan.planId, h.deps));
     expect(settled.state).toBe('settled');
+    // COMMITMENT_KERNEL §15 step 6: each guest who accepted is told it is booked, alone.
+    const booked = () => h.preflights.filter((m) => m.type === 'coordination.booked');
+    expect(booked().map((m) => [m.to, (m.body as { state: string }).state])).toEqual([
+      [GARCIA, 'booked'],
+      [MILLER, 'booked'],
+      [JOHNSON, 'booked'],
+    ]);
     // The Garcias can't make the 26th after all: the organizer reopens with other dates.
     const reopened = ok(await widenPlan(plan.planId, [{ start: 'Sun 27' }], h.deps));
+    expect(booked().slice(3).map((m) => [m.to, (m.body as { state: string }).state])).toEqual([
+      [GARCIA, 'cancelled'],
+      [MILLER, 'cancelled'],
+      [JOHNSON, 'cancelled'],
+    ]);
     expect(reopened.state).toBe('proposing');
     expect(reopened.round).toBe(3);
     expect(reopened.chosen).toBeNull();
     expect(h.plans.listOpen().map((p) => p.planId)).toEqual([plan.planId]);
     const stopped = ok(await abandonPlan(plan.planId, h.deps));
     expect(stopped.state).toBe('abandoned');
+  });
+
+  it('deleting a settled plan tells each booked guest first; one that cannot be told keeps the plan', async () => {
+    setNodeDID('did:plc:mikeorganiser0000000000');
+    const plan = await openDefault(h);
+    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    ok(await readGroupPlan(plan.planId, h.deps));
+    const confirming = ok(await chooseSlot(plan.planId, SAT_26, h.deps));
+    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).state).toBe('settled');
+    h.failSendsTo.add(MILLER);
+    expect(await deleteGroupPlan(plan.planId, h.deps)).toEqual({
+      ok: false,
+      refusal: 'cancellations_pending',
+      detail: 'a booked guest could not be told yet',
+    });
+    expect(h.plans.get(plan.planId)).not.toBeNull();
+    // The refusal stopped the plan: a read books nobody again.
+    const before = h.preflights.filter((m) => m.type === 'coordination.booked').length;
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).state).toBe('abandoned');
+    const sinceRead = h.preflights.filter((m) => m.type === 'coordination.booked').slice(before);
+    expect(sinceRead.every((m) => (m.body as { state: string }).state === 'cancelled')).toBe(true);
+    h.failSendsTo.delete(MILLER);
+    expect(await deleteGroupPlan(plan.planId, h.deps)).toEqual({ ok: true, removed: true });
+    const cancels = h.preflights.filter(
+      (m) => m.type === 'coordination.booked' && (m.body as { state: string }).state === 'cancelled',
+    );
+    // Each guest told once: the Garcias and Johnsons on the first try, the Millers on the second.
+    expect(cancels.map((m) => m.to).sort()).toEqual([GARCIA, JOHNSON, MILLER].sort());
   });
 });
 

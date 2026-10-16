@@ -69,6 +69,8 @@ export interface Node {
   /** Inbox tasks the engine finished after acting on an owner's yes. */
   finished: { cardId: string; ok: boolean; refusal?: string }[];
   probing: { allow: boolean };
+  /** Is the Commerce Pack active (`runtime.money()`)? A Slot-only node when false. */
+  money: { active: boolean };
 }
 
 export class Fleet {
@@ -93,6 +95,7 @@ export class Fleet {
     const inboxAnswers = new Map<string, 'approved' | 'declined'>();
     const finished: Node['finished'] = [];
     const probing = { allow: true };
+    const money = { active: true };
     let adapter = this.openAdapter(dir, passphraseHex, true);
     const node: Node = {
       did,
@@ -106,6 +109,7 @@ export class Fleet {
         probing,
         inboxAnswers,
         finished,
+        money,
       }),
       cards,
       closed,
@@ -117,6 +121,7 @@ export class Fleet {
       inboxAnswers,
       finished,
       probing,
+      money,
       db: () => adapter,
       restart: () => {
         // An app relaunch: the process and everything in memory is gone; the
@@ -137,6 +142,7 @@ export class Fleet {
             probing,
             inboxAnswers,
             finished,
+            money,
           }),
         );
       },
@@ -174,6 +180,7 @@ export class Fleet {
       | 'probing'
       | 'inboxAnswers'
       | 'finished'
+      | 'money'
     >,
   ): { engine: TermEngine; store: TermStore } {
     const store = new TermStore(adapter);
@@ -193,6 +200,7 @@ export class Fleet {
           ? { entry: buyerEntry, installId: `inst-b-${did}` }
           : null;
       },
+      moneyAvailable: () => state.money.active,
       packHeld: (role) => !state.packRemoved[role === 'term_seller' ? 'seller' : 'buyer'],
       isContact: (peer) => state.contacts.has(peer),
       isBlocked: (peer) => state.blocked.has(peer),

@@ -152,37 +152,3 @@ export function lineBounds(
   const cap = (value: bigint): bigint => (value > firstUnitMinor ? firstUnitMinor : value);
   return { hardFloor: cap(hard), autoFloor: cap(auto) };
 }
-
-export type ClampedPrice =
-  /** Within what Core signs alone (or raised to the auto floor). */
-  | { price: bigint; needsOwner: false }
-  /** The runner asked below the auto floor but not below the hard floor. */
-  | { price: bigint; needsOwner: true; asked: bigint };
-
-/**
- * Where a runner's proposal lands. An owner-authorised price for this line
- * (from an earlier card) is honoured down to the hard floor; otherwise the
- * proposal is raised to the auto floor, and a proposal between the floors is
- * reported so the owner can be asked. Nothing is ever below the hard floor.
- */
-export function clampProposal(
-  proposed: bigint,
-  bounds: LineBounds,
-  ownerAuthorised: bigint | null,
-): ClampedPrice {
-  const lowestAllowed =
-    ownerAuthorised !== null &&
-    ownerAuthorised >= bounds.hardFloor &&
-    ownerAuthorised < bounds.autoFloor
-      ? ownerAuthorised
-      : bounds.autoFloor;
-  if (proposed >= lowestAllowed) return { price: proposed, needsOwner: false };
-  // Below what Core may sign alone, with room between the floors and no
-  // authorisation yet: sign the auto floor now and ask the owner about the
-  // proposal — never about anything under the hard floor.
-  if (ownerAuthorised === null && bounds.hardFloor < bounds.autoFloor) {
-    const asked = proposed > bounds.hardFloor ? proposed : bounds.hardFloor;
-    return { price: bounds.autoFloor, needsOwner: true, asked };
-  }
-  return { price: lowestAllowed, needsOwner: false };
-}

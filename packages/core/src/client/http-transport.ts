@@ -62,6 +62,8 @@ import {
 
 import type {
   OwnerExportManifest,
+  CommitmentBrainView,
+  CommitmentProposeResult,
   ForgetProposeResult,
   ForgetRequestBody,
   A2ACallableAgent,
@@ -683,6 +685,33 @@ export class HttpCoreTransport implements CoreClient {
       end: input.proof.end,
       request: input.request,
     }, 'forgetPropose');
+  }
+
+  async commitmentBrainView(kind: string): Promise<CommitmentBrainView> {
+    return this.call('GET', `/v1/commitment/brain/${encodeURIComponent(kind)}`, undefined, undefined, 'commitmentBrainView');
+  }
+
+  async commitmentProposeChanges(input: {
+    kind: string;
+    proof: OwnerWordsProof;
+    changes: readonly Record<string, unknown>[];
+  }): Promise<CommitmentProposeResult> {
+    return this.call<CommitmentProposeResult>(
+      'POST',
+      `/v1/commitment/brain/${encodeURIComponent(input.kind)}/changes`,
+      undefined,
+      {
+        changes: input.changes,
+        proof: {
+          release_session: input.proof.releaseSession,
+          turn_id: input.proof.turnId,
+          turn_text: input.proof.turnText,
+          start: input.proof.start,
+          end: input.proof.end,
+        },
+      },
+      'commitmentProposeChanges',
+    );
   }
 
   async ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }> {

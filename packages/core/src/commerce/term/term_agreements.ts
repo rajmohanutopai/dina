@@ -27,6 +27,8 @@ import {
   type TermFoldResult,
 } from '@dina/commerce-protocol';
 
+import { foldAgreementEnd, type EndingOnRecord } from '../../commitment';
+
 import {
   readTermAckRow,
   readTermDecisionRow,
@@ -90,28 +92,27 @@ export function termAgreementStatus(store: TermStore, proposalDigest: string): T
   const decision = decisionRow === undefined ? null : readTermDecisionRow(decisionRow);
   if (decision === null) return { state: 'proposed', proposal, row };
   if (decision.kind === 'rejected') return { state: 'rejected', proposal, row };
-  let endsAt = Date.parse(proposal.general.end);
-  let heldUntil = endsAt;
-  let terminated = false;
+  const endings: EndingOnRecord[] = [];
   for (const tRow of store.answersTo(proposalDigest, 'agreement_termination')) {
     const termination = readTermTerminationRow(tRow);
-    if (termination === null || refusedByPeer(store, tRow)) continue;
-    terminated = true;
-    const effective = Date.parse(termination.effective_at);
-    endsAt = Math.min(endsAt, effective);
-    const confirmed =
-      tRow.direction === 'inbound' ||
-      store.getOutbox(tRow.recordDigest)?.receiptOutcome === 'stored';
-    if (confirmed) heldUntil = Math.min(heldUntil, effective);
+    if (termination === null) continue;
+    endings.push({
+      effectiveAtMs: Date.parse(termination.effective_at),
+      refused: refusedByPeer(store, tRow),
+      confirmed:
+        tRow.direction === 'inbound' ||
+        store.getOutbox(tRow.recordDigest)?.receiptOutcome === 'stored',
+    });
   }
+  const end = foldAgreementEnd({ endMs: Date.parse(proposal.general.end), endings });
   return {
     state: 'accepted',
     proposal,
     row,
     acceptedAt: decision.decided_at,
-    endsAt: new Date(endsAt).toISOString(),
-    heldUntil: new Date(heldUntil).toISOString(),
-    terminated,
+    endsAt: new Date(end.endsAtMs).toISOString(),
+    heldUntil: new Date(end.heldUntilMs).toISOString(),
+    terminated: end.ended,
   };
 }
 

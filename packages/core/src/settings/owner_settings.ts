@@ -63,15 +63,41 @@ function hostTimeZone(): string {
   }
 }
 
+/** The zone last read or set, for callers that cannot wait (quote issuance). */
+let lastZone: string | null = null;
+let zoneRead = false;
+
 /** The owner's time zone, or the host's when none is set. */
 export async function getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
   const v = await kvGet('timezone', NS);
-  if (v !== null && isValidTimeZone(v)) return { timezone: v, source: 'owner' };
+  zoneRead = true;
+  if (v !== null && isValidTimeZone(v)) {
+    lastZone = v;
+    return { timezone: v, source: 'owner' };
+  }
+  lastZone = null;
   return { timezone: hostTimeZone(), source: 'host' };
 }
 
 export async function setOwnerTimeZone(zone: string): Promise<boolean> {
   if (!isValidTimeZone(zone)) return false;
   await kvSet('timezone', zone, NS);
+  lastZone = zone;
+  zoneRead = true;
   return true;
 }
+
+/** The owner's time zone as last read or set, else the host's. Never waits. */
+export function ownerTimeZoneNow(): string {
+  return lastZone ?? hostTimeZone();
+}
+
+/**
+ * The owner's time zone once it has been read since start, else null: for a
+ * caller that must not guess a day from the host's zone (a seller's cheaper
+ * days are offered only once the owner's day is known).
+ */
+export function ownerTimeZoneIfRead(): string | null {
+  return zoneRead ? (lastZone ?? hostTimeZone()) : null;
+}
+

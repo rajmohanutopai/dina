@@ -143,3 +143,17 @@ export function projectionExtends(
   }
   return null;
 }
+
+/**
+ * The pincode a projection carries, if any: its `postal_code`, or its region
+ * when that region is a postal area. What an onward-sharing grant lets a
+ * supplier pass to its shippers, and nothing finer (COMMITMENT_KERNEL §11).
+ */
+export function projectionPincode(projection: {
+  region: RegionRef;
+  postal_code?: string;
+}): string | undefined {
+  if (projection.postal_code !== undefined) return projection.postal_code;
+  return projection.region.scheme === 'postal_area' ? projection.region.value : undefined;
+}
+

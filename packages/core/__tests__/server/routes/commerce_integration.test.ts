@@ -18,6 +18,7 @@ import { InMemoryCatalogSourceBindingRepository } from '../../../src/commerce/ca
 import { CommerceOrderStore } from '../../../src/commerce/commerce_order';
 import { encodeOrdersCursor } from '../../../src/commerce/integration';
 import { InMemoryCommerceOrderRefRepository } from '../../../src/commerce/order_refs';
+import { priceQuoteAlternatives } from '../../../src/commerce/quote_issuance';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
 import {
   getCommerceRuntime,
@@ -394,6 +395,47 @@ describe('the orders export door', () => {
     const line = (named.body as { events: { order: { lines: unknown[] } }[] }).events[0]?.order
       .lines[0];
     expect(line).toMatchObject({ line_id: 'l1', name: 'Birthday cake' });
+  });
+
+  it('an order on the supplier\'s other offer reaches the connector with its version: date and charges', async () => {
+    const request = makeQuoteRequest({ protocol_version: '1.3' });
+    const base = makeSignedQuote(request);
+    const alternatives = priceQuoteAlternatives(base, [
+      { alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' },
+    ]);
+    if (alternatives === null) throw new Error('fixture: alternatives');
+    const quote = makeSignedQuote(request, { alternatives });
+    const order = makeOrder(quote, request.delivery.projection, {
+      protocol_version: '1.3',
+      alternative_id: 'tue',
+      approved_total: alternatives[0]?.total,
+      accepted_terms_digest: alternatives[0]?.terms_digest,
+    });
+    for (const [digest, domain, json] of [
+      [order.order_digest, 'order', JSON.stringify(order)],
+      [quote.quote_digest, 'quote', JSON.stringify(quote)],
+    ] as const)
+      receipts.put({
+        recordDigest: digest,
+        domain,
+        buyerDid: BUYER_DID,
+        quoteId: quote.quote_id,
+        purchaseOrderId: domain === 'order' ? order.purchase_order_id : '',
+        recordJson: json,
+        evidenceJson: '{}',
+        createdAt: T0,
+      });
+    decided(order.purchase_order_id, order.order_digest, T0 + 1, {
+      id: quote.quote_id,
+      digest: quote.quote_digest,
+    });
+    const res = await router.handle(device(ORDERS));
+    const event = (res.body as { events: { order: Record<string, unknown> }[] }).events[0];
+    expect(event?.order.version).toEqual({
+      alternative_id: 'tue',
+      delivery_at: '2026-08-11T10:00:00Z',
+      charges: [],
+    });
   });
 
   it('refuses a malformed cursor or limit before touching the store', async () => {

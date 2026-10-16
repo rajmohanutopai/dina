@@ -87,6 +87,18 @@ export type InboxEntryKind =
   | 'term_agreement_decision'
   /** §5.3 — a shelf-space message could not be delivered (a notice). */
   | 'term_delivery_failed'
+  /** COMMITMENT_KERNEL §8 — a shelf deal waits for a closed persona to be opened. */
+  | 'term_open_persona'
+  /** COMMITMENT_KERNEL §11 — Brain's turns ran out; the fixed style bargains (a notice). */
+  | 'term_strategy_fallback'
+  | 'commitment_model_change'
+  /** COMMITMENT_KERNEL §15 step 7 — clearing a version on a shipper's run, and notices about runs. */
+  | 'option_clear'
+  | 'option_link'
+  | 'option_disclosure'
+  | 'option_fallback'
+  /** COMMITMENT_KERNEL §15 step 8 — did the other side keep a promise? */
+  | 'evidence_ask'
   | 'unknown';
 
 export interface InboxEntry {
@@ -1436,6 +1448,19 @@ const TERM_CARD_TYPES = [
   'term_agreement_proposal',
   'term_agreement_decision',
   'term_delivery_failed',
+  'term_open_persona',
+  'term_strategy_fallback',
+  // COMMITMENT_KERNEL §15 step 5 — not a term card, but Core-minted and the
+  // owner's alone in the same way: a change to their deal values Dina suggests.
+  'commitment_model_change',
+  // §15 step 7 — a shipper's run: clearing a version that rests on one (the
+  // one card that asks), and the notices about runs. Core's words, whole.
+  'option_clear',
+  'option_link',
+  'option_disclosure',
+  'option_fallback',
+  // §15 step 8 — "did it happen?": yes records the promise kept, no broken.
+  'evidence_ask',
 ] as const;
 type TermCardType = (typeof TERM_CARD_TYPES)[number];
 
@@ -1550,7 +1575,7 @@ function termCardEntry(
         capability: 'slot agreement',
         serviceName: 'A store’s offer is ready',
         requesterDID: str(parsed.seller_did),
-        paramsPreview: `${slot} · ${termsLine(parsed)}\n${conditionsLine(parsed)}${typeof parsed.valid_until === 'string' ? `\noffer good until ${parsed.valid_until.slice(0, 10)}` : ''}`,
+        paramsPreview: `${slot} · ${termsLine(parsed)}${legibleLines(parsed)}\n${conditionsLine(parsed)}${typeof parsed.valid_until === 'string' ? `\noffer good until ${parsed.valid_until.slice(0, 10)}` : ''}`,
       };
     case 'term_agreement_decision': {
       const holding = (parsed.holding ?? {}) as {
@@ -1569,9 +1594,76 @@ function termCardEntry(
         capability: 'slot agreement',
         serviceName: 'A brand proposes a slot agreement',
         requesterDID: str(parsed.vendor_did),
-        paramsPreview: `${slot} · ${termsLine(parsed)}${held}\n${conditionsLine(parsed)}`,
+        paramsPreview: `${slot} · ${termsLine(parsed)}${held}${legibleLines(parsed)}\n${conditionsLine(parsed)}`,
       };
     }
+    case 'term_open_persona': {
+      // The persona is opened through its own door (a confirmation, or the
+      // passphrase); a yes here only says "go on now".
+      const personas = Array.isArray(parsed.personas) ? parsed.personas.map(str).join(', ') : '';
+      return {
+        ...base,
+        capability: 'shelf space',
+        serviceName: 'A deal waits for a closed persona',
+        requesterDID: '',
+        paramsPreview: `A rule you keep in your ${personas} persona must be read first. Open it, then say yes to go on.`,
+      };
+    }
+    case 'commitment_model_change':
+      // Core wrote the description from the exact entries on the card.
+      return {
+        ...base,
+        capability: 'deal values',
+        serviceName: 'Dina suggests a change to your deal values',
+        requesterDID: '',
+        // Whole: the yes applies every change on it, so the owner sees every one.
+        paramsPreview: task.description ?? '',
+      };
+    case 'term_strategy_fallback':
+      return {
+        ...base,
+        capability: 'shelf space',
+        serviceName: 'Dina bargains in its fixed style',
+        requesterDID: '',
+        paramsPreview:
+          parsed.spent === 'owner'
+            ? 'Brain has used its turns for shelf deals this month; they refill.'
+            : 'Brain has used its turns for this deal.',
+      };
+    case 'evidence_ask':
+      // Core's question, whole: yes records the promise kept, no records it broken.
+      return {
+        ...base,
+        capability: 'promise',
+        serviceName: 'Did it happen?',
+        requesterDID: str(parsed.counterparty_did),
+        paramsPreview: task.description ?? '',
+      };
+    case 'option_clear':
+      // Core wrote the date, the fee and the hold; a yes lets a buyer's yes bind the run.
+      return {
+        ...base,
+        capability: 'delivery run',
+        serviceName: 'Offer a partner’s delivery run to the buyer?',
+        requesterDID: '',
+        paramsPreview: task.description ?? '',
+      };
+    case 'option_link':
+    case 'option_disclosure':
+    case 'option_fallback':
+      // Notices: Core's words are the whole card; answering only marks it seen.
+      return {
+        ...base,
+        capability: 'delivery run',
+        serviceName:
+          type === 'option_link'
+            ? 'About a partner’s delivery run'
+            : type === 'option_disclosure'
+              ? 'A shipper your sharing rules keep out'
+              : 'An order falls back to standard delivery',
+        requesterDID: '',
+        paramsPreview: task.description ?? '',
+      };
     case 'term_delivery_failed':
       // `why`: the other side never answered, or answered with a refusal — so a
       // termination, settlement or decision took effect on neither side.
@@ -1586,4 +1678,28 @@ function termCardEntry(
             : 'The other side did not answer before the deadline.',
       };
   }
+}
+
+/**
+ * COMMITMENT_KERNEL §9 — a binding card's own list, from Core: every part as
+ * signed, a pack's label beside it in quotes, then where the risk is and what
+ * changed, as lines after the terms. Empty on a card without one.
+ */
+function legibleLines(parsed: Record<string, unknown>): string {
+  const legibility = parsed.legibility as
+    | {
+        binds?: { core?: unknown; pack?: unknown }[];
+        risks?: unknown[];
+        changed?: unknown[];
+        worth?: unknown;
+      }
+    | undefined;
+  if (legibility === undefined || !Array.isArray(legibility.binds)) return '';
+  const binds = legibility.binds
+    .map((b) => `${String(b.core ?? '')}${typeof b.pack === 'string' ? ` ${b.pack}` : ''}`)
+    .join('; ');
+  const risks = Array.isArray(legibility.risks) ? legibility.risks.map(String) : [];
+  const changed = Array.isArray(legibility.changed) ? legibility.changed.map(String) : [];
+  const worth = typeof legibility.worth === 'string' ? [legibility.worth] : [];
+  return ['', `binds: ${binds}`, ...worth, ...risks, ...(changed.length > 0 ? [`changed: ${changed.join('; ')}`] : [])].join('\n');
 }

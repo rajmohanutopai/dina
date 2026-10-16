@@ -8,11 +8,11 @@ import {
   type SupplierSettings,
 } from '../../src/commerce/commerce_settings';
 import {
-  clampProposal,
   lineBounds,
   negotiationPolicyFindings,
   type SupplierNegotiationPolicy,
 } from '../../src/commerce/negotiation_policy';
+import { clampPart, type NumberPartSpec } from '../../src/commitment';
 
 const CAKE = {
   scheme: 'manufacturer_sku' as const,
@@ -45,41 +45,51 @@ describe('floors per line', () => {
   });
 });
 
-describe('where a proposal lands', () => {
-  const bounds = { hardFloor: 21_000n, autoFloor: 22_000n };
+describe('where a proposal lands (the kernel clamp, COMMITMENT_KERNEL §15 step 6)', () => {
+  // A goods line is a money part the seller holds; its floors are the part's limits.
+  const PRICE: NumberPartSpec = { name: 'l1', kind: 'money', payer: 'buyer', payee: 'seller' };
+  const bounds = { hard: 21_000n, auto: 22_000n };
+  const clamp = (proposed: bigint, b: typeof bounds, yes: bigint | null) =>
+    clampPart(PRICE, 'seller', proposed, b, yes);
 
   it('above the automatic limit it stands', () => {
-    expect(clampProposal(23_000n, bounds, null)).toEqual({ price: 23_000n, needsOwner: false });
+    expect(clamp(23_000n, bounds, null)).toEqual({ value: 23_000n, needsOwner: false });
   });
 
   it('between the floors Core signs 220 and asks the owner about the proposal', () => {
-    expect(clampProposal(21_500n, bounds, null)).toEqual({
-      price: 22_000n,
+    expect(clamp(21_500n, bounds, null)).toEqual({
+      value: 22_000n,
       needsOwner: true,
       asked: 21_500n,
     });
   });
 
   it('below the hard floor the owner is asked about the floor, never below it', () => {
-    expect(clampProposal(20_000n, bounds, null)).toEqual({
-      price: 22_000n,
+    expect(clamp(20_000n, bounds, null)).toEqual({
+      value: 22_000n,
       needsOwner: true,
       asked: 21_000n,
     });
   });
 
   it('once the owner said 210, 210 is signed — and still nothing below it', () => {
-    expect(clampProposal(21_000n, bounds, 21_000n)).toEqual({ price: 21_000n, needsOwner: false });
-    expect(clampProposal(20_000n, bounds, 21_000n)).toEqual({ price: 21_000n, needsOwner: false });
+    expect(clamp(21_000n, bounds, 21_000n)).toEqual({ value: 21_000n, needsOwner: false });
+    expect(clamp(20_000n, bounds, 21_000n)).toEqual({ value: 21_000n, needsOwner: false });
   });
 
-  it('an authorisation outside the floors is ignored', () => {
-    expect(clampProposal(19_000n, bounds, 19_000n)).toEqual({ price: 22_000n, needsOwner: false });
+  it('a yes outside the floors (the owner raised them since) is not used; the new floor is asked about', () => {
+    // Goods once signed 220 silently here; the kernel, as shelf space does,
+    // signs the same 220 and asks the owner about the floor now in force.
+    expect(clamp(19_000n, bounds, 19_000n)).toEqual({
+      value: 22_000n,
+      needsOwner: true,
+      asked: 21_000n,
+    });
   });
 
   it('with no room between the floors there is nobody to ask', () => {
-    expect(clampProposal(100n, { hardFloor: 300n, autoFloor: 300n }, null)).toEqual({
-      price: 300n,
+    expect(clamp(100n, { hard: 300n, auto: 300n }, null)).toEqual({
+      value: 300n,
       needsOwner: false,
     });
   });

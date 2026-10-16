@@ -197,6 +197,89 @@ const CONTRACTS: Readonly<Record<ReasoningTaskKind, ReasoningSchemaContract>> = 
     maxDepth: 16,
     maxProperties: 2048,
   },
+  'negotiate.move': {
+    taskKind: 'negotiate.move',
+    requestSchemaId: 'dina.reasoning.negotiate.move.input.v1',
+    // The brief is Core's one projection (COMMITMENT_KERNEL §11): it never
+    // carries the walk-away point, the comfort zone, limits, totals or (before
+    // the first offer) asking terms; values only when the owner switched them on.
+    requestSchema: {
+      type: 'object',
+      required: ['kind', 'ref', 'side', 'parts', 'table', 'history', 'model', 'roundsLeft'],
+      properties: {
+        kind: { type: 'string', minLength: 1, maxLength: 128 },
+        // Which negotiation and turn: Core's own ids, so the move lands where it was asked.
+        ref: {
+          type: 'object',
+          required: ['negotiationId', 'turn'],
+          properties: {
+            negotiationId: { type: 'string', minLength: 1, maxLength: 128 },
+            turn: { type: 'integer', minimum: 0, maximum: 1000 },
+          },
+          additionalProperties: false,
+        },
+        side: { type: 'string', enum: ['buyer', 'seller'] },
+        parts: { type: 'array', maxItems: 32, items: { type: 'object' } },
+        table: { type: 'object' },
+        history: { type: 'array', maxItems: 64, items: { type: 'object' } },
+        model: { type: 'object' },
+        roundsLeft: { type: 'integer', minimum: 0, maximum: 100 },
+        deadlineAt: { type: 'string', maxLength: 64 },
+        rules: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 512 } },
+      },
+      additionalProperties: false,
+    },
+    resultSchemaId: 'dina.reasoning.negotiate.move.result.v1',
+    resultSchema: {
+      type: 'object',
+      required: ['move'],
+      properties: {
+        move: {
+          type: 'object',
+          required: ['kind'],
+          properties: {
+            kind: { type: 'string', enum: ['propose', 'ask_other', 'stop'] },
+            versions: {
+              type: 'array',
+              maxItems: 8,
+              items: {
+                type: 'object',
+                required: ['terms'],
+                properties: {
+                  terms: {
+                    type: 'array',
+                    maxItems: 32,
+                    items: {
+                      type: 'object',
+                      required: ['name', 'value'],
+                      properties: {
+                        name: { type: 'string', maxLength: 64 },
+                        value: { type: 'string', pattern: '^(0|[1-9][0-9]{0,17})$' },
+                      },
+                      additionalProperties: false,
+                    },
+                  },
+                },
+                additionalProperties: false,
+              },
+            },
+            message: {
+              type: 'string',
+              enum: ['ask_about_part', 'explain_change', 'offer_version', 'decline', 'stop'],
+            },
+            part: { type: 'string', maxLength: 64 },
+            note: { type: 'string', maxLength: 2048 },
+          },
+          additionalProperties: false,
+        },
+      },
+      additionalProperties: false,
+    },
+    maxInputBytes: 64 * 1024,
+    maxResultBytes: 16 * 1024,
+    maxDepth: 12,
+    maxProperties: 1024,
+  },
   'review.summarize': {
     taskKind: 'review.summarize',
     requestSchemaId: 'dina.reasoning.review.summarize.input.v1',

@@ -14,15 +14,28 @@ import type { DisclosureKind } from './group_plan';
 /** The one capability a spoke carries (CONTACT_SERVICES §6.1). */
 export const GROUP_COORDINATION_CAPABILITY = 'availability_coordination';
 
-export type DisclosureCategory = 'health' | 'general';
+/**
+ * `location` (COMMITMENT_KERNEL §11) is known to the resolver so a location
+ * policy set per contact answers for it; no group disclosure kind carries a
+ * place today, so none maps to it yet.
+ */
+export type DisclosureCategory = 'health' | 'general' | 'location';
 
 /** The data category a disclosure kind belongs to (`DATA_CATEGORIES`). */
 export function disclosureCategory(kind: DisclosureKind): DisclosureCategory {
   return kind === 'dietary' || kind === 'accessibility' ? 'health' : 'general';
 }
 
-/** A tier's word on whether one bounded line of a category may leave, or be held. */
-export function tierAdmitsDisclosure(tier: SharingTier | undefined): boolean {
+/**
+ * A tier's word on whether one bounded line of a category may leave, or be
+ * held. A free-text line about a place could be finer than a pincode, so for
+ * location only `full` and `exact_location` admit one.
+ */
+export function tierAdmitsDisclosure(
+  tier: SharingTier | undefined,
+  category: DisclosureCategory = 'general',
+): boolean {
+  if (category === 'location') return tier === 'full' || tier === 'exact_location';
   return tier === 'summary' || tier === 'full';
 }
 

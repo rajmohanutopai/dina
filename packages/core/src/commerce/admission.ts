@@ -167,6 +167,14 @@ export interface AdmissionEngineDeps {
     /** The state the chain opens at — see the engine's own note. */
     openAt: 'accepted' | 'rejected',
   ) => { error: string } | null;
+  /**
+   * COMMITMENT_KERNEL §6 step 5 — ONE ACT BINDS BOTH. An accepted order whose
+   * version rests on a shipper's firm option takes the option up inside this
+   * same transaction: `taken`, both bind; `lapsed`, the hold has ended (or
+   * the yes came after the offer ended) and nothing binds — the acceptance
+   * becomes a rejection, `option_lapsed`; `none`, no option is involved.
+   */
+  takeUpOptionInTx?: (order: PurchaseOrderProposal, nowMs: number) => 'none' | 'taken' | 'lapsed';
 }
 
 function isoNow(nowMs: number): string {
@@ -835,6 +843,12 @@ export class CommerceAdmissionEngine {
       }
 
       const nowMs = this.deps.now();
+      if (
+        decision.kind === 'accepted' &&
+        this.deps.takeUpOptionInTx?.(order, nowMs) === 'lapsed'
+      ) {
+        decision = { kind: 'rejected', reasonCode: 'option_lapsed' };
+      }
       const acknowledgement = this.buildAcknowledgement(
         order,
         decision.kind === 'accepted'

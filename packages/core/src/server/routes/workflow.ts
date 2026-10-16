@@ -57,6 +57,9 @@ import {
   admitSupplierRecords,
   WATERMARK_REFUSAL,
 } from '../../commerce/watermark_gate';
+import { MODEL_CHANGE_CARD } from '../../commitment/model_changes';
+import { EVIDENCE_ASK_TYPE } from '../../commitment/evidence_handler';
+import { OPTION_CARD_TYPES, OPTION_CLEAR_TYPE } from '../../commitment/option_handler';
 import { DISCLOSURE_REVIEW_APPROVAL_TYPE } from '../../coordination/disclosure_egress';
 import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
 import { claimPluginTask } from '../../plugins/claim_guard';
@@ -626,6 +629,10 @@ function redactCardForBrain(payload: string): string {
     const { session_id: sessionId } = parsed as { session_id?: unknown };
     return JSON.stringify({ type: card.type, session_id: sessionId, redacted: 'owner_only' });
   }
+  // COMMITMENT_KERNEL §15 step 5 — a value-model change card quotes the owner's
+  // entries, which may hold values (switched off since) or sit in a persona
+  // Brain may no longer read. Brain learns only that one exists.
+  if (card.type === MODEL_CHANGE_CARD) return JSON.stringify({ type: card.type, redacted: 'owner_only' });
   // SHELF_SPACE_NEGOTIATION §7.4 — a term card carries rent, share, floors
   // asked about and holding counts: the owner's alone. Brain learns which
   // card and which negotiation, never a number.
@@ -659,6 +666,8 @@ function forCaller(req: CoreRequest, task: WorkflowTask): Record<string, unknown
   // mirror from the owner's server node (§3.9) carries the same words.
   if (body?.type === UCP_ORDER_NOTICE_TYPE || isMirroredOrderNotice(body?.type, body?.agent_did))
     return { ...redacted, description: 'An order notice for the owner', result: undefined, result_summary: '' };
+  if (body?.type === MODEL_CHANGE_CARD)
+    return { ...redacted, description: 'A change to the owner’s deal values', result: undefined, result_summary: '' };
   if (isUcpLinkCard(body?.type, body?.agent_did))
     return { ...redacted, description: 'A link card for the owner', result: undefined, result_summary: '' };
   return isUcpCheckoutCard(body?.type, body?.agent_did)
@@ -1638,6 +1647,8 @@ export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map
   [TERM_FLOOR_CARD, 'offering terms past your automatic limit needs a person present'],
   [TERM_PROPOSAL_CARD, 'sending a slot proposal needs a person present'],
   [TERM_DECISION_CARD, 'accepting a slot agreement needs a person present'],
+  // COMMITMENT_KERNEL §6 step 3: once cleared, a buyer's yes binds the run with no further card.
+  [OPTION_CLEAR_TYPE, 'letting a shipper’s run bind your orders needs a person present'],
 ]);
 
 function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | null {
@@ -1677,6 +1688,14 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   TENDER_READY_TYPE,
   // SHELF_SPACE_NEGOTIATION — every term card is Core's to mint and the owner's to answer.
   ...TERM_CARD_TYPES,
+  // COMMITMENT_KERNEL §15 step 5 — a change to the owner's value model that
+  // Brain proposed: the owner's yes alone applies it, never Brain's.
+  MODEL_CHANGE_CARD,
+  // §15 step 7 — clearing a version resting on a shipper's run, and the
+  // notices about runs: Core's words, the owner's to answer.
+  ...OPTION_CARD_TYPES,
+  // §15 step 8 — "did it happen?": the owner's answer is the evidence.
+  EVIDENCE_ASK_TYPE,
   // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — a clerk's operation above the
   // cap. A yes lets money move: Brain may neither mint nor decide one.
   STAFF_ESCALATION_APPROVAL_TYPE,

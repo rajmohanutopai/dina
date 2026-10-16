@@ -16,6 +16,7 @@ import {
   setScenarioDeny,
   setSharingRestrictions,
   clearGatesState,
+  setFallbackRecipientCheck,
   blockDestination,
   unblockDestination,
   trustDestination,
@@ -238,4 +239,21 @@ describe('D2D Egress 4-Gate Enforcement', () => {
       expect(isDestinationTrusted('did:plc:b')).toBe(false);
     });
   });
+
+  describe('COMMITMENT_KERNEL §6 step 6 — a run\'s fallback notice to a buyer who is no contact', () => {
+    afterEach(() => setFallbackRecipientCheck(null));
+
+    it('passes only for the buyer of an order this node recorded a fallback for', () => {
+      clearGatesState();
+      const notice = { v: 1, kind: 'fallback', purchase_order_id: 'po-1' };
+      setFallbackRecipientCheck((did, n) => did === 'did:plc:buyer' && (n as typeof notice).purchase_order_id === 'po-1');
+      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], 'option_fallback', notice).allowed).toBe(true);
+      expect(checkEgressGates('did:plc:other', 'commitment.option', [], 'option_fallback', notice).allowed).toBe(false);
+      // Any other kind of the family still needs a contact.
+      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], '', null).allowed).toBe(false);
+      // A trade kind does not open the family's door.
+      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], 'delivery_note', notice).allowed).toBe(false);
+    });
+  });
 });
+

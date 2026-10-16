@@ -35,6 +35,9 @@ import { registerBrainCallerRoutes } from './routes/brain_callers';
 import { registerChatThreadRoutes } from './routes/chat_threads';
 import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
 import { registerCommerceRoutes } from './routes/commerce';
+import { registerCommitmentRoutes } from './routes/commitment';
+import { registerCommitmentBrainRoutes } from './routes/commitment_brain';
+import { registerEvidenceRoutes } from './routes/commitment_evidence';
 import { registerContactsRoutes } from './routes/contacts';
 import { registerD2DMsgRoutes } from './routes/d2d_msg';
 import { registerD2DQuarantineRoutes } from './routes/d2d_quarantine';
@@ -157,6 +160,9 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // a list of which orders this node cannot answer for is a map of where the
   // supplier is vulnerable.
   registerCommerceRoutes(router, options.ownerCapability);
+  registerCommitmentRoutes(router, options.ownerCapability);
+  registerEvidenceRoutes(router, options.ownerCapability);
+  registerCommitmentBrainRoutes(router);
   registerPluginInstallRoutes(
     router,
     options.ownerCapability,
