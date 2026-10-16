@@ -31,7 +31,9 @@ export type TenderExclusionReason =
   | 'declined'
   | 'expired'
   | 'currency_mismatch'
-  | 'over_budget';
+  | 'over_budget'
+  /** Every version breaks one of the owner's never-rules (shown to the owner only). */
+  | 'ruled_out';
 
 export interface TenderRankingView {
   tender_id: string;

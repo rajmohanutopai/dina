@@ -7473,7 +7473,14 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (ceiling !== undefined && !/^(0|[1-9][0-9]{0,17})$/.test(ceiling)) {
       return { status: 400, body: { error: 'budget_ceiling must be whole minor units' } };
     }
-    const values = await goodsBuyerModelNow();
+    // The owner's rules and worths stay with the owner: a clerk's ranking is
+    // built on the signed offers alone, so neither which versions a rule
+    // removed, nor the owner's worth in a comparison cost, nor the names of
+    // closed personas reach a staff device. The award still applies them.
+    const values =
+      caller.kind === 'owner'
+        ? await goodsBuyerModelNow()
+        : { model: null, closedPersonas: [], timeZone: (await getOwnerTimeZone()).timezone };
     const ranked = rankTender({
       tenderId,
       nowMs: runtime.now(),
@@ -7608,11 +7615,16 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     }
     // The owner's rules decide among versions; one kept in a closed persona
     // must be read before anything is awarded (COMMITMENT_KERNEL §7, §8).
+    // A clerk learns only that the award waits on the owner, never which
+    // personas are closed.
     const values = await goodsBuyerModelNow();
     if (values.closedPersonas.length > 0)
       return {
         status: 409,
-        body: { error: 'persona_closed', personas: values.closedPersonas },
+        body:
+          caller.kind === 'owner'
+            ? { error: 'persona_closed', personas: values.closedPersonas }
+            : { error: 'persona_closed' },
       };
     const ranked = rankTender({
       tenderId,
@@ -7637,7 +7649,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (pick === undefined) {
       return {
         status: 409,
-        body: { error: 'no_awardable_offer', excluded: ranked.ranking.excluded },
+        // A clerk is not told which offers the owner's rules removed.
+        body:
+          caller.kind === 'owner'
+            ? { error: 'no_awardable_offer', excluded: ranked.ranking.excluded }
+            : { error: 'no_awardable_offer' },
       };
     }
     // A counter still on its way could replace this quote with a revision the

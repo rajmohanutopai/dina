@@ -346,6 +346,151 @@ describe("the owner's values choose among versions (COMMITMENT_KERNEL §7, §15 
       body: { error: 'persona_closed', personas: ['health'] },
     });
   });
+
+  it("a clerk's ranking shows the signed offers alone: no rule's effect, no worth, no persona names", async () => {
+    const CLERK = 'did:key:zrulesclerk';
+    const clerkCall = (method: 'GET' | 'POST', p: string, body = {}, query = {}): CoreRequest =>
+      ({
+        method,
+        path: p,
+        query,
+        headers: {},
+        body,
+        rawBody: new Uint8Array(),
+        params: {},
+        trustedInProcess: true,
+        callerType: 'staff',
+        callerDID: CLERK,
+      }) as unknown as CoreRequest;
+    runtime.attributionBoundary.cross(Date.now(), []);
+    runtime.staffGrants.put({
+      deviceDid: CLERK,
+      scope: 'commerce_submit',
+      maxOrderMinorUnits: '100000',
+      currency: 'INR',
+      installs: 'buyer',
+      createdAt: Date.now(),
+      revokedAt: null,
+    });
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quotesWithTuesday();
+    // Never Tuesday, Friday worth ₹100 to the owner, and a rule in a closed persona.
+    installValueModelStore({
+      load: () => ({
+        model: assemble('goods.buyer', 1, { limits: {}, totals: {}, asking: {}, binding: 'card' }, [
+          {
+            id: 'n1',
+            kind: 'goods.buyer',
+            covers: ['delivery_day'],
+            body: {
+              type: 'never',
+              label: 'not on Tuesdays',
+              all: [{ part: 'delivery_day', choice: 'tue' }],
+            },
+          },
+          {
+            id: 'd1',
+            kind: 'goods.buyer',
+            covers: ['delivery_day'],
+            body: { type: 'choice', part: 'delivery_day', option: 'fri', rupees: 100n },
+          },
+        ]),
+        closedPersonas: ['health'],
+      }),
+    } as unknown as ValueModelStore);
+
+    const owner = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    expect(owner.body).toMatchObject({ closed_personas: ['health'] });
+    const ownerRanked = (owner.body as { ranked: { alternative_id?: string }[] }).ranked;
+    expect(ownerRanked.some((r) => r.alternative_id === 'tue')).toBe(false);
+
+    const clerk = await router.handle(
+      clerkCall('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    expect(clerk.status).toBe(200);
+    const body = clerk.body as {
+      ranked: {
+        supplier_did: string;
+        alternative_id?: string;
+        total_minor: string;
+        comparison_cost_minor: string;
+      }[];
+      excluded: { reason: string }[];
+    };
+    expect(body).not.toHaveProperty('closed_personas');
+    expect(body.excluded.some((e) => e.reason === 'ruled_out')).toBe(false);
+    expect(
+      body.ranked.map(
+        (r) =>
+          `${r.supplier_did === SUPPLIER_A ? 'A' : 'B'}${r.alternative_id === undefined ? '' : `:${r.alternative_id}`}`,
+      ),
+    ).toEqual(['A:tue', 'B', 'A']);
+    // No credit days and no worth: each comparison cost is the signed total.
+    for (const r of body.ranked) expect(r.comparison_cost_minor).toBe(r.total_minor);
+
+    // The award still waits on the closed persona, without naming it.
+    installStaffPresenceVerifier(async (device, pin) => device === CLERK && pin === '1357');
+    try {
+      expect(await proveStaffPresence(CLERK, '1357', Date.now())).toBe(true);
+      const award = await router.handle(
+        clerkCall('POST', '/v1/commerce/trade/tender/award', { tender_id: tenderId }),
+      );
+      expect(award).toEqual({ status: 409, body: { error: 'persona_closed' } });
+    } finally {
+      installStaffPresenceVerifier(null);
+    }
+  });
+
+  it('a clerk naming a version the owner ruled out is refused without the reasons', async () => {
+    const CLERK = 'did:key:zrulesclerk2';
+    runtime.attributionBoundary.cross(Date.now(), []);
+    runtime.staffGrants.put({
+      deviceDid: CLERK,
+      scope: 'commerce_submit',
+      maxOrderMinorUnits: '100000',
+      currency: 'INR',
+      installs: 'buyer',
+      createdAt: Date.now(),
+      revokedAt: null,
+    });
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    quotesWithTuesday();
+    withModel([
+      {
+        id: 'n1',
+        kind: 'goods.buyer',
+        covers: ['delivery_day'],
+        body: {
+          type: 'never',
+          label: 'not on Tuesdays',
+          all: [{ part: 'delivery_day', choice: 'tue' }],
+        },
+      },
+    ]);
+    installStaffPresenceVerifier(async (device, pin) => device === CLERK && pin === '1357');
+    try {
+      expect(await proveStaffPresence(CLERK, '1357', Date.now())).toBe(true);
+      const award = await router.handle({
+        method: 'POST',
+        path: '/v1/commerce/trade/tender/award',
+        query: {},
+        headers: {},
+        body: { tender_id: tenderId, supplier_did: SUPPLIER_A, alternative_id: 'tue' },
+        rawBody: new Uint8Array(),
+        params: {},
+        trustedInProcess: true,
+        callerType: 'staff',
+        callerDID: CLERK,
+      } as unknown as CoreRequest);
+      expect(award).toEqual({ status: 409, body: { error: 'no_awardable_offer' } });
+    } finally {
+      installStaffPresenceVerifier(null);
+    }
+  });
 });
 
 describe('the owner client starts a tender (ASK_FOR_QUOTES_PLAN §2)', () => {

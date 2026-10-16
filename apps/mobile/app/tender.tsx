@@ -126,6 +126,7 @@ const EXCLUDED_LABEL: Record<TenderExclusionReason, string> = {
   expired: 'Quote expired',
   currency_mismatch: 'Quoted in another currency',
   over_budget: 'Over your budget',
+  ruled_out: 'Against one of your rules',
 };
 
 /** Why a supplier was set aside and never asked (PeerLens), in the owner's words. */
