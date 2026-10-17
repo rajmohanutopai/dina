@@ -329,6 +329,17 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>Shelf space</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* COMMITMENT_KERNEL §11 — Dina's fixed rules or Brain, per kind of deal. */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/bargaining')}
+          accessibilityRole="button"
+          accessibilityLabel="Open Who bargains for you"
+          testID="settings-row-bargaining"
+        >
+          <Text style={styles.rowLabel}>Who bargains for you</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* §5.D — the node's own business on paper: what a country pack's
             filing prints (an e-way bill names YOUR GSTIN as well as theirs). */}
         <TouchableOpacity

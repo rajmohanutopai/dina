@@ -1280,6 +1280,15 @@ export default function RootLayout() {
                   }}
                 />
                 <Tabs.Screen
+                  name="bargaining"
+                  options={{
+                    title: 'Who bargains for you',
+                    // Reached from Settings; no tab of its own.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
                   name="buyer-settings"
                   options={{
                     title: 'Buying preferences',

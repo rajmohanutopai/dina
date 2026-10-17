@@ -795,6 +795,55 @@ export class OwnerCommerceClient {
   async revokeStaffGrants(deviceDid: string): Promise<{ ok: true }> {
     return this.post('/v1/commerce/staff-grants/revoke', { device_did: deviceDid }, 'revokeStaffGrants');
   }
+  // --- COMMITMENT_KERNEL §11: who bargains for the owner, per kind of deal ------
+
+  /** Who bargains for one kind of deal, and what choosing Brain would show it. */
+  async strategySetting(kind: string): Promise<StrategySettingView> {
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: `/v1/commitment/strategy/${encodeURIComponent(kind)}`,
+    });
+    return expectOk(res, 'strategySetting');
+  }
+
+  /** Choose the fixed style or Brain. Presence-gated: throws `no_user_presence` until proven. */
+  async setStrategy(
+    kind: string,
+    choice: { strategy: 'fixed' | 'brain'; valuesOn: boolean },
+  ): Promise<{ ok: true; disclosure: string }> {
+    const res = await this.dispatcher.dispatch({
+      method: 'PUT',
+      path: `/v1/commitment/strategy/${encodeURIComponent(kind)}`,
+      body: { strategy: choice.strategy, values_on: choice.valuesOn },
+    });
+    return expectOk(res, 'setStrategy');
+  }
+
+  /**
+   * The goods seller's own share of a cheaper day's saving, or null to drop
+   * it (half, or Brain's share once Brain sets one). Either replaces a share
+   * Brain set before.
+   */
+  async setSavingShare(option: 'third' | 'half' | 'most' | null): Promise<{ ok: true }> {
+    const res =
+      option === null
+        ? await this.dispatcher.dispatch({
+            method: 'DELETE',
+            path: '/v1/commitment/models/goods.seller/entries/saving_share',
+          })
+        : await this.dispatcher.dispatch({
+            method: 'PUT',
+            path: '/v1/commitment/models/goods.seller/entries',
+            body: {
+              entry: {
+                id: 'saving_share',
+                body: { type: 'choice', part: 'saving_share', option, rupees: '1' },
+              },
+            },
+          });
+    return expectOk(res, 'setSavingShare');
+  }
+
   // --- SHELF_SPACE_NEGOTIATION: term negotiation --------------------------------
 
   /** The store's term policy (§5.4). */
@@ -1243,6 +1292,25 @@ export interface InviteListEntry {
   created_at: number;
   /** Present ONLY on held cold offers — the accept key. */
   nonce?: string;
+}
+
+/** `GET /v1/commitment/strategy/:kind`. */
+export interface StrategySettingView {
+  kind: string;
+  strategy: 'fixed' | 'brain';
+  values_on: boolean;
+  /** False for a kind that takes no values: Brain sees none either way. */
+  values_apply: boolean;
+  disclosure: string;
+  disclosures: { with_values: string; without_values: string };
+  /** Selling goods only: the share of a cheaper day's saving the next quote uses. */
+  saving_share?:
+    | { set_by: 'brain'; share_bps: number }
+    | { set_by: 'owner' | 'default'; option: 'third' | 'half' | 'most' }
+    /** A selling rule sits in a closed persona: quotes are withheld until it opens. */
+    | { set_by: 'closed'; personas: string[] }
+    /** The selling rules cannot be read: quotes are withheld until they can be. */
+    | { set_by: 'unreadable' };
 }
 
 export interface StaffGrantEntry {

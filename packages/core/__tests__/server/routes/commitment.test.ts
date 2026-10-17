@@ -12,7 +12,11 @@
  *         option of the choice's own, a flag on a flag; the seller's share of
  *         a saving is one entry under a fixed id;
  *   C-08  the owner can set what step 7 needs: a shipper's asking fee, and
- *         a goods seller's firm rule.
+ *         a goods seller's firm rule;
+ *   C-09  the strategy setting shows both choices' words before one is made,
+ *         says no values for a kind that takes none, and names the saving
+ *         share the next quote uses and who set it, or that the selling rules
+ *         are in a closed persona or cannot be read (§15 step 11).
  */
 
 import { randomBytes } from 'node:crypto';
@@ -30,6 +34,11 @@ import {
   proveOwnerPresence,
 } from '../../../src/commerce/owner_presence';
 import { installValueModelStore, ValueModelStore } from '../../../src/commitment/model_store';
+import {
+  installStandingChoiceStore,
+  SAVING_SHARE_BPS,
+  StandingChoiceStore,
+} from '../../../src/commitment/standing_choices';
 import { installStrategyStore, StrategyStore } from '../../../src/commitment/strategy_store';
 import { createCoreRouter } from '../../../src/server/core_server';
 import { parseForm } from '../../../src/server/routes/commitment';
@@ -91,11 +100,13 @@ describe('the value model’s Core form', () => {
     applyMigrations(identity, IDENTITY_MIGRATIONS);
     installValueModelStore(new ValueModelStore(identity, { db: () => null, isOpen: () => false }));
     installStrategyStore(new StrategyStore(identity));
+    installStandingChoiceStore(new StandingChoiceStore(identity));
     installOwnerPresenceVerifier(async (p) => p === 'correct horse');
   });
   afterEach(() => {
     installValueModelStore(null);
     installStrategyStore(null);
+    installStandingChoiceStore(null);
     clearOwnerPresence();
     installOwnerPresenceVerifier(null);
     identity.close();
@@ -387,5 +398,71 @@ describe('the value model’s Core form', () => {
     expect((await put('goods.seller', { binding: 'firm' })).status).toBe(200);
     expect((await put('goods.buyer', { binding: 'firm' })).status).toBe(400);
   });
-});
+  it('C-09: the strategy setting shows both choices, values only where they apply, and the share in use', async () => {
+    const get = async (kind: string) =>
+      (await router.handle(owner('GET', `/v1/commitment/strategy/${kind}`, undefined, { kind }))).body as {
+        values_apply: boolean;
+        disclosure: string;
+        disclosures: { with_values: string; without_values: string };
+        saving_share?: unknown;
+      };
+    const vendor = await get('shelf_space.vendor');
+    expect(vendor.values_apply).toBe(true);
+    expect(vendor.disclosures.with_values).toMatch(/what parts are worth to you\. They never/);
+    expect(vendor.disclosures.without_values).toMatch(/not what parts are worth/);
+    expect(vendor.saving_share).toBeUndefined();
+    // The store's kind takes no values: Brain sees none, so neither text claims it does.
+    const host = await get('shelf_space.host');
+    expect(host.values_apply).toBe(false);
+    expect(host.disclosure).toMatch(/not what parts are worth/);
+    expect(host.disclosures.with_values).toBe(host.disclosures.without_values);
+    await present();
+    const put = await router.handle(
+      owner('PUT', '/v1/commitment/strategy/shelf_space.host', { strategy: 'brain' }, { kind: 'shelf_space.host' }),
+    );
+    expect((put.body as { disclosure: string }).disclosure).toMatch(/not what parts are worth/);
 
+    // Selling goods: half until the owner chooses; then the owner's; Brain's only while Brain is chosen.
+    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'default', option: 'half' });
+    const share = await router.handle(
+      owner(
+        'PUT',
+        '/v1/commitment/models/goods.seller/entries',
+        { entry: { id: 'saving_share', body: { type: 'choice', part: 'saving_share', option: 'most', rupees: '1' } } },
+        { kind: 'goods.seller' },
+      ),
+    );
+    expect(share.status).toBe(200);
+    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'owner', option: 'most' });
+    new StandingChoiceStore(identity).set('goods.seller', SAVING_SHARE_BPS, '4000', 'brain', Date.now());
+    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'owner', option: 'most' });
+    await router.handle(
+      owner('PUT', '/v1/commitment/strategy/goods.seller', { strategy: 'brain' }, { kind: 'goods.seller' }),
+    );
+    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'brain', share_bps: 4000 });
+    // The owner dropping their share clears Brain's too, until Brain sets another.
+    await router.handle(
+      owner('DELETE', '/v1/commitment/models/goods.seller/entries/saving_share', undefined, {
+        kind: 'goods.seller',
+        id: 'saving_share',
+      }),
+    );
+    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'default', option: 'half' });
+
+    // A selling rule in a closed persona withholds quotes; the share is not claimed.
+    identity.execute(
+      `INSERT INTO commitment_value_index (persona, kind, entry_id, covers) VALUES ('health', 'goods.seller', 'n9', 'delivery_day')`,
+    );
+    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'closed', personas: ['health'] });
+    identity.execute(`DELETE FROM commitment_value_index`);
+    // Rules that cannot be read: said so, never a 500 and never a made-up share.
+    identity.execute(
+      `INSERT INTO commitment_value_entries (kind, entry_id, entry_json, created_at) VALUES ('goods.seller', 'bad', '{', 0)`,
+    );
+    const unreadable = await router.handle(
+      owner('GET', '/v1/commitment/strategy/goods.seller', undefined, { kind: 'goods.seller' }),
+    );
+    expect(unreadable.status).toBe(200);
+    expect((unreadable.body as { saving_share: unknown }).saving_share).toEqual({ set_by: 'unreadable' });
+  });
+});

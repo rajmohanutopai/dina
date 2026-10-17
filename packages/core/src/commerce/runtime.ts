@@ -28,7 +28,7 @@ import {
   installOrderDigestLookup,
 } from '../commitment/option_handler';
 import { SellerOptionStore } from '../commitment/options';
-import { SAVING_SHARE_BPS, shareBpsOf, StandingChoiceStore } from '../commitment/standing_choices';
+import { brainShareBps, SAVING_SHARE_BPS, StandingChoiceStore } from '../commitment/standing_choices';
 import { StrategyStore } from '../commitment/strategy_store';
 import { setTradeCounterpartyCheck, setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
 import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
@@ -70,6 +70,7 @@ import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
 import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
 import { SQLiteDeclineDocumentRepository } from './decline_documents';
 import { firstPartyPack } from './first_party_packs';
+import { GOODS_SELLER_TOUCHES } from './goods_seller_alternatives';
 import {
   SQLiteIdempotencyEvidenceRepository,
   type IdempotencyEvidenceRepository,
@@ -663,11 +664,7 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
   return {
     goodsSellerModel: () => {
       try {
-        const loaded = new ValueModelStore(inputs.adapter).load('goods.seller', [
-          'delivery_day',
-          'saving_share',
-          'total',
-        ]);
+        const loaded = new ValueModelStore(inputs.adapter).load('goods.seller', GOODS_SELLER_TOUCHES);
         return { model: loaded.model, closedPersonas: loaded.closedPersonas };
       } catch {
         // Not "no rules": the rules exist and cannot be read, so whatever
@@ -679,9 +676,10 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     // owner keeps Brain for selling goods; otherwise none (the owner's choice).
     goodsSellerShareBps: () => {
       try {
-        if (new StrategyStore(inputs.adapter).settings('goods.seller').strategy !== 'brain') return undefined;
-        const choice = new StandingChoiceStore(inputs.adapter).get('goods.seller', SAVING_SHARE_BPS);
-        return choice?.setBy === 'brain' ? shareBpsOf(choice) : undefined;
+        return brainShareBps(
+          new StrategyStore(inputs.adapter).settings('goods.seller').strategy,
+          new StandingChoiceStore(inputs.adapter).get('goods.seller', SAVING_SHARE_BPS),
+        );
       } catch {
         return undefined;
       }

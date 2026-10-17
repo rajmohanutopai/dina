@@ -63,3 +63,15 @@ export function shareBpsOf(choice: StandingChoice | null): number | undefined {
   const bps = Number(choice.value);
   return bps <= 10_000 ? bps : undefined;
 }
+
+/**
+ * The standing share Brain set, as the next quote uses it: only while the
+ * owner keeps Brain for selling goods and Brain wrote the latest choice (an
+ * owner's change writes an owner row, which supersedes Brain's).
+ */
+export function brainShareBps(
+  strategy: 'fixed' | 'brain',
+  choice: StandingChoice | null,
+): number | undefined {
+  return strategy === 'brain' && choice?.setBy === 'brain' ? shareBpsOf(choice) : undefined;
+}

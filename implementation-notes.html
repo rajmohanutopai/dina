@@ -645,10 +645,33 @@
             buyer asked and the seller grants. Round 2: queued or running exit cards a crash left are finished
             without replacing the kept cancellation; real-runtime tests drive the seller's cancellation (cancelled,
             dispatched stands, no right refused).</li>
+          <li><b>Phone screen "Who bargains for you" (2026-10-17, built; dual review passed, three rounds):</b> Settings →
+            <code>app/bargaining.tsx</code>. Each kind (buying and selling stock, deliveries, renting out and renting
+            shelf space, group bookings) shows the fixed rules or Brain; a change shows Core's own words on what
+            Brain and the AI provider will see before Save, and Save needs a person present. The values switch shows
+            only where the kind takes values. A goods seller picks a third, half or most of a cheaper day's saving,
+            or, with Brain chosen, leaves it to Brain. Core: <code>GET /v1/commitment/strategy/:kind</code> adds
+            <code>values_apply</code>, both choices' words (<code>disclosures</code>) and, for selling goods, the
+            share the next quote uses and who set it; a kind that takes no values no longer gets the "Brain sees
+            what parts are worth" text. Owner client: <code>strategySetting</code>, <code>setStrategy</code>,
+            <code>setSavingShare</code>. Tests: C-09, <code>bargaining.render.test.tsx</code>. Review fixes: one change at
+            a time (every control waits through a save and its presence check); each kind loads on its own with its
+            own retry; the screen reloads on focus and drops older replies; selling rules in a closed persona, or
+            unreadable, are named and said to hold quotes back (both withhold, as the quote path does); one rule for
+            Brain's share (<code>brainShareBps</code>) and one list of parts read (<code>GOODS_SELLER_TOUCHES</code>),
+            shared with the runtime. Tried live on Home Node Lite (alonso, Chrome): the server refused every
+            <code>/v1/commitment/</code> owner route to the paired browser, because the prefix was missing from
+            <code>isOwnerSurfacePath</code> (<code>bind_core_router.ts</code>), so the value model, strategy and evidence
+            routes from steps 2–11 had only ever worked on the phone (each runs its own owner guard). Added, with Brain's own <code>/v1/commitment/brain</code>
+            door kept off. Then: choose Brain, the disclosure with values on and off, save, a share chosen and left to
+            Brain, back to fixed rules, a kind with no values switch: all as the tests say. A node that cannot check
+            a person (no passphrase) saves without the presence sheet, as every gated route does there. iOS
+            simulator (iPhone 17, dev build): Settings → Who bargains for you; Save opened the presence sheet with
+            Save held back behind it, the passphrase resent the same change; the disclosure, the share chips, "Leave it
+            to Brain", the no-values kind, the return to fixed rules and a reload on coming back all as on the web.</li>
           <li><b>What remains (all recorded, none started):</b> publishing the promise summary to
             PeerLens (a new record kind and AppView ingestion; owner decision); past deals for goods kinds in
-            Brain's view; device runs on the phone; step 9 (bundles, conditions, loops, standing deals); a phone
-            screen for choosing who bargains per kind (the strategy setting is a route only); for the exit right,
+            Brain's view; device runs on the phone; step 9 (bundles, conditions, loops, standing deals); for the exit right,
             what the buyer gives for it, Brain deciding either side, and a buyer-side applier for the
             cancellation result; Brain asking the owner on goods, shipping and group turns (shelf only today);
             owner limits on a runner's credit days and quote validity. The buyer-named second choice is dropped:

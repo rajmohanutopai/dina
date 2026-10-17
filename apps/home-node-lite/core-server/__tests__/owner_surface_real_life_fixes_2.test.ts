@@ -23,3 +23,15 @@ it('keeps proposing, preparing and anything else off the owner surface', () => {
   expect(isOwnerSurfacePath('/v1/settings/other', 'PUT')).toBe(false);
   expect(isOwnerSurfacePath('/v1/spend-allowances', 'POST')).toBe(false);
 });
+
+it('opens the owner’s commitment routes, never Brain’s door under them', () => {
+  expect(isOwnerSurfacePath('/v1/commitment/strategy/goods.seller', 'GET')).toBe(true);
+  expect(isOwnerSurfacePath('/v1/commitment/strategy/goods.seller', 'PUT')).toBe(true);
+  expect(isOwnerSurfacePath('/v1/commitment/models/goods.seller/entries', 'PUT')).toBe(true);
+  expect(
+    isOwnerSurfacePath('/v1/commitment/models/goods.seller/entries/saving_share', 'DELETE'),
+  ).toBe(true);
+  expect(isOwnerSurfacePath('/v1/commitment/brain/goods.seller', 'GET')).toBe(false);
+  expect(isOwnerSurfacePath('/v1/commitment/brain/goods.seller/saving-share', 'PUT')).toBe(false);
+  expect(isOwnerSurfacePath('/v1/commitment/brain', 'GET')).toBe(false);
+});

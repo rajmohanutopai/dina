@@ -71,6 +71,7 @@ const SECTION_PARENTS: Record<string, string> = {
   catalog: '/settings',
   'business-identity': '/settings',
   'buyer-settings': '/settings',
+  bargaining: '/settings',
   'shopping-settings': '/settings',
   'linked-accounts': '/settings',
   // The account-link callback (`/ucp/oauth/callback`) returns to Linked accounts.

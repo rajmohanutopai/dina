@@ -154,6 +154,12 @@ export function shareOf(saving: bigint, share: (typeof SAVING_SHARES)[number]): 
 }
 
 /**
+ * The parts a goods seller's rules are read for. A closed persona holding a
+ * rule on any of them withholds the quote, since the rules cannot be read whole.
+ */
+export const GOODS_SELLER_TOUCHES: readonly string[] = ['delivery_day', 'saving_share', 'total'];
+
+/**
  * The share passed on (COMMITMENT_KERNEL §15 step 11): the standing share
  * Brain set, in hundredths of a percent of the saving, when there is one;
  * otherwise the owner's chosen share. `label` is the nearest of the owner's

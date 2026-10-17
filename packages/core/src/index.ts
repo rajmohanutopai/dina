@@ -1592,6 +1592,7 @@ export type {
   PlacedOrdersAnswer,
   SettingsFindingDto,
   StaffGrantEntry,
+  StrategySettingView,
   BusinessIdentityAnswer,
   BuyerSettingsAnswer,
   BuyerSettingsDto,

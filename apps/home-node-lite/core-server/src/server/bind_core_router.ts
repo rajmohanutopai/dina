@@ -290,6 +290,14 @@ export function isOwnerSurfacePath(p: string, method: string): boolean {
     // route re-validates the capability with its own owner guard; guest
     // traffic never arrives here — it rides the 1:1 service lane.
     p.startsWith('/v1/coordination/') ||
+    // COMMITMENT_KERNEL §7, §11 — the owner's value model and who bargains
+    // for them (the phone's "Who bargains for you"). Every route re-validates
+    // the capability with its own owner guard, and choosing Brain or changing
+    // the Core form still needs a person present. Brain's own door under it
+    // is Brain's alone, never the owner's bearer.
+    (p.startsWith('/v1/commitment/') &&
+      p !== '/v1/commitment/brain' &&
+      !p.startsWith('/v1/commitment/brain/')) ||
     // NEGOTIATION_PLAN §4.3/§4.5/§4.7 — the LIST of the owner's cards (GET
     // only), so the console can show what it may decide: a price below the
     // automatic limit, a tender ready, a clerk over the cap. Creating a task

@@ -18,6 +18,7 @@
  */
 
 import { dealKind, STRATEGY_KINDS, type DealKind, type FormField } from '../../commerce/deal_kinds';
+import { GOODS_SELLER_TOUCHES, shareChoice } from '../../commerce/goods_seller_alternatives';
 import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { atLeastFor, MAX_RATIO_BPS, type NeverCondition } from '../../commitment';
 import {
@@ -26,6 +27,11 @@ import {
   type ModelForm,
   type ValueEntry,
 } from '../../commitment/model_store';
+import {
+  brainShareBps,
+  getStandingChoiceStore,
+  SAVING_SHARE_BPS,
+} from '../../commitment/standing_choices';
 import { getStrategyStore } from '../../commitment/strategy_store';
 
 import { makeOwnerGuard } from './owner_guard';
@@ -301,6 +307,38 @@ export function strategyDisclosure(valuesOn: boolean): string {
     : 'Brain, and the AI provider you chose, will see the deal so far, but not what parts are worth to you. They never see your walk-away point, your limits or your totals.';
 }
 
+/** The share of a cheaper day's saving the next quote uses, as the owner reads it. */
+export type SavingShareInUse =
+  | { set_by: 'brain'; share_bps: number }
+  | { set_by: 'owner' | 'default'; option: string }
+  /** A selling rule sits in a closed persona: quotes are withheld until it opens. */
+  | { set_by: 'closed'; personas: string[] }
+  /** The selling rules cannot be read: quotes are withheld until they can be. */
+  | { set_by: 'unreadable' };
+
+/**
+ * The share of a cheaper day's saving a goods seller passes on, read the way
+ * the quote path reads it (runtime.ts goodsSellerModel and
+ * goodsSellerShareBps, then shareChoice): Brain's standing share while the
+ * owner keeps Brain and Brain set the latest one; else the owner's chosen
+ * share; else half, the starting point (§16).
+ */
+async function savingShareInUse(strategy: 'fixed' | 'brain'): Promise<SavingShareInUse> {
+  try {
+    const models = await getValueModelStore();
+    if (models === null) return { set_by: 'unreadable' };
+    const { model, closedPersonas } = models.load('goods.seller', GOODS_SELLER_TOUCHES);
+    if (closedPersonas.length > 0) return { set_by: 'closed', personas: closedPersonas };
+    const standing = (await getStandingChoiceStore())?.get('goods.seller', SAVING_SHARE_BPS) ?? null;
+    const choice = shareChoice(model, brainShareBps(strategy, standing));
+    if (choice.bps !== undefined) return { set_by: 'brain', share_bps: choice.bps };
+    const owned = Object.keys(model.choiceValues.saving_share ?? {}).length > 0;
+    return { set_by: owned ? 'owner' : 'default', option: choice.label };
+  } catch {
+    return { set_by: 'unreadable' };
+  }
+}
+
 export function registerCommitmentRoutes(router: CoreRouter, ownerCapability?: string): void {
   const ownerOnlyGuard = makeOwnerGuard(
     ownerCapability,
@@ -344,13 +382,24 @@ export function registerCommitmentRoutes(router: CoreRouter, ownerCapability?: s
     const store = await getStrategyStore();
     if (store === null) return NO_STORE;
     const settings = store.settings(kind.id);
+    const applies = kind.honours.has('values');
     return {
       status: 200,
       body: {
         kind: kind.id,
         strategy: settings.strategy,
         values_on: settings.valuesOn,
-        disclosure: strategyDisclosure(settings.valuesOn),
+        // A kind that takes no values gives Brain none to see, whatever the switch says.
+        values_apply: applies,
+        disclosure: strategyDisclosure(settings.valuesOn && applies),
+        // What each choice would show, so the owner reads it before saying yes.
+        disclosures: {
+          with_values: strategyDisclosure(applies),
+          without_values: strategyDisclosure(false),
+        },
+        ...(kind.id === 'goods.seller'
+          ? { saving_share: await savingShareInUse(settings.strategy) }
+          : {}),
       },
     };
   });
@@ -375,7 +424,10 @@ export function registerCommitmentRoutes(router: CoreRouter, ownerCapability?: s
     if (store === null) return NO_STORE;
     const valuesOn = body.values_on ?? true;
     store.setSettings(kind.id, { strategy: body.strategy, valuesOn }, Date.now());
-    return { status: 200, body: { ok: true, disclosure: strategyDisclosure(valuesOn) } };
+    return {
+      status: 200,
+      body: { ok: true, disclosure: strategyDisclosure(valuesOn && kind.honours.has('values')) },
+    };
   });
 
   router.put('/v1/commitment/models/:kind/form', async (req): Promise<CoreResponse> => {
