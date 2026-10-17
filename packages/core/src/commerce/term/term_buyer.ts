@@ -66,6 +66,7 @@ import {
   shelfEnvelope,
   shelfParts,
   shelfWorth,
+  ownerAnswersFor,
   raiseStrategyNotice,
   strategyBudgetLeft,
   tableMessage,
@@ -79,6 +80,7 @@ import {
   validateTermBuyerPolicy,
   type TermBuyerPolicy,
 } from './term_policy';
+import { askOwnerOnTurn } from './term_questions';
 import {
   readTermApprovalMaterial,
   readTermBuyerPolicyJson,
@@ -557,7 +559,30 @@ function vendorBrief(
       'A counter asks the store to move; propose the terms you want, one version.',
       'Never set a price for anyone outside the deal.',
     ],
+    ...ownerAnswersFor(ctx, SHELF_VENDOR_KIND, args.requestId),
   };
+}
+
+/**
+ * The brand's brief for a turn already handed to Brain, built again from the
+ * negotiation as it stands (after the owner answered Brain's question). Null
+ * when the negotiation has moved on.
+ */
+export function buyerTurnBrief(ctx: TermContext, requestId: string, turn: number): NegotiationBrief | null {
+  const negotiation = ctx.store.getNegotiation(requestId);
+  const policy = negotiation === null ? null : readTermBuyerPolicyJson(negotiation.policyJson);
+  const head = offerChain(ctx, requestId, 'inbound').at(-1)?.offer;
+  const settings = ctx.deps.strategy?.settings(SHELF_VENDOR_KIND);
+  if (
+    negotiation === null ||
+    negotiation.state !== 'negotiating' ||
+    policy === null ||
+    head === undefined ||
+    settings === undefined ||
+    outboundCounters(ctx, requestId).length + 1 !== turn
+  )
+    return null;
+  return vendorBrief(ctx, { requestId, head, policy, round: turn, deadlineAt: negotiation.deadlineAt }, settings.valuesOn);
 }
 
 const SHELF_PARTS_BRIEF = SLOT_PACK_PARTS.map((p) => ({ ...p }));
@@ -607,6 +632,20 @@ export function applyStrategyMove(
       toReady(ctx, args.requestId, head, policy);
     });
     return { outcome: 'stopped' };
+  }
+  // §15 step 11 — a yes-or-no question for the owner: the turn waits on its
+  // card. It draws no verdict (the owner answers, not a threshold), so no
+  // budget; a deal asks at most a few.
+  if (args.move.kind === 'ask_owner') {
+    return askOwnerOnTurn(ctx, {
+      requestId: args.requestId,
+      turn: args.turn,
+      question: args.move.question,
+      // The counter must go out while the negotiation runs and the store's offer stands.
+      dealDeadlineMs: Math.min(negotiation.deadlineAt, Date.parse(head.valid_until)),
+    })
+      ? { outcome: 'asked_owner' }
+      : fixed('fixed_style');
   }
   // A question for the store: the fixed style's counter carries it, if the
   // part is on the table. It draws no verdict, so no budget.

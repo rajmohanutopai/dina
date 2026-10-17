@@ -111,6 +111,12 @@ export async function requestQuote(args: {
   const dispatch = getCommerceServiceQueryDispatch();
   if (dispatch === null) return { kind: 'refused', reason: 'no_dispatch' };
 
+  const sharing = args.sharePincodeWithShippers === true && projectionPincode(args.projection) !== undefined;
+  // The exit right (1.5) is asked only alongside a partner's run; a request
+  // without one keeps asking at 1.4 (and reads no setting).
+  const buyerSettings = sharing ? runtime.settings.readBuyer() : null;
+  const askExit =
+    buyerSettings !== null && (!buyerSettings.ok || buyerSettings.settings.askExitIfRunFails !== false);
   const draft = {
     // §9.13 — the request picks the conversation's dialect, and §4.5's
     // `payment_terms.due_basis` exists only at minor 1.1: a buyer asking
@@ -125,7 +131,7 @@ export async function requestQuote(args: {
     // buyer asking at that minor. Minors are additive and a supplier on an
     // earlier build answers in the request's dialect with none, so every
     // request asks at 1.4.
-    protocol_version: '1.4',
+    protocol_version: askExit ? '1.5' : '1.4',
     request_id: args.requestId,
     buyer_did: runtime.nodeDid(),
     supplier_did: args.supplierDid,
@@ -156,7 +162,7 @@ export async function requestQuote(args: {
       ...(args.requiredBy === undefined ? {} : { required_by: args.requiredBy }),
     },
     ...(args.currency === undefined ? {} : { requested_terms: { currency: args.currency } }),
-    ...(args.sharePincodeWithShippers === true && projectionPincode(args.projection) !== undefined
+    ...(sharing
       ? {
           onward_sharing: {
             fields: ['postal_code'] as ['postal_code'],
@@ -164,6 +170,10 @@ export async function requestQuote(args: {
           },
         }
       : {}),
+    // COMMITMENT_KERNEL §15 step 12: with a partner's run possible, ask for
+    // the right to cancel without charge if it falls through (the owner's
+    // buyer setting; yes unless they turned it off).
+    ...(askExit ? { exit_if_run_fails: true as const } : {}),
     issued_at: new Date(args.nowMs).toISOString(),
     expires_at: new Date(args.nowMs + DEFAULT_REQUEST_VALIDITY_MS).toISOString(),
     idempotency_key: args.idempotencyKey,

@@ -3132,6 +3132,7 @@ function partnerRunOf(
       ...(quote.estimated_delivery_at === undefined
         ? {}
         : { fallbackDeliveryAt: quote.estimated_delivery_at }),
+      ...(alt.exit_if_run_fails === true ? { exitIfRunFails: true as const } : {}),
     },
   };
 }

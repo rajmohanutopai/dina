@@ -104,7 +104,11 @@ import {
   createSearchUcpCatalogTool,
   type UcpToolCoreClient,
 } from '../reasoning/ucp_tools';
-import { createProposeDealValuesTool, createReadDealValuesTool } from '../reasoning/value_model_tools';
+import {
+  createProposeDealValuesTool,
+  createReadDealValuesTool,
+  createSetSavingShareTool,
+} from '../reasoning/value_model_tools';
 import {
   createVaultSearchTool,
   createListPersonasTool,
@@ -498,6 +502,13 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
             thread: ownerChatThread,
             core: valuesCore as Pick<CoreClient, 'commitmentProposeChanges'>,
           }),
+        );
+      }
+      // §15 step 11: the standing share of a saving, Brain's to set when the owner chose Brain.
+      const shareCore = input.coreClient as Partial<Pick<CoreClient, 'commitmentSetSavingShare'>>;
+      if (typeof shareCore.commitmentSetSavingShare === 'function') {
+        reg.register(
+          createSetSavingShareTool({ core: shareCore as Pick<CoreClient, 'commitmentSetSavingShare'> }),
         );
       }
       // REAL_LIFE_FIXES_2 §4: forget on the owner's word; Core plans, the owner approves.

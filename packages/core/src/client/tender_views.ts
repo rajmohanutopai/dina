@@ -23,7 +23,13 @@ export interface TenderOfferView {
   /** When this version is delivered, if the quote says. */
   estimated_delivery_at?: string;
   /** This version rests on a partner's run: until when, and what the order becomes if it falls through. */
-  partner_run?: { offer_ends_at: string; fallback_total_minor: string; fallback_delivery_at?: string };
+  partner_run?: {
+    offer_ends_at: string;
+    fallback_total_minor: string;
+    fallback_delivery_at?: string;
+    /** §15 step 12: if the run falls through, the buyer may cancel without charge instead. */
+    exit_if_run_fails?: true;
+  };
 }
 
 export type TenderExclusionReason =

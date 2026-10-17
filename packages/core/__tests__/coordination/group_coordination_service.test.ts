@@ -10,10 +10,20 @@
  * of those resolve at the same instant, and only a yes arrives early.
  */
 
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import { appendAudit, queryAudit, resetAuditState } from '../../src/audit/service';
+import { StrategyStore } from '../../src/commitment/strategy_store';
+import { StrategyTurnStore } from '../../src/commitment/strategy_turns';
 import {
   GROUP_COORDINATION_CAPABILITY,
   abandonPlan,
+  applyGroupSlotMove,
   chooseSlot,
   deleteGroupPlan,
   listGroupPlans,
@@ -30,12 +40,16 @@ import {
 } from '../../src/coordination/group_coordination_service';
 import { MAX_PLAN_ROUNDS, currentSpoke, windowClosesAt, type GroupPlan } from '../../src/coordination/group_plan';
 import { InMemoryGroupPlanRepository } from '../../src/coordination/group_plan_repository';
+import { installGroupSlotStrategy, slotFromMove } from '../../src/coordination/group_slot_strategy';
 import { emitServiceOfferReceived, resetServiceOfferReceivedListeners } from '../../src/d2d/service_offer_events';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import { submitServiceQuery } from '../../src/server/routes/service_query';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
 
+import type { NegotiationBrief } from '../../src/commitment/strategy_submit';
 import type { TrustLevel } from '../../src/contacts/directory';
 import type { ServiceOffer, ServiceOfferRepository } from '../../src/contacts/service_offers_repository';
 import type { ServiceQueryBody } from '../../src/d2d/service_bodies';
@@ -882,5 +896,183 @@ describe('what leaves the node, and what the log holds', () => {
     const b = await openDefault(h);
     expect(taskOf(a, GARCIA)).not.toBe(taskOf(b, GARCIA));
     expect(h.queries).toHaveLength(6);
+  });
+});
+
+describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
+  let db: NodeSQLiteAdapter;
+  let briefs: NegotiationBrief[];
+  let settings: { strategy: 'fixed' | 'brain'; valuesOn: boolean };
+  let budget: number;
+  let dbDir: string;
+
+  beforeEach(() => {
+    dbDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-group-slot-'));
+    db = new NodeSQLiteAdapter({
+      path: path.join(dbDir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+    });
+    applyMigrations(db, IDENTITY_MIGRATIONS);
+    briefs = [];
+    settings = { strategy: 'brain', valuesOn: true };
+    budget = 5;
+    installGroupSlotStrategy({
+      settings: () => settings,
+      canSpend: () => budget > 0,
+      charge: () => {
+        if (budget <= 0) return false;
+        budget -= 1;
+        return true;
+      },
+      turns: new StrategyTurnStore(db),
+      submit: (brief) => {
+        briefs.push(brief);
+        return { taskId: `task-${String(briefs.length)}` };
+      },
+      atomically: (fn) => db.transaction(fn),
+    });
+  });
+  afterEach(() => {
+    installGroupSlotStrategy(null);
+    db.close();
+    fs.rmSync(dbDir, { recursive: true, force: true });
+  });
+
+  async function folded(): Promise<GroupPlan> {
+    const plan = await openDefault(h);
+    reply(h, plan, GARCIA, { status: 'accepted', accepted_slots: [SAT_26, SAT_19] });
+    reply(h, plan, MILLER, { status: 'accepted', accepted_slots: [SAT_19, SAT_26] });
+    reply(h, plan, JOHNSON, { status: 'accepted', accepted_slots: [SAT_26] });
+    return ok(await readGroupPlan(plan.planId, h.deps));
+  }
+  const pick = (planId: string, turn: number, value: string) =>
+    applyGroupSlotMove(
+      {
+        input: { kind: 'group.organizer', ref: { negotiationId: planId, turn } },
+        result: { move: { kind: 'propose', versions: [{ terms: [{ name: 'slot', value }] }] } },
+      },
+      h.deps,
+    );
+
+  it('a fold with agreed slots asks Brain once; its pick opens the confirming round', async () => {
+    const plan = await folded();
+    expect(plan.fold?.agreed).toEqual([SAT_19, SAT_26]);
+    expect(briefs).toHaveLength(1);
+    const brief = briefs[0];
+    expect(brief?.ref).toEqual({ negotiationId: plan.planId, turn: 1 });
+    expect(brief?.table).toEqual({
+      intent: INTENT,
+      agreed: [
+        { index: 0, start: SAT_19.start },
+        { index: 1, start: SAT_26.start },
+      ],
+    });
+    // Nothing about the guests reaches Brain.
+    expect(JSON.stringify(brief)).not.toMatch(new RegExp([GARCIA, MILLER, JOHNSON].join('|')));
+    // Reading again does not ask again.
+    await readGroupPlan(plan.planId, h.deps);
+    expect(briefs).toHaveLength(1);
+    expect(await pick(plan.planId, 1, '1')).toBe('chosen');
+    const confirming = ok(await readGroupPlan(plan.planId, h.deps));
+    expect(confirming.state).toBe('confirming');
+    expect(confirming.chosen).toEqual(SAT_26);
+    expect(budget).toBe(4);
+  });
+
+  it('a pick outside the agreed slots, or a stale one, chooses nothing; the owner picks', async () => {
+    const plan = await folded();
+    expect(await pick(plan.planId, 1, '7')).toBe('owner_picks');
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).state).toBe('folded');
+    // The turn is closed: a second try changes nothing, and the owner still can.
+    expect(await pick(plan.planId, 1, '0')).toBe('owner_picks');
+    expect(ok(await chooseSlot(plan.planId, SAT_19, h.deps)).chosen).toEqual(SAT_19);
+  });
+
+  it('Brain’s index is read against the slots it was shown, not a fold that moved since', async () => {
+    const plan = await openDefault(h);
+    reply(h, plan, GARCIA, { status: 'accepted', accepted_slots: [SAT_19, SAT_26] });
+    reply(h, plan, MILLER, { status: 'accepted', accepted_slots: [SAT_26] });
+    reply(h, plan, JOHNSON, { status: 'declined' });
+    const folded = ok(await readGroupPlan(plan.planId, h.deps));
+    expect(folded.fold?.agreed).toEqual([SAT_26]);
+    expect(briefs[0]?.table).toMatchObject({ agreed: [{ index: 0, start: SAT_26.start }] });
+    // Miller is no longer required: the fold now agrees on Sat 19 too, first.
+    const relaxed = ok(await makeGuestOptional(plan.planId, MILLER, h.deps));
+    expect(relaxed.fold?.agreed).toEqual([SAT_19, SAT_26]);
+    // Brain's 0 meant Sat 26, the one slot it was shown.
+    expect(await pick(plan.planId, 1, '0')).toBe('chosen');
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).chosen).toEqual(SAT_26);
+  });
+
+  it('the verdict is charged before the slot is chosen: no budget, no confirming round', async () => {
+    const plan = await folded();
+    budget = 0;
+    expect(await pick(plan.planId, 1, '1')).toBe('owner_picks');
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).state).toBe('folded');
+  });
+
+  it('a crash after the choice, before its turn was settled: the replay settles it and charges nothing more', async () => {
+    const plan = await folded();
+    const move = {
+      input: { kind: 'group.organizer', ref: { negotiationId: plan.planId, turn: 1 } },
+      result: { move: { kind: 'propose', versions: [{ terms: [{ name: 'slot', value: '1' }] }] } },
+    };
+    // The first try charges and chooses, then stops before settling.
+    const slot = slotFromMove(ok(await readGroupPlan(plan.planId, h.deps)), {
+      planId: plan.planId,
+      turn: 1,
+      result: move.result,
+      nowMs: T0,
+    });
+    expect(slot).toEqual(SAT_26);
+    ok(await chooseSlot(plan.planId, SAT_26, h.deps));
+    expect(budget).toBe(4);
+    // The replay finds the slot chosen: the turn is settled, no second charge.
+    expect(await applyGroupSlotMove(move, h.deps)).toBe('owner_picks');
+    expect(budget).toBe(4);
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).chosen).toEqual(SAT_26);
+  });
+
+  it('the verdict and its mark land together: a crash between them charges nothing, and the replay pays once', async () => {
+    // A real budget on the same database: one verdict in this plan.
+    const strategies = new StrategyStore(db, { perNegotiation: 1, perOwnerMonthly: 10 });
+    const turns = new StrategyTurnStore(db);
+    let failOnce = true;
+    const realNote = turns.note.bind(turns);
+    turns.note = (...args: Parameters<StrategyTurnStore['note']>) => {
+      if (failOnce) {
+        failOnce = false;
+        throw new Error('crash between the charge and its mark');
+      }
+      return realNote(...args);
+    };
+    installGroupSlotStrategy({
+      settings: () => settings,
+      canSpend: (id, nowMs) =>
+        strategies.canSpend({ kind: 'group.organizer', negotiationId: id, nowMs, thresholdVersion: 0 }).ok,
+      charge: (id, nowMs) =>
+        strategies.charge({ kind: 'group.organizer', negotiationId: id, count: 1, nowMs, thresholdVersion: 0 }).ok,
+      turns,
+      submit: (brief) => {
+        briefs.push(brief);
+        return { taskId: `task-${String(briefs.length)}` };
+      },
+      atomically: (fn) => db.transaction(fn),
+    });
+    const plan = await folded();
+    await expect(pick(plan.planId, 1, '1')).rejects.toThrow('crash between');
+    // The charge rolled back with the mark: the one verdict still pays for the replay.
+    expect(await pick(plan.planId, 1, '1')).toBe('chosen');
+    expect(ok(await readGroupPlan(plan.planId, h.deps)).chosen).toEqual(SAT_26);
+  });
+
+  it('the owner on the fixed style, or no budget: Brain is not asked', async () => {
+    settings = { strategy: 'fixed', valuesOn: true };
+    await folded();
+    expect(briefs).toEqual([]);
+    settings = { strategy: 'brain', valuesOn: true };
+    budget = 0;
+    await folded();
+    expect(briefs).toEqual([]);
   });
 });

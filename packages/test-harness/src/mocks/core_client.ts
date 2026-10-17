@@ -611,6 +611,15 @@ export class MockCoreClient implements CoreClient {
   }): Promise<typeof this.commitmentProposeChangesResult> {
     return this.dispatch('commitmentProposeChanges', [input], () => ({ ...this.commitmentProposeChangesResult }));
   }
+  commitmentSetSavingShareResult: { ok: true; share_bps: number } = { ok: true, share_bps: 5000 };
+
+  async commitmentSetSavingShare(shareBps: number): Promise<{ ok: true; share_bps: number }> {
+    return this.dispatch('commitmentSetSavingShare', [shareBps], () => ({
+      ...this.commitmentSetSavingShareResult,
+      share_bps: shareBps,
+    }));
+  }
+
 
   ownerExportPrepareResult = { id: 'exp-1', manifest: { personas: [], people: 0, contacts: 0, reminders: 0 } };
 

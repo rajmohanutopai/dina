@@ -46,6 +46,8 @@ export function costLedAlternatives(args: {
   nowMs: number;
   /** The owner's time zone: a day is the owner's day. */
   timeZone: string;
+  /** Brain's standing share of a saving, in hundredths of a percent (§15 step 11). */
+  brainShareBps?: number;
 }): CostLedAlternative[] {
   const { model } = args;
   if (model === null || args.deliveryAt === undefined || args.currency !== 'INR') return [];
@@ -56,7 +58,8 @@ export function costLedAlternatives(args: {
   if (baseDay === null) return [];
   const baseValue = costOf[baseDay];
   if (baseValue === undefined) return [];
-  const share = chosenShare(model);
+  const choice = shareChoice(model, args.brainShareBps);
+  const share = choice.label;
   // A never-rule is judged against the whole version offered: its day, the
   // share passed on, and its total. Every test the owner's doors accept for
   // this kind is judged; a test on any other part is taken to hold, so a
@@ -81,7 +84,7 @@ export function costLedAlternatives(args: {
     if (value === undefined || value <= baseValue) continue;
     // The saving is the seller's; the share the owner chose, in whole
     // rupees, is offered (half when they chose none).
-    const pass = shareOf(value - baseValue, share);
+    const pass = passOf(value - baseValue, choice);
     if (pass < 1n) continue;
     // Never a discount larger than the order: that day is simply not offered.
     const totalMinor = args.totalMinor - pass * 100n;
@@ -148,4 +151,26 @@ export function shareOf(saving: bigint, share: (typeof SAVING_SHARES)[number]): 
   if (share === 'third') return saving / 3n;
   if (share === 'most') return (saving * 3n) / 4n;
   return saving / 2n;
+}
+
+/**
+ * The share passed on (COMMITMENT_KERNEL §15 step 11): the standing share
+ * Brain set, in hundredths of a percent of the saving, when there is one;
+ * otherwise the owner's chosen share. `label` is the nearest of the owner's
+ * words, which is what a never-rule on the share is judged against.
+ */
+export interface ShareChoice {
+  label: (typeof SAVING_SHARES)[number];
+  bps?: number;
+}
+
+export function shareChoice(model: ValueModel, brainShareBps?: number): ShareChoice {
+  if (brainShareBps === undefined) return { label: chosenShare(model) };
+  const label = brainShareBps <= 4_166 ? 'third' : brainShareBps <= 6_250 ? 'half' : 'most';
+  return { label, bps: brainShareBps };
+}
+
+/** The part of a saving passed on under a share choice, in whole rupees, rounded down. */
+export function passOf(saving: bigint, choice: ShareChoice): bigint {
+  return choice.bps === undefined ? shareOf(saving, choice.label) : (saving * BigInt(choice.bps)) / 10_000n;
 }

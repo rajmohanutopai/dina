@@ -65,6 +65,7 @@ import {
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
+  withPublishedCatalogue,
 } from './helpers';
 
 const T0 = Date.parse('2026-08-08T09:00:00.000Z');
@@ -155,12 +156,15 @@ describe('pricing a quote from the published catalogue', () => {
     });
     applyMigrations(adapter, IDENTITY_MIGRATIONS);
     installCommerceRuntime(
-      createCommerceRuntime({
-        adapter,
-        supplierDid: () => SUPPLIER_DID,
-        currentEpoch: () => '1',
-        now: () => T0,
-      }),
+      withPublishedCatalogue(
+        createCommerceRuntime({
+          adapter,
+          supplierDid: () => SUPPLIER_DID,
+          currentEpoch: () => '1',
+          now: () => T0,
+        }),
+        [item()],
+      ),
     );
     try {
       const terms = answerQuoteRequest(request, [item()]);

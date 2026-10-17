@@ -627,6 +627,60 @@ describe('useServiceInbox', () => {
     expect(calls.cancelled.map((c) => c.id)).toEqual(['option-clear-req-1']);
   });
 
+  it('shows the exit-right choice with its supplier (COMMITMENT_KERNEL §15 step 12)', async () => {
+    const words =
+      'A partner run your supplier booked for one of your orders ended without fault. Your order lets you cancel without charge. Approve to cancel; deny to keep it on the quote’s own terms: standard delivery, at the price without the run’s discount.';
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'option-exit-did:plc:supplier-po-1',
+          description: words,
+          payload: JSON.stringify({
+            type: 'option_exit',
+            supplier_did: 'did:plc:supplier',
+            purchase_order_id: 'po-1',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry).toMatchObject({
+      kind: 'option_exit',
+      serviceName: 'Cancel an order whose run fell through?',
+      requesterDID: 'did:plc:supplier',
+      paramsPreview: words,
+    });
+  });
+
+  it('shows Brain’s yes-or-no question as Core cleaned it (COMMITMENT_KERNEL §15 step 11)', async () => {
+    const { client, calls } = stubClient({
+      list: [
+        makeTask({
+          id: 'tq-1',
+          description: 'Brain asks: May I offer ₹2,000 rent?',
+          payload: JSON.stringify({
+            type: 'term_strategy_question',
+            card_id: 'tq-1',
+            request_id: 'treq-1',
+            question: 'May I offer ₹2,000 rent?',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const [entry] = await listPendingApprovals();
+    expect(entry).toMatchObject({
+      kind: 'term_strategy_question',
+      serviceName: 'Brain asks you',
+      paramsPreview: 'May I offer ₹2,000 rent? Approve for yes, deny for no.',
+    });
+    // A no is a plain cancel: there is no D2D requester to answer.
+    await denyPending('tq-1', 'denied_by_operator', 'term_strategy_question');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled.map((c) => c.id)).toEqual(['tq-1']);
+  });
+
   it('denyPending on either negotiation card is a plain cancel — neither has a D2D requester to answer', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);

@@ -17,7 +17,12 @@
  *         known: issuance offers no cheaper day rather than guess one.
  */
 
-import { chosenShare, costLedAlternatives } from '../../src/commerce/goods_seller_alternatives';
+import {
+  chosenShare,
+  costLedAlternatives,
+  passOf,
+  shareChoice,
+} from '../../src/commerce/goods_seller_alternatives';
 import { describeEntry } from '../../src/commitment/model_changes';
 import { assemble } from '../../src/commitment/model_store';
 
@@ -56,6 +61,40 @@ const sellerCosts = (extra: Parameters<typeof assemble>[3] = []) =>
   ]);
 
 describe("the seller's cheaper days", () => {
+  it('S-37: Brain’s standing share passes on its part; a never-rule reads the nearest of the owner’s words (§15 step 11)', () => {
+    const offered = (bps: number, extra: Parameters<typeof assemble>[3] = []) =>
+      costLedAlternatives({
+        model: sellerCosts(extra),
+        deliveryAt: FRIDAY,
+        charges: [delivery],
+        currency: 'INR',
+        totalMinor: 65_000n,
+        nowMs: NOW,
+        timeZone: 'UTC',
+        brainShareBps: bps,
+      }).map((a) => a.charges.at(-1)?.amount.minor_units);
+    // ₹80 saved: a quarter is ₹20; all of it is ₹80; none is no cheaper day.
+    expect(offered(2_500)).toEqual(['2000']);
+    expect(offered(10_000)).toEqual(['8000']);
+    expect(offered(0)).toEqual([]);
+    expect(shareChoice(sellerCosts(), 2_500)).toEqual({ label: 'third', bps: 2_500 });
+    expect(shareChoice(sellerCosts(), 5_000).label).toBe('half');
+    expect(shareChoice(sellerCosts(), 8_000).label).toBe('most');
+    expect(passOf(80n, { label: 'most', bps: 8_000 })).toBe(64n);
+    // "Never pass on most" holds against Brain's 80%, as against the owner's "most".
+    const neverMost = [
+      {
+        id: 'n1',
+        kind: 'goods.seller',
+        covers: ['saving_share'],
+        body: { type: 'never' as const, label: 'never most', all: [{ part: 'saving_share', choice: 'most' }] },
+      },
+    ];
+    expect(offered(8_000, neverMost)).toEqual([]);
+    expect(offered(5_000, neverMost)).toEqual(['4000']);
+  });
+
+
   it('S-30: Tuesday saves the seller ₹80; ₹40 is offered', () => {
     const offered = costLedAlternatives({
       model: sellerCosts(),

@@ -80,6 +80,8 @@ export interface PartnerRunTerms {
   offerEndsAt: string;
   fallbackTotal: Money;
   fallbackDeliveryAt?: string;
+  /** §15 step 12: if the run falls through, the buyer may cancel without charge instead. */
+  exitIfRunFails?: true;
 }
 
 export interface ApprovingPrincipal {

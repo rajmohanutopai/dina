@@ -710,6 +710,12 @@ export interface CoreClient {
     changes: readonly Record<string, unknown>[];
   }): Promise<CommitmentProposeResult>;
   /**
+   * Set the standing share of a cheaper day's saving a goods seller passes on,
+   * in hundredths of a percent (COMMITMENT_KERNEL §15 step 11). Only while the
+   * owner keeps Brain for selling goods; each change spends a verdict.
+   */
+  commitmentSetSavingShare(shareBps: number): Promise<{ ok: true; share_bps: number }>;
+  /**
    * Prepare the owner's readable export (REAL_LIFE_FIXES_2 §5): the
    * manifest and an id only. Only the owner's device can fetch the document.
    */

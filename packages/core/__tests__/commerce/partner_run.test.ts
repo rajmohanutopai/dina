@@ -22,7 +22,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { validateSignedQuote, type SignedQuote } from '@dina/commerce-protocol';
+import {
+  commerceRecordDigest,
+  validateCancellationRequest,
+  validateSignedQuote,
+  type SignedQuote,
+} from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
@@ -32,13 +37,21 @@ import {
 } from '../../src/commerce';
 import { deliveryDayOf } from '../../src/commerce/deal_kinds';
 import {
+  buyerExitCancellation,
   isClearedPartnerRun,
   partnerRunAlternatives,
   retainedQuote,
+  sellerOrderHoldsExit,
   takeUpForOrderInTx,
 } from '../../src/commerce/partner_run';
 import { priceQuoteAlternatives } from '../../src/commerce/quote_issuance';
+import { createCommerceRuntime, installCommerceRuntime } from '../../src/commerce/runtime';
 import { assemble } from '../../src/commitment/model_store';
+import {
+  getOrderFallbackStore,
+  handleOptionMessage,
+  installOptionStores,
+} from '../../src/commitment/option_handler';
 import {
   admitOptionAnswer,
   answerOptionRequest,
@@ -336,5 +349,183 @@ describe("a goods version resting on a shipper's option", () => {
     expect(takeUpForOrderInTx({ store: seller, quote, order: order('po-2'), nowMs: T_ADMIT })).toBe(
       'lapsed',
     );
+  });
+});
+
+describe('§15 step 12 — the exit right on both sides', () => {
+  const request = makeQuoteRequest({ protocol_version: '1.5' });
+  const base = makeSignedQuote(request, { protocol_version: '1.5', valid_until: '2026-08-20T00:00:00.000Z' });
+  const priced = priceQuoteAlternatives(base, [
+    {
+      alternative_id: 'partner_0a1b2c3d',
+      charges: [],
+      estimated_delivery_at: '2026-08-18T09:00:00Z',
+      partner_run: true,
+      offer_ends_at: '2026-08-10T09:00:00Z',
+      exit_if_run_fails: true,
+    },
+    { alternative_id: 'partner_0a1b2c3e', charges: [], estimated_delivery_at: '2026-08-19T09:00:00Z', partner_run: true, offer_ends_at: '2026-08-10T09:00:00Z' },
+  ]);
+  const quote = makeSignedQuote(request, {
+    protocol_version: '1.5',
+    valid_until: base.valid_until,
+    alternatives: priced ?? [],
+  });
+  const orderFor = (alternative: string) => {
+    const alt = quote.alternatives?.find((a) => a.alternative_id === alternative);
+    return makeOrder(quote, request.delivery.projection, {
+      protocol_version: '1.5',
+      alternative_id: alternative,
+      approved_total: alt?.total,
+      accepted_terms_digest: alt?.terms_digest,
+    });
+  };
+  const receiptsOf = (order: ReturnType<typeof orderFor>) => {
+    const rows = new Map<string, { recordJson: string }>([
+      [quote.quote_digest, { recordJson: JSON.stringify(quote) }],
+      [order.order_digest, { recordJson: JSON.stringify(order) }],
+    ]);
+    return { get: (d: string) => rows.get(d) ?? null };
+  };
+
+  it('P-06: the version’s right is signed into its terms; an order on it holds the right, one on another does not', () => {
+    expect(validateSignedQuote(quote, hash)).toBeNull();
+    const withRight = orderFor('partner_0a1b2c3d');
+    const without = orderFor('partner_0a1b2c3e');
+    for (const [order, holds] of [
+      [withRight, true],
+      [without, false],
+    ] as const) {
+      expect(
+        sellerOrderHoldsExit(
+          {
+            orders: { load: () => ({ ref: { orderDigest: order.order_digest, quoteDigest: quote.quote_digest } }) },
+            receipts: receiptsOf(order),
+          },
+          BUYER_DID,
+          'po-1',
+        ),
+      ).toBe(holds);
+    }
+  });
+
+  it('P-07: the buyer’s cancellation for its order is a valid request, the same each time', () => {
+    const order = orderFor('partner_0a1b2c3d');
+    const stores = {
+      buyerOrders: { get: () => ({ orderDigest: order.order_digest }) },
+      receipts: receiptsOf(order),
+    };
+    const one = buyerExitCancellation(stores, SUPPLIER_DID, 'po-1', Date.parse('2026-08-19T10:00:00Z'));
+    expect(one).not.toBeNull();
+    expect(validateCancellationRequest(one, hash)).toBeNull();
+    expect(one).toMatchObject({ purchase_order_id: 'po-1', order_digest: order.order_digest, reason_code: 'partner_run_failed' });
+    const again = buyerExitCancellation(stores, SUPPLIER_DID, 'po-1', Date.parse('2026-08-19T11:00:00Z'));
+    expect(again?.cancellation_id).toBe(one?.cancellation_id);
+    expect(buyerExitCancellation({ ...stores, buyerOrders: { get: () => null } }, SUPPLIER_DID, 'po-1', 0)).toBeNull();
+  });
+});
+
+describe('§15 step 12 — the seller cancels an exit through its own records (a real runtime)', () => {
+  /** A seller node that sold po-1 on a partner-run version, with or without the right, and recorded its fallback. */
+  function sellerWithOrder(exitRight: boolean) {
+    installOptionStores(adapter);
+    const runtime = createCommerceRuntime({
+      adapter,
+      supplierDid: () => SUPPLIER_DID,
+      currentEpoch: () => '1',
+      now: () => clock.now,
+    });
+    installCommerceRuntime(runtime);
+    holdOption();
+    const asked = makeQuoteRequest({
+      protocol_version: '1.5',
+      onward_sharing: { fields: ['postal_code'], recipient_role: 'shipper' },
+      ...(exitRight ? { exit_if_run_fails: true as const } : {}),
+    });
+    const head = makeSignedQuote(asked, { protocol_version: '1.5' });
+    const { quote_digest: _q, terms_digest: _t, ...draft } = head;
+    const priced = priceQuoteAlternatives(draft, offered({ protocolVersion: '1.5', exitRight }));
+    const quote = makeSignedQuote(asked, { protocol_version: '1.5', alternatives: priced ?? [] });
+    runtime.receipts.put({
+      recordDigest: asked.request_digest,
+      domain: 'request',
+      buyerDid: asked.buyer_did,
+      quoteId: quote.quote_id,
+      purchaseOrderId: '',
+      recordJson: JSON.stringify(asked),
+      evidenceJson: '{}',
+      createdAt: clock.now,
+    });
+    expect(runtime.admission.registerSignedQuote(quote)).toBeNull();
+    const version = quote.alternatives?.[0];
+    expect(version?.exit_if_run_fails).toBe(exitRight ? true : undefined);
+    const order = makeOrder(quote, asked.delivery.projection, {
+      protocol_version: '1.5',
+      alternative_id: version?.alternative_id,
+      approved_total: version?.total,
+      accepted_terms_digest: version?.terms_digest,
+    });
+    expect(runtime.admission.admitOrder(order, BUYER_DID)).toEqual({ kind: 'reserved' });
+    expect(
+      'acknowledgement' in runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+        kind: 'accepted',
+        supplierOrderId: 'so-1',
+      }),
+    ).toBe(true);
+    // The run fell through without fault: the seller recorded the fallback.
+    getOrderFallbackStore()?.record({
+      buyerDid: BUYER_DID,
+      purchaseOrderId: order.purchase_order_id,
+      supplierDid: 'self',
+      quoteId: quote.quote_id,
+      alternativeId: version?.alternative_id ?? '',
+      role: 'seller',
+      appliedAt: clock.now,
+    });
+    const draftCx = {
+      protocol_version: '1.5',
+      cancellation_id: 'exit-1',
+      purchase_order_id: order.purchase_order_id,
+      order_digest: order.order_digest,
+      reason_code: 'partner_run_failed',
+      idempotency_key: 'exit-1',
+      issued_at: new Date(clock.now).toISOString(),
+    };
+    const cancellation = { ...draftCx, cancellation_digest: commerceRecordDigest('cancellation', draftCx, hash) };
+    return { runtime, order, cancellation };
+  }
+  afterEach(() => {
+    installCommerceRuntime(null);
+    installOptionStores(null);
+  });
+
+  it('P-08: an order that holds the right is cancelled, with no runner asked; a resend gets the same', async () => {
+    const { runtime, order, cancellation } = sellerWithOrder(true);
+    const exit = { v: 1, kind: 'exit', cancellation };
+    expect(await handleOptionMessage(BUYER_DID, exit, clock.now)).toBe('kept');
+    expect(runtime.chains.load(BUYER_DID, order.purchase_order_id).head.state).toBe('cancelled');
+    expect(await handleOptionMessage(BUYER_DID, exit, clock.now + 1_000)).toBe('kept');
+    expect(runtime.chains.load(BUYER_DID, order.purchase_order_id).head.state).toBe('cancelled');
+  });
+
+  it('P-09: dispatch already won the race: the order stands', async () => {
+    const { runtime, order, cancellation } = sellerWithOrder(true);
+    expect(
+      'error' in
+        runtime.lifecycle.signStatusUpdate(BUYER_DID, order.purchase_order_id, {
+          state: 'dispatched',
+          lines: [{ lineId: 'l1', fulfilledQuantity: { value: '100', unitCode: 'each' } }],
+        }),
+    ).toBe(false);
+    expect(await handleOptionMessage(BUYER_DID, { v: 1, kind: 'exit', cancellation }, clock.now)).toBe('kept');
+    expect(runtime.chains.load(BUYER_DID, order.purchase_order_id).head.state).toBe('dispatched');
+  });
+
+  it('P-10: an order on a version without the right is not cancelled this way', async () => {
+    const { runtime, order, cancellation } = sellerWithOrder(false);
+    expect(await handleOptionMessage(BUYER_DID, { v: 1, kind: 'exit', cancellation }, clock.now)).toBe(
+      'refused',
+    );
+    expect(runtime.chains.load(BUYER_DID, order.purchase_order_id).head.state).toBe('accepted');
   });
 });

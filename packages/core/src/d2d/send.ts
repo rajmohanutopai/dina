@@ -66,8 +66,9 @@ function tradeOf(req: SendRequest): { kind: string; document: unknown } {
   if (req.messageType === 'commitment.option') {
     try {
       const body = JSON.parse(req.body) as { kind?: unknown };
-      return body.kind === 'fallback'
-        ? { kind: 'option_fallback', document: body }
+      // §15 step 12: the buyer's exit is order-bound the same way.
+      return body.kind === 'fallback' || body.kind === 'exit'
+        ? { kind: `option_${body.kind}`, document: body }
         : { kind: '', document: null };
     } catch {
       return { kind: '', document: null };

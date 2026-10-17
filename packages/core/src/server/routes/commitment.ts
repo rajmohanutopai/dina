@@ -17,7 +17,7 @@
  * units, basis points) for its limits and asking terms.
  */
 
-import { dealKind, type DealKind, type FormField } from '../../commerce/deal_kinds';
+import { dealKind, STRATEGY_KINDS, type DealKind, type FormField } from '../../commerce/deal_kinds';
 import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { atLeastFor, MAX_RATIO_BPS, type NeverCondition } from '../../commitment';
 import {
@@ -297,7 +297,7 @@ function formView(form: ModelForm): Record<string, unknown> {
  */
 export function strategyDisclosure(valuesOn: boolean): string {
   return valuesOn
-    ? 'Brain, and the AI provider you chose, will see the deal so far and what parts are worth to you. They never see your walk-away point, your limits or your totals.'
+    ? 'Brain, and the AI provider you chose, will see the deal so far and what parts are worth to you. They never see your walk-away point, your limits or your totals. Brain can let the other side guess what a part is worth to you from the offers it makes.'
     : 'Brain, and the AI provider you chose, will see the deal so far, but not what parts are worth to you. They never see your walk-away point, your limits or your totals.';
 }
 
@@ -309,6 +309,9 @@ export function registerCommitmentRoutes(router: CoreRouter, ownerCapability?: s
   const present = (req: CoreRequest, detail: string): CoreResponse | null =>
     ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), detail);
   const kindOf = (req: CoreRequest): DealKind | null => dealKind(req.params?.kind ?? '');
+  // §15 step 11: the strategy setting also names the organiser of a group booking.
+  const strategyKindOf = (req: CoreRequest): DealKind | null =>
+    STRATEGY_KINDS.find((k) => k.id === (req.params?.kind ?? '')) ?? null;
   const UNKNOWN: CoreResponse = { status: 404, body: { error: 'unknown_kind' } };
   const NO_STORE: CoreResponse = { status: 503, body: { error: 'model_store_unavailable' } };
 
@@ -336,7 +339,7 @@ export function registerCommitmentRoutes(router: CoreRouter, ownerCapability?: s
   router.get('/v1/commitment/strategy/:kind', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
-    const kind = kindOf(req);
+    const kind = strategyKindOf(req);
     if (kind === null) return UNKNOWN;
     const store = await getStrategyStore();
     if (store === null) return NO_STORE;
@@ -358,7 +361,7 @@ export function registerCommitmentRoutes(router: CoreRouter, ownerCapability?: s
   router.put('/v1/commitment/strategy/:kind', async (req): Promise<CoreResponse> => {
     const denied = present(req, 'choosing who bargains for you needs a person present');
     if (denied !== null) return denied;
-    const kind = kindOf(req);
+    const kind = strategyKindOf(req);
     if (kind === null) return UNKNOWN;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (body.strategy !== 'fixed' && body.strategy !== 'brain')

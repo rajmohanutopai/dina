@@ -254,14 +254,28 @@ export function commitTermStrategyMove(input: {
   const turn = brief.ref?.turn;
   if (typeof requestId !== 'string' || typeof turn !== 'number') throw new Error('negotiation move: no ref');
   const move = readMove((input.result as { move?: unknown } | null)?.move);
-  const { outcome } = engine.applyStrategyMove({ requestId, turn, move });
+  const answers = (input.input as { ownerAnswers?: unknown }).ownerAnswers;
+  const { outcome } = engine.applyStrategyMove({
+    requestId,
+    turn,
+    move,
+    answersSeen: Array.isArray(answers) ? answers.length : 0,
+  });
   return { state: 'committed', receipt: { outcome } };
 }
 
 /** The model's move, read as data: numbers stay strings until Core parses them. */
 function readMove(value: unknown): StrategyMove {
-  const m = (value ?? {}) as { kind?: unknown; versions?: unknown; message?: unknown; part?: unknown };
+  const m = (value ?? {}) as {
+    kind?: unknown;
+    versions?: unknown;
+    message?: unknown;
+    part?: unknown;
+    question?: unknown;
+  };
   if (m.kind === 'stop') return { kind: 'stop' };
+  // §15 step 11: a question for the owner; the engine cleans and bounds it.
+  if (m.kind === 'ask_owner' && typeof m.question === 'string') return { kind: 'ask_owner', question: m.question };
   // A message the wire carries: a fixed kind and a part (the engine checks
   // the part is on the table). Anything else asked of the other side lets
   // the fixed style play the round.

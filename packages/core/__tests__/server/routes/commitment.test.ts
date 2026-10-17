@@ -308,6 +308,22 @@ describe('the value model’s Core form', () => {
     ]);
   });
 
+  it('C-06b: the organiser of a group booking has a strategy setting, and no value model (§15 step 11)', async () => {
+    await present();
+    const put = await router.handle(
+      owner('PUT', '/v1/commitment/strategy/group.organizer', { strategy: 'brain' }, { kind: 'group.organizer' }),
+    );
+    expect(put.status).toBe(200);
+    const got = await router.handle(
+      owner('GET', '/v1/commitment/strategy/group.organizer', undefined, { kind: 'group.organizer' }),
+    );
+    expect(got.body).toMatchObject({ kind: 'group.organizer', strategy: 'brain' });
+    const model = await router.handle(
+      owner('GET', '/v1/commitment/models/group.organizer', undefined, { kind: 'group.organizer' }),
+    );
+    expect(model.status).toBe(404);
+  });
+
   it('C-06: choosing Brain needs presence and says what Brain and its provider will see', async () => {
     const put = (body: Record<string, unknown>) =>
       router.handle(
@@ -322,8 +338,13 @@ describe('the value model’s Core form', () => {
     expect((on.body as { disclosure: string }).disclosure).toMatch(
       /never see your walk-away point/,
     );
+    // §15 step 10: with values on, the text admits what offers can give away.
+    expect((on.body as { disclosure: string }).disclosure).toMatch(
+      /let the other side guess what a part is worth to you/,
+    );
     const off = await put({ strategy: 'brain', values_on: false });
     expect((off.body as { disclosure: string }).disclosure).toMatch(/not what parts are worth/);
+    expect((off.body as { disclosure: string }).disclosure).not.toMatch(/guess/);
     expect((await put({ strategy: 'somebody' })).status).toBe(400);
   });
 

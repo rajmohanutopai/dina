@@ -235,6 +235,13 @@ const IDENTITY_TABLES = [
   'commitment_evidence',
   'commitment_evidence_asks',
   'commitment_evidence_consent',
+  // §15 step 11: Brain's questions to the owner and its turns (so a restore
+  // never asks again what was answered), and the standing choices it set.
+  'commitment_strategy_questions',
+  'commitment_strategy_turns',
+  'commitment_standing_choices',
+  // §15 step 12: an approved exit is sent after a move as before it.
+  'commitment_exit_asks',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */

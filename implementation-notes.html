@@ -553,15 +553,110 @@
             long ago their day was. Last rounds: after a restore the other side's newer words are kept but
             count as no until a reply echoes the challenge, and the newest word stands; an ask is listed before
             its card is made and dropped only once its answer is kept and its card closed.</li>
-          <li><b>What remains after step 8 (all recorded, none started):</b> publishing the promise summary to
-            PeerLens (a new record kind and AppView ingestion; owner decision); a buyer-named second-choice
-            version (§6 step 5, optional); past deals for goods kinds in Brain's view; device runs on the phone;
-            step 9 (bundles, conditions, loops, standing deals).</li>
+          <li><b>Where the agent decides alone (owner decision 2026-10-17, §10 of the note):</b> the agent acts
+            alone among outcomes the owner already accepted; Core or a card decides wherever a move binds, reveals a
+            private figure, cannot be undone, or goes past what the owner said yes to. An inventory of every decision
+            point found five places looser than the rule (all on the goods runner's lane, plus the Brain disclosure
+            text) and seven stricter. Steps 10 to 12 added to §15: close the looser places; lift six stricter ones
+            (goods counters and the saving share by Brain, the shipper's fee, the store's opening offer, the group
+            slot, Brain asking the owner); an exit right when a partner's run fails.</li>
+          <li><b>Step 10 closed (2026-10-17), both reviewers passing the same version after three rounds: the runner's binding terms are checked</b> (<code>commerce/runner_bounds.ts</code>).
+            Floors are what the owner approved, never the runner's first price: an item's own policy floors stand as
+            set (a lower published price does not lower them); else the published catalogue price less the policy's
+            discount; else, with no policy, the catalogue price itself. A price published in another currency or for
+            another sell unit approves nothing. A floor naming its unit (new optional <code>unitCode</code> on a
+            policy item, checked against the unit list when written) never holds for another; without a published
+            price, an item's own floors hold only in the trading currency and need that unit. Stored settings that
+            do not validate approve nothing (never read as "no policy"). Lines
+            are compared only when priced per one unit of their own quantity. A first quote below the automatic
+            floor, or for an item the owner never priced, is withheld (silence, audited); a replacement quote with
+            an order decision below it is refused (<code>counter_out_of_bounds</code>) and the order stays undecided;
+            a held price lowers a replacement's floor only for the same product, currency and unit. No version's
+            total may fall below the goods at their floors: a discount charge is a price (delivery may pay for one),
+            and Core's own cheaper days and partner runs that would go under are dropped. Every version passes the
+            seller's never-rules; a day that cannot be read matches a rule on the day; a closed persona, or rules
+            that fail to load, withhold the quote (changed from step 6, where the quote went out without cheaper
+            days). Counters: no first-price measure at all; a line with no approved price holds the counter; a
+            revision whose total would fall under the floors, or whose day the never-rules refuse, or while the
+            rules cannot be read, holds; its own alternatives under the floors or ruled out are dropped. Credit
+            days and quote validity stay the runner's (no owner setting). Test fixtures publish a catalogue
+            (<code>withPublishedCatalogue</code>, <code>transformWithPublishedPrices</code> in the commerce test
+            helpers).</li>
+          <li><b>Step 11 closed (2026-10-17), both reviewers passing the same version after four rounds: the agent decides where the rule allows.</b> Identity migration 80
+            (<code>commitment_strategy_questions</code>, <code>commitment_strategy_turns</code>,
+            <code>commitment_standing_choices</code>, all in the archive). One commit door routes moves by kind
+            (<code>commitment/strategy_commit.ts</code>, wired on both hosts).
+            <ul>
+              <li><b>Opening shelf offer:</b> turn 0 on the store's side; the brief holds the request's period, no
+                asking terms; Brain's terms go through <code>firstWithinLimits</code> and the envelope; a request
+                due within the 20-minute wait, a stop, a spent budget or no answer opens in the fixed style.</li>
+              <li><b>Owner questions:</b> <code>ask_owner</code> is a move (schema, Brain prompt, output guard
+                scrubs it); the turn waits on a <code>term_strategy_question</code> card (reserved for the owner,
+                shown on the phone), excluded from the stale sweep; yes or no is asked again with
+                <code>ownerAnswers</code> in the brief; a lapse plays the fixed style; at most two a deal; shelf
+                kinds only.</li>
+              <li><b>Shipper's fee:</b> the shipper asks Brain once a run is otherwise possible and sends nothing
+                meanwhile; Brain's fee is held between the automatic limit and the asking fee, the never-rules
+                judged on it; the answer goes out at once on Brain's move, else the asking fee on the seller's
+                resend after 50 minutes.</li>
+              <li><b>Group slot:</b> new strategy kind <code>group.organizer</code> (no value model); a read that
+                finds a fold with agreed slots asks Brain once per round; Brain's index must be in the agreed list
+                and goes through <code>choose</code>; otherwise the owner picks.</li>
+              <li><b>Goods counters:</b> each round waits up to 15 seconds for Brain's target (none with under 25
+                seconds left); Core holds it between the owner's target and the ceiling and under the quote.</li>
+              <li><b>Saving share:</b> Brain sets a standing share in hundredths of a percent of the saving (basis points,
+                0 to 10,000; <code>PUT /v1/commitment/brain/goods.seller/saving-share</code>, tool
+                <code>set_saving_share</code>), a verdict each, honoured only while the owner keeps Brain; the
+                owner's word nearest to it is what a never-rule on the share reads; floors still apply.</li>
+            </ul>
+            Round 1 review fixes: a move while a question card waits changes nothing, and a move from a brief
+            before the owner's latest answer is stale; a question card lapses at least 30 minutes before the deal's
+            deadline (or is not put), so the fixed style still plays; a goods target over the ceiling sends the
+            owner's target, never the ceiling; the shipper asks Brain only after the day's rules, room and hold
+            pass and only while the hold would still fit after the wait, with turns keyed by seller and request;
+            the shipper and group commits finish their work before reporting done, and a group pick is read
+            against the slots Brain was shown and settles its turn only after the slot is chosen; the standing
+            share's change cap renews monthly, and the owner's own word on the share replaces Brain's. Later rounds:
+            a group pick's verdict is charged, with its mark on the turn, in one transaction before the slot is
+            chosen; the shipper waits for Brain only when the hold fits past the seller's next hourly resend; a
+            fee never-rule on Brain's fee sends the asking fee; a brand question also lapses before the store's
+            offer expires.
+            No phone screen sets a strategy yet (the route only).</li>
+          <li><b>Step 12 closed (2026-10-17), both reviewers passing the same version after three rounds: the exit right when a partner's run fails.</b> Owner decision 2026-10-17:
+            the buyer asks, the seller grants. Commerce protocol minor 1.5 (additive):
+            <code>QuoteRequest.exit_if_run_fails</code> (only with <code>onward_sharing</code>) and
+            <code>QuoteAlternative.exit_if_run_fails</code> (only with <code>partner_run</code>, inside the version's
+            terms digest; <code>termsDigestInput</code> carries the key only when true). Buyer setting
+            <code>askExitIfRunFails</code> and supplier setting <code>grantExitIfRunFails</code>, both on when absent.
+            A request with the grant asks at 1.5; others stay at 1.4. The seller's revision puts the right on its
+            partner runs when the retained request asked and it grants. The fallback notice carries
+            <code>exit: true</code> for an order that holds it; the buyer, by its own copy of the quote, raises an
+            <code>option_exit</code> card (a person present) instead of the plain notice; a yes sends an
+            <code>exit</code> message (the cancellation request) in the option family; the seller's Core cancels
+            through the lifecycle with the runner not asked, only for an order that holds the right and whose
+            fallback it recorded. D2D: the exit passes the contact gate only to the supplier whose fallback notice
+            the buyer kept, and is admitted on receipt like the fallback notice. The buyer learns the outcome by
+            the order's status, as for any cancellation (no buyer-side cancellation applier exists). Round 1 fixes:
+            an approved exit is kept (<code>commitment_exit_asks</code>, migration 80, in the archive) before the
+            card closes, sent at once and again on each tick until the transport takes it, never twice at once; an
+            approval a crash kept from applying is finished by the tick. The right is shown where it binds: the
+            buyer's ranking (<code>partner_run.exit_if_run_fails</code>, on the phone's tender row) and order
+            approval terms (<code>PartnerRunTerms.exitIfRunFails</code>), and the seller's clearance card when the
+            buyer asked and the seller grants. Round 2: queued or running exit cards a crash left are finished
+            without replacing the kept cancellation; real-runtime tests drive the seller's cancellation (cancelled,
+            dispatched stands, no right refused).</li>
+          <li><b>What remains (all recorded, none started):</b> publishing the promise summary to
+            PeerLens (a new record kind and AppView ingestion; owner decision); past deals for goods kinds in
+            Brain's view; device runs on the phone; step 9 (bundles, conditions, loops, standing deals); a phone
+            screen for choosing who bargains per kind (the strategy setting is a route only); for the exit right,
+            what the buyer gives for it, Brain deciding either side, and a buyer-side applier for the
+            cancellation result; Brain asking the owner on goods, shipping and group turns (shelf only today);
+            owner limits on a runner's credit days and quote validity. The buyer-named second choice is dropped:
+            it is an exit right (step 12) plus an ordinary new deal.</li>
           <li><b>Step 4 owed item closed:</b> E-05 in <code>term_strategy_budget.test.ts</code> counts what Brain could
             observe — cards raised and agreements formed — under real per-counterparty probing budgets, and checks it
             against N + I and the 1.6 × (N + I) bit bound.</li>
-          <li><b>Open question (owner, 2026-10-16):</b> Brain in goods' strategy slot, as shelf has it since step
-            4 — goods today lets its plugin-lane runner propose freely inside the floors.</li>
+
         </ul></li>
     </ul>
 

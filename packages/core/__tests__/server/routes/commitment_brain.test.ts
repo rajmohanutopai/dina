@@ -21,6 +21,7 @@ import { cleanForProvenance } from '../../../src/a2a/provenance_text';
 import { resetSpanProofs } from '../../../src/a2a/span_proof';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import { installValueModelStore, ValueModelStore } from '../../../src/commitment/model_store';
+import { installStandingChoiceStore, StandingChoiceStore } from '../../../src/commitment/standing_choices';
 import { installStrategyStore, StrategyStore } from '../../../src/commitment/strategy_store';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommitmentBrainRoutes } from '../../../src/server/routes/commitment_brain';
@@ -32,6 +33,8 @@ import { setWorkflowService, WorkflowService } from '../../../src/workflow/servi
 
 const SESSION = 'chat:main';
 const KIND = 'shelf_space.vendor';
+
+let clockNow = Date.now();
 
 describe('Brain’s door to the value model', () => {
   let dir: string;
@@ -68,7 +71,7 @@ describe('Brain’s door to the value model', () => {
     repo = new InMemoryWorkflowRepository();
     setWorkflowService(new WorkflowService({ repository: repo }));
     router = new CoreRouter();
-    registerCommitmentBrainRoutes(router);
+    registerCommitmentBrainRoutes(router, { nowMs: () => clockNow });
     registerWorkflowRoutes(router);
   });
   afterEach(() => {
@@ -81,7 +84,7 @@ describe('Brain’s door to the value model', () => {
   });
 
   const call = async (
-    method: 'GET' | 'POST',
+    method: 'GET' | 'POST' | 'PUT',
     p: string,
     body: unknown,
     callerType: string | undefined = 'brain',
@@ -235,7 +238,7 @@ describe('Brain’s door to the value model', () => {
     const id = String(made.body.task_id);
     const asBrain = await call('GET', `/v1/workflow/tasks/${id}`, undefined, 'brain');
     expect(asBrain.status).toBe(200);
-    expect(JSON.stringify(asBrain.body)).not.toMatch(/300|stock_run|lorry/);
+    expect(JSON.stringify(asBrain.body)).not.toMatch(/\b300\b|stock_run|lorry/);
     expect(JSON.stringify(asBrain.body)).toContain('owner_only');
   });
 
@@ -318,5 +321,38 @@ describe('Brain’s door to the value model', () => {
       installCommerceRuntime(null);
     }
   });
-});
 
+  it('R-08: the standing share of a saving is Brain’s to set only while the owner keeps Brain (§15 step 11)', async () => {
+    const choices = new StandingChoiceStore(db);
+    installStandingChoiceStore(choices);
+    try {
+      const put = (bps: unknown, callerType?: string) =>
+        call('PUT', '/v1/commitment/brain/goods.seller/saving-share', { share_bps: bps }, callerType);
+      // Not Brain's while the owner bargains in the fixed style.
+      expect((await put(2_500)).status).toBe(409);
+      strategy.setSettings('goods.seller', { strategy: 'brain', valuesOn: true }, Date.now());
+      expect((await put(2_500, 'device')).status).toBe(403);
+      expect((await put(10_001)).status).toBe(400);
+      expect((await put(2.5)).status).toBe(400);
+      expect(
+        (await call('PUT', '/v1/commitment/brain/goods.buyer/saving-share', { share_bps: 1 }, 'brain')).status,
+      ).toBe(404);
+      const ok = await put(2_500);
+      expect(ok).toEqual({ status: 200, body: { ok: true, share_bps: 2_500 } });
+      expect(choices.get('goods.seller', 'saving_share_bps')).toMatchObject({ value: '2500', setBy: 'brain' });
+      // Brain sees what it set, in its own view.
+      const view = await call('GET', '/v1/commitment/brain/goods.seller', undefined);
+      expect(view.body.standing).toEqual({ saving_share_bps: 2_500 });
+      // Each change spends a verdict: once the budget is gone, no more.
+      let last = ok.status;
+      for (let i = 0; i < 20 && last === 200; i += 1) last = (await put(3_000 + i)).status;
+      expect(last).toBe(429);
+      // A month on, the cap on changes has renewed.
+      clockNow += 31 * 24 * 60 * 60 * 1000;
+      expect((await put(4_000)).status).toBe(200);
+      clockNow = Date.now();
+    } finally {
+      installStandingChoiceStore(null);
+    }
+  });
+});

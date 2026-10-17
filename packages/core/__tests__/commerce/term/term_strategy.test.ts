@@ -32,6 +32,27 @@
  *         Brain;
  *   G-17  the owner back on the fixed style: Brain's late question to the brand
  *         does not go out.
+ *
+ * §15 step 11 — Brain makes the store's opening offer:
+ *   G-18  the request waits for Brain; the brief holds no asking terms or
+ *         limits; Brain's proposal is the first offer;
+ *   G-19  an opening below the automatic limit is raised to it, with no card;
+ *   G-20  no answer in time, a stop, or a spent budget: the fixed style opens;
+ *   G-21  a request that must be answered before Brain's wait is over gets
+ *         the fixed opening at once; a replayed move changes nothing.
+ *
+ * §15 step 11 — Brain asks the owner a yes-or-no question:
+ *   G-22  the brand's turn waits on the card (nothing sent, no budget, not
+ *         taken by the stale sweep); a yes sends the turn back to Brain with
+ *         the answer in its brief, and its proposal is the counter;
+ *   G-23  the store's turn: a no goes back to Brain the same way;
+ *   G-24  a card left to lapse lets the fixed style play the turn;
+ *   G-25  a deal asks at most two questions; an empty one is no question;
+ *         the card shows one bounded line.
+ *   G-26  a replayed move while the card waits changes nothing; once the
+ *         owner answered, a move from the brief before the answer is stale;
+ *   G-27  a deal due within a day: the card lapses early enough for the
+ *         fixed style to play before the deadline; too near, no question.
  */
 
 import {
@@ -43,6 +64,8 @@ import {
 
 import { STRATEGY_WAIT_MS, TERM_STRATEGY_CARD } from '../../../src/commerce/term/term_buyer';
 import { hash } from '../../../src/commerce/term/term_context';
+import { FIRST_OFFER_TURN } from '../../../src/commerce/term/term_seller';
+import { TERM_STRATEGY_QUESTION_CARD } from '../../../src/commerce/term/term_questions';
 import { SHELF_VENDOR_KIND } from '../../../src/commerce/term/term_model';
 import { carriesWithheld, type StrategyMove } from '../../../src/commitment';
 import { assemble, type ValueEntry } from '../../../src/commitment/model_store';
@@ -97,7 +120,10 @@ function withStrategy(node: Node, rig: Rig, entries: ValueEntry[] = []): void {
   };
 }
 
-function setUp(fleet: Fleet): { store: Node; brand: Node; requestId: string } {
+function setUp(
+  fleet: Fleet,
+  deadlineSeconds = 3 * 24 * 60 * 60,
+): { store: Node; brand: Node; requestId: string } {
   const store = fleet.add(STORE_DID);
   expect(store.engine.setPolicy(juicePolicy()).ok).toBe(true);
   const listing = publishListing(store, {
@@ -125,7 +151,7 @@ function setUp(fleet: Fleet): { store: Node; brand: Node; requestId: string } {
           targets: { fee: '170000', share_bps: '600' },
           ceilings: { fee: '300000', share_bps: '1000' },
           max_rounds: 3,
-          deadline_seconds: 3 * 24 * 60 * 60,
+          deadline_seconds: deadlineSeconds,
         },
       });
       if (!started.ok) throw new Error(started.refusal);
@@ -139,6 +165,19 @@ function counters(brand: Node, requestId: string): TermCounter[] {
     .listByRequest(requestId, 'term_counter')
     .map((r) => JSON.parse(r.recordJson) as TermCounter)
     .sort((a, b) => a.round - b.round);
+}
+
+/**
+ * COMMITMENT_KERNEL §15 step 11: with Brain chosen, the store's opening offer
+ * is Brain's turn. Tests about the rounds after it let the fixed style open,
+ * and drop that turn's brief.
+ */
+function openFixed(fleet: Fleet, store: Node, requestId: string, r: Rig): void {
+  fleet.pump();
+  if (store.store.getTurn(requestId, FIRST_OFFER_TURN)?.state !== 'pending') return;
+  store.engine.applyStrategyMove({ requestId, turn: FIRST_OFFER_TURN, move: { kind: 'stop' } });
+  r.briefs.splice(0, 1);
+  fleet.pump();
 }
 
 const propose = (fee: bigint): StrategyMove => ({
@@ -307,7 +346,7 @@ describe('the strategy slot on the brand’s side', () => {
     const r = rig();
     const { store, requestId } = setUp(fleet);
     withStrategy(store, r);
-    fleet.pump();
+    openFixed(fleet, store, requestId, r);
     expect(offersOf(store, requestId)).toEqual([250_000n]);
     const brief = must(r.briefs[0]);
     expect(brief.side).toBe('seller');
@@ -322,7 +361,7 @@ describe('the strategy slot on the brand’s side', () => {
     const r = rig();
     const { store, requestId } = setUp(fleet);
     withStrategy(store, r);
-    fleet.pump();
+    openFixed(fleet, store, requestId, r);
     store.engine.applyStrategyMove({ requestId, turn: 1, move: propose(160_000n) });
     expect(offersOf(store, requestId)).toEqual([250_000n, 180_000n]);
     expect(store.cards.some((c) => c.type === 'term_floor_approval')).toBe(true);
@@ -332,7 +371,7 @@ describe('the strategy slot on the brand’s side', () => {
     const r = rig();
     const { store, requestId } = setUp(fleet);
     withStrategy(store, r);
-    fleet.pump();
+    openFixed(fleet, store, requestId, r);
     fleet.advance(STRATEGY_WAIT_MS + 1);
     store.engine.sweep();
     const offers = offersOf(store, requestId);
@@ -422,7 +461,7 @@ describe('the strategy slot on the brand’s side', () => {
     const { store, brand, requestId } = setUp(fleet);
     withStrategy(brand, brandRig);
     withStrategy(store, storeRig);
-    fleet.pump();
+    openFixed(fleet, store, requestId, storeRig);
     expect(
       brand.engine.applyStrategyMove({
         requestId,
@@ -461,7 +500,7 @@ describe('the strategy slot on the brand’s side', () => {
     const storeRig = rig();
     const { store, brand, requestId } = setUp(fleet);
     withStrategy(store, storeRig);
-    fleet.pump();
+    openFixed(fleet, store, requestId, storeRig);
     expect(
       store.engine.applyStrategyMove({
         requestId,
@@ -561,7 +600,7 @@ describe('the strategy slot on the brand’s side', () => {
     const r = rig();
     const { store, requestId } = setUp(fleet);
     withStrategy(store, r);
-    fleet.pump();
+    openFixed(fleet, store, requestId, r);
     r.settings = { strategy: 'fixed', valuesOn: true };
     expect(
       store.engine.applyStrategyMove({
@@ -575,5 +614,297 @@ describe('the strategy slot on the brand’s side', () => {
       .map((row) => JSON.parse(row.recordJson) as TermOffer);
     expect(offers.length).toBe(2);
     expect(offers.every((o) => o.message === undefined)).toBe(true);
+  });
+});
+
+describe('the store’s opening offer (§15 step 11)', () => {
+  let fleet: Fleet;
+  beforeEach(() => {
+    fleet = new Fleet();
+  });
+  afterEach(() => fleet.closeAll());
+
+  const rig = (over: Partial<Rig> = {}): Rig => ({
+    briefs: [],
+    budget: { left: 10 },
+    settings: { strategy: 'brain', valuesOn: true },
+    ...over,
+  });
+  const openings = (store: Node, requestId: string): bigint[] =>
+    store.store
+      .listByRequest(requestId, 'term_offer')
+      .map((row) => JSON.parse(row.recordJson) as TermOffer)
+      .filter((o) => o.revision === 1)
+      .map((o) => termValues(o.terms).fee);
+
+  it('G-18: the request waits for Brain, whose brief holds no asking terms; its proposal opens', () => {
+    const r = rig();
+    const { store, requestId } = setUp(fleet);
+    withStrategy(store, r);
+    fleet.pump();
+    expect(openings(store, requestId)).toEqual([]);
+    const brief = must(r.briefs[0]);
+    expect(brief.ref).toEqual({ negotiationId: requestId, turn: FIRST_OFFER_TURN });
+    expect(brief.side).toBe('seller');
+    // The asking terms and the floors stay in Core.
+    expect(JSON.stringify(brief)).not.toMatch(/250000|150000|180000|asking/);
+    expect(carriesWithheld(brief)).toBe(false);
+    expect(
+      store.engine.applyStrategyMove({ requestId, turn: FIRST_OFFER_TURN, move: propose(260_000n) }),
+    ).toEqual({ outcome: 'answered' });
+    expect(openings(store, requestId)).toEqual([260_000n]);
+    expect(r.budget.left).toBe(9);
+    // A replayed move changes nothing.
+    expect(
+      store.engine.applyStrategyMove({ requestId, turn: FIRST_OFFER_TURN, move: propose(200_000n) }),
+    ).toEqual({ outcome: 'already_applied' });
+    expect(openings(store, requestId)).toEqual([260_000n]);
+  });
+
+  it('G-19: an opening below the automatic limit is raised to it, with no card', () => {
+    const r = rig();
+    const { store, requestId } = setUp(fleet);
+    withStrategy(store, r);
+    fleet.pump();
+    store.engine.applyStrategyMove({ requestId, turn: FIRST_OFFER_TURN, move: propose(100_000n) });
+    expect(openings(store, requestId)).toEqual([180_000n]);
+    expect(store.cards.some((c) => c.type === 'term_floor_approval')).toBe(false);
+  });
+
+  it('G-20: no answer in time, a stop, or a spent budget: the fixed style opens', () => {
+    const late = rig();
+    const first = setUp(fleet);
+    withStrategy(first.store, late);
+    fleet.pump();
+    fleet.advance(STRATEGY_WAIT_MS + 1);
+    first.store.engine.sweep();
+    expect(openings(first.store, first.requestId)).toEqual([250_000n]);
+
+    const g = new Fleet();
+    try {
+      const stopped = rig();
+      const second = setUp(g);
+      withStrategy(second.store, stopped);
+      g.pump();
+      expect(
+        second.store.engine.applyStrategyMove({
+          requestId: second.requestId,
+          turn: FIRST_OFFER_TURN,
+          move: { kind: 'stop' },
+        }),
+      ).toEqual({ outcome: 'fixed_style' });
+      expect(openings(second.store, second.requestId)).toEqual([250_000n]);
+      expect(stopped.budget.left).toBe(10);
+    } finally {
+      g.closeAll();
+    }
+
+    const h = new Fleet();
+    try {
+      const spent = rig({ budget: { left: 0, spent: 'owner' } });
+      const third = setUp(h);
+      withStrategy(third.store, spent);
+      h.pump();
+      expect(spent.briefs.filter((b) => b.ref.turn === FIRST_OFFER_TURN)).toEqual([]);
+      expect(openings(third.store, third.requestId)).toEqual([250_000n]);
+      expect(third.store.cards.some((c) => c.type === TERM_STRATEGY_CARD)).toBe(true);
+    } finally {
+      h.closeAll();
+    }
+  });
+
+  it('G-21: a request due before Brain’s wait is over opens in the fixed style at once', () => {
+    const r = rig();
+    const { store, requestId } = setUp(fleet, 10 * 60);
+    withStrategy(store, r);
+    fleet.pump();
+    expect(r.briefs.filter((b) => b.ref.turn === FIRST_OFFER_TURN)).toEqual([]);
+    expect(openings(store, requestId)).toEqual([250_000n]);
+  });
+});
+
+describe('Brain asks the owner (§15 step 11)', () => {
+  let fleet: Fleet;
+  beforeEach(() => {
+    fleet = new Fleet();
+  });
+  afterEach(() => fleet.closeAll());
+
+  const rig = (over: Partial<Rig> = {}): Rig => ({
+    briefs: [],
+    budget: { left: 10 },
+    settings: { strategy: 'brain', valuesOn: true },
+    ...over,
+  });
+  const ask = (question: string): StrategyMove => ({ kind: 'ask_owner', question });
+  const questionCards = (node: Node) => node.cards.filter((c) => c.type === TERM_STRATEGY_QUESTION_CARD);
+
+  it('G-22: the brand’s turn waits on the card; a yes goes back to Brain, whose proposal is the counter', () => {
+    const r = rig();
+    const { brand, requestId } = setUp(fleet);
+    withStrategy(brand, r);
+    fleet.pump();
+    expect(
+      brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('May I offer ₹2,000 rent?') }),
+    ).toEqual({ outcome: 'asked_owner' });
+    const card = must(questionCards(brand)[0]);
+    expect(card.description).toBe('Brain asks: May I offer ₹2,000 rent?');
+    expect(card.payload).toMatchObject({ question: 'May I offer ₹2,000 rent?', request_id: requestId });
+    expect(r.budget.left).toBe(10);
+    // Waiting on the owner is not "no answer in time".
+    fleet.advance(STRATEGY_WAIT_MS + 1);
+    brand.engine.sweep();
+    expect(counters(brand, requestId)).toEqual([]);
+    expect(brand.engine.decideCard(card.cardId, true)).toEqual({ ok: true });
+    const again = must(r.briefs.at(-1));
+    expect(again.ref).toEqual({ negotiationId: requestId, turn: 1 });
+    expect(again.ownerAnswers).toEqual([{ question: 'May I offer ₹2,000 rent?', answer: 'yes' }]);
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n) })).toEqual({
+      outcome: 'sent',
+    });
+    expect(counters(brand, requestId).map((c) => c.targets.fee)).toEqual(['200000']);
+    // A second answer to the same card changes nothing.
+    expect(brand.engine.decideCard(card.cardId, false)).toEqual({ ok: false, refusal: 'already_decided' });
+  });
+
+  it('G-23: the store’s turn: a no goes back to Brain the same way', () => {
+    const r = rig();
+    const { store, requestId } = setUp(fleet);
+    withStrategy(store, r);
+    openFixed(fleet, store, requestId, r);
+    expect(
+      store.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Hold the rent this round?') }),
+    ).toEqual({ outcome: 'asked_owner' });
+    const card = must(questionCards(store)[0]);
+    expect(store.engine.decideCard(card.cardId, false)).toEqual({ ok: true });
+    expect(must(r.briefs.at(-1)).ownerAnswers).toEqual([
+      { question: 'Hold the rent this round?', answer: 'no' },
+    ]);
+    expect(store.engine.applyStrategyMove({ requestId, turn: 1, move: propose(220_000n) })).toEqual({
+      outcome: 'answered',
+    });
+  });
+
+  it('G-24: a card left to lapse lets the fixed style play the turn', () => {
+    const r = rig();
+    const { brand, requestId } = setUp(fleet);
+    withStrategy(brand, r);
+    fleet.pump();
+    brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go higher?') });
+    const card = must(questionCards(brand)[0]);
+    brand.engine.lapseCard(card.cardId);
+    brand.engine.sweep();
+    expect(counters(brand, requestId).map((c) => c.targets.fee)).toEqual(['170000']);
+    expect(brand.store.getTurn(requestId, 1)?.state).toBe('fallen_back');
+  });
+
+  it('G-25: at most two questions a deal; an empty one is none; the card shows one bounded line', () => {
+    const r = rig();
+    const { brand, requestId } = setUp(fleet);
+    withStrategy(brand, r);
+    fleet.pump();
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('  \n ') })).toEqual({
+      outcome: 'fixed_style',
+    });
+    brand.engine.sweep();
+    fleet.pump();
+    const turn = counters(brand, requestId).length + 1;
+    const long = `First line\nsecond ${'x'.repeat(400)}`;
+    expect(brand.engine.applyStrategyMove({ requestId, turn, move: ask(long) })).toEqual({
+      outcome: 'asked_owner',
+    });
+    const first = must(questionCards(brand)[0]);
+    expect(first.description).not.toContain('\n');
+    expect(first.description.length).toBeLessThanOrEqual('Brain asks: '.length + 280);
+    brand.engine.decideCard(first.cardId, true);
+    expect(brand.engine.applyStrategyMove({ requestId, turn, move: ask('Second?') })).toEqual({
+      outcome: 'asked_owner',
+    });
+    brand.engine.decideCard(must(questionCards(brand)[1]).cardId, true);
+    // The third is not put to the owner: the fixed style plays.
+    expect(brand.engine.applyStrategyMove({ requestId, turn, move: ask('Third?') })).toEqual({
+      outcome: 'fixed_style',
+    });
+    expect(questionCards(brand)).toHaveLength(2);
+  });
+
+  it('G-26: a replay while the card waits changes nothing; a move from before the answer is stale', () => {
+    const r = rig();
+    const { brand, requestId } = setUp(fleet);
+    withStrategy(brand, r);
+    fleet.pump();
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go to ₹2,000?') })).toEqual({
+      outcome: 'asked_owner',
+    });
+    // The same commit again, or any other move, while the card waits.
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go to ₹2,000?') })).toEqual({
+      outcome: 'waiting_owner',
+    });
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n) })).toEqual({
+      outcome: 'waiting_owner',
+    });
+    expect(counters(brand, requestId)).toEqual([]);
+    brand.engine.decideCard(must(questionCards(brand)[0]).cardId, true);
+    // The first task's move, from a brief with no answers, is stale now.
+    expect(
+      brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n), answersSeen: 0 }),
+    ).toEqual({ outcome: 'stale_move' });
+    expect(counters(brand, requestId)).toEqual([]);
+    expect(
+      brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n), answersSeen: 1 }),
+    ).toEqual({ outcome: 'sent' });
+  });
+
+  it('G-27: a deal due within a day: the card lapses in time for the fixed style; too near, no question', () => {
+    const r = rig();
+    // Two hours to go.
+    const { brand, requestId } = setUp(fleet, 2 * 60 * 60);
+    withStrategy(brand, r);
+    fleet.pump();
+    brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go higher?') });
+    const card = must(questionCards(brand)[0]);
+    const deadline = must(brand.store.getNegotiation(requestId)).deadlineAt;
+    expect(card.expiresAtMs).toBeLessThanOrEqual(deadline - 30 * 60 * 1000);
+    // Nobody answers: at the card's own lapse the sweep plays the fixed counter.
+    fleet.advance(card.expiresAtMs - fleet.nowMs + 1);
+    brand.engine.sweep();
+    brand.engine.sweep();
+    expect(counters(brand, requestId).map((c) => c.targets.fee)).toEqual(['170000']);
+    // A long negotiation whose store offer expires first: the card lapses before the offer does.
+    const h2 = new Fleet();
+    try {
+      const longRig = rig();
+      const third = setUp(h2, 7 * 24 * 60 * 60);
+      withStrategy(third.brand, longRig);
+      h2.pump();
+      const head = must(
+        third.brand.store
+          .listByRequest(third.requestId, 'term_offer')
+          .map((row) => JSON.parse(row.recordJson) as TermOffer)
+          .at(-1),
+      );
+      // Five hours before the offer expires (days before the negotiation ends).
+      h2.advance(Date.parse(head.valid_until) - 5 * 60 * 60 * 1000 - h2.nowMs);
+      expect(
+        third.brand.engine.applyStrategyMove({ requestId: third.requestId, turn: 1, move: ask('Go higher?') }),
+      ).toEqual({ outcome: 'asked_owner' });
+      const lapse = must(questionCards(third.brand)[0]).expiresAtMs;
+      expect(lapse).toBe(Date.parse(head.valid_until) - 30 * 60 * 1000);
+    } finally {
+      h2.closeAll();
+    }
+    // Thirty-four minutes to go: too near to ask.
+    const g = new Fleet();
+    try {
+      const near = rig();
+      const second = setUp(g, 34 * 60);
+      withStrategy(second.brand, near);
+      g.pump();
+      expect(
+        second.brand.engine.applyStrategyMove({ requestId: second.requestId, turn: 1, move: ask('Go higher?') }),
+      ).toEqual({ outcome: 'fixed_style' });
+    } finally {
+      g.closeAll();
+    }
   });
 });

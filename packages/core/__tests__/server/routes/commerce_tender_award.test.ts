@@ -318,6 +318,65 @@ describe("the owner's values choose among versions (COMMITMENT_KERNEL §7, §15 
     expect(await order(tenderId)).toEqual(['B', 'A']);
   });
 
+  it('§15 step 12: a partner-run version that holds the exit right says so in the ranking; one without does not', async () => {
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    for (const wire of sent.filter((w) => w.body.capability === 'com.dinakernel.commerce.request_quote')) {
+      const request = wire.body.params as QuoteRequest;
+      const product = request.lines[0]?.product;
+      if (product === undefined) throw new Error('request has no line');
+      const line = {
+        line_id: 'l1',
+        requested_product: product,
+        offered_product: product,
+        quantity: { value: '100', unit_code: 'each' },
+        price_basis: { value: '1', unit_code: 'each' },
+        unit_price: { currency: 'INR', minor_units: '500' },
+        line_subtotal: { currency: 'INR', minor_units: '50000' },
+        stock_status: 'available' as const,
+      };
+      const withRight = wire.toDid === SUPPLIER_A;
+      const base = makeSignedQuote(request, {
+        quote_id: `q-${wire.toDid.slice(-4)}`,
+        valid_until: '2036-01-01T00:00:00.000Z',
+        lines: [line],
+        total: { currency: 'INR', minor_units: '50000' },
+        protocol_version: '1.5',
+      });
+      const alternatives =
+        priceQuoteAlternatives(base, [
+          {
+            alternative_id: 'partner_0a1b2c3d',
+            charges: [
+              { kind: 'discount', label: 'Delivery by a partner run', amount: { currency: 'INR', minor_units: '1000' }, operation: 'subtract' },
+            ],
+            estimated_delivery_at: '2035-08-18T09:00:00Z',
+            partner_run: true,
+            offer_ends_at: '2035-12-01T00:00:00.000Z',
+            ...(withRight ? { exit_if_run_fails: true as const } : {}),
+          },
+        ]) ?? [];
+      const quote = makeSignedQuote(request, {
+        quote_id: base.quote_id,
+        valid_until: base.valid_until,
+        lines: base.lines,
+        total: base.total,
+        protocol_version: '1.5',
+        alternatives,
+      });
+      runtime.buyerQuotes.append({ supplierDid: wire.toDid, quoteId: quote.quote_id, quote, acceptedAt: Date.now() });
+      runtime.tenders.setMemberQuote(request.request_id, quote.quote_id);
+    }
+    const res = await router.handle(call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }));
+    const runs = (res.body as { ranked: { supplier_did: string; partner_run?: { exit_if_run_fails?: true } }[] }).ranked
+      .filter((r) => r.partner_run !== undefined)
+      .map((r) => [r.supplier_did === SUPPLIER_A ? 'A' : 'B', r.partner_run?.exit_if_run_fails ?? false]);
+    expect(runs.sort()).toEqual([
+      ['A', true],
+      ['B', false],
+    ]);
+  });
+
   it('a rule kept in a closed persona: the ranking says so, and the award waits until it is open', async () => {
     const opened = await openTender();
     const tenderId = String(opened.body.tender_id);

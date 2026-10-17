@@ -5,6 +5,8 @@
  *         from the model's JSON; values stay strings for Core to parse;
  *   B-02  an answer with no move fails the job (the fixed style plays);
  *   B-03  the output guard keeps the move and screens only the owner's note.
+ *   B-04  §15 step 11: a yes-or-no question for the owner is a move; an empty
+ *         one fails the job; the guard screens the question as it does the note.
  */
 
 import { createInternalBrainExecutor } from '../../src/reasoning/internal_brain_executor';
@@ -103,5 +105,28 @@ describe('negotiate.move in the built-in Brain', () => {
         evidenceIds: [],
       } as never),
     ).toMatchObject({ ok: false });
+  });
+
+  it('B-04: a question for the owner is a move, screened like the note', async () => {
+    const execute = createInternalBrainExecutor({
+      provider: 'test',
+      llm: async () => '{"move":{"kind":"ask_owner","question":"  May I go to ₹2,100?  "}}',
+    });
+    expect((await execute(claim(), undefined as never)).result).toEqual({
+      move: { kind: 'ask_owner', question: 'May I go to ₹2,100?' },
+    });
+    const empty = createInternalBrainExecutor({
+      provider: 'test',
+      llm: async () => '{"move":{"kind":"ask_owner","question":"  "}}',
+    });
+    await expect(empty(claim(), undefined as never)).rejects.toThrow();
+    const guard = createReasoningOutputGuard();
+    const out = await guard({
+      taskKind: 'negotiate.move',
+      input: BRIEF,
+      result: { move: { kind: 'ask_owner', question: 'May I go to ₹2,100?' } },
+      evidenceIds: [],
+    } as never);
+    expect(out).toMatchObject({ ok: true, result: { move: { kind: 'ask_owner' } } });
   });
 });

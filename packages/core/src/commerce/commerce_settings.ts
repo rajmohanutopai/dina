@@ -71,6 +71,12 @@ export interface BuyerSettings {
    * this buyer's vault; never mixed into signed totals.
    */
   workingCapitalRateBps?: number;
+  /**
+   * COMMITMENT_KERNEL §15 step 12 — ask, in a request that lets the supplier
+   * book a partner's run, for the right to cancel without charge if the run
+   * falls through after binding. Absent means yes.
+   */
+  askExitIfRunFails?: boolean;
 }
 
 export type ListingState = 'live' | 'paused' | 'withdrawn';
@@ -133,6 +139,12 @@ export interface SupplierSettings {
    * drops them before any card exists.
    */
   acceptColdInvites?: boolean;
+  /**
+   * COMMITMENT_KERNEL §15 step 12 — grant a buyer that asks for it the right
+   * to cancel without charge if a partner's run its version rests on falls
+   * through after binding. Absent means yes.
+   */
+  grantExitIfRunFails?: boolean;
   listingState: ListingState;
   /**
    * Connector health and credential STATUS (§18.3). Never the credential.
@@ -400,6 +412,7 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
     { field: 'preferredUnitCodes', kind: 'array' },
     { field: 'workingCapitalRateBps', kind: 'number', optional: true },
     { field: 'divergenceThresholdPct', kind: 'number', optional: true },
+    { field: 'askExitIfRunFails', kind: 'boolean', optional: true },
     // Optional so a record saved before currency existed still reads; when
     // present it must be a string (`null` or a number is refused here).
     { field: 'currency', kind: 'string', optional: true },
@@ -523,6 +536,7 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
     // _PLAN §3.2 B3) would otherwise let a device put one onto the owner's card.
     { field: 'publishIndicativePrice', kind: 'boolean', optional: true },
     { field: 'acceptColdInvites', kind: 'boolean', optional: true },
+    { field: 'grantExitIfRunFails', kind: 'boolean', optional: true },
   ]);
   if (structural.length > 0) return { ok: false, findings: structural };
   const findings: SettingsFinding[] = [];

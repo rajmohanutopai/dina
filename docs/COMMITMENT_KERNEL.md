@@ -758,6 +758,41 @@ after-work is reminders. The Commerce Pack is a plugin because it runs
 the money afterwards (ledger, settlements, statements), not because its
 deals have prices.
 
+### Where the agent decides alone
+
+The agent is often better at judging a deal than any rule written in
+advance, so intelligence is not what draws the line. Four facts draw it,
+and they hold however capable the agent becomes:
+
+1. **The other side writes part of what the agent reads.** Its offers,
+   labels and messages reach the agent, and a clever counterparty can
+   steer it. Core's checks cannot be talked round.
+2. **What the agent sees, its model provider sees.** Core never shows the
+   walk-away point or the limits to anyone.
+3. **Some moves cannot be undone:** a bound deal, money owed, a figure
+   revealed.
+4. **The owner must be able to check it.** "Code refused it" can be
+   tested and audited; "the model judged it fine" cannot.
+
+**The rule.** The agent acts alone wherever it chooses among outcomes the
+owner has already accepted. Core decides, or the owner on a card,
+wherever a move binds, reveals a private figure, cannot be undone, or
+goes past what the owner said yes to.
+
+| The agent decides alone | Core decides, or the owner on a card |
+|---|---|
+| Which offer to make, when to counter, how hard to push | Whether a deal binds past the automatic limit |
+| Which version or partner to prefer, within the owner's values | Never-rules, hard limits, the walk-away point |
+| Which smaller deals to explore with known partners | Clearing a version that rests on a partner's run, unless the kind is firm |
+| Proposing changes to the value model | Making them |
+| Asking the owner a question | Revealing a private figure, or adding a partner |
+
+The rule applies to every agent in a strategy slot, the goods runner
+included: anything a runner sends that binds passes the same checks as
+a counter (§15 step 10). Where the agent is held back further than the
+rule needs, that is a phasing choice to be lifted (§15 step 11), not a
+fixed line.
+
 ## 11. The strategy slot
 
 The next move comes from a strategy: a fixed style chosen by the pack as
@@ -1162,12 +1197,96 @@ values off and finds no withheld number.
    resting on several options, and loops, each with their own binding
    design; standing deals with a running balance; wider automatic
    outbound text.
+10. **Close the places looser than the rule (§10, "Where the agent decides
+    alone").** Goods floors are measured from the owner's catalogue price,
+    or the item's own floors, never from the runner's first price. Every
+    price and charge the goods runner sends that a buyer can take up (a
+    first quote, its alternatives, the replacement quote with an order
+    decision) passes the floor checks a counter passes. A first quote
+    cannot wait on the owner, so one below the automatic floor is
+    withheld; a replacement quote below it is refused and the order stays
+    undecided. An item's own floors stand as set; without a published
+    price they hold only in the trading currency and the unit they name.
+    No version's total falls below the goods at their floors, so a
+    discount written as a charge counts as a price, and Core's own cheaper
+    days and partner runs that would go under are not offered. Every
+    version, its own terms included and each counter revision, passes the
+    seller's never-rules; while a persona holding them is closed, or they
+    cannot be read, nothing is quoted or revised
+    (`commerce/runner_bounds.ts`). With quotes bounded, automatic order
+    acceptance stays. The runner's credit days and how long a quote stays
+    open remain its own: the owner has no setting for them yet. The text
+    shown when the owner turns Brain on says that, with values on, Brain
+    can carry what a part is worth into the terms it offers.
+11. **Let the agent decide where the rule allows (owner decision,
+    2026-10-17).** Each inside Core's checks:
+    - Brain bargains goods counters for the buyer, between the owner's
+      target and budget ceiling, through the strategy slot.
+    - Brain sets the share of a cheaper day's saving passed to the buyer,
+      starting from half (§16, item 7); the owner's chosen share becomes
+      a starting point, not a fixed figure.
+    - Brain picks a shipper's fee for a run, between the automatic limit
+      and the asking fee.
+    - Brain makes the store's opening shelf offer.
+    - Brain picks the slot in a group booking, among slots every required
+      guest accepted; the confirming round still follows.
+    - Brain may ask the owner a question mid-deal, as a card; nothing
+      binds until the owner answers.
+
+    How each one runs, chosen so a slow or absent Brain never stalls a
+    deal (the fixed style plays whenever Brain does not answer in time):
+    - **Goods counters:** a tender's window is short (90 seconds by
+      default), so each round's counter waits at most a few seconds for
+      Brain's target and otherwise goes at the owner's target. Core keeps
+      Brain's target between the owner's target and the budget ceiling,
+      below the quote it answers; the ceiling stays out of the brief.
+    - **The saving share:** quotes are answered at once, so Brain cannot
+      choose per quote. Brain sets a standing share, in hundredths of a
+      percent of the saving (basis points, 0 to 10,000), which Core uses for every cheaper day and partner run until
+      Brain or the owner changes it; with none set, the owner's choice
+      (half by default) stands. Each change spends the verdict budget and
+      is logged. The floors and never-rules still apply to every version.
+    - **The shipper's fee:** the shipper does not answer a request at once;
+      it asks Brain and answers the seller's hourly resend. Core keeps the
+      fee between the automatic limit and the asking fee and re-runs the
+      never-rules. With no answer by the first resend, the asking fee goes.
+    - **The opening shelf offer:** the store asks Brain before the first
+      offer, with a brief that holds no asking terms, and plays the fixed
+      first offer if Brain has not answered within the turn's wait. Core
+      raises short parts to their automatic limits and runs the envelope,
+      as for any first offer.
+    - **The group slot:** a new built-in kind, `group.organizer`, carries
+      the strategy setting. With Brain chosen, a fold that leaves agreed
+      slots asks Brain to pick one; Core accepts only a slot in the fold's
+      agreed list and opens the confirming round. With no answer, the
+      owner picks, as today.
+    - **Asking the owner:** a yes-or-no question, shown on a card with the
+      text scrubbed of anything private. The turn waits for the answer (and
+      is not taken by the stale-turn sweep) until the card lapses or the
+      deal's deadline comes; the answer goes into the next brief. Free-text
+      answers come later.
+12. **An exit right when a partner's run fails.** A condition both sides
+    sign at binding: if the run a version rests on falls through, the
+    buyer may cancel without charge instead of taking the fallback. The
+    buyer asks for it in its quote request (`exit_if_run_fails`, minor
+    1.5, only with the onward-sharing grant; the owner's buyer setting,
+    on unless turned off); the seller grants it on its partner-run
+    versions (its own setting, on unless turned off), inside each such
+    version's terms digest, so an order naming the version holds it. When
+    the run falls through, the seller's fallback notice says so; the
+    buyer's owner chooses on a card (a person present) to cancel or keep
+    the order on the quote's own terms; a yes sends the cancellation in
+    the option family, and the seller's Core cancels without asking its
+    runner, but only for an order that holds the right and whose fallback
+    it recorded (the race against dispatch still decides). What the buyer
+    gives for the right, and Brain deciding either side, come later. A new
+    deal with another supplier is an ordinary deal.
 
 Each step ships on its own, with its tests and a dual review.
 
 ## 16. Owner decisions
 
-All decided by the owner on 2026-10-15.
+Items 1 to 8 decided by the owner on 2026-10-15.
 
 1. **Groups and loops:** built from two-party deals; a loop, and a deal
    with smaller deals beneath it, are linked two-party deals that bind
@@ -1195,6 +1314,16 @@ All decided by the owner on 2026-10-15.
    Asking anyone found through the directory comes later, per pack, and
    sharing anything about the owner with a stranger needs the owner's yes
    (§11).
+
+Decided by the owner on 2026-10-17:
+
+9. **Where the agent decides alone:** the rule in §10. Places looser
+   than it are defects and close at once (§15 step 10).
+10. **Lifting the stricter places:** all six in §15 step 11.
+11. **The exit right (§15 step 12):** the buyer asks for it in its quote
+    request (the owner's buyer setting); the seller grants it on its
+    partner-run versions by its own setting. What the buyer gives for it,
+    and Brain deciding either side, come later.
 
 ## 17. Not in this note
 

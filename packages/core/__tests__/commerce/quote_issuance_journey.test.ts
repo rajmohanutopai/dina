@@ -34,12 +34,21 @@ import {
   type CommerceRuntime,
 } from '../../src/commerce/runtime';
 import { ValueModelStore } from '../../src/commitment/model_store';
+import { StandingChoiceStore } from '../../src/commitment/standing_choices';
+import { StrategyStore } from '../../src/commitment/strategy_store';
 import { setOwnerTimeZone } from '../../src/settings/owner_settings';
 import { validatePluginResult } from '../../src/plugins/dispatch';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-import { BUYER_DID, SUPPLIER_DID, hash, makeOrder, makeQuoteRequest } from './helpers';
+import {
+  BUYER_DID,
+  SUPPLIER_DID,
+  hash,
+  makeOrder,
+  makeQuoteRequest,
+  withPublishedCatalogue,
+} from './helpers';
 
 const NOW = Date.parse('2026-08-10T09:00:00.000Z');
 
@@ -56,12 +65,14 @@ beforeEach(() => {
     synchronous: 'NORMAL',
   });
   applyMigrations(adapter, IDENTITY_MIGRATIONS);
-  runtime = createCommerceRuntime({
-    adapter,
-    supplierDid: () => SUPPLIER_DID,
-    currentEpoch: () => '1',
-    now: () => NOW,
-  });
+  runtime = withPublishedCatalogue(
+    createCommerceRuntime({
+      adapter,
+      supplierDid: () => SUPPLIER_DID,
+      currentEpoch: () => '1',
+      now: () => NOW,
+    }),
+  );
   installCommerceRuntime(runtime);
 });
 
@@ -428,7 +439,7 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
   });
 
   /** The seller's day costs, and a Friday quote of ₹650 (₹150 of it delivery). */
-  function quoteWithCosts(costs: readonly (readonly [string, bigint])[]): SignedQuote {
+  function quoteWithCosts(costs: readonly (readonly [string, bigint])[], requestId = 'req-1'): SignedQuote {
     const model = new ValueModelStore(adapter);
     for (const [day, rupees] of costs)
       model.putEntry(
@@ -436,7 +447,7 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
         NOW,
       );
     const issued = answerQuoteRequest(
-      makeQuoteRequest({ protocol_version: '1.3' }),
+      makeQuoteRequest({ protocol_version: '1.3', request_id: requestId, idempotency_key: `idem-${requestId}` }),
       runnerTerms({
         charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '15000' }, operation: 'add' }],
         estimated_delivery_at: '2030-08-16T10:00:00Z', // a Friday
@@ -448,10 +459,16 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
     return quote;
   }
 
-  it('a persona holding the seller\'s rules is closed: the quote goes out, with no cheaper day', () => {
+  it('a persona holding the seller\'s rules is closed: nothing is quoted until it opens (§15 step 10)', () => {
+    // A sealed never-rule may forbid the quote's own day, so Core cannot
+    // say the runner's terms are inside the owner's rules: it withholds.
     const real = runtime.goodsSellerModel;
     runtime.goodsSellerModel = () => ({ model: real?.()?.model ?? null, closedPersonas: ['health'] });
-    expect(quoteWithCosts([['fri', -120n], ['tue', -40n]]).alternatives).toBeUndefined();
+    const issued = answerQuoteRequest(
+      makeQuoteRequest({ protocol_version: '1.3' }),
+      runnerTerms({ estimated_delivery_at: '2030-08-16T10:00:00Z' }),
+    );
+    expect(issued).toEqual({ kind: 'withhold', reason: 'persona_closed' });
   });
 
   it('a quote already at the charge limit: the cheaper day is dropped, the quote goes out', () => {
@@ -509,6 +526,57 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
         total: { currency: 'INR', minor_units: '61000' },
       }),
     ]);
+  });
+
+  it('§15 step 11: Brain’s standing share passes on a quarter; back on the fixed style, the owner’s half', () => {
+    const strategies = new StrategyStore(adapter);
+    strategies.setSettings('goods.seller', { strategy: 'brain', valuesOn: true }, NOW);
+    new StandingChoiceStore(adapter).set('goods.seller', 'saving_share_bps', '2500', 'brain', NOW);
+    const tuesday = (requestId: string) => {
+      const quote = quoteWithCosts(
+        [
+          ['fri', -120n],
+          ['tue', -40n],
+        ],
+        requestId,
+      );
+      return quote.alternatives?.[0]?.total.minor_units;
+    };
+    // ₹80 saved: a quarter is ₹20 off the ₹650 quote.
+    expect(tuesday('req-q1')).toBe('63000');
+    strategies.setSettings('goods.seller', { strategy: 'fixed', valuesOn: true }, NOW);
+    expect(tuesday('req-q2')).toBe('61000');
+  });
+
+  it('§15 step 11: the owner’s later choice of share replaces Brain’s; Brain may set its own again', () => {
+    const strategies = new StrategyStore(adapter);
+    strategies.setSettings('goods.seller', { strategy: 'brain', valuesOn: true }, NOW);
+    const choices = new StandingChoiceStore(adapter);
+    choices.set('goods.seller', 'saving_share_bps', '7000', 'brain', NOW);
+    const tuesday = (requestId: string) =>
+      quoteWithCosts(
+        [
+          ['fri', -120n],
+          ['tue', -40n],
+        ],
+        requestId,
+      ).alternatives?.[0]?.total.minor_units;
+    // ₹80 saved: 70% is ₹56 off.
+    expect(tuesday('req-o1')).toBe('59400');
+    // The owner then chooses a third: ₹26 off (whole rupees, rounded down).
+    new ValueModelStore(adapter).putEntry(
+      {
+        id: 'saving_share',
+        kind: 'goods.seller',
+        covers: ['saving_share'],
+        body: { type: 'choice', part: 'saving_share', option: 'third', rupees: 1n },
+      },
+      NOW + 1,
+    );
+    expect(tuesday('req-o2')).toBe('62400');
+    // Brain's next change is its own again.
+    choices.set('goods.seller', 'saving_share_bps', '2500', 'brain', NOW + 2);
+    expect(tuesday('req-o3')).toBe('63000');
   });
 });
 

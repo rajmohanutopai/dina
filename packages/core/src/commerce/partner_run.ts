@@ -18,6 +18,8 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { commerceRecordDigest } from '@dina/commerce-protocol';
+
 import { offerEndOf, upperOfferEndsAt } from '../commitment/dependent';
 import {
   optionTerms,
@@ -28,11 +30,11 @@ import {
 } from '../commitment/options';
 
 import { deliveryDayOf } from './deal_kinds';
-import { chosenShare, holds, shareOf } from './goods_seller_alternatives';
-import { rehydratePurchaseOrder, rehydrateSignedQuote } from './rehydrate';
+import { holds, passOf, shareChoice } from './goods_seller_alternatives';
+import { rehydratePurchaseOrder, rehydrateQuoteRequest, rehydrateSignedQuote } from './rehydrate';
 
 import type { ValueModel } from '../commitment';
-import type { Charge, Sha256Fn, SignedQuote } from '@dina/commerce-protocol';
+import type { CancellationRequest, Charge, Sha256Fn, SignedQuote } from '@dina/commerce-protocol';
 
 export interface PartnerRunAlternative {
   alternative_id: string;
@@ -40,6 +42,8 @@ export interface PartnerRunAlternative {
   estimated_delivery_at: string;
   partner_run: true;
   offer_ends_at: string;
+  /** §15 step 12: the buyer may cancel without charge if the run falls through. */
+  exit_if_run_fails?: true;
 }
 
 /**
@@ -60,6 +64,10 @@ export function partnerRunAlternatives(args: {
   validUntilMs: number;
   nowMs: number;
   timeZone: string | null;
+  /** Brain's standing share of a saving, in hundredths of a percent (§15 step 11). */
+  brainShareBps?: number;
+  /** The buyer asked for the exit right and the seller grants it (§15 step 12; minor 1.5). */
+  exitRight?: boolean;
 }): PartnerRunAlternative[] {
   const minor = Number(args.protocolVersion.split('.')[1] ?? '0');
   const { store, seller, timeZone } = args;
@@ -75,7 +83,8 @@ export function partnerRunAlternatives(args: {
   )
     return [];
   const model = seller.model;
-  const share = chosenShare(model);
+  const choice = shareChoice(model, args.brainShareBps);
+  const share = choice.label;
   const out: PartnerRunAlternative[] = [];
   for (const link of store.forDeal(args.dealRef)) {
     // Only an option the seller's owner cleared (§6 step 3).
@@ -91,7 +100,7 @@ export function partnerRunAlternatives(args: {
     // What the seller saves by the partner's run, in whole rupees.
     const saving = -ownCost - BigInt(option.fee_minor) / 100n;
     if (saving <= 0n) continue;
-    const pass = shareOf(saving, share);
+    const pass = passOf(saving, choice);
     if (pass < 1n) continue;
     const totalMinor = args.totalMinor - pass * 100n;
     if (totalMinor < 0n) continue;
@@ -113,6 +122,7 @@ export function partnerRunAlternatives(args: {
       estimated_delivery_at: option.service_at,
       partner_run: true,
       offer_ends_at: new Date(offerEnds).toISOString(),
+      ...(args.exitRight === true && minor >= 5 ? { exit_if_run_fails: true as const } : {}),
     });
   }
   return out;
@@ -238,7 +248,7 @@ export function checkFallbackNotice(
     supplierDid: string;
     notice: { purchase_order_id: string; quote_id: string; alternative_id: string };
   },
-): { buyerDid: string } | null {
+): { buyerDid: string; exitRight: boolean } | null {
   const record = stores.buyerOrders.get(args.supplierDid, args.notice.purchase_order_id);
   if (record === null || record.orderDigest === '') return null;
   const row = stores.receipts.get(record.orderDigest);
@@ -254,5 +264,95 @@ export function checkFallbackNotice(
   const alternative = quote?.alternatives?.find(
     (a) => a.alternative_id === args.notice.alternative_id,
   );
-  return alternative?.partner_run === true ? { buyerDid: record.buyerDid } : null;
+  return alternative?.partner_run === true
+    ? { buyerDid: record.buyerDid, exitRight: alternative.exit_if_run_fails === true }
+    : null;
+}
+
+/**
+ * COMMITMENT_KERNEL §15 step 12 — on the seller's node: does this order hold
+ * the exit right? Read from the order and the quote version it names, as
+ * this node retained them.
+ */
+export function sellerOrderHoldsExit(
+  stores: {
+    orders: { load(buyerDid: string, purchaseOrderId: string): { ref: { orderDigest: string; quoteDigest: string } } | null };
+    receipts: { get(recordDigest: string): { recordJson: string } | null };
+  },
+  buyerDid: string,
+  purchaseOrderId: string,
+): boolean {
+  const ref = stores.orders.load(buyerDid, purchaseOrderId)?.ref;
+  if (ref === undefined) return false;
+  const row = stores.receipts.get(ref.orderDigest);
+  const order = row === null ? null : rehydratePurchaseOrder(row.recordJson, sha256 as Sha256Fn);
+  if (order === null || !order.ok || order.value.alternative_id === undefined) return false;
+  const alternative = retainedQuote(stores.receipts, ref.quoteDigest)?.alternatives?.find(
+    (a) => a.alternative_id === order.value.alternative_id,
+  );
+  return alternative?.partner_run === true && alternative.exit_if_run_fails === true;
+}
+
+/**
+ * On the seller's node: will a partner-run version of this quote carry the
+ * exit right? The buyer asked in the request this node retained, and the
+ * seller's settings grant it (§15 step 12).
+ */
+export function quoteGrantsExit(
+  stores: {
+    families: { load(quoteId: string): { headDigest: string } | null };
+    receipts: { get(recordDigest: string): { recordJson: string } | null };
+    settings: { readSupplier(): { ok: true; settings: { grantExitIfRunFails?: boolean } } | { ok: false } };
+  },
+  quoteId: string,
+): boolean {
+  const family = stores.families.load(quoteId);
+  const head = family === null ? null : retainedQuote(stores.receipts, family.headDigest);
+  const row = head === null ? null : stores.receipts.get(head.request_digest);
+  const request = row === null ? null : rehydrateQuoteRequest(row.recordJson, sha256 as Sha256Fn);
+  const settings = stores.settings.readSupplier();
+  return (
+    request !== null &&
+    request.ok &&
+    request.value.exit_if_run_fails === true &&
+    settings.ok &&
+    settings.settings.grantExitIfRunFails !== false
+  );
+}
+
+/**
+ * On the buyer's node: the cancellation request the exit right lets it send,
+ * for an order it placed with this supplier. Null when it holds no such order.
+ */
+export function buyerExitCancellation(
+  stores: {
+    buyerOrders: {
+      get(supplierDid: string, purchaseOrderId: string): { orderDigest: string } | null;
+    };
+    receipts: { get(recordDigest: string): { recordJson: string } | null };
+  },
+  supplierDid: string,
+  purchaseOrderId: string,
+  nowMs: number,
+): CancellationRequest | null {
+  const record = stores.buyerOrders.get(supplierDid, purchaseOrderId);
+  if (record === null || record.orderDigest === '') return null;
+  const row = stores.receipts.get(record.orderDigest);
+  const order = row === null ? null : rehydratePurchaseOrder(row.recordJson, sha256 as Sha256Fn);
+  if (order === null || !order.ok) return null;
+  // One id for this order's exit: asking twice is the same request.
+  const id = `exit-${record.orderDigest.slice(0, 24)}`;
+  const draft = {
+    protocol_version: order.value.protocol_version,
+    cancellation_id: id,
+    purchase_order_id: purchaseOrderId,
+    order_digest: record.orderDigest,
+    reason_code: 'partner_run_failed',
+    idempotency_key: id,
+    issued_at: new Date(nowMs).toISOString(),
+  };
+  return {
+    ...draft,
+    cancellation_digest: commerceRecordDigest('cancellation', draft, sha256 as Sha256Fn),
+  };
 }

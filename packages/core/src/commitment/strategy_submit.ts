@@ -29,6 +29,8 @@ export interface NegotiationBrief {
   roundsLeft: number;
   deadlineAt?: string;
   rules?: readonly string[];
+  /** The owner's answers to Brain's earlier questions in this deal (§15 step 11). */
+  ownerAnswers?: readonly { question: string; answer: 'yes' | 'no' }[];
 }
 
 export type NegotiationSubmitter = (brief: NegotiationBrief) => { taskId: string } | null;
@@ -84,7 +86,12 @@ export function createNegotiationSubmitter(options: {
       evidencePolicy: 'none',
       purpose: `negotiate:${brief.kind}`.slice(0, 512),
       backendBindingId: selected.backendId,
-      idempotencyKey: `negotiate:${brief.kind}:${brief.ref.negotiationId}:${String(brief.ref.turn)}`,
+      // A turn asked again after the owner answered Brain's question is a new job.
+      idempotencyKey: `negotiate:${brief.kind}:${brief.ref.negotiationId}:${String(brief.ref.turn)}${
+        brief.ownerAnswers === undefined || brief.ownerAnswers.length === 0
+          ? ''
+          : `:a${String(brief.ownerAnswers.length)}`
+      }`,
       priority: 'normal',
       deadlineAtMs: now + 20 * 60 * 1000,
       maxAttempts: 2,

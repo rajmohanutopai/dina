@@ -710,6 +710,18 @@ export class InProcessTransport implements CoreClient {
     return expectOk<CommitmentProposeResult>(res, 'commitmentProposeChanges');
   }
 
+  async commitmentSetSavingShare(shareBps: number): Promise<{ ok: true; share_bps: number }> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'PUT',
+        path: '/v1/commitment/brain/goods.seller/saving-share',
+        params: { kind: 'goods.seller' },
+        body: { share_bps: shareBps },
+      }),
+    );
+    return expectOk<{ ok: true; share_bps: number }>(res, 'commitmentSetSavingShare');
+  }
+
   async forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult> {
     const res = await this.router.handle(
       blankRequest({

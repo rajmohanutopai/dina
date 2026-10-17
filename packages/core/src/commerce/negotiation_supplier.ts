@@ -53,14 +53,18 @@ import { ownerTimeZoneIfRead } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
-import {
-  lineBounds,
-  NEGOTIATION_PRICE_APPROVAL_TYPE,
-  TENDER_READY_TYPE,
-} from './negotiation_policy';
+import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from './negotiation_policy';
 import { partnerRunAlternatives } from './partner_run';
 import { priceQuoteAlternatives } from './quote_issuance';
-import { rehydrateSignedQuote } from './rehydrate';
+import { rehydrateQuoteRequest, rehydrateSignedQuote } from './rehydrate';
+import {
+  approvedLineFloors,
+  approvedPricesOf,
+  atOrAboveFloor,
+  pricedPerUnit,
+  sellerRulesRefuse,
+  subtotalAt,
+} from './runner_bounds';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
 
 import type { SupplierNegotiationPolicy } from './negotiation_policy';
@@ -462,7 +466,7 @@ function settleCounterTerms(args: {
 }): { ok: true; json: string } | { ok: false; refusal: CounterRefusal } {
   const read = readCounterContext(args.params, args.buyerDid, args.nowMs);
   if (!read.ok) return read;
-  const { runtime, counter, head, first, policy } = read.context;
+  const { runtime, counter, head, first } = read.context;
   const held = runtime.negotiation.getCounter(args.buyerDid, counter.counter_id);
   if (held !== null && !sameCounter(held, counter))
     return { ok: false, refusal: 'counter_invalid' };
@@ -485,44 +489,73 @@ function settleCounterTerms(args: {
       authorised.set(question.lineId, BigInt(question.askedMinorUnits));
   }
 
-  // COMMITMENT_KERNEL §15 step 6: each line's price is a money part the
-  // seller holds, floors from the first quote by the declared rule
-  // (`lineBounds`), clamped by the kernel's own rule. The loop around it is
+  // COMMITMENT_KERNEL §15 steps 6 and 10: each line's price is a money part
+  // the seller holds, floors from what the owner approved
+  // (`approvedLineFloors`), clamped by the kernel's own rule. The loop around it is
   // goods' own and unchanged, so the same terms are signed and the same
   // questions asked as before: the proposal is first capped at the price the
   // buyer holds; every line's question is collected, even while one line
   // holds the whole revision under a floor the owner has raised.
+  const approved = approvedPricesOf(runtime);
   const toAsk: { lineId: string; asked: bigint; signed: bigint; current: bigint }[] = [];
   const lines: SignedQuoteLine[] = [];
   let moved = false;
   // A line whose kept price is under the CURRENT hard floor (the owner raised
   // it since the head was signed) must not be re-signed in a new revision.
   let belowFloor = false;
+  // COMMITMENT_KERNEL §15 step 10: a line the owner approved no price for
+  // (no catalogue price, no floor of its own, or priced on another basis)
+  // does not move, and nothing is revised: the first price is never the
+  // measure, so a withdrawn catalogue cannot hand the runner a lower one.
+  let unapproved = false;
+  // The goods at the lowest prices this revision could sign: a discount
+  // written as a charge may not take the total below them.
+  let floorGoods = 0n;
   for (const line of head.lines) {
     const current = BigInt(line.unit_price.minor_units);
     const firstPrice = firstPrices.get(line.line_id) ?? current;
     const proposal = proposals === 'hold' ? current : (proposals.get(line.line_id) ?? current);
     // Never raise a price the buyer holds.
     const wanted = proposal > current ? current : proposal;
-    const floors = lineBounds(policy, line.offered_product, firstPrice);
+    // Measured from what the owner approved, never above the first price.
+    const approvedFloors = pricedPerUnit(line)
+      ? approvedLineFloors(approved, {
+          product: line.offered_product,
+          unitCode: line.quantity.unit_code,
+          currency: line.unit_price.currency,
+          capMinor: firstPrice,
+        })
+      : null;
+    if (approvedFloors === null) unapproved = true;
+    const floors = approvedFloors ?? { hardFloor: current, autoFloor: current };
+    const ownerSaid = authorised.get(line.line_id) ?? null;
     const clamped = clampPart(
       GOODS_LINE_PRICE,
       'seller',
       wanted,
       { hard: floors.hardFloor, auto: floors.autoFloor },
-      authorised.get(line.line_id) ?? null,
+      ownerSaid,
     );
     const price = clamped.value > current ? current : clamped.value;
     if (clamped.needsOwner)
       toAsk.push({ lineId: line.line_id, asked: clamped.asked, signed: price, current });
     if (price < current) moved = true;
     if (price < floors.hardFloor) belowFloor = true;
+    // The lowest this line may go now: the automatic floor, or down to what
+    // the owner said yes to (never under the hard floor), never above today.
+    let lowest = floors.autoFloor;
+    if (ownerSaid !== null && ownerSaid < lowest)
+      lowest = ownerSaid < floors.hardFloor ? floors.hardFloor : ownerSaid;
+    if (lowest > current) lowest = current;
     const unitPrice: Money = {
       currency: line.unit_price.currency,
       minor_units: price.toString(10),
     };
     const subtotal = computeLineSubtotal(unitPrice, line.quantity, line.price_basis);
     if (subtotal.error || !subtotal.value) return { ok: false, refusal: 'terms_unusable' };
+    const lineAtLowest = subtotalAt(line, lowest);
+    if (lineAtLowest === null) return { ok: false, refusal: 'terms_unusable' };
+    floorGoods += lineAtLowest;
     lines.push({ ...line, unit_price: unitPrice, line_subtotal: subtotal.value });
   }
 
@@ -531,7 +564,33 @@ function settleCounterTerms(args: {
     .questionsForQuote(counter.quote_id)
     .some((question) => question.state === 'pending');
 
-  if (!moved || belowFloor) {
+  const revisedTotal = computeTotal(
+    head.total.currency,
+    lines.map((line) => line.line_subtotal),
+    head.charges,
+  );
+  const underFloor =
+    revisedTotal.value != null && BigInt(revisedTotal.value.minor_units) < floorGoods;
+  // A revision is a new signed quote: its own day passes the seller's
+  // never-rules as a first quote's does, and nothing is revised while those
+  // rules cannot be read (§15 step 10).
+  const seller = runtime.goodsSellerModel?.() ?? null;
+  const zone = ownerTimeZoneIfRead();
+  const rulesHold =
+    revisedTotal.value != null &&
+    sellerRulesRefuse(
+      seller,
+      [
+        {
+          ...(head.estimated_delivery_at === undefined
+            ? {}
+            : { estimatedDeliveryAt: head.estimated_delivery_at }),
+          total: revisedTotal.value,
+        },
+      ],
+      zone,
+    ) !== null;
+  if (!moved || belowFloor || unapproved || underFloor || rulesHold) {
     const json = answerJson(head, 'held', ownerPending);
     recordCounter(runtime, counter, json, args.nowMs);
     return { ok: true, json };
@@ -577,19 +636,48 @@ function settleCounterTerms(args: {
   // again from the options this seller holds now (§15 step 7), so one whose
   // hold is too near, or whose option is gone, is no longer offered.
   const ownAlternatives = (headAlternatives ?? []).filter((a) => a.partner_run !== true);
-  const alternatives = priceQuoteAlternatives(base, ownAlternatives);
-  if (alternatives === null) return { ok: false, refusal: 'revision_refused' };
+  const priced = priceQuoteAlternatives(base, ownAlternatives);
+  if (priced === null) return { ok: false, refusal: 'revision_refused' };
+  // A version whose charges would take the revised goods under their floors
+  // is no longer offered (§15 step 10).
+  const alternatives = atOrAboveFloor(priced, floorGoods).filter(
+    (alt) =>
+      sellerRulesRefuse(
+        seller,
+        [{ estimatedDeliveryAt: alt.estimated_delivery_at, total: alt.total }],
+        zone,
+      ) === null,
+  );
+  const keptOwn = ownAlternatives.filter((a) =>
+    alternatives.some((kept) => kept.alternative_id === a.alternative_id),
+  );
+  // §15 step 11: the share of a saving Brain set, while the owner keeps Brain.
+  const brainShareBps = runtime.goodsSellerShareBps?.();
+  // §15 step 12: the buyer asked for the exit right in its request, and this
+  // seller grants it (by default); read from the request this node retained.
+  const supplierSettings = runtime.settings.readSupplier();
+  const retainedRequest = runtime.receipts.get(head.request_digest);
+  const asked =
+    retainedRequest === null ? null : rehydrateQuoteRequest(retainedRequest.recordJson, hash);
+  const exitRight =
+    asked !== null &&
+    asked.ok &&
+    asked.value.exit_if_run_fails === true &&
+    supplierSettings.ok &&
+    supplierSettings.settings.grantExitIfRunFails !== false;
   const partner = partnerRunAlternatives({
     store: getSellerOptionStore(),
     dealRef: head.quote_id,
-    seller: runtime.goodsSellerModel?.() ?? null,
+    seller,
     protocolVersion: head.protocol_version,
     charges: head.charges,
     currency: head.total.currency,
     totalMinor: BigInt(total.value.minor_units),
     validUntilMs: validUntil,
     nowMs: args.nowMs,
-    timeZone: ownerTimeZoneIfRead(),
+    timeZone: zone,
+    ...(brainShareBps === undefined ? {} : { brainShareBps }),
+    exitRight,
   });
   const assemble = (alts: readonly QuoteAlternative[]): SignedQuote => {
     const draft = { ...base, ...(alts.length > 0 ? { alternatives: [...alts] } : {}) };
@@ -606,10 +694,11 @@ function settleCounterTerms(args: {
   };
   // Partner runs first, within the protocol's cap; if they break the quote,
   // the revision goes out without them.
-  const withPartner =
+  const pricedPartner =
     partner.length === 0
       ? null
-      : priceQuoteAlternatives(base, [...partner, ...ownAlternatives].slice(0, MAX_QUOTE_ALTERNATIVES));
+      : priceQuoteAlternatives(base, [...partner, ...keptOwn].slice(0, MAX_QUOTE_ALTERNATIVES));
+  const withPartner = pricedPartner === null ? null : atOrAboveFloor(pricedPartner, floorGoods);
   let revision = assemble(withPartner ?? alternatives);
   if (withPartner !== null && validateSignedQuote(revision, hash) !== null)
     revision = assemble(alternatives);

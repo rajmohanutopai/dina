@@ -81,6 +81,7 @@ import {
   terminateTermAgreement,
   termAgreementView,
 } from './term_followups';
+import { SHELF_HOST_KIND, SHELF_VENDOR_KIND } from './term_model';
 import { openShelfDeals } from './term_money';
 import {
   endPersonaWait,
@@ -89,6 +90,7 @@ import {
   type PersonaResumers,
 } from './term_persona';
 import { validateTermPolicy, type TermListingAccess, type TermPolicy } from './term_policy';
+import { answerStrategyQuestion, TERM_STRATEGY_QUESTION_CARD } from './term_questions';
 import {
   legacyTermAccess,
   readStoredTermBody,
@@ -169,6 +171,8 @@ export const TERM_CARD_TYPES: readonly string[] = [
   TERM_DELIVERY_FAILED_CARD,
   TERM_PERSONA_CARD,
   TERM_STRATEGY_CARD,
+  // §15 step 11 — Brain's question: the owner's to answer, never Brain's.
+  TERM_STRATEGY_QUESTION_CARD,
 ];
 
 /** Documents that follow an agreement; a refusal of one is the owner's to hear about. */
@@ -616,13 +620,31 @@ export class TermEngine {
   }
 
   /** A move the strategy returned, through the reasoning commit bridge (COMMITMENT_KERNEL §11). */
-  applyStrategyMove(args: { requestId: string; turn: number; move: StrategyMove }): { outcome: string } {
+  applyStrategyMove(args: {
+    requestId: string;
+    turn: number;
+    move: StrategyMove;
+    /** How many owner answers the move's brief carried; absent: not checked. */
+    answersSeen?: number;
+  }): { outcome: string } {
     // The brand keeps a negotiation row for its requests; the store does not.
-    return this.ctx.atomically('strategy_move', () =>
-      this.ctx.store.getNegotiation(args.requestId) !== null
+    return this.ctx.atomically('strategy_move', () => {
+      const kind = this.ctx.store.getNegotiation(args.requestId) !== null ? SHELF_VENDOR_KIND : SHELF_HOST_KIND;
+      // §15 step 11: a turn waiting on the owner's answer takes no move (a
+      // replayed commit of the move that asked lands here), and a move from
+      // a brief before the owner's latest answer is stale: the turn was asked
+      // again with that answer.
+      const questions = this.ctx.store.questions();
+      if (questions.openFor(kind, args.requestId, args.turn) !== null) return { outcome: 'waiting_owner' };
+      if (
+        args.answersSeen !== undefined &&
+        args.answersSeen !== questions.answered(kind, args.requestId).length
+      )
+        return { outcome: 'stale_move' };
+      return kind === SHELF_VENDOR_KIND
         ? applyStrategyMove(this.ctx, args)
-        : applySellerStrategyMove(this.ctx, args),
-    );
+        : applySellerStrategyMove(this.ctx, args);
+    });
   }
 
   /** Shelf deals with settlement work open here, for the pack's removal warning. */
@@ -1006,6 +1028,10 @@ export class TermEngine {
           ? { ok: true }
           : { ok: false, refusal: 'persona_closed' };
       }
+      case TERM_STRATEGY_QUESTION_CARD:
+        return answerStrategyQuestion(this.ctx, cardId, approve ? 'yes' : 'no')
+          ? { ok: true }
+          : { ok: false, refusal: 'already_decided' };
       case TERM_STRATEGY_CARD:
       case TERM_DELIVERY_FAILED_CARD:
         return this.ctx.store.decideCard(cardId, approve ? 'approved' : 'declined', this.ctx.now())
@@ -1029,6 +1055,9 @@ export class TermEngine {
     else if (card.cardType === TERM_STRANGER_CARD) this.decideStranger(cardId, false);
     else if (card.cardType === TERM_PERSONA_CARD)
       endPersonaWait(this.ctx, card, 'lapsed', PERSONA_RESUMERS);
+    // Brain's question unanswered: the fixed style plays the turn (§15 step 11).
+    else if (card.cardType === TERM_STRATEGY_QUESTION_CARD)
+      answerStrategyQuestion(this.ctx, cardId, 'lapsed');
     else this.ctx.store.decideCard(cardId, 'lapsed', this.ctx.now());
   }
 

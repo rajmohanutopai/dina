@@ -226,6 +226,20 @@ const CONTRACTS: Readonly<Record<ReasoningTaskKind, ReasoningSchemaContract>> = 
         roundsLeft: { type: 'integer', minimum: 0, maximum: 100 },
         deadlineAt: { type: 'string', maxLength: 64 },
         rules: { type: 'array', maxItems: 16, items: { type: 'string', maxLength: 512 } },
+        // COMMITMENT_KERNEL §15 step 11: the owner's answers to Brain's questions so far.
+        ownerAnswers: {
+          type: 'array',
+          maxItems: 8,
+          items: {
+            type: 'object',
+            required: ['question', 'answer'],
+            properties: {
+              question: { type: 'string', maxLength: 280 },
+              answer: { type: 'string', enum: ['yes', 'no'] },
+            },
+            additionalProperties: false,
+          },
+        },
       },
       additionalProperties: false,
     },
@@ -238,7 +252,7 @@ const CONTRACTS: Readonly<Record<ReasoningTaskKind, ReasoningSchemaContract>> = 
           type: 'object',
           required: ['kind'],
           properties: {
-            kind: { type: 'string', enum: ['propose', 'ask_other', 'stop'] },
+            kind: { type: 'string', enum: ['propose', 'ask_other', 'ask_owner', 'stop'] },
             versions: {
               type: 'array',
               maxItems: 8,
@@ -269,6 +283,8 @@ const CONTRACTS: Readonly<Record<ReasoningTaskKind, ReasoningSchemaContract>> = 
             },
             part: { type: 'string', maxLength: 64 },
             note: { type: 'string', maxLength: 2048 },
+            // A yes-or-no question for the owner (§15 step 11), shown on a card.
+            question: { type: 'string', minLength: 1, maxLength: 280 },
           },
           additionalProperties: false,
         },

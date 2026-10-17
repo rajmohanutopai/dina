@@ -92,6 +92,13 @@ export interface QuoteRequest {
   idempotency_key: string;
   /** The buyer's onward-sharing grant (§6 step 0). From protocol minor 1.4. */
   onward_sharing?: OnwardSharingGrant;
+  /**
+   * From minor 1.5 (COMMITMENT_KERNEL §15 step 12): the buyer asks that a
+   * version resting on a partner's run let it cancel without charge if the
+   * run falls through after binding, rather than take the quote's own terms.
+   * Only with `onward_sharing`, without which no partner run is asked.
+   */
+  exit_if_run_fails?: true;
   request_digest: string;
 }
 
@@ -201,6 +208,15 @@ export function validateQuoteRequest(request: unknown, sha256: Sha256Fn): string
     if (projectionPincode(projection) === undefined) {
       return 'quoteRequest.onward_sharing: grants a pincode the projection does not carry';
     }
+  }
+
+  if (request.exit_if_run_fails !== undefined) {
+    const minor = Number(String(request.protocol_version).split('.')[1] ?? '0');
+    if (!Number.isFinite(minor) || minor < 5)
+      return 'quoteRequest.exit_if_run_fails: requires protocol minor >= 1.5';
+    if (request.exit_if_run_fails !== true) return 'quoteRequest.exit_if_run_fails: true';
+    if (request.onward_sharing === undefined)
+      return 'quoteRequest.exit_if_run_fails: only with onward_sharing';
   }
 
   if (request.requested_terms !== undefined) {
@@ -328,6 +344,14 @@ export interface QuoteAlternative {
    */
   partner_run?: true;
   offer_ends_at?: string;
+  /**
+   * From minor 1.5, only on a partner-run version, and only when the request
+   * asked for it (COMMITMENT_KERNEL §15 step 12): if the run falls through
+   * after binding, the buyer may cancel without charge instead of taking the
+   * quote's own terms. Part of this version's `terms_digest`, so an order
+   * that names the version holds the right.
+   */
+  exit_if_run_fails?: true;
 }
 
 /** At most this many alternatives beside the quote's own terms. */
@@ -428,6 +452,8 @@ export function termsDigestInput(quote: {
   estimated_delivery_at?: string;
   payment_terms?: PaymentTerms;
   valid_until: string;
+  /** A version's exit right (1.5); absent from every digest made without one. */
+  exit_if_run_fails?: true;
 }): Record<string, unknown> {
   return {
     charges: quote.charges,
@@ -435,6 +461,7 @@ export function termsDigestInput(quote: {
     estimated_delivery_at: quote.estimated_delivery_at,
     payment_terms: quote.payment_terms,
     valid_until: quote.valid_until,
+    ...(quote.exit_if_run_fails === true ? { exit_if_run_fails: true } : {}),
   };
 }
 
@@ -686,10 +713,18 @@ function validateQuoteAlternatives(
     const path = `quote.alternatives[${String(i)}]`;
     if (!isRecord(raw)) return `${path}: must be an object`;
     const keys = Object.keys(raw).sort().join(',');
+    const exitRight =
+      keys ===
+      'alternative_id,charges,estimated_delivery_at,exit_if_run_fails,offer_ends_at,partner_run,terms_digest,total';
     const partnerRun =
+      exitRight ||
       keys === 'alternative_id,charges,estimated_delivery_at,offer_ends_at,partner_run,terms_digest,total';
     if (keys !== 'alternative_id,charges,estimated_delivery_at,terms_digest,total' && !partnerRun) {
-      return `${path}: exactly alternative_id, charges, estimated_delivery_at, total, terms_digest (and from 1.4, partner_run with offer_ends_at)`;
+      return `${path}: exactly alternative_id, charges, estimated_delivery_at, total, terms_digest (and from 1.4, partner_run with offer_ends_at; from 1.5, exit_if_run_fails with them)`;
+    }
+    if (exitRight) {
+      if (minor < 5) return `${path}.exit_if_run_fails: requires protocol minor >= 1.5`;
+      if (raw.exit_if_run_fails !== true) return `${path}.exit_if_run_fails: true`;
     }
     if (partnerRun) {
       if (minor < 4) return `${path}.partner_run: requires protocol minor >= 1.4`;
@@ -733,6 +768,7 @@ function validateQuoteAlternatives(
         ...(quote as unknown as SignedQuote),
         charges: raw.charges as Charge[],
         estimated_delivery_at: raw.estimated_delivery_at as string,
+        ...(raw.exit_if_run_fails === true ? { exit_if_run_fails: true as const } : {}),
       }),
       sha256,
     );

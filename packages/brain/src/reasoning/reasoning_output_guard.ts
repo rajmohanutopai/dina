@@ -188,14 +188,18 @@ export function createReasoningOutputGuard(): (
       }
       case 'negotiate.move': {
         // The move's structure is checked by its schema and by Core's
-        // envelope; only the strategy's own note is text, and it goes to the
-        // owner, never out on its own (COMMITMENT_KERNEL §11).
+        // envelope; only the strategy's own words are text: its note, and a
+        // question for the owner (§15 step 11). Both go to the owner, never
+        // out on their own (COMMITMENT_KERNEL §11).
         const body = record(input.result);
         const move = record(body?.move);
         if (body === null || move === null) return { ok: false, error: 'negotiation move is not an object' };
-        if (typeof move.note !== 'string') return { ok: true, result: input.result };
-        const cleaned = await sanitizeJsonStrings({ note: move.note }, input);
-        if (!cleaned.ok) return { ok: false, error: 'negotiation note was removed by output policy' };
+        const words: Record<string, string> = {};
+        if (typeof move.note === 'string') words.note = move.note;
+        if (typeof move.question === 'string') words.question = move.question;
+        if (Object.keys(words).length === 0) return { ok: true, result: input.result };
+        const cleaned = await sanitizeJsonStrings(words, input);
+        if (!cleaned.ok) return { ok: false, error: 'negotiation words were removed by output policy' };
         return { ok: true, result: { ...body, move: { ...move, ...record(cleaned.value) } } };
       }
       case 'memory.structure':

@@ -713,6 +713,16 @@ export class HttpCoreTransport implements CoreClient {
       'commitmentProposeChanges',
     );
   }
+  async commitmentSetSavingShare(shareBps: number): Promise<{ ok: true; share_bps: number }> {
+    return this.call<{ ok: true; share_bps: number }>(
+      'PUT',
+      '/v1/commitment/brain/goods.seller/saving-share',
+      undefined,
+      { share_bps: shareBps },
+      'commitmentSetSavingShare',
+    );
+  }
+
 
   async ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }> {
     return this.call('POST', '/v1/owner-export/prepare', undefined, {}, 'ownerExportPrepare');

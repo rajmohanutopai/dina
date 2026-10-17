@@ -72,6 +72,7 @@ import {
   shelfEnvelope,
   shelfSigningBlocked,
   shelfWorth,
+  ownerAnswersFor,
   raiseStrategyNotice,
   strategyBudgetLeft,
   tableMessage,
@@ -84,6 +85,7 @@ import {
   type TermPolicy,
   type TermResourcePolicy,
 } from './term_policy';
+import { askOwnerOnTurn } from './term_questions';
 import {
   readTermApprovalMaterial,
   readTermCounterRow,
@@ -97,6 +99,7 @@ import {
 import { DEFAULT_TERM_RUNNER_PARAMS, proposeFirstOffer, proposeRevision } from './term_runner';
 
 import type { TermDocumentRow } from './term_store';
+import type { NegotiationBrief } from '../../commitment/strategy_submit';
 
 export const TERM_STRANGER_CARD = 'term_stranger_request';
 export const TERM_FLOOR_CARD = 'term_floor_approval';
@@ -435,14 +438,23 @@ function issueFirstOffer(
     policy: TermPolicy;
     resource: TermResourcePolicy;
     pack: NonNullable<ReturnType<TermContext['deps']['activePack']>>;
+    /** Brain's opening terms (COMMITMENT_KERNEL §15 step 11); absent: the fixed style's. */
+    proposed?: Record<TermName, bigint>;
+    /** The fixed style plays: Brain is not asked. */
+    fixedStyle?: boolean;
   },
 ): TermOffer | null {
   const { request, resource, policy } = args;
   const nowMs = ctx.now();
   const general = generalFor(request, resource);
+  // §15 step 11: with Brain chosen for shelf deals, the opening offer is
+  // Brain's. The offer waits for its turn; the fixed style plays it if Brain
+  // does not answer in time (`fallBackStaleSellerTurns`).
+  if (args.proposed === undefined && args.fixedStyle !== true && handFirstOfferTurn(ctx, request, general))
+    return null;
   const asking = {} as Record<TermName, bigint>;
   for (const name of TERM_NAMES) asking[name] = BigInt(resource.asking[name]);
-  const proposed = proposeFirstOffer(asking);
+  const proposed = args.proposed ?? proposeFirstOffer(asking);
   const bounds = boundsFor(ctx, policy, resource, general);
   // The first offer never asks the owner: anything short of the automatic
   // limit (asking terms below a premium-raised floor) is simply raised to it.
@@ -1336,8 +1348,16 @@ export function lapseDecisionCard(ctx: TermContext, cardId: string): void {
 // Going on once a closed persona is open (term_persona.ts)
 // ---------------------------------------------------------------------------
 
-/** The request waited for a persona: sign its first offer now, if none went out. */
-export function resumeFirstOffer(ctx: TermContext, requestDigest: string): void {
+/**
+ * The request waited (for a persona, or for Brain's turn): sign its first
+ * offer now, if none went out. `play`: Brain's opening terms, or the fixed
+ * style with no new turn.
+ */
+export function resumeFirstOffer(
+  ctx: TermContext,
+  requestDigest: string,
+  play?: { proposed?: Record<TermName, bigint>; fixedStyle?: boolean },
+): void {
   const row = ctx.store.getDocument(requestDigest);
   if (row === null || row.kind !== 'term_request' || row.direction !== 'inbound') return;
   const request = readTermRequestRow(row);
@@ -1348,7 +1368,7 @@ export function resumeFirstOffer(ctx: TermContext, requestDigest: string): void 
   const policy = currentTermPolicy(ctx);
   const resource = policy.resources.find((r) => r.resource_ref === request.resource_ref);
   if (pack === null || !policy.enabled || resource === undefined) return;
-  issueFirstOffer(ctx, { request, policy, resource, pack });
+  issueFirstOffer(ctx, { request, policy, resource, pack, ...(play ?? {}) });
 }
 
 /**
@@ -1412,6 +1432,33 @@ export function endDecisionWait(ctx: TermContext, proposalDigest: string): void 
 /** How long the store's round waits for the strategy before the fixed style plays it. */
 const SELLER_STRATEGY_WAIT_MS = 20 * 60 * 1000;
 
+/** The turn number of the store's opening offer: counters start at round 1. */
+export const FIRST_OFFER_TURN = 0;
+
+/**
+ * Hand the store's opening offer to Brain (COMMITMENT_KERNEL §15 step 11),
+ * when the owner chose it for shelf deals. True when Brain has the turn. The
+ * brief holds the request and the period, never the asking terms or limits
+ * (§11); the answer goes through the same raise-to-limit and envelope as the
+ * fixed first offer. A request answered too soon for Brain's wait gets the
+ * fixed offer at once.
+ */
+function handFirstOfferTurn(ctx: TermContext, request: TermRequest, general: TermGeneral): boolean {
+  const strategy = ctx.deps.strategy;
+  if (strategy === undefined) return false;
+  const settings = strategy.settings(SHELF_HOST_KIND);
+  if (settings.strategy !== 'brain') return false;
+  const requestId = request.request_id;
+  const turn = ctx.store.getTurn(requestId, FIRST_OFFER_TURN);
+  if (turn !== null) return turn.state === 'pending';
+  if (Date.parse(request.respond_by) - ctx.now() <= SELLER_STRATEGY_WAIT_MS) return false;
+  if (!strategyBudgetLeft(ctx, SHELF_HOST_KIND, requestId)) return false;
+  const submitted = strategy.submit(firstOfferBrief(ctx, request, general, settings.valuesOn));
+  if (submitted === null) return false;
+  ctx.store.putTurn({ requestId, turn: FIRST_OFFER_TURN, taskId: submitted.taskId, createdAt: ctx.now() });
+  return true;
+}
+
 /**
  * Hand the store's answer to a counter to Brain, when the owner chose it for
  * shelf deals. True when Brain has the round. Brain proposes what the runner
@@ -1427,6 +1474,79 @@ function handSellerTurn(ctx: TermContext, counter: TermCounter, head: TermOffer)
   const turn = ctx.store.getTurn(requestId, counter.round);
   if (turn !== null) return turn.state === 'pending';
   if (!strategyBudgetLeft(ctx, SHELF_HOST_KIND, requestId)) return false;
+  const submitted = strategy.submit(sellerCounterBrief(ctx, counter, head, settings.valuesOn));
+  if (submitted === null) return false;
+  ctx.store.putTurn({ requestId, turn: counter.round, taskId: submitted.taskId, createdAt: ctx.now() });
+  return true;
+}
+
+/** The store's brief for its opening offer: no asking terms, no limits (§11). */
+function firstOfferBrief(
+  ctx: TermContext,
+  request: TermRequest,
+  general: TermGeneral,
+  valuesOn: boolean,
+): NegotiationBrief {
+  const requestId = request.request_id;
+  const model = ctx.deps.strategy?.brainModel(SHELF_HOST_KIND) ?? undefined;
+  const policy = currentTermPolicy(ctx);
+  return {
+    kind: SHELF_HOST_KIND,
+    ref: { negotiationId: requestId, turn: FIRST_OFFER_TURN },
+    side: 'seller',
+    parts: SLOT_PACK_PARTS.map((p) => ({ ...p })),
+    table: {
+      general: {
+        currency: general.currency,
+        period: general.period,
+        start: general.start,
+        end: general.end,
+      },
+    },
+    history: [],
+    model:
+      model === undefined
+        ? { constrained: [] }
+        : { ...projectModel(model, { valuesOn, firstOfferOut: false }) },
+    roundsLeft: policy.maxRounds,
+    deadlineAt: request.respond_by,
+    rules: [
+      'You speak for the store, which is paid rent (fee, minor units) and a share of sales (share_bps).',
+      'A brand asked for this slot. Propose the opening offer, one version; Core never lets it fall below the owner’s limits.',
+      'Never set a price for anyone outside the deal.',
+    ],
+    ...ownerAnswersFor(ctx, SHELF_HOST_KIND, requestId),
+  };
+}
+
+/**
+ * The store's brief for a turn already handed to Brain, built again as the
+ * deal stands (after the owner answered Brain's question). Null when the
+ * turn no longer stands: an offer went out, the counter was overtaken.
+ */
+export function sellerTurnBrief(ctx: TermContext, requestId: string, turn: number): NegotiationBrief | null {
+  const settings = ctx.deps.strategy?.settings(SHELF_HOST_KIND);
+  if (settings === undefined) return null;
+  if (turn !== FIRST_OFFER_TURN) {
+    const target = sellerTurnTarget(ctx, requestId, turn);
+    return target === null ? null : sellerCounterBrief(ctx, target.counter, target.head, settings.valuesOn);
+  }
+  const row = ctx.store.listByRequest(requestId, 'term_request').find((r) => r.direction === 'inbound');
+  const request = row === undefined ? null : readTermRequestRow(row);
+  if (request === null || ctx.store.listByRequest(requestId, 'term_offer').length > 0) return null;
+  const resource = currentTermPolicy(ctx).resources.find((r) => r.resource_ref === request.resource_ref);
+  if (resource === undefined) return null;
+  return firstOfferBrief(ctx, request, generalFor(request, resource), settings.valuesOn);
+}
+
+/** The store's brief for its answer to a counter (§11), with the owner's answers so far. */
+function sellerCounterBrief(
+  ctx: TermContext,
+  counter: TermCounter,
+  head: TermOffer,
+  valuesOn: boolean,
+): NegotiationBrief {
+  const requestId = head.request_id;
   const chain = offerChain(ctx, requestId, 'outbound').map(({ offer }) => ({
     by: 'us',
     revision: offer.revision,
@@ -1449,9 +1569,9 @@ function handSellerTurn(ctx: TermContext, counter: TermCounter, head: TermOffer)
           ];
     });
   // Only what Brain may read now: untagged entries and Brain-readable personas.
-  const model = strategy.brainModel(SHELF_HOST_KIND) ?? undefined;
+  const model = ctx.deps.strategy?.brainModel(SHELF_HOST_KIND) ?? undefined;
   const policy = currentTermPolicy(ctx);
-  const submitted = strategy.submit({
+  return {
     kind: SHELF_HOST_KIND,
     ref: { negotiationId: requestId, turn: counter.round },
     side: 'seller',
@@ -1466,7 +1586,7 @@ function handSellerTurn(ctx: TermContext, counter: TermCounter, head: TermOffer)
       },
     },
     history: [...chain, ...counters],
-    model: model === undefined ? { constrained: [] } : { ...projectModel(model, { valuesOn: settings.valuesOn, firstOfferOut: true }) },
+    model: model === undefined ? { constrained: [] } : { ...projectModel(model, { valuesOn, firstOfferOut: true }) },
     roundsLeft: Math.max(0, policy.maxRounds - head.revision),
     deadlineAt: head.valid_until,
     rules: [
@@ -1474,10 +1594,8 @@ function handSellerTurn(ctx: TermContext, counter: TermCounter, head: TermOffer)
       'Propose the next revision of your offer, one version; Core never lets it fall below the owner’s floors.',
       'Never set a price for anyone outside the deal.',
     ],
-  });
-  if (submitted === null) return false;
-  ctx.store.putTurn({ requestId, turn: counter.round, taskId: submitted.taskId, createdAt: ctx.now() });
-  return true;
+    ...ownerAnswersFor(ctx, SHELF_HOST_KIND, requestId),
+  };
 }
 
 /** The counter a store's turn answers, and the offer it countered, if it still stands. */
@@ -1510,6 +1628,7 @@ export function applySellerStrategyMove(
 ): { outcome: string } {
   const turn = ctx.store.getTurn(args.requestId, args.turn);
   if (turn === null || turn.state !== 'pending') return { outcome: 'already_applied' };
+  if (args.turn === FIRST_OFFER_TURN) return applyFirstOfferMove(ctx, args.requestId, args.move);
   const target = sellerTurnTarget(ctx, args.requestId, args.turn);
   if (target === null) {
     ctx.store.closeTurn(args.requestId, args.turn, 'applied');
@@ -1524,6 +1643,18 @@ export function applySellerStrategyMove(
   // The owner went back to the fixed style meanwhile: it answers, with no message.
   if (strategy === undefined || strategy.settings(SHELF_HOST_KIND).strategy !== 'brain')
     return fixed('fixed_style');
+  // §15 step 11 — a yes-or-no question for the owner: the turn waits on its card.
+  if (args.move.kind === 'ask_owner') {
+    return askOwnerOnTurn(ctx, {
+      requestId: args.requestId,
+      turn: args.turn,
+      question: args.move.question,
+      // The revision must go out while the counter waits for it and the offer it answers stands.
+      dealDeadlineMs: Math.min(Date.parse(target.counter.respond_by), Date.parse(target.head.valid_until)),
+    })
+      ? { outcome: 'asked_owner' }
+      : fixed('fixed_style');
+  }
   // A question for the brand rides on the fixed style's revision; no verdict, no budget.
   if (args.move.kind === 'ask_other') {
     const message = tableMessage(args.move, target.head);
@@ -1552,11 +1683,97 @@ export function applySellerStrategyMove(
   return { outcome: 'answered' };
 }
 
+/**
+ * Brain's opening offer: charged like any proposal; a stop, a question or a
+ * spent budget lets the fixed style open. The request must still stand, with
+ * no offer out.
+ */
+function applyFirstOfferMove(ctx: TermContext, requestId: string, move: StrategyMove): { outcome: string } {
+  const requestRow = ctx.store
+    .listByRequest(requestId, 'term_request')
+    .find((row) => row.direction === 'inbound');
+  const close = (state: 'applied' | 'fallen_back') => ctx.store.closeTurn(requestId, FIRST_OFFER_TURN, state);
+  if (requestRow === undefined) {
+    close('applied');
+    return { outcome: 'negotiation_moved_on' };
+  }
+  const fixed = (outcome: string): { outcome: string } => {
+    close('fallen_back');
+    resumeFirstOffer(ctx, requestRow.recordDigest, { fixedStyle: true });
+    return { outcome };
+  };
+  const strategy = ctx.deps.strategy;
+  if (strategy === undefined || strategy.settings(SHELF_HOST_KIND).strategy !== 'brain')
+    return fixed('fixed_style');
+  if (move.kind === 'ask_owner') {
+    const request = readTermRequestRow(requestRow);
+    return request !== null &&
+      askOwnerOnTurn(ctx, {
+        requestId,
+        turn: FIRST_OFFER_TURN,
+        question: move.question,
+        dealDeadlineMs: Date.parse(request.respond_by),
+      })
+      ? { outcome: 'asked_owner' }
+      : fixed('fixed_style');
+  }
+  if (move.kind !== 'propose' || move.versions.length === 0) return fixed('fixed_style');
+  const charged = strategy.charge({
+    kind: SHELF_HOST_KIND,
+    negotiationId: requestId,
+    count: move.versions.length,
+    nowMs: ctx.now(),
+    thresholdVersion: ctx.deps.valueModels?.(SHELF_HOST_KIND, [])?.model.version ?? 0,
+  });
+  if (!charged.ok) {
+    raiseStrategyNotice(ctx, requestId, charged.spent);
+    return fixed('budget_spent');
+  }
+  // Every part starts at the fixed style's opening; Brain's numbers replace
+  // the ones it names. Core then raises anything short to its automatic limit.
+  const policy = currentTermPolicy(ctx);
+  const request = readTermRequestRow(requestRow);
+  const resource = policy.resources.find((r) => r.resource_ref === request?.resource_ref);
+  if (resource === undefined) return fixed('fixed_style');
+  const asking = {} as Record<TermName, bigint>;
+  for (const name of TERM_NAMES) asking[name] = BigInt(resource.asking[name]);
+  const proposed = proposeFirstOffer(asking);
+  for (const part of (move.versions[0] as DealVersion).parts)
+    if (part.kind === 'number' && (TERM_NAMES as readonly string[]).includes(part.name))
+      proposed[part.name as TermName] = part.value;
+  close('applied');
+  resumeFirstOffer(ctx, requestRow.recordDigest, { proposed });
+  return { outcome: 'answered' };
+}
+
+/** The fixed style plays a store's turn Brain will not finish (a lapsed question). */
+export function playSellerTurnFixed(ctx: TermContext, requestId: string, turn: number): void {
+  if (!ctx.store.closeTurn(requestId, turn, 'fallen_back')) return;
+  if (turn === FIRST_OFFER_TURN) {
+    const row = ctx.store.listByRequest(requestId, 'term_request').find((r) => r.direction === 'inbound');
+    if (row !== undefined) resumeFirstOffer(ctx, row.recordDigest, { fixedStyle: true });
+    return;
+  }
+  const target = sellerTurnTarget(ctx, requestId, turn);
+  if (target !== null) answerCounter(ctx, { ...target, fixedStyle: true });
+}
+
 /** A store's round the strategy did not answer in time: the fixed style answers. */
 export function fallBackStaleSellerTurns(ctx: TermContext): number {
   let n = 0;
   for (const turn of ctx.store.staleTurns(ctx.now() - SELLER_STRATEGY_WAIT_MS)) {
     if (ctx.store.getNegotiation(turn.requestId) !== null) continue; // the brand's own turn
+    if (turn.turn === FIRST_OFFER_TURN) {
+      ctx.atomically('seller_strategy_stale', () => {
+        if (!ctx.store.closeTurn(turn.requestId, turn.turn, 'fallen_back')) return;
+        const row = ctx.store
+          .listByRequest(turn.requestId, 'term_request')
+          .find((r) => r.direction === 'inbound');
+        if (row !== undefined) resumeFirstOffer(ctx, row.recordDigest, { fixedStyle: true });
+        n += 1;
+      });
+      continue;
+    }
     ctx.atomically('seller_strategy_stale', () => {
       if (!ctx.store.closeTurn(turn.requestId, turn.turn, 'fallen_back')) return;
       const target = sellerTurnTarget(ctx, turn.requestId, turn.turn);

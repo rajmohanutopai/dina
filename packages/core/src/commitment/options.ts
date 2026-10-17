@@ -133,6 +133,20 @@ export interface FallbackBody {
   quote_id: string;
   alternative_id: string;
   at: string;
+  /** §15 step 12: the order holds the exit right; the buyer may cancel without charge. */
+  exit?: true;
+}
+
+/**
+ * The buyer takes the exit right (COMMITMENT_KERNEL §15 step 12): the
+ * cancellation request for the order whose run fell through. The seller's
+ * Core cancels it without asking its runner, but only for an order that
+ * holds the right and whose fallback it recorded.
+ */
+export interface ExitBody {
+  v: 1;
+  kind: 'exit';
+  cancellation: Record<string, unknown>;
 }
 
 export type OptionMessage =
@@ -142,7 +156,8 @@ export type OptionMessage =
   | AcceptanceBody
   | ReceiptBody
   | StatusQueryBody
-  | FallbackBody;
+  | FallbackBody
+  | ExitBody;
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>
   typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -244,7 +259,12 @@ export function parseOptionMessage(raw: unknown): OptionMessage | null {
         quote_id: raw.quote_id,
         alternative_id: raw.alternative_id,
         at: raw.at,
+        ...(raw.exit === true ? { exit: true as const } : {}),
       };
+    case 'exit':
+      // The cancellation's own validator runs where it is resolved.
+      if (!isRecord(raw.cancellation) || JSON.stringify(raw.cancellation).length > 4_096) return null;
+      return { v: 1, kind: 'exit', cancellation: raw.cancellation };
     default:
       return null;
   }
@@ -375,7 +395,16 @@ export interface ShipperModelView {
  * (§11); issued with no card, so it must be at or above the least `fee` Core
  * may agree alone. A day with no cost entry is a day with no run.
  */
-export function answerOptionRequest(args: {
+export function answerOptionRequest(args: OptionRequestArgs & { chooseFee?: undefined }): OptionBody | DeclineBody;
+export function answerOptionRequest(args: OptionRequestArgs): OptionBody | DeclineBody | null;
+export function answerOptionRequest(args: OptionRequestArgs): OptionBody | DeclineBody | null {
+  const { request, store } = args;
+  const held = store.byRequest(args.sellerDid, request.request_id);
+  if (held !== null) return held.option;
+  return issueForRequest(args);
+}
+
+interface OptionRequestArgs {
   store: ShipperOptionStore;
   view: ShipperModelView;
   sellerDid: string;
@@ -383,10 +412,19 @@ export function answerOptionRequest(args: {
   timeZone: string;
   nowMs: number;
   deliveryDayOf: (atMs: number, timeZone: string) => string | null;
-}): OptionBody | DeclineBody {
+  /**
+   * COMMITMENT_KERNEL §15 step 11: Brain's fee for this run, asked for once
+   * the run is otherwise possible; `wait` while Brain is still deciding
+   * (nothing is sent: the seller's resend asks again); `asking`, or absent:
+   * the owner's asking fee. Whatever comes back is held between the
+   * automatic limit and the asking fee, and the never-rules are judged on
+   * the fee that goes out.
+   */
+  chooseFee?: (bounds: { day: string; crates: number; slackMs: number }) => bigint | 'asking' | 'wait';
+}
+
+function issueForRequest(args: OptionRequestArgs): OptionBody | DeclineBody | null {
   const { request, store } = args;
-  const held = store.byRequest(args.sellerDid, request.request_id);
-  if (held !== null) return held.option;
   const decline = (reason: DeclineReason): DeclineBody => ({
     v: 1,
     kind: 'decline',
@@ -405,22 +443,29 @@ export function answerOptionRequest(args: {
   // The owner's price for a run, held to what Core may agree alone.
   const asking = args.view.asking.fee;
   if (asking === undefined || !MINOR.test(asking)) return decline('no_price');
-  const feeMinor = BigInt(asking);
-  if (feeMinor < (model.limits.fee?.auto ?? 0n)) return decline('no_price');
+  const askingMinor = BigInt(asking);
+  const autoMinor = model.limits.fee?.auto ?? 0n;
+  if (askingMinor < autoMinor) return decline('no_price');
   // A never-rule is judged against the run as offered: its day and its fee.
   // A test on any other part is taken to hold, so a rule this code cannot
   // read refuses rather than letting the run by.
-  const holdsFor = (c: NeverCondition): boolean => {
-    if (c.part === 'delivery_day') return 'choice' in c ? c.choice === day : 'present' in c;
-    if (c.part === 'fee') {
-      if ('below' in c) return feeMinor < c.below;
-      if ('above' in c) return feeMinor > c.above;
-      return 'present' in c;
-    }
-    return true;
-  };
-  if (model.never.some((rule) => rule.all.length > 0 && rule.all.every(holdsFor)))
-    return decline('no_run');
+  const refusedAt = (fee: bigint | null): boolean =>
+    model.never.some(
+      (rule) =>
+        rule.all.length > 0 &&
+        rule.all.every((c: NeverCondition): boolean => {
+          if (c.part === 'delivery_day') return 'choice' in c ? c.choice === day : 'present' in c;
+          // Before a fee is chosen, only rules that need no fee can refuse.
+          if (c.part === 'fee') {
+            if (fee === null) return false;
+            if ('below' in c) return fee < c.below;
+            if ('above' in c) return fee > c.above;
+            return 'present' in c;
+          }
+          return true;
+        }),
+    );
+  if (refusedAt(null)) return decline('no_run');
   // Room on that day's run: crates held by options still open or admitted.
   const room = model.capacities?.run;
   if (room === undefined || room.dimension !== 'crates') return decline('full');
@@ -448,6 +493,25 @@ export function answerOptionRequest(args: {
     serviceAtMs,
   };
   if (optionFits(terms) !== null) return decline('too_soon');
+  // The run is possible. Brain chooses the fee within what Core may agree
+  // alone: never under the automatic limit (which needs the owner), never
+  // over the asking fee. `slackMs`: how long it may take before the hold no
+  // longer fits.
+  const choice =
+    args.chooseFee?.({
+      day,
+      crates: request.crates,
+      slackMs: latest - args.nowMs - MIN_HOLD_MS,
+    }) ?? 'asking';
+  if (choice === 'wait') return null;
+  const chosen = choice === 'asking' ? askingMinor : choice;
+  let feeMinor = chosen < autoMinor ? autoMinor : chosen > askingMinor ? askingMinor : chosen;
+  // A never-rule on the fee stops Brain's figure, not the run: the asking fee
+  // goes instead, and only a run the asking fee would break is declined.
+  if (refusedAt(feeMinor)) {
+    if (feeMinor === askingMinor || refusedAt(askingMinor)) return decline('no_run');
+    feeMinor = askingMinor;
+  }
   const option: OptionBody = {
     v: 1,
     kind: 'option',
@@ -925,6 +989,16 @@ export class OrderFallbackStore {
   }
 
   /** Seller rows whose buyer has not yet been told. */
+  /** The buyer-side records: orders of this node whose run fell through (§15 step 12 repair). */
+  asBuyer(): OrderFallback[] {
+    return this.db
+      .query(`SELECT * FROM commitment_order_fallbacks WHERE role = 'buyer' ORDER BY applied_at`)
+      .flatMap((r) => {
+        const f = this.row(r);
+        return f === null ? [] : [f];
+      });
+  }
+
   untold(): OrderFallback[] {
     return this.db
       .query(`SELECT * FROM commitment_order_fallbacks WHERE role = 'seller' AND notice_sent = 0`)
@@ -953,4 +1027,58 @@ export function orderRefOf(buyerDid: string, purchaseOrderId: string): string {
 export function parseOrderRef(ref: string): { buyerDid: string; purchaseOrderId: string } | null {
   const at = ref.indexOf(' ');
   return at <= 0 ? null : { buyerDid: ref.slice(0, at), purchaseOrderId: ref.slice(at + 1) };
+}
+
+/**
+ * The cancellations a buyer's owner approved under the exit right
+ * (COMMITMENT_KERNEL §15 step 12), kept until the transport takes each one:
+ * an approval is never lost to a failed send or a restart.
+ */
+export class ExitAskStore {
+  constructor(private readonly db: DatabaseAdapter) {}
+
+  /** Keep an approved exit once; the first kept stands. */
+  ask(supplierDid: string, purchaseOrderId: string, cancellation: Record<string, unknown>, nowMs: number): void {
+    this.db.execute(
+      `INSERT OR IGNORE INTO commitment_exit_asks
+         (supplier_did, purchase_order_id, cancellation_json, asked_at, sent_at)
+       VALUES (?, ?, ?, ?, NULL)`,
+      [supplierDid, purchaseOrderId, JSON.stringify(cancellation), nowMs],
+    );
+  }
+
+  has(supplierDid: string, purchaseOrderId: string): boolean {
+    return (
+      this.db.query(
+        `SELECT 1 FROM commitment_exit_asks WHERE supplier_did = ? AND purchase_order_id = ?`,
+        [supplierDid, purchaseOrderId],
+      )[0] !== undefined
+    );
+  }
+
+  /** Approved exits the transport has not yet taken. */
+  unsent(): { supplierDid: string; purchaseOrderId: string; cancellation: Record<string, unknown> }[] {
+    return this.db
+      .query(`SELECT * FROM commitment_exit_asks WHERE sent_at IS NULL ORDER BY asked_at`)
+      .flatMap((r) => {
+        try {
+          return [
+            {
+              supplierDid: String(r.supplier_did),
+              purchaseOrderId: String(r.purchase_order_id),
+              cancellation: JSON.parse(String(r.cancellation_json)) as Record<string, unknown>,
+            },
+          ];
+        } catch {
+          return [];
+        }
+      });
+  }
+
+  sent(supplierDid: string, purchaseOrderId: string, nowMs: number): void {
+    this.db.execute(
+      `UPDATE commitment_exit_asks SET sent_at = ? WHERE supplier_did = ? AND purchase_order_id = ? AND sent_at IS NULL`,
+      [nowMs, supplierDid, purchaseOrderId],
+    );
+  }
 }

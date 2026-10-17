@@ -73,3 +73,30 @@ export function createProposeDealValuesTool(opts: {
     },
   };
 }
+
+/**
+ * COMMITMENT_KERNEL §15 step 11: when the owner chose Brain to bargain for
+ * selling goods, Brain sets the standing share of a cheaper day's saving that
+ * goes to the buyer, by its own judgement. Core refuses it otherwise, spends
+ * a verdict on each change, and keeps every price within the owner's floors.
+ */
+export function createSetSavingShareTool(opts: {
+  core: Pick<CoreClient, 'commitmentSetSavingShare'>;
+}): AgentTool {
+  return {
+    name: 'set_saving_share',
+    description:
+      'Only when the user has chosen you to bargain for them when selling goods: set how much of what a cheaper delivery day saves them is passed on to the buyer, in hundredths of a percent (5000 is half). Start from their own choice (`saving_share` in read_deal_values) and move from it by your judgement of what wins orders without giving away more than needed. Each change uses one of your turns, so change it rarely. Core still keeps every price within their limits.',
+    parameters: {
+      type: 'object',
+      properties: { share_bps: { type: 'integer', minimum: 0, maximum: 10000 } },
+      required: ['share_bps'],
+    },
+    async execute(args) {
+      const bps = args.share_bps;
+      if (typeof bps !== 'number' || !Number.isInteger(bps) || bps < 0 || bps > 10_000)
+        return { error: 'share_bps: a whole number from 0 to 10000' };
+      return opts.core.commitmentSetSavingShare(bps);
+    },
+  };
+}

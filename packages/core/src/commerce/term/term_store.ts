@@ -16,6 +16,8 @@
  * (`CommerceTransaction`) from the engine instead.
  */
 
+import { StrategyQuestionStore } from '../../commitment/strategy_questions';
+
 import type { TermListingAccess } from './term_policy';
 import type { DatabaseAdapter, DBRow } from '../../storage/db_adapter';
 import type { TermReceiptOutcome } from '@dina/commerce-protocol';
@@ -254,6 +256,11 @@ function cardFromDb(row: DBRow): TermCardRow {
 export class TermStore {
   constructor(private readonly db: DatabaseAdapter) {}
 
+  /** Brain's questions to the owner (COMMITMENT_KERNEL §15 step 11), in the same database. */
+  questions(): StrategyQuestionStore {
+    return new StrategyQuestionStore(this.db);
+  }
+
   // --- documents -----------------------------------------------------------
 
   /** First writer wins on the digest. False when the row already exists. */
@@ -366,11 +373,36 @@ export class TermStore {
     );
   }
 
-  /** Turns still pending that were asked before `beforeMs`. */
+  /**
+   * Turns still pending that were asked before `beforeMs`. A turn waiting on
+   * the owner's answer to the strategy's question is not stale: its card
+   * decides when it ends (COMMITMENT_KERNEL §15 step 11).
+   */
   staleTurns(beforeMs: number): TermStrategyTurn[] {
     return this.db
-      .query(`SELECT * FROM commerce_term_strategy_turns WHERE state = 'pending' AND created_at < ?`, [beforeMs])
+      .query(
+        `SELECT * FROM commerce_term_strategy_turns t
+          WHERE t.state = 'pending' AND t.created_at < ?
+            AND NOT EXISTS (
+              SELECT 1 FROM commitment_strategy_questions q
+               WHERE q.negotiation_id = t.request_id AND q.turn = t.turn AND q.answer IS NULL)`,
+        [beforeMs],
+      )
       .map(turnFromDb);
+  }
+
+  /**
+   * The same turn asked of the strategy again, after the owner answered its
+   * question: a new task, and the wait measured from now.
+   */
+  restartTurn(requestId: string, turn: number, taskId: string, nowMs: number): boolean {
+    return (
+      this.db.run(
+        `UPDATE commerce_term_strategy_turns SET task_id = ?, created_at = ?
+          WHERE request_id = ? AND turn = ? AND state = 'pending'`,
+        [taskId, nowMs, requestId, turn],
+      ) > 0
+    );
   }
 
   // --- outbox (§5.3 delivery) -----------------------------------------------

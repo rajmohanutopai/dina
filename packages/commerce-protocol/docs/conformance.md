@@ -59,6 +59,15 @@ above is lifted, breaks do not bump the version.
 
 ### Unreleased (pre-freeze `1.x`)
 
+- **Additive at minor 1.5 (COMMITMENT_KERNEL §15 step 12)** — the exit right.
+  `QuoteRequest.exit_if_run_fails: true` (optional, only with
+  `onward_sharing`): the buyer asks that a version resting on a partner's run
+  let it cancel without charge if the run falls through after binding.
+  `QuoteAlternative.exit_if_run_fails: true` (optional, only with
+  `partner_run`): the supplier grants it on that version; it is part of the
+  version's `terms_digest` (`termsDigestInput` carries the key only when
+  true, so every digest made without it is unchanged), so an order naming the
+  version holds the right. Conversations at 1.0–1.4 are unchanged.
 - **Additive at minor 1.4 (COMMITMENT_KERNEL §6, §11, §15 step 7)** — goods
   versions resting on a shipper's firm option. `QuoteRequest.onward_sharing`
   (optional): the buyer's per-deal grant, `{fields: ["postal_code"],

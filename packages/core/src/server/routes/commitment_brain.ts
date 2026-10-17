@@ -10,6 +10,9 @@
  *        turn_text, start, end } }. Core checks each entry by the owner's own
  *        rules and Brain's narrower ones, and raises one card; nothing changes
  *        until the owner says yes.
+ *   PUT  /v1/commitment/brain/goods.seller/saving-share — { share_bps }: the
+ *        standing share of a cheaper day's saving passed on (§15 step 11),
+ *        while the owner keeps Brain for selling goods; a verdict each.
  *
  * Brain only (authz.ts); the handler checks again.
  */
@@ -17,6 +20,7 @@
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import { verifySpanProof } from '../../a2a/span_proof';
+import { appendAudit } from '../../audit/service';
 import { dealKind, type DealKind } from '../../commerce/deal_kinds';
 import { getCommerceRuntime } from '../../commerce/runtime';
 import {
@@ -27,6 +31,7 @@ import {
   type ModelChange,
 } from '../../commitment/model_changes';
 import { getValueModelStore } from '../../commitment/model_store';
+import { getStandingChoiceStore, SAVING_SHARE_BPS, shareBpsOf } from '../../commitment/standing_choices';
 import { getStrategyStore } from '../../commitment/strategy_store';
 import { getWorkflowService } from '../../workflow/service';
 
@@ -64,7 +69,11 @@ function vocabularyView(kind: DealKind): Record<string, unknown> {
   };
 }
 
-export function registerCommitmentBrainRoutes(router: CoreRouter): void {
+export function registerCommitmentBrainRoutes(
+  router: CoreRouter,
+  opts: { nowMs?: () => number } = {},
+): void {
+  const now = opts.nowMs ?? Date.now;
   const FORBIDDEN: CoreResponse = { status: 403, body: { error: 'brain only' } };
   const UNKNOWN: CoreResponse = { status: 404, body: { error: 'unknown_kind' } };
   const NO_STORE: CoreResponse = { status: 503, body: { error: 'model_store_unavailable' } };
@@ -92,8 +101,48 @@ export function registerCommitmentBrainRoutes(router: CoreRouter): void {
         // COMMITMENT_KERNEL §13 — past deals through the one projection: the
         // parties, dates and outcome always; the numbers only with values on.
         past_deals: pastDeals(kind.id, valuesOn && settings?.strategy === 'brain'),
+        // §15 step 11 — the standing share Brain set, while it is Brain's to set.
+        ...(kind.id === 'goods.seller' && settings?.strategy === 'brain'
+          ? await standingShareView()
+          : {}),
       },
     };
+  });
+
+  // COMMITMENT_KERNEL §15 step 11 — the share of a cheaper day's saving a
+  // goods seller passes on, set by Brain's judgement. Only while the owner
+  // keeps Brain for selling goods; each change spends a verdict, so Brain
+  // cannot sweep the share to learn what buyers do. Core still applies the
+  // floors and never-rules to every version it makes from it.
+  router.put('/v1/commitment/brain/:kind/saving-share', async (req): Promise<CoreResponse> => {
+    if (!isBrain(req)) return FORBIDDEN;
+    if (req.params?.kind !== 'goods.seller') return UNKNOWN;
+    const raw = ((req.body as Record<string, unknown> | null) ?? {}).share_bps;
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 0 || raw > 10_000)
+      return {
+        status: 400,
+        body: { error: 'invalid_share', detail: 'share_bps: a whole number from 0 to 10000' },
+      };
+    const strategies = await getStrategyStore();
+    const choices = await getStandingChoiceStore();
+    const models = await getValueModelStore();
+    if (strategies === null || choices === null || models === null) return NO_STORE;
+    if (strategies.settings('goods.seller').strategy !== 'brain')
+      return { status: 409, body: { error: 'not_brain', detail: 'the owner has not chosen Brain for selling goods' } };
+    const nowMs = now();
+    const charged = strategies.charge({
+      kind: 'goods.seller',
+      // A month's changes count as one negotiation: the cap renews each
+      // month, and the owner's monthly budget bounds them all.
+      negotiationId: `standing:saving_share:${new Date(nowMs).toISOString().slice(0, 7)}`,
+      count: 1,
+      nowMs,
+      thresholdVersion: models.loadForBrain('goods.seller').version,
+    });
+    if (!charged.ok) return { status: 429, body: { error: 'budget_spent', spent: charged.spent } };
+    choices.set('goods.seller', SAVING_SHARE_BPS, String(raw), 'brain', nowMs);
+    appendAudit('commitment', 'saving_share_set', 'goods.seller', `bps=${String(raw)} by=brain`);
+    return { status: 200, body: { ok: true, share_bps: raw } };
   });
 
   router.post('/v1/commitment/brain/:kind/changes', async (req): Promise<CoreResponse> => {
@@ -216,3 +265,9 @@ function pastDeals(kindId: string, numbers: boolean): Record<string, unknown>[] 
     }));
 }
 
+/** The standing share of a saving Brain set, for its own view. */
+async function standingShareView(): Promise<{ standing?: { saving_share_bps: number } }> {
+  const choice = (await getStandingChoiceStore())?.get('goods.seller', SAVING_SHARE_BPS) ?? null;
+  const bps = choice?.setBy === 'brain' ? shareBpsOf(choice) : undefined;
+  return bps === undefined ? {} : { standing: { saving_share_bps: bps } };
+}

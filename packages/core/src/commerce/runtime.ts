@@ -22,8 +22,14 @@
  */
 
 import { ValueModelStore } from '../commitment/model_store';
-import { installFallbackNoticeCheck, installOrderDigestLookup } from '../commitment/option_handler';
+import {
+  installExitRightPort,
+  installFallbackNoticeCheck,
+  installOrderDigestLookup,
+} from '../commitment/option_handler';
 import { SellerOptionStore } from '../commitment/options';
+import { SAVING_SHARE_BPS, shareBpsOf, StandingChoiceStore } from '../commitment/standing_choices';
+import { StrategyStore } from '../commitment/strategy_store';
 import { setTradeCounterpartyCheck, setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
 import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
 import { tier0TxRunner } from '../run/tx';
@@ -94,7 +100,14 @@ import {
 } from './order_draft_store';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
 import { installStaffPresenceVerifier } from './owner_presence';
-import { checkFallbackNotice, retainedQuote, takeUpForOrderInTx } from './partner_run';
+import {
+  buyerExitCancellation,
+  checkFallbackNotice,
+  quoteGrantsExit,
+  retainedQuote,
+  sellerOrderHoldsExit,
+  takeUpForOrderInTx,
+} from './partner_run';
 import {
   SQLitePendingSupplierDecisionRepository,
   type PendingSupplierDecisionRepository,
@@ -137,11 +150,11 @@ import type { DeclineDocumentRepository } from './decline_documents';
 import type { LifecycleEngineDeps } from './lifecycle_engine';
 import type { NegotiationRepository } from './negotiation_store';
 import type { CommerceReceiptRepository } from './receipts';
+import type { SellerRules } from './runner_bounds';
 import type { TenderRepository } from './tender';
 import type { TermEngine } from './term/term_engine';
 import type { TradeDocumentRepository } from './trade_ledger';
 import type { CommerceEpochWatermarkRepository } from './watermarks';
-import type { ValueModel } from '../commitment';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /**
@@ -208,7 +221,9 @@ export interface CommerceRuntime {
    * whose entries could not be read because they are closed. Read at
    * issuance; absent or null: no cost-led alternatives.
    */
-  goodsSellerModel?: () => { model: ValueModel | null; closedPersonas: string[] } | null;
+  goodsSellerModel?: () => SellerRules | null;
+  /** Brain's standing share of a saving, in hundredths of a percent (§15 step 11); none: the owner's. */
+  goodsSellerShareBps?: () => number | undefined;
   families: QuoteFamilyStore;
   chains: StatusChainStore;
   orders: CommerceOrderStore;
@@ -655,7 +670,20 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
         ]);
         return { model: loaded.model, closedPersonas: loaded.closedPersonas };
       } catch {
-        return null;
+        // Not "no rules": the rules exist and cannot be read, so whatever
+        // they would refuse is refused (COMMITMENT_KERNEL §15 step 10).
+        return { model: null, closedPersonas: [], unreadable: true as const };
+      }
+    },
+    // COMMITMENT_KERNEL §15 step 11: the standing share Brain set, while the
+    // owner keeps Brain for selling goods; otherwise none (the owner's choice).
+    goodsSellerShareBps: () => {
+      try {
+        if (new StrategyStore(inputs.adapter).settings('goods.seller').strategy !== 'brain') return undefined;
+        const choice = new StandingChoiceStore(inputs.adapter).get('goods.seller', SAVING_SHARE_BPS);
+        return choice?.setBy === 'brain' ? shareBpsOf(choice) : undefined;
+      } catch {
+        return undefined;
       }
     },
     families,
@@ -783,6 +811,27 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
     value === null
       ? null
       : (buyerDid, purchaseOrderId) => value.orders.load(buyerDid, purchaseOrderId)?.ref.orderDigest ?? null,
+  );
+  // §15 step 12 — the exit right, read from this node's own orders and quotes.
+  installExitRightPort(
+    value === null
+      ? null
+      : {
+          sellerOrderHoldsExit: (buyerDid, purchaseOrderId) =>
+            sellerOrderHoldsExit(value, buyerDid, purchaseOrderId),
+          quoteGrantsExit: (quoteId) => quoteGrantsExit(value, quoteId),
+          buyerCancellation: (supplierDid, purchaseOrderId, nowMs) =>
+            buyerExitCancellation(value, supplierDid, purchaseOrderId, nowMs) as unknown as Record<
+              string,
+              unknown
+            > | null,
+          cancelForExit: (buyerDid, cancellation) => {
+            // The right is the order's: the runner is not asked; the race
+            // against dispatch still decides.
+            const outcome = value.lifecycle.resolveCancellation(cancellation, buyerDid, () => 'cancelled');
+            return 'error' in outcome ? 'error' : outcome.result;
+          },
+        },
   );
   // §20.10 — the probing window lives and dies with the runtime. Composed
   // HERE rather than at each boot because there are two boots and the defence

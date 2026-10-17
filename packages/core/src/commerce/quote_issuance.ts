@@ -61,12 +61,19 @@ import {
   type QuoteAlternative,
 } from '@dina/commerce-protocol';
 
+import { appendAudit } from '../audit/service';
 import { openSmallerDeals } from '../commitment/option_handler';
 import { ownerTimeZoneIfRead } from '../settings/owner_settings';
 
 import { authorQuoteDecline, rehydrateDeclineDocument } from './decline_documents';
 import { costLedAlternatives } from './goods_seller_alternatives';
 import { publishedCatalogItems } from './published_catalog';
+import {
+  approvedPricesOf,
+  atOrAboveFloor,
+  checkRunnerTerms,
+  type RunnerBoundsRefusal,
+} from './runner_bounds';
 import { getCommerceRuntime } from './runtime';
 
 const hash: Sha256Fn = (data) => sha256(data);
@@ -88,7 +95,9 @@ export type QuoteIssuanceRefusal =
   /** Core composed a quote its own validator refused. */
   | 'quote_invalid'
   /** The ledger refused to register the family (§9.8). */
-  | 'registration_refused';
+  | 'registration_refused'
+  /** COMMITMENT_KERNEL §15 step 10: the runner's terms broke the owner's floors or rules. */
+  | RunnerBoundsRefusal;
 
 export type QuoteIssuanceOutcome =
   /** Core signed it; this JSON replaces the runner's answer on the wire. */
@@ -240,6 +249,8 @@ export function priceQuoteAlternatives(
     /** A version resting on a shipper's option (minor 1.4): kept as given. */
     partner_run?: true;
     offer_ends_at?: string;
+    /** Its exit right (minor 1.5, only with `partner_run`): part of its terms digest. */
+    exit_if_run_fails?: true;
   }[],
 ): QuoteAlternative[] | null {
   const minor = Number(String(draft.protocol_version).split('.')[1] ?? '0');
@@ -256,15 +267,26 @@ export function priceQuoteAlternatives(
       total: total.value,
       terms_digest: commerceRecordDigest(
         'terms',
-        termsDigestInput({ ...draft, charges: alt.charges, estimated_delivery_at: alt.estimated_delivery_at }),
+        termsDigestInput({
+          ...draft,
+          charges: alt.charges,
+          estimated_delivery_at: alt.estimated_delivery_at,
+          ...(exitRight(alt) ? { exit_if_run_fails: true as const } : {}),
+        }),
         hash,
       ),
       ...(alt.partner_run === true && alt.offer_ends_at !== undefined
         ? { partner_run: true as const, offer_ends_at: alt.offer_ends_at }
         : {}),
+      ...(exitRight(alt) ? { exit_if_run_fails: true as const } : {}),
     });
   }
   return out;
+}
+
+/** A version's exit right stands only on a partner-run version (§15 step 12). */
+function exitRight(alt: { partner_run?: true; offer_ends_at?: string; exit_if_run_fails?: true }): boolean {
+  return alt.exit_if_run_fails === true && alt.partner_run === true && alt.offer_ends_at !== undefined;
 }
 
 /**
@@ -465,9 +487,50 @@ export function settleInboundQuote(args: {
             totalMinor: BigInt(total.minor_units),
             nowMs: args.nowMs,
             timeZone: zone,
+            ...shareArg(runtime.goodsSellerShareBps?.()),
           });
     // A cheaper day Core made up never costs the buyer the quote itself.
     alternatives = priceQuoteAlternatives(pricedDraft, offered) ?? [];
+    madeUp = alternatives.length > 0;
+  }
+  // COMMITMENT_KERNEL §10, §15 step 10 — the runner's prices bind once a
+  // buyer orders, so they pass the floors a counter passes, measured from
+  // what the owner approved, and every version the runner stated passes the
+  // seller's never-rules. Core's own cheaper days were judged against the
+  // never-rules where made; here they are kept only while they leave the
+  // goods at or above their floors.
+  const bounds = checkRunnerTerms({
+    approved: approvedPricesOf(runtime),
+    lines: lines.map((line) => ({
+      line_id: line.line_id,
+      product: line.offered_product,
+      unit_price: line.unit_price,
+      quantity: line.quantity,
+      price_basis: line.price_basis,
+    })),
+    versions: [
+      {
+        ...(terms.estimatedDeliveryAt === undefined
+          ? {}
+          : { estimatedDeliveryAt: terms.estimatedDeliveryAt }),
+        total,
+      },
+      ...(madeUp
+        ? []
+        : alternatives.map((alt) => ({
+            estimatedDeliveryAt: alt.estimated_delivery_at,
+            total: alt.total,
+          }))),
+    ],
+    seller: runtime.goodsSellerModel?.() ?? null,
+    timeZone: ownerTimeZoneIfRead(),
+  });
+  if (!bounds.ok) {
+    appendAudit('negotiation', 'runner_quote_withheld', quoteId, `reason=${bounds.refusal}`);
+    return { kind: 'withhold', refusal: bounds.refusal };
+  }
+  if (madeUp) {
+    alternatives = atOrAboveFloor(alternatives, bounds.floorGoodsMinor);
     madeUp = alternatives.length > 0;
   }
   const terms_digest = commerceRecordDigest('terms', termsDigestInput(draft), hash);
@@ -630,4 +693,9 @@ function sealDecline(
   });
   if (!authored.ok) return { kind: 'withhold', refusal: 'registration_refused' };
   return { kind: 'declined', declineJson: JSON.stringify({ decline: authored.document }) };
+}
+
+/** Brain's standing share for an alternative's arguments, when there is one. */
+function shareArg(bps: number | undefined): { brainShareBps?: number } {
+  return bps === undefined ? {} : { brainShareBps: bps };
 }

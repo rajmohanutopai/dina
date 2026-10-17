@@ -57,9 +57,9 @@ import {
   admitSupplierRecords,
   WATERMARK_REFUSAL,
 } from '../../commerce/watermark_gate';
-import { MODEL_CHANGE_CARD } from '../../commitment/model_changes';
 import { EVIDENCE_ASK_TYPE } from '../../commitment/evidence_handler';
-import { OPTION_CARD_TYPES, OPTION_CLEAR_TYPE } from '../../commitment/option_handler';
+import { MODEL_CHANGE_CARD } from '../../commitment/model_changes';
+import { OPTION_CARD_TYPES, OPTION_CLEAR_TYPE, OPTION_EXIT_TYPE } from '../../commitment/option_handler';
 import { DISCLOSURE_REVIEW_APPROVAL_TYPE } from '../../coordination/disclosure_egress';
 import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
 import { claimPluginTask } from '../../plugins/claim_guard';
@@ -1649,6 +1649,8 @@ export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map
   [TERM_DECISION_CARD, 'accepting a slot agreement needs a person present'],
   // COMMITMENT_KERNEL §6 step 3: once cleared, a buyer's yes binds the run with no further card.
   [OPTION_CLEAR_TYPE, 'letting a shipper’s run bind your orders needs a person present'],
+  // COMMITMENT_KERNEL §15 step 12: taking the exit right cancels an order.
+  [OPTION_EXIT_TYPE, 'cancelling an order needs a person present'],
 ]);
 
 function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | null {

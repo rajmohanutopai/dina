@@ -123,6 +123,23 @@ describe('the tender screen', () => {
     expect(b.sendHeldOrder).toHaveBeenCalledWith('oap_1');
   });
 
+  it('a partner run that holds the exit right says the buyer may cancel without charge (§15 step 12)', async () => {
+    const partner = {
+      ...RANKING.ranked[0],
+      alternative_id: 'partner_00112233',
+      partner_run: {
+        offer_ends_at: '2026-08-08T09:00:00.000Z',
+        fallback_total_minor: '48000',
+        exit_if_run_fails: true as const,
+      },
+    };
+    setTenderBackendForTest(backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner] })) }));
+    const view = render(<TenderScreen />);
+    await waitFor(() => expect(view.getByTestId(`tender-partner-run-${B}-partner_00112233`)).toBeTruthy());
+    const words = JSON.stringify(view.getByTestId(`tender-partner-run-${B}-partner_00112233`).props.children);
+    expect(words).toMatch(/cancel without charge/);
+  });
+
   it('one supplier in two versions: each its own row; a partner run says its end and its fallback', async () => {
     const own = RANKING.ranked[0];
     const partner = {
@@ -148,6 +165,8 @@ describe('the tender screen', () => {
     expect(words).toMatch(/2026-08-08 09:00/);
     expect(words).toMatch(/2026-08-20/);
     expect(words).toMatch(/480\.00/);
+    // No exit right on this version: nothing says the buyer may cancel.
+    expect(words).not.toMatch(/cancel/);
     fireEvent.press(view.getByTestId(`tender-award-${B}-partner_00112233`));
     await waitFor(() =>
       expect(b.awardTender).toHaveBeenCalledWith({

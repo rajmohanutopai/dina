@@ -40,7 +40,7 @@ import {
   makeNegotiationPriceDecisionHandler,
   replayedCounterAnswer,
 } from '../../src/commerce/negotiation_supplier';
-import { transformInboundOrderResult } from '../../src/commerce/order_decision';
+import { transformInboundOrderResult as rawTransformInboundOrderResult } from '../../src/commerce/order_decision';
 import { publishedCatalogItems } from '../../src/commerce/published_catalog';
 import {
   createCommerceRuntime,
@@ -66,7 +66,16 @@ import {
   makeProjection,
   makeRevision,
   makeSignedQuote,
+  catalogItem,
+  transformWithPublishedPrices,
+  withPublishedCatalogue,
 } from './helpers';
+
+// Every quote here is priced from a catalogue the owner published; the floors
+// a runner's quote passes are tested in runner_bounds.test.ts.
+const transformInboundOrderResult = transformWithPublishedPrices;
+// Where what is published is the subject, nothing is added to it.
+const rawTransform = rawTransformInboundOrderResult;
 
 import type { SupplierSettings } from '../../src/commerce/commerce_settings';
 import type { SupplierNegotiationPolicy } from '../../src/commerce/negotiation_policy';
@@ -128,7 +137,11 @@ const LINES = [
   },
 ];
 
-async function buyerAsks(buyer: CommerceRuntime, requestId = 'req-1'): Promise<QuoteRequest> {
+async function buyerAsks(
+  buyer: CommerceRuntime,
+  requestId = 'req-1',
+  sharePincode = false,
+): Promise<QuoteRequest> {
   installCommerceRuntime(buyer);
   const outcome = await requestQuote({
     supplierDid: SUPPLIER_DID,
@@ -137,9 +150,10 @@ async function buyerAsks(buyer: CommerceRuntime, requestId = 'req-1'): Promise<Q
     idempotencyKey: `idem-${requestId}`,
     lines: LINES,
     projection: makeProjection(),
+    ...(sharePincode ? { sharePincodeWithShippers: true } : {}),
     nowMs: NOW,
   });
-  if (outcome.kind !== 'sent') throw new Error(`request not sent: ${outcome.kind}`);
+  if (outcome.kind !== 'sent') throw new Error(`request not sent: ${JSON.stringify(outcome)}`);
   return outcome.request;
 }
 
@@ -311,6 +325,8 @@ async function negotiatingPair(
   withDecisionHandler = false,
   /** The first quote's unit price, in paise. */
   unitMinor = '500',
+  /** The buyer lets the supplier ask its shippers (and so asks for the exit right). */
+  sharePincode = false,
 ): Promise<Pair> {
   const buyer = openRuntime(BUYER_DID);
   const supplier = openRuntime(SUPPLIER_DID);
@@ -330,7 +346,7 @@ async function negotiatingPair(
   });
   setWorkflowService(workflow);
   expect(supplier.settings.writeSupplier(supplierSettings(policy)).ok).toBe(true);
-  const request = await buyerAsks(buyer);
+  const request = await buyerAsks(buyer, 'req-1', sharePincode);
   const quote = supplierQuotes(supplier, request, unitMinor);
   installCommerceRuntime(buyer);
   expect(
@@ -452,19 +468,116 @@ describe('COMMITMENT_KERNEL §15 step 7 — a held option becomes a partner-run 
     );
     // The seller's owner cleared offering it (§6 step 3).
     links.clear(request.request_id, NOW);
-    const counter = await buyerCounters(pair, '40000');
+    // Halfway to ₹480 is ₹490 each: room above the ₹450 floor for the saving.
+    const counter = await buyerCounters(pair, '48000');
     const answer = supplierAnswers(pair, counter);
     if (!('json' in answer)) throw new Error(answer.refused);
     const revision = (JSON.parse(answer.json) as { quote: SignedQuote }).quote;
+    expect(revision.total.minor_units).toBe('49000');
     expect(revision.alternatives).toEqual([
       expect.objectContaining({
         alternative_id: 'partner_00112233',
         partner_run: true,
         estimated_delivery_at: '2026-08-18T09:00:00Z',
-        total: { currency: 'INR', minor_units: '41500' }, // 45000 less half of the ₹70 saved
+        total: { currency: 'INR', minor_units: '45500' }, // 49000 less half of the ₹70 saved
       }),
     ]);
     expect(buyerReceives(pair, counter, answer.json)).toBe('applied');
+  });
+
+  async function exitRightCase(grant: boolean): Promise<void> {
+    {
+      const pair = await negotiatingPair(POLICY, false, '500', true);
+      expect(pair.quote.protocol_version).toBe('1.5');
+      installCommerceRuntime(pair.supplier);
+      expect(
+        pair.supplier.settings.writeSupplier({ ...supplierSettings(POLICY), grantExitIfRunFails: grant }).ok,
+      ).toBe(true);
+      const models = new ValueModelStore(adapter);
+      for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+        models.putEntry(
+          { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n } },
+          NOW,
+        );
+      await setOwnerTimeZone('UTC');
+      installOptionStores(adapter);
+      const links = new SellerOptionStore(adapter);
+      const request = { v: 1 as const, kind: 'request' as const, request_id: `req-00112233445566${grant ? '77' : '88'}`, service_at: '2026-08-18T09:00:00Z', crates: 1, postal_code: '682001' };
+      links.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: pair.quote.quote_id, request }, NOW);
+      links.settleAsk(
+        request.request_id,
+        {
+          v: 1,
+          kind: 'option',
+          option_id: `opt-${grant ? '1' : '2'}`,
+          request_id: request.request_id,
+          service_at: request.service_at,
+          crates: 1,
+          fee_minor: '5000',
+          currency: 'INR',
+          issued_at: '2026-08-07T11:00:00.000Z',
+          hold_until: '2026-08-10T11:00:00.000Z',
+          lead_time_s: 86_400,
+          model_version: 1,
+        },
+        NOW,
+      );
+      links.clear(request.request_id, NOW);
+      const counter = await buyerCounters(pair, '48000');
+      const answer = supplierAnswers(pair, counter);
+      if (!('json' in answer)) throw new Error(answer.refused);
+      const revision = (JSON.parse(answer.json) as { quote: SignedQuote }).quote;
+      const run = revision.alternatives?.find((a) => a.partner_run === true);
+      expect(run?.exit_if_run_fails).toBe(grant ? true : undefined);
+      // The buyer's own checks accept the version, right and all.
+      expect(buyerReceives(pair, counter, answer.json)).toBe('applied');
+      installOptionStores(null);
+    }
+  }
+
+  it('§15 step 12: a buyer that asked gets the exit right on the partner run', () => exitRightCase(true));
+
+  it('§15 step 12: a seller that does not grant it gives none', () => exitRightCase(false));
+
+  it('a partner run whose saving would take the goods under their floors is not offered (§15 step 10)', async () => {
+    const pair = await negotiatingPair();
+    const models = new ValueModelStore(adapter);
+    for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
+      models.putEntry(
+        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n } },
+        NOW,
+      );
+    await setOwnerTimeZone('UTC');
+    installOptionStores(adapter);
+    const links = new SellerOptionStore(adapter);
+    const request = { v: 1 as const, kind: 'request' as const, request_id: 'req-0011223344556677', service_at: '2026-08-18T09:00:00Z', crates: 1, postal_code: '682001' };
+    links.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: pair.quote.quote_id, request }, NOW);
+    links.settleAsk(
+      request.request_id,
+      {
+        v: 1,
+        kind: 'option',
+        option_id: 'opt-1',
+        request_id: request.request_id,
+        service_at: request.service_at,
+        crates: 1,
+        fee_minor: '5000',
+        currency: 'INR',
+        issued_at: '2026-08-07T11:00:00.000Z',
+        hold_until: '2026-08-10T11:00:00.000Z',
+        lead_time_s: 86_400,
+        model_version: 1,
+      },
+      NOW,
+    );
+    links.clear(request.request_id, NOW);
+    // The revision lands on the ₹450 floor: ₹35 off would sell under it.
+    const counter = await buyerCounters(pair, '40000');
+    const answer = supplierAnswers(pair, counter);
+    if (!('json' in answer)) throw new Error(answer.refused);
+    const revision = (JSON.parse(answer.json) as { quote: SignedQuote }).quote;
+    expect(revision.total.minor_units).toBe('45000');
+    expect(revision.alternatives).toBeUndefined();
   });
 });
 
@@ -497,6 +610,181 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
     expect(pair.supplier.families.load(pair.quote.quote_id)?.headDigest).toBe(
       (JSON.parse(answer.json) as { quote: SignedQuote }).quote.quote_digest,
     );
+  });
+
+  it('a discount charge kept on the quote stops a counter that would take the goods under their floors (§15 step 10)', async () => {
+    const buyer = openRuntime(BUYER_DID);
+    const supplier = openRuntime(SUPPLIER_DID);
+    const workflow = new WorkflowService({
+      repository: new InMemoryWorkflowRepository(),
+      nowMsFn: () => NOW,
+    });
+    setWorkflowService(workflow);
+    expect(supplier.settings.writeSupplier(supplierSettings(POLICY)).ok).toBe(true);
+    const request = await buyerAsks(buyer);
+    installCommerceRuntime(supplier);
+    // ₹500 each less ₹50 off the order: ₹45,000, exactly the goods at the ₹450 floor.
+    withPublishedCatalogue(supplier, [catalogItem()]);
+    const issued = rawTransformInboundOrderResult({
+      capability: 'request_quote',
+      fromDid: BUYER_DID,
+      params: request,
+      resultJSON: JSON.stringify({
+        can_supply: true,
+        lines: [
+          {
+            line_id: 'l1',
+            unit_price: { currency: 'INR', minor_units: '500' },
+            quantity: { value: '100', unit_code: 'each' },
+          },
+        ],
+        charges: [
+          {
+            kind: 'discount',
+            label: 'Order discount',
+            amount: { currency: 'INR', minor_units: '5000' },
+            operation: 'subtract',
+          },
+        ],
+      }),
+      nowMs: NOW,
+    });
+    if (issued.kind !== 'replace') throw new Error(JSON.stringify(issued));
+    const quote = JSON.parse(issued.json) as SignedQuote;
+    installCommerceRuntime(buyer);
+    expect(
+      applyInboundBuyerResponse({
+        supplierDid: SUPPLIER_DID,
+        response: {
+          capability: REQUEST_QUOTE_CAPABILITY,
+          query_id: request.request_id,
+          status: 'success',
+          result: { quote },
+        },
+        nowMs: NOW,
+      }),
+    ).toBe('applied');
+    const pair = { buyer, supplier, quote, workflow };
+    const counter = await buyerCounters(pair, '30000');
+    const answer = supplierAnswers(pair, counter);
+    if (!('json' in answer)) throw new Error(answer.refused);
+    expect(JSON.parse(answer.json)).toMatchObject({ outcome: 'held' });
+  });
+
+  it("a counter revision is held while the seller's rules refuse its day or cannot be read (§15 step 10)", async () => {
+    const pair = await negotiatingPair();
+    // The quote names no delivery date, so a rule on the day is taken to hold.
+    new ValueModelStore(adapter).putEntry(
+      {
+        id: 'n1',
+        kind: 'goods.seller',
+        covers: ['delivery_day'],
+        body: { type: 'never', label: 'no Tuesday runs', all: [{ part: 'delivery_day', choice: 'tue' }] },
+      },
+      NOW,
+    );
+    await setOwnerTimeZone('UTC');
+    const first = supplierAnswers(pair, await buyerCounters(pair, '40000'));
+    if (!('json' in first)) throw new Error(first.refused);
+    expect(JSON.parse(first.json)).toMatchObject({ outcome: 'held' });
+  });
+
+  it("a counter revision drops its own version on a day the seller's rules now refuse, and goes ahead (§15 step 10)", async () => {
+    await setOwnerTimeZone('UTC');
+    const buyer = openRuntime(BUYER_DID);
+    const supplier = openRuntime(SUPPLIER_DID);
+    const workflow = new WorkflowService({
+      repository: new InMemoryWorkflowRepository(),
+      nowMsFn: () => NOW,
+    });
+    setWorkflowService(workflow);
+    expect(supplier.settings.writeSupplier(supplierSettings(POLICY)).ok).toBe(true);
+    const request = await buyerAsks(buyer);
+    installCommerceRuntime(supplier);
+    withPublishedCatalogue(supplier, [catalogItem()]);
+    // Friday delivery, or Tuesday as the runner's own other version.
+    const issued = rawTransformInboundOrderResult({
+      capability: 'request_quote',
+      fromDid: BUYER_DID,
+      params: request,
+      resultJSON: JSON.stringify({
+        can_supply: true,
+        lines: [
+          {
+            line_id: 'l1',
+            unit_price: { currency: 'INR', minor_units: '500' },
+            quantity: { value: '100', unit_code: 'each' },
+          },
+        ],
+        estimated_delivery_at: '2026-08-14T10:00:00Z',
+        alternatives: [{ alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' }],
+      }),
+      nowMs: NOW,
+    });
+    if (issued.kind !== 'replace') throw new Error(JSON.stringify(issued));
+    const quote = JSON.parse(issued.json) as SignedQuote;
+    expect(quote.alternatives?.map((a) => a.alternative_id)).toEqual(['tue']);
+    installCommerceRuntime(buyer);
+    expect(
+      applyInboundBuyerResponse({
+        supplierDid: SUPPLIER_DID,
+        response: {
+          capability: REQUEST_QUOTE_CAPABILITY,
+          query_id: request.request_id,
+          status: 'success',
+          result: { quote },
+        },
+        nowMs: NOW,
+      }),
+    ).toBe('applied');
+    // The owner rules Tuesdays out after the quote went.
+    new ValueModelStore(adapter).putEntry(
+      {
+        id: 'n1',
+        kind: 'goods.seller',
+        covers: ['delivery_day'],
+        body: { type: 'never', label: 'no Tuesday runs', all: [{ part: 'delivery_day', choice: 'tue' }] },
+      },
+      NOW,
+    );
+    const pair = { buyer, supplier, quote, workflow };
+    const answer = supplierAnswers(pair, await buyerCounters(pair, '40000'));
+    if (!('json' in answer)) throw new Error(answer.refused);
+    const revision = (JSON.parse(answer.json) as { outcome: string; quote: SignedQuote });
+    expect(revision.outcome).toBe('revised');
+    expect(revision.quote.total.minor_units).toBe('45000');
+    expect(revision.quote.alternatives).toBeUndefined();
+  });
+
+  it('a counter revision is held while a persona holding the seller\'s rules is closed (§15 step 10)', async () => {
+    const pair = await negotiatingPair();
+    pair.supplier.goodsSellerModel = () => ({ model: null, closedPersonas: ['health'] });
+    const answer = supplierAnswers(pair, await buyerCounters(pair, '40000'));
+    if (!('json' in answer)) throw new Error(answer.refused);
+    expect(JSON.parse(answer.json)).toMatchObject({ outcome: 'held' });
+  });
+
+  it('a withdrawn catalogue leaves nothing to measure from: the counter holds, the first price is never the measure (§15 step 10)', async () => {
+    const pair = await negotiatingPair();
+    withPublishedCatalogue(pair.supplier, []);
+    const counter = await buyerCounters(pair, '40000');
+    const answer = supplierAnswers(pair, counter);
+    if (!('json' in answer)) throw new Error(answer.refused);
+    expect(JSON.parse(answer.json)).toMatchObject({ outcome: 'held' });
+  });
+
+  it('floors are measured from the catalogue price the owner published, not the runner\'s first price (§15 step 10)', async () => {
+    // The runner quoted 600 each; the owner's catalogue says 500, so the 10%
+    // floor is 450, not 540.
+    const pair = await negotiatingPair(POLICY, false, '600');
+    withPublishedCatalogue(pair.supplier, [catalogItem()]);
+    const counter = await buyerCounters(pair, '30000');
+    const answer = supplierAnswers(pair, counter);
+    if (!('json' in answer)) throw new Error(answer.refused);
+    expect(JSON.parse(answer.json)).toMatchObject({
+      outcome: 'revised',
+      quote: { total: { minor_units: '45000' } },
+    });
   });
 
   it('below the automatic limit Core signs the limit and asks the owner; a yes lets the next round reach the floor', async () => {
@@ -873,7 +1161,7 @@ describe("item 1 — a need answered with the supplier's own item", () => {
       { line_id: 'l1', unit_price: price, quantity: qty, offered_product: CAKE },
       { line_id: 'l1', unit_price: price, quantity: qty },
     ]) {
-      const issued = transformInboundOrderResult({
+      const issued = rawTransform({
         capability: 'request_quote',
         fromDid: BUYER_DID,
         params: request,
@@ -889,7 +1177,7 @@ describe("item 1 — a need answered with the supplier's own item", () => {
     const supplier = withCatalogue(openRuntime(SUPPLIER_DID), [item({})]);
     const request = await buyerAsks(buyer);
     installCommerceRuntime(supplier);
-    const issued = transformInboundOrderResult({
+    const issued = rawTransform({
       capability: 'request_quote',
       fromDid: BUYER_DID,
       params: request,

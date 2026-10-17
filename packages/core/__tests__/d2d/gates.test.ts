@@ -16,6 +16,7 @@ import {
   setScenarioDeny,
   setSharingRestrictions,
   clearGatesState,
+  setExitRecipientCheck,
   setFallbackRecipientCheck,
   blockDestination,
   unblockDestination,
@@ -255,5 +256,20 @@ describe('D2D Egress 4-Gate Enforcement', () => {
       expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], 'delivery_note', notice).allowed).toBe(false);
     });
   });
-});
 
+  describe('COMMITMENT_KERNEL §15 step 12 — the buyer\'s exit to a supplier who is no contact', () => {
+    afterEach(() => setExitRecipientCheck(null));
+
+    it('passes only to the supplier whose fallback notice the buyer kept for that order', () => {
+      clearGatesState();
+      const exit = { v: 1, kind: 'exit', cancellation: { purchase_order_id: 'po-1' } };
+      setExitRecipientCheck(
+        (did, e) => did === 'did:plc:supplier' && (e as typeof exit).cancellation.purchase_order_id === 'po-1',
+      );
+      expect(checkEgressGates('did:plc:supplier', 'commitment.option', [], 'option_exit', exit).allowed).toBe(true);
+      expect(checkEgressGates('did:plc:other', 'commitment.option', [], 'option_exit', exit).allowed).toBe(false);
+      // The fallback door does not open the exit's, nor the other way round.
+      expect(checkEgressGates('did:plc:supplier', 'commitment.option', [], 'option_fallback', exit).allowed).toBe(false);
+    });
+  });
+});

@@ -226,7 +226,23 @@ export class ValueModelStore {
           `DELETE FROM commitment_value_index WHERE persona = ? AND kind = ? AND entry_id = ?`,
           [persona, entry.kind, entry.id],
         );
+    this.ownerChoseShare(entry.kind, entry.id, nowMs);
     return { ok: true, version: this.bump(entry.kind, nowMs) };
+  }
+
+  /**
+   * COMMITMENT_KERNEL §15 step 11: the owner's own word on the seller's
+   * share of a saving (set, changed or removed) replaces any standing share
+   * Brain set. Every write here is the owner's: through the owner's routes,
+   * or a model change the owner said yes to.
+   */
+  private ownerChoseShare(kind: string, id: string, nowMs: number): void {
+    if (kind !== 'goods.seller' || id !== 'saving_share') return;
+    this.identity.execute(
+      `INSERT OR REPLACE INTO commitment_standing_choices (kind, name, value, set_by, set_at)
+       VALUES ('goods.seller', 'saving_share_bps', '', 'owner', ?)`,
+      [nowMs],
+    );
   }
 
   /** Drop an entry wherever it is kept; a copy kept in a persona needs the persona open. */
@@ -248,6 +264,7 @@ export class ValueModelStore {
       args.kind,
       args.id,
     ]);
+    this.ownerChoseShare(args.kind, args.id, nowMs);
     return { ok: true, version: this.bump(args.kind, nowMs) };
   }
 

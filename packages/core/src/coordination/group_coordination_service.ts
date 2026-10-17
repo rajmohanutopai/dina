@@ -85,6 +85,7 @@ import {
   type PlanResult,
 } from './group_plan';
 import { getGroupPlanRepository, type GroupPlanRepository } from './group_plan_repository';
+import { askBrainForSlot, settleSlotTurn, slotFromMove } from './group_slot_strategy';
 
 export { GROUP_COORDINATION_CAPABILITY } from './disclosure_policy';
 
@@ -646,6 +647,8 @@ async function loadSettled(planId: string, deps: GroupCoordinationDeps): Promise
   // tried again on every read.
   const booked = await syncPlanBookings(plan, deps);
   if (changed || booked.changed) deps.plans.put(booked.plan);
+  // §15 step 11: with Brain chosen, a fold with agreed slots asks it to pick.
+  askBrainForSlot(booked.plan, deps.nowMs());
   return booked.plan;
 }
 
@@ -786,6 +789,40 @@ export async function chooseSlot(
     cancelLiveSpokes(plan, deps, 'superseded by the confirm round');
     return { ok: true, plan: await fanOut(chosen.plan, deps) };
   });
+}
+
+/**
+ * The commit bridge's door for Brain's pick (COMMITMENT_KERNEL §15 step 11):
+ * the plan and round come from Core's own input; the slot must be one the
+ * fold agreed, and goes through the same `choose` as the owner's pick.
+ */
+export async function commitGroupSlotMove(input: { input: unknown; result: unknown }): Promise<{
+  state: 'committed';
+  receipt: Record<string, unknown>;
+}> {
+  return { state: 'committed', receipt: { outcome: await applyGroupSlotMove(input) } };
+}
+
+/** Apply Brain's pick: `chosen`, or `owner_picks` when it does not stand. */
+export async function applyGroupSlotMove(
+  input: { input: unknown; result: unknown },
+  over: Partial<GroupCoordinationDeps> = {},
+): Promise<'chosen' | 'owner_picks'> {
+  const ref = (input.input as { ref?: { negotiationId?: unknown; turn?: unknown } } | null)?.ref;
+  const planId = ref?.negotiationId;
+  const turn = ref?.turn;
+  if (typeof planId !== 'string' || typeof turn !== 'number') return 'owner_picks';
+  const resolved = resolveDeps(over);
+  const nowMs = resolved.ok ? resolved.deps.nowMs() : Date.now();
+  const read = await readGroupPlan(planId, over);
+  const slot = slotFromMove(read.ok ? read.plan : null, { planId, turn, result: input.result, nowMs });
+  if (slot === null) return 'owner_picks';
+  // `chooseSlot` checks the slot again under the plan's lock: a fold that
+  // moved meanwhile refuses it, and the owner picks.
+  const chosen = await chooseSlot(planId, slot, over);
+  settleSlotTurn(planId, turn, chosen.ok);
+  appendAudit('group_plan', 'group_plan_brain_chose', planId, `ok=${String(chosen.ok)}`);
+  return chosen.ok ? 'chosen' : 'owner_picks';
 }
 
 /** The organizer widens: a new proposing round over new candidates. */

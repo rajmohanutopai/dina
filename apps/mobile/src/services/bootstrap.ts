@@ -185,7 +185,7 @@ import {
   createReasoningCommitBridge,
   createReasoningPolicySnapshotResolver,
   createServiceReasoningCommitter,
-  commitTermStrategyMove,
+  commitStrategyMove,
   createServiceReasoningSubmitter,
   deriveLocalServiceIdentity,
   ensureReasoningBackendForBoot,
@@ -872,7 +872,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
               workflowService,
             }),
             // COMMITMENT_KERNEL §11 — a strategy's move goes to the term engine.
-            commitNegotiationMove: commitTermStrategyMove,
+            commitNegotiationMove: commitStrategyMove,
           }),
         })
       : null;

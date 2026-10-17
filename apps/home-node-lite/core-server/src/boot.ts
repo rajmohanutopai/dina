@@ -56,7 +56,7 @@ import {
   createReasoningCommitBridge,
   createReasoningPolicySnapshotResolver,
   createServiceReasoningCommitter,
-  commitTermStrategyMove,
+  commitStrategyMove,
   createCoreRouter,
   deriveDIDKey,
   ensureReasoningBackendForBoot,
@@ -1357,7 +1357,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       outputGuard: createReasoningOutputGuard(),
       commitValidatedProposal: createReasoningCommitBridge({
         // COMMITMENT_KERNEL §11 — a strategy's move goes to the term engine.
-        commitNegotiationMove: commitTermStrategyMove,
+        commitNegotiationMove: commitStrategyMove,
         ...(wiredWorkflow === undefined
           ? {}
           : {

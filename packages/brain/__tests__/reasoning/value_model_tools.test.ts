@@ -8,6 +8,7 @@ import { resetOwnerTurns, setCurrentOwnerTurn } from '../../src/chat/owner_turns
 import {
   createProposeDealValuesTool,
   createReadDealValuesTool,
+  createSetSavingShareTool,
 } from '../../src/reasoning/value_model_tools';
 
 beforeEach(() => resetOwnerTurns());
@@ -90,4 +91,22 @@ it('V-03: reads Brain’s view for a known kind only', async () => {
   expect(await t.execute({ kind: 'shelf_space.host' })).toMatchObject({ kind: 'shelf_space.host' });
   expect(await t.execute({ kind: 'x' })).toHaveProperty('error');
   expect(seen).toEqual(['shelf_space.host']);
+});
+
+describe('set_saving_share (§15 step 11)', () => {
+  it('sends a whole number of hundredths to Core, and refuses anything else', async () => {
+    const calls: number[] = [];
+    const t = createSetSavingShareTool({
+      core: {
+        commitmentSetSavingShare: async (bps) => {
+          calls.push(bps);
+          return { ok: true, share_bps: bps };
+        },
+      },
+    });
+    expect(await t.execute({ share_bps: 2_500 })).toEqual({ ok: true, share_bps: 2_500 });
+    expect(await t.execute({ share_bps: 10_001 })).toMatchObject({ error: expect.any(String) });
+    expect(await t.execute({ share_bps: 2.5 })).toMatchObject({ error: expect.any(String) });
+    expect(calls).toEqual([2_500]);
+  });
 });

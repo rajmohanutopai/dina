@@ -41,6 +41,7 @@ import { getWorkflowService } from '../workflow/service';
 
 import { getCommerceServiceQueryDispatch } from './buyer_sender';
 import { deliveryDayOf } from './deal_kinds';
+import { goodsCounterTarget } from './goods_counter_strategy';
 import { formatMoneyAmount } from './money_display';
 import { TENDER_READY_TYPE } from './negotiation_policy';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
@@ -409,7 +410,13 @@ export interface RankedTenderOffer {
    * supplier's: the card says until when it can be taken, and what the order
    * becomes if the run falls through after binding (the quote's own terms).
    */
-  partner_run?: { offer_ends_at: string; fallback_total_minor: string; fallback_delivery_at?: string };
+  partner_run?: {
+    offer_ends_at: string;
+    fallback_total_minor: string;
+    fallback_delivery_at?: string;
+    /** §15 step 12: if the run falls through, the buyer may cancel without charge instead. */
+    exit_if_run_fails?: true;
+  };
 }
 
 export type ExclusionReason =
@@ -521,6 +528,7 @@ export function rankTender(args: {
         // own end (COMMITMENT_KERNEL §6 step 4), before the quote's.
         offerEndsAt: alt.offer_ends_at,
         partnerRun: alt.partner_run === true,
+        exitRight: alt.exit_if_run_fails === true,
       })),
     ];
     let kept = 0;
@@ -566,6 +574,8 @@ export function rankTender(args: {
                 ...(head.estimated_delivery_at !== undefined
                   ? { fallback_delivery_at: head.estimated_delivery_at }
                   : {}),
+                // §15 step 12: and the buyer may cancel without charge instead.
+                ...('exitRight' in version && version.exitRight ? { exit_if_run_fails: true as const } : {}),
               },
             }
           : {}),
@@ -783,11 +793,17 @@ async function negotiateOnce(
     // supplier counts the same way, and the tender deadline bounds the wait.
     if (counters.filter((c) => c.state !== 'pending').length >= tender.maxRounds) continue;
     open = true;
+    // §15 step 11: Brain's target when the owner chose it, else the owner's.
+    const target = goodsCounterTarget({ tender, head, counters, nowMs });
+    if (target === 'wait') {
+      waiting = true;
+      continue;
+    }
     const outcome = await sendCounterOffer({
       supplierDid: member.supplierDid,
       quoteId: member.quoteId,
       serviceRkey: member.serviceRkey,
-      targetTotal: { currency: tender.currency, minor_units: tender.targetTotalMinor },
+      targetTotal: { currency: tender.currency, minor_units: target },
       tenderId: tender.tenderId,
       nowMs,
     });

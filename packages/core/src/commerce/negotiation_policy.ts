@@ -6,9 +6,11 @@
  * floor never goes on the wire. Kept on `SupplierSettings.negotiation` and
  * off the integration proposal allowlist, so a connector cannot move a floor.
  *
- * Two numbers per line, both judged against the line's REVISION-1 unit price
- * (the price first quoted), never the current head, so rounds cannot compound
- * a percentage discount:
+ * Two numbers per line, both judged against a fixed measure, never the
+ * current head, so rounds cannot compound a percentage discount. The measure
+ * is what the owner approved, the catalogue price (COMMITMENT_KERNEL §15 step
+ * 10, `runner_bounds.ts`); `lineBounds` below takes it as `firstUnitMinor`,
+ * and only a quote signed before that rule falls back to its first price:
  *
  *   hard floor  — never below, whoever asks. An item's `floorMinorUnits`,
  *                 else the first price less `defaultMaxDiscountBps`, rounded
@@ -22,7 +24,12 @@
  * buyer holds.
  */
 
-import { productRefsEqual, validateProductRef, type ProductRef } from '@dina/commerce-protocol';
+import {
+  productRefsEqual,
+  unitDef,
+  validateProductRef,
+  type ProductRef,
+} from '@dina/commerce-protocol';
 
 import type { SettingsFinding } from './commerce_settings';
 
@@ -36,6 +43,12 @@ export interface NegotiationItemPolicy {
   product: ProductRef;
   floorMinorUnits: string;
   autoFloorMinorUnits?: string;
+  /**
+   * The unit the floors are per (COMMITMENT_KERNEL §15 step 10). Needed only
+   * when the item has no published price to say so; without either, the
+   * floors approve no price.
+   */
+  unitCode?: string;
 }
 
 export interface SupplierNegotiationPolicy {
@@ -108,6 +121,12 @@ export function negotiationPolicyFindings(policy: unknown): SettingsFinding[] {
         if (typeof item.floorMinorUnits !== 'string' || !MINOR_UNITS.test(item.floorMinorUnits)) {
           refuse(`${at}.floorMinorUnits`, 'must be a whole number of minor units, as a string');
           continue;
+        }
+        if (
+          item.unitCode !== undefined &&
+          (typeof item.unitCode !== 'string' || unitDef(item.unitCode) === undefined)
+        ) {
+          refuse(`${at}.unitCode`, 'must be a known unit code');
         }
         if (item.autoFloorMinorUnits !== undefined) {
           if (

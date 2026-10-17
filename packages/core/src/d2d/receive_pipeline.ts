@@ -744,10 +744,13 @@ export function receiveD2D(
     // A run's fallback notice may come from the supplier of an order this
     // node placed through the AppView, contact or not; the handler keeps it
     // only for this node's own order from that supplier.
-    const orderBound =
-      parsedOption !== null &&
-      typeof parsedOption === 'object' &&
-      (parsedOption as { kind?: unknown }).kind === 'fallback';
+    // So may a buyer's exit (§15 step 12): the handler keeps it only for an
+    // order this node sold that holds the right and whose fallback it recorded.
+    const optionKind =
+      parsedOption !== null && typeof parsedOption === 'object'
+        ? (parsedOption as { kind?: unknown }).kind
+        : undefined;
+    const orderBound = optionKind === 'fallback' || optionKind === 'exit';
     if (!isContact && !orderBound) {
       appendAudit(message.from, 'd2d_recv_option_refused', message.to, 'reason=not_contact');
       return {

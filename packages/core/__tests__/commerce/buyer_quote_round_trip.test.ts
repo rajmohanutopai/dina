@@ -39,7 +39,7 @@ import {
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-import { BUYER_DID, SUPPLIER_DID, makeProjection } from './helpers';
+import { BUYER_DID, SUPPLIER_DID, makeProjection, withPublishedCatalogue } from './helpers';
 
 const NOW = Date.parse('2026-08-10T09:00:00.000Z');
 
@@ -99,6 +99,54 @@ async function sanchoAsks() {
   });
 }
 
+describe('§15 step 12 — the buyer asks for the exit right with a partner run', () => {
+  const ask = (requestId: string) =>
+    requestQuote({
+      supplierDid: SUPPLIER_DID,
+      serviceRkey: 'chairs',
+      requestId,
+      idempotencyKey: `idem-${requestId}`,
+      lines: LINES,
+      projection: makeProjection(),
+      sharePincodeWithShippers: true,
+      nowMs: NOW,
+    });
+
+  it('a request that lets the supplier book a run asks at 1.5 for the right; the owner may turn it off', async () => {
+    const buyer = openRuntime(BUYER_DID);
+    installCommerceRuntime(buyer);
+    const asked = await ask('req-exit-1');
+    expect(asked).toMatchObject({
+      kind: 'sent',
+      request: { protocol_version: '1.5', exit_if_run_fails: true, onward_sharing: { recipient_role: 'shipper' } },
+    });
+    expect(
+      buyer.settings.writeBuyer({
+        actingIdentityDid: BUYER_DID,
+        locations: [],
+        preferredSuppliers: [],
+        blockedSuppliers: [],
+        allowedCategoryIds: [],
+        quoteFanoutCeiling: 5,
+        approvalPolicySummary: 'Every order needs your approval.',
+        currency: 'INR',
+        preferredUnitCodes: ['each'],
+        publishReviews: false,
+        askExitIfRunFails: false,
+      }).ok,
+    ).toBe(true);
+    const off = await ask('req-exit-2');
+    expect(off).toMatchObject({ kind: 'sent', request: { protocol_version: '1.4' } });
+    expect((off as unknown as { request: Record<string, unknown> }).request.exit_if_run_fails).toBeUndefined();
+  });
+
+  it('with no partner run possible, nothing is asked', async () => {
+    installCommerceRuntime(openRuntime(BUYER_DID));
+    const plain = await sanchoAsks();
+    expect((plain as unknown as { request: Record<string, unknown> }).request.exit_if_run_fails).toBeUndefined();
+  });
+});
+
 describe('the buyer asks, and can recognise the answer', () => {
   it('composes, RETAINS and sends the request', async () => {
     installCommerceRuntime(openRuntime(BUYER_DID));
@@ -132,7 +180,7 @@ describe('the buyer asks, and can recognise the answer', () => {
 
     // ChairMaker prices it on its OWN node, through the production issuance
     // seam — no hand-built quote anywhere in this test.
-    const supplier = openRuntime(SUPPLIER_DID);
+    const supplier = withPublishedCatalogue(openRuntime(SUPPLIER_DID));
     installCommerceRuntime(supplier);
     const issued = transformInboundOrderResult({
       capability: 'request_quote',

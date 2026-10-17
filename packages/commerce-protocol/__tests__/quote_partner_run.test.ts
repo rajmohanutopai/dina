@@ -8,6 +8,13 @@
  *         `offer_ends_at`, both or neither, the end after issue and no later
  *         than the quote's validity;
  *   Q-52  `option_lapsed` is a known rejection reason.
+ *
+ * COMMITMENT_KERNEL §15 step 12 — minor 1.5: the exit right.
+ *   Q-53  a request may ask for it from 1.5, only with the grant;
+ *   Q-54  a partner-run version may carry it from 1.5, only with partner_run;
+ *         it is part of the version's terms digest, so dropping it from a
+ *         signed version breaks the digest; a digest made without it is
+ *         unchanged.
  */
 
 import {
@@ -134,5 +141,66 @@ describe('minor 1.4: onward sharing and partner runs', () => {
 
   it('Q-52: option_lapsed is known', () => {
     expect(KNOWN_REJECTION_REASONS).toContain('option_lapsed');
+  });
+});
+
+describe('minor 1.5: the exit right', () => {
+  it('Q-53: the request asks for it only with the grant, from 1.5', () => {
+    expect(
+      validateQuoteRequest(
+        makeQuoteRequest({ protocol_version: '1.5', onward_sharing: grant, exit_if_run_fails: true }),
+        hash,
+      ),
+    ).toBeNull();
+    expect(
+      validateQuoteRequest(
+        makeQuoteRequest({ protocol_version: '1.4', onward_sharing: grant, exit_if_run_fails: true }),
+        hash,
+      ),
+    ).toMatch(/minor >= 1.5/);
+    expect(
+      validateQuoteRequest(makeQuoteRequest({ protocol_version: '1.5', exit_if_run_fails: true }), hash),
+    ).toMatch(/only with onward_sharing/);
+    expect(
+      validateQuoteRequest(
+        makeQuoteRequest({
+          protocol_version: '1.5',
+          onward_sharing: grant,
+          exit_if_run_fails: 'yes' as never,
+        }),
+        hash,
+      ),
+    ).toMatch(/exit_if_run_fails: true/);
+  });
+
+  it('Q-54: a partner-run version carries it from 1.5, inside its terms digest', () => {
+    const ends = { partner_run: true as const, offer_ends_at: '2026-08-08T09:00:00Z' };
+    const withExit = (version: string, digestWithExit: boolean) =>
+      quoteWithPartnerRun(version, (alt) => ({
+        ...alt,
+        ...ends,
+        exit_if_run_fails: true,
+        terms_digest: commerceRecordDigest(
+          'terms',
+          termsDigestInput({
+            ...makeSignedQuote({ overrides: { protocol_version: version } }),
+            charges: alt.charges,
+            estimated_delivery_at: alt.estimated_delivery_at,
+            ...(digestWithExit ? { exit_if_run_fails: true as const } : {}),
+          }),
+          hash,
+        ),
+      }));
+    expect(validateSignedQuote(withExit('1.5', true), hash)).toBeNull();
+    expect(validateSignedQuote(withExit('1.4', true), hash)).toMatch(/minor >= 1.5/);
+    // The right is part of what the digest binds.
+    expect(validateSignedQuote(withExit('1.5', false), hash)).toMatch(/terms_digest/);
+    // Only on a partner-run version.
+    expect(
+      validateSignedQuote(quoteWithPartnerRun('1.5', { exit_if_run_fails: true } as never), hash),
+    ).toMatch(/exactly/);
+    // A digest made without it is the digest it always was.
+    const plain = makeSignedQuote({});
+    expect(termsDigestInput({ ...plain })).not.toHaveProperty('exit_if_run_fails');
   });
 });

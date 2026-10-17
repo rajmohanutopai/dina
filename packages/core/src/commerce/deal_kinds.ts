@@ -182,6 +182,23 @@ export const DEAL_KINDS: readonly DealKind[] = [
   },
 ];
 
+
+/**
+ * COMMITMENT_KERNEL §15 step 11 — the organiser of a group booking. It has
+ * no figures: the kind exists to carry the owner's strategy setting (Brain
+ * may pick the slot among those every required guest accepted).
+ */
+export const GROUP_ORGANIZER_KIND: DealKind = {
+  id: 'group.organizer',
+  holder: 'buyer',
+  vocabulary: { numbers: [], choices: {}, flags: [], promises: {} },
+  honours: new Set(),
+  promiseWords: {},
+};
+
+/** Every kind a strategy setting may name: the deal kinds, and the organiser of a group booking. */
+export const STRATEGY_KINDS: readonly DealKind[] = [...DEAL_KINDS, GROUP_ORGANIZER_KIND];
+
 export function dealKind(id: string): DealKind | null {
   return DEAL_KINDS.find((kind) => kind.id === id) ?? null;
 }

@@ -197,6 +197,9 @@ const NEGOTIATION_SYSTEM = [
   'Answer with one JSON object and nothing else:',
   '{"move":{"kind":"propose","versions":[{"terms":[{"name":"fee","value":"170000"}]}],"note":"optional, for your owner"}}',
   'or {"move":{"kind":"ask_other","message":"ask_about_part","part":"fee"}} or {"move":{"kind":"stop"}}.',
+  'When only your owner can settle something, ask them one yes-or-no question instead:',
+  '{"move":{"kind":"ask_owner","question":"May I offer a Tuesday run for ₹200 less?"}}.',
+  'Nothing is sent while they decide; their answers so far are in "ownerAnswers". Ask rarely.',
   'Values are integer strings in each part\'s own unit (minor units for money, basis points for shares).',
 ].join(' ');
 
@@ -216,6 +219,11 @@ async function negotiationMove(
   if (move === null || typeof move !== 'object' || Array.isArray(move)) throw new Error('negotiation move: no move');
   const m = move as Record<string, unknown>;
   if (m.kind === 'stop') return { move: { kind: 'stop' } };
+  if (m.kind === 'ask_owner') {
+    if (typeof m.question !== 'string' || m.question.trim() === '')
+      throw new Error('negotiation move: an empty question');
+    return { move: { kind: 'ask_owner', question: m.question.trim().slice(0, 280) } };
+  }
   if (m.kind === 'ask_other') {
     const out: Record<string, unknown> = { kind: 'ask_other', message: m.message };
     if (typeof m.part === 'string') out.part = m.part;

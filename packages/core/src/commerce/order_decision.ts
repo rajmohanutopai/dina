@@ -29,7 +29,11 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { validateSignedQuote } from '@dina/commerce-protocol';
+
+import { appendAudit } from '../audit/service';
 import { getSellerOptionStore, runOptionLinkTick } from '../commitment/option_handler';
+import { ownerTimeZoneIfRead } from '../settings/owner_settings';
 
 import {
   buildSupplierApprovalPayload,
@@ -43,7 +47,8 @@ import { isCommerceCapability } from './capability_names';
 import { settleInboundCounter } from './negotiation_supplier';
 import { orderTakesClearedRun } from './partner_run';
 import { settleInboundQuote } from './quote_issuance';
-import { rehydrateOrderStatus } from './rehydrate';
+import { rehydrateOrderStatus, rehydrateSignedQuote } from './rehydrate';
+import { approvedPricesOf, checkRunnerTerms, type RunnerBoundsRefusal } from './runner_bounds';
 import { getCommerceRuntime } from './runtime';
 
 import type { SupplierDecision } from './admission';
@@ -77,7 +82,12 @@ export type InboundDecisionRefusal =
    * an operator to different places: one is a mismatch to investigate, the
    * other is a card waiting on their desk.
    */
-  | 'approval_required';
+  | 'approval_required'
+  /**
+   * COMMITMENT_KERNEL §15 step 10 — the runner's replacement quote breaks the
+   * owner's floors or the seller's never-rules; nothing is signed.
+   */
+  | 'counter_out_of_bounds';
 
 /**
  * What the supplier approved, and who is about to act on it (§15.2b).
@@ -146,6 +156,46 @@ export function readSupplierDecision(value: unknown): SupplierDecision | null {
   }
 }
 
+/** Why a runner's replacement quote may not go out; null when it may. */
+function replacementOutOfBounds(
+  runtime: NonNullable<ReturnType<typeof getCommerceRuntime>>,
+  buyerDid: string,
+  purchaseOrderId: string,
+  replacement: SignedQuote,
+): RunnerBoundsRefusal | null {
+  if (validateSignedQuote(replacement, hash) !== null) return null;
+  const ref = runtime.orders.load(buyerDid, purchaseOrderId)?.ref;
+  const receipt = ref === undefined ? null : runtime.receipts.get(ref.quoteDigest);
+  const countered = receipt === null ? null : rehydrateSignedQuote(receipt.recordJson, hash);
+  const asBounds = (line: SignedQuote['lines'][number]) => ({
+    line_id: line.line_id,
+    product: line.offered_product,
+    unit_price: line.unit_price,
+    quantity: line.quantity,
+    price_basis: line.price_basis,
+  });
+  const checked = checkRunnerTerms({
+    approved: approvedPricesOf(runtime),
+    lines: replacement.lines.map(asBounds),
+    versions: [
+      {
+        ...(replacement.estimated_delivery_at === undefined
+          ? {}
+          : { estimatedDeliveryAt: replacement.estimated_delivery_at }),
+        total: replacement.total,
+      },
+      ...(replacement.alternatives ?? []).map((alt) => ({
+        estimatedDeliveryAt: alt.estimated_delivery_at,
+        total: alt.total,
+      })),
+    ],
+    seller: runtime.goodsSellerModel?.() ?? null,
+    timeZone: ownerTimeZoneIfRead(),
+    ...(countered === null || !countered.ok ? {} : { held: countered.value.lines.map(asBounds) }),
+  });
+  return checked.ok ? null : checked.refusal;
+}
+
 /**
  * Record the runner's decision and return the acknowledgement to send back.
  *
@@ -186,6 +236,23 @@ export function settleInboundOrderDecision(args: {
       refusal: 'decision_unrecognized',
       error: 'order decision: runner answer is not a recognised supplier decision',
     };
+  }
+
+  // COMMITMENT_KERNEL §10, §15 step 10 — a replacement quote is an offer the
+  // buyer can take up, so it passes the floors a counter passes. Its lines
+  // are measured from what the owner approved, never above the prices the
+  // buyer already holds on the countered quote. A malformed one is left to
+  // admission, which refuses it with its own reason.
+  if (decision.kind === 'counterproposal') {
+    const refused = replacementOutOfBounds(runtime, args.buyerDid, args.purchaseOrderId, decision.replacementQuote);
+    if (refused !== null) {
+      appendAudit('negotiation', 'runner_counter_withheld', args.purchaseOrderId, `reason=${refused}`);
+      return {
+        ok: false,
+        refusal: 'counter_out_of_bounds',
+        error: `order decision: the replacement quote was not signed (${refused})`,
+      };
+    }
   }
 
   // §15.2b — DOES ACCEPTING THIS ORDER NEED A HUMAN?

@@ -596,7 +596,10 @@ export default function TenderScreen(): React.ReactElement {
                       {offer.partner_run.fallback_delivery_at !== undefined
                         ? ` on ${offer.partner_run.fallback_delivery_at.slice(0, 10)}`
                         : ''}{' '}
-                      at {money(offer.partner_run.fallback_total_minor, offer.currency)}.
+                      at {money(offer.partner_run.fallback_total_minor, offer.currency)}
+                      {offer.partner_run.exit_if_run_fails === true
+                        ? ', or you may cancel without charge.'
+                        : '.'}
                     </Text>
                   )}
                   {offer.comparison_cost_minor !== offer.total_minor && (

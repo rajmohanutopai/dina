@@ -244,3 +244,13 @@ export function tableMessage(move: StrategyMove, head: TermOffer): TermMessage |
   if (!partsOnOffer(head).includes(move.part)) return null;
   return { kind: move.message as TermMessage['kind'], part: move.part };
 }
+
+/** The owner's answers to Brain's questions in this deal, for the brief (§15 step 11). */
+export function ownerAnswersFor(
+  ctx: TermContext,
+  kind: string,
+  requestId: string,
+): { ownerAnswers?: { question: string; answer: 'yes' | 'no' }[] } {
+  const answers = ctx.store.questions().answered(kind, requestId);
+  return answers.length === 0 ? {} : { ownerAnswers: answers };
+}

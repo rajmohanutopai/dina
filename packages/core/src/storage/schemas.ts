@@ -4248,6 +4248,61 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // COMMITMENT_KERNEL §15 step 11: where the agent decides alone. Brain's
+    // yes-or-no questions to the owner mid-deal; Brain's turns for kinds
+    // outside the shelf engine (goods counters, a shipper's fee, a group's
+    // slot), each answered once and replayed by its result; the standing
+    // choices Brain sets for later deals (the saving share); and (§15 step
+    // 12) the cancellations an owner approved under the exit right.
+    version: 80,
+    name: 'commitment_strategy_step11',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_strategy_questions (
+        kind TEXT NOT NULL,
+        negotiation_id TEXT NOT NULL,
+        turn INTEGER NOT NULL,
+        ask_no INTEGER NOT NULL,
+        question TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        answer TEXT CHECK (answer IS NULL OR answer IN ('yes', 'no', 'lapsed')),
+        asked_at INTEGER NOT NULL,
+        answered_at INTEGER,
+        PRIMARY KEY (kind, negotiation_id, turn, ask_no)
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS commitment_strategy_questions_by_card
+        ON commitment_strategy_questions (card_id);
+      CREATE TABLE IF NOT EXISTS commitment_strategy_turns (
+        kind TEXT NOT NULL,
+        negotiation_id TEXT NOT NULL,
+        turn INTEGER NOT NULL,
+        task_id TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('pending', 'applied', 'fallen_back')),
+        result_json TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, negotiation_id, turn)
+      );
+      -- §15 step 12: a cancellation the buyer's owner approved under the exit
+      -- right, kept until the supplier's node has it (sent is not enough to
+      -- stop: a send the transport did not take is tried again).
+      CREATE TABLE IF NOT EXISTS commitment_exit_asks (
+        supplier_did TEXT NOT NULL,
+        purchase_order_id TEXT NOT NULL,
+        cancellation_json TEXT NOT NULL,
+        asked_at INTEGER NOT NULL,
+        sent_at INTEGER,
+        PRIMARY KEY (supplier_did, purchase_order_id)
+      );
+      CREATE TABLE IF NOT EXISTS commitment_standing_choices (
+        kind TEXT NOT NULL,
+        name TEXT NOT NULL,
+        value TEXT NOT NULL,
+        set_by TEXT NOT NULL CHECK (set_by IN ('brain', 'owner')),
+        set_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, name)
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

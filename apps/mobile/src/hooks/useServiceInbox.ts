@@ -91,12 +91,16 @@ export type InboxEntryKind =
   | 'term_open_persona'
   /** COMMITMENT_KERNEL §11 — Brain's turns ran out; the fixed style bargains (a notice). */
   | 'term_strategy_fallback'
+  /** COMMITMENT_KERNEL §15 step 11 — Brain asks the owner a yes-or-no question mid-deal. */
+  | 'term_strategy_question'
   | 'commitment_model_change'
   /** COMMITMENT_KERNEL §15 step 7 — clearing a version on a shipper's run, and notices about runs. */
   | 'option_clear'
   | 'option_link'
   | 'option_disclosure'
   | 'option_fallback'
+  /** COMMITMENT_KERNEL §15 step 12 — a run fell through: cancel without charge, or keep the order. */
+  | 'option_exit'
   /** COMMITMENT_KERNEL §15 step 8 — did the other side keep a promise? */
   | 'evidence_ask'
   | 'unknown';
@@ -1450,6 +1454,8 @@ const TERM_CARD_TYPES = [
   'term_delivery_failed',
   'term_open_persona',
   'term_strategy_fallback',
+  // §15 step 11 — Brain's yes-or-no question; yes and no both go back to Brain.
+  'term_strategy_question',
   // COMMITMENT_KERNEL §15 step 5 — not a term card, but Core-minted and the
   // owner's alone in the same way: a change to their deal values Dina suggests.
   'commitment_model_change',
@@ -1459,6 +1465,7 @@ const TERM_CARD_TYPES = [
   'option_link',
   'option_disclosure',
   'option_fallback',
+  'option_exit',
   // §15 step 8 — "did it happen?": yes records the promise kept, no broken.
   'evidence_ask',
 ] as const;
@@ -1630,6 +1637,15 @@ function termCardEntry(
             ? 'Brain has used its turns for shelf deals this month; they refill.'
             : 'Brain has used its turns for this deal.',
       };
+    case 'term_strategy_question':
+      // Brain's question, cleaned to one line by Core; nothing is sent while it waits.
+      return {
+        ...base,
+        capability: 'shelf space',
+        serviceName: 'Brain asks you',
+        requesterDID: '',
+        paramsPreview: `${str(parsed.question)} Approve for yes, deny for no.`,
+      };
     case 'evidence_ask':
       // Core's question, whole: yes records the promise kept, no records it broken.
       return {
@@ -1646,6 +1662,15 @@ function termCardEntry(
         capability: 'delivery run',
         serviceName: 'Offer a partner’s delivery run to the buyer?',
         requesterDID: '',
+        paramsPreview: task.description ?? '',
+      };
+    case 'option_exit':
+      // Core's words, whole: approve cancels the order, deny keeps it.
+      return {
+        ...base,
+        capability: 'delivery run',
+        serviceName: 'Cancel an order whose run fell through?',
+        requesterDID: str(parsed.supplier_did),
         paramsPreview: task.description ?? '',
       };
     case 'option_link':

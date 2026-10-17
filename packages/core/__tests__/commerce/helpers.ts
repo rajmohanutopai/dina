@@ -26,6 +26,11 @@ import {
   type SignedQuote,
   type SignedQuoteLine,
   type OrderAcknowledgement,
+  type CatalogItem,
+  type Money,
+  type ProductRef,
+  type Quantity,
+  productRefsEqual,
 } from '@dina/commerce-protocol';
 import { buildMessageJSON } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
@@ -45,13 +50,22 @@ import {
   type CommerceQuoteLedgerRepository,
   type CommerceStatusHeadRepository,
 } from '../../src/commerce';
+import {
+  InMemoryCatalogDraftRepository,
+  type CatalogDraft,
+} from '../../src/commerce/catalog_draft_store';
+import { InMemoryCatalogPointerRepository } from '../../src/commerce/catalog_pointer_store';
+import { buildCatalogSnapshot } from '../../src/commerce/catalog_publisher';
 import { makeHeldEvidenceVerifier } from '../../src/commerce/held_evidence_verifier';
 import { InMemoryOrderAttachmentRepository } from '../../src/commerce/order_attachments';
+import { transformInboundOrderResult } from '../../src/commerce/order_decision';
+import { publishedCatalogItems } from '../../src/commerce/published_catalog';
 import {
   BUYER_REFERENCE_MANIFEST,
   SUPPLIER_REFERENCE_MANIFEST,
 } from '../../src/commerce/reference_manifests';
 import { InMemoryRevshareDocumentRepository } from '../../src/commerce/revshare_ledger';
+import { getCommerceRuntime } from '../../src/commerce/runtime';
 import { InMemoryTradeDocumentRepository } from '../../src/commerce/trade_ledger';
 import { getPublicKey, sign } from '../../src/crypto/ed25519';
 import {
@@ -67,6 +81,7 @@ import type {
   CommerceMoneyAccess,
   CommerceMoneyStores,
   CommerceMoneyUnavailableReason,
+  CommerceRuntime,
 } from '../../src/commerce/runtime';
 
 export const hash: Sha256Fn = (data) => sha256(data);
@@ -591,4 +606,121 @@ export function moneyClosed(
   reason: CommerceMoneyUnavailableReason = 'pack_not_installed',
 ): () => CommerceMoneyAccess {
   return () => ({ available: false, reason, detail: `test: ${reason}` });
+}
+
+/** The product `makeQuoteRequest` asks for. */
+export const REQUEST_GTIN: ProductRef = { scheme: 'gtin', value: '09506000134352' };
+
+/** A published item, priced per one `each` (500 paise unless told otherwise). */
+export function catalogItem(over: Partial<CatalogItem> = {}): CatalogItem {
+  return {
+    product: REQUEST_GTIN,
+    supplier_did: SUPPLIER_DID,
+    catalog_id: 'main',
+    item_revision: 'rev-1',
+    name: 'Teak chair',
+    description: 'A plain teak chair',
+    category_ids: ['furniture.chairs'],
+    pack: { sell_unit: { value: '1', unit_code: 'each' } },
+    fulfilment_regions: [{ scheme: 'admin_area', value: 'IN-KA' }],
+    indicative_price: { currency: 'INR', minor_units: '500' },
+    freshness: { generated_at: '2026-08-07T08:00:00.000Z' },
+    ...over,
+  };
+}
+
+/**
+ * Give the supplier's runtime a live published catalogue: the prices the
+ * owner approved, which a runner's quote is measured against
+ * (COMMITMENT_KERNEL §15 step 10). Publishing again replaces it.
+ */
+export function withPublishedCatalogue(
+  runtime: CommerceRuntime,
+  items: CatalogItem[] = [catalogItem()],
+  supplierDid: string = SUPPLIER_DID,
+): CommerceRuntime {
+  const built = buildCatalogSnapshot({
+    supplierDid,
+    catalogId: 'main',
+    protocolVersion: '1.0',
+    publishedAt: '2026-08-07T08:00:00.000Z',
+    items: items.map((item) => ({ ...item, supplier_did: supplierDid })),
+    previous: null,
+    sha256: hash,
+  });
+  if (!built.ok || built.snapshot === undefined || built.pages === undefined)
+    throw new Error('catalogue fixture did not build');
+  const catalogDrafts = new InMemoryCatalogDraftRepository();
+  const catalogPointers = new InMemoryCatalogPointerRepository();
+  catalogDrafts.put({
+    draftId: 'cdr-fixture',
+    catalogId: 'main',
+    state: 'published',
+    held: { snapshot: built.snapshot, pages: built.pages, pointer: built.pointer },
+    createdAtMs: 0,
+    updatedAtMs: 0,
+  } as unknown as CatalogDraft);
+  catalogPointers.put({
+    catalogId: 'main',
+    pointer: built.pointer,
+    pointerCid: 'bafy-fixture',
+    snapshotDigest: built.snapshot.snapshot_digest,
+    withdrawn: false,
+    publishedAtMs: 0,
+  });
+  // In place, so a test's own handle on the runtime sees the catalogue too.
+  return Object.assign(runtime, { catalogDrafts, catalogPointers });
+}
+
+/**
+ * The owner published every price the runner is about to quote: each line's
+ * product at its unit price, added to (or replacing in) the live catalogue.
+ * For tests whose subject is not the floors (COMMITMENT_KERNEL §15 step 10).
+ */
+export function publishQuotedPrices(runtime: CommerceRuntime, params: unknown, resultJSON: string): void {
+  let result: { can_supply?: unknown; lines?: unknown };
+  try {
+    result = JSON.parse(resultJSON) as typeof result;
+  } catch {
+    return;
+  }
+  if (result.can_supply !== true || !Array.isArray(result.lines)) return;
+  const asked = (params as Partial<QuoteRequest> | null)?.lines ?? [];
+  const items = publishedCatalogItems(runtime);
+  for (const raw of result.lines as {
+    line_id?: string;
+    unit_price?: Money;
+    quantity?: Quantity;
+    offered_product?: ProductRef;
+  }[]) {
+    const product = raw.offered_product ?? asked.find((l) => l.line_id === raw.line_id)?.product;
+    if (product === undefined || raw.unit_price === undefined || raw.quantity === undefined) continue;
+    const at = items.findIndex((item) => productRefsEqual(item.product, product));
+    if (at >= 0) {
+      items[at] = { ...(items[at] as CatalogItem), indicative_price: raw.unit_price };
+    } else {
+      items.push(
+        catalogItem({
+          product,
+          item_revision: `rev-${String(items.length + 1)}`,
+          indicative_price: raw.unit_price,
+          pack: { sell_unit: { value: '1', unit_code: raw.quantity.unit_code } },
+        }),
+      );
+    }
+  }
+  withPublishedCatalogue(runtime, items, runtime.nodeDid());
+}
+
+/**
+ * `transformInboundOrderResult` with the quoted prices published first, as an
+ * owner whose runner prices from the catalogue would have.
+ */
+export function transformWithPublishedPrices(
+  args: Parameters<typeof transformInboundOrderResult>[0],
+): ReturnType<typeof transformInboundOrderResult> {
+  const runtime = getCommerceRuntime();
+  if (runtime !== null && /request_quote$/.test(args.capability))
+    publishQuotedPrices(runtime, args.params, args.resultJSON);
+  return transformInboundOrderResult(args);
 }

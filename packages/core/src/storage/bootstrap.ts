@@ -10,11 +10,17 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
-import { setCommitmentPersonaDB } from '../commitment/model_store';
+import { GOODS_BUYER, installGoodsCounterStrategy } from '../commerce/goods_counter_strategy';
 import { installEvidenceStore } from '../commitment/evidence_handler';
-import { installOptionStores } from '../commitment/option_handler';
+import { setCommitmentPersonaDB , ValueModelStore } from '../commitment/model_store';
+import { installOptionStores, setShipperFeeSubmitter } from '../commitment/option_handler';
+import { StrategyStore } from '../commitment/strategy_store';
+import { createNegotiationSubmitter } from '../commitment/strategy_submit';
+import { StrategyTurnStore } from '../commitment/strategy_turns';
 import { BookingStore, installBookingStore } from '../coordination/group_booking';
+import { GROUP_ORGANIZER, installGroupSlotStrategy } from '../coordination/group_slot_strategy';
 import { installSharingPolicyStore } from '../gatekeeper/sharing';
+import { getNodeDID } from '../pairing/ceremony';
 import { fireHeldReplay } from '../run/replay_registry';
 
 import { setDBProvider, resetDBProvider } from './db_provider';
@@ -45,6 +51,40 @@ export async function bootstrapPersistence(provider: DBProvider): Promise<Databa
   installBookingStore(new BookingStore(identityDB));
   // COMMITMENT_KERNEL §15 step 7 — options issued and taken up survive a restart.
   installOptionStores(identityDB);
+  // §15 step 11 — a shipper's fee may be Brain's: the door to the owner's
+  // reasoning backend, read when a request arrives.
+  const submitMove = createNegotiationSubmitter({ ownerDid: () => getNodeDID() ?? '' });
+  setShipperFeeSubmitter(submitMove);
+  // §15 step 11 — and a group booking's slot, among those every required guest accepted.
+  const strategies = new StrategyStore(identityDB);
+  installGroupSlotStrategy({
+    settings: () => strategies.settings(GROUP_ORGANIZER),
+    canSpend: (negotiationId, nowMs) =>
+      strategies.canSpend({ kind: GROUP_ORGANIZER, negotiationId, nowMs, thresholdVersion: 0 }).ok,
+    charge: (negotiationId, nowMs) =>
+      strategies.charge({ kind: GROUP_ORGANIZER, negotiationId, count: 1, nowMs, thresholdVersion: 0 }).ok,
+    turns: new StrategyTurnStore(identityDB),
+    submit: submitMove,
+    atomically: (fn) => identityDB.transaction(fn),
+  });
+  // §15 step 11 — and a goods tender's counter targets, for the buyer.
+  installGoodsCounterStrategy({
+    settings: () => strategies.settings(GOODS_BUYER),
+    canSpend: (negotiationId, nowMs, thresholdVersion) =>
+      strategies.canSpend({ kind: GOODS_BUYER, negotiationId, nowMs, thresholdVersion }).ok,
+    charge: (negotiationId, nowMs, thresholdVersion) =>
+      strategies.charge({ kind: GOODS_BUYER, negotiationId, count: 1, nowMs, thresholdVersion }).ok,
+    turns: new StrategyTurnStore(identityDB),
+    submit: submitMove,
+    brainModel: () => {
+      try {
+        return new ValueModelStore(identityDB).loadForBrain(GOODS_BUYER);
+      } catch {
+        return null;
+      }
+    },
+    nowMs: Date.now,
+  });
   // COMMITMENT_KERNEL §15 step 8 — evidence and each relationship's consent.
   installEvidenceStore(identityDB);
 

@@ -1819,6 +1819,7 @@ export { modelChangeWorkflowHooks } from './commitment/model_changes';
 export { optionWorkflowHooks } from './commitment/option_handler';
 export { evidenceWorkflowHooks } from './commitment/evidence_handler';
 export { commitTermStrategyMove } from './commerce/term/term_runtime';
+export { commitStrategyMove } from './commitment/strategy_commit';
 
 // Commerce Pack Core stores (docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md §23)
 export * from './commerce';
