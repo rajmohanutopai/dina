@@ -38,6 +38,7 @@ import {
   type TermGeneral,
   type TermPromise,
   type TermListing,
+  type TermName,
   type TermOffer,
   type TermReceipt,
   type TermReceiptOutcome,
@@ -46,6 +47,7 @@ import {
 } from '@dina/commerce-protocol';
 
 import { deliveryState, type DeliveryState, type StrategyMove } from '../../commitment';
+import { ownerChangedLimits } from '../../commitment/earned_room';
 
 import {
   endedEarlyAt,
@@ -71,6 +73,7 @@ import {
   TERM_STRATEGY_CARD,
 } from './term_buyer';
 import { hash, iso, mintId, TermContext, TERM_TIMINGS, type TermEngineDeps } from './term_context';
+import { noteFloorAnswer } from './term_earned_room';
 import {
   acknowledgeTermSettlement,
   admitTermDecision,
@@ -567,11 +570,37 @@ export class TermEngine {
   setPolicy(policy: unknown): { ok: true; revision: number } | { ok: false; refusal: string } {
     const bad = validateTermPolicy(policy);
     if (bad !== null) return { ok: false, refusal: bad };
-    return { ok: true, revision: this.ctx.store.putPolicy(JSON.stringify(policy), this.ctx.now()) };
+    // §15 step 13: the owner's own save starts every floor's record again.
+    let revision = 0;
+    this.ctx.atomically('owner_policy', () => {
+      revision = this.ctx.store.putPolicy(JSON.stringify(policy), this.ctx.now());
+      ownerChangedLimits(SHELF_HOST_KIND);
+    });
+    return { ok: true, revision };
   }
 
   policy(): TermPolicy {
     return currentTermPolicy(this.ctx);
+  }
+
+  /**
+   * COMMITMENT_KERNEL §15 step 13: Core's own write of one automatic floor,
+   * after the owner's yes to earned room or to put their figure back. Never
+   * past the hard floor or the asking terms, and only through the policy's
+   * own checks.
+   */
+  writeEarnedAutoFloor(resourceRef: string, term: TermName, value: bigint): boolean {
+    const policy = currentTermPolicy(this.ctx);
+    const resources = policy.resources.map((r) =>
+      r.resource_ref !== resourceRef
+        ? r
+        : { ...r, floors: { ...r.floors, [term]: { ...r.floors[term], auto: value.toString(10) } } },
+    );
+    if (!resources.some((r) => r.resource_ref === resourceRef)) return false;
+    const next = { ...policy, resources };
+    if (validateTermPolicy(next) !== null) return false;
+    this.ctx.store.putPolicy(JSON.stringify(next), this.ctx.now());
+    return true;
   }
 
   withdrawListing(listingId: string): boolean {
@@ -1058,6 +1087,13 @@ export class TermEngine {
     // Brain's question unanswered: the fixed style plays the turn (§15 step 11).
     else if (card.cardType === TERM_STRATEGY_QUESTION_CARD)
       answerStrategyQuestion(this.ctx, cardId, 'lapsed');
+    else if (card.cardType === TERM_FLOOR_CARD)
+      // §15 step 13: the lapse and its place in the record land together; a
+      // lapse ends a run of yeses, and narrows nothing.
+      this.ctx.atomically('floor_lapse', () => {
+        if (this.ctx.store.decideCard(cardId, 'lapsed', this.ctx.now()))
+          noteFloorAnswer(card, 'lapsed', this.ctx.now());
+      });
     else this.ctx.store.decideCard(cardId, 'lapsed', this.ctx.now());
   }
 

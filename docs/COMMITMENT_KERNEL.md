@@ -793,6 +793,49 @@ a counter (§15 step 10). Where the agent is held back further than the
 rule needs, that is a phasing choice to be lifted (§15 step 11), not a
 fixed line.
 
+### Earned room
+
+The owner's automatic limits are a guess made before any deal. When the
+owner keeps saying yes to deals just past one, the guess was too tight.
+Dina may then offer to widen it: the agent earns room by a record, not
+by being clever, and the owner still says yes to the wider room itself,
+so the rule above holds.
+
+Core does this in plain code, with no model and no part for Brain. An
+agent that argued for its own room would be the counterparty the rule
+guards against.
+
+- **Where it applies:** a kind whose limit has an automatic figure inside
+  a hard one, with a card for what falls between: the store's floors on
+  shelf space (per resource and term) and the goods seller's floors (per
+  line). A kind that never binds alone (the brand renting shelf space,
+  the goods buyer), a kind with no card between its limits (the shipper),
+  and a kind with no figures (group bookings) earn nothing.
+- **The record:** for each automatic limit, the cards raised only because
+  a figure went past it, with the figure and the owner's answer: yes, no,
+  or lapsed. A yes always approves the figure as asked; no card offers an
+  edited figure.
+- **Earning:** the last five such cards for that limit were all yeses,
+  within 90 days, and no promise in deals of that kind was recorded broken
+  in that time. A lapse is not a yes: it ends the run of yeses but
+  narrows nothing.
+- **The offer:** a card in Core's words, built from those figures: "You
+  said yes to the last 5 offers below your automatic floor for the
+  morning slot, the lowest at ₹850. Let Dina agree down to ₹850 alone?"
+  The new automatic limit is the furthest of the five figures, never past
+  the hard limit, and only if it widens the room. A yes writes it as the
+  automatic limit, keeping the owner's own figure as the one to go back
+  to; a no is kept, and Core offers again only after five more yeses.
+- **Taking it back:** Core goes back to the owner's own figure at once,
+  and tells the owner, when the owner declines a deal card whose terms
+  fall inside the earned room, or a promise in deals of that kind is
+  recorded broken while the earned room stands. Narrowing only shrinks
+  what Dina may do, so it needs no yes. Any change the owner makes to the
+  limit is their own figure from then on.
+- **What never moves:** hard limits, never-rules, the walk-away point and
+  totals. They are the owner's lines, and a record of yeses cannot shift
+  them.
+
 ## 11. The strategy slot
 
 The next move comes from a strategy: a fixed style chosen by the pack as
@@ -1281,6 +1324,53 @@ values off and finds no withheld number.
     it recorded (the race against dispatch still decides). What the buyer
     gives for the right, and Brain deciding either side, come later. A new
     deal with another supplier is an ordinary deal.
+13. **Earned room (§10).** Core keeps, per automatic limit (the store's
+    floor per resource and term; the goods seller's floor per item), the
+    cards raised past it, their figures and answers
+    (`commitment_limit_cards`, migration 81, in the archive). A shelf
+    figure is kept as its policy figure, before any holding premium; a
+    goods price card that lapses is recorded as lapsed in this record,
+    though the question still closes as a no. After five yeses in a row
+    within 90 days, with no promise broken in deals of that kind (a
+    shipper's run for the goods seller; the other side's promise under a
+    shelf agreement for the store), Core raises one offer card
+    (`earned_room_offer`, a person present) to widen the automatic limit
+    to the furthest figure said yes to, within the hard limit. A yes
+    writes it, only while the owner's own figure still stands, and keeps
+    that figure (`commitment_earned_room`); a no or a lapse is kept, and
+    the next offer needs five more yeses. The owner declining a shelf
+    agreement whose terms fall inside the earned room, or a promise in
+    that kind recorded or amended to broken, puts the owner's figure back
+    at once, with a notice (`earned_room_narrowed`). A limit the owner
+    changes is theirs: Core neither widens nor narrows it, and the record
+    starts again: each limit has a generation, which moves whenever its
+    figures, currency or unit change by anything but Core's own write, or
+    the limit is removed (made again, it starts afresh).
+    Core looks at every limit it keeps a record for in the same
+    transaction as each of the owner's saves of the kind's policy (and,
+    for goods, each catalogue publication), so a change and a change back
+    both count; a save that leaves a limit exactly as it stands (an edit
+    elsewhere, or the same figures saved again) changes nothing for it. A
+    record, an offer and earned room count only in their own generation,
+    so a change before the fifth yes, while an offer waits, or after the
+    room was earned earns nothing, widens nothing and restores nothing. Every answer, broken promise and declined deal is
+    written to the record, and any narrowing it causes is made, in the
+    same transaction as the decision itself; a yes to an offer is checked
+    again as it lands (the basis, the hard limit, no promise broken in the
+    last 90 days) and finished at boot after a crash; room in a kind whose
+    promises were broken since it was earned is taken back when the kind
+    comes online, its notice raised at boot if the workflow was not yet up;
+    a broken promise also withdraws an offer still waiting, and its card
+    is cancelled once that write has committed (or at boot). Only a record recorded or amended to broken counts, from when it
+    became broken; a note edit counts for nothing. A limit Core cannot read just now (stored settings that
+    do not validate) changes nothing until it can. Brain never sees these
+    cards' figures; the goods seller has no deal card after a quote, so
+    only a broken promise narrows its room. Brain takes no part.
+14. **Brain asks where there is time.** The step 11 question card, with
+    the same two-question limit, for the organiser of a group booking
+    (always: the round waits on guests) and for the shipper (only when
+    the hold leaves room for an answer before the seller's next resend).
+    Never for goods counters, which wait seconds.
 
 Each step ships on its own, with its tests and a dual review.
 
@@ -1324,6 +1414,16 @@ Decided by the owner on 2026-10-17:
     request (the owner's buyer setting); the seller grants it on its
     partner-run versions by its own setting. What the buyer gives for it,
     and Brain deciding either side, come later.
+12. **Earned room (§10, §15 step 13):** Core offers to widen an
+    automatic limit; the owner says yes to the wider room. Brain asking
+    the owner on every kind is dropped: a question needs time for an
+    answer, and goods counters have seconds.
+13. **What earns room:** five yeses in a row within 90 days, with no
+    promise broken in deals of that kind.
+14. **What takes it back:** a declined deal inside the earned room, or a
+    broken promise in that kind; Core narrows at once and tells the owner.
+15. **Brain asks where there is time (§15 step 14):** group bookings
+    always, shipping when the hold leaves room.
 
 ## 17. Not in this note
 

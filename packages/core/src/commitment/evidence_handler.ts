@@ -15,6 +15,7 @@ import { getOwnerTimeZone } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
+import { cancelWithdrawnOffers, installBrokenPromiseCheck, narrowRoom } from './earned_room';
 import {
   describePromise,
   EvidenceStore,
@@ -36,6 +37,36 @@ let store: EvidenceStore | null = null;
 /** Storage boot installs it on the identity database; null in tests that do not. */
 export function installEvidenceStore(db: DatabaseAdapter | null): void {
   store = db === null ? null : new EvidenceStore(db);
+  // §15 step 13: no room is earned in a kind whose promises were broken.
+  installBrokenPromiseCheck(
+    store === null
+      ? null
+      : (kind, sinceMs) =>
+          (store?.brokenSince(sinceMs) ?? []).some((e) => evidenceKind(e.subject, e.dealRef) === kind),
+  );
+}
+
+/**
+ * The kind of deal a record is about, on this node: a shipper's run is the
+ * goods seller's; a promise under a shelf agreement is the store's or the
+ * brand's by this node's role in it. Null when the deal is not found.
+ */
+export function evidenceKind(subject: string, dealRef: string): string | null {
+  if (subject === 'run') return 'goods.seller';
+  const agreement = getCommerceRuntime()
+    ?.terms.agreements()
+    .find((a) => a.proposalDigest === dealRef);
+  if (agreement === undefined) return null;
+  return agreement.role === 'host' ? 'shelf_space.host' : 'shelf_space.vendor';
+}
+
+/**
+ * A record now stands broken: the room earned in its kind goes back (§15
+ * step 13). Called in the transaction that writes the record.
+ */
+export function narrowForBroken(subject: string, dealRef: string, nowMs: number): void {
+  const kind = evidenceKind(subject, dealRef);
+  if (kind !== null) narrowRoom(kind, null, 'broken', nowMs);
 }
 
 export function getEvidenceStore(): EvidenceStore | null {
@@ -343,7 +374,21 @@ export const makeEvidenceDecisionHandler =
  * record wins, so recording again after a crash is safe.
  */
 function recordAnswer(p: AskPayload, taskId: string, kept: boolean, nowMs: number): void {
-  store?.record({
+  const evidence = store;
+  if (evidence === null) return;
+  // A broken record and the earned room it takes back land together (§15 step 13).
+  evidence.atomically(() => {
+    recordOne(evidence, p, kept, nowMs);
+    if (!kept) narrowForBroken(p.subject, p.deal_ref, nowMs);
+  });
+  if (!kept) cancelWithdrawnOffers();
+  appendAudit('owner', 'evidence_recorded', p.deal_ref, `outcome=${kept ? 'kept' : 'broken'}`);
+  if (!kept) return;
+  closeKept(taskId, nowMs);
+}
+
+function recordOne(evidence: EvidenceStore, p: AskPayload, kept: boolean, nowMs: number): void {
+  evidence.record({
     counterpartyDid: p.counterparty_did,
     dealRef: p.deal_ref,
     subject: p.subject,
@@ -356,8 +401,9 @@ function recordAnswer(p: AskPayload, taskId: string, kept: boolean, nowMs: numbe
     facts: { answered_by: 'owner' },
     recordedAt: nowMs,
   });
-  appendAudit('owner', 'evidence_recorded', p.deal_ref, `outcome=${kept ? 'kept' : 'broken'}`);
-  if (!kept) return;
+}
+
+function closeKept(taskId: string, nowMs: number): void {
   const workflow = getWorkflowService();
   const task = workflow?.store().getById(taskId);
   try {

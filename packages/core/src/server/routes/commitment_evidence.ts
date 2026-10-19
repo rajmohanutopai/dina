@@ -14,8 +14,13 @@
  */
 
 import { ownerPresenceRefusal } from '../../commerce/owner_presence';
+import { cancelWithdrawnOffers } from '../../commitment/earned_room';
 import { promiseSummary } from '../../commitment/evidence';
-import { getEvidenceStore, setOwnerConsent } from '../../commitment/evidence_handler';
+import {
+  getEvidenceStore,
+  narrowForBroken,
+  setOwnerConsent,
+} from '../../commitment/evidence_handler';
 
 import { makeOwnerGuard } from './owner_guard';
 
@@ -76,8 +81,20 @@ export function registerEvidenceRoutes(router: CoreRouter, ownerCapability?: str
     if (note.length > 500) return { status: 400, body: { error: 'note: up to 500 characters' } };
     const store = getEvidenceStore();
     if (store === null) return NO_STORE;
-    const amended = store.amend(body.evidence_id, { outcome: body.outcome, note }, Date.now());
+    const outcome = body.outcome;
+    // A box: a closure's assignment is invisible to the compiler's narrowing.
+    const box: { amended: ReturnType<typeof store.amend> } = { amended: null };
+    // COMMITMENT_KERNEL §15 step 13: a record turned broken takes earned
+    // room back, in the same write; a note edit on one already broken does not.
+    store.atomically(() => {
+      const before = store.get(body.evidence_id as string);
+      box.amended = store.amend(body.evidence_id as string, { outcome, note }, Date.now());
+      if (box.amended?.outcome === 'broken' && before?.outcome !== 'broken')
+        narrowForBroken(box.amended.subject, box.amended.dealRef, Date.now());
+    });
+    const amended = box.amended;
     if (amended === null) return { status: 404, body: { error: 'no_such_owner_record' } };
+    cancelWithdrawnOffers();
     return { status: 200, body: { ok: true, outcome: amended.outcome } };
   });
 

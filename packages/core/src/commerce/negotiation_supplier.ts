@@ -38,6 +38,7 @@ import {
   validateSignedQuote,
   type CounterOffer,
   type Money,
+  type ProductRef,
   type QuoteAlternative,
   type QuoteOutcomeNotice,
   type Sha256Fn,
@@ -47,12 +48,15 @@ import {
 
 import { appendAudit } from '../audit/service';
 import { clampPart, type NumberPartSpec } from '../commitment';
+import { limitStamp } from '../commitment/earned_room';
 import { getSellerOptionStore } from '../commitment/option_handler';
 import { getContact } from '../contacts/directory';
 import { ownerTimeZoneIfRead } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
+
+import { goodsLimitKey, GOODS_SELLER_KIND, notePriceAnswer } from './goods_earned_room';
 import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from './negotiation_policy';
 import { partnerRunAlternatives } from './partner_run';
 import { priceQuoteAlternatives } from './quote_issuance';
@@ -497,7 +501,13 @@ function settleCounterTerms(args: {
   // buyer holds; every line's question is collected, even while one line
   // holds the whole revision under a floor the owner has raised.
   const approved = approvedPricesOf(runtime);
-  const toAsk: { lineId: string; asked: bigint; signed: bigint; current: bigint }[] = [];
+  const toAsk: {
+    lineId: string;
+    asked: bigint;
+    signed: bigint;
+    current: bigint;
+    product: ProductRef;
+  }[] = [];
   const lines: SignedQuoteLine[] = [];
   let moved = false;
   // A line whose kept price is under the CURRENT hard floor (the owner raised
@@ -538,7 +548,13 @@ function settleCounterTerms(args: {
     );
     const price = clamped.value > current ? current : clamped.value;
     if (clamped.needsOwner)
-      toAsk.push({ lineId: line.line_id, asked: clamped.asked, signed: price, current });
+      toAsk.push({
+        lineId: line.line_id,
+        asked: clamped.asked,
+        signed: price,
+        current,
+        product: line.offered_product,
+      });
     if (price < current) moved = true;
     if (price < floors.hardFloor) belowFloor = true;
     // The lowest this line may go now: the automatic floor, or down to what
@@ -737,6 +753,9 @@ export interface NegotiationPriceCardPayload {
     asked_minor_units: string;
     signed_minor_units: string;
     quoted_minor_units: string;
+    /** COMMITMENT_KERNEL §15 step 13: the item whose automatic floor this asks past, and its generation then. */
+    limit_key?: string;
+    limit_stamp?: string;
   }[];
 }
 
@@ -749,7 +768,7 @@ function askOwner(
   runtime: CommerceRuntime,
   counter: CounterOffer,
   head: SignedQuote,
-  lines: { lineId: string; asked: bigint; signed: bigint; current: bigint }[],
+  lines: { lineId: string; asked: bigint; signed: bigint; current: bigint; product: ProductRef }[],
   nowMs: number,
 ): void {
   const workflow = getWorkflowService();
@@ -769,12 +788,19 @@ function askOwner(
     quote_id: counter.quote_id,
     buyer_did: counter.buyer_did,
     currency: head.total.currency,
-    lines: fresh.map((line) => ({
-      line_id: line.lineId,
-      asked_minor_units: line.asked.toString(10),
-      signed_minor_units: line.signed.toString(10),
-      quoted_minor_units: line.current.toString(10),
-    })),
+    lines: fresh.map((line) => {
+      // A limit with no generation here (no port, unreadable) is left off:
+      // its answer is not counted (§15 step 13).
+      const stamp = limitStamp(GOODS_SELLER_KIND, goodsLimitKey(line.product));
+      return {
+        line_id: line.lineId,
+        asked_minor_units: line.asked.toString(10),
+        signed_minor_units: line.signed.toString(10),
+        quoted_minor_units: line.current.toString(10),
+        limit_key: goodsLimitKey(line.product),
+        ...(stamp === null || stamp === '' ? {} : { limit_stamp: stamp }),
+      };
+    }),
   };
   try {
     workflow.create({
@@ -833,7 +859,9 @@ export function parseNegotiationPriceCard(text: string): NegotiationPriceCardPay
  * question. The card completes either way so it never sits queued.
  */
 export function makeNegotiationPriceDecisionHandler(deps: {
-  runtime: () => Pick<CommerceRuntime, 'negotiation'> | null;
+  runtime: () =>
+    | (Pick<CommerceRuntime, 'negotiation'> & Partial<Pick<CommerceRuntime, 'runInTransaction'>>)
+    | null;
   workflow: () => WorkflowService | null;
   nowMs: () => number;
 }): ApprovalDecisionHandler {
@@ -847,8 +875,22 @@ export function makeNegotiationPriceDecisionHandler(deps: {
     if (runtime === null) return;
     const state = decision === 'approved' ? 'approved' : 'declined';
     // Already withdrawn (the quote was not awarded): the cancel that took the
-    // card down is not an owner's no, and is not audited as one.
-    if (!runtime.negotiation.decideQuestion(task.id, state, deps.nowMs())) return;
+    // card down is not an owner's no, and is not audited as one. The answer
+    // and its place in each item's record (§15 step 13) land together; a
+    // lapse is a lapse there, never a no, though the question closes alike.
+    let decided = false;
+    const inTransaction = runtime.runInTransaction ?? ((body: () => void) => body());
+    inTransaction(() => {
+      decided = runtime.negotiation.decideQuestion(task.id, state, deps.nowMs());
+      if (decided)
+        notePriceAnswer(
+          task,
+          payload.lines,
+          decision === 'approved' ? 'yes' : decision === 'lapsed' ? 'lapsed' : 'no',
+          deps.nowMs(),
+        );
+    });
+    if (!decided) return;
     appendAudit(
       'negotiation',
       `owner_price_${decision}`,

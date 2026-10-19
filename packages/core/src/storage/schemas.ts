@@ -4303,6 +4303,58 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // COMMITMENT_KERNEL §10 "Earned room", §15 step 13: the cards raised only
+    // because a figure went past an automatic limit, with the figure and the
+    // owner's answer; and, per limit, the room the owner's yeses earned, with
+    // the owner's own figure to go back to.
+    version: 81,
+    name: 'commitment_earned_room',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commitment_limit_cards (
+        kind TEXT NOT NULL,
+        limit_key TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        figure TEXT NOT NULL,
+        -- The limit's generation when the card was raised: a record counts
+        -- only while it stands.
+        stamp TEXT NOT NULL,
+        answer TEXT NOT NULL CHECK (answer IN ('yes', 'no', 'lapsed')),
+        decided_at INTEGER NOT NULL,
+        PRIMARY KEY (kind, limit_key, card_id)
+      );
+      CREATE TABLE IF NOT EXISTS commitment_earned_room (
+        kind TEXT NOT NULL,
+        limit_key TEXT NOT NULL,
+        state TEXT NOT NULL CHECK (state IN ('offered', 'earned', 'declined', 'narrowed')),
+        owner_figure TEXT NOT NULL,
+        figure TEXT NOT NULL,
+        stamp TEXT NOT NULL,
+        card_id TEXT NOT NULL,
+        since INTEGER NOT NULL,
+        -- A narrowing whose notice waits for the workflow (made at install).
+        notice_pending TEXT NOT NULL DEFAULT '',
+        PRIMARY KEY (kind, limit_key)
+      );
+      -- Each limit's generation: bumped by the owner's own save of the kind's
+      -- policy (limit_key '') and by any change Core sees in a limit's basis
+      -- that it did not write itself.
+      CREATE TABLE IF NOT EXISTS commitment_limit_generations (
+        kind TEXT NOT NULL,
+        limit_key TEXT NOT NULL,
+        generation INTEGER NOT NULL,
+        basis TEXT NOT NULL,
+        PRIMARY KEY (kind, limit_key)
+      );
+      -- When a record came to stand broken: its recording, or the owner's
+      -- amendment that turned it broken (a note edit moves nothing).
+      ALTER TABLE commitment_evidence ADD COLUMN broken_since INTEGER;
+      -- An amended record may have turned broken at its amendment: counted
+      -- from then, which errs toward the recent side.
+      UPDATE commitment_evidence SET broken_since = COALESCE(amended_at, recorded_at)
+        WHERE outcome = 'broken';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

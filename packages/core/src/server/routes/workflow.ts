@@ -57,6 +57,10 @@ import {
   admitSupplierRecords,
   WATERMARK_REFUSAL,
 } from '../../commerce/watermark_gate';
+import {
+  EARNED_ROOM_CARD_TYPES,
+  EARNED_ROOM_OFFER_TYPE,
+} from '../../commitment/earned_room';
 import { EVIDENCE_ASK_TYPE } from '../../commitment/evidence_handler';
 import { MODEL_CHANGE_CARD } from '../../commitment/model_changes';
 import { OPTION_CARD_TYPES, OPTION_CLEAR_TYPE, OPTION_EXIT_TYPE } from '../../commitment/option_handler';
@@ -633,6 +637,10 @@ function redactCardForBrain(payload: string): string {
   // entries, which may hold values (switched off since) or sit in a persona
   // Brain may no longer read. Brain learns only that one exists.
   if (card.type === MODEL_CHANGE_CARD) return JSON.stringify({ type: card.type, redacted: 'owner_only' });
+  // COMMITMENT_KERNEL §15 step 13 — earned room names the owner's automatic
+  // limits and the figures said yes to: never Brain's to read.
+  if (typeof card.type === 'string' && EARNED_ROOM_CARD_TYPES.includes(card.type))
+    return JSON.stringify({ type: card.type, redacted: 'owner_only' });
   // SHELF_SPACE_NEGOTIATION §7.4 — a term card carries rent, share, floors
   // asked about and holding counts: the owner's alone. Brain learns which
   // card and which negotiation, never a number.
@@ -668,6 +676,8 @@ function forCaller(req: CoreRequest, task: WorkflowTask): Record<string, unknown
     return { ...redacted, description: 'An order notice for the owner', result: undefined, result_summary: '' };
   if (body?.type === MODEL_CHANGE_CARD)
     return { ...redacted, description: 'A change to the owner’s deal values', result: undefined, result_summary: '' };
+  if (typeof body?.type === 'string' && EARNED_ROOM_CARD_TYPES.includes(body.type))
+    return { ...redacted, description: 'A card about the owner’s automatic limits', result: undefined, result_summary: '' };
   if (isUcpLinkCard(body?.type, body?.agent_did))
     return { ...redacted, description: 'A link card for the owner', result: undefined, result_summary: '' };
   return isUcpCheckoutCard(body?.type, body?.agent_did)
@@ -1651,6 +1661,8 @@ export const PRESENCE_GATED_PAYLOAD_TYPES: ReadonlyMap<string, string> = new Map
   [OPTION_CLEAR_TYPE, 'letting a shipper’s run bind your orders needs a person present'],
   // COMMITMENT_KERNEL §15 step 12: taking the exit right cancels an order.
   [OPTION_EXIT_TYPE, 'cancelling an order needs a person present'],
+  // §15 step 13: widening what Dina agrees alone.
+  [EARNED_ROOM_OFFER_TYPE, 'letting Dina agree more alone needs a person present'],
 ]);
 
 function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | null {
@@ -1698,6 +1710,8 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   ...OPTION_CARD_TYPES,
   // §15 step 8 — "did it happen?": the owner's answer is the evidence.
   EVIDENCE_ASK_TYPE,
+  // §15 step 13 — earned room: Core counts, the owner answers.
+  ...EARNED_ROOM_CARD_TYPES,
   // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — a clerk's operation above the
   // cap. A yes lets money move: Brain may neither mint nor decide one.
   STAFF_ESCALATION_APPROVAL_TYPE,

@@ -653,6 +653,42 @@ describe('useServiceInbox', () => {
     });
   });
 
+  it('shows earned room in Core’s words: the offer and the notice (COMMITMENT_KERNEL §15 step 13)', async () => {
+    const offer =
+      'You said yes to the last 5 prices for Mango juice below your automatic limit, the lowest at INR 425.00. Let Dina agree down to INR 425.00 alone?';
+    const back = 'Dina is back to your own automatic limit for prices for Mango juice: INR 450.00.';
+    const { client } = stubClient({
+      list: [
+        makeTask({
+          id: 'earned-room-1',
+          description: offer,
+          payload: JSON.stringify({ type: 'earned_room_offer', kind: 'goods.seller' }),
+        }),
+        makeTask({
+          id: 'earned-room-back-1',
+          description: back,
+          payload: JSON.stringify({ type: 'earned_room_narrowed', kind: 'goods.seller' }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const entries = await listPendingApprovals();
+    expect(entries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'earned_room_offer',
+          serviceName: 'Let Dina agree more alone?',
+          paramsPreview: offer,
+        }),
+        expect.objectContaining({
+          kind: 'earned_room_narrowed',
+          serviceName: 'Dina is back to your own limit',
+          paramsPreview: back,
+        }),
+      ]),
+    );
+  });
+
   it('shows Brain’s yes-or-no question as Core cleaned it (COMMITMENT_KERNEL §15 step 11)', async () => {
     const { client, calls } = stubClient({
       list: [

@@ -129,6 +129,7 @@ import {
   modelChangeWorkflowHooks,
   optionWorkflowHooks,
   evidenceWorkflowHooks,
+  earnedRoomWorkflowHooks,
   negotiationWorkflowHooks,
   termWorkflowHooks,
   orderAttachmentWorkflowHooks,
@@ -832,6 +833,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           optionWorkflowHooks(),
           // §15 step 8: the owner's answer to "did it happen?" is the evidence.
           evidenceWorkflowHooks(),
+          earnedRoomWorkflowHooks(),
           orderAttachmentWorkflowHooks(),
           negotiationWorkflowHooks(),
           termWorkflowHooks(),

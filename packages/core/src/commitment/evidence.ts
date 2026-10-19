@@ -86,8 +86,8 @@ export class EvidenceStore {
     this.db.execute(
       `INSERT OR IGNORE INTO commitment_evidence
          (evidence_id, counterparty_did, deal_ref, subject, item, occurrence, outcome, fault,
-          source, note, facts_json, recorded_at, amended_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+          source, note, facts_json, recorded_at, amended_at, broken_since)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
       [
         id,
         e.counterpartyDid,
@@ -101,6 +101,7 @@ export class EvidenceStore {
         e.note,
         JSON.stringify(e.facts),
         e.recordedAt,
+        e.outcome === 'broken' ? e.recordedAt : null,
       ],
     );
     return this.get(id) as Evidence;
@@ -124,18 +125,39 @@ export class EvidenceStore {
   ): Evidence | null {
     const held = this.get(id);
     if (held === null || held.source !== 'owner') return null;
+    // When it came to stand broken: kept from before, set when the amendment
+    // turns it broken, cleared when it turns it kept (§15 step 13).
+    const brokenSince =
+      change.outcome === 'kept' ? null : held.outcome === 'broken' ? undefined : nowMs;
     this.db.execute(
       `UPDATE commitment_evidence SET outcome = ?, fault = ?, note = ?, amended_at = ?
+        ${brokenSince === undefined ? '' : ', broken_since = ?'}
         WHERE evidence_id = ?`,
       [
         change.outcome,
         change.outcome === 'broken' ? 'counterparty' : 'none',
         change.note,
         nowMs,
+        ...(brokenSince === undefined ? [] : [brokenSince]),
         id,
       ],
     );
     return this.get(id);
+  }
+
+  /** For a caller with no transaction of its own: a record and what it changes land together. */
+  atomically(fn: () => void): void {
+    this.db.transaction(fn);
+  }
+
+  /** Records that came to stand broken since `sinceMs` (COMMITMENT_KERNEL §15 step 13). */
+  brokenSince(sinceMs: number): Evidence[] {
+    return this.db
+      .query(
+        `SELECT * FROM commitment_evidence WHERE outcome = 'broken' AND broken_since >= ?`,
+        [sinceMs],
+      )
+      .map((r) => this.row(r) as Evidence);
   }
 
   forCounterparty(counterpartyDid: string): Evidence[] {

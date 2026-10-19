@@ -1819,6 +1819,12 @@ export * from './reasoning/job_projection';
 export { modelChangeWorkflowHooks } from './commitment/model_changes';
 export { optionWorkflowHooks } from './commitment/option_handler';
 export { evidenceWorkflowHooks } from './commitment/evidence_handler';
+export {
+  earnedRoomWorkflowHooks,
+  EARNED_ROOM_CARD_TYPES,
+  EARNED_ROOM_NOTICE_TYPE,
+  EARNED_ROOM_OFFER_TYPE,
+} from './commitment/earned_room';
 export { commitTermStrategyMove } from './commerce/term/term_runtime';
 export { commitStrategyMove } from './commitment/strategy_commit';
 

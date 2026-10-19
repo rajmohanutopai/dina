@@ -669,11 +669,44 @@
             simulator (iPhone 17, dev build): Settings → Who bargains for you; Save opened the presence sheet with
             Save held back behind it, the passphrase resent the same change; the disclosure, the share chips, "Leave it
             to Brain", the no-values kind, the return to fixed rules and a reload on coming back all as on the web.</li>
+          <li><b>Step 13, earned room (2026-10-17, built; dual review passed on cf2da24fe327, five rounds):</b> owner decisions §16 items 12–15.
+            Kernel: <code>commitment/earned_room.ts</code>: the record of cards past each automatic limit, the offer
+            (five yeses in a row within 90 days, no broken promise in the kind), the owner's yes applied only while
+            their own figure stands (finished at boot after a crash), narrowing with a notice, and a limit the owner
+            changes treated as theirs on the next look. Kinds: the store's shelf floors
+            (<code>term/term_earned_room.ts</code>; the floor card now carries each asked term's policy figure before
+            the holding premium; a declined agreement inside the room narrows) and the goods seller's item floors
+            (<code>goods_earned_room.ts</code>; the price card names its item; a lapse is a lapse in the record).
+            A broken promise is mapped to its kind (<code>evidenceKind</code>: a run is the goods seller's, a shelf
+            promise the store's or the brand's). Migration 81 (<code>commitment_limit_cards</code>,
+            <code>commitment_earned_room</code>), both archived. Cards are Core-minted, redacted for Brain (the
+            idempotency key carries only a tag of the limit), and the offer needs a person present; the phone shows
+            both in Core's words. Tests: ER-01..06, TE-01..03, the goods case in <code>negotiation_flow</code>, the
+            phone inbox case. Round 1 (Codex 5, Claude 5): every record, narrowing and offer row is written
+            synchronously in the transaction of the decision that causes it (no detached work); records carry the
+            limit's basis (figures, currency, unit) and count only under it; a yes is checked again as it lands
+            and finished at boot; a broken promise withdraws an open offer and is checked over the full 90 days;
+            room is checked against broken promises when a kind comes online; an offer whose card closed
+            unanswered stops blocking; an unreadable limit changes nothing; a declined shelf deal is read at the
+            holding count its card showed. Round 2 (Codex 3, Claude 5): a generation per limit (owner saves,
+            catalogue publications and any basis change Core did not make bump it) replaces comparing figures;
+            the goods basis includes the published unit and currency; a widening already applied is reported as
+            applied after a crash; a narrowing made before the workflow is up raises its notice at boot; a
+            withdrawn offer's card is cancelled; evidence keeps when a record became broken
+            (<code>broken_since</code>), so a note edit narrows nothing. Round 3 (Codex 3, Claude 3): a save looks at
+            each kept limit and moves only the ones whose basis changed (a kind-wide bump made earned room
+            permanent after any unrelated save); the supplier save and the catalogue publication land with that look
+            in one transaction; a withdrawn offer's card is cancelled after the commit, never inside it (the phone
+            cannot nest); the migration counts an amended record from its amendment. Judgement: a save that leaves
+            a limit at its earned figure is not taken as the owner adopting it, since every save re-sends every
+            field. Round 4 (Codex 1): a limit removed is a generation of its own, so one made again with the same
+            figures starts a fresh record; the goods key and the term card reads go through the module's readers
+            (the commerce boundary rule). All suites green.</li>
           <li><b>What remains (all recorded, none started):</b> publishing the promise summary to
             PeerLens (a new record kind and AppView ingestion; owner decision); past deals for goods kinds in
             Brain's view; device runs on the phone; step 9 (bundles, conditions, loops, standing deals); for the exit right,
             what the buyer gives for it, Brain deciding either side, and a buyer-side applier for the
-            cancellation result; Brain asking the owner on goods, shipping and group turns (shelf only today);
+            cancellation result; Brain asking where there is time (step 14, decided 2026-10-17);
             owner limits on a runner's credit days and quote validity. The buyer-named second choice is dropped:
             it is an exit right (step 12) plus an ordinary new deal.</li>
           <li><b>Step 4 owed item closed:</b> E-05 in <code>term_strategy_budget.test.ts</code> counts what Brain could

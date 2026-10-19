@@ -34,6 +34,7 @@ import {
 } from '../../src/commerce/catalog_draft_store';
 import { InMemoryCatalogPointerRepository } from '../../src/commerce/catalog_pointer_store';
 import { buildCatalogSnapshot } from '../../src/commerce/catalog_publisher';
+import { goodsLimitKey, goodsLimitPort, GOODS_SELLER_KIND } from '../../src/commerce/goods_earned_room';
 import {
   admitInboundCounter,
   answerQuoteOutcomeInCore,
@@ -49,6 +50,7 @@ import {
 } from '../../src/commerce/runtime';
 import { answerCounterOffer, answerQuoteRequest } from '../../src/commerce/supplier_runner';
 import { createTender } from '../../src/commerce/tender';
+import { EarnedRoomStore, installEarnedRoomStore } from '../../src/commitment/earned_room';
 import { ValueModelStore } from '../../src/commitment/model_store';
 import { installOptionStores } from '../../src/commitment/option_handler';
 import { SellerOptionStore } from '../../src/commitment/options';
@@ -830,6 +832,61 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
     });
     expect(buyerReceives(pair, third, r3.json)).toBe('applied');
     expect(headPrice(pair)).toBe('425');
+  });
+
+  it('§15 step 13: the price card names its item; each answer joins that item’s record, and the item’s floors are the limit', async () => {
+    const pair = await negotiatingPair({
+      ...POLICY,
+      items: [{ product: GTIN, floorMinorUnits: '420', autoFloorMinorUnits: '450' }],
+    });
+    const roomDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-goods-room-'));
+    const roomDb = new NodeSQLiteAdapter({
+      path: path.join(roomDir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+    });
+    applyMigrations(roomDb, IDENTITY_MIGRATIONS);
+    const room = new EarnedRoomStore(roomDb);
+    installEarnedRoomStore(room);
+    try {
+      const first = await buyerCounters(pair, '40000');
+      const r1 = supplierAnswers(pair, first) as { json: string };
+      expect(buyerReceives(pair, first, r1.json)).toBe('applied');
+      const second = await buyerCounters(pair, '40000');
+      supplierAnswers(pair, second);
+      installCommerceRuntime(pair.supplier);
+      const [question] = pair.supplier.negotiation.questionsForQuote(pair.quote.quote_id);
+      const card = pair.workflow.store().getById(question?.taskId ?? '');
+      const key = goodsLimitKey(GTIN);
+      const port = goodsLimitPort(pair.supplier);
+      // The card names the item and the generation of its floors when asked.
+      const line = JSON.parse(card?.payload ?? '{}').lines[0] as Record<string, string>;
+      expect(line).toMatchObject({ asked_minor_units: '425', limit_key: key });
+      const stamp = line.limit_stamp ?? '';
+      expect(stamp).toMatch(/^\d+$/);
+      const basis = port.read(key)?.basis;
+      // A lapse is recorded as a lapse, though the question closes as a no.
+      makeNegotiationPriceDecisionHandler({
+        runtime: () => pair.supplier,
+        workflow: () => pair.workflow,
+        nowMs: () => NOW,
+      })({ task: card as never, decision: 'lapsed' });
+      expect(pair.supplier.negotiation.questionsForQuote(pair.quote.quote_id)[0]?.state).toBe(
+        'declined',
+      );
+      expect(room.latestCards(GOODS_SELLER_KIND, key, 0, stamp, 5)).toEqual([
+        { figure: 425n, answer: 'lapsed', decidedAt: NOW },
+      ]);
+      // The item's floors are what earned room reads and writes; a write moves the basis.
+      expect(port.read(key)).toMatchObject({ hard: 420n, auto: 450n });
+      expect(port.writeAuto(key, 430n, NOW)).toBe(true);
+      expect(port.read(key)).toMatchObject({ hard: 420n, auto: 430n });
+      expect(port.read(key)?.basis).not.toBe(basis);
+      expect(port.read(goodsLimitKey({ scheme: 'gtin', value: '00000000000000' }))).toBeNull();
+    } finally {
+      installEarnedRoomStore(null);
+      roomDb.close();
+      fs.rmSync(roomDir, { recursive: true, force: true });
+    }
   });
 
   it('COMMITMENT_KERNEL §7 replay: ₹900 held, hard ₹800, automatic newly raised to ₹950, proposal ₹850 — the offer stays at ₹900 and the owner is asked', async () => {

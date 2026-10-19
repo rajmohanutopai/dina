@@ -160,6 +160,7 @@ import {
   sweepFulfilment,
   type ExternalFulfilment,
 } from '../../commerce/fulfilment_reconciler';
+import { GOODS_SELLER_KIND } from '../../commerce/goods_earned_room';
 import {
   DEFAULT_RETENTION_REQUIREMENT,
   evaluateIdempotencyEvidence,
@@ -318,6 +319,7 @@ import {
 } from '../../commerce/trade_ledger';
 import { TradeLedgerService } from '../../commerce/trade_ledger_service';
 import { tradeRelationshipReaders, tradeOrientations } from '../../commerce/trade_readers';
+import { ownerChangedLimits } from '../../commitment/earned_room';
 import { getValueModelStore } from '../../commitment/model_store';
 import { getContact } from '../../contacts/directory';
 import { getDeviceByDID, revokePluginDeviceForTeardown } from '../../devices/registry';
@@ -483,6 +485,17 @@ function ownerPresentNowForRoutes(principal: string | null): boolean {
 }
 
 /**
+ * One transaction on the runtime's store, where it has one (a test stand-in
+ * may not): COMMITMENT_KERNEL §15 step 13 keeps an owner's save and its look
+ * at the limits it may move together.
+ */
+function inRuntimeTransaction(runtime: CommerceRuntime, body: () => void): void {
+  const door = (runtime as Partial<CommerceRuntime>).runInTransaction;
+  if (typeof door === 'function') door(body);
+  else body();
+}
+
+/**
  * Remember what this node just published.
  *
  * Written only after the repo accepted the pointer, because the row's job is to
@@ -496,13 +509,18 @@ function recordPublication(catalogId: string, pointer: CatalogPointer, pointerCi
   // see beside the record, and an owner card that disagreed with it would be
   // reporting a second, private publication history.
   const claimed = Date.parse(pointer.published_at);
-  runtime.catalogPointers.put({
-    catalogId,
-    pointer,
-    pointerCid,
-    snapshotDigest: pointer.snapshot_digest ?? '',
-    withdrawn: pointer.withdrawn === true,
-    publishedAtMs: Number.isFinite(claimed) ? claimed : Date.now(),
+  // §15 step 13: a publication can move the unit and currency the item
+  // floors are measured in; the look at each lands with it.
+  inRuntimeTransaction(runtime, () => {
+    runtime.catalogPointers.put({
+      catalogId,
+      pointer,
+      pointerCid,
+      snapshotDigest: pointer.snapshot_digest ?? '',
+      withdrawn: pointer.withdrawn === true,
+      publishedAtMs: Number.isFinite(claimed) ? claimed : Date.now(),
+    });
+    ownerChangedLimits(GOODS_SELLER_KIND);
   });
 }
 
@@ -3707,12 +3725,22 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
         return { status: 400, body: { error: 'settings body is required' } };
       }
       const previousLegalName = kind === 'business' ? businessLegalName() : undefined;
-      const written =
-        kind === 'buyer'
-          ? runtime.settings.writeBuyer(body as never)
-          : kind === 'supplier'
-            ? runtime.settings.writeSupplier(body as never)
-            : runtime.settings.writeBusiness(body as never);
+      // COMMITMENT_KERNEL §15 step 13: the owner's supplier save and the look
+      // at each item floor it may have moved land in one transaction.
+      // A box: a closure's assignment is invisible to the compiler's narrowing.
+      const box: { written: ReturnType<typeof runtime.settings.writeSupplier> } = {
+        written: { ok: true },
+      };
+      inRuntimeTransaction(runtime, () => {
+        box.written =
+          kind === 'buyer'
+            ? runtime.settings.writeBuyer(body as never)
+            : kind === 'supplier'
+              ? runtime.settings.writeSupplier(body as never)
+              : runtime.settings.writeBusiness(body as never);
+        if (box.written.ok && kind === 'supplier') ownerChangedLimits(GOODS_SELLER_KIND);
+      });
+      const written = box.written;
       if (!written.ok) return { status: 400, body: { ok: false, findings: written.findings } };
       if (kind === 'business') {
         // The public listing follows the legal name (a listing made before it

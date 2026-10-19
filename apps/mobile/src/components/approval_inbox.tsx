@@ -63,6 +63,8 @@ const TERM_CARD_HEADLINES: Readonly<Partial<Record<string, string>>> = {
   term_strategy_fallback: 'Dina bargains in its fixed style',
   term_strategy_question: 'Brain asks you',
   commitment_model_change: 'Change what Dina knows about your deals?',
+  earned_room_offer: 'Let Dina agree more alone?',
+  earned_room_narrowed: 'Dina is back to your own limit',
   term_floor_approval: 'Offer terms past your automatic limit?',
   term_agreement_proposal: 'Send this slot proposal?',
   term_agreement_decision: 'Accept this slot agreement?',

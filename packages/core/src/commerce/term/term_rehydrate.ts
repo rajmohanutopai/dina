@@ -163,6 +163,48 @@ export function readTermFloorMaterial(json: string): Partial<Record<TermName, st
   return out;
 }
 
+/**
+ * COMMITMENT_KERNEL §15 step 13 — what a floor card keeps for the record of
+ * yeses: the resource, each asked term's policy figure, and its limit's
+ * generation when asked. Null for a card raised before the record began.
+ */
+export function readTermFloorRecord(json: string): {
+  resourceRef: string;
+  terms: { name: TermName; figure: string; stamp: string }[];
+} | null {
+  const value = parse(json);
+  if (value === null || typeof value !== 'object') return null;
+  const v = value as { resource_ref?: unknown; asked_base?: unknown; asked_stamp?: unknown };
+  if (typeof v.resource_ref !== 'string') return null;
+  const bases = v.asked_base;
+  const stamps = v.asked_stamp;
+  if (bases === null || typeof bases !== 'object' || stamps === null || typeof stamps !== 'object')
+    return null;
+  const terms: { name: TermName; figure: string; stamp: string }[] = [];
+  for (const [name, figure] of Object.entries(bases as Record<string, unknown>)) {
+    const stamp = (stamps as Record<string, unknown>)[name];
+    if (!isTermName(name) || typeof figure !== 'string' || typeof stamp !== 'string') continue;
+    if (!/^\d{1,20}$/.test(figure) || !/^\d{1,12}$/.test(stamp)) continue;
+    terms.push({ name, figure, stamp });
+  }
+  return { resourceRef: v.resource_ref, terms };
+}
+
+/** The holding count and rate a decision card showed (§7.1); zero when it showed none. */
+export function readTermDecisionHolding(json: string): { held: number; premiumBps: number } {
+  const value = parse(json);
+  const holding =
+    value !== null && typeof value === 'object'
+      ? (value as { holding?: Record<string, unknown> }).holding
+      : undefined;
+  const held = holding?.already_held;
+  const premium = holding?.premium_bps_per_count;
+  return {
+    held: typeof held === 'number' && Number.isInteger(held) && held >= 0 ? held : 0,
+    premiumBps: typeof premium === 'number' && Number.isInteger(premium) && premium >= 0 ? premium : 0,
+  };
+}
+
 /** A term card's workflow payload: its type and card id, or nothing. */
 export function readTermCardPayload(
   payload: string,

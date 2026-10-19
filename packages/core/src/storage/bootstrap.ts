@@ -11,6 +11,7 @@
  */
 
 import { GOODS_BUYER, installGoodsCounterStrategy } from '../commerce/goods_counter_strategy';
+import { EarnedRoomStore, installEarnedRoomStore } from '../commitment/earned_room';
 import { installEvidenceStore } from '../commitment/evidence_handler';
 import { setCommitmentPersonaDB , ValueModelStore } from '../commitment/model_store';
 import { installOptionStores, setShipperFeeSubmitter } from '../commitment/option_handler';
@@ -87,6 +88,8 @@ export async function bootstrapPersistence(provider: DBProvider): Promise<Databa
   });
   // COMMITMENT_KERNEL §15 step 8 — evidence and each relationship's consent.
   installEvidenceStore(identityDB);
+  // §15 step 13 — the record of yeses past each automatic limit, and the room it earned.
+  installEarnedRoomStore(new EarnedRoomStore(identityDB));
 
   return identityDB;
 }

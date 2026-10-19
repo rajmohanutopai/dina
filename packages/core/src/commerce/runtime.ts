@@ -21,6 +21,7 @@
  * before the epoch exists must fail, not silently sign at a guessed epoch.
  */
 
+import { installLimitPort, uninstallLimitPort } from '../commitment/earned_room';
 import { ValueModelStore } from '../commitment/model_store';
 import {
   installExitRightPort,
@@ -70,6 +71,7 @@ import { CredentialBroker, type BrokeredExecutor } from './credential_broker';
 import { SQLiteCredentialStore, type RotatableCredentialStore } from './credential_store';
 import { SQLiteDeclineDocumentRepository } from './decline_documents';
 import { firstPartyPack } from './first_party_packs';
+import { goodsLimitPort, GOODS_SELLER_KIND } from './goods_earned_room';
 import { GOODS_SELLER_TOUCHES } from './goods_seller_alternatives';
 import {
   SQLiteIdempotencyEvidenceRepository,
@@ -137,6 +139,8 @@ import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository 
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
 import { SQLiteTenderRepository } from './tender';
+import { shelfLimitPort } from './term/term_earned_room';
+import { SHELF_HOST_KIND } from './term/term_model';
 import { createTermEngine } from './term/term_runtime';
 import { installTradeContextSources } from './trade_context_sources';
 import { isOrderCounterparty } from './trade_counterparty';
@@ -831,6 +835,15 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
           },
         },
   );
+  // §15 step 13 — earned room: the store's shelf floors and the goods
+  // seller's floors, read and written through this node's own policies.
+  if (value === null) {
+    uninstallLimitPort(SHELF_HOST_KIND);
+    uninstallLimitPort(GOODS_SELLER_KIND);
+  } else {
+    installLimitPort(shelfLimitPort(value.terms));
+    installLimitPort(goodsLimitPort(value));
+  }
   // §20.10 — the probing window lives and dies with the runtime. Composed
   // HERE rather than at each boot because there are two boots and the defence
   // is worthless on the one that forgets: an unwired ledger fails closed, so

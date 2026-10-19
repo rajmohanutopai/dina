@@ -242,6 +242,10 @@ const IDENTITY_TABLES = [
   'commitment_standing_choices',
   // §15 step 12: an approved exit is sent after a move as before it.
   'commitment_exit_asks',
+  // §15 step 13: the record of yeses, and the room it earned, survive a move.
+  'commitment_limit_cards',
+  'commitment_earned_room',
+  'commitment_limit_generations',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */

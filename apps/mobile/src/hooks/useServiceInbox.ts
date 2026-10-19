@@ -103,6 +103,9 @@ export type InboxEntryKind =
   | 'option_exit'
   /** COMMITMENT_KERNEL §15 step 8 — did the other side keep a promise? */
   | 'evidence_ask'
+  /** §15 step 13 — let Dina agree more alone, and the notice when that is taken back. */
+  | 'earned_room_offer'
+  | 'earned_room_narrowed'
   | 'unknown';
 
 export interface InboxEntry {
@@ -1468,6 +1471,9 @@ const TERM_CARD_TYPES = [
   'option_exit',
   // §15 step 8 — "did it happen?": yes records the promise kept, no broken.
   'evidence_ask',
+  // §15 step 13 — earned room: Core's words from the figures; the owner's yes.
+  'earned_room_offer',
+  'earned_room_narrowed',
 ] as const;
 type TermCardType = (typeof TERM_CARD_TYPES)[number];
 
@@ -1661,6 +1667,19 @@ function termCardEntry(
         ...base,
         capability: 'delivery run',
         serviceName: 'Offer a partner’s delivery run to the buyer?',
+        requesterDID: '',
+        paramsPreview: task.description ?? '',
+      };
+    case 'earned_room_offer':
+    case 'earned_room_narrowed':
+      // Core counted the owner's yeses and wrote the words; the whole card is them.
+      return {
+        ...base,
+        capability: 'automatic limit',
+        serviceName:
+          type === 'earned_room_offer'
+            ? 'Let Dina agree more alone?'
+            : 'Dina is back to your own limit',
         requesterDID: '',
         paramsPreview: task.description ?? '',
       };

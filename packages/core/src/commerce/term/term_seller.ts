@@ -66,6 +66,7 @@ import { SLOT_PACK_PARTS } from '../slot_pack_manifests';
 
 import { termAgreementStatus, termHoldingCount, termResourceFree } from './term_agreements';
 import { DAY_MS, hash, iso, mintId, TERM_TIMINGS, type TermContext } from './term_context';
+import { floorCardRecord, noteDeclinedDeal, noteFloorAnswer } from './term_earned_room';
 import {
   SHELF_HOST_KIND,
   shelfBindingCard,
@@ -95,6 +96,7 @@ import {
   readTermPolicyJson,
   readTermProposalRow,
   readTermRequestRow,
+  readTermDecisionHolding,
 } from './term_rehydrate';
 import { DEFAULT_TERM_RUNNER_PARAMS, proposeFirstOffer, proposeRevision } from './term_runner';
 
@@ -778,6 +780,20 @@ function signRevision(
   storeAndSendOffer(ctx, next, answers);
 }
 
+/**
+ * §15 step 13: a declined agreement whose terms sit inside the room Dina had
+ * earned puts the owner's own floor back. Read at the holding count and rate
+ * its decision card showed, as the deal was priced.
+ */
+function noteDeclinedProposal(
+  ctx: TermContext,
+  proposal: TermAgreementProposal,
+  card: { payloadJson: string },
+): void {
+  const { held, premiumBps } = readTermDecisionHolding(card.payloadJson);
+  noteDeclinedDeal(proposal, held, premiumBps, ctx.now());
+}
+
 function resendHead(ctx: TermContext, head: TermOffer): void {
   ctx.resend(head.buyer_did, 'term_offer', head);
 }
@@ -799,6 +815,15 @@ function raiseFloorCard(
   const asked: Record<string, string> = {};
   for (const [name, value] of Object.entries(args.asked))
     asked[name] = (value as bigint).toString(10);
+  // COMMITMENT_KERNEL §15 step 13: the policy figure behind each asked value,
+  // for the record of yeses that earns room.
+  const policy = currentTermPolicy(ctx);
+  const rule = holdingRuleFor(policy, args.head.general.tag);
+  const held = heldCountFor(ctx, policy, {
+    tag: args.head.general.tag,
+    start: args.head.general.start,
+    end: args.head.general.end,
+  });
   const payload = {
     type: TERM_FLOOR_CARD,
     card_id: cardId,
@@ -808,6 +833,7 @@ function raiseFloorCard(
     currency: args.head.general.currency,
     asked,
     offered: Object.fromEntries(TERM_NAMES.map((n) => [n, args.signed[n].toString(10)])),
+    ...floorCardRecord(args.head.resource_ref, args.asked, held, rule.premium),
   };
   const decideBy = Date.parse(args.head.valid_until) + DAY_MS;
   ctx.raiseCard({
@@ -832,9 +858,11 @@ function raiseFloorCard(
 export function decideFloorCard(ctx: TermContext, cardId: string, approve: boolean): boolean {
   const card = ctx.store.getCard(cardId);
   if (card === null || card.cardType !== TERM_FLOOR_CARD) return false;
-  // The yes, every value it authorises and the revision it allows land together.
+  // The yes, every value it authorises, the revision it allows, and the
+  // answer's place in the record that earns room (§15 step 13) land together.
   return ctx.atomically('floor_decision', () => {
     if (!ctx.store.decideCard(cardId, approve ? 'approved' : 'declined', ctx.now())) return false;
+    noteFloorAnswer(card, approve ? 'yes' : 'no', ctx.now());
     if (!approve) return true;
     const asked = readTermFloorMaterial(card.materialJson);
     for (const [name, value] of Object.entries(asked ?? {})) {
@@ -1227,6 +1255,7 @@ export function decideTermProposal(
         decision === null
           ? { ok: false, refusal: 'already_decided' }
           : { ok: true, decision: 'rejected', decisionDigest: decision.decision_digest };
+      if (decision !== null) noteDeclinedProposal(ctx, proposal, card);
       return;
     }
     // FR-P5 — what the owner saw is what executes.
