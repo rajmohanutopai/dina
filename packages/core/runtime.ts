@@ -51,6 +51,7 @@ export { modelChangeWorkflowHooks } from './src/commitment/model_changes';
 export { optionWorkflowHooks } from './src/commitment/option_handler';
 export { evidenceWorkflowHooks } from './src/commitment/evidence_handler';
 export { earnedRoomWorkflowHooks } from './src/commitment/earned_room';
+export { ownerQuestionWorkflowHooks } from './src/commitment/owner_questions';
 // A2A Lane 1 (docs/A2A_GATEWAY_ARCHITECTURE.md §6.2): the decision hook every
 // host composes, and the runtime it reads (null where Lane 1 is not installed).
 export { a2aWorkflowHooks } from './src/a2a/permits';

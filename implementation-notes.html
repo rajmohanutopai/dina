@@ -702,11 +702,26 @@
             field. Round 4 (Codex 1): a limit removed is a generation of its own, so one made again with the same
             figures starts a fresh record; the goods key and the term card reads go through the module's readers
             (the commerce boundary rule). All suites green.</li>
+          <li><b>Step 14, Brain asks where there is time (2026-10-19, built; dual review passed on e097b0f8a9b1, two rounds):</b> owner decision
+            §16 item 15. Kernel: <code>commitment/owner_questions.ts</code> keeps the question and its card
+            (<code>strategy_question</code>) together, settles each answer once, and hands it to the kind through a
+            port (in the answer's write: a lapse closes the turn; after it: the turn goes back to Brain). Group
+            booking (<code>group_slot_strategy.ts</code>): a day to answer; a question about a round the plan has
+            left is withdrawn. Shipper (<code>option_handler.ts</code>): put only while the hold leaves room for the
+            answer, Brain's wait and one more resend; open, it holds every resend; a lapse sends the asking fee at
+            once. Goods counters never ask. The shelf engine's question limits moved to
+            <code>strategy_questions.ts</code>; <code>StrategyTurnStore.restart</code> hands a turn back. Boot
+            settles cards a crash left decided. Tests: GQ-01..09, H-18..23, the phone inbox case. Round 1 (Codex 4,
+            Claude 3, one shared): the shipper commit reads its turn only after every wait; turning shipping off Brain
+            withdraws an open question before the asking fee goes; ids Brain writes into a question become "this
+            deal"; the group question is put under the plan's lock against the current plan; boot settles cards but
+            hands nothing to Brain (the server's broker comes up later), leaving it to each kind's next look; a delete
+            that stops with a guest still to tell withdraws the question. All 23 suites green.</li>
           <li><b>What remains (all recorded, none started):</b> publishing the promise summary to
             PeerLens (a new record kind and AppView ingestion; owner decision); past deals for goods kinds in
             Brain's view; device runs on the phone; step 9 (bundles, conditions, loops, standing deals); for the exit right,
             what the buyer gives for it, Brain deciding either side, and a buyer-side applier for the
-            cancellation result; Brain asking where there is time (step 14, decided 2026-10-17);
+            cancellation result;
             owner limits on a runner's credit days and quote validity. The buyer-named second choice is dropped:
             it is an exit right (step 12) plus an ordinary new deal.</li>
           <li><b>Step 4 owed item closed:</b> E-05 in <code>term_strategy_budget.test.ts</code> counts what Brain could

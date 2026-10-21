@@ -64,6 +64,7 @@ import {
 import { EVIDENCE_ASK_TYPE } from '../../commitment/evidence_handler';
 import { MODEL_CHANGE_CARD } from '../../commitment/model_changes';
 import { OPTION_CARD_TYPES, OPTION_CLEAR_TYPE, OPTION_EXIT_TYPE } from '../../commitment/option_handler';
+import { STRATEGY_QUESTION_TYPE } from '../../commitment/owner_questions';
 import { DISCLOSURE_REVIEW_APPROVAL_TYPE } from '../../coordination/disclosure_egress';
 import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
 import { claimPluginTask } from '../../plugins/claim_guard';
@@ -1712,6 +1713,8 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   EVIDENCE_ASK_TYPE,
   // §15 step 13 — earned room: Core counts, the owner answers.
   ...EARNED_ROOM_CARD_TYPES,
+  // §15 step 14 — Brain's question to the owner: Brain may neither mint nor answer it.
+  STRATEGY_QUESTION_TYPE,
   // TRADE_FIRST §6.5 / NEGOTIATION_PLAN §4.7 — a clerk's operation above the
   // cap. A yes lets money move: Brain may neither mint nor decide one.
   STAFF_ESCALATION_APPROVAL_TYPE,

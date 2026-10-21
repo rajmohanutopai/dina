@@ -46,6 +46,12 @@ import {
   setShipperFeeSubmitter,
   SHIPPER_FEE_WAIT_MS,
 } from '../../src/commitment/option_handler';
+import {
+  installOwnerQuestions,
+  ownerQuestionWorkflowHooks,
+  reconcileOwnerQuestionsAtBoot,
+} from '../../src/commitment/owner_questions';
+import { StrategyQuestionStore } from '../../src/commitment/strategy_questions';
 import { installStrategyStore, StrategyStore } from '../../src/commitment/strategy_store';
 import {
   addContact,
@@ -65,7 +71,7 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
+import { WorkflowService, composeWorkflowHooks, setWorkflowService } from '../../src/workflow/service';
 
 import type { NegotiationBrief } from '../../src/commitment/strategy_submit';
 
@@ -779,5 +785,198 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
     as(shipper);
     await feeMove(requestId, '22000');
     expect(offers().map((m) => m.body.fee_minor)).toEqual(['30000']);
+  });
+
+  describe('Brain asks the owner where the hold leaves room (§15 step 14)', () => {
+    let questions: StrategyQuestionStore;
+    beforeEach(() => {
+      installOwnerQuestions(shipper.db);
+      questions = new StrategyQuestionStore(shipper.db);
+      workflow = new WorkflowService({
+        repository: repo,
+        nowMsFn: () => NOW,
+        ...composeWorkflowHooks(optionWorkflowHooks({ nowMs: () => NOW }), ownerQuestionWorkflowHooks({ nowMs: () => NOW })),
+      });
+      setWorkflowService(workflow);
+    });
+    afterEach(() => installOwnerQuestions(null));
+
+    const seen = (n: number) =>
+      n === 0 ? {} : { ownerAnswers: Array.from({ length: n }, () => ({ question: 'q', answer: 'yes' })) };
+    const askOwner = (requestId: string, question: string, answersSeen = 0) =>
+      commitShipperFeeMove({
+        input: {
+          kind: 'delivery.shipper',
+          ref: { negotiationId: shipperTurnId(SELLER, requestId), turn: 0 },
+          ...seen(answersSeen),
+        },
+        result: { move: { kind: 'ask_owner', question } },
+      });
+    const feeSeen = (requestId: string, fee: string, answersSeen: number) =>
+      commitShipperFeeMove({
+        input: {
+          kind: 'delivery.shipper',
+          ref: { negotiationId: shipperTurnId(SELLER, requestId), turn: 0 },
+          ...seen(answersSeen),
+        },
+        result: { move: { kind: 'propose', versions: [{ terms: [{ name: 'fee', value: fee }] }] } },
+      });
+    const openCard = (requestId: string) =>
+      questions.openFor('delivery.shipper', shipperTurnId(SELLER, requestId), 0)?.cardId ?? '';
+
+    it('H-18: a question waits on its card across the seller’s resends; a yes goes back to Brain, whose fee then goes', async () => {
+      const requestId = await ask();
+      as(shipper);
+      expect((await askOwner(requestId, 'This seller paid late twice. Ask ₹50 more?')).receipt).toEqual({
+        outcome: 'asked_owner',
+      });
+      const cardId = openCard(requestId);
+      const card = workflow.store().getById(cardId);
+      expect(card?.status).toBe('pending_approval');
+      expect(card?.description).toBe('Brain asks, on a delivery run: This seller paid late twice. Ask ₹50 more?');
+      expect(card?.payload).not.toMatch(new RegExp(`${SELLER}|${requestId}`));
+      // The run is a week away: the card stays open a day.
+      expect(card?.expires_at).toBe(Math.floor((NOW + 24 * 3600_000) / 1000));
+      expect(wire).toEqual([]);
+      // The seller resends twice; nothing goes while the owner decides.
+      for (const at of [NOW + 3600_000, NOW + 2 * 3600_000]) {
+        as(seller);
+        await runOptionLinkTick(at);
+        await deliver(at);
+      }
+      as(seller);
+      expect(getSellerOptionStore()?.get(requestId)?.option).toBeNull();
+      // A replay of the move that asked changes nothing.
+      as(shipper);
+      expect((await askOwner(requestId, 'again?')).receipt).toEqual({ outcome: 'waiting_owner' });
+
+      workflow.approve(cardId);
+      await settle();
+      expect(workflow.store().getById(cardId)?.status).toBe('completed');
+      expect(briefs).toHaveLength(2);
+      expect(briefs[1]?.ownerAnswers).toEqual([
+        { question: 'This seller paid late twice. Ask ₹50 more?', answer: 'yes' },
+      ]);
+      expect(briefs[1]?.table).toEqual(briefs[0]?.table);
+      expect(wire).toEqual([]);
+      // A fee from the brief before the answer is stale; the one after it goes.
+      expect((await feeMove(requestId, '25000')).receipt).toEqual({ outcome: 'stale_move' });
+      expect(wire).toEqual([]);
+      expect((await feeSeen(requestId, '35000', 1)).receipt).toEqual({ outcome: 'answered' });
+      // Still never over the asking fee.
+      expect(offers().map((m) => m.body.fee_minor)).toEqual(['30000']);
+    });
+
+    it('H-19: a card left to lapse lets the asking fee go at once; Brain’s late fee changes nothing', async () => {
+      const requestId = await ask();
+      as(shipper);
+      await askOwner(requestId, 'Take the run at all?');
+      const cardId = openCard(requestId);
+      workflow.expireTasks(Math.floor((NOW + 25 * 3600_000) / 1000), NOW + 25 * 3600_000);
+      await settle();
+      expect(questions.byCard(cardId)?.answer).toBe('lapsed');
+      expect(offers().map((m) => m.body.fee_minor)).toEqual(['30000']);
+      expect(briefs).toHaveLength(1);
+      expect((await feeMove(requestId, '25000')).receipt).toEqual({ outcome: 'already_applied' });
+    });
+
+    it('H-20: a no goes back to Brain; a run too near for an answer is not asked about, and the asking fee goes', async () => {
+      const requestId = await ask();
+      as(shipper);
+      await askOwner(requestId, 'Offer Tuesday below the usual?');
+      workflow.cancel(openCard(requestId), 'no');
+      await settle();
+      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'Offer Tuesday below the usual?', answer: 'no' }]);
+
+      // 99 h 40 min before the run: 100 minutes of slack, room to wait for
+      // Brain but not for the owner's answer and Brain's fee after it.
+      const late = Date.parse(RUN_AT) - (99 * 3600_000 + 40 * 60_000);
+      setShipperFeeSubmitter(
+        (brief) => {
+          briefs.push(brief);
+          return { taskId: `task-${String(briefs.length)}` };
+        },
+        () => late,
+      );
+      await handleOptionMessage(
+        SELLER,
+        { v: 1, kind: 'request', request_id: 'req-near', service_at: RUN_AT, crates: 1, postal_code: '560001' },
+        late,
+      );
+      expect(briefs.at(-1)?.ref.negotiationId).toBe(shipperTurnId(SELLER, 'req-near'));
+      expect((await askOwner('req-near', 'Ask the owner?')).receipt).toEqual({ outcome: 'fixed_style' });
+      expect(questions.countFor('delivery.shipper', shipperTurnId(SELLER, 'req-near'))).toBe(0);
+      expect(wire.at(-1)?.body).toMatchObject({ kind: 'option', request_id: 'req-near', fee_minor: '30000' });
+    });
+
+    it('H-22: the owner turns shipping off Brain while a card is open: the question is withdrawn before the asking fee goes', async () => {
+      const requestId = await ask();
+      as(shipper);
+      await askOwner(requestId, 'Ask more for Tuesday?');
+      const cardId = openCard(requestId);
+      strategies.setSettings('delivery.shipper', { strategy: 'fixed', valuesOn: true }, NOW);
+      as(seller);
+      await runOptionLinkTick(NOW + 3600_000);
+      await deliver(NOW + 3600_000);
+      expect(workflow.store().getById(cardId)?.status).toBe('cancelled');
+      expect(questions.byCard(cardId)?.answer).toBe('lapsed');
+      as(seller);
+      expect(getSellerOptionStore()?.get(requestId)?.option?.fee_minor).toBe('30000');
+      // The cancel's notice records no answer, and Brain is not asked again.
+      expect(briefs).toHaveLength(1);
+    });
+
+    it('H-23: the card never shows the seller or the request, even when Brain writes them in; a closed turn raises no card', async () => {
+      const requestId = await ask();
+      as(shipper);
+      await askOwner(requestId, `Charge ${SELLER} more for ${requestId}?`);
+      const card = workflow.store().getById(openCard(requestId));
+      expect(card?.description).toBe('Brain asks, on a delivery run: Charge this deal more for this deal?');
+      expect(card?.payload).not.toMatch(new RegExp(`${SELLER}|${requestId}`));
+      // A turn the seller's resend already closed takes no question.
+      const other = 'req-other';
+      const body = { v: 1, kind: 'request', request_id: other, service_at: RUN_AT, crates: 1, postal_code: '560001' };
+      as(shipper);
+      await handleOptionMessage(SELLER, body, NOW);
+      expect(briefs.at(-1)?.ref.negotiationId).toBe(shipperTurnId(SELLER, other));
+      await handleOptionMessage(SELLER, body, NOW + SHIPPER_FEE_WAIT_MS + 3600_000);
+      expect(wire.at(-1)?.body).toMatchObject({ kind: 'option', request_id: other, fee_minor: '30000' });
+      expect((await askOwner(other, 'Too late?')).receipt).toEqual({ outcome: 'already_applied' });
+      expect(questions.countFor('delivery.shipper', shipperTurnId(SELLER, other))).toBe(0);
+    });
+
+    it('H-21: a yes whose handler a crash cut short is settled at boot; the seller’s next resend hands it back to Brain', async () => {
+      const requestId = await ask();
+      as(shipper);
+      await askOwner(requestId, 'Go ahead?');
+      const cardId = openCard(requestId);
+      // The yes lands with no handler wired.
+      setWorkflowService(new WorkflowService({ repository: repo, nowMsFn: () => NOW }));
+      workflow.store().transition(cardId, WorkflowTaskState.PendingApproval, WorkflowTaskState.Queued, NOW);
+      setWorkflowService(workflow);
+      // Boot runs before the reasoning broker is up: with no door to Brain
+      // the answer must still not be used up.
+      setShipperFeeSubmitter(null);
+      expect(reconcileOwnerQuestionsAtBoot(NOW)).toBe(1);
+      await settle();
+      expect(questions.byCard(cardId)?.answer).toBe('yes');
+      expect(workflow.store().getById(cardId)?.status).toBe('completed');
+      expect(briefs).toHaveLength(1);
+      expect(wire).toEqual([]);
+      // The broker is up; the seller's next resend hands the answer to Brain.
+      setShipperFeeSubmitter(
+        (brief) => {
+          briefs.push(brief);
+          return { taskId: `task-${String(briefs.length)}` };
+        },
+        () => NOW,
+      );
+      as(seller);
+      await runOptionLinkTick(NOW + 3600_000);
+      await deliver(NOW + 3600_000);
+      expect(briefs).toHaveLength(2);
+      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'Go ahead?', answer: 'yes' }]);
+      expect(wire).toEqual([]);
+    });
   });
 });

@@ -130,6 +130,7 @@ import {
   optionWorkflowHooks,
   evidenceWorkflowHooks,
   earnedRoomWorkflowHooks,
+  ownerQuestionWorkflowHooks,
   negotiationWorkflowHooks,
   termWorkflowHooks,
   orderAttachmentWorkflowHooks,
@@ -834,6 +835,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           // §15 step 8: the owner's answer to "did it happen?" is the evidence.
           evidenceWorkflowHooks(),
           earnedRoomWorkflowHooks(),
+          // §15 step 14: the owner's answer to Brain's question on a group booking or a run.
+          ownerQuestionWorkflowHooks(),
           orderAttachmentWorkflowHooks(),
           negotiationWorkflowHooks(),
           termWorkflowHooks(),

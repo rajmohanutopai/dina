@@ -10,6 +10,7 @@
 
 import { reconcileEarnedRoomAtBoot } from './commitment/earned_room';
 import { reconcileModelChangesAtBoot } from './commitment/model_changes';
+import { reconcileOwnerQuestionsAtBoot } from './commitment/owner_questions';
 import { getBookingStore, reconcileBookingReminders } from './coordination/group_booking';
 import { resumeForgetJobs } from './forget/forget';
 import { reconcileSpend } from './spend/allowance';
@@ -25,6 +26,8 @@ export async function recoverOwnerApprovals(): Promise<{ ran: boolean }> {
   await reconcileModelChangesAtBoot();
   // §15 step 13: wider room the owner said yes to.
   await reconcileEarnedRoomAtBoot();
+  // §15 step 14: Brain's questions whose cards a crash left decided.
+  await reconcileOwnerQuestionsAtBoot();
   // COMMITMENT_KERNEL §15 step 6: each group booking's reminder follows its record.
   const bookings = getBookingStore();
   if (bookings !== null) await reconcileBookingReminders(bookings, Date.now());

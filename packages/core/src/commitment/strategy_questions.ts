@@ -18,6 +18,12 @@ export const MAX_OWNER_QUESTIONS = 2;
 /** The longest question a card shows. */
 export const MAX_QUESTION_LENGTH = 280;
 
+/** The longest a question waits for the owner, whatever the deal's own deadline. */
+export const QUESTION_WAIT_MS = 24 * 60 * 60 * 1000;
+
+/** A question the owner would have less than this to answer is not put. */
+export const LEAST_QUESTION_WAIT_MS = 5 * 60 * 1000;
+
 export type OwnerAnswer = 'yes' | 'no' | 'lapsed';
 
 export interface StrategyQuestion {
@@ -79,6 +85,29 @@ export class StrategyQuestionStore {
       [kind, negotiationId, turn],
     )[0];
     return row === undefined ? null : fromRow(row);
+  }
+
+  /** Questions still waiting in one negotiation, any turn. */
+  openIn(kind: string, negotiationId: string): StrategyQuestion[] {
+    return this.db
+      .query(
+        `SELECT * FROM commitment_strategy_questions
+          WHERE kind = ? AND negotiation_id = ? AND answer IS NULL`,
+        [kind, negotiationId],
+      )
+      .map(fromRow);
+  }
+
+  /** Every question still waiting, of the kinds named: what boot looks over. */
+  openOf(kinds: readonly string[]): StrategyQuestion[] {
+    if (kinds.length === 0) return [];
+    return this.db
+      .query(
+        `SELECT * FROM commitment_strategy_questions
+          WHERE answer IS NULL AND kind IN (${kinds.map(() => '?').join(', ')})`,
+        [...kinds],
+      )
+      .map(fromRow);
   }
 
   byCard(cardId: string): StrategyQuestion | null {

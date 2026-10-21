@@ -717,6 +717,42 @@ describe('useServiceInbox', () => {
     expect(calls.cancelled.map((c) => c.id)).toEqual(['tq-1']);
   });
 
+  it('shows Brain’s question on a group booking or a shipper’s run (COMMITMENT_KERNEL §15 step 14)', async () => {
+    const { client, calls } = stubClient({
+      list: [
+        makeTask({
+          id: 'sq-1',
+          description: 'Brain asks, on a group booking: Take the 26th anyway?',
+          payload: JSON.stringify({
+            type: 'strategy_question',
+            card_id: 'sq-1',
+            kind: 'group.organizer',
+            question: 'Take the 26th anyway?',
+          }),
+        }),
+        makeTask({
+          id: 'sq-2',
+          description: 'Brain asks, on a delivery run: Ask ₹50 more?',
+          payload: JSON.stringify({
+            type: 'strategy_question',
+            card_id: 'sq-2',
+            kind: 'delivery.shipper',
+            question: 'Ask ₹50 more?',
+          }),
+        }),
+      ],
+    });
+    setInboxCoreClient(client);
+    const entries = await listPendingApprovals();
+    expect(entries.map((e) => [e.kind, e.capability, e.serviceName, e.paramsPreview])).toEqual([
+      ['strategy_question', 'group booking', 'Brain asks you', 'Take the 26th anyway? Approve for yes, deny for no.'],
+      ['strategy_question', 'delivery run', 'Brain asks you', 'Ask ₹50 more? Approve for yes, deny for no.'],
+    ]);
+    await denyPending('sq-1', 'denied_by_operator', 'strategy_question');
+    expect(calls.responded).toEqual([]);
+    expect(calls.cancelled.map((c) => c.id)).toEqual(['sq-1']);
+  });
+
   it('denyPending on either negotiation card is a plain cancel — neither has a D2D requester to answer', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);

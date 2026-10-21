@@ -12,6 +12,7 @@
 
 import { GOODS_BUYER, installGoodsCounterStrategy } from '../commerce/goods_counter_strategy';
 import { EarnedRoomStore, installEarnedRoomStore } from '../commitment/earned_room';
+import { installOwnerQuestions } from '../commitment/owner_questions';
 import { installEvidenceStore } from '../commitment/evidence_handler';
 import { setCommitmentPersonaDB , ValueModelStore } from '../commitment/model_store';
 import { installOptionStores, setShipperFeeSubmitter } from '../commitment/option_handler';
@@ -52,6 +53,8 @@ export async function bootstrapPersistence(provider: DBProvider): Promise<Databa
   installBookingStore(new BookingStore(identityDB));
   // COMMITMENT_KERNEL §15 step 7 — options issued and taken up survive a restart.
   installOptionStores(identityDB);
+  // §15 step 14 — Brain's questions to the owner on kinds outside the shelf engine.
+  installOwnerQuestions(identityDB);
   // §15 step 11 — a shipper's fee may be Brain's: the door to the owner's
   // reasoning backend, read when a request arrives.
   const submitMove = createNegotiationSubmitter({ ownerDid: () => getNodeDID() ?? '' });
