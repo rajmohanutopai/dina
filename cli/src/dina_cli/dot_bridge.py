@@ -525,6 +525,9 @@ class DotBridge(OAuthProvider):
                     "device_name": LINK_DEVICE_NAME,
                     "public_key_multibase": identity.public_key_multibase(),
                     "role": "agent",
+                    # HOSTED_DINA §3.2: the narrowest scope, whatever code the
+                    # owner made, so a breached bridge holds keys that do little.
+                    "narrow_scope": "dot",
                 }
             )
             try:
@@ -546,6 +549,11 @@ class DotBridge(OAuthProvider):
                 data = json.loads(resp.body) if resp.body else {}
             except ValueError:
                 data = {}
+            if data.get("scope") != "dot":
+                # A Core too old to narrow gave this key the code's own,
+                # wider scope: take it back rather than hold it.
+                self._revoke(identity, transport_for(identity))
+                raise BridgeError("This Dina is too old to link safely. Update it, then try again.")
         except BaseException:
             shutil.rmtree(link_dir, ignore_errors=True)
             raise
@@ -559,6 +567,21 @@ class DotBridge(OAuthProvider):
             },
         )
         return link_id
+
+    @staticmethod
+    def _revoke(identity: CLIIdentity, transport: Any) -> bool:
+        path = "/v1/devices/self"
+        try:
+            did, ts, nonce, sig = identity.sign_request("DELETE", path, b"")
+            resp = transport.request(
+                "DELETE",
+                path,
+                headers={"X-DID": did, "X-Timestamp": ts, "X-Nonce": nonce, "X-Signature": sig},
+                body=None,
+            )
+            return resp.status in (200, 204, 404)
+        except Exception:
+            return False
 
     def unlink(self, link_id: str) -> bool:
         """Revoke the link's device at Core, then forget it. True if Core confirmed."""

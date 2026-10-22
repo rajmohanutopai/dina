@@ -187,8 +187,19 @@ export function registerPairRoutes(router: CoreRouter): void {
       const roleRaw = normaliseRole(intent?.role ?? 'rich');
       // Like role, the agent_scope is authoritative from initiate — a completing
       // device can never pick its own scope (a `runner` code can't self-upgrade
-      // to `coding`). Any client-sent scope on /complete is ignored.
-      const scope = intent?.scope;
+      // to `coding`). Any client-sent scope on /complete is ignored, with one
+      // exception that only narrows: `narrow_scope: "dot"` asks for the
+      // allowlist scope (HOSTED_DINA §3.2), the narrowest there is, for an
+      // agent code. The ChatGPT bridge asks for it on every link, so the keys
+      // a shared front door holds can do little whatever code the owner made.
+      const narrowToDot = body.narrow_scope === 'dot';
+      if (body.narrow_scope !== undefined && !narrowToDot) {
+        return { status: 400, body: { error: 'narrow_scope may only be dot' } };
+      }
+      if (narrowToDot && intent !== null && intent.role !== 'agent') {
+        return { status: 400, body: { error: 'narrow_scope applies to agent codes only' } };
+      }
+      const scope = narrowToDot ? 'dot' : intent?.scope;
 
       // If the intent exists but the admin didn't capture a device_name
       // AND the agent didn't supply one, reject BEFORE calling
@@ -324,6 +335,7 @@ export function registerPairRoutes(router: CoreRouter): void {
           node_did: result.nodeDID,
           device_name: deviceName,
           role: roleRaw,
+          ...(scope !== undefined ? { scope } : {}),
           ...(gatingProfile !== undefined ? { gating_profile: gatingProfile } : {}),
         },
       };

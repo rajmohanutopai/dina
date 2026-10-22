@@ -40,7 +40,7 @@ class FakeTransport:
 
     def request(self, method, path, headers=None, body=None):
         self.calls.append((method, path, json.loads(body) if body else None))
-        return TransportResponse(status=self.status, headers={}, body=json.dumps({"device_id": "dev_1"}))
+        return TransportResponse(status=self.status, headers={}, body=json.dumps({"device_id": "dev_1", "scope": "dot"}))
 
 
 @pytest.fixture
@@ -266,3 +266,21 @@ def test_public_url_must_be_https(tmp_path):
                   msgbox_url="wss://mb.test/ws", state_dir=tmp_path)
     assert re.match(r"^https://", DotBridge(public_url="https://dot.example.com/", homenode_did=HOME,
                                            msgbox_url="wss://mb.test/ws", state_dir=tmp_path).public_url)
+
+
+def test_a_link_that_does_not_come_back_dot_scoped_is_taken_back(http, bridge, monkeypatch):
+    calls: list = []
+
+    class OldCore:
+        def request(self, method, path, headers=None, body=None):
+            calls.append((method, path, json.loads(body) if body else None))
+            return TransportResponse(status=201, headers={}, body=json.dumps({"device_id": "d"}))
+
+    monkeypatch.setattr(bridge, "_transport", lambda identity: OldCore())
+    client_id = _register(http).json()["client_id"]
+    req = _authorize(http, client_id)
+    resp = _link(http, req, _setup_code())
+    assert "too old to link safely" in resp.text
+    assert calls[0][2]["narrow_scope"] == "dot"
+    assert calls[-1][:2] == ("DELETE", "/v1/devices/self")
+    assert bridge.state.links() == {}

@@ -120,6 +120,23 @@ class Provisioner:
             raise HostingError("not a cell label")
         return self.config.root / "cells" / label
 
+    def admin_dir(self, label: str) -> Path:
+        """Files the provisioner writes for a cell, in a folder ROOT owns.
+
+        Never inside the cell's own folder: as root, writing or chowning a path
+        the cell's user controls would follow a symlink it planted.
+        """
+        self.cell_dir(label)  # validates the label
+        return self.config.root / "admin" / label
+
+    def _admin_file(self, label: str, name: str, mode: int) -> int:
+        """Open (append) a file in the cell's admin folder, refusing symlinks."""
+        return os.open(
+            self.admin_dir(label) / name,
+            os.O_WRONLY | os.O_CREAT | os.O_APPEND | getattr(os, "O_NOFOLLOW", 0),
+            mode,
+        )
+
     def core_socket(self, label: str) -> str:
         return str(self.cell_dir(label) / "run" / "core.sock")
 
@@ -221,6 +238,7 @@ class Provisioner:
             cell = self._cells.pop(label, None)
             self._save()
         shutil.rmtree(self.cell_dir(label), ignore_errors=True)
+        shutil.rmtree(self.admin_dir(label), ignore_errors=True)
         if cell is not None and cell.get("user") and self.config.isolate:
             subprocess.run(["userdel", cell["user"]], check=False, capture_output=True)
 
@@ -268,6 +286,9 @@ class Provisioner:
             )
         for sub in ("vault", "run", "logs", "caddy"):
             (cell / sub).mkdir(parents=True, exist_ok=True, mode=0o700)
+        admin = self.admin_dir(label)
+        admin.parent.mkdir(exist_ok=True, mode=0o711)
+        admin.mkdir(exist_ok=True, mode=0o755)
         if not self.config.isolate:
             return
         user = self._cells[label]["user"]
@@ -314,7 +335,7 @@ class Provisioner:
         command = list(self.config.gate_command)
         if self.config.isolate:
             command = ["runuser", "-u", info["user"], "--", *command]
-        log = open(cell / "logs" / "gate.log", "ab")
+        log = os.fdopen(self._admin_file(label, "gate.log", 0o600), "ab")
         try:
             proc = subprocess.Popen(
                 command,
@@ -366,13 +387,17 @@ class Provisioner:
         cell = self.cell_dir(label)
         info = self._cells[label]
         host = self.owner_origin(label).split("://", 1)[-1]
-        caddyfile = cell / "caddy" / "Caddyfile"
-        caddyfile.write_text(
-            render_cell_caddyfile(host, info["port"], self.gate_socket(label), cell / "caddy"),
-            encoding="utf-8",
-        )
-        shutil.chown(caddyfile, info["user"], info["user"])
-        log = open(cell / "logs" / "caddy.log", "ab")
+        # Root writes the Caddyfile into the root-owned admin folder; the cell's
+        # Caddy only reads it. Replaced whole, never opened through a link.
+        caddyfile = self.admin_dir(label) / "Caddyfile"
+        tmp = self.admin_dir(label) / f".Caddyfile.{secrets.token_hex(4)}"
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(
+                render_cell_caddyfile(host, info["port"], self.gate_socket(label), cell / "caddy")
+            )
+        os.replace(tmp, caddyfile)
+        log = os.fdopen(self._admin_file(label, "caddy.log", 0o600), "ab")
         try:
             return subprocess.Popen(
                 ["runuser", "-u", info["user"], "--", *self.config.caddy_command,

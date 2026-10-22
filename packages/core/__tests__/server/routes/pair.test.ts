@@ -293,6 +293,43 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     expect(caller.name).toBe('openclaw-user');
   });
 
+  it('narrows an agent code to the dot scope when asked, and never widens one', async () => {
+    const { code } = await initiate('ChatGPT dot', 'agent', 'coding');
+    const agent = makeActor();
+    const resp = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code,
+        public_key: publicKeyToMultibase(agent.pub),
+        narrow_scope: 'dot',
+      }),
+    );
+    expect(resp.status).toBe(201);
+    expect((resp.body as { scope?: string }).scope).toBe('dot');
+    expect(getDeviceByDID(agent.did)?.scope).toBe('dot');
+
+    // Only `dot` may be asked for: no client picks a wider scope.
+    const { code: code2 } = await initiate('runner', 'agent', 'runner');
+    const wide = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code: code2,
+        public_key: publicKeyToMultibase(makeActor().pub),
+        narrow_scope: 'coding',
+      }),
+    );
+    expect(wide.status).toBe(400);
+
+    // And never on a code for anything but an agent.
+    const { code: code3 } = await initiate('laptop', 'rich');
+    const rich = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code: code3,
+        public_key: publicKeyToMultibase(makeActor().pub),
+        narrow_scope: 'dot',
+      }),
+    );
+    expect(rich.status).toBe(400);
+  });
+
   it('creates an explicit Standard profile for a newly paired coding agent', async () => {
     const { code } = await initiate('Claude Code', 'agent', 'coding');
     const agent = makeActor();

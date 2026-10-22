@@ -153,7 +153,9 @@ scope, and `peerlens/attest` and `/v1/vault/query` are refused.
 Everything else is refused in Core, whatever the front door sends. This is
 the answer to the hosted-bridge question in `OPENAI_DOTS_INTEGRATION.md`
 §4.3 for hosted cells: the front door holds keys, but keys that can do
-little. Own-Dina links keep their owner's choice of scope.
+little. Own-Dina links get the same scope: the bridge asks Core to narrow
+any agent code to `dot` when it pairs (`narrow_scope`, which can only
+narrow), and takes back a link that does not come back `dot`.
 
 ## 4. Sign-up
 

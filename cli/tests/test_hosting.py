@@ -73,7 +73,7 @@ class FakeCellTransport:
 
     def request(self, method, path, headers=None, body=None):
         self.calls.append((method, path, json.loads(body) if body else None))
-        return TransportResponse(status=200, headers={}, body=json.dumps({"device_id": "dev_cell"}))
+        return TransportResponse(status=200, headers={}, body=json.dumps({"device_id": "dev_cell", "scope": "dot"}))
 
 
 @pytest.fixture
@@ -538,3 +538,21 @@ def test_the_front_door_will_not_run_production_cells_in_its_own_process(tmp_pat
     }))
     with pytest.raises(click.UsageError, match="separate provisioner"):
         _make_bridge("https://dot.test", "", "", "msgbox", "", tmp_path / "b", (), cfg)
+
+
+def test_root_written_files_live_outside_the_cell_and_refuse_symlinks(provisioner, tmp_path):
+    import os
+
+    label, _ = provisioner.create("Café")
+    admin = provisioner.admin_dir(label)
+    assert (admin / "gate.log").exists()
+    assert not (provisioner.cell_dir(label) / "logs" / "gate.log").exists()
+    assert provisioner.cell_dir(label) not in admin.parents
+    target = tmp_path / "victim"
+    target.write_text("untouched")
+    (admin / "caddy.log").symlink_to(target)
+    with pytest.raises(OSError):
+        os.close(provisioner._admin_file(label, "caddy.log", 0o600))
+    assert target.read_text() == "untouched"
+    provisioner.delete(label)
+    assert not admin.exists()
