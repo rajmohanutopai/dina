@@ -488,6 +488,11 @@ describe('commerce aggregate boundary', () => {
       // field by field toward refusal. A held or queued body is parsed here
       // and re-validated by its consumer before anything acts on it.
       'term_rehydrate.ts',
+      // OPENAI_DOTS_INTEGRATION §6.4 — an outside agent's tender draft, same
+      // discipline as the draft stores above: every line, supplier, region and
+      // state is re-checked on the way out, and one miss reads the whole draft
+      // as ABSENT, so nothing opens or shows on a row nobody checked.
+      'tender_draft_store.ts',
     ]);
     const offenders: string[] = [];
     for (const file of tsFiles(COMMERCE_SRC)) {

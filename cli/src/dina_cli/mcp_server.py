@@ -13,9 +13,10 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, Callable
 
 from fastmcp import FastMCP
+from fastmcp.tools import FunctionTool
 
 from . import __version__
 from .spend import spend_fields
@@ -26,6 +27,9 @@ from .session import SessionStore
 mcp = FastMCP("dina")
 
 _client: DinaClient | None = None
+# The HTTP bridge (dot_bridge.py) serves several linked hosts from one process,
+# each paired as its own agent device; it picks the caller's client per request.
+_client_resolver: Callable[[], DinaClient] | None = None
 _sessions = SessionStore()
 _owned_session_ids: set[str] = set()
 # New IDs carry 128 random bits. Accept the earlier 8-hex shape so an
@@ -33,8 +37,15 @@ _owned_session_ids: set[str] = set()
 _PII_ID_RE = re.compile(r"^pii_(?:[0-9a-f]{8}|[0-9a-f]{32})$")
 
 
+def set_client_resolver(resolver: Callable[[], DinaClient] | None) -> None:
+    global _client_resolver
+    _client_resolver = resolver
+
+
 def _get_client() -> DinaClient:
     global _client
+    if _client_resolver is not None:
+        return _client_resolver()
     if _client is None:
         cfg = load_config()
         _client = DinaClient(cfg)
@@ -648,6 +659,40 @@ def dina_service_publication_status(rkey: str, session: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Tender drafts (OPENAI_DOTS_INTEGRATION §6.4)
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+def dina_tender_draft(session: str, lines: list[dict], required_by: str = "") -> dict:
+    """Draft a tender for the owner's suppliers to price.
+
+    ``lines`` is a list of needs in words with a quantity, for example
+    ``[{"text": "butter croissants", "quantity": {"value": "200", "unit_code": "each"}}]``.
+    ``required_by`` is an optional ISO date-time. Dina picks the suppliers from
+    the owner's own trade history; you cannot name one. Nothing is sent to any
+    supplier until the owner adds a target and ceiling and opens the tender.
+    You never see prices or the owner's limits. Poll ``dina_tender_status``
+    with the returned ``draft_id``.
+    """
+    return _get_client().tender_draft(session=session, lines=lines, required_by=required_by)
+
+
+@mcp.tool()
+def dina_tender_status(session: str, draft_id: str) -> dict:
+    """Read a tender draft's progress.
+
+    ``draft_state`` is pending (waiting for the owner), opened, dismissed or
+    lapsed. Once opened, ``tender`` gives the state, the suppliers ranked best
+    first (names only), whether the order is held or sent, and the supplier's
+    answer. It never carries a price. The owner awards and sends; tell them
+    when the tender is ready, and do not claim an order was placed until
+    ``held_order`` is ``sent`` and ``supplier_answer`` is ``accepted``.
+    """
+    return _get_client().tender_draft_status(session=session, draft_id=draft_id)
+
+
+# ---------------------------------------------------------------------------
 # PeerLens
 # ---------------------------------------------------------------------------
 
@@ -973,6 +1018,23 @@ def dina_status() -> dict:
         return result
 
 
+DOT_PROFILE_TOOLS = (
+    "dina_session_start",
+    "dina_session_end",
+    "dina_tender_draft",
+    "dina_tender_status",
+    "dina_peerlens",
+    "dina_validate",
+    "dina_validate_status",
+    "dina_status",
+)
+
+
+def _registered_tool_names() -> list[str]:
+    """Every tool this module registered, in definition order."""
+    return [obj.name for obj in globals().values() if isinstance(obj, FunctionTool)]
+
+
 def configure_profile(profile: str) -> None:
     """Remove tools that do not belong to the selected host contract."""
     reasoning_tools = (
@@ -1013,6 +1075,8 @@ def configure_profile(profile: str) -> None:
             "dina_invoke_service",
             "dina_service_status",
             "dina_service_publication_status",
+            "dina_tender_draft",
+            "dina_tender_status",
             "dina_peerlens",
             "dina_review",
             "dina_review_status",
@@ -1026,6 +1090,15 @@ def configure_profile(profile: str) -> None:
             "dina_rehydrate",
         ):
             mcp.remove_tool(name)
+        return
+    if profile == "dot":
+        # OPENAI_DOTS_INTEGRATION §4.4 — an allowlist for an agent running in
+        # someone else's cloud: no vault reads, no reasoning or runner jobs, no
+        # scrub/rehydrate (its text is already off the node).
+        keep = set(DOT_PROFILE_TOOLS)
+        for name in _registered_tool_names():
+            if name not in keep:
+                mcp.remove_tool(name)
         return
     if profile != "all":
         raise ValueError(f"unknown MCP profile: {profile}")

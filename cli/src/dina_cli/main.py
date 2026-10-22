@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import os
 import sys
+import time
 import uuid
 import webbrowser
 from datetime import datetime, timezone
@@ -4114,7 +4115,7 @@ def session_end_hook() -> None:
 @cli.command("mcp-server")
 @click.option(
     "--profile",
-    type=click.Choice(["all", "coding", "brain", "connected"], case_sensitive=False),
+    type=click.Choice(["all", "coding", "brain", "connected", "dot"], case_sensitive=False),
     default="all",
     show_default=True,
     help="Limit the exposed MCP tools to a host contract.",
@@ -4133,6 +4134,240 @@ def mcp_server(profile: str) -> None:
     from .mcp_server import run_server
 
     run_server(profile=profile.lower())
+
+
+# ── Dot bridge (ChatGPT plugins) ─────────────────────────────────────────
+
+
+def _bridge_options(fn):
+    for option in reversed(
+        (
+            click.option(
+                "--homenode-did",
+                envvar="DINA_HOMENODE_DID",
+                default="",
+                help="The one Home Node people may link with a setup code (others are refused).",
+            ),
+            click.option(
+                "--hosting-config",
+                envvar="DINA_HOSTING_CONFIG",
+                type=click.Path(dir_okay=False, exists=True, path_type=Path),
+                default=None,
+                help="Serve hosted cells too: a JSON file (see docs/HOSTED_DINA.md).",
+            ),
+            click.option("--msgbox-url", envvar="DINA_MSGBOX_URL", default=""),
+            click.option(
+                "--transport",
+                "transport_mode",
+                envvar="DINA_TRANSPORT",
+                type=click.Choice(["msgbox", "direct"]),
+                default="msgbox",
+                show_default=True,
+            ),
+            click.option("--core-url", envvar="DINA_CORE_URL", default=""),
+            click.option(
+                "--state-dir",
+                envvar="DINA_DOT_BRIDGE_DIR",
+                type=click.Path(file_okay=False, path_type=Path),
+                default=None,
+                help="Where links and token hashes live (default ~/.dina/dot-bridge).",
+            ),
+        )
+    ):
+        fn = option(fn)
+    return fn
+
+
+def _make_bridge(public_url: str, homenode_did: str, msgbox_url: str,
+                 transport_mode: str, core_url: str, state_dir: Path | None,
+                 redirect_hosts: tuple[str, ...] = (), hosting_config: Path | None = None):
+    from .dot_bridge import DEFAULT_REDIRECT_HOSTS, DEFAULT_STATE_DIR, DotBridge
+
+    hosting = None
+    if hosting_config is not None:
+        from .hosting import HostingError, Provisioner, RemoteProvisioner, load_hosting_config
+
+        try:
+            cfg = load_hosting_config(hosting_config)
+            if cfg.provisioner_socket:
+                # Production: the provisioner is its own process (root); the
+                # front door reaches it only through its narrow socket.
+                hosting = RemoteProvisioner(cfg.provisioner_socket)
+            elif cfg.isolate:
+                raise click.UsageError(
+                    "isolate needs the separate provisioner: set provisioner_socket and "
+                    "run `dina dot-bridge provisiond` as root"
+                )
+            else:
+                hosting = Provisioner(cfg)
+        except (HostingError, KeyError, ValueError) as exc:
+            raise click.UsageError(f"bad hosting config: {exc}") from exc
+    try:
+        return DotBridge(
+            public_url=public_url,
+            homenode_did=homenode_did,
+            msgbox_url=msgbox_url,
+            transport_mode=transport_mode,
+            core_url=core_url,
+            state_dir=state_dir or DEFAULT_STATE_DIR,
+            redirect_hosts=redirect_hosts or DEFAULT_REDIRECT_HOSTS,
+            hosting=hosting,
+        )
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+
+@cli.group("dot-bridge")
+def dot_bridge() -> None:
+    """Serve the `dot` tools to ChatGPT over HTTPS (see docs/OPENAI_DOTS_INTEGRATION.md)."""
+
+
+@dot_bridge.command("serve")
+@click.option(
+    "--public-url",
+    envvar="DINA_DOT_PUBLIC_URL",
+    required=True,
+    help="The https URL ChatGPT reaches this bridge at (the TLS front).",
+)
+@click.option("--host", default="127.0.0.1", show_default=True)
+@click.option("--port", default=8765, type=int, show_default=True)
+@click.option(
+    "--allow-redirect-host",
+    "redirect_hosts",
+    multiple=True,
+    help="Hosts an OAuth client may send the owner back to (default chatgpt.com).",
+)
+@_bridge_options
+def dot_bridge_serve(public_url: str, host: str, port: int, redirect_hosts: tuple[str, ...],
+                     homenode_did: str, hosting_config: Path | None, msgbox_url: str,
+                     transport_mode: str, core_url: str, state_dir: Path | None) -> None:
+    """Run the front door: create hosted Dinas by invite, or link your own with a setup code."""
+    from .dot_bridge import run_bridge
+
+    bridge = _make_bridge(public_url, homenode_did, msgbox_url, transport_mode,
+                          core_url, state_dir, redirect_hosts, hosting_config)
+    local = bridge.hosting is not None and hasattr(bridge.hosting, "start_all")
+    if local:
+        # Every cell comes up locked; its owner unlocks it on their Dina page.
+        bridge.hosting.start_all()
+    try:
+        run_bridge(bridge, host, port)
+    finally:
+        if local:
+            bridge.hosting.stop_all()
+
+
+@dot_bridge.command("provisiond")
+@click.option(
+    "--hosting-config",
+    envvar="DINA_HOSTING_CONFIG",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    required=True,
+)
+def dot_bridge_provisiond(hosting_config: Path) -> None:
+    """Run the provisioner as its own process (production: as root)."""
+    import signal as _signal
+
+    from .hosting import HostingError, Provisioner, load_hosting_config, serve_provisioner
+
+    try:
+        cfg = load_hosting_config(hosting_config)
+    except (HostingError, KeyError, ValueError) as exc:
+        raise click.UsageError(f"bad hosting config: {exc}") from exc
+    if not cfg.provisioner_socket:
+        raise click.UsageError("the hosting config needs provisioner_socket")
+    provisioner = Provisioner(cfg)
+    provisioner.start_all()
+    server = serve_provisioner(
+        provisioner, cfg.provisioner_socket, cfg.front_door_group if cfg.isolate else ""
+    )
+
+    def stop(*_args: object) -> None:
+        provisioner.stop_all()
+        raise SystemExit(0)
+
+    _signal.signal(_signal.SIGTERM, stop)
+    try:
+        server.serve_forever()
+    finally:
+        provisioner.stop_all()
+
+
+@dot_bridge.group("invite")
+def dot_bridge_invite() -> None:
+    """Invite codes for "Create my Dina" (each works once)."""
+
+
+@dot_bridge_invite.command("create")
+@click.option("--count", default=1, type=click.IntRange(1, 100), show_default=True)
+@click.option(
+    "--state-dir",
+    envvar="DINA_DOT_BRIDGE_DIR",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+)
+def dot_bridge_invite_create(count: int, state_dir: Path | None) -> None:
+    """Make invite codes. They are shown once; only their hashes are kept."""
+    from .dot_bridge import DEFAULT_STATE_DIR, BridgeState
+
+    for code in BridgeState(state_dir or DEFAULT_STATE_DIR).add_invites(count):
+        click.echo(code)
+
+
+@dot_bridge_invite.command("list")
+@click.option(
+    "--state-dir",
+    envvar="DINA_DOT_BRIDGE_DIR",
+    type=click.Path(file_okay=False, path_type=Path),
+    default=None,
+)
+def dot_bridge_invite_list(state_dir: Path | None) -> None:
+    """How many invite codes are made, used and left."""
+    from .dot_bridge import DEFAULT_STATE_DIR, BridgeState
+
+    invites = BridgeState(state_dir or DEFAULT_STATE_DIR).invites()
+    used = sum(1 for i in invites if i.get("used_at"))
+    click.echo(f"{len(invites)} made, {used} used, {len(invites) - used} left")
+
+
+@dot_bridge.command("links")
+@_bridge_options
+def dot_bridge_links(homenode_did: str, hosting_config: Path | None, msgbox_url: str,
+                     transport_mode: str, core_url: str, state_dir: Path | None) -> None:
+    """List the ChatGPT links this bridge holds."""
+    # Listing and unlinking serve no page, so any local URL satisfies the check.
+    bridge = _make_bridge("http://localhost", homenode_did, msgbox_url, transport_mode,
+                          core_url, state_dir, (), hosting_config)
+    links = bridge.state.links()
+    if not links:
+        click.echo("No links.")
+    for link_id, link in sorted(links.items(), key=lambda kv: kv[1].get("created_at", 0)):
+        created = time.strftime("%Y-%m-%d %H:%M", time.localtime(link.get("created_at", 0)))
+        where = f"cell {link['cell']}" if link.get("kind") == "cell" else "own Dina"
+        click.echo(f"{link_id}  {where}  {link.get('did', '')}  linked {created}")
+
+
+@dot_bridge.command("unlink")
+@click.argument("link_id")
+@_bridge_options
+def dot_bridge_unlink(link_id: str, homenode_did: str, hosting_config: Path | None,
+                      msgbox_url: str, transport_mode: str, core_url: str,
+                      state_dir: Path | None) -> None:
+    """Revoke a link's device at Dina and drop its tokens."""
+    bridge = _make_bridge("http://localhost", homenode_did, msgbox_url, transport_mode,
+                          core_url, state_dir, (), hosting_config)
+    try:
+        confirmed = bridge.unlink(link_id)
+    except KeyError:
+        raise click.ClickException(f"No link {link_id}.") from None
+    if confirmed:
+        click.echo(f"Unlinked {link_id}; Dina revoked its device.")
+    else:
+        click.echo(
+            f"Unlinked {link_id} here, but Dina did not confirm the revoke. "
+            "Remove the device in the Dina app (Settings → Agents).",
+            err=True,
+        )
 
 
 @cli.command("agent-daemon")

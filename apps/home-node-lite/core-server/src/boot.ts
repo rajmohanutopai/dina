@@ -34,6 +34,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a task 4.3.
  */
 
+import * as fs from 'node:fs';
+
 import { sha256 } from '@noble/hashes/sha2.js';
 import { randomBytes } from '@noble/hashes/utils.js';
 
@@ -186,12 +188,17 @@ import { loadOrGenerateSeed, wrappedSeedPathOf, type SeedSource } from './identi
 import { loadOrProvisionPdsIdentity, type PdsIdentity } from './identity/provision_pds';
 import { createOpenAiVisionBroker, createSharpReencoder } from './image_pipeline';
 import { createLogger } from './logger';
-import { deliverBootstrapCapability, resolveHandoffFromEnv } from './pair/bootstrap_capability';
+import {
+  deliverBootstrapCapability,
+  resolveBootstrapScope,
+  resolveHandoffFromEnv,
+} from './pair/bootstrap_capability';
 import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
 import { ReasoningCommitSupervisor } from './reasoning/reasoning_commit_supervisor';
 import { createServer } from './server';
 import { phoneStatusForOwnerSetup, registerApprovalPhoneRoutes } from './server/approval_phone_routes';
 import { bindCoreRouter } from './server/bind_core_router';
+import { socketAnswers, watchParent } from './server/cell_lifecycle';
 import { registerDebugDispatch } from './server/debug_dispatch';
 import { resolveOwnerCapability } from './server/owner_capability';
 import { registerOwnerConsoleRoute } from './server/owner_console';
@@ -332,6 +339,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     },
     'core-server booting',
   );
+
+  // HOSTED_DINA §5: watch the gate from the first moment, before any key is
+  // loaded, so a gate that dies during boot takes this Core with it too.
+  let closeForGate: () => Promise<unknown> = async () => undefined;
+  watchParent({ logger, close: () => closeForGate() });
 
   // Register configured service DIDs (currently just `brain`) into
   // `@dina/core`'s caller-type registry. Without this, signed
@@ -658,6 +670,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     const bootstrapResult = await deliverBootstrapCapability({
       firstBoot: identity?.kind === 'generated',
       handoff: resolveHandoffFromEnv(process.env),
+      scope: resolveBootstrapScope(process.env),
     });
     // Metadata only — the enrolment code itself is never logged.
     logger.info(
@@ -1522,7 +1535,23 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       }
       registerDebugDispatch(app, coreRouter, logger);
     }
-    await app.listen({ host: config.network.host, port: config.network.port });
+    const socketPath = config.network.socketPath;
+    if (socketPath !== undefined) {
+      // HOSTED_DINA §7: two Cores on one vault would be two writers and two
+      // nodes signing as one DID. A socket someone still answers on means a
+      // Core is alive; refuse rather than take its socket away.
+      if (await socketAnswers(socketPath)) {
+        throw new Error(`another Core is listening on ${socketPath}; refusing to start`);
+      }
+      // A socket left by a crashed run would make listen fail with EADDRINUSE.
+      await fs.promises.rm(socketPath, { force: true });
+      await app.listen({ path: socketPath });
+      // Owner and group (the front door) may connect; no one else.
+      await fs.promises.chmod(socketPath, 0o660);
+      closeForGate = () => app.close();
+    } else {
+      await app.listen({ host: config.network.host, port: config.network.port });
+    }
     reasoningCommitSupervisor?.start();
     reviewPublishSupervisor?.start();
   } catch (err) {

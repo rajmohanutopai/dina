@@ -6,7 +6,7 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { REVIEW_REASON_WORDS } from '@dina/core';
+import { REVIEW_REASON_WORDS, verifyRequest } from '@dina/core';
 
 import { registerOwnerConsoleRoute } from '../src/server/owner_console';
 
@@ -1232,5 +1232,181 @@ describe('the console script', () => {
     } finally {
       await app.close();
     }
+  });
+});
+
+describe('the owner console’s tender-draft card (OPENAI_DOTS_INTEGRATION §6.4)', () => {
+  const settle = () => new Promise((r) => setImmediate(r));
+  const DRAFT = {
+    draft_id: 'tdr_1',
+    agent_did: 'did:key:z6MkDot',
+    lines: [{ line_id: 'l1', requirement: { text: 'butter croissants' }, quantity: { value: '200', unit_code: 'each' } }],
+    required_by: '2036-01-09T07:00:00.000Z',
+    suppliers: [
+      { supplier_did: 'did:plc:a', service_rkey: 'self', name: "Rosa's Bakery" },
+      { supplier_did: 'did:plc:b', service_rkey: 'shop', name: null },
+    ],
+    region: { scheme: 'postal_area', value: '78701' },
+    currency: 'USD',
+  };
+  const byId = (node: PageNode, id: string): (PageNode & Record<string, unknown>) | undefined => {
+    if (node.attrs[`id`] === id) return node as PageNode & Record<string, unknown>;
+    for (const c of node.children) {
+      const found = byId(c, id);
+      if (found !== undefined) return found;
+    }
+    return undefined;
+  };
+  const rig = async (answers: { status: number; body: unknown }[]) => {
+    const sent: [string, string, unknown][] = [];
+    const presence: (() => void)[] = [];
+    const alerts: string[] = [];
+    const opened: string[] = [];
+    const page = await consoleFunctions(['loadDraftForm', 'openDraft', 'toMinor', 'refusal'], {
+      call: (method: string, path: string, body: unknown) => {
+        sent.push([method, path, body]);
+        if (method === 'GET') return Promise.resolve({ status: 200, body: { drafts: [DRAFT] } });
+        return Promise.resolve(answers.shift() ?? { status: 500, body: {} });
+      },
+      alert: (m: string) => alerts.push(m),
+      needPresence: (retry: () => void) => presence.push(retry),
+      loadApprovals: () => undefined,
+      loadTenders: () => undefined,
+      openTender: (id: string) => opened.push(id),
+    });
+    return { page, sent, presence, alerts, opened };
+  };
+
+  it('reads amounts as minor units, and refuses what is not an amount', async () => {
+    const { page } = await rig([]);
+    const toMinor = page.toMinor as (t: string) => string;
+    expect(toMinor('2000')).toBe('200000');
+    expect(toMinor('2000.5')).toBe('200050');
+    expect(toMinor('0.07')).toBe('7');
+    for (const bad of ['', '20.001', '1,000', 'abc', '.5', '1.2.3']) expect(toMinor(bad)).toBe('');
+  });
+
+  it('shows the need and the suppliers, and opens with the owner’s limits after presence', async () => {
+    const { page, sent, presence, opened } = await rig([
+      { status: 403, body: { error: 'no_user_presence' } },
+      { status: 200, body: { ok: true, tender_id: 'tnd_9' } },
+    ]);
+    const box = pageNode();
+    (page.loadDraftForm as (id: string, b: PageNode) => void)('tdr_1', box);
+    await settle();
+    const text = textsOf(box).join(' | ');
+    expect(text).toContain('200 each · butter croissants');
+    expect(text).toContain("Rosa's Bakery");
+    expect(text).toContain('did:plc:b');
+    expect(text).toContain('the agent never sees them');
+    (byId(box, 'draft-tdr_1-currency') as Record<string, unknown>).value = 'usd';
+    (byId(box, 'draft-tdr_1-postal') as Record<string, unknown>).value = '78701';
+    (byId(box, 'draft-tdr_1-target') as Record<string, unknown>).value = '2000';
+    (byId(box, 'draft-tdr_1-ceiling') as Record<string, unknown>).value = '2600.00';
+    (byId(box, 'draft-tdr_1-supplier-0') as Record<string, unknown>).checked = true;
+    (byId(box, 'draft-tdr_1-supplier-1') as Record<string, unknown>).checked = false;
+    buttonOf(box, 'Open tender').clicks.forEach((fn) => fn());
+    await settle();
+    expect(presence).toHaveLength(1);
+    presence[0]?.();
+    await settle();
+    const posts = sent.filter(([m]) => m === 'POST');
+    const expected = {
+      draft_id: 'tdr_1',
+      target_total: '200000',
+      budget_ceiling: '260000',
+      currency: 'USD',
+      region: { scheme: 'postal_area', value: '78701' },
+      suppliers: ['did:plc:a'],
+    };
+    expect(posts).toEqual([
+      ['POST', '/v1/commerce/trade/tender-drafts/open', expected],
+      ['POST', '/v1/commerce/trade/tender-drafts/open', expected],
+    ]);
+    expect(opened).toEqual(['tnd_9']);
+  });
+
+  it('sends nothing without both limits, and dismisses on request', async () => {
+    const { page, sent, alerts } = await rig([{ status: 200, body: { ok: true } }]);
+    const box = pageNode();
+    (page.loadDraftForm as (id: string, b: PageNode) => void)('tdr_1', box);
+    await settle();
+    (byId(box, 'draft-tdr_1-target') as Record<string, unknown>).value = '2000';
+    buttonOf(box, 'Open tender').clicks.forEach((fn) => fn());
+    await settle();
+    expect(alerts).toHaveLength(1);
+    expect(sent.filter(([m]) => m === 'POST')).toEqual([]);
+    buttonOf(box, 'Dismiss').clicks.forEach((fn) => fn());
+    await settle();
+    expect(sent.filter(([m]) => m === 'POST')).toEqual([
+      ['POST', '/v1/commerce/trade/tender-drafts/dismiss', { draft_id: 'tdr_1' }],
+    ]);
+  });
+});
+
+
+describe('signing with this browser as the owner key (HOSTED_DINA §5)', () => {
+  it('signs exactly the canonical request Core verifies, query and body included', async () => {
+    const pair = (await crypto.subtle.generateKey({ name: 'Ed25519' }, false, [
+      'sign',
+      'verify',
+    ])) as import('node:crypto').webcrypto.CryptoKeyPair;
+    const pub = new Uint8Array(await crypto.subtle.exportKey('raw', pair.publicKey));
+    const device = { did: 'did:key:zBrowser', privateKey: pair.privateKey };
+    const page = await consoleFunctions(['authHeaders', 'hex'], {
+      DEVICE: device,
+      getCap: () => 'should-not-be-sent',
+    });
+    const authHeaders = page.authHeaders as (
+      m: string,
+      p: string,
+      b: string,
+    ) => Promise<Record<string, string>>;
+
+    const body = JSON.stringify({ draft_id: 'tdr_1' });
+    const h = await authHeaders('POST', '/v1/commerce/trade/tender-drafts/open', body);
+    expect(h['x-dina-owner-capability']).toBeUndefined();
+    expect(h['X-DID']).toBe('did:key:zBrowser');
+    expect(h['X-Timestamp']).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/);
+    expect(
+      verifyRequest(
+        'POST',
+        '/v1/commerce/trade/tender-drafts/open',
+        '',
+        h['X-Timestamp']!,
+        h['X-Nonce']!,
+        new TextEncoder().encode(body),
+        h['X-Signature']!,
+        pub,
+      ),
+    ).toBe(true);
+
+    const g = await authHeaders('GET', '/v1/workflow/tasks?state=pending&limit=5', '');
+    expect(
+      verifyRequest(
+        'GET',
+        '/v1/workflow/tasks',
+        'state=pending&limit=5',
+        g['X-Timestamp']!,
+        g['X-Nonce']!,
+        new Uint8Array(),
+        g['X-Signature']!,
+        pub,
+      ),
+    ).toBe(true);
+    expect(g['X-Nonce']).not.toBe(h['X-Nonce']);
+  });
+
+  it('uses the capability field when this browser holds no key', async () => {
+    const page = await consoleFunctions(['authHeaders', 'hex'], {
+      DEVICE: null,
+      getCap: () => 'typed-capability',
+    });
+    const h = await (page.authHeaders as (m: string, p: string, b: string) => Promise<Record<string, string>>)(
+      'GET',
+      '/v1/owner/setup/status',
+      '',
+    );
+    expect(h).toEqual({ 'content-type': 'application/json', 'x-dina-owner-capability': 'typed-capability' });
   });
 });

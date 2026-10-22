@@ -13,6 +13,10 @@
  *                 its approval cards there (UCP plan §3.9). Only it may send a
  *                 card that opens a link, asks for a person present, or speaks
  *                 as Dina's shopping; it reaches no coding or runner surface.
+ *   • `dot`     — a ChatGPT dot linked through the front door (HOSTED_DINA
+ *                 §3.2). The one ALLOWLIST scope: it reaches only the routes
+ *                 its tools call (`DOT_ROUTES`) and is refused everywhere
+ *                 else, so the keys the shared front door holds can do little.
  *
  * Both keep `callerType='agent'` (renaming would silently disable the many
  * `!== 'agent'` guards — a fail-open, NEW-02). The scope is an ADDITIONAL
@@ -25,9 +29,9 @@
  * `resolveAgentScope`).
  */
 
-export type AgentScope = 'coding' | 'runner' | 'node';
+export type AgentScope = 'coding' | 'runner' | 'node' | 'dot';
 
-const VALID_SCOPES: ReadonlySet<string> = new Set<AgentScope>(['coding', 'runner', 'node']);
+const VALID_SCOPES: ReadonlySet<string> = new Set<AgentScope>(['coding', 'runner', 'node', 'dot']);
 
 /** Normalise a device-record scope value; unknown/missing ⇒ undefined (fail-closed). */
 export function resolveAgentScope(deviceScope: string | null | undefined): AgentScope | undefined {
@@ -74,6 +78,42 @@ const SCOPE_RULES: readonly ScopeRule[] = [
   { prefix: '/v1/workflow/tasks/claim', scope: 'runner' },
 ];
 
+/**
+ * HOSTED_DINA §3.2 — every route a `dot` device may call, one per tool in the
+ * CLI's `dot` MCP profile (`DOT_PROFILE_TOOLS`). `:id` matches one path
+ * segment. A route missing here is refused for `dot`, whatever its own rules.
+ */
+const DOT_ROUTES: readonly { method: string; path: string }[] = [
+  { method: 'POST', path: '/v1/session/start' },
+  { method: 'POST', path: '/v1/session/end' },
+  { method: 'GET', path: '/v1/sessions' },
+  { method: 'POST', path: '/v1/commerce/agent/tender-drafts' },
+  { method: 'GET', path: '/v1/commerce/agent/tender-drafts/status' },
+  { method: 'POST', path: '/v1/agent/peerlens/search' },
+  { method: 'POST', path: '/v1/agent/validate' },
+  { method: 'GET', path: '/v1/intent/proposals/:id/status' },
+  { method: 'DELETE', path: '/v1/devices/self' },
+];
+
+function matchesRoute(pattern: string, path: string): boolean {
+  const want = pattern.split('/');
+  const got = path.split('/');
+  if (want.length !== got.length) return false;
+  return want.every((part, i) => (part === ':id' ? got[i] !== '' : part === got[i]));
+}
+
+/**
+ * Whether a `dot` device may call this route. With no method (a route
+ * re-checking its own path) any listed method for the path counts; the auth
+ * middleware always passes the method.
+ */
+export function isDotRoute(path: string, method?: string): boolean {
+  return DOT_ROUTES.some(
+    (r) =>
+      matchesRoute(r.path, path) && (method === undefined || r.method === method.toUpperCase()),
+  );
+}
+
 /** Boundary-safe prefix test: exact, or followed by `/`. */
 function pathHasPrefix(path: string, prefix: string): boolean {
   if (path === prefix) return true;
@@ -91,9 +131,15 @@ export function requiredScopeFor(path: string): AgentScope | null {
 /**
  * Fail-closed scope check for an agent caller. `true` when the route has no
  * scope constraint OR the caller's (device-derived) scope matches. A scope-gated
- * route with an undefined/mismatched scope is DENIED.
+ * route with an undefined/mismatched scope is DENIED. A `dot` caller is checked
+ * against its allowlist alone.
  */
-export function isScopeAuthorized(scope: AgentScope | undefined, path: string): boolean {
+export function isScopeAuthorized(
+  scope: AgentScope | undefined,
+  path: string,
+  method?: string,
+): boolean {
+  if (scope === 'dot') return isDotRoute(path, method);
   const required = requiredScopeFor(path);
   if (required === null) return true;
   if (scope === undefined) return false; // fail-closed on missing scope

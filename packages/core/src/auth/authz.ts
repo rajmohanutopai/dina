@@ -85,6 +85,21 @@ const AUTHZ_RULES: {
   singleSegmentTail?: boolean;
   allowed: Set<CallerType>;
 }[] = [
+  // OPENAI_DOTS_INTEGRATION §6.4 — the agent's tender-draft lane: draft a
+  // tender and read its own draft's progress. Nothing else under
+  // /v1/commerce admits an agent; the handlers check the session and scope.
+  {
+    prefix: '/v1/commerce/agent/tender-drafts',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['agent']),
+  },
+  {
+    prefix: '/v1/commerce/agent/tender-drafts/status',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['agent']),
+  },
   // TRADE_FIRST_STRATEGY §6 — the staff surface: EXACTLY the routes the
   // grant scopes act through (§6.5's table) plus the two clerk reads and
   // the PIN prover. The route handlers apply the staff-grant gate

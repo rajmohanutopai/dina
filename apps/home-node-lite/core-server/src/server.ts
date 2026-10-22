@@ -295,6 +295,14 @@ export async function createServer(opts: CreateServerOptions) {
   // one signature check and is refused there, before it spends a nonce or a
   // rate-limit bucket.
   const gatewayDid = config.a2a?.gatewayDid;
+  // HOSTED_DINA §7: on a Unix socket every caller has the same address, so
+  // this budget would be ONE bucket for the dot, the owner's browser and every
+  // stranger the gate forwards. There the bucket is the client the cell's gate
+  // names in `x-dina-client` (the gate sets it from the address the cell's TLS
+  // front saw and drops any copy a browser sends); a caller with no such
+  // header is the front door or the gate itself, on the `local` bucket. Only
+  // the gate and the front door can open the socket, so the header is theirs.
+  const onSocket = config.network.socketPath !== undefined;
   await app.register(rateLimit, {
     max: config.runtime.rateLimitPerMinute,
     timeWindow: '1 minute',
@@ -306,7 +314,11 @@ export async function createServer(opts: CreateServerOptions) {
         req.headers['x-did'] === gatewayDid &&
         (isA2AGatewayRoute(req.method, req.url.split('?')[0] ?? '') ||
           isUcpGatewayRoute(req.method, req.url.split('?')[0] ?? ''))),
-    keyGenerator: (req) => `ip:${req.ip}`,
+    keyGenerator: (req) => {
+      if (!onSocket) return `ip:${req.ip}`;
+      const client = req.headers['x-dina-client'];
+      return typeof client === 'string' && client !== '' ? `client:${client}` : 'local';
+    },
     // `@fastify/rate-limit` THROWS the return value of
     // errorResponseBuilder — it doesn't send it directly (see the
     // plugin's `throw params.errorResponseBuilder(...)` at

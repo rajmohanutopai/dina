@@ -196,6 +196,30 @@ def test_agent_validation_and_status_bind_session_in_signed_inputs(config):
         client.close()
 
 
+def test_tender_draft_signs_the_session_into_body_and_query(config):
+    lines = [{"text": "butter croissants", "quantity": {"value": "200", "unit_code": "each"}}]
+    responses = [
+        _tr(200, '{"draft_id":"tdr_1","draft_state":"pending"}'),
+        _tr(200, '{"draft_id":"tdr_1","draft_state":"opened"}'),
+    ]
+    with patch("dina_cli.transport.DirectTransport.request", side_effect=responses) as mock_req:
+        client = DinaClient(replace(config, role="agent"))
+        client.tender_draft("sess-1", lines, required_by="2036-01-09T07:00:00Z")
+        client.tender_draft_status("sess-1", "tdr_1")
+        draft = mock_req.call_args_list[0]
+        assert draft.args[1] == "/v1/commerce/agent/tender-drafts"
+        assert json.loads(draft.kwargs["body"]) == {
+            "session_id": "sess-1",
+            "lines": lines,
+            "required_by": "2036-01-09T07:00:00Z",
+        }
+        status = mock_req.call_args_list[1]
+        assert status.args[1] == (
+            "/v1/commerce/agent/tender-drafts/status?draft_id=tdr_1&session_id=sess-1"
+        )
+        client.close()
+
+
 def test_agent_validation_requires_session_before_transport(config):
     client = DinaClient(replace(config, role="agent"))
     with pytest.raises(ValueError, match="requires a session"):

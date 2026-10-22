@@ -110,6 +110,18 @@
     </p>
 
     <!-- ============================================================ -->
+    <h1 id="hosted">Hosted Dina for ChatGPT dots <span class="status wip">DEMO CUT BUILT, UNCOMMITTED</span></h1>
+    <p class="meta">Spec: <code>docs/HOSTED_DINA.md</code> (§12 lists what is built); the dot flow in
+      <code>docs/OPENAI_DOTS_INTEGRATION.md</code>.</p>
+    <ul>
+      <li>Deviation: run-time unlock lives in a per-cell gate, not Core; TLS ends in a per-cell Caddy, not Core.</li>
+      <li>Not run: production <code>isolate</code> mode (per-cell users, socket groups, Caddy ACME, SNI router on a host).</li>
+      <li>Not built: backup, stopping idle cells, delete and move-out, re-linking ChatGPT to an existing cell.</li>
+      <li>Owed: a run with a real ChatGPT dot (personal plugin), and deployment (owner decides).</li>
+      <li>Code review closed at the 3-round cap; round-3 fixes (delete race, guess ceiling) tested, not re-reviewed.</li>
+      <li>One CLI full-suite run had a single failure that did not recur in 11 later runs; not traced.</li>
+    </ul>
+
     <h1 id="commitment">Commitment kernel <span class="status wip">STEP 1 BUILT, NOT YET REVIEWED</span></h1>
     <p class="meta">Design: <code>docs/COMMITMENT_KERNEL.md</code> (dual-reviewed, both reviewers pass;
       a third cold audit was not run). Build order follows its §15. Step 1 is split into slices: 1a to 1c

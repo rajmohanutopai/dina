@@ -38,6 +38,8 @@ services:
       - ./www:/srv/www:ro
       - caddy-data:/data
       - caddy-config:/config
+    # `dot` holds only the dot bridge; Caddy is the one thing it shares.
+    networks: [default, dot]
     depends_on:
       msgbox: { condition: service_healthy }
       appview-web: { condition: service_healthy }
@@ -239,6 +241,34 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Dot bridge (docs/OPENAI_DOTS_INTEGRATION.md §4) ──
+  # ChatGPT's door to one Home Node. Starts only under the `dot-bridge`
+  # profile, which deploy_shared_infra.sh turns on when DOT_BRIDGE_HOST is set.
+  # Its own network and user, a read-only root, no capabilities; it reaches
+  # MsgBox by its public name like any other agent.
+  dot-bridge:
+    profiles: ["dot-bridge"]
+    build:
+      context: ../../../cli
+      dockerfile: Dockerfile.dot-bridge
+    restart: always
+    environment:
+      DINA_DOT_PUBLIC_URL: https://${DOT_BRIDGE_HOST:-}
+      DINA_HOMENODE_DID: ${DOT_BRIDGE_HOMENODE_DID:-}
+      DINA_MSGBOX_URL: ${DOT_BRIDGE_MSGBOX_URL:-}
+      # Encrypts each link's agent key at rest. Generated on the server.
+      DINA_CLI_KEY_PASSPHRASE: ${DOT_BRIDGE_KEY_PASSPHRASE:-}
+    volumes:
+      - dot-bridge-data:/data
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    networks: [dot]
+
+networks:
+  dot:
+
 volumes:
   caddy-data:
   caddy-config:
@@ -246,3 +276,4 @@ volumes:
   msgbox-data:
   postgres-data:
   grants-data:
+  dot-bridge-data:

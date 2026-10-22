@@ -117,6 +117,48 @@ class DirectTransport:
             raise TransportError(f"Core timeout at {self._core_url}: {e}") from e
 
 
+class UnixSocketTransport:
+    """HTTP to a hosted cell's Core over its Unix socket (HOSTED_DINA §3.1).
+
+    Same machine only: the front door reaches each cell it hosts this way, and
+    the socket's file mode decides who may connect. Requests are still signed
+    by the caller's own key, as over MsgBox; Core checks them the same way.
+    """
+
+    transport_name: str = "unix"
+
+    def __init__(self, socket_path: str, timeout: float = 30.0) -> None:
+        self._socket_path = socket_path
+        self._timeout = timeout
+        self._client = httpx.Client(
+            transport=httpx.HTTPTransport(uds=socket_path),
+            base_url="http://cell",
+            timeout=timeout,
+        )
+
+    def request(
+        self, method: str, path: str, headers: dict[str, str],
+        body: str | None = None, request_id: str | None = None,
+    ) -> TransportResponse:
+        try:
+            resp = self._client.request(
+                method, path, headers=headers,
+                content=body.encode() if body else None,
+            )
+            return TransportResponse(
+                status=resp.status_code,
+                headers=dict(resp.headers),
+                body=resp.text,
+            )
+        except (httpx.ConnectError, OSError) as e:
+            raise TransportError(f"Core socket unreachable: {e}") from e
+        except httpx.TimeoutException as e:
+            raise TransportError(f"Core socket timeout: {e}") from e
+
+    def close(self) -> None:
+        self._client.close()
+
+
 def _resolve_homenode_x25519_pub(homenode_did: str, plc_url: str = "https://plc.directory") -> bytes | None:
     """Resolve the Home Node's X25519 public key for NaCl sealed-box encryption.
 
@@ -747,6 +789,7 @@ def select_transport(
     msgbox_url: str | None,
     homenode_did: str | None,
     timeout: float = 30.0,
+    identity: CLIIdentity | None = None,
 ) -> Transport:
     """Select transport based on mode.
 
@@ -756,6 +799,7 @@ def select_transport(
         msgbox_url: MsgBox WebSocket URL (e.g., "wss://mailbox.dinakernel.com")
         homenode_did: Home Node DID for MsgBox addressing
         timeout: Request timeout in seconds
+        identity: Key the MsgBox envelope is sealed under (default: the CLI's)
 
     Returns:
         A Transport instance.
@@ -771,7 +815,7 @@ def select_transport(
     if mode == "msgbox":
         if not msgbox_url or not homenode_did:
             raise TransportError("transport=msgbox requires msgbox_url and homenode_did")
-        return MsgBoxTransport(msgbox_url, homenode_did, timeout=timeout)
+        return MsgBoxTransport(msgbox_url, homenode_did, identity=identity, timeout=timeout)
 
     if mode == "auto":
         # Try direct first.
@@ -785,7 +829,7 @@ def select_transport(
 
         # Fall back to msgbox.
         if msgbox_url and homenode_did:
-            return MsgBoxTransport(msgbox_url, homenode_did, timeout=timeout)
+            return MsgBoxTransport(msgbox_url, homenode_did, identity=identity, timeout=timeout)
 
         raise TransportError("Home Node unreachable")
 

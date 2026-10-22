@@ -103,6 +103,7 @@ import {
 } from './order_draft_store';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
 import { installStaffPresenceVerifier } from './owner_presence';
+import { SQLiteOwnerSupplierRepository, type OwnerSupplierRepository } from './owner_suppliers';
 import {
   buyerExitCancellation,
   checkFallbackNotice,
@@ -139,6 +140,7 @@ import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository 
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
 import { SQLiteTenderRepository } from './tender';
+import { SQLiteTenderDraftRepository, type TenderDraftRepository } from './tender_draft_store';
 import { shelfLimitPort } from './term/term_earned_room';
 import { SHELF_HOST_KIND } from './term/term_model';
 import { createTermEngine } from './term/term_runtime';
@@ -285,6 +287,10 @@ export interface CommerceRuntime {
   tradeSpool: TradeSpoolRepository;
   /** §3.2 — the private-tender aggregate: N requests, one comparison. */
   tenders: TenderRepository;
+  /** OPENAI_DOTS_INTEGRATION §6.4 — tenders an outside agent drafted for the owner to open. */
+  tenderDrafts: TenderDraftRepository;
+  /** HOSTED_DINA §6 — the owner's own supplier list. */
+  ownerSuppliers: OwnerSupplierRepository;
   /** NEGOTIATION_PLAN §5 — counters received, owner price questions, not-awarded notices. */
   negotiation: NegotiationRepository;
   /** NEGOTIATION_PLAN §5 — counters sent and each tender's negotiation state. */
@@ -704,6 +710,8 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     declineDocuments: new SQLiteDeclineDocumentRepository(inputs.adapter),
     tradeSpool: new SQLiteTradeSpoolRepository(inputs.adapter),
     tenders: new SQLiteTenderRepository(inputs.adapter),
+    tenderDrafts: new SQLiteTenderDraftRepository(inputs.adapter),
+    ownerSuppliers: new SQLiteOwnerSupplierRepository(inputs.adapter),
     negotiation: new SQLiteNegotiationRepository(inputs.adapter),
     buyerNegotiation: new SQLiteBuyerNegotiationRepository(inputs.adapter),
     staffGrants: new SQLiteStaffGrantRepository(inputs.adapter),

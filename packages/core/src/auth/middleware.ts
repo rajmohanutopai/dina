@@ -216,13 +216,16 @@ export function authenticateRequest(req: AuthRequest): AuthResult {
   let agentScope: AgentScope | undefined;
   if (callerIdentity.callerType === 'agent' || callerIdentity.callerType === 'plugin') {
     agentScope = resolveAgentScope(callerIdentity.scope) ?? 'runner';
-    if (!isScopeAuthorized(agentScope, req.path)) {
+    if (!isScopeAuthorized(agentScope, req.path, req.method)) {
       return {
         authenticated: false,
         did,
         callerType: callerIdentity.callerType,
         rejectedAt: 'authorization',
-        reason: `agent_scope '${requiredScopeFor(req.path)}' required for ${req.path}`,
+        reason:
+          agentScope === 'dot'
+            ? `agent_scope 'dot' may not call ${req.method} ${req.path}`
+            : `agent_scope '${requiredScopeFor(req.path)}' required for ${req.path}`,
       };
     }
   }

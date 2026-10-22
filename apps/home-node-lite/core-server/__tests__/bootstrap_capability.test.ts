@@ -10,6 +10,7 @@ import { generatePairingCode, getPairingIntent, setNodeDID } from '@dina/core';
 
 import {
   deliverBootstrapCapability,
+  resolveBootstrapScope,
   resolveHandoffFromEnv,
   HANDOFF_FD_ENV,
   DEFAULT_BOOTSTRAP_DEVICE_NAME,
@@ -92,6 +93,27 @@ describe('bootstrap enrolment capability (item 2)', () => {
       const { code } = JSON.parse(writes.join('').trim()) as { code: string };
       const intent = getPairingIntent(code);
       expect(intent?.role).toBe('agent');
+    });
+  });
+
+  describe('the dot scope for a hosted cell (HOSTED_DINA §4 step 6)', () => {
+    it('mints a dot-scoped code when the cell asks for one', async () => {
+      setNodeDID('did:key:z6MkuBootstrapTestNodeDid00000000000000000000');
+      const { handoff, writes } = fakeHandoff();
+      const res = await deliverBootstrapCapability({ firstBoot: true, handoff, scope: 'dot' });
+      expect(res.delivered).toBe(true);
+      const { code } = JSON.parse(writes.join('').trim()) as { code: string };
+      const intent = getPairingIntent(code);
+      expect(intent?.role).toBe('agent');
+      expect(intent?.scope).toBe('dot');
+      expect(intent?.deviceName).toBe('ChatGPT dot');
+    });
+
+    it('reads the scope from the environment, coding unless it says dot', () => {
+      expect(resolveBootstrapScope({ DINA_BOOTSTRAP_SCOPE: 'dot' })).toBe('dot');
+      expect(resolveBootstrapScope({ DINA_BOOTSTRAP_SCOPE: 'coding' })).toBe('coding');
+      expect(resolveBootstrapScope({ DINA_BOOTSTRAP_SCOPE: 'node' })).toBe('coding');
+      expect(resolveBootstrapScope({})).toBe('coding');
     });
   });
 

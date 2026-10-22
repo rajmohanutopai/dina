@@ -272,6 +272,18 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   <div id="tenderDetail"></div>
 </section>
 
+<section>
+  <h2>Suppliers</h2>
+  <p class="muted">The suppliers your tenders go to. A tender an agent drafts asks these first. Only you can add or remove one.</p>
+  <div class="row">
+    <input id="supDid" type="text" placeholder="Supplier's Dina ID (did:…)" size="34" aria-label="Supplier's Dina ID" />
+    <input id="supRkey" type="text" placeholder="Listing key" size="14" aria-label="Supplier's listing key" />
+    <input id="supLabel" type="text" placeholder="Name (optional)" size="18" maxlength="80" aria-label="Supplier name" />
+    <button id="addSupplier" class="primary">Add supplier</button>
+  </div>
+  <div id="suppliers" class="muted">Not checked.</div>
+</section>
+
 <div id="presenceBox" class="card hidden">
   <div class="row">
     <input id="presencePass" type="password" placeholder="owner passphrase" autocomplete="off" size="30" />
@@ -301,16 +313,72 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   }
   function refreshKeyState() {
     var el = document.getElementById("keystate");
-    el.textContent = getCap() ? "key set" : "no key";
+    el.textContent = DEVICE ? "this browser is an owner key" : getCap() ? "key set" : "no key";
+  }
+
+  // ── This browser as an owner device (WEB_OWNER_SURFACE_PLAN §3.3) ────
+  // A hosted cell (HOSTED_DINA §5) pairs the browser at sign-up and keeps the
+  // capability inside the cell. The key lives in the same IndexedDB record
+  // the web app uses; it is non-extractable, so the page can sign with it but
+  // no script can read it out. With no key stored, the capability field above
+  // is used as before.
+  var DEVICE = null;
+  function loadDevice() {
+    return new Promise(function (resolve) {
+      try {
+        var req = indexedDB.open("dina-owner-device", 1);
+        req.onupgradeneeded = function () { req.result.createObjectStore("device", { keyPath: "id" }); };
+        req.onsuccess = function () {
+          var r = req.result.transaction("device", "readonly").objectStore("device").get("owner");
+          r.onsuccess = function () { resolve(r.result && r.result.privateKey && r.result.did ? r.result : null); };
+          r.onerror = function () { resolve(null); };
+        };
+        req.onerror = function () { resolve(null); };
+      } catch (e) { resolve(null); }
+    });
+  }
+  function hex(buf) {
+    var bytes = new Uint8Array(buf), out = "";
+    for (var i = 0; i < bytes.length; i++) out += (bytes[i] < 16 ? "0" : "") + bytes[i].toString(16);
+    return out;
+  }
+  // Core's canonical request: METHOD, PATH, QUERY, TIMESTAMP, NONCE, SHA-256(BODY),
+  // one per line, signed with Ed25519.
+  function authHeaders(method, path, bodyStr) {
+    var headers = { "content-type": "application/json" };
+    if (!DEVICE) {
+      var cap = getCap();
+      if (cap) headers["x-dina-owner-capability"] = cap;
+      return Promise.resolve(headers);
+    }
+    var q = path.indexOf("?");
+    var bare = q < 0 ? path : path.slice(0, q);
+    var query = q < 0 ? "" : path.slice(q + 1);
+    var ts = new Date().toISOString().slice(0, 19) + "Z";
+    var nonce = hex(crypto.getRandomValues(new Uint8Array(16)));
+    var NL = String.fromCharCode(10);
+    return crypto.subtle.digest("SHA-256", new TextEncoder().encode(bodyStr)).then(function (digest) {
+      var canonical = method + NL + bare + NL + query + NL + ts + NL + nonce + NL + hex(digest);
+      return crypto.subtle.sign("Ed25519", DEVICE.privateKey, new TextEncoder().encode(canonical));
+    }).then(function (sig) {
+      headers["X-DID"] = DEVICE.did;
+      headers["X-Timestamp"] = ts;
+      headers["X-Nonce"] = nonce;
+      headers["X-Signature"] = hex(sig);
+      return headers;
+    });
+  }
+  function send(method, path, body) {
+    var bodyStr = method !== "GET" ? JSON.stringify(body || {}) : "";
+    return authHeaders(method, path, bodyStr).then(function (headers) {
+      var init = { method: method, headers: headers };
+      if (method !== "GET") init.body = bodyStr;
+      return fetch(path, init);
+    });
   }
   function api(method, path, body) {
-    var cap = getCap();
-    var headers = { "content-type": "application/json" };
-    if (cap) headers["x-dina-owner-capability"] = cap;
-    var init = { method: method, headers: headers };
-    if (method !== "GET") init.body = JSON.stringify(body || {});
-    return fetch(path, init).then(function (res) {
-      if (res.status === 403) { clearCap(); refreshKeyState(); throw new Error("403 — wrong or missing owner key"); }
+    return send(method, path, body).then(function (res) {
+      if (res.status === 403 && !DEVICE) { clearCap(); refreshKeyState(); throw new Error("403 — wrong or missing owner key"); }
       return res.text().then(function (t) {
         if (!res.ok) throw new Error(method + " " + path + " → " + res.status + " " + t.slice(0, 160));
         return t === "" ? {} : JSON.parse(t);
@@ -818,12 +886,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   // answers 403 no_user_presence when a proof is due, and that is not a
   // wrong key.
   function call(method, path, body) {
-    var cap = getCap();
-    var headers = { "content-type": "application/json" };
-    if (cap) headers["x-dina-owner-capability"] = cap;
-    var init = { method: method, headers: headers };
-    if (method !== "GET") init.body = JSON.stringify(body || {});
-    return fetch(path, init).then(function (res) {
+    return send(method, path, body).then(function (res) {
       return res.text().then(function (t) {
         var parsed = {};
         try { parsed = t === "" ? {} : JSON.parse(t); } catch (e) { parsed = { error: t.slice(0, 120) }; }
@@ -848,7 +911,11 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       quote_expired: "That quote has expired.",
       approval_expired: "The held order has lapsed. Award again to hold a fresh one.",
       approval_already_used: "This order has already been sent.",
-      buyer_sender_unavailable: "Dina cannot send orders right now. Try again shortly."
+      buyer_sender_unavailable: "Dina cannot send orders right now. Try again shortly.",
+      presence_unavailable: "This node cannot check your passphrase, so it cannot open an agent's tender. Run it in security mode.",
+      draft_not_pending: "This draft was already opened, dismissed or has lapsed.",
+      no_such_draft: "This draft is gone.",
+      negotiation_invalid: "Check the target and ceiling: the target must be at or below the ceiling."
     };
     return words[key] || ("Dina could not do that (" + String(key || "error") + ").");
   }
@@ -908,6 +975,15 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       var tid = String(p.tender_id || "");
       card.appendChild(el("div", { class: "row" }, [btn("Open tender", "primary", function () { openTender(tid); })]));
       yes = "Dismiss"; no = null;
+    } else if (p.type === "tender_draft") {
+      // OPENAI_DOTS_INTEGRATION §6.4: an agent said what is needed; Core chose the suppliers
+      // from your trade history. You add the limits (never shown to the agent) and open it.
+      card.appendChild(el("strong", { text: String(task.description || "An agent drafted a tender") }));
+      card.appendChild(el("div", { class: "muted", text: "Agent " + String(p.agent_did || "") }));
+      var draftBox = el("div");
+      card.appendChild(draftBox);
+      loadDraftForm(String(p.draft_id || ""), draftBox);
+      return card;
     } else if (p.type === "commerce_staff_escalation") {
       card.appendChild(el("strong", { text: "A clerk is over their limit" }));
       card.appendChild(el("div", { text: "Device " + String(p.device_did || "") + " · " +
@@ -970,6 +1046,86 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     if (no) row.appendChild(btn(no, "danger", function () { decideApproval(task, "cancel", { reason: "denied by the owner" }); }));
     card.appendChild(row);
     return card;
+  }
+  // A decimal amount the owner typed, in minor units (two decimals); "" when it is not one.
+  function toMinor(text) {
+    var t = String(text || "").trim();
+    var parts = t.split(".");
+    var digits = "0123456789";
+    if (parts.length > 2 || parts[0] === "") return "";
+    var whole = parts[0], frac = parts.length === 2 ? parts[1] : "";
+    if (frac.length > 2) return "";
+    var all = whole + frac;
+    for (var i = 0; i < all.length; i++) if (digits.indexOf(all.charAt(i)) < 0) return "";
+    while (frac.length < 2) frac = frac + "0";
+    var minor = (whole + frac).replace(/^0+/, "");
+    return minor === "" ? "0" : minor;
+  }
+  function loadDraftForm(draftId, box) {
+    call("GET", "/v1/commerce/trade/tender-drafts").then(function (r) {
+      clear(box);
+      var drafts = r.status === 200 && Array.isArray(r.body.drafts) ? r.body.drafts : [];
+      var d = null;
+      drafts.forEach(function (x) { if (x.draft_id === draftId) d = x; });
+      if (d === null) { box.appendChild(el("div", { class: "muted", text: refusal("draft_not_pending") })); return; }
+      (Array.isArray(d.lines) ? d.lines : []).forEach(function (line) {
+        var q = line.quantity || {};
+        box.appendChild(el("div", { text: String(q.value || "") + " " + String(q.unit_code || "") + " · " +
+          String((line.requirement && line.requirement.text) || "") }));
+      });
+      if (d.required_by) box.appendChild(el("div", { class: "muted", text: "Needed by " + String(d.required_by) }));
+      box.appendChild(el("div", { class: "muted", text: "Ask these suppliers:" }));
+      var picks = [];
+      (Array.isArray(d.suppliers) ? d.suppliers : []).forEach(function (s, i) {
+        var id = "draft-" + draftId + "-supplier-" + i;
+        var box1 = el("input", { type: "checkbox", id: id, checked: "checked" });
+        picks.push({ did: String(s.supplier_did || ""), input: box1 });
+        box.appendChild(el("div", { class: "row" }, [box1,
+          el("label", { for: id, text: String(s.name || s.supplier_did || "") })]));
+      });
+      var currency = el("input", { id: "draft-" + draftId + "-currency", size: "4", placeholder: "USD",
+        value: String(d.currency || "") });
+      var postal = el("input", { id: "draft-" + draftId + "-postal", size: "10", placeholder: "postal area",
+        value: d.region && d.region.value ? String(d.region.value) : "" });
+      var target = el("input", { id: "draft-" + draftId + "-target", size: "10", placeholder: "target total" });
+      var ceiling = el("input", { id: "draft-" + draftId + "-ceiling", size: "10", placeholder: "most you will pay" });
+      box.appendChild(el("div", { class: "row" }, [currency, postal, target, ceiling]));
+      box.appendChild(el("div", { class: "muted", text: "Your target and ceiling stay on this node: the agent never sees them, or any price." }));
+      var row = el("div", { class: "row decision" });
+      row.appendChild(btn("Open tender", "primary", function () {
+        var t = toMinor(target.value), c = toMinor(ceiling.value);
+        if (t === "" || c === "") { alert("Enter the target and the ceiling as amounts, like 2000 or 2000.50."); return; }
+        var chosen = picks.filter(function (x) { return x.input.checked; }).map(function (x) { return x.did; });
+        if (chosen.length === 0) { alert("Pick at least one supplier."); return; }
+        openDraft({
+          draft_id: draftId,
+          target_total: t,
+          budget_ceiling: c,
+          currency: String(currency.value || "").trim().toUpperCase(),
+          region: { scheme: "postal_area", value: String(postal.value || "").trim() },
+          suppliers: chosen
+        });
+      }));
+      row.appendChild(btn("Dismiss", "danger", function () {
+        call("POST", "/v1/commerce/trade/tender-drafts/dismiss", { draft_id: draftId }).then(function (r2) {
+          if (r2.status !== 200) alert(refusal(r2.body && r2.body.error));
+          loadApprovals();
+        });
+      }));
+      box.appendChild(row);
+    });
+  }
+  function openDraft(body) {
+    call("POST", "/v1/commerce/trade/tender-drafts/open", body).then(function (r) {
+      if (r.status === 403 && r.body && r.body.error === "no_user_presence") {
+        needPresence(function () { openDraft(body); });
+        return;
+      }
+      if (r.status !== 200) { alert(refusal(r.body && r.body.error)); return; }
+      loadApprovals();
+      loadTenders();
+      openTender(String(r.body.tender_id || ""));
+    });
   }
   function showHandoffLink(url) {
     if (url.indexOf("https://") !== 0) return;
@@ -1785,13 +1941,53 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     });
   }
 
+  // ── Suppliers (HOSTED_DINA §6) ──────────────────────────────────────
+  function loadSuppliers() {
+    var box = document.getElementById("suppliers");
+    api("GET", "/v1/commerce/trade/suppliers").then(function (data) {
+      clear(box);
+      var list = data.suppliers || [];
+      if (list.length === 0) { box.textContent = "No suppliers yet. Add one above."; return; }
+      list.forEach(function (s) {
+        var name = s.label || s.name || s.supplier_did;
+        box.appendChild(el("div", { class: "card" }, [
+          el("div", { class: "row" }, [
+            el("strong", { text: name }),
+            el("code", { text: s.supplier_did }),
+            el("span", { class: "muted", text: "listing " + s.service_rkey }),
+            btn("Remove", "danger", function () {
+              api("POST", "/v1/commerce/trade/suppliers/remove", { supplier_did: s.supplier_did })
+                .then(loadSuppliers)
+                .catch(function (e) { alert(e.message); });
+            })
+          ])
+        ]));
+      });
+    }).catch(function (e) { box.textContent = e.message; });
+  }
+  function addSupplier() {
+    var body = {
+      supplier_did: document.getElementById("supDid").value.trim(),
+      service_rkey: document.getElementById("supRkey").value.trim(),
+      label: document.getElementById("supLabel").value.trim()
+    };
+    call("POST", "/v1/commerce/trade/suppliers", body).then(function (res) {
+      if (res.status !== 200) { alert(res.body.error || ("Could not add the supplier (" + res.status + ")")); return; }
+      document.getElementById("supDid").value = "";
+      document.getElementById("supRkey").value = "";
+      document.getElementById("supLabel").value = "";
+      loadSuppliers();
+    });
+  }
+
   // ── wire up ─────────────────────────────────────────────────────────
   document.getElementById("save").addEventListener("click", function () {
     setCap(document.getElementById("cap").value);
     document.getElementById("cap").value = "";
     refreshKeyState();
-    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadShopOrders(); loadPublication(); loadLinks(); loadTenders(); loadPacks(); loadA2A(); loadDirectory(); loadUcpSettings();
+    loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadShopOrders(); loadPublication(); loadLinks(); loadTenders(); loadSuppliers(); loadPacks(); loadA2A(); loadDirectory(); loadUcpSettings();
   });
+  document.getElementById("addSupplier").addEventListener("click", addSupplier);
   document.getElementById("saveUcpSettings").addEventListener("click", saveUcpSettings);
   document.getElementById("refreshUcpSettings").addEventListener("click", loadUcpSettings);
   document.getElementById("refreshShopOrders").addEventListener("click", loadShopOrders);
@@ -1825,8 +2021,11 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     document.getElementById("watchForm").classList.toggle("hidden");
   });
   document.getElementById("watchForm").addEventListener("submit", createWatch);
-  refreshKeyState();
-  if (getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadShopOrders(); loadPublication(); loadLinks(); loadTenders(); loadPacks(); loadA2A(); loadDirectory(); loadUcpSettings(); }
+  loadDevice().then(function (device) {
+    DEVICE = device;
+    refreshKeyState();
+    if (DEVICE || getCap()) { loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadShopOrders(); loadPublication(); loadLinks(); loadTenders(); loadSuppliers(); loadPacks(); loadA2A(); loadDirectory(); loadUcpSettings(); }
+  });
 })();
 </script>
 </body>

@@ -2,6 +2,7 @@
  * Task 4.51 + 4.52 — master seed load/generate + keyfile tests.
  */
 
+import * as fsSync from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -11,6 +12,8 @@ import { validateMnemonic, mnemonicToEntropy } from '@dina/core';
 import {
   loadOrGenerateSeed,
   recoveryPhraseFromWrapped,
+  resetUnlockPassphraseForTest,
+  unlockPassphrase,
   wrappedSeedPathOf,
   KEYFILE_MODE,
   KEYFILE_NAME,
@@ -299,6 +302,53 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
+    });
+  });
+
+  describe('passphrase from an inherited fd (HOSTED_DINA §5)', () => {
+    afterEach(() => {
+      resetUnlockPassphraseForTest();
+      delete process.env.DINA_UNLOCK_PASSPHRASE_FD;
+      delete process.env.DINA_UNLOCK_PASSPHRASE;
+    });
+
+    async function fdWith(dir: string, text: string): Promise<number> {
+      const file = path.join(dir, 'pass');
+      await fs.writeFile(file, text, { mode: 0o600 });
+      // A bare fd, as a parent process hands one over; the reader closes it.
+      return fsSync.openSync(file, 'r');
+    }
+
+    it('writes and reopens a wrapped seed with a passphrase read from the fd', async () => {
+      const dir = await mkTmpDir();
+      try {
+        process.env.DINA_UNLOCK_PASSPHRASE_FD = String(await fdWith(dir, 'cell passphrase 1\n'));
+        const first = await loadOrGenerateSeed(path.join(dir, 'vault'));
+        expect(first.kind).toBe('generated');
+        expect(wrappedSeedPathOf(first)).toBe(path.join(dir, 'vault', WRAPPED_SEED_NAME));
+        // The trailing newline is not part of the passphrase.
+        const phrase = await recoveryPhraseFromWrapped(path.join(dir, 'vault'), 'cell passphrase 1');
+        expect(first.kind === 'generated' && first.mnemonic).toBe(phrase);
+        // A later boot reads it again from a fresh fd.
+        resetUnlockPassphraseForTest();
+        process.env.DINA_UNLOCK_PASSPHRASE_FD = String(await fdWith(dir, 'cell passphrase 1'));
+        const again = await loadOrGenerateSeed(path.join(dir, 'vault'));
+        expect(again.kind).toBe('loaded_wrapped');
+      } finally {
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    }, 30_000);
+
+    it('prefers the variable, and refuses the standard streams', async () => {
+      process.env.DINA_UNLOCK_PASSPHRASE = 'from env';
+      process.env.DINA_UNLOCK_PASSPHRASE_FD = '0';
+      await expect(unlockPassphrase()).resolves.toBe('from env');
+      delete process.env.DINA_UNLOCK_PASSPHRASE;
+      await expect(unlockPassphrase()).rejects.toThrow(/3 or above/);
+      process.env.DINA_UNLOCK_PASSPHRASE_FD = 'x';
+      await expect(unlockPassphrase()).rejects.toThrow(/3 or above/);
+      delete process.env.DINA_UNLOCK_PASSPHRASE_FD;
+      await expect(unlockPassphrase()).resolves.toBe('');
     });
   });
 

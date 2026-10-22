@@ -28,6 +28,20 @@ export const HANDOFF_FD_ENV = 'DINA_BOOTSTRAP_HANDOFF_FD';
 export const DEFAULT_BOOTSTRAP_DEVICE_NAME = 'coding-plugin';
 
 /**
+ * Env var choosing the scope the bootstrap code enrols. A hosted cell sets
+ * `dot` (HOSTED_DINA §4 step 6): its first agent is the ChatGPT link, held by
+ * the shared front door, so it gets the narrow allowlist scope. Anything else
+ * keeps the coding plugin's `coding`.
+ */
+export const BOOTSTRAP_SCOPE_ENV = 'DINA_BOOTSTRAP_SCOPE';
+
+export type BootstrapScope = 'coding' | 'dot';
+
+export function resolveBootstrapScope(env: NodeJS.ProcessEnv): BootstrapScope {
+  return (env[BOOTSTRAP_SCOPE_ENV] ?? '').trim() === 'dot' ? 'dot' : 'coding';
+}
+
+/**
  * A one-shot, write-then-close delivery channel to the parent process. The
  * real implementation writes to an inherited fd; tests inject a fake that
  * captures what was written.
@@ -46,6 +60,8 @@ export interface DeliverBootstrapOptions {
   generate?: typeof generatePairingCode;
   /** Device label for the enrolling plugin. */
   deviceName?: string;
+  /** Scope the code enrols; `coding` unless a hosted cell asks for `dot`. */
+  scope?: BootstrapScope;
 }
 
 export interface DeliverBootstrapResult {
@@ -74,10 +90,11 @@ export async function deliverBootstrapCapability(
   // Codex), so stamp `agent_scope='coding'` at initiate. It travels through the
   // pairing intent to registration, and Core later derives `req.agentScope`
   // from the device record — this is what unlocks the coding tool façades.
+  const scope = opts.scope ?? 'coding';
   const { code, expiresAt } = generate({
     role: 'agent',
-    scope: 'coding',
-    deviceName: opts.deviceName ?? DEFAULT_BOOTSTRAP_DEVICE_NAME,
+    scope,
+    deviceName: opts.deviceName ?? (scope === 'dot' ? 'ChatGPT dot' : DEFAULT_BOOTSTRAP_DEVICE_NAME),
   });
 
   try {

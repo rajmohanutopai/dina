@@ -181,6 +181,16 @@ ${GRANTS_HOST} {
 EOF
     fi
 
+    # Dot bridge (docs/OPENAI_DOTS_INTEGRATION.md §4). Gated on DOT_BRIDGE_HOST.
+    if [ -n "${DOT_BRIDGE_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${DOT_BRIDGE_HOST} {
+	reverse_proxy dot-bridge:8765
+}
+EOF
+    fi
+
     # UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5): the host's own
     # name and every label under it, on one wildcard certificate by DNS-01
     # (caddy/Dockerfile). No `log` directive: Caddy then keeps no access log
@@ -265,6 +275,8 @@ prepare_compose() {
         # Grants builds from a repo-root context locally; on the remote
         # the synced subset lives at ../grants-src (see sync_files).
         sed -i 's|context: ../../..$|context: ../grants-src|' docker-compose.infra.yml
+        # The dot bridge builds from cli/, synced to ../dot-bridge-src.
+        sed -i 's|context: ../../../cli$|context: ../dot-bridge-src|' docker-compose.infra.yml
     "
 }
 
@@ -347,6 +359,13 @@ sync_files() {
         "$PROJECT_ROOT/apps/grants-service/" \
         "$REMOTE:$REMOTE_DIR/grants-src/apps/grants-service/"
 
+    # Dot bridge build context: the Python CLI package only.
+    rsync -az --delete \
+        --exclude='.venv' --exclude='__pycache__' --exclude='.pytest_cache' \
+        --exclude='dist' --exclude='tests' --exclude='*-plugin' --exclude='agent-plugin-runtime' \
+        "$PROJECT_ROOT/cli/" \
+        "$REMOTE:$REMOTE_DIR/dot-bridge-src/"
+
     info "Files synced"
 }
 
@@ -424,6 +443,38 @@ sync_ucp_env() {
         "# <<< ucp")
     printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \
         sed -i '/# >>> ucp/,/# <<< ucp/d' .env && cat >> .env && chmod 600 .env"
+}
+
+# -- Step 5d: Forward the dot bridge's settings into the remote .env --
+# The same marker-block pattern. COMPOSE_PROFILES turns the service on only
+# when DOT_BRIDGE_HOST is set. The key passphrase is made on the server once and
+# kept outside the block, so it never leaves the server and survives redeploys.
+sync_dot_bridge_env() {
+    local profiles=""
+    if [ -n "${DOT_BRIDGE_HOST:-}" ]; then
+        case "${DOT_BRIDGE_HOMENODE_DID:-}" in
+            did:*) ;;
+            *) echo "Error: DOT_BRIDGE_HOST needs DOT_BRIDGE_HOMENODE_DID (the one Home Node it serves)." >&2; exit 1 ;;
+        esac
+        case "${DOT_BRIDGE_MSGBOX_URL:-}" in
+            wss://*) ;;
+            *) echo "Error: DOT_BRIDGE_HOST needs DOT_BRIDGE_MSGBOX_URL (wss://...)." >&2; exit 1 ;;
+        esac
+        profiles="dot-bridge"
+    fi
+    info "Syncing dot bridge env block..."
+    local block
+    block=$(printf '%s\n' \
+        "# >>> dot-bridge (managed by deploy_shared_infra.sh - do not edit)" \
+        "COMPOSE_PROFILES=${profiles}" \
+        "DOT_BRIDGE_HOST=${DOT_BRIDGE_HOST:-}" \
+        "DOT_BRIDGE_HOMENODE_DID=${DOT_BRIDGE_HOMENODE_DID:-}" \
+        "DOT_BRIDGE_MSGBOX_URL=${DOT_BRIDGE_MSGBOX_URL:-}" \
+        "# <<< dot-bridge")
+    printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \
+        sed -i '/# >>> dot-bridge/,/# <<< dot-bridge/d' .env && cat >> .env && \
+        { grep -q '^DOT_BRIDGE_KEY_PASSPHRASE=' .env || echo \"DOT_BRIDGE_KEY_PASSPHRASE=\$(openssl rand -hex 24)\" >> .env; } && \
+        chmod 600 .env"
 }
 
 # ── Step 5: Generate secrets if not present ──
@@ -590,6 +641,7 @@ case "$ACTION" in
         generate_secrets
         sync_grants_env
         sync_ucp_env
+        sync_dot_bridge_env
         prepare_compose
         start_services
         reload_caddy
@@ -604,6 +656,7 @@ case "$ACTION" in
         sync_files
         sync_grants_env
         sync_ucp_env
+        sync_dot_bridge_env
         prepare_compose
         ssh "$REMOTE" "
             cd $REMOTE_DIR/deploy &&

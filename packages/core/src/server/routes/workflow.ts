@@ -45,6 +45,7 @@ import {
   STAFF_ESCALATION_APPROVAL_TYPE,
   STAFF_ESCALATION_KEY_PREFIX,
 } from '../../commerce/staff_escalation';
+import { TENDER_DRAFT_TYPE } from '../../commerce/tender_drafts';
 import { TERM_PROPOSAL_CARD } from '../../commerce/term/term_buyer';
 import { TERM_CARD_TYPES } from '../../commerce/term/term_engine';
 import { TERM_DECISION_CARD, TERM_FLOOR_CARD } from '../../commerce/term/term_seller';
@@ -1700,6 +1701,9 @@ export const CORE_MINTED_PAYLOAD_TYPES: ReadonlySet<string> = new Set([
   NEGOTIATION_PRICE_APPROVAL_TYPE,
   // §4.5 — the buyer owner's "your tender is ready" notice.
   TENDER_READY_TYPE,
+  // OPENAI_DOTS_INTEGRATION §6.4 — "an agent drafted a tender": Core's notice,
+  // opened only through the owner's form; neither Brain nor an agent mints it.
+  TENDER_DRAFT_TYPE,
   // SHELF_SPACE_NEGOTIATION — every term card is Core's to mint and the owner's to answer.
   ...TERM_CARD_TYPES,
   // COMMITMENT_KERNEL §15 step 5 — a change to the owner's value model that

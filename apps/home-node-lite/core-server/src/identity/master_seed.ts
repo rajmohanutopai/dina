@@ -39,6 +39,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4g tasks 4.51-4.52.
  */
 
+import { createReadStream } from 'node:fs';
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
@@ -119,6 +120,47 @@ export function wrappedSeedPathOf(source: SeedSource): string | undefined {
   }
 }
 
+/** Env var naming an inherited fd that carries the unlock passphrase. */
+export const UNLOCK_PASSPHRASE_FD_ENV = 'DINA_UNLOCK_PASSPHRASE_FD';
+
+let fdPassphrase: string | null = null;
+
+/**
+ * The operator's unlock passphrase: `DINA_UNLOCK_PASSPHRASE`, or the contents
+ * of the inherited fd named by `DINA_UNLOCK_PASSPHRASE_FD`. A hosted cell's
+ * gate uses the fd (HOSTED_DINA §5) so the passphrase never sits in Core's
+ * environment, where a process of the same user could read it from /proc.
+ * The fd is read once, to its end (a stream, so a pipe or socket the parent
+ * made works), and closed; one trailing newline is dropped. An fd below 3 is
+ * refused: stdin/stdout/stderr never carry it.
+ */
+export async function unlockPassphrase(env: NodeJS.ProcessEnv = process.env): Promise<string> {
+  const direct = env.DINA_UNLOCK_PASSPHRASE ?? '';
+  if (direct !== '') return direct;
+  if (fdPassphrase !== null) return fdPassphrase;
+  const raw = (env[UNLOCK_PASSPHRASE_FD_ENV] ?? '').trim();
+  if (raw === '') return '';
+  const fd = Number(raw);
+  if (!Number.isInteger(fd) || fd < 3) {
+    throw new Error(`${UNLOCK_PASSPHRASE_FD_ENV} must name an inherited fd (3 or above)`);
+  }
+  const chunks: Buffer[] = [];
+  await new Promise<void>((resolve, reject) => {
+    const stream = createReadStream('', { fd, autoClose: true });
+    stream.on('data', (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    stream.on('end', () => resolve());
+    stream.on('error', reject);
+  });
+  const text = Buffer.concat(chunks).toString('utf8');
+  fdPassphrase = text.endsWith('\n') ? text.slice(0, -1) : text;
+  return fdPassphrase;
+}
+
+/** Tests only: forget a passphrase read from an fd. */
+export function resetUnlockPassphraseForTest(): void {
+  fdPassphrase = null;
+}
+
 /**
  * Load the master seed from `vaultDir`, generating it on first boot.
  *
@@ -148,7 +190,7 @@ export async function loadOrGenerateSeed(vaultDir: string): Promise<SeedSource> 
     // boot (GCM tag mismatch) rather than falling back to a limited state
     // that looks alive; an absent one keeps the pre-slice behaviour: the
     // boot trace's 'pending' identity step.
-    const passphrase = process.env.DINA_UNLOCK_PASSPHRASE ?? '';
+    const passphrase = await unlockPassphrase();
     if (passphrase !== '') {
       const wrapped = readWrappedSeed(wrappedPath);
       const seed = await unwrapSeed(passphrase, wrapped);
@@ -182,7 +224,7 @@ export async function loadOrGenerateSeed(vaultDir: string): Promise<SeedSource> 
   // passphrase supplied the seed is written only wrapped, in the format the
   // branch above reads back, and the plain keyfile never exists — so a bed or
   // a fresh server can prove owner presence without a migration step.
-  const passphrase = process.env.DINA_UNLOCK_PASSPHRASE ?? '';
+  const passphrase = await unlockPassphrase();
   let wrappedSeedPath: string | undefined;
   if (passphrase !== '') {
     const wrapped = await wrapSeed(passphrase, seed);

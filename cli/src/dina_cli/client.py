@@ -88,6 +88,7 @@ class DinaClient:
         verbose: bool = False,
         *,
         identity: CLIIdentity | None = None,
+        transport: Transport | None = None,
     ) -> None:
         self._identity = identity or CLIIdentity()
         self._identity.ensure_loaded()
@@ -98,13 +99,18 @@ class DinaClient:
         # `_request` for backward compat; `_request` ignores the value, but the
         # attribute must exist on the instance.
         self._core = None
+        if transport is not None:
+            # A caller with its own channel (the dot bridge's cell sockets).
+            self._transport: Transport = transport
+            return
         try:
-            self._transport: Transport = select_transport(
+            self._transport = select_transport(
                 mode=config.transport_mode,
                 core_url=config.core_url or None,
                 msgbox_url=config.msgbox_url or None,
                 homenode_did=config.homenode_did or None,
                 timeout=config.timeout,
+                identity=self._identity,
             )
         except TransportError as exc:
             raise DinaClientError(
@@ -597,6 +603,26 @@ class DinaClient:
             f"/v1/intent/proposals/{proposal_id}/status",
             params=params if params else None,
             headers=extra if extra else None,
+        )
+        return resp.json()
+
+    # -- Tender drafts (OPENAI_DOTS_INTEGRATION §6.4) ---------------------------
+
+    def tender_draft(self, session: str, lines: list[dict], required_by: str = "") -> dict:
+        """Draft a tender for the owner to open: what is needed, never who or how much."""
+        body: dict = {"session_id": session, "lines": lines}
+        if required_by:
+            body["required_by"] = required_by
+        resp = self._request(self._core, "POST", "/v1/commerce/agent/tender-drafts", json=body)
+        return resp.json()
+
+    def tender_draft_status(self, session: str, draft_id: str) -> dict:
+        """One draft's progress: ranks and supplier names, never a price."""
+        resp = self._request(
+            self._core,
+            "GET",
+            "/v1/commerce/agent/tender-drafts/status",
+            params={"draft_id": draft_id, "session_id": session},
         )
         return resp.json()
 

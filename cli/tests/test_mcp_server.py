@@ -925,3 +925,51 @@ def test_a_refused_ask_tells_the_agent_to_finish_the_task(fake_client):
     assert out["status"] == "refused"
     assert "effect_started" in out["error"]
     assert "dina_task_complete" in out["next"] and "dina_task_fail" in out["next"]
+
+
+def test_dina_tender_draft_sends_the_need_only(fake_client):
+    fake_client.tender_draft.return_value = {"draft_id": "tdr_1", "draft_state": "pending"}
+    lines = [{"text": "butter croissants", "quantity": {"value": "200", "unit_code": "each"}}]
+
+    out = mcp_server.dina_tender_draft.fn(
+        session="s1", lines=lines, required_by="2036-01-09T07:00:00Z"
+    )
+
+    assert out == {"draft_id": "tdr_1", "draft_state": "pending"}
+    fake_client.tender_draft.assert_called_once_with(
+        session="s1", lines=lines, required_by="2036-01-09T07:00:00Z"
+    )
+
+
+def test_dina_tender_status_reads_one_draft(fake_client):
+    fake_client.tender_draft_status.return_value = {"draft_id": "tdr_1", "draft_state": "opened"}
+
+    out = mcp_server.dina_tender_status.fn(session="s1", draft_id="tdr_1")
+
+    assert out["draft_state"] == "opened"
+    fake_client.tender_draft_status.assert_called_once_with(session="s1", draft_id="tdr_1")
+
+
+def test_dot_profile_keeps_only_its_allowlist(monkeypatch):
+    removed = []
+    monkeypatch.setattr(mcp_server.mcp, "remove_tool", removed.append)
+
+    mcp_server.configure_profile("dot")
+
+    kept = [n for n in mcp_server._registered_tool_names() if n not in removed]
+    assert sorted(kept) == sorted(mcp_server.DOT_PROFILE_TOOLS)
+    # The doc's exclusions (OPENAI_DOTS_INTEGRATION §4.4, §5): no vault reads,
+    # no scrub/rehydrate, no reasoning or runner jobs.
+    for name in ("dina_ask", "dina_remember", "dina_scrub", "dina_rehydrate",
+                 "dina_context_prepare", "dina_reasoning_claim", "dina_task_complete"):
+        assert name in removed
+
+
+def test_brain_profile_removes_the_tender_tools(monkeypatch):
+    removed = []
+    monkeypatch.setattr(mcp_server.mcp, "remove_tool", removed.append)
+
+    mcp_server.configure_profile("brain")
+
+    assert "dina_tender_draft" in removed
+    assert "dina_tender_status" in removed

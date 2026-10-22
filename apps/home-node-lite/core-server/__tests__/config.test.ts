@@ -194,6 +194,17 @@ describe('core-server config (task 4.4/4.5)', () => {
     });
   });
 
+  describe('Unix socket (HOSTED_DINA §3.1)', () => {
+    it('listens on TCP unless DINA_CORE_SOCKET names a socket path', () => {
+      expect(loadConfig(minimalEnv()).network.socketPath).toBeUndefined();
+      expect(loadConfig({ ...minimalEnv(), DINA_CORE_SOCKET: '  ' }).network.socketPath).toBeUndefined();
+      expect(
+        loadConfig({ ...minimalEnv(), DINA_CORE_SOCKET: '/run/dina/cell-a/core.sock' }).network
+          .socketPath,
+      ).toBe('/run/dina/cell-a/core.sock');
+    });
+  });
+
   describe('type coercion + validation', () => {
     it('rejects non-integer port', () => {
       expect(() => loadConfig({ ...minimalEnv(), DINA_CORE_PORT: 'not-a-number' })).toThrow(

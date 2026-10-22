@@ -41,6 +41,12 @@ const NetworkSchema = z.object({
    * tests. Zod min=0 reflects HTTP's actual port range 0-65535.
    */
   port: z.number().int().min(0).max(65535),
+  /**
+   * Listen on this Unix socket instead of host and port (HOSTED_DINA §3.1):
+   * a hosted cell's Core takes agent calls only from the front door, whose
+   * group the socket is made connectable by (mode 0660). Absent: TCP.
+   */
+  socketPath: z.string().min(1).optional(),
 });
 
 /** Storage layout. */
@@ -282,6 +288,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
   //
   //   DINA_CORE_HOST       → network.host       (default: 127.0.0.1)
   //   DINA_CORE_PORT       → network.port       (default: 8100)
+  //   DINA_CORE_SOCKET     → network.socketPath (default: none, so TCP)
   //   DINA_VAULT_DIR       → storage.vaultDir   (required)
   //   DINA_CACHE_PAGES     → storage.cachePages (default: 1000)
   //   DINA_LOG_LEVEL       → runtime.logLevel   (default: info)
@@ -309,6 +316,9 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): LoadedCoreServ
     network: {
       host: readString(env, 'DINA_CORE_HOST', DEFAULTS.network.host),
       port: readInt(env, 'DINA_CORE_PORT', DEFAULTS.network.port),
+      ...((env.DINA_CORE_SOCKET ?? '').trim() !== ''
+        ? { socketPath: (env.DINA_CORE_SOCKET ?? '').trim() }
+        : {}),
     },
     storage: {
       vaultDir: requireString(env, 'DINA_VAULT_DIR'),

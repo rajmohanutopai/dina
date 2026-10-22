@@ -239,6 +239,10 @@ import {
   staffPresentNow,
 } from '../../commerce/owner_presence';
 import {
+  MAX_OWNER_SUPPLIERS,
+  parseOwnerSupplier,
+} from '../../commerce/owner_suppliers';
+import {
   ownerOrderViewWire,
   ownerQuoteViewWire,
   placedOrderWire,
@@ -308,6 +312,13 @@ import {
   NOT_ASKED_REASONS,
   type NotAskedReason,
 } from '../../commerce/tender';
+import {
+  agentDraftStatus,
+  createTenderDraft,
+  parseDraftLines,
+  retireDraftCard,
+  type TenderDraft,
+} from '../../commerce/tender_drafts';
 import { tenderStory } from '../../commerce/tender_story';
 import { getTradeDocumentDispatcher, installTradeDocumentDispatcher } from '../../commerce/trade_dispatch';
 import { buildTradeInbox } from '../../commerce/trade_inbox';
@@ -331,6 +342,7 @@ import {
   uninstall,
 } from '../../plugins/install_service';
 import { getPluginInstallRepository, type PluginInstall } from '../../plugins/registry';
+import { getSessionRegistry } from '../../session/registry';
 import { getOwnerTimeZone } from '../../settings/owner_settings';
 import { WorkflowTaskState } from '../../workflow/domain';
 import { getWorkflowService } from '../../workflow/service';
@@ -7367,125 +7379,247 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (denied !== null) return denied;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return openTenderFromBody(runtime, (req.body ?? {}) as Record<string, unknown>);
+  });
+
+  // OPENAI_DOTS_INTEGRATION §6.4 — an outside agent drafts a tender: what the
+  // café needs, never who is asked or for how much. Core fills the suppliers
+  // from its own trade history and raises the owner's card.
+  router.post('/v1/commerce/agent/tender-drafts', async (req): Promise<CoreResponse> => {
+    const agent = tenderDraftAgent(req, (req.body ?? {}) as Record<string, unknown>);
+    if ('status' in agent) return agent;
     const body = (req.body ?? {}) as Record<string, unknown>;
-    if (!Array.isArray(body.suppliers) || !Array.isArray(body.lines) || body.projection === null || typeof body.projection !== 'object') {
-      return { status: 400, body: { error: 'suppliers, lines and projection are required' } };
-    }
-    const suppliers: { supplierDid: string; serviceRkey: string }[] = [];
-    for (const entry of body.suppliers) {
-      const named = entry as Record<string, unknown>;
-      if (typeof named.supplier_did !== 'string' || typeof named.service_rkey !== 'string') {
-        return { status: 400, body: { error: 'every supplier names supplier_did and service_rkey' } };
+    const parsed = parseDraftLines(body.lines);
+    if (!parsed.ok) return { status: 400, body: { error: 'invalid_lines', detail: parsed.detail } };
+    let requiredBy = '';
+    if (body.required_by !== undefined) {
+      if (typeof body.required_by !== 'string' || Number.isNaN(Date.parse(body.required_by))) {
+        return { status: 400, body: { error: 'required_by must be an ISO date-time' } };
       }
-      suppliers.push({ supplierDid: named.supplier_did, serviceRkey: named.service_rkey });
+      requiredBy = new Date(Date.parse(body.required_by)).toISOString();
     }
-    // Who the owner's surface set aside (never asked) and why — a PeerLens
-    // reason it read; Core keeps it so the tender can say who was left out.
-    const notAsked: {
-      supplierDid: string;
-      serviceRkey: string;
-      reason: NotAskedReason;
-      note?: string;
-      listedFrom?: { currency: string; minor_units: string };
-    }[] = [];
-    if (body.not_asked !== undefined) {
-      if (!Array.isArray(body.not_asked)) {
-        return { status: 400, body: { error: 'not_asked must be an array' } };
-      }
-      for (const entry of body.not_asked) {
-        const named = (entry ?? {}) as Record<string, unknown>;
-        const listed = named.listed_from as Record<string, unknown> | undefined;
-        const listedOk =
-          listed === undefined ||
-          (listed !== null &&
-            typeof listed === 'object' &&
-            typeof listed.currency === 'string' &&
-            /^[A-Z]{3}$/.test(listed.currency) &&
-            typeof listed.minor_units === 'string' &&
-            /^(0|[1-9][0-9]{0,17})$/.test(listed.minor_units));
-        if (
-          typeof named.supplier_did !== 'string' ||
-          typeof named.service_rkey !== 'string' ||
-          !NOT_ASKED_REASONS.includes(named.reason as NotAskedReason) ||
-          (named.note !== undefined && typeof named.note !== 'string') ||
-          !listedOk
-        ) {
-          return {
-            status: 400,
-            body: {
-              error: `every not_asked entry names supplier_did, service_rkey and a reason (${NOT_ASKED_REASONS.join(', ')})`,
-            },
-          };
-        }
-        notAsked.push({
-          supplierDid: named.supplier_did,
-          serviceRkey: named.service_rkey,
-          reason: named.reason as NotAskedReason,
-          ...(typeof named.note === 'string' ? { note: named.note } : {}),
-          ...(listed !== undefined
-            ? {
-                listedFrom: {
-                  currency: String(listed.currency),
-                  minor_units: String(listed.minor_units),
-                },
-              }
-            : {}),
-        });
-      }
-    }
-    // §9.13 wire law is snake_case; the tender line input is an internal
-    // camelCase domain shape. Accept `line_id` and normalize to `lineId`
-    // so a hand-written or ported client follows the wire convention.
-    const tenderLines = (body.lines as Record<string, unknown>[]).map((line) =>
-      line.lineId === undefined && typeof line.line_id === 'string'
-        ? { ...line, lineId: line.line_id }
-        : line,
-    );
-    // NEGOTIATION_PLAN §4.5 — an optional policy: the loop counters toward
-    // `target_total`, never awards over `budget_ceiling`. Checked BEFORE any
-    // request leaves, so a bad policy never produces a half-started tender.
-    let negotiation: TenderPolicyInput | null = null;
-    if (body.negotiation !== undefined) {
-      const n = body.negotiation as Record<string, unknown> | null;
-      if (n === null || typeof n !== 'object' || typeof body.currency !== 'string') {
-        return { status: 400, body: { error: 'negotiation needs an object and the tender currency' } };
-      }
-      negotiation = {
-        currency: body.currency,
-        targetTotalMinor: String(n.target_total ?? ''),
-        budgetCeilingMinor: String(n.budget_ceiling ?? ''),
-        ...(typeof n.max_rounds === 'number' ? { maxRounds: n.max_rounds } : {}),
-        ...(typeof n.deadline_seconds === 'number' ? { deadlineSeconds: n.deadline_seconds } : {}),
-      };
-      const invalid = tenderPolicyError(negotiation);
-      if (invalid !== null) return { status: 400, body: { error: 'negotiation_invalid', detail: invalid } };
-    }
-    const created = await createTender({
-      suppliers,
-      ...(notAsked.length > 0 ? { notAsked } : {}),
-      lines: tenderLines as never,
-      projection: completeProjection(body.projection as Record<string, unknown>) as never,
-      ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
-      ...(typeof body.required_by === 'string' ? { requiredBy: body.required_by } : {}),
-      // COMMITMENT_KERNEL §6 step 0: the owner's own grant, per tender —
-      // suppliers may pass the pincode, and nothing else, to their shippers.
-      ...(body.share_pincode_with_shippers === true ? { sharePincodeWithShippers: true } : {}),
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const created = createTenderDraft({
+      agentDid: agent.agentDid,
+      lines: parsed.lines,
+      requiredBy,
       nowMs: runtime.now(),
     });
-    if (created.ok && negotiation !== null) {
-      startTenderNegotiation(created.tenderId, negotiation, runtime.now());
+    if (!created.ok) {
+      return {
+        status: created.refusal === 'commerce_unavailable' ? 503 : 409,
+        body: { error: created.refusal },
+      };
     }
-    return created.ok
-      ? {
-          status: 200,
-          body: {
-            ok: true,
-            tender_id: created.tenderId,
-            members: created.members,
-            negotiating: negotiation !== null,
-          },
-        }
-      : { status: 409, body: { error: created.refusal } };
+    return {
+      status: 200,
+      body: agentDraftStatus(created.draft, runtime.now(), supplierNameFor),
+    };
+  });
+
+  // The agent's read of its own draft: ranks and names, never a price, a
+  // quote, or the owner's limits.
+  router.get('/v1/commerce/agent/tender-drafts/status', async (req): Promise<CoreResponse> => {
+    const agent = tenderDraftAgent(req, { session_id: req.query.session_id });
+    if ('status' in agent) return agent;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const draft =
+      typeof req.query.draft_id === 'string' ? runtime.tenderDrafts.get(req.query.draft_id) : null;
+    // Another agent's draft reads as absent, never as forbidden.
+    if (draft === null || draft.agentDid !== agent.agentDid) {
+      return { status: 404, body: { error: 'no_such_draft' } };
+    }
+    return { status: 200, body: agentDraftStatus(draft, runtime.now(), supplierNameFor) };
+  });
+
+  // The owner's view of waiting drafts: everything the open form needs.
+  router.get('/v1/commerce/trade/tender-drafts', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return {
+      status: 200,
+      body: {
+        drafts: runtime.tenderDrafts.listPending(runtime.now()).map((draft) => ({
+          draft_id: draft.draftId,
+          agent_did: draft.agentDid,
+          lines: draft.lines,
+          required_by: draft.requiredBy === '' ? null : draft.requiredBy,
+          suppliers: draft.suppliers.map((s) => ({ ...s, name: supplierNameFor(s.supplier_did) })),
+          region: draft.region,
+          currency: draft.currency === '' ? null : draft.currency,
+          created_at: draft.createdAt,
+          expires_at: draft.expiresAt,
+        })),
+      },
+    };
+  });
+
+  // The owner opens a draft with the target and ceiling. Needs a person
+  // present, and refuses on a node that cannot check (a convenience-mode
+  // server): the agent's draft never opens on an owner capability alone.
+  router.post('/v1/commerce/trade/tender-drafts/open', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    if (!ownerPresenceCanBeEstablished()) {
+      return {
+        status: 409,
+        body: {
+          error: 'presence_unavailable',
+          detail: 'opening an agent’s draft needs a node that can check the owner’s passphrase',
+        },
+      };
+    }
+    const nowMs = runtime.now();
+    if (!ownerPresentNow(nowMs, ownerPresencePrincipal(req))) {
+      return {
+        status: 403,
+        body: { error: 'no_user_presence', detail: 'opening an agent’s tender needs a person present' },
+      };
+    }
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const draft = typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
+    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    if (draft.state !== 'pending' || draft.expiresAt <= nowMs) {
+      return { status: 409, body: { error: 'draft_not_pending' } };
+    }
+    if (typeof body.target_total !== 'string' || typeof body.budget_ceiling !== 'string') {
+      return { status: 400, body: { error: 'target_total and budget_ceiling are required' } };
+    }
+    const currency = typeof body.currency === 'string' && body.currency !== '' ? body.currency : draft.currency;
+    if (currency === '') return { status: 400, body: { error: 'currency is required' } };
+    const region = body.region !== undefined ? body.region : draft.region;
+    if (region === null || region === undefined) {
+      return { status: 400, body: { error: 'region is required: the draft has no delivery area' } };
+    }
+    // The owner may leave suppliers out, never add one the draft did not name.
+    let suppliers = draft.suppliers;
+    if (body.suppliers !== undefined) {
+      if (!Array.isArray(body.suppliers) || !body.suppliers.every((d) => typeof d === 'string')) {
+        return { status: 400, body: { error: 'suppliers must be a list of supplier DIDs' } };
+      }
+      const keep = new Set(body.suppliers as string[]);
+      suppliers = draft.suppliers.filter((s) => keep.has(s.supplier_did));
+      if (suppliers.length === 0 || keep.size !== suppliers.length) {
+        return { status: 400, body: { error: 'suppliers must be a non-empty subset of the draft' } };
+      }
+    }
+    // Reserve the draft before anything reaches a supplier: a second open, or
+    // a dismiss, while this one is sending is refused, so one draft never
+    // starts two tenders. Core is one process, so a set held here is enough.
+    if (draftsOpening.has(draft.draftId)) {
+      return { status: 409, body: { error: 'draft_opening' } };
+    }
+    draftsOpening.add(draft.draftId);
+    try {
+      return await openDraftNow(runtime, draft, suppliers, region, currency, body);
+    } finally {
+      draftsOpening.delete(draft.draftId);
+    }
+  });
+
+  async function openDraftNow(
+    runtime: CommerceRuntime,
+    draft: TenderDraft,
+    suppliers: TenderDraft['suppliers'],
+    region: unknown,
+    currency: string,
+    body: Record<string, unknown>,
+  ): Promise<CoreResponse> {
+    const opened = await openTenderFromBody(runtime, {
+      suppliers,
+      lines: draft.lines,
+      projection: { region },
+      currency,
+      ...(draft.requiredBy === '' ? {} : { required_by: draft.requiredBy }),
+      negotiation: {
+        target_total: body.target_total,
+        budget_ceiling: body.budget_ceiling,
+        ...(typeof body.max_rounds === 'number' ? { max_rounds: body.max_rounds } : {}),
+        ...(typeof body.deadline_seconds === 'number' ? { deadline_seconds: body.deadline_seconds } : {}),
+      },
+    });
+    if (opened.status !== 200) return opened;
+    const tenderId = String((opened.body as { tender_id: string }).tender_id);
+    if (!runtime.tenderDrafts.move(draft.draftId, 'opened', tenderId)) {
+      // Unreachable while the reservation holds; kept so a lost race reads
+      // as a refusal, never as two drafts naming one tender.
+      return { status: 409, body: { error: 'draft_not_pending', tender_id: tenderId } };
+    }
+    retireDraftCard(draft.draftId, 'draft_opened');
+    return { status: 200, body: { ...(opened.body as Record<string, unknown>), draft_id: draft.draftId } };
+  }
+
+  router.post('/v1/commerce/trade/tender-drafts/dismiss', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const draft = typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
+    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    if (draftsOpening.has(draft.draftId)) return { status: 409, body: { error: 'draft_opening' } };
+    if (!runtime.tenderDrafts.move(draft.draftId, 'dismissed', '')) {
+      return { status: 409, body: { error: 'draft_not_pending' } };
+    }
+    retireDraftCard(draft.draftId, 'draft_dismissed');
+    return { status: 200, body: { ok: true, draft_id: draft.draftId } };
+  });
+
+  // HOSTED_DINA §6 — the owner's own supplier list. Tender drafts read it
+  // first, so a new Dina with no orders can still draft. Owner only.
+  router.get('/v1/commerce/trade/suppliers', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return {
+      status: 200,
+      body: {
+        suppliers: runtime.ownerSuppliers.list().map((s) => ({
+          supplier_did: s.supplierDid,
+          service_rkey: s.serviceRkey,
+          label: s.label,
+          name: supplierNameFor(s.supplierDid),
+          added_at: s.addedAt,
+        })),
+      },
+    };
+  });
+
+  router.post('/v1/commerce/trade/suppliers', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const parsed = parseOwnerSupplier((req.body ?? {}) as Record<string, unknown>);
+    if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
+    const listed = runtime.ownerSuppliers
+      .list()
+      .some((s) => s.supplierDid === parsed.supplier.supplierDid);
+    if (!listed && runtime.ownerSuppliers.count() >= MAX_OWNER_SUPPLIERS) {
+      return { status: 409, body: { error: 'too_many_suppliers' } };
+    }
+    runtime.ownerSuppliers.put({ ...parsed.supplier, addedAt: Date.now() });
+    return { status: 200, body: { ok: true, supplier_did: parsed.supplier.supplierDid } };
+  });
+
+  router.post('/v1/commerce/trade/suppliers/remove', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const did = typeof body.supplier_did === 'string' ? body.supplier_did : '';
+    if (!runtime.ownerSuppliers.remove(did)) {
+      return { status: 404, body: { error: 'no_such_supplier' } };
+    }
+    return { status: 200, body: { ok: true, supplier_did: did } };
   });
 
   // NEGOTIATION_PLAN §4.5 — the offers a tender holds, filtered then ordered.
@@ -8385,4 +8519,177 @@ async function goodsBuyerModelNow(): Promise<{
   } catch {
     return { model: null, closedPersonas: [], timeZone };
   }
+}
+
+/**
+ * Open a tender from an owner's request body: the phone's form, the console's
+ * draft form (OPENAI_DOTS_INTEGRATION §6.4), or any owner client. The caller
+ * has already checked who is asking.
+ */
+async function openTenderFromBody(
+  runtime: CommerceRuntime,
+  body: Record<string, unknown>,
+): Promise<CoreResponse> {
+  if (!Array.isArray(body.suppliers) || !Array.isArray(body.lines) || body.projection === null || typeof body.projection !== 'object') {
+    return { status: 400, body: { error: 'suppliers, lines and projection are required' } };
+  }
+  const suppliers: { supplierDid: string; serviceRkey: string }[] = [];
+  for (const entry of body.suppliers) {
+    const named = entry as Record<string, unknown>;
+    if (typeof named.supplier_did !== 'string' || typeof named.service_rkey !== 'string') {
+      return { status: 400, body: { error: 'every supplier names supplier_did and service_rkey' } };
+    }
+    suppliers.push({ supplierDid: named.supplier_did, serviceRkey: named.service_rkey });
+  }
+  // Who the owner's surface set aside (never asked) and why — a PeerLens
+  // reason it read; Core keeps it so the tender can say who was left out.
+  const notAsked: {
+    supplierDid: string;
+    serviceRkey: string;
+    reason: NotAskedReason;
+    note?: string;
+    listedFrom?: { currency: string; minor_units: string };
+  }[] = [];
+  if (body.not_asked !== undefined) {
+    if (!Array.isArray(body.not_asked)) {
+      return { status: 400, body: { error: 'not_asked must be an array' } };
+    }
+    for (const entry of body.not_asked) {
+      const named = (entry ?? {}) as Record<string, unknown>;
+      const listed = named.listed_from as Record<string, unknown> | undefined;
+      const listedOk =
+        listed === undefined ||
+        (listed !== null &&
+          typeof listed === 'object' &&
+          typeof listed.currency === 'string' &&
+          /^[A-Z]{3}$/.test(listed.currency) &&
+          typeof listed.minor_units === 'string' &&
+          /^(0|[1-9][0-9]{0,17})$/.test(listed.minor_units));
+      if (
+        typeof named.supplier_did !== 'string' ||
+        typeof named.service_rkey !== 'string' ||
+        !NOT_ASKED_REASONS.includes(named.reason as NotAskedReason) ||
+        (named.note !== undefined && typeof named.note !== 'string') ||
+        !listedOk
+      ) {
+        return {
+          status: 400,
+          body: {
+            error: `every not_asked entry names supplier_did, service_rkey and a reason (${NOT_ASKED_REASONS.join(', ')})`,
+          },
+        };
+      }
+      notAsked.push({
+        supplierDid: named.supplier_did,
+        serviceRkey: named.service_rkey,
+        reason: named.reason as NotAskedReason,
+        ...(typeof named.note === 'string' ? { note: named.note } : {}),
+        ...(listed !== undefined
+          ? {
+              listedFrom: {
+                currency: String(listed.currency),
+                minor_units: String(listed.minor_units),
+              },
+            }
+          : {}),
+      });
+    }
+  }
+  // §9.13 wire law is snake_case; the tender line input is an internal
+  // camelCase domain shape. Accept `line_id` and normalize to `lineId`
+  // so a hand-written or ported client follows the wire convention.
+  const tenderLines = (body.lines as Record<string, unknown>[]).map((line) =>
+    line.lineId === undefined && typeof line.line_id === 'string'
+      ? { ...line, lineId: line.line_id }
+      : line,
+  );
+  // NEGOTIATION_PLAN §4.5 — an optional policy: the loop counters toward
+  // `target_total`, never awards over `budget_ceiling`. Checked BEFORE any
+  // request leaves, so a bad policy never produces a half-started tender.
+  let negotiation: TenderPolicyInput | null = null;
+  if (body.negotiation !== undefined) {
+    const n = body.negotiation as Record<string, unknown> | null;
+    if (n === null || typeof n !== 'object' || typeof body.currency !== 'string') {
+      return { status: 400, body: { error: 'negotiation needs an object and the tender currency' } };
+    }
+    negotiation = {
+      currency: body.currency,
+      targetTotalMinor: String(n.target_total ?? ''),
+      budgetCeilingMinor: String(n.budget_ceiling ?? ''),
+      ...(typeof n.max_rounds === 'number' ? { maxRounds: n.max_rounds } : {}),
+      ...(typeof n.deadline_seconds === 'number' ? { deadlineSeconds: n.deadline_seconds } : {}),
+    };
+    const invalid = tenderPolicyError(negotiation);
+    if (invalid !== null) return { status: 400, body: { error: 'negotiation_invalid', detail: invalid } };
+  }
+  const created = await createTender({
+    suppliers,
+    ...(notAsked.length > 0 ? { notAsked } : {}),
+    lines: tenderLines as never,
+    projection: completeProjection(body.projection as Record<string, unknown>) as never,
+    ...(typeof body.currency === 'string' ? { currency: body.currency } : {}),
+    ...(typeof body.required_by === 'string' ? { requiredBy: body.required_by } : {}),
+    // COMMITMENT_KERNEL §6 step 0: the owner's own grant, per tender —
+    // suppliers may pass the pincode, and nothing else, to their shippers.
+    ...(body.share_pincode_with_shippers === true ? { sharePincodeWithShippers: true } : {}),
+    nowMs: runtime.now(),
+  });
+  if (created.ok && negotiation !== null) {
+    startTenderNegotiation(created.tenderId, negotiation, runtime.now());
+  }
+  return created.ok
+    ? {
+        status: 200,
+        body: {
+          ok: true,
+          tender_id: created.tenderId,
+          members: created.members,
+          negotiating: negotiation !== null,
+        },
+      }
+    : { status: 409, body: { error: created.refusal } };
+}
+
+/** The owner's own name for a supplier, when the supplier is a contact. */
+/** Drafts being opened right now (see the open route). */
+const draftsOpening = new Set<string>();
+
+/**
+ * The name a supplier goes by here: the contact's name, else the label the
+ * owner gave it on their supplier list (HOSTED_DINA §6; a new Dina has no
+ * contacts yet). Never a name the supplier or an agent supplied.
+ */
+function supplierNameFor(did: string): string | null {
+  const contact = getContact(did)?.displayName;
+  if (contact !== undefined && contact !== '') return contact;
+  const listed = getCommerceRuntime()
+    ?.ownerSuppliers.list()
+    .find((s) => s.supplierDid === did);
+  return listed !== undefined && listed.label !== '' ? listed.label : null;
+}
+
+/**
+ * OPENAI_DOTS_INTEGRATION §6.4 — who may use the draft lane: a paired agent
+ * (never a runner), on a live session of its own, with no non-owner job
+ * reserved on it. Unknown, foreign and ended sessions read alike.
+ */
+function tenderDraftAgent(
+  req: CoreRequest,
+  fields: Record<string, unknown>,
+): { agentDid: string } | CoreResponse {
+  if (req.callerType !== 'agent' || typeof req.callerDID !== 'string' || req.callerDID === '') {
+    return { status: 403, body: { error: 'access_denied' } };
+  }
+  if (req.agentScope === 'runner') {
+    return { status: 403, body: { error: 'agent_scope_not_allowed' } };
+  }
+  const sessionId = typeof fields.session_id === 'string' ? fields.session_id : '';
+  const registry = getSessionRegistry();
+  if (sessionId === '' || !registry.renew(sessionId, req.callerDID).ok) {
+    return { status: 401, body: { error: 'invalid_session' } };
+  }
+  if (registry.hasActiveNonOwnerAuthority(req.callerDID)) {
+    return { status: 403, body: { error: 'non_owner_session_restricted' } };
+  }
+  return { agentDid: req.callerDID };
 }

@@ -4354,6 +4354,44 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       UPDATE commitment_evidence SET broken_since = COALESCE(amended_at, recorded_at)
         WHERE outcome = 'broken';
     `,
+  },  {
+    // OPENAI_DOTS_INTEGRATION §6.4 — a tender an outside agent drafted: what
+    // the café needs, with the suppliers Core filled from its own trade
+    // history. No target, no ceiling: the owner adds those when opening it.
+    version: 82,
+    name: 'commerce_tender_drafts',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_tender_drafts (
+        draft_id TEXT PRIMARY KEY,
+        agent_did TEXT NOT NULL,
+        lines_json TEXT NOT NULL,
+        required_by TEXT NOT NULL DEFAULT '',
+        suppliers_json TEXT NOT NULL,
+        region_json TEXT NOT NULL DEFAULT '',
+        currency TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL CHECK (state IN ('pending', 'opened', 'dismissed')),
+        tender_id TEXT NOT NULL DEFAULT '',
+        created_at INTEGER NOT NULL,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_commerce_tender_drafts_agent
+        ON commerce_tender_drafts(agent_did, state);
+    `,
+  },
+  {
+    // HOSTED_DINA §6 — the owner's own supplier list. A new Dina has no orders
+    // or tenders to find suppliers in, so the owner adds them here; tender
+    // drafts read it first. Written only from owner routes.
+    version: 83,
+    name: 'commerce_owner_suppliers',
+    sql: `
+      CREATE TABLE IF NOT EXISTS commerce_owner_suppliers (
+        supplier_did TEXT PRIMARY KEY,
+        service_rkey TEXT NOT NULL,
+        label TEXT NOT NULL DEFAULT '',
+        added_at INTEGER NOT NULL
+      );
+    `,
   },
 ];
 
