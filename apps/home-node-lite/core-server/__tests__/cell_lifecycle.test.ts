@@ -67,6 +67,35 @@ describe('a cell Core and its gate', () => {
     }
   }, 30_000);
 
+  it('can still exit on its own while the gate lives (SIGTERM, a crash)', async () => {
+    // The watch must not pin a thread-pool read that `process.exit` waits on.
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cl-'));
+    const script = path.join(dir, 'core.ts');
+    fs.writeFileSync(
+      script,
+      `import { watchParent } from ${JSON.stringify(path.resolve(__dirname, '../src/server/cell_lifecycle'))};\n` +
+        `watchParent({ env: { DINA_PARENT_WATCH_FD: '3' }, logger: { warn: () => undefined },\n` +
+        `  close: async () => undefined, exit: (c) => process.exit(c) });\n` +
+        `process.on('SIGTERM', () => process.exit(0));\n` +
+        `setInterval(() => {}, 1000);\n`,
+    );
+    try {
+      const core = spawn(process.execPath, ['--import', 'tsx', script], {
+        cwd: path.resolve(__dirname, '..'),
+        stdio: ['ignore', 'ignore', 'inherit', 'pipe'],
+      });
+      await new Promise((r) => setTimeout(r, 1500));
+      const t0 = Date.now();
+      core.kill('SIGTERM'); // our end of the pipe stays open
+      const code = await new Promise<number | null>((resolve) => core.on('exit', resolve));
+      expect(code).toBe(0);
+      expect(Date.now() - t0).toBeLessThan(3_000);
+      (core.stdio[3] as net.Socket).destroy();
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it('does nothing without the variable, and refuses the standard streams', () => {
     const close = jest.fn(async () => undefined);
     watchParent({ env: {}, logger: { warn: () => undefined }, close });

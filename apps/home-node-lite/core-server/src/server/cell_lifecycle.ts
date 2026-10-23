@@ -9,7 +9,6 @@
  *   ends, and Core closes and exits, taking its keys with it.
  */
 
-import * as fs from 'node:fs';
 import * as net from 'node:net';
 
 /** True when something accepts a connection on this Unix socket. */
@@ -40,7 +39,11 @@ export function watchParent(opts: WatchParentOptions): void {
   const fd = Number(raw);
   if (!Number.isInteger(fd) || fd < 3) throw new Error('DINA_PARENT_WATCH_FD must be 3 or above');
   const exit = opts.exit ?? ((code: number) => process.exit(code));
-  const watch = fs.createReadStream('', { fd, autoClose: true });
+  // A socket on the event loop, never an fs stream: an fs read blocks a
+  // thread-pool thread until the gate writes or dies, and `process.exit`
+  // waits for that thread, so Core could not exit (SIGTERM, a crash) while
+  // its gate lived.
+  const watch = new net.Socket({ fd, readable: true, writable: false });
   let gone = false;
   const leave = (): void => {
     if (gone) return;

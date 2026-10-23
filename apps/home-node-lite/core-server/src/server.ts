@@ -29,6 +29,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4a tasks 4.6 + 4.7 + 4.10.
  */
 
+import { timingSafeEqual } from 'node:crypto';
+
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
@@ -299,10 +301,17 @@ export async function createServer(opts: CreateServerOptions) {
   // this budget would be ONE bucket for the dot, the owner's browser and every
   // stranger the gate forwards. There the bucket is the client the cell's gate
   // names in `x-dina-client` (the gate sets it from the address the cell's TLS
-  // front saw and drops any copy a browser sends); a caller with no such
-  // header is the front door or the gate itself, on the `local` bucket. Only
-  // the gate and the front door can open the socket, so the header is theirs.
+  // front saw and drops any copy a browser sends). The front door can open the
+  // same socket, so the header counts only beside `x-dina-gate-key`, a secret
+  // the gate hands this Core at start (`DINA_GATE_KEY`, same OS user only);
+  // anything else is the front door, on its own `local` bucket.
   const onSocket = config.network.socketPath !== undefined;
+  const gateKey = Buffer.from((process.env.DINA_GATE_KEY ?? '').trim());
+  const fromGate = (header: unknown): boolean => {
+    if (gateKey.length < 16 || typeof header !== 'string') return false;
+    const offered = Buffer.from(header);
+    return offered.length === gateKey.length && timingSafeEqual(offered, gateKey);
+  };
   await app.register(rateLimit, {
     max: config.runtime.rateLimitPerMinute,
     timeWindow: '1 minute',
@@ -316,8 +325,9 @@ export async function createServer(opts: CreateServerOptions) {
           isUcpGatewayRoute(req.method, req.url.split('?')[0] ?? ''))),
     keyGenerator: (req) => {
       if (!onSocket) return `ip:${req.ip}`;
+      if (!fromGate(req.headers['x-dina-gate-key'])) return 'local';
       const client = req.headers['x-dina-client'];
-      return typeof client === 'string' && client !== '' ? `client:${client}` : 'local';
+      return typeof client === 'string' && client !== '' ? `client:${client}` : 'gate';
     },
     // `@fastify/rate-limit` THROWS the return value of
     // errorResponseBuilder — it doesn't send it directly (see the

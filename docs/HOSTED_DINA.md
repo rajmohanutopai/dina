@@ -1,7 +1,8 @@
 # Hosted Dina: add the plugin, get a Dina
 
-**Status:** DESIGN, 2026-10-21. The demo cut (§10) is built, uncommitted; §12 says what
-was built, how it was checked, and what is not built.
+**Status:** DESIGN, 2026-10-21. The demo cut (§10) is built and committed
+(76961fab, 1c43b6f9); the 2026-10-22 fixes in §12 are not committed yet. §12
+says what was built, how it was checked, and what is not built.
 **Related:** `docs/OPENAI_DOTS_INTEGRATION.md` (the dot flow and the bridge),
 `docs/USER_BACKUP.md` (backup), `docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md`
 §17 (managed runtime rules), `docs/WEB_OWNER_SURFACE_PLAN.md` (owner in a
@@ -89,13 +90,37 @@ OpenAI's directory) and sign-up needs an invite code.
   capability a browser sends. Wrong passphrases are counted per client (IPv6
   by its /64), five per ten minutes, for unlock and connect-browser alike, so
   one stranger cannot lock the owner out; past twenty wrong passphrases from
-  anywhere in that window, every check waits longer (up to five seconds), at
-  most four run at once, and checks happen before the gate's busy flag, so
-  guessers never hold the gate against the owner. The client is the browser's own address: the
-  SNI router tells the cell's Caddy with a PROXY protocol line (accepted from
-  loopback only), Caddy hands it to the gate, and the gate passes it to Core
+  anywhere in that window, every check waits longer (up to five seconds,
+  before it joins the queue), and checks happen before the gate's busy flag,
+  so guessers never hold the gate against the owner. Checks a client has
+  waiting count against its five, so a burst gets no more than one guess
+  after another. The checks themselves (each a 128 MiB Argon2id run) happen
+  one at a time on a worker thread, off the gate's event loop, with a
+  20-second limit each, and a client with no recent failure is served ahead
+  of those who keep guessing. A check that cannot run (no memory, a stuck or
+  dead worker) answers "busy" and spends no try. Across the machine, each check also waits for
+  a turn from the provisioner (`max_kdf_checks`, four by default), asked as
+  fresh or repeat: fresh asks go first across the whole machine, so
+  guessers from a few addresses on many cells cannot starve an owner (many
+  addresses are another matter; see §12), and a repeat guesser waits at most
+  five seconds for a turn (a fresh client twenty). When a check takes over an
+  ask still waiting from an earlier check of the other kind, the gate sends
+  the new kind and the provisioner moves the ask to that queue, so an owner
+  never waits in a guesser's place. A turn that does not come answers "busy"
+  and costs nobody a try: it used no check, and an owner with one typo (who
+  now asks as repeat) must not be locked out by a busy machine. One turn
+  per cell at most, held 30 seconds at most (longer than a check's own
+  limit, so a turn is never taken back while its check runs), in the order
+  asked, over a
+  socket pair of the gate's own (`DINA_CELL_KDF_FD`) that carries only turns,
+  never a passphrase. The gate's own routes take only JSON from the
+  cell's own origin, so another web site cannot spend the owner's tries. The client is the browser's own address: the
+  SNI router tells the cell's Caddy with a PROXY protocol line (sent down a
+  Unix socket only the router can open), Caddy hands it to the gate, and the gate passes it to Core
   as `x-dina-client`, replacing any a browser sent, so Core's rate limit on
-  the socket is per client too. Every call the gate makes to Core has a time
+  the socket is per client too. Core honours that header only beside a key
+  the gate hands it at start (`DINA_GATE_KEY`), since the front door can open
+  the same socket. Every call the gate makes to Core has a time
   limit. The cell
   listens on two things only:
   - a Unix socket for agent calls, owned by the cell's user and connectable
@@ -103,11 +128,15 @@ OpenAI's directory) and sign-up needs an invite code.
     a socket path; Core's boot listens on host and port today, so this is
     new);
   - its owner origin, `<cell>.dina-owner.dinakernel.com`, reached by TLS
-    passthrough: an SNI router (`cli/src/dina_cli/sni_router.py`) forwards
+    passthrough: an SNI router (`dina dot-bridge sni-router`, run as a user
+    in the `sni_group`, never root; `cli/src/dina_cli/sni_router.py`) forwards
     the encrypted stream, and the cell ends TLS itself in its own Caddy,
     running as the cell's user, which makes the cell's TLS key, gets its
     certificate by ACME TLS-ALPN-01 through the passthrough, renews it, and
-    forwards to the gate's socket. No shared part ever holds that key:
+    forwards to the gate's socket. The router reaches each Caddy on a Unix
+    socket in a folder only the router's group may enter, so no other cell,
+    the front door or a local user can take a cell's place while its Caddy
+    restarts, or hand it a forged PROXY line. No shared part ever holds that key:
     whoever holds it could stand in for the owner page. `<cell>` is a random
     label, since every certificate name is published in public logs.
 - **The provisioner** creates, starts, stops and deletes cells. In
@@ -215,12 +244,16 @@ target and ceiling, awarding, adding suppliers, deleting.
   serves the unlock page; when the owner types the passphrase, the gate checks
   it against the wrapped seed and starts Core with it on an inherited pipe
   (`DINA_UNLOCK_PASSPHRASE_FD`), never in Core's environment. When Core stops
-  for any reason, the gate reports the cell locked again. Core in turn lives
+  for any reason, the gate reports a set-up cell locked again, and an
+  unfinished one (a seed with no set-up mark) failed, which the provisioner
+  sweeps; a restarted gate reports the same. Core in turn lives
   only as long as its gate: it watches a pipe the gate holds
   (`DINA_PARENT_WATCH_FD`) from the start of its boot and exits when the gate
   dies (after at most five seconds of graceful closing), and it refuses to
   start while another Core still answers on its socket. Before the gate shows
-  the recovery words it marks the cell `setup_complete`; the provisioner never
+  the recovery words it marks the cell `setup_complete`, flushed to disk
+  with its folder, so a crash cannot keep the seed and lose the mark; the
+  provisioner never
   removes a marked cell as an unfinished sign-up, whatever its gate is doing,
   and it stops the gate before it looks a last time, so a sign-up cannot
   finish behind its check.
@@ -354,7 +387,7 @@ phone as a second owner device.
    from the one running MsgBox and the PDS. The CEO demo may use the test
    machine.
 
-## 12. What is built (2026-10-21, uncommitted)
+## 12. What is built (committed 2026-10-22; later fixes below are not)
 
 **Code.**
 - Core: the `dot` scope (`auth/agent_scope.ts`), the owner supplier list
@@ -383,12 +416,68 @@ phone as a second owner device.
   it, the dot was told so, and the passphrase unlocked it.
 
 - Code review: three rounds, Claude and Codex (2026-10-22), 27 findings
-  fixed. The last round's two fixes (the delete race, guessing from many
+  fixed. Then an automated security review (2 findings) and a cold
+  attacker's-view audit by Claude and Codex (9 findings, 8 distinct), all
+  fixed and tested, not re-reviewed. The last round's two fixes (the delete race, guessing from many
   addresses) were tested here but not re-reviewed; no cold audit ran. A
   second local run on the final code passed sign-up through a ranked tender,
   and killing a cell's gate made its Core exit within two seconds.
+- 2026-10-22, after the audit fixes: a full run passed again (sign-up, a
+  ranked tender, award, lock and unlock). It found that Core could not exit
+  while its gate lived: the parent-pipe watch held a blocking read that
+  `process.exit` waits on, so a SIGTERM or a crash left Core half closed.
+  Fixed (the watch is a socket now) and tested. A reviewer then checked the
+  audit fixes and found the per-client limit broken by the new queue (a burst
+  from one address got 65 checks), a delay that held the one check slot, a
+  race in the worker's crash handling, a link thread that could die silently
+  or link for nobody, abandoned sign-ups filling `max_cells` (now swept once
+  their ticket is long expired), and registration that a flood could fill.
+  All fixed and tested. Also added: the machine-wide turn for passphrase
+  checks and `dina dot-bridge sni-router`. A first dual-review round of
+  these (Claude and Codex) found nine more: a turn taken back while its
+  check ran, two creates at once passing `max_cells`, a client store that
+  could pass its cap, a client waiting to exchange its code being dropped, a
+  worker fault counted as a wrong passphrase, a failed sign-up never cleaned
+  up when the person did not come back (the link thread now removes it and
+  returns the invite, and the sweep takes failed cells too), a race on the
+  front door's pending table, a weak worker test, and this status line. All
+  fixed and tested, and both reviewers then passed the result. A cold audit
+  (a fresh Claude and a fresh Codex) found four more: two submits of one
+  sign-up making two cells, the browser's five-minute owner code running out
+  while the words were written down (the page now pairs the browser when the
+  words appear), a failed sign-up found after a restart coming back
+  `locked` and never swept (a seed with no set-up mark now means `failed`,
+  every restarted gate reports its state, and the sweep uses the cell's age
+  when there is no ticket), and machine turns that let guessers on many
+  cells starve every owner (fixed as above). A fourth round (Claude and
+  Codex) checked those four: three held; the fourth did not, since an
+  owner's check could wait on a guesser's timed-out repeat ask (now
+  relabelled on the wire). It also found that busy answers charged an owner
+  with one typo (busy is now free for everyone), the recovery button going
+  to `/owner` instead of the passphrase page at `/`, an unflushed set-up
+  mark, and doc drift. All fixed and tested; these fixes are not
+  re-reviewed. None of this is committed yet.
 
 **Not built or not run.**
+- Caddy's TLS-ALPN challenge with no TCP listener: with no
+  `alt_tlsalpn_port`, CertMagic may try to bind port 443 as the cell's user,
+  fail with "permission denied", and give up. It may need a free high port
+  per cell. Whether Caddy's PROXY wrapper accepts a peer on a Unix socket
+  depends on its version. A run with Caddy and Pebble must settle both.
+- Registration is still limited to 30 a minute for everyone together, so a
+  flood can delay ChatGPT's own registrations while it lasts. A full store
+  drops the oldest unused client, keeps those with live tokens, a sign-up or
+  a code under way, and refuses only when all are in use. A limit per
+  address needs the client's address from the front door's TLS front.
+- A guesser with many addresses (IPv4, or many IPv6 /64s) counts as many
+  fresh clients: each is ahead of the repeat guessers, in the gate and in
+  the machine's turns, and level with the owner.
+- No real browser runs the cell page's script. A test runs the sign-up
+  path on a small fake DOM: pairing starts when the words appear, and a
+  failed pairing keeps the way back and the passphrase page. IndexedDB and
+  the other pages are not covered.
+- A cell's Caddy on a Unix socket with TLS-ALPN-01 and the PROXY line, and
+  the router's group, have not been run against a real Caddy and ACME.
 - Production mode (`isolate`): the separate provisioner, per-cell OS users,
   folder and socket permissions, per-cell Caddy (its Caddyfile, PROXY
   protocol included, has not been parsed by a real Caddy) and the SNI router

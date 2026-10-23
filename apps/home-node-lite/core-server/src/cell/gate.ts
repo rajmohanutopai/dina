@@ -29,12 +29,13 @@ import * as path from 'node:path';
 
 import Fastify, { type FastifyInstance, type FastifyReply, type FastifyRequest } from 'fastify';
 
-import { readWrappedSeed, unwrapSeed } from '@dina/core';
+import { readWrappedSeed } from '@dina/core';
 
 import { recoveryPhraseFromWrapped, WRAPPED_SEED_NAME } from '../identity/master_seed';
 import { socketAnswers } from '../server/cell_lifecycle';
 
 import { GATE_PAGE_HEADERS, renderGatePage } from './gate_pages';
+import { createWorkerChecker, type KdfSlot, type PassphraseChecker } from './kdf_worker';
 
 export type GateState = 'new' | 'starting' | 'unlocked' | 'locked' | 'failed';
 
@@ -58,8 +59,12 @@ export interface GateOptions {
   vaultDir: string;
   /** The Unix socket Core listens on. */
   coreSocket: string;
-  /** Start Core with this passphrase on its unlock pipe. */
-  spawnCore(passphrase: string): CoreHandle;
+  /**
+   * Start Core with this passphrase on its unlock pipe and this gate key in
+   * its environment (`DINA_GATE_KEY`): Core trusts `x-dina-client` only beside
+   * it, so the front door, which shares Core's socket, cannot name a client.
+   */
+  spawnCore(passphrase: string, gateKey: string): CoreHandle;
   /** Report to the provisioner. */
   emit(event: GateEvent): void;
   now?: () => number;
@@ -68,7 +73,8 @@ export interface GateOptions {
   coreReadyTimeoutMs?: number;
   minPassphraseLength?: number;
   /** Shorter Argon2 for tests; production uses Core's defaults. */
-  verifyPassphrase?(passphrase: string): Promise<boolean>;
+  /** Null when the check could not run (counted as no try). */
+  verifyPassphrase?(passphrase: string): Promise<boolean | null>;
   /** The front door's origin: the only place a finished sign-up may return to. */
   frontDoorOrigin?: string;
   /**
@@ -79,6 +85,13 @@ export interface GateOptions {
   trustForwardedFor?: boolean;
   /** Longest wait for one call to Core (default 15 s). */
   coreCallTimeoutMs?: number;
+  /**
+   * A turn among all the machine's cells before each passphrase check (the
+   * provisioner's limit on Argon2 memory), asked as fresh or repeat so the
+   * machine serves clients with no recent failure first. Without it, checks
+   * are limited per gate only.
+   */
+  kdfSlot?: KdfSlot;
 }
 
 const TICKET_TTL_MS = 10 * 60 * 1000;
@@ -89,8 +102,9 @@ const UNLOCK_ATTEMPTS = 5;
 const UNLOCK_WINDOW_MS = 10 * 60 * 1000;
 /** Clients whose failures are remembered; the oldest go first past this. */
 const MAX_TRACKED_CLIENTS = 10_000;
-/** Passphrase checks (each an Argon2id unwrap) that may run at once. */
-const MAX_CHECKS = 4;
+/** Checks that may wait, per queue: clients with no recent failure, and the rest. */
+const MAX_WAITING_FRESH = 64;
+const MAX_WAITING_REPEAT = 16;
 /** Wrong passphrases from anywhere in a window before checks slow down. */
 const GLOBAL_QUIET_FAILURES = 20;
 const GLOBAL_DELAY_STEP_MS = 250;
@@ -125,18 +139,52 @@ export function createGate(opts: GateOptions): Gate {
   const now = opts.now ?? Date.now;
   const minLength = opts.minPassphraseLength ?? MIN_PASSPHRASE;
   const wrappedPath = path.join(opts.vaultDir, WRAPPED_SEED_NAME);
-  let state: GateState = fs.existsSync(wrappedPath) ? 'locked' : 'new';
+  // Someone's Dina: set up, its words shown. A seed without the mark is a
+  // sign-up that never finished (nobody holds its words): it stays failed,
+  // never unlockable, and the provisioner removes it.
+  const isSetUp = (): boolean =>
+    fs.existsSync(wrappedPath) && fs.existsSync(path.join(opts.vaultDir, SETUP_COMPLETE));
+  let state: GateState = isSetUp() ? 'locked' : fs.existsSync(wrappedPath) ? 'failed' : 'new';
   let core: CoreHandle | null = null;
   let ticket: { value: Buffer; expiresAt: number } | null = null;
   let busy = false;
+  const gateKey = randomBytes(24).toString('hex');
   // Wrong passphrases, for unlock and connect-browser alike. Per client, so
   // one stranger's guesses cannot lock the owner out; and across all clients,
   // so guessing from many addresses slows down for everyone who keeps
   // guessing. A check runs before the gate's busy flag is taken, so guesses
-  // never hold the gate, and at most MAX_CHECKS run at once.
+  // never hold the gate.
   const failures = new Map<string, number[]>();
   const allFailures: number[] = [];
-  let checking = 0;
+  // One check runs at a time (on the worker, off the event loop). Clients
+  // with no recent failure are served first, so the owner is not stuck
+  // behind someone who keeps guessing; each queue is capped.
+  const fresh: (() => void)[] = [];
+  const repeat: (() => void)[] = [];
+  let running = false;
+  const pump = (): void => {
+    if (running) return;
+    const next = fresh.shift() ?? repeat.shift();
+    if (next === undefined) return;
+    running = true;
+    next();
+  };
+  const inTurn = async <T>(isFresh: boolean, run: () => Promise<T>): Promise<T> => {
+    const queue = isFresh ? fresh : repeat;
+    if (queue.length >= (isFresh ? MAX_WAITING_FRESH : MAX_WAITING_REPEAT)) {
+      throw new GateError(429, 'too_many_attempts');
+    }
+    await new Promise<void>((resolve) => {
+      queue.push(resolve);
+      pump();
+    });
+    try {
+      return await run();
+    } finally {
+      running = false;
+      pump();
+    }
+  };
 
   const recentFailures = (client: string, t: number): number[] => {
     const list = (failures.get(client) ?? []).filter((at) => at >= t - UNLOCK_WINDOW_MS);
@@ -157,30 +205,62 @@ export function createGate(opts: GateOptions): Gate {
     }
     allFailures.push(t);
   };
+  // Checks a client has waiting or running: they count against its tries, so
+  // a burst of requests at once gets no more checks than one after another.
+  const inFlight = new Map<string, number>();
   /** Check a passphrase against the wrapped seed, counting a miss against this client. */
   const checkPassphrase = async (client: string, raw: unknown): Promise<string> => {
     const t = now();
-    if (recentFailures(client, t).length >= UNLOCK_ATTEMPTS) {
-      throw new GateError(429, 'too_many_attempts');
+    const past = recentFailures(client, t).length;
+    const pending = inFlight.get(client) ?? 0;
+    if (past + pending >= UNLOCK_ATTEMPTS) throw new GateError(429, 'too_many_attempts');
+    const passphrase = typeof raw === 'string' ? raw : '';
+    if (passphrase === '' || passphrase.length > MAX_PASSPHRASE) {
+      noteFailure(client, t);
+      throw new GateError(401, 'wrong_passphrase');
     }
-    if (checking >= MAX_CHECKS) throw new GateError(429, 'too_many_attempts');
     while ((allFailures[0] ?? Infinity) < t - UNLOCK_WINDOW_MS) allFailures.shift();
-    checking += 1;
+    inFlight.set(client, pending + 1);
+    let opened: boolean | null;
     try {
       // Past a quiet level, each check waits longer the more wrong
-      // passphrases there have been lately, from anywhere.
+      // passphrases there have been lately, from anywhere. The wait comes
+      // before the queue, so it never holds the one check that runs.
       const over = allFailures.length - GLOBAL_QUIET_FAILURES;
       if (over > 0) await sleep(Math.min(MAX_GLOBAL_DELAY_MS, over * GLOBAL_DELAY_STEP_MS));
-      const passphrase = typeof raw === 'string' ? raw : '';
-      if (passphrase === '' || passphrase.length > MAX_PASSPHRASE || !(await verify(passphrase))) {
-        noteFailure(client, t);
-        throw new GateError(401, 'wrong_passphrase');
-      }
-      failures.delete(client);
-      return passphrase;
+      const isFresh = past === 0 && pending === 0;
+      opened = await inTurn(isFresh, async () => {
+        let release: (() => void) | null = null;
+        if (opts.kdfSlot !== undefined) {
+          try {
+            release = await opts.kdfSlot(isFresh);
+          } catch {
+            // No turn came. That says nothing about the passphrase and used
+            // no check, so it costs nobody a try: an owner with one typo
+            // must not be locked out by a busy machine. Guessers gain
+            // nothing by asking again, since fresh asks go first.
+            throw new GateError(503, 'busy');
+          }
+        }
+        try {
+          return await verify(passphrase);
+        } finally {
+          release?.();
+        }
+      });
     } finally {
-      checking -= 1;
+      const left = (inFlight.get(client) ?? 1) - 1;
+      if (left > 0) inFlight.set(client, left);
+      else inFlight.delete(client);
     }
+    // A check that could not run says nothing about the passphrase.
+    if (opened === null) throw new GateError(503, 'busy');
+    if (!opened) {
+      noteFailure(client, now());
+      throw new GateError(401, 'wrong_passphrase');
+    }
+    failures.delete(client);
+    return passphrase;
   };
 
   const setState = (next: GateState): void => {
@@ -196,18 +276,26 @@ export function createGate(opts: GateOptions): Gate {
       ticket: value.toString('base64url'),
       expires_at: ticket.expiresAt,
     });
+  } else {
+    // Tell the provisioner where a restarted cell stands (locked, or a
+    // sign-up that never finished).
+    opts.emit({ event: 'state', state });
   }
 
-  const verify =
-    opts.verifyPassphrase ??
-    (async (passphrase: string): Promise<boolean> => {
-      try {
-        await unwrapSeed(passphrase, readWrappedSeed(wrappedPath));
-        return true;
-      } catch {
-        return false;
-      }
-    });
+  const checker = opts.verifyPassphrase === undefined ? createWorkerChecker() : null;
+  // True or false for the passphrase; null when the check could not run.
+  const verify = async (passphrase: string): Promise<boolean | null> => {
+    if (opts.verifyPassphrase !== undefined) return opts.verifyPassphrase(passphrase);
+    try {
+      const result = await (checker as PassphraseChecker).check(
+        passphrase,
+        readWrappedSeed(wrappedPath),
+      );
+      return result === 'fault' ? null : result === 'opened';
+    } catch {
+      return null;
+    }
+  };
 
   // ── Core ──────────────────────────────────────────────────────────────
 
@@ -215,14 +303,14 @@ export function createGate(opts: GateOptions): Gate {
     // A Core still answering (an old one outlived its gate) must go first;
     // Core itself refuses to start on a live socket.
     if (await socketAnswers(opts.coreSocket)) throw new GateError(409, 'core_still_running');
-    const handle = opts.spawnCore(passphrase);
+    const handle = opts.spawnCore(passphrase, gateKey);
     core = handle;
     void handle.exited.then(() => {
       if (core === handle) {
         core = null;
         // A Core that stops takes its keys with it: the cell is locked until
         // the owner unlocks it, whatever state it was in.
-        setState(fs.existsSync(wrappedPath) ? 'locked' : 'failed');
+        setState(isSetUp() ? 'locked' : 'failed');
       }
     });
     const deadline = now() + (opts.coreReadyTimeoutMs ?? 120_000);
@@ -246,7 +334,9 @@ export function createGate(opts: GateOptions): Gate {
     timeoutMs = opts.coreCallTimeoutMs ?? 15_000,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const payload = body === undefined ? undefined : Buffer.from(JSON.stringify(body));
-    const headers: Record<string, string> = {};
+    // The gate's own calls: its key, and no client, so Core counts them on a
+    // bucket of the gate's own.
+    const headers: Record<string, string> = { 'x-dina-gate-key': gateKey };
     if (payload !== undefined) headers['content-type'] = 'application/json';
     if (owner) headers['x-dina-owner-capability'] = ownerCapability();
     return new Promise((resolve, reject) => {
@@ -371,7 +461,9 @@ export function createGate(opts: GateOptions): Gate {
         opts.emit({ event: 'bootstrap', code: boot.code, expires_at: boot.expiresAt });
       // Mark the cell as someone's before the words leave: from here on the
       // provisioner never removes it as an unfinished sign-up.
-      fs.writeFileSync(path.join(opts.vaultDir, SETUP_COMPLETE), String(now()), { mode: 0o600 });
+      // Flushed to disk, file and folder: a crash that kept the seed but lost
+      // the mark would leave the cell failed, and it would be removed.
+      writeDurably(opts.vaultDir, SETUP_COMPLETE, String(now()));
       setState('unlocked');
       return { words, owner_device_code: code };
     } catch (err) {
@@ -438,6 +530,14 @@ export function createGate(opts: GateOptions): Gate {
     ) =>
     async (req: FastifyRequest, reply: FastifyReply): Promise<void> => {
       reply.headers(GATE_PAGE_HEADERS);
+      // Only the cell's own page may post here: JSON (a cross-site form or
+      // no-cors fetch cannot send it without a preflight, which the gate never
+      // grants), and no foreign Origin or fetch site. Refused before any
+      // passphrase is checked, so another site cannot spend the owner's tries.
+      if (!sameOriginJson(req)) {
+        await reply.code(403).send({ error: 'cross_site' });
+        return;
+      }
       const body = jsonBody(req.body);
       // The passphrase is checked first, outside the busy flag, so guessers
       // (refused or wrong) never hold the gate against the owner.
@@ -510,7 +610,7 @@ export function createGate(opts: GateOptions): Gate {
       await reply.code(401).headers(GATE_PAGE_HEADERS).send({ error: 'sign_in_first' });
       return;
     }
-    await forward(req, reply, opts.coreSocket, clientOf(req));
+    await forward(req, reply, opts.coreSocket, clientOf(req), gateKey);
   });
 
   return {
@@ -520,6 +620,7 @@ export function createGate(opts: GateOptions): Gate {
       const handle = core;
       core = null;
       await handle?.stop();
+      await checker?.close();
       await app.close();
     },
   };
@@ -531,11 +632,14 @@ async function forward(
   reply: FastifyReply,
   socketPath: string,
   client: string,
+  gateKey: string,
 ): Promise<void> {
   const headers: http.OutgoingHttpHeaders = { ...req.headers };
   delete headers['x-dina-owner-capability'];
-  // Core keys its budget for forwarded calls on this; only the gate sets it.
+  // Core keys its budget for forwarded calls on this; only the gate sets it,
+  // and proves it with its key (any copy a browser sent is overwritten).
   headers['x-dina-client'] = client;
+  headers['x-dina-gate-key'] = gateKey;
   delete headers.host;
   delete headers.connection;
   const body = Buffer.isBuffer(req.body) ? req.body : undefined;
@@ -594,6 +698,23 @@ function postalAreaOf(raw: unknown): string {
   return value;
 }
 
+/** Write a file and flush it and its folder to disk before returning. */
+function writeDurably(dir: string, name: string, data: string): void {
+  const fd = fs.openSync(path.join(dir, name), 'w', 0o600);
+  try {
+    fs.writeSync(fd, data);
+    fs.fsyncSync(fd);
+  } finally {
+    fs.closeSync(fd);
+  }
+  const dirFd = fs.openSync(dir, 'r');
+  try {
+    fs.fsyncSync(dirFd);
+  } finally {
+    fs.closeSync(dirFd);
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -612,4 +733,24 @@ export function clientKey(address: string): string {
     .slice(0, 4)
     .map((g) => g.toLowerCase().replace(/^0+(?=.)/, ''))
     .join(':')}::/64`;
+}
+
+/** A JSON request from the cell's own origin (or a client that names none). */
+function sameOriginJson(req: FastifyRequest): boolean {
+  const type = String(req.headers['content-type'] ?? '')
+    .split(';')[0]
+    ?.trim()
+    .toLowerCase();
+  if (type !== 'application/json') return false;
+  const site = req.headers['sec-fetch-site'];
+  if (typeof site === 'string' && site !== 'same-origin' && site !== 'none') return false;
+  const origin = req.headers.origin;
+  if (typeof origin === 'string') {
+    try {
+      if (new URL(origin).host !== req.headers.host) return false;
+    } catch {
+      return false;
+    }
+  }
+  return true;
 }

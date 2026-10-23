@@ -142,8 +142,30 @@ setup_remote() {
 # ── Step 2: Generate Caddyfile from config ──
 generate_caddyfile() {
     info "Generating Caddyfile..."
+    # Behind the hosting machine's SNI router (docs/HOSTED_DINA.md §3.1;
+    # gated on CADDY_HTTPS_PUBLISH): the router holds port 443, passes every
+    # name that is not a cell to this Caddy, still encrypted, and starts each
+    # stream with a PROXY line naming the client. Only Docker's own networks
+    # (where the router's streams arrive from) may send that line. No HTTP/3:
+    # UDP 443 does not reach this Caddy.
+    local global=""
+    if [ -n "${CADDY_HTTPS_PUBLISH:-}" ]; then
+        global=$(printf '%s\n' \
+            "{" \
+            "	servers {" \
+            "		listener_wrappers {" \
+            "			proxy_protocol {" \
+            "				allow 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8 127.0.0.1/32" \
+            "			}" \
+            "			tls" \
+            "		}" \
+            "		protocols h1 h2" \
+            "	}" \
+            "}")
+    fi
     cat > "$SCRIPT_DIR/Caddyfile" << EOF
 # Auto-generated for ${ENV_LABEL} from infra-${ENV_NAME}.env. Do not edit manually.
+${global}
 
 ${PDS_HOST} {
 	reverse_proxy pds:3000
@@ -187,6 +209,17 @@ EOF
 
 ${DOT_BRIDGE_HOST} {
 	reverse_proxy dot-bridge:8765
+}
+EOF
+    fi
+
+    # Hosted Dinas' front door (docs/HOSTED_DINA.md §3.1), running on the
+    # host as its own user, not in Docker. Gated on HOSTED_FRONT_DOOR_HOST.
+    if [ -n "${HOSTED_FRONT_DOOR_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${HOSTED_FRONT_DOOR_HOST} {
+	reverse_proxy ${HOSTED_FRONT_DOOR_UPSTREAM:-host.docker.internal:8765}
 }
 EOF
     fi
@@ -477,6 +510,21 @@ sync_dot_bridge_env() {
         chmod 600 .env"
 }
 
+# -- Step 5e: Where Caddy's HTTPS port is published --
+# Empty: port 443, as always. Behind the hosting SNI router, a local address
+# such as 127.0.0.1:8443 (see generate_caddyfile).
+sync_caddy_publish_env() {
+    info "Syncing Caddy publish env block..."
+    local block
+    block=$(printf '%s\n' \
+        "# >>> caddy-publish (managed by deploy_shared_infra.sh - do not edit)" \
+        "CADDY_HTTPS_PUBLISH=${CADDY_HTTPS_PUBLISH:-443}" \
+        "# <<< caddy-publish")
+    printf '%s\n' "$block" | ssh "$REMOTE" "cd $REMOTE_DIR/deploy && touch .env && \
+        sed -i '/# >>> caddy-publish/,/# <<< caddy-publish/d' .env && cat >> .env && \
+        chmod 600 .env"
+}
+
 # ── Step 5: Generate secrets if not present ──
 generate_secrets() {
     info "Checking secrets..."
@@ -642,6 +690,7 @@ case "$ACTION" in
         sync_grants_env
         sync_ucp_env
         sync_dot_bridge_env
+        sync_caddy_publish_env
         prepare_compose
         start_services
         reload_caddy
@@ -657,6 +706,7 @@ case "$ACTION" in
         sync_grants_env
         sync_ucp_env
         sync_dot_bridge_env
+        sync_caddy_publish_env
         prepare_compose
         ssh "$REMOTE" "
             cd $REMOTE_DIR/deploy &&

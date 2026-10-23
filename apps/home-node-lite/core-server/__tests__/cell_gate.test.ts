@@ -45,8 +45,11 @@ let gate: Gate;
 let spawned: string[];
 let handles: CoreHandle[];
 
-function fakeCore(): (passphrase: string) => CoreHandle {
-  return (passphrase) => {
+let lastGateKey = '';
+
+function fakeCore(): (passphrase: string, gateKey: string) => CoreHandle {
+  return (passphrase, gateKey) => {
+    lastGateKey = gateKey;
     spawned.push(passphrase);
     let exit: (code: number | null) => void = () => undefined;
     const exited = new Promise<number | null>((resolve) => (exit = resolve));
@@ -91,6 +94,7 @@ function fakeCore(): (passphrase: string) => CoreHandle {
       page: 'owner',
       saw_capability: req.headers['x-dina-owner-capability'] ?? null,
       client: req.headers['x-dina-client'] ?? null,
+      gate_key: req.headers['x-dina-gate-key'] ?? null,
     }));
     const ready = (async () => {
       // Core's first boot: the seed, wrapped under the passphrase it was given.
@@ -247,7 +251,13 @@ describe('running, locking and unlocking', () => {
       headers: { 'x-dina-owner-capability': 'stolen', 'x-dina-client': 'forged' },
     });
     // No capability passes, and the client name is the gate's, not the browser's.
-    expect(res.json()).toEqual({ page: 'owner', saw_capability: null, client: '127.0.0.1' });
+    expect(res.json()).toEqual({
+      page: 'owner',
+      saw_capability: null,
+      client: '127.0.0.1',
+      gate_key: lastGateKey,
+    });
+    expect(lastGateKey).toHaveLength(48);
   }, 30_000);
 
   it('locks when Core stops, and opens again only with the passphrase', async () => {
@@ -300,6 +310,31 @@ describe('running, locking and unlocking', () => {
     expect(res.headers['cache-control']).toBe('no-store');
     expect(res.body).toContain('"new"');
     expect(res.body).toContain('"https://chatgpt.dinakernel.test"');
+  });
+});
+
+describe('a sign-up that never finished (cold audit)', () => {
+  it('comes back failed after a restart, reports it, and cannot be unlocked', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    await gate.close();
+    // As if the gate died after Core wrote the seed but before the mark.
+    fs.rmSync(path.join(vaultDir, 'setup_complete'));
+    events = [];
+    start();
+    expect(gate.state()).toBe('failed');
+    expect(events).toEqual([{ event: 'state', state: 'failed' }]);
+    const r = await post('/cell/unlock', { passphrase: PASS });
+    expect(r.status).toBe(409);
+  });
+
+  it('reports a set-up cell as locked when it restarts', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    await gate.close();
+    events = [];
+    start();
+    expect(events).toEqual([{ event: 'state', state: 'locked' }]);
   });
 });
 
@@ -453,30 +488,212 @@ describe('guessing from many addresses (code review round 3)', () => {
     });
   }, 60_000);
 
-  it('never makes the owner wait on the busy flag because of guessers', async () => {
+  it('serves a client with no failures ahead of guessers, and never answers the owner busy', async () => {
     start();
     expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
     await gate.close();
-    let release: () => void = () => undefined;
-    const held = new Promise<void>((r) => (release = r));
+    const order: string[] = [];
+    let releaseFirst: () => void = () => undefined;
+    const firstHeld = new Promise<void>((r) => (releaseFirst = r));
     gate = createGate({
       vaultDir,
       coreSocket: socket,
       spawnCore: fakeCore(),
       emit: (e) => events.push(e),
       trustForwardedFor: true,
-      // A guesser's check that has not finished yet.
       verifyPassphrase: async (p) => {
-        if (p !== PASS) await held;
+        order.push(p);
+        if (p === 'first slow guess') await firstHeld;
         return p === PASS;
       },
     });
-    const guess = post('/cell/unlock', { passphrase: 'a slow wrong one' }, '198.51.100.1');
-    await new Promise((r) => setTimeout(r, 50));
+    // Two guessers who have each failed before.
+    await post('/cell/unlock', { passphrase: 'earlier wrong one' }, '198.51.100.1');
+    await post('/cell/unlock', { passphrase: 'earlier wrong two' }, '198.51.100.2');
+    // One runs a slow check; the other queues behind it; then the owner arrives.
+    const slow = post('/cell/unlock', { passphrase: 'first slow guess' }, '198.51.100.1');
+    await new Promise((r) => setTimeout(r, 30));
+    const repeatGuess = post('/cell/unlock', { passphrase: 'queued repeat guess' }, '198.51.100.2');
+    await new Promise((r) => setTimeout(r, 30));
+    const owner = post('/cell/unlock', { passphrase: PASS }, '192.0.2.10');
+    await new Promise((r) => setTimeout(r, 30));
+    releaseFirst();
+    expect((await owner).body).toEqual({ ok: true });
+    await slow;
+    await repeatGuess;
+    // The owner's check ran before the repeat guesser's, though it came later.
+    expect(order.indexOf(PASS)).toBeLessThan(order.indexOf('queued repeat guess'));
+  }, 60_000);
+
+  it('gives a burst from one client no more checks than its five tries, and keeps the owner first', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    await gate.close();
+    const checked: string[] = [];
+    gate = createGate({
+      vaultDir,
+      coreSocket: socket,
+      spawnCore: fakeCore(),
+      emit: (e) => events.push(e),
+      trustForwardedFor: true,
+      verifyPassphrase: async (p) => {
+        checked.push(p);
+        await new Promise((r) => setTimeout(r, 20));
+        return p === PASS;
+      },
+    });
+    const burst = Array.from({ length: 70 }, (_, i) =>
+      post('/cell/unlock', { passphrase: `burst guess ${i}` }, '198.51.100.7'),
+    );
+    await new Promise((r) => setTimeout(r, 10));
+    const owner = post('/cell/unlock', { passphrase: PASS }, '192.0.2.10');
+    const out = await Promise.all(burst);
+    expect(out.filter((r) => r.status === 401)).toHaveLength(5);
+    expect(out.filter((r) => r.status === 429)).toHaveLength(65);
+    expect((await owner).body).toEqual({ ok: true });
+    // The owner waited behind at most the one check already running.
+    expect(checked.indexOf(PASS)).toBeLessThanOrEqual(1);
+  }, 60_000);
+
+  it('charges nobody for a turn the machine could not give, even an owner after a typo', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    await gate.close();
+    let busy = false;
+    const asked: boolean[] = [];
+    gate = createGate({
+      vaultDir,
+      coreSocket: socket,
+      spawnCore: fakeCore(),
+      emit: (e) => events.push(e),
+      trustForwardedFor: true,
+      verifyPassphrase: async (p) => p === PASS,
+      kdfSlot: async (fresh) => {
+        asked.push(fresh);
+        if (busy) throw new Error('no slot in time');
+        return () => undefined;
+      },
+    });
+    // The owner mistypes once, so now asks as a repeat client.
+    expect((await post('/cell/unlock', { passphrase: 'a typo here' }, '192.0.2.10')).status).toBe(
+      401,
+    );
+    busy = true;
+    for (let i = 0; i < 8; i++) {
+      expect((await post('/cell/unlock', { passphrase: PASS }, '192.0.2.10')).status).toBe(503);
+    }
+    // Busy answers spent none of the five tries.
+    busy = false;
     expect((await post('/cell/unlock', { passphrase: PASS }, '192.0.2.10')).body).toEqual({
       ok: true,
     });
-    release();
-    expect((await guess).status).toBe(401);
+    expect(asked[0]).toBe(true); // before the typo: fresh
+    expect(asked.slice(1).every((f) => !f)).toBe(true); // after it: repeat
+  }, 60_000);
+
+  it('answers busy and spends no try when a check cannot run', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    await gate.close();
+    let faulty = true;
+    gate = createGate({
+      vaultDir,
+      coreSocket: socket,
+      spawnCore: fakeCore(),
+      emit: (e) => events.push(e),
+      trustForwardedFor: true,
+      verifyPassphrase: async (p) => (faulty ? null : p === PASS),
+    });
+    // The owner's right passphrase, over and over, while checks fault.
+    for (let i = 0; i < 7; i++) {
+      const r = await post('/cell/unlock', { passphrase: PASS }, '192.0.2.10');
+      expect(r.status).toBe(503);
+      expect(r.body).toEqual({ error: 'busy' });
+    }
+    faulty = false;
+    expect((await post('/cell/unlock', { passphrase: PASS }, '192.0.2.10')).body).toEqual({
+      ok: true,
+    });
+  }, 60_000);
+
+  it('takes a turn among all cells for every check, and counts no miss when none comes', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    await gate.close();
+    let slotFree = false;
+    let held = 0;
+    let given = 0;
+    gate = createGate({
+      vaultDir,
+      coreSocket: socket,
+      spawnCore: fakeCore(),
+      emit: (e) => events.push(e),
+      trustForwardedFor: true,
+      verifyPassphrase: async (p) => {
+        expect(held).toBe(1); // every check runs inside a turn
+        return p === PASS;
+      },
+      kdfSlot: async () => {
+        if (!slotFree) throw new Error('no slot in time');
+        held += 1;
+        return () => {
+          held -= 1;
+          given += 1;
+        };
+      },
+    });
+    // No turn: busy, and not counted as a wrong passphrase.
+    for (let i = 0; i < 6; i++) {
+      const r = await post('/cell/unlock', { passphrase: 'a wrong passphrase' }, '192.0.2.10');
+      expect(r.status).toBe(503);
+      expect(r.body).toEqual({ error: 'busy' });
+    }
+    slotFree = true;
+    expect(
+      (await post('/cell/unlock', { passphrase: 'a wrong passphrase' }, '192.0.2.10')).status,
+    ).toBe(401);
+    expect((await post('/cell/unlock', { passphrase: PASS }, '192.0.2.10')).body).toEqual({
+      ok: true,
+    });
+    // Each turn went back, right or wrong.
+    expect(held).toBe(0);
+    expect(given).toBe(2);
+  }, 60_000);
+});
+
+describe('posts from other sites (security audit)', () => {
+  it('refuses a cross-site or non-JSON post before checking any passphrase', async () => {
+    start();
+    expect((await post('/cell/setup', { ticket: ticketOf(), passphrase: PASS })).status).toBe(200);
+    const tries = async (headers: Record<string, string>) =>
+      gate.app.inject({
+        method: 'POST',
+        url: '/cell/connect-browser',
+        payload: JSON.stringify({ passphrase: 'a wrong passphrase' }),
+        headers,
+      });
+    const plain = await tries({ 'content-type': 'text/plain' });
+    expect(plain.statusCode).toBe(403);
+    expect(plain.json()).toEqual({ error: 'cross_site' });
+    const foreign = await tries({
+      'content-type': 'application/json',
+      origin: 'https://evil.example',
+      host: 'abc.dina-owner.test',
+    });
+    expect(foreign.statusCode).toBe(403);
+    const crossFetch = await tries({
+      'content-type': 'application/json',
+      'sec-fetch-site': 'cross-site',
+    });
+    expect(crossFetch.statusCode).toBe(403);
+    // None of those counted: the owner still has all five tries.
+    for (let i = 0; i < 4; i++) {
+      expect(
+        (await post('/cell/connect-browser', { passphrase: `wrong ${i} passphrase` })).status,
+      ).toBe(401);
+    }
+    expect((await post('/cell/connect-browser', { passphrase: PASS })).body).toEqual({
+      owner_device_code: 'OWNERCODE',
+    });
   }, 60_000);
 });

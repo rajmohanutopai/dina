@@ -98,7 +98,10 @@ def make_handler(route: Callable[[str], Target | None]):
             return
         host, port = target[0], target[1]
         try:
-            up_reader, up_writer = await asyncio.open_connection(host, port)
+            if host.startswith("unix:"):
+                up_reader, up_writer = await asyncio.open_unix_connection(host[len("unix:") :])
+            else:
+                up_reader, up_writer = await asyncio.open_connection(host, port)
         except OSError:
             writer.close()
             return
@@ -121,25 +124,33 @@ def cell_route(
     front_door_host: str,
     front_door_target: tuple[str, int],
     owner_domain: str,
-    cell_port: Callable[[str], int | None],
+    cell_socket: Callable[[str], str | None],
+    other_target: tuple[str, int] | None = None,
+    front_door_proxy: bool = False,
 ) -> Callable[[str], Target | None]:
     """Front door by its name; `<label>.<owner_domain>` to that cell's Caddy
-    port, with a PROXY line so the cell sees the browser's address."""
+    socket (a Unix socket only this router's group can open), with a PROXY
+    line so the cell sees the browser's address. Any other name goes to
+    `other_target` (a TLS front already on the machine) with a PROXY line, or
+    nowhere. A name under the owner domain never goes there: it is a cell or
+    nothing."""
 
     def route(name: str) -> Target | None:
         if name == front_door_host:
-            return front_door_target
+            return (*front_door_target, True) if front_door_proxy else front_door_target
         suffix = "." + owner_domain
         if name.endswith(suffix):
             label = name[: -len(suffix)]
-            port = cell_port(label) if "." not in label else None
-            return ("127.0.0.1", port, True) if port is not None else None
+            path = cell_socket(label) if "." not in label else None
+            return (f"unix:{path}", 0, True) if path is not None else None
+        if other_target is not None:
+            return (*other_target, True)
         return None
 
     return route
 
 
-async def serve(route: Callable[[str], Target | None], host: str, port: int) -> None:
+async def serve(route: Callable[[str], Target | None], host: str | list[str], port: int) -> None:
     server = await asyncio.start_server(make_handler(route), host, port)
     async with server:
         await server.serve_forever()

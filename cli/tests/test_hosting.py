@@ -24,7 +24,7 @@ from starlette.testclient import TestClient
 from dina_cli import mcp_server
 from dina_cli.client import DinaClientError
 from dina_cli.dot_bridge import BridgeState, DotBridge, build_bridge_server
-from dina_cli.hosting import HostingConfig, Provisioner, render_cell_caddyfile
+from dina_cli.hosting import HostingConfig, KdfSlots, Provisioner, render_cell_caddyfile
 from dina_cli.sni_router import cell_route, server_name
 from dina_cli.transport import TransportResponse
 
@@ -61,9 +61,11 @@ class FakeHosting:
         return f"/tmp/{label}/core.sock"
 
     def delete_unclaimed(self, label: str) -> bool:
-        if getattr(self, "refuse_delete", False):
+        # Like the provisioner: succeeds once, for a cell that is still there.
+        if getattr(self, "refuse_delete", False) or label not in self.states:
             return False
         self.deleted = getattr(self, "deleted", []) + [label]
+        del self.states[label]
         return True
 
 
@@ -174,7 +176,12 @@ def test_done_waits_for_the_cell_then_pairs_a_dot_key_and_finishes_oauth(hosted)
 
     bridge.fake_hosting.states[label] = "unlocked"
     bridge.fake_hosting.boot[label] = "DOTCODE"
-    done = client.get(f"/link/done?req={req}", follow_redirects=False)
+    # The front door pairs in the background as soon as the code arrives.
+    for _ in range(40):
+        done = client.get(f"/link/done?req={req}", follow_redirects=False)
+        if done.status_code == 303:
+            break
+        time.sleep(0.1)
     assert done.status_code == 303
     back = urlparse(done.headers["location"])
     assert f"{back.scheme}://{back.netloc}{back.path}" == REDIRECT
@@ -209,6 +216,21 @@ def test_a_failed_setup_ends_the_request(hosted):
     assert "failed" in client.get(f"/link/done?req={req}").text
     assert "expired" in client.get(f"/link/done?req={req}").text
     # The dead cell is removed and the invite works again.
+    assert bridge.fake_hosting.deleted == ["cell00000000"]
+    assert bridge.state.take_invite(invite)
+
+
+def test_a_failed_setup_is_cleaned_up_though_nobody_comes_back(hosted):
+    bridge, client = hosted
+    [invite] = bridge.state.add_invites(1)
+    _, req = _start(client)
+    _create(client, req, invite)
+    bridge.fake_hosting.states["cell00000000"] = "failed"
+    # The gate's page says "start again" and never returns to /link/done.
+    for _ in range(40):
+        if getattr(bridge.fake_hosting, "deleted", []):
+            break
+        time.sleep(0.1)
     assert bridge.fake_hosting.deleted == ["cell00000000"]
     assert bridge.state.take_invite(invite)
 
@@ -262,8 +284,16 @@ if os.path.exists(os.path.join(vault, "wrapped_seed.bin")):
     out.write(json.dumps({"event": "state", "state": "locked"}) + "\n")
 else:
     out.write(json.dumps({"event": "ticket", "ticket": "T-" + os.environ["DINA_PDS_HANDLE"], "expires_at": 1}) + "\n")
+    if os.environ.get("FAKE_GATE_STAYS_NEW"):
+        time.sleep(60)  # nobody ever signs up
     out.write(json.dumps({"event": "bootstrap", "code": "BOOT", "expires_at": time.time() + 300}) + "\n")
     out.write(json.dumps({"event": "state", "state": "unlocked"}) + "\n")
+if os.environ.get("FAKE_GATE_TAKES_A_TURN"):
+    import socket
+    slots = socket.socket(fileno=int(os.environ["DINA_CELL_KDF_FD"]))
+    slots.sendall(b"want\n")
+    if slots.recv(16) == b"go\n":
+        open(os.path.join(vault, "turn"), "w").write("held")
 time.sleep(60)
 """
 
@@ -450,10 +480,15 @@ def test_a_root_too_deep_for_sockets_is_refused_and_leaves_nothing(tmp_path):
 
 
 def test_cell_caddyfile_keeps_tls_in_the_cell(tmp_path):
-    text = render_cell_caddyfile("abc.dina-owner.test", 19402, "/cells/abc/run/gate.sock", tmp_path)
+    text = render_cell_caddyfile(
+        "abc.dina-owner.test", "/h/tls/abc/caddy.sock", "/cells/abc/run/gate.sock", tmp_path,
+        alt_tlsalpn_port=19400,
+    )
+    assert "alt_tlsalpn_port 19400" in text
+    assert "bind unix//h/tls/abc/caddy.sock|0660" in text
     assert "admin off" in text and "disable_http_challenge" in text
     assert "reverse_proxy unix//cells/abc/run/gate.sock" in text
-    assert "proxy_protocol" in text and "allow 127.0.0.1/32" in text
+    assert "proxy_protocol" in text
     assert f"storage file_system {tmp_path / 'data'}" in text
 
 
@@ -475,7 +510,7 @@ def test_sni_reads_the_name_from_a_real_client_hello():
     assert server_name(_client_hello("abcd.dina-owner.example.com")[:20]) is None
 
 
-def test_sni_tells_a_cell_the_browsers_address_with_a_proxy_line():
+def test_sni_tells_a_cell_the_browsers_address_with_a_proxy_line(short_root):
     import asyncio
 
     from dina_cli.sni_router import make_handler
@@ -487,10 +522,10 @@ def test_sni_tells_a_cell_the_browsers_address_with_a_proxy_line():
             got.set_result(await reader.read(4096))
             writer.close()
 
-        backend = await asyncio.start_server(cell, "127.0.0.1", 0)
-        port = backend.sockets[0].getsockname()[1]
+        sock = str(short_root / "caddy.sock")
+        backend = await asyncio.start_unix_server(cell, sock)
         router = await asyncio.start_server(
-            make_handler(lambda name: ("127.0.0.1", port, True)), "127.0.0.1", 0
+            make_handler(lambda name: (f"unix:{sock}", 0, True)), "127.0.0.1", 0
         )
         rport = router.sockets[0].getsockname()[1]
         reader, writer = await asyncio.open_connection("127.0.0.1", rport)
@@ -516,13 +551,32 @@ def test_sni_routes_the_front_door_and_cells_only():
         "chatgpt.example.com",
         ("127.0.0.1", 9000),
         "dina-owner.example.com",
-        lambda label: 19402 if label == "abcdefghijkm" else None,
+        lambda label: "/h/tls/abcdefghijkm/caddy.sock" if label == "abcdefghijkm" else None,
     )
     assert route("chatgpt.example.com") == ("127.0.0.1", 9000)
-    assert route("abcdefghijkm.dina-owner.example.com") == ("127.0.0.1", 19402, True)
+    assert route("abcdefghijkm.dina-owner.example.com") == (
+        "unix:/h/tls/abcdefghijkm/caddy.sock",
+        0,
+        True,
+    )
     assert route("other.dina-owner.example.com") is None
     assert route("x.abcdefghijkm.dina-owner.example.com") is None
     assert route("evil.example.com") is None
+
+
+def test_sni_sends_other_names_to_an_existing_front_with_a_proxy_line():
+    route = cell_route(
+        "dot.example.com",
+        ("127.0.0.1", 8443),
+        "dina-owner.example.com",
+        lambda label: None,
+        other_target=("127.0.0.1", 8443),
+        front_door_proxy=True,
+    )
+    assert route("dot.example.com") == ("127.0.0.1", 8443, True)
+    assert route("test-pds.example.com") == ("127.0.0.1", 8443, True)
+    # A name under the owner domain is a cell or nothing, never the other front.
+    assert route("nosuchcell123.dina-owner.example.com") is None
 
 
 def test_the_front_door_will_not_run_production_cells_in_its_own_process(tmp_path):
@@ -556,3 +610,443 @@ def test_root_written_files_live_outside_the_cell_and_refuse_symlinks(provisione
     assert target.read_text() == "untouched"
     provisioner.delete(label)
     assert not admin.exists()
+
+
+def test_the_link_is_paired_as_soon_as_the_code_arrives_not_when_the_person_returns(hosted):
+    bridge, client = hosted
+    [invite] = bridge.state.add_invites(1)
+    _, req = _start(client)
+    _create(client, req, invite)
+    bridge.fake_hosting.states["cell00000000"] = "unlocked"
+    bridge.fake_hosting.boot["cell00000000"] = "DOTCODE"
+    # Nobody visits /link/done (the person is still writing their words down),
+    # yet the link is made.
+    for _ in range(40):
+        if bridge.state.links():
+            break
+        time.sleep(0.1)
+    (link,) = bridge.state.links().values()
+    assert link["cell"] == "cell00000000"
+
+
+def test_open_registration_is_bounded_and_a_flood_cannot_shut_people_out(tmp_path):
+    state = BridgeState(tmp_path)
+    state.put_client("a", {}, max_clients=3, unused_ttl=3600)
+    time.sleep(0.01)
+    state.put_client("b", {}, max_clients=3, unused_ttl=3600)
+    state.put_link("lnk", {"did": "x"})
+    state.put_tokens({"t": {"kind": "access", "client_id": "a", "link_id": "lnk",
+                            "family": "f", "expires_at": time.time() + 60}})
+    time.sleep(0.01)
+    state.put_client("c", {}, max_clients=3, unused_ttl=3600)
+    # Full. A flood keeps coming; c is mid sign-up, a has tokens.
+    for i in range(20):
+        state.put_client(f"flood{i}", {}, max_clients=3, unused_ttl=3600, keep=frozenset({"c"}))
+    for cid in ("a", "c", "flood19"):
+        assert state.get_client(cid) is not None
+    assert state.get_client("b") is None  # unused and oldest: dropped first
+    names = ["a", "b", "c"] + [f"flood{i}" for i in range(20)]
+    assert sum(state.get_client(n) is not None for n in names) == 3
+
+
+def test_the_provisioner_enforces_its_own_limits(provisioner):
+    from dina_cli.hosting import HostingError
+
+    provisioner.config.max_cells = 1
+    provisioner.create("First")
+    with pytest.raises(HostingError, match="no room"):
+        provisioner.create("Second")
+    provisioner.config.max_cells = 100
+    provisioner.config.max_creates_per_hour = 2
+    provisioner.create("Second")
+    with pytest.raises(HostingError, match="Too many new Dinas"):
+        provisioner.create("Third")
+    assert len(provisioner.cells()) == 2
+
+
+def test_the_sni_router_command_routes_to_cell_sockets_that_exist(tmp_path, monkeypatch):
+    from click.testing import CliRunner
+
+    from dina_cli import sni_router
+    from dina_cli.main import cli
+
+    cfg = tmp_path / "hosting.json"
+    cfg.write_text(json.dumps({
+        "root": str(tmp_path / "h"), "core_command": ["x"], "gate_command": ["x"],
+        "core_cwd": str(tmp_path), "pds_handle_domain": "x.example",
+        "front_door_origin": "https://dot.test",
+    }))
+    sock = tmp_path / "h" / "tls" / "abcdefghijkm" / "caddy.sock"
+    sock.parent.mkdir(parents=True)
+    sock.write_text("")
+    seen = {}
+
+    async def fake_serve(route, host, port):
+        seen.update(route=route, host=host, port=port)
+
+    monkeypatch.setattr(sni_router, "serve", fake_serve)
+    result = CliRunner().invoke(cli, [
+        "dot-bridge", "sni-router", "--hosting-config", str(cfg),
+        "--front-door-host", "Dot.Example.com", "--front-door-target", "127.0.0.1:8443",
+        "--owner-domain", "dina-owner.example.com", "--port", "8444",
+    ])
+    assert result.exit_code == 0, result.output
+    route = seen["route"]
+    assert (seen["host"], seen["port"]) == (["0.0.0.0", "::"], 8444)
+    assert route("dot.example.com") == ("127.0.0.1", 8443)
+    assert route("abcdefghijkm.dina-owner.example.com") == (f"unix:{sock}", 0, True)
+    assert route("zzzzzzzzzzzz.dina-owner.example.com") is None  # no such cell
+    assert route("..%2f.dina-owner.example.com") is None  # not a label
+
+
+def test_the_sni_router_command_wants_host_and_port_for_the_front_door(tmp_path):
+    from click.testing import CliRunner
+
+    from dina_cli.main import cli
+
+    cfg = tmp_path / "hosting.json"
+    cfg.write_text(json.dumps({
+        "root": str(tmp_path / "h"), "core_command": ["x"], "gate_command": ["x"],
+        "core_cwd": str(tmp_path), "pds_handle_domain": "x.example",
+        "front_door_origin": "https://dot.test",
+    }))
+    result = CliRunner().invoke(cli, [
+        "dot-bridge", "sni-router", "--hosting-config", str(cfg),
+        "--front-door-host", "dot.example.com", "--front-door-target", "8443",
+        "--owner-domain", "dina-owner.example.com",
+    ])
+    assert result.exit_code != 0
+    assert "host:port" in result.output
+
+
+# ── passphrase checks, all cells together ────────────────────────────────
+
+
+def test_kdf_slots_cap_checks_and_go_in_the_order_asked():
+    import threading
+
+    slots = KdfSlots(2)
+    a, b = slots.acquire(), slots.acquire()
+    order: list[str] = []
+    waiters = []
+    for name in ("first", "second"):
+        t = threading.Thread(target=lambda n=name: (slots.acquire(), order.append(n)))
+        t.start()
+        waiters.append(t)
+        time.sleep(0.05)  # so they ask in this order
+    time.sleep(0.1)
+    assert order == [] and slots.holding() == 2
+    slots.release(a)
+    waiters[0].join(timeout=3)
+    assert order == ["first"]
+    slots.release(b)
+    waiters[1].join(timeout=3)
+    assert order == ["first", "second"]
+
+
+def test_kdf_slots_take_back_a_turn_held_too_long():
+    slots = KdfSlots(1, hold_seconds=0.2)
+    slots.acquire()  # never given back
+    start = time.monotonic()
+    slots.acquire()
+    assert time.monotonic() - start < 2.5
+
+
+def test_a_gate_holds_one_turn_at_most_and_gives_it_back_when_its_socket_closes():
+    import socket
+    import threading
+
+    slots = KdfSlots(1)
+    ours, gate = socket.socketpair()
+    threading.Thread(target=slots.serve, args=(ours,), daemon=True).start()
+    gate.sendall(b"want\nwant\n")  # a second ask while holding is ignored
+    assert gate.recv(16) == b"go\n"
+    assert slots.holding() == 1
+    gate.settimeout(0.3)
+    with pytest.raises(socket.timeout):
+        gate.recv(16)
+    gate.close()  # the gate died holding its turn
+    for _ in range(50):
+        if slots.holding() == 0:
+            break
+        time.sleep(0.02)
+    assert slots.holding() == 0
+
+
+def test_the_provisioner_shares_its_turns_among_cells(tmp_path, short_root):
+    gate = tmp_path / "fake_gate.py"
+    gate.write_text(FAKE_GATE)
+    prov = Provisioner(
+        HostingConfig(
+            root=short_root / "hosting",
+            core_command=["true"],
+            gate_command=[sys.executable, str(gate)],
+            core_cwd=tmp_path,
+            core_env={"FAKE_GATE_TAKES_A_TURN": "1"},
+            pds_handle_domain="test-pds.example",
+            front_door_origin="https://dot.test",
+            max_kdf_checks=1,
+        )
+    )
+    try:
+        first, _ = prov.create("First")
+        turn = lambda label: (prov.cell_dir(label) / "vault" / "turn").exists()  # noqa: E731
+        for _ in range(100):
+            if turn(first):
+                break
+            time.sleep(0.05)
+        assert turn(first)
+        second, _ = prov.create("Second")
+        time.sleep(0.5)
+        assert not turn(second)  # one check at a time on this machine
+        prov.stop(first)  # its gate dies, and its turn comes back
+        for _ in range(100):
+            if turn(second):
+                break
+            time.sleep(0.05)
+        assert turn(second)
+    finally:
+        prov.stop_all()
+
+
+def test_sign_ups_people_walk_away_from_do_not_fill_the_machine(tmp_path, short_root):
+    gate = tmp_path / "fake_gate.py"
+    gate.write_text(FAKE_GATE)
+    prov = Provisioner(
+        HostingConfig(
+            root=short_root / "hosting",
+            core_command=["true"],
+            gate_command=[sys.executable, str(gate)],
+            core_cwd=tmp_path,
+            core_env={"FAKE_GATE_STAYS_NEW": "1"},
+            pds_handle_domain="test-pds.example",
+            front_door_origin="https://dot.test",
+            max_cells=1,
+        )
+    )
+    try:
+        abandoned, _ = prov.create("Walked away")  # its ticket expired long ago
+        second, _ = prov.create("Second")
+        assert abandoned not in prov.cells()
+        assert second in prov.cells()
+        assert not prov.cell_dir(abandoned).exists()
+    finally:
+        prov.stop_all()
+
+
+def test_a_store_full_of_clients_in_use_refuses_rather_than_grows(tmp_path):
+    state = BridgeState(tmp_path)
+    assert state.put_client("a", {}, max_clients=2, unused_ttl=3600)
+    assert state.put_client("b", {}, max_clients=2, unused_ttl=3600)
+    assert not state.put_client("c", {}, max_clients=2, unused_ttl=3600, keep=frozenset({"a", "b"}))
+    assert state.get_client("c") is None
+    # A client whose only tokens expired is no longer in use.
+    state.put_link("lnk", {"did": "x"})
+    state.put_tokens({"t": {"kind": "access", "client_id": "a", "link_id": "lnk",
+                            "family": "f", "expires_at": time.time() + 0.05}})
+    time.sleep(0.1)
+    assert state.put_client("d", {}, max_clients=2, unused_ttl=3600, keep=frozenset({"b"}))
+    assert state.get_client("a") is None and state.get_client("d") is not None
+
+
+def test_a_client_waiting_to_exchange_its_code_is_not_dropped(hosted, monkeypatch):
+    from dina_cli import dot_bridge as db
+
+    bridge, client = hosted
+    [invite] = bridge.state.add_invites(1)
+    client_id, req = _start(client)
+    _create(client, req, invite)
+    bridge.fake_hosting.boot["cell00000000"] = "DOTCODE"
+    for _ in range(40):
+        if bridge.state.links():
+            break
+        time.sleep(0.1)
+    back = client.get(f"/link/done?req={req}", follow_redirects=False)
+    assert back.status_code == 303  # a code is out; the client has no tokens yet
+    monkeypatch.setattr(db, "MAX_CLIENTS", 1)
+    flood = client.post(
+        "/register",
+        json={"redirect_uris": [REDIRECT], "client_name": "x", "token_endpoint_auth_method": "none"},
+    )
+    assert flood.status_code == 400  # full, and ChatGPT's client is kept
+    code = parse_qs(urlparse(back.headers["location"]).query)["code"][0]
+    tokens = client.post(
+        "/token",
+        data={"client_id": client_id, "grant_type": "authorization_code", "code": code,
+              "redirect_uri": REDIRECT, "code_verifier": VERIFIER},
+    )
+    assert tokens.status_code == 200
+
+
+def test_two_creates_at_once_cannot_both_take_the_last_place(provisioner):
+    import threading
+
+    from dina_cli.hosting import HostingError
+
+    provisioner.config.max_cells = 1
+    inner = provisioner._create
+
+    def slow(name, reserved):
+        time.sleep(0.3)  # both are past the check before either is in the registry
+        return inner(name, reserved)
+
+    provisioner._create = slow
+    results: list[str] = []
+
+    def make(name):
+        try:
+            provisioner.create(name)
+            results.append("made")
+        except HostingError:
+            results.append("refused")
+
+    threads = [threading.Thread(target=make, args=(n,)) for n in ("One", "Two")]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(timeout=30)
+    assert sorted(results) == ["made", "refused"]
+    assert len(provisioner.cells()) == 1
+
+
+def test_a_failed_sign_up_is_swept_once_its_ticket_is_long_gone(provisioner):
+    label, _ = provisioner.create("Failed")
+    for _ in range(50):
+        if provisioner.state(label) == "unlocked":
+            break
+        time.sleep(0.05)
+    provisioner._live[label].state = "failed"  # setup's Core died; no mark written
+    assert provisioner.sweep_abandoned() == 1
+    assert label not in provisioner.cells()
+
+
+def test_two_submits_of_one_sign_up_make_one_cell(hosted):
+    import threading
+
+    bridge, client = hosted
+    first, second = bridge.state.add_invites(2)
+    _, req = _start(client)
+    inner = bridge.fake_hosting.create
+
+    def slow(name):
+        time.sleep(0.3)  # both submits arrive while the first cell is made
+        return inner(name)
+
+    bridge.fake_hosting.create = slow
+    codes: list[int] = []
+    threads = [
+        threading.Thread(target=lambda inv=inv: codes.append(_create(client, req, inv).status_code))
+        for inv in (first, second)
+    ]
+    for t in threads:
+        t.start()
+        time.sleep(0.05)
+    for t in threads:
+        t.join(timeout=10)
+    assert sorted(codes) == [303, 409]
+    assert bridge.fake_hosting.created == ["Main Street Café"]
+    # The refused submit spent no invite.
+    assert bridge.state.take_invite(second)
+
+
+def test_a_failed_sign_up_found_after_a_restart_is_swept_by_its_age(provisioner):
+    from dina_cli.hosting import ABANDONED_GRACE_SECONDS, SIGNUP_TICKET_SECONDS
+
+    label, _ = provisioner.create("Failed then restarted")
+    live = provisioner._live[label]
+    # A restarted gate reports `failed` and mints no ticket.
+    live.state, live.ticket_expires_at = "failed", 0
+    assert provisioner.sweep_abandoned() == 0  # young: its ticket could still be live
+    provisioner._cells[label]["created_at"] = (
+        time.time() - SIGNUP_TICKET_SECONDS - ABANDONED_GRACE_SECONDS - 5
+    )
+    assert provisioner.sweep_abandoned() == 1
+    assert label not in provisioner.cells()
+
+
+def test_the_provisioner_and_the_gate_agree_on_the_ticket_lifetime():
+    import re
+    from pathlib import Path
+
+    from dina_cli.hosting import SIGNUP_TICKET_SECONDS
+
+    gate = (Path(__file__).parents[2] / "apps/home-node-lite/core-server/src/cell/gate.ts").read_text()
+    match = re.search(r"^const TICKET_TTL_MS = ([0-9 *]+);", gate, re.M)
+    assert match is not None
+    import math
+
+    assert math.prod(int(n) for n in match.group(1).split("*")) == SIGNUP_TICKET_SECONDS * 1000
+
+
+def test_fresh_turns_go_before_guessers_on_every_cell():
+    import threading
+
+    slots = KdfSlots(1)
+    held = slots.acquire(fresh=False)
+    order: list[str] = []
+    threads = []
+    for name, fresh in (("guess1", False), ("guess2", False), ("owner", True), ("guess3", False)):
+        t = threading.Thread(target=lambda n=name, f=fresh: (slots.release(slots.acquire(fresh=f)), order.append(n)))
+        t.start()
+        threads.append(t)
+        time.sleep(0.05)  # so they ask in this order
+    slots.release(held)
+    for t in threads:
+        t.join(timeout=5)
+    # The owner asked third, after two guessers on other cells, and went first.
+    assert order == ["owner", "guess1", "guess2", "guess3"]
+
+
+def test_a_waiting_ask_moves_queue_when_the_gate_relabels_it():
+    import socket
+    import threading
+
+    slots = KdfSlots(1)
+    held = slots.acquire(fresh=False)
+    gates = {}
+    for name in ("owner_cell", "guess_cell"):
+        ours, gate = socket.socketpair()
+        threading.Thread(target=slots.serve, args=(ours,), daemon=True).start()
+        gates[name] = gate
+    # A guesser's cell asks first; then the owner's cell asks for a guess
+    # that has since timed out.
+    gates["guess_cell"].sendall(b"want repeat\n")
+    time.sleep(0.1)
+    gates["owner_cell"].sendall(b"want repeat\n")
+    time.sleep(0.1)
+    # The owner's check takes over that waiting ask: it moves to the fresh
+    # queue, ahead of every repeat ask.
+    gates["guess_cell"].sendall(b"want repeat\n")  # same kind: no change
+    gates["owner_cell"].sendall(b"want fresh\n")
+    time.sleep(0.1)
+    slots.release(held)
+    gates["owner_cell"].settimeout(2)
+    assert gates["owner_cell"].recv(16) == b"go\n"
+    gates["guess_cell"].settimeout(0.3)
+    with pytest.raises(socket.timeout):
+        gates["guess_cell"].recv(16)
+    gates["owner_cell"].sendall(b"done\n")
+    gates["guess_cell"].settimeout(2)
+    assert gates["guess_cell"].recv(16) == b"go\n"
+    for g in gates.values():
+        g.close()
+
+
+def test_a_gate_that_dies_while_waiting_leaves_the_queue():
+    import socket
+    import threading
+
+    slots = KdfSlots(1)
+    held = slots.acquire(fresh=False)
+    ours, gate = socket.socketpair()
+    threading.Thread(target=slots.serve, args=(ours,), daemon=True).start()
+    gate.sendall(b"want fresh\n")
+    time.sleep(0.1)
+    gate.close()  # died before its turn came
+    time.sleep(0.1)
+    slots.release(held)
+    # Its turn was dropped: the next ask is served at once, nothing held.
+    done = threading.Event()
+    threading.Thread(target=lambda: (slots.release(slots.acquire(fresh=False)), done.set()), daemon=True).start()
+    assert done.wait(2)
+    assert slots.holding() == 0

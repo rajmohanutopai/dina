@@ -27,6 +27,7 @@ import re
 import secrets
 import shutil
 import signal
+import socket
 import socketserver
 import subprocess
 import threading
@@ -71,6 +72,158 @@ class HostingConfig:
     caddy_command: list[str] = field(default_factory=lambda: ["caddy"])
     provisioner_socket: str = ""
     """Where `dina dot-bridge provisiond` listens; required with `isolate`."""
+    max_cells: int = 200
+    """No more cells than this on the machine, whatever the front door asks."""
+    max_creates_per_hour: int = 30
+    sni_group: str = "dina-sni"
+    """The SNI router's group: the only one that may open a cell's TLS socket."""
+    max_kdf_checks: int = 4
+    """Passphrase checks (128 MiB of Argon2 each) running at once, all cells together."""
+
+
+# A sign-up whose ticket expired this long ago is abandoned (HOSTED_DINA §4).
+ABANDONED_GRACE_SECONDS = 5 * 60
+# The gate's sign-up ticket lifetime (`gate.ts` TICKET_TTL_MS).
+SIGNUP_TICKET_SECONDS = 10 * 60
+
+# A passphrase check takes a second or two; a gate that holds its slot longer
+# loses it, so no cell can keep the others waiting.
+KDF_HOLD_SECONDS = 30.0
+
+
+class KdfSlots:
+    """The machine's passphrase checks, shared fairly among cells (HOSTED_DINA §5).
+
+    Each gate asks before every check over its own socket pair
+    (`DINA_CELL_KDF_FD`, one line each way: `want fresh` or `want repeat`,
+    `go`, `done`; a second `want` while waiting relabels the ask). No
+    passphrase or seed passes here, only turns. Fresh asks
+    (a client with no recent failure, the owner most likely) go before every
+    repeat ask, machine-wide, so guessers from a few addresses on many cells
+    cannot starve an owner; each kind goes in the order asked. A cell holds at most one slot,
+    for at most `hold_seconds`, and a gate that dies gives its slot back when
+    its socket closes.
+    """
+
+    def __init__(self, size: int, hold_seconds: float = KDF_HOLD_SECONDS) -> None:
+        self.size = max(1, size)
+        self.hold_seconds = hold_seconds
+        self._cond = threading.Condition()
+        self._holders: dict[int, float] = {}  # turn -> when granted
+        self._fresh: list[int] = []
+        self._repeat: list[int] = []
+        self._next = 0
+
+    def _reclaim(self) -> None:
+        cutoff = time.monotonic() - self.hold_seconds
+        for turn, at in list(self._holders.items()):
+            if at < cutoff:
+                del self._holders[turn]
+
+    def _enqueue(self, fresh: bool) -> int:
+        with self._cond:
+            turn = self._next
+            self._next += 1
+            (self._fresh if fresh else self._repeat).append(turn)
+            return turn
+
+    def _drop(self, turn: int) -> None:
+        for queue in (self._fresh, self._repeat):
+            if turn in queue:
+                queue.remove(turn)
+
+    def _wait(self, turn: int, cancelled: threading.Event) -> bool:
+        """Block until `turn` holds a slot (True), or it is cancelled (False)."""
+        with self._cond:
+            while True:
+                if cancelled.is_set():
+                    self._drop(turn)
+                    self._cond.notify_all()
+                    return False
+                self._reclaim()
+                head = self._fresh[0] if self._fresh else self._repeat[0]
+                if head == turn and len(self._holders) < self.size:
+                    (self._fresh if self._fresh else self._repeat).pop(0)
+                    self._holders[turn] = time.monotonic()
+                    self._cond.notify_all()
+                    return True
+                self._cond.wait(timeout=1.0)
+
+    def acquire(self, fresh: bool = False) -> int:
+        turn = self._enqueue(fresh)
+        self._wait(turn, threading.Event())
+        return turn
+
+    def relabel(self, turn: int, fresh: bool) -> None:
+        """Move a waiting turn to the back of the other queue; a held turn stays."""
+        with self._cond:
+            src, dst = (self._repeat, self._fresh) if fresh else (self._fresh, self._repeat)
+            if turn in src:
+                src.remove(turn)
+                dst.append(turn)
+                self._cond.notify_all()
+
+    def _cancel(self, turn: int, cancelled: threading.Event) -> None:
+        # Under the lock, so a turn is either granted already (and released
+        # here) or its waiter sees the cancel before it can be granted.
+        with self._cond:
+            cancelled.set()
+            self._holders.pop(turn, None)
+            self._drop(turn)
+            self._cond.notify_all()
+
+    def release(self, turn: int) -> None:
+        with self._cond:
+            self._holders.pop(turn, None)
+            self._cond.notify_all()
+
+    def holding(self) -> int:
+        with self._cond:
+            self._reclaim()
+            return len(self._holders)
+
+    def serve(self, conn: socket.socket) -> None:
+        """Answer one gate until its socket closes.
+
+        A turn waits on its own thread, so this loop keeps reading: a gate
+        whose waiting ask now serves a different kind of check sends the
+        other `want`, and the turn moves to that queue.
+        """
+        turn: int | None = None
+        granted = threading.Event()
+        cancelled = threading.Event()
+
+        def wait(t: int, got: threading.Event, stop: threading.Event) -> None:
+            if self._wait(t, stop):
+                got.set()
+                try:
+                    conn.sendall(b"go\n")
+                except OSError:
+                    pass  # the socket is closing; serve's finally gives it back
+
+        try:
+            with conn, conn.makefile("rb") as lines:
+                for raw in lines:
+                    line = raw.strip()
+                    if line in (b"want fresh", b"want repeat", b"want"):
+                        fresh = line == b"want fresh"
+                        if turn is None:
+                            granted, cancelled = threading.Event(), threading.Event()
+                            turn = self._enqueue(fresh)
+                            threading.Thread(
+                                target=wait, args=(turn, granted, cancelled), daemon=True
+                            ).start()
+                        elif not granted.is_set():
+                            self.relabel(turn, fresh)
+                    elif line == b"done" and turn is not None and granted.is_set():
+                        self.release(turn)
+                        turn = None
+                    # Anything else is ignored: one slot each.
+        except OSError:
+            pass
+        finally:
+            if turn is not None:
+                self._cancel(turn, cancelled)
 
 
 @dataclass
@@ -98,6 +251,10 @@ class Provisioner:
             (self.config.root / "cells").mkdir(exist_ok=True, mode=0o711)
             os.chmod(self.config.root, 0o711)
             os.chmod(self.config.root / "cells", 0o711)
+        self._creating = 0
+        self._reserved = 0  # places taken by creates not yet in the registry
+        self._created_at: list[float] = []
+        self.kdf_slots = KdfSlots(self.config.max_kdf_checks)
         self._registry = self.config.root / "cells.json"
         self._cells: dict[str, dict[str, Any]] = {}
         if self._registry.exists():
@@ -140,6 +297,16 @@ class Provisioner:
     def core_socket(self, label: str) -> str:
         return str(self.cell_dir(label) / "run" / "core.sock")
 
+    def tls_socket(self, label: str) -> str:
+        """Where the cell's Caddy takes TLS from the SNI router (production).
+
+        A Unix socket, not a TCP port: in a folder of the SNI router's group,
+        so no other cell, the front door or any local user can stand in for
+        this cell's Caddy (a TCP port anyone could bind while it restarted)
+        or hand it a forged PROXY line.
+        """
+        return tls_socket_path(self.config.root, label)
+
     def gate_socket(self, label: str) -> str:
         return str(self.cell_dir(label) / "run" / "gate.sock")
 
@@ -162,7 +329,37 @@ class Provisioner:
         name = " ".join(display_name.split())[:DISPLAY_NAME_MAX]
         if name == "":
             raise HostingError("A display name is needed.")
+        if len(self._cells) + self._reserved >= self.config.max_cells:
+            self.sweep_abandoned()
+        # The provisioner's own limits, checked before any user, folder or
+        # process is made: a breached front door cannot use it to fill the
+        # machine, and only so many cells start at once.
         with self._lock:
+            now = time.time()
+            self._created_at = [t for t in self._created_at if t > now - 3600]
+            # Cells still being made count too, so two at once cannot both
+            # take the last place.
+            if len(self._cells) + self._reserved >= self.config.max_cells:
+                raise HostingError("There is no room for a new Dina right now.")
+            if len(self._created_at) >= self.config.max_creates_per_hour or self._creating >= 2:
+                raise HostingError("Too many new Dinas just now. Try again in a little while.")
+            self._creating += 1
+            self._reserved += 1
+            self._created_at.append(now)
+        reserved = [True]
+        try:
+            return self._create(name, reserved)
+        finally:
+            with self._lock:
+                self._creating -= 1
+                if reserved[0]:
+                    self._reserved -= 1
+
+    def _create(self, name: str, reserved: list[bool]) -> tuple[str, str]:
+        with self._lock:
+            # The place reserved becomes the registry entry: counted once.
+            self._reserved -= 1
+            reserved[0] = False
             label = "".join(secrets.choice(LABEL_ALPHABET) for _ in range(LABEL_LENGTH))
             while label in self._cells:
                 label = "".join(secrets.choice(LABEL_ALPHABET) for _ in range(LABEL_LENGTH))
@@ -239,6 +436,7 @@ class Provisioner:
             self._save()
         shutil.rmtree(self.cell_dir(label), ignore_errors=True)
         shutil.rmtree(self.admin_dir(label), ignore_errors=True)
+        shutil.rmtree(Path(self.tls_socket(label)).parent, ignore_errors=True)
         if cell is not None and cell.get("user") and self.config.isolate:
             subprocess.run(["userdel", cell["user"]], check=False, capture_output=True)
 
@@ -267,6 +465,28 @@ class Provisioner:
             self.delete(label)
             return True
 
+    def sweep_abandoned(self) -> int:
+        """Remove cells nobody can set up any more: `new` or `failed` with no
+        set-up mark, ticket long expired (it is single use and only the
+        person who signed up held it). So sign-ups people walk away from, or
+        that failed, do not fill `max_cells`; `delete_unclaimed` keeps any
+        cell that is someone's Dina."""
+        cutoff = time.time() - ABANDONED_GRACE_SECONDS
+        with self._lock:
+            stale = []
+            for label, live in self._live.items():
+                if live.state not in ("new", "failed"):
+                    continue
+                # The gate reports the ticket's expiry in milliseconds. A gate
+                # restarted on a failed sign-up mints none; then the cell's
+                # age stands in, past any ticket it ever had.
+                expired = live.ticket_expires_at / 1000 if live.ticket_expires_at > 0 else (
+                    float(self._cells.get(label, {}).get("created_at", time.time())) + SIGNUP_TICKET_SECONDS
+                )
+                if expired < cutoff:
+                    stale.append(label)
+        return sum(1 for label in stale if self.delete_unclaimed(label))
+
     def take_bootstrap(self, label: str) -> str | None:
         """The dot's bootstrap code, once: it is single-use and leaves here when taken."""
         live = self._live.get(label)
@@ -289,6 +509,9 @@ class Provisioner:
         admin = self.admin_dir(label)
         admin.parent.mkdir(exist_ok=True, mode=0o711)
         admin.mkdir(exist_ok=True, mode=0o755)
+        tls = Path(self.tls_socket(label)).parent
+        tls.parent.mkdir(exist_ok=True, mode=0o711)
+        tls.mkdir(exist_ok=True, mode=0o700)
         if not self.config.isolate:
             return
         user = self._cells[label]["user"]
@@ -307,6 +530,10 @@ class Provisioner:
         # connect to it, other cells may not.
         shutil.chown(cell / "run", user, self.config.front_door_group)
         os.chmod(cell / "run", 0o2750)
+        # The cell's Caddy socket inherits the SNI router's group the same way.
+        tls = Path(self.tls_socket(label)).parent
+        shutil.chown(tls, user, self.config.sni_group)
+        os.chmod(tls, 0o2750)
 
     def _start_gate(self, label: str) -> _Live:
         cell = self.cell_dir(label)
@@ -332,6 +559,9 @@ class Provisioner:
         }
         read_end, write_end = os.pipe()
         env["DINA_CELL_EVENTS_FD"] = str(write_end)
+        slots, gate_slots = socket.socketpair()
+        gate_slots.set_inheritable(True)
+        env["DINA_CELL_KDF_FD"] = str(gate_slots.fileno())
         command = list(self.config.gate_command)
         if self.config.isolate:
             command = ["runuser", "-u", info["user"], "--", *command]
@@ -344,19 +574,24 @@ class Provisioner:
                 stdin=subprocess.DEVNULL,
                 stdout=log,
                 stderr=log,
-                pass_fds=(write_end,),
+                pass_fds=(write_end, gate_slots.fileno()),
                 # Its own process group, so stopping the cell reaches the Core
                 # the gate starts as well.
                 start_new_session=True,
             )
+        except BaseException:
+            slots.close()
+            raise
         finally:
             os.close(write_end)
+            gate_slots.close()
             log.close()
         live = _Live(process=proc)
         self._live[label] = live
         threading.Thread(
             target=self._read_events, args=(label, live, read_end), daemon=True
         ).start()
+        threading.Thread(target=self.kdf_slots.serve, args=(slots,), daemon=True).start()
         if self.config.isolate:
             live.caddy = self._start_caddy(label)
         return live
@@ -394,7 +629,10 @@ class Provisioner:
         fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0), 0o644)
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             handle.write(
-                render_cell_caddyfile(host, info["port"], self.gate_socket(label), cell / "caddy")
+                render_cell_caddyfile(
+                    host, self.tls_socket(label), self.gate_socket(label), cell / "caddy",
+                    alt_tlsalpn_port=int(info["port"]),
+                )
             )
         os.replace(tmp, caddyfile)
         log = os.fdopen(self._admin_file(label, "caddy.log", 0o600), "ab")
@@ -421,36 +659,44 @@ def _kill_group(pid: int, sig: int) -> None:
         pass
 
 
-def render_cell_caddyfile(host: str, port: int, gate_socket: str, caddy_dir: Path) -> str:
-    """A cell's Caddy: TLS on a loopback port the SNI router forwards to.
+def render_cell_caddyfile(
+    host: str, tls_socket: str, gate_socket: str, caddy_dir: Path, alt_tlsalpn_port: int = 0
+) -> str:
+    """A cell's Caddy: TLS on a Unix socket only the SNI router's group can open.
 
     Only TLS-ALPN-01 is used (the SNI router forwards port 443 here). No admin
     endpoint, no HTTP port, no access log: the owner page's requests are the
-    owner's business. The PROXY line is accepted from the router on loopback
-    only, so the address Caddy hands the gate is the browser's.
+    owner's business. The PROXY line is honoured because only the router can
+    reach this socket, so the address Caddy hands the gate is the browser's.
+    `alt_tlsalpn_port`: a free high port of the cell's own. With no TCP
+    listener, Caddy would try to bind 443 (as the cell's user, which fails)
+    to take part in the challenge; given this port it binds that instead,
+    and its socket answers the challenge the router passes it.
+    Written for Caddy 2.8+ (unix bind with a file mode); not yet run against a
+    real Caddy and ACME.
     """
     return (
         "{\n"
         "\tadmin off\n"
         "\tauto_https disable_redirects\n"
         "\thttp_port 0\n"
-        f"\thttps_port {port}\n"
         f"\tstorage file_system {caddy_dir / 'data'}\n"
         "\tservers {\n"
         "\t\tlistener_wrappers {\n"
         "\t\t\tproxy_protocol {\n"
-        "\t\t\t\tallow 127.0.0.1/32\n"
+        "\t\t\t\tallow 0.0.0.0/0 ::/0\n"
         "\t\t\t}\n"
         "\t\t\ttls\n"
         "\t\t}\n"
         "\t}\n"
         "}\n\n"
-        f"{host}:{port} {{\n"
+        f"https://{host} {{\n"
+        f"\tbind unix/{tls_socket}|0660\n"
         "\ttls {\n"
         "\t\tissuer acme {\n"
         "\t\t\tdisable_http_challenge\n"
-        "\t\t\talt_tlsalpn_port " + str(port) + "\n"
-        "\t\t}\n"
+        + (f"\t\t\talt_tlsalpn_port {alt_tlsalpn_port}\n" if alt_tlsalpn_port else "")
+        + "\t\t}\n"
         "\t}\n"
         f"\treverse_proxy unix/{gate_socket}\n"
         "}\n"
@@ -556,6 +802,13 @@ class RemoteProvisioner:
         return bool(self._call("delete_unclaimed", label=label)["value"])
 
 
+def tls_socket_path(root: Path, label: str) -> str:
+    """A cell's Caddy socket under `root`; the provisioner and the SNI router share it."""
+    if not _LABEL_RE.fullmatch(label):
+        raise HostingError("not a cell label")
+    return str(root / "tls" / label / "caddy.sock")
+
+
 def load_hosting_config(path: Path) -> HostingConfig:
     """Read a hosting config (JSON). Paths may be relative to the file's folder."""
     raw = json.loads(path.read_text(encoding="utf-8"))
@@ -587,4 +840,8 @@ def load_hosting_config(path: Path) -> HostingConfig:
         front_door_group=str(raw.get("front_door_group", "dina-frontdoor")),
         caddy_command=cmd(raw.get("caddy_command", ["caddy"])),
         provisioner_socket=str(raw.get("provisioner_socket", "")),
+        max_cells=int(raw.get("max_cells", 200)),
+        max_creates_per_hour=int(raw.get("max_creates_per_hour", 30)),
+        sni_group=str(raw.get("sni_group", "dina-sni")),
+        max_kdf_checks=int(raw.get("max_kdf_checks", 4)),
     )

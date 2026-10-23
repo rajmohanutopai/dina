@@ -67,6 +67,14 @@ DEFAULT_REDIRECT_HOSTS = ("chatgpt.com",)
 LINK_DEVICE_NAME = "ChatGPT dot"
 
 PENDING_TTL_SECONDS = 10 * 60
+# A sign-up waits for the person to write down 24 words; give it time.
+SIGNUP_TTL_SECONDS = 30 * 60
+# Dynamic client registration is open (ChatGPT needs it), so it is bounded.
+# `_Pending.cell` while its cell is being made.
+CREATING = "(creating)"
+MAX_CLIENTS = 500
+UNUSED_CLIENT_TTL_SECONDS = 24 * 60 * 60
+MAX_REGISTRATIONS_PER_MINUTE = 30
 AUTH_CODE_TTL_SECONDS = 5 * 60
 ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
@@ -94,6 +102,9 @@ class _Pending:
     # and the invite it spent (given back if the sign-up fails).
     cell: str = ""
     invite: str = ""
+    # Set by the pairing thread as soon as the cell's bootstrap code arrives.
+    link_id: str = ""
+    pair_error: str = ""
 
 
 class BridgeState:
@@ -158,9 +169,44 @@ class BridgeState:
         with self._locked(write=False) as data:
             return data["clients"].get(client_id)
 
-    def put_client(self, client_id: str, info: dict) -> None:
+    def put_client(
+        self,
+        client_id: str,
+        info: dict,
+        max_clients: int = 0,
+        unused_ttl: float = 0,
+        keep: frozenset[str] = frozenset(),
+    ) -> bool:
+        """Store a client. When full, drop clients never used, oldest first,
+        sparing those with live tokens or in `keep` (a sign-up or code
+        exchange under way), so a flood of registrations cannot shut new
+        people out. False when nothing can be dropped: the store stays at
+        `max_clients`."""
         with self._locked(write=True) as data:
-            data["clients"][client_id] = info
+            if max_clients and len(data["clients"]) >= max_clients:
+                now = time.time()
+                used = {
+                    t.get("client_id")
+                    for t in data["tokens"].values()
+                    if float(t.get("expires_at", 0)) >= now
+                } | keep
+                cutoff = time.time() - unused_ttl
+                clients = {
+                    cid: c
+                    for cid, c in data["clients"].items()
+                    if cid in used or float(c.get("_registered_at", 0)) >= cutoff
+                }
+                spare = sorted(
+                    (cid for cid in clients if cid not in used),
+                    key=lambda cid: float(clients[cid].get("_registered_at", 0)),
+                )
+                for cid in spare[: max(0, len(clients) - max_clients + 1)]:
+                    del clients[cid]
+                data["clients"] = clients
+                if len(clients) >= max_clients:
+                    return False
+            data["clients"][client_id] = {**info, "_registered_at": time.time()}
+            return True
 
     # links
     def get_link(self, link_id: str) -> dict | None:
@@ -284,6 +330,7 @@ class DotBridge(OAuthProvider):
         self.core_url = core_url
         self.redirect_hosts = tuple(h.lower() for h in redirect_hosts)
         self.hosting = hosting
+        self._registrations: list[float] = []
         self.state = BridgeState(state_dir)
         self._pending: dict[str, _Pending] = {}
         self._codes: dict[str, tuple[AuthorizationCode, str]] = {}
@@ -301,7 +348,11 @@ class DotBridge(OAuthProvider):
 
     async def get_client(self, client_id: str) -> OAuthClientInformationFull | None:
         raw = self.state.get_client(client_id)
-        return OAuthClientInformationFull.model_validate(raw) if raw else None
+        if not raw:
+            return None
+        return OAuthClientInformationFull.model_validate(
+            {k: v for k, v in raw.items() if k != "_registered_at"}
+        )
 
     async def register_client(self, client_info: OAuthClientInformationFull) -> None:
         if not client_info.client_id:
@@ -313,7 +364,23 @@ class DotBridge(OAuthProvider):
             )
         if client_info.scope and set(client_info.scope.split()) - {DOT_SCOPE}:
             raise RegistrationError("invalid_client_metadata", f"scope must be {DOT_SCOPE}")
-        self.state.put_client(client_info.client_id, client_info.model_dump(mode="json"))
+        now = time.time()
+        self._registrations = [t for t in self._registrations if t > now - 60]
+        if len(self._registrations) >= MAX_REGISTRATIONS_PER_MINUTE:
+            raise RegistrationError("invalid_client_metadata", "too many registrations; try again shortly")
+        self._registrations.append(now)
+        now = time.time()
+        busy = {p.client_id for p in list(self._pending.values()) if p.expires_at >= now}
+        busy |= {c.client_id for c, _ in list(self._codes.values()) if c.expires_at >= now}
+        stored = self.state.put_client(
+            client_info.client_id,
+            client_info.model_dump(mode="json"),
+            max_clients=MAX_CLIENTS,
+            unused_ttl=UNUSED_CLIENT_TTL_SECONDS,
+            keep=frozenset(busy),
+        )
+        if not stored:
+            raise RegistrationError("invalid_client_metadata", "registration is full; try again later")
 
     # ── authorization: hand the owner to the link page ─────────────────
 
@@ -384,20 +451,73 @@ class DotBridge(OAuthProvider):
                 self._pending.pop(request_id, None)
                 return _page("That invite code is not valid. No tries left.", 400)
             return self._link_form(request_id, pending, "That invite code is not valid or was used.")
+        # Reserved before the first await: a second submit (a double click, a
+        # second tab) meets the check above and cannot make another cell.
+        pending.cell = CREATING
         try:
             label, ticket = await anyio.to_thread.run_sync(self.hosting.create, name)
         except Exception as exc:
+            pending.cell = ""
             self.state.release_invite(invite)
             message = str(exc) if exc.__class__.__name__ == "HostingError" else "Could not create your Dina. Try again."
             return self._link_form(request_id, pending, message)
         pending.cell = label
         pending.invite = invite
+        pending.expires_at = max(pending.expires_at, time.time() + SIGNUP_TTL_SECONDS)
+        # Pair the link the moment the cell's first boot hands over its code,
+        # without waiting for the person to finish writing down their words:
+        # the code lives five minutes.
+        threading.Thread(
+            target=self._pair_when_ready, args=(request_id, pending, label), daemon=True
+        ).start()
         back = f"{self.public_url}/link/done?req={request_id}"
         target = (
             f"{self.hosting.owner_origin(label)}/#ticket={quote(ticket, safe='')}"
             f"&return={quote(back, safe='')}"
         )
         return RedirectResponse(target, status_code=303, headers=_NO_STORE)
+
+    def _pair_when_ready(self, request_id: str, pending: _Pending, label: str) -> None:
+        assert self.hosting is not None
+        try:
+            while time.time() < pending.expires_at:
+                # One lookup: the event loop changes this dict meanwhile.
+                if self._pending.get(request_id) is not pending:
+                    return  # nobody will finish this sign-up; make no link
+                if self.hosting.state(label) in ("failed", "stopped"):
+                    # Clean up here, so a person who never comes back to
+                    # /link/done still gets their invite back.
+                    pending.pair_error = self._remove_failed(pending, label)
+                    return
+                try:
+                    code = self.hosting.take_bootstrap(label)
+                except Exception:
+                    code = None
+                if code is not None:
+                    pending.link_id = self.pair_cell(label, code)
+                    return
+                time.sleep(1.0)
+            pending.pair_error = "Your Dina was not ready in time."
+        except BridgeError as exc:
+            pending.pair_error = str(exc)
+        except Exception:
+            # Never leave the sign-up page waiting on a thread that died.
+            pending.pair_error = "Linking your Dina failed."
+
+    def _remove_failed(self, pending: _Pending, label: str) -> str:
+        """Remove a cell whose sign-up failed and give the invite back; the
+        message for the person. Safe from both threads: only the one whose
+        delete succeeds releases the invite."""
+        assert self.hosting is not None
+        try:
+            deleted = self.hosting.delete_unclaimed(label)
+        except Exception:
+            deleted = False
+        if not deleted:
+            # Someone's Dina, already removed, or not removable now.
+            return "This sign-up did not finish. Open your Dina page, or ask for help."
+        self.state.release_invite(pending.invite)
+        return "Setting up your Dina failed. Your invite still works."
 
     async def link_done(self, request: Request) -> Response:
         """HOSTED_DINA §4 steps 6–7: pair the link once the cell's Core is up."""
@@ -408,29 +528,20 @@ class DotBridge(OAuthProvider):
         if pending is None or pending.cell == "" or self.hosting is None:
             return _page("This link request has expired. Start again from ChatGPT.", 400)
         label = pending.cell
-        state = self.hosting.state(label)
-        if state in ("failed", "stopped"):
+        if label == CREATING:
+            return _waiting_page("Finishing your Dina…")
+        if pending.link_id != "":
+            return self._finish(request_id, pending, pending.link_id)
+        if pending.pair_error != "":
+            self._pending.pop(request_id, None)
+            return _page(f"{pending.pair_error} Start again from ChatGPT.", 400)
+        if self.hosting.state(label) in ("failed", "stopped"):
             # Nobody got this cell's words, so nothing is lost by removing it;
             # the invite goes back so the person can try again.
             self._pending.pop(request_id, None)
-            try:
-                deleted = await anyio.to_thread.run_sync(self.hosting.delete_unclaimed, label)
-            except Exception:
-                deleted = False
-            if not deleted:
-                # Someone's Dina, or not removable now: the invite stays spent.
-                return _page("This sign-up did not finish. Open your Dina page, or ask for help.", 400)
-            self.state.release_invite(pending.invite)
-            return _page("Setting up your Dina failed. Start again from ChatGPT; your invite still works.", 400)
-        code = self.hosting.take_bootstrap(label)
-        if code is None:
-            return _waiting_page("Finishing your Dina…")
-        try:
-            link_id = await anyio.to_thread.run_sync(self.pair_cell, label, code)
-        except BridgeError as exc:
-            self._pending.pop(request_id, None)
-            return _page(f"{exc} Start again from ChatGPT.", 400)
-        return self._finish(request_id, pending, link_id)
+            message = await anyio.to_thread.run_sync(self._remove_failed, pending, label)
+            return _page(f"{message} Start again from ChatGPT.", 400)
+        return _waiting_page("Finishing your Dina…")
 
     def _finish(self, request_id: str, pending: _Pending, link_id: str) -> Response:
         self._pending.pop(request_id, None)

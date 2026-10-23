@@ -318,6 +318,26 @@ describe('POST /v1/pair/complete — public, code-authenticated', () => {
     );
     expect(wide.status).toBe(400);
 
+    // A runner code is not "narrowed" into dot: dot reaches routes it may not.
+    const { code: runnerCode } = await initiate('runner2', 'agent', 'runner');
+    const runner = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code: runnerCode,
+        public_key: publicKeyToMultibase(makeActor().pub),
+        narrow_scope: 'dot',
+      }),
+    );
+    expect(runner.status).toBe(400);
+    const { code: plainCode } = await initiate('plain-agent', 'agent');
+    const plain = await router.handle(
+      unsignedReq('POST', '/v1/pair/complete', {
+        code: plainCode,
+        public_key: publicKeyToMultibase(makeActor().pub),
+        narrow_scope: 'dot',
+      }),
+    );
+    expect(plain.status).toBe(400);
+
     // And never on a code for anything but an agent.
     const { code: code3 } = await initiate('laptop', 'rich');
     const rich = await router.handle(

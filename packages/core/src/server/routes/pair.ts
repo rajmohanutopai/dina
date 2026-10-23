@@ -199,6 +199,15 @@ export function registerPairRoutes(router: CoreRouter): void {
       if (narrowToDot && intent !== null && intent.role !== 'agent') {
         return { status: 400, body: { error: 'narrow_scope applies to agent codes only' } };
       }
+      // Only a true narrowing: `dot` reaches a subset of what `coding` does,
+      // but routes a `runner` or `node` device may not (PeerLens, drafts), so
+      // those codes are refused rather than "narrowed" into more authority.
+      if (narrowToDot && intent !== null && intent.scope !== 'coding' && intent.scope !== 'dot') {
+        return {
+          status: 400,
+          body: { error: 'narrow_scope needs a code made for a coding agent or ChatGPT' },
+        };
+      }
       const scope = narrowToDot ? 'dot' : intent?.scope;
 
       // If the intent exists but the admin didn't capture a device_name

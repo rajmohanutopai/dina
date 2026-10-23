@@ -10,6 +10,8 @@
  *   DINA_CELL_CORE_CWD     Core's working folder
  *   DINA_CELL_CORE_LOG     file Core's output goes to (metadata-only logs)
  *   DINA_CELL_EVENTS_FD    inherited fd the gate reports events on, one JSON line each
+ *   DINA_CELL_KDF_FD       inherited socket the gate asks the provisioner on for a
+ *                          turn before each passphrase check (all cells share them)
  *   DINA_CELL_FRONT_DOOR   the front door's origin, the one place sign-up returns to
  *
  * Every other variable passes through to Core (PDS, MsgBox, AppView, handle).
@@ -19,6 +21,7 @@ import { spawn } from 'node:child_process';
 import * as fs from 'node:fs';
 
 import { createGate, type CoreHandle, type GateEvent } from './gate';
+import { createSlotClient, type KdfSlot } from './kdf_worker';
 
 function required(name: string): string {
   const value = (process.env[name] ?? '').trim();
@@ -37,7 +40,15 @@ function eventSink(): (event: GateEvent) => void {
   };
 }
 
-function coreEnv(vaultDir: string, socket: string): NodeJS.ProcessEnv {
+function kdfSlot(): KdfSlot | undefined {
+  const raw = (process.env.DINA_CELL_KDF_FD ?? '').trim();
+  if (raw === '') return undefined;
+  const fd = Number(raw);
+  if (!Number.isInteger(fd) || fd < 3) throw new Error('DINA_CELL_KDF_FD must be 3 or above');
+  return createSlotClient(fd);
+}
+
+function coreEnv(vaultDir: string, socket: string, gateKey: string): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = {};
   for (const [k, v] of Object.entries(process.env)) {
     if (k.startsWith('DINA_CELL_') || k === 'DINA_UNLOCK_PASSPHRASE') continue;
@@ -50,13 +61,18 @@ function coreEnv(vaultDir: string, socket: string): NodeJS.ProcessEnv {
     DINA_UNLOCK_PASSPHRASE_FD: '3',
     DINA_BOOTSTRAP_HANDOFF_FD: '4',
     DINA_BOOTSTRAP_SCOPE: 'dot',
+    // Readable only by the cell's own user (/proc/<pid>/environ).
+    DINA_GATE_KEY: gateKey,
     // Core exits when this pipe ends, which is when the gate dies.
     DINA_PARENT_WATCH_FD: '5',
     DINA_CORE_OWNER_CONSOLE: '1',
   };
 }
 
-function spawner(vaultDir: string, socket: string): (passphrase: string) => CoreHandle {
+function spawner(
+  vaultDir: string,
+  socket: string,
+): (passphrase: string, gateKey: string) => CoreHandle {
   const command = JSON.parse(required('DINA_CELL_CORE_COMMAND')) as unknown;
   if (
     !Array.isArray(command) ||
@@ -68,11 +84,11 @@ function spawner(vaultDir: string, socket: string): (passphrase: string) => Core
   const [bin = '', ...args] = command as string[];
   const cwd = (process.env.DINA_CELL_CORE_CWD ?? '').trim() || process.cwd();
   const logPath = (process.env.DINA_CELL_CORE_LOG ?? '').trim();
-  return (passphrase) => {
+  return (passphrase, gateKey) => {
     const log = logPath === '' ? 'ignore' : fs.openSync(logPath, 'a', 0o600);
     const child = spawn(bin, args, {
       cwd,
-      env: coreEnv(vaultDir, socket),
+      env: coreEnv(vaultDir, socket, gateKey),
       stdio: ['ignore', log, log, 'pipe', 'pipe', 'pipe'],
     });
     if (typeof log === 'number') fs.closeSync(log);
@@ -123,6 +139,7 @@ async function main(): Promise<void> {
     if (Buffer.byteLength(p) > 100) throw new Error(`socket path too long: ${p}`);
   }
   fs.mkdirSync(vaultDir, { recursive: true, mode: 0o700 });
+  const slot = kdfSlot();
   const gate = createGate({
     vaultDir,
     coreSocket: socket,
@@ -131,6 +148,7 @@ async function main(): Promise<void> {
     frontDoorOrigin: (process.env.DINA_CELL_FRONT_DOOR ?? '').trim(),
     // On a socket only the cell's Caddy can open, its forwarded address is the client.
     trustForwardedFor: listen.startsWith('unix:'),
+    ...(slot !== undefined ? { kdfSlot: slot } : {}),
   });
   if (listen.startsWith('unix:')) {
     const p = listen.slice('unix:'.length);

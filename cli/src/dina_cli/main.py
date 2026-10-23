@@ -4293,6 +4293,73 @@ def dot_bridge_provisiond(hosting_config: Path) -> None:
         provisioner.stop_all()
 
 
+@dot_bridge.command("sni-router")
+@click.option(
+    "--hosting-config",
+    envvar="DINA_HOSTING_CONFIG",
+    type=click.Path(dir_okay=False, exists=True, path_type=Path),
+    required=True,
+)
+@click.option("--front-door-host", required=True, help="The front door's name, e.g. dot.dinakernel.com.")
+@click.option(
+    "--front-door-target",
+    required=True,
+    help="Where the front door's own TLS front listens, as host:port.",
+)
+@click.option("--owner-domain", required=True, help="Cells are <label>.<owner-domain>.")
+@click.option(
+    "--other-target",
+    default="",
+    help="Where every other name goes, as host:port, with a PROXY line: a TLS "
+    "front already on this machine (for example a Caddy moved off port 443).",
+)
+@click.option(
+    "--front-door-proxy",
+    is_flag=True,
+    help="Send the front door's TLS front a PROXY line too.",
+)
+@click.option("--host", multiple=True, default=("0.0.0.0", "::"), show_default=True)
+@click.option("--port", default=443, type=int, show_default=True)
+def dot_bridge_sni_router(hosting_config: Path, front_door_host: str, front_door_target: str,
+                          owner_domain: str, other_target: str, front_door_proxy: bool,
+                          host: tuple[str, ...], port: int) -> None:
+    """Run the SNI router: pass each TLS stream, unread, to the front door or a cell.
+
+    Run it as a user in the hosting config's `sni_group` (the only group that
+    may open a cell's Caddy socket), never as root; on Linux give it port 443
+    with CAP_NET_BIND_SERVICE.
+    """
+    import asyncio
+
+    from .hosting import HostingError, load_hosting_config, tls_socket_path
+    from .sni_router import cell_route, serve
+
+    try:
+        cfg = load_hosting_config(hosting_config)
+    except (HostingError, KeyError, ValueError) as exc:
+        raise click.UsageError(f"bad hosting config: {exc}") from exc
+    def host_port(value: str, flag: str) -> tuple[str, int]:
+        h, _, p = value.rpartition(":")
+        if not h or not p.isdigit():
+            raise click.UsageError(f"{flag} must be host:port")
+        return h, int(p)
+
+    front_door = host_port(front_door_target, "--front-door-target")
+    other = host_port(other_target, "--other-target") if other_target else None
+
+    def cell_socket(label: str) -> str | None:
+        try:
+            path = tls_socket_path(cfg.root, label)
+        except HostingError:
+            return None
+        return path if os.path.exists(path) else None
+
+    route = cell_route(front_door_host.lower(), front_door,
+                       owner_domain.lower().strip("."), cell_socket,
+                       other_target=other, front_door_proxy=front_door_proxy)
+    asyncio.run(serve(route, list(host), port))
+
+
 @dot_bridge.group("invite")
 def dot_bridge_invite() -> None:
     """Invite codes for "Create my Dina" (each works once)."""

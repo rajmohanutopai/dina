@@ -29,7 +29,12 @@ services:
       UCP_ACME_DNS_TOKEN: ${UCP_ACME_DNS_TOKEN:-}
     ports:
       - "80:80"
-      - "443:443"
+      # 443 unless the hosting SNI router holds it (CADDY_HTTPS_PUBLISH, e.g.
+      # 127.0.0.1:8443; docs/HOSTED_DINA.md §3.1).
+      - "${CADDY_HTTPS_PUBLISH:-443}:443"
+    # The hosted Dinas' front door runs on the host (HOSTED_FRONT_DOOR_HOST).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       # Static apex landing page (served only when LANDING_HOST is set in

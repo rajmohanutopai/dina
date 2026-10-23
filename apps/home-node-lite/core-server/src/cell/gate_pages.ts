@@ -212,6 +212,9 @@ const PAGE = `<!doctype html>
   }
 
   function showWords(words, code, back) {
+    // Pair now, while the words are written down: the code lives five
+    // minutes, and writing down 24 words can take longer.
+    var paired = pairBrowser(code).then(function () { return true; }, function () { return false; });
     clear(view);
     var list = el("ol", { class: "words" });
     words.forEach(function (w) { list.appendChild(el("li", { text: w })); });
@@ -230,19 +233,25 @@ const PAGE = `<!doctype html>
       say("");
       clear(view);
       view.appendChild(el("p", { class: "muted", text: "Connecting this browser as your owner key…" }));
-      pairBrowser(code).then(function () {
+      paired.then(function (ok) {
         clear(view);
-        var done = el("div", { class: "card" }, [el("p", { text: "Your Dina is ready, and this browser is its owner key." })]);
+        // Without the key the Dina is still ready: the unlock page connects
+        // this browser later, with the passphrase. The way back stays.
+        var done = el("div", { class: "card" }, [el("p", { text: ok
+          ? "Your Dina is ready, and this browser is its owner key."
+          : "Your Dina is ready. This browser could not become its owner key; your Dina page can connect it later with your passphrase." })]);
         if (back) {
           var go = el("button", { text: "Back to ChatGPT" });
           go.addEventListener("click", function () { location.assign(back); });
           done.appendChild(go);
         }
+        // The gate's own page: it sends an owner key on to /owner, and
+        // offers any other browser the passphrase connection.
         var page = el("button", { text: "Open my Dina page" });
-        page.addEventListener("click", function () { location.assign("/owner"); });
+        page.addEventListener("click", function () { location.assign("/"); });
         done.appendChild(page);
         view.appendChild(done);
-      }).catch(function () { say("pairing_failed"); });
+      });
     });
   }
 
