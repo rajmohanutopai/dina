@@ -202,7 +202,9 @@ narrow), and takes back a link that does not come back `dot`.
    sent there at once, the person's first sight of their Dina was a browser
    error (found on the test box, 2026-10-24). After 90 seconds it sends them
    anyway. Until then the ticket stays in the front door's memory, never in
-   a page. It then sends the browser to the cell's owner origin with the
+   a page, and it goes once and only to the browser that made the cell (an
+   HttpOnly cookie set with the create): the request id is in URLs, and so
+   in access logs, and must not be enough to claim a cell. It then sends the browser to the cell's owner origin with the
    ticket in the URL fragment, so no server log sees it. The ticket is
    single-use and lasts ten minutes; the gate spends it on the first
    passphrase set with it. Whoever holds the ticket first claims the cell,

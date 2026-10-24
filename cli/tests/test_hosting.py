@@ -176,6 +176,27 @@ def test_the_person_waits_on_the_front_door_until_their_cells_page_answers(hoste
     assert urlparse(ready.headers["location"]).netloc == "cell00000000.dina-owner.test"
 
 
+def test_the_ticket_goes_only_to_the_browser_that_made_the_cell_and_only_once(hosted):
+    # The request id sits in URLs and so in the front door's access log; it
+    # alone must not hand anyone the ticket that claims the cell.
+    bridge, client = hosted
+    [invite] = bridge.state.add_invites(1)
+    _, req = _start(client)
+    bridge.origin_up = False
+    _create(client, req, invite)
+    cookie = client.cookies.get("dina_signup")
+    assert cookie
+    client.cookies.clear()
+    bridge.origin_up = True
+    stranger = client.get(f"/link/open?req={req}", follow_redirects=False)
+    assert stranger.status_code == 403 and "TICKET-1" not in stranger.headers.get("location", "")
+    client.cookies.set("dina_signup", cookie, domain="dot.test", path="/link")
+    first = client.get(f"/link/open?req={req}", follow_redirects=False)
+    assert first.status_code == 303 and "TICKET-1" in first.headers["location"]
+    again = client.get(f"/link/open?req={req}", follow_redirects=False)
+    assert again.status_code == 400 and "TICKET-1" not in again.text
+
+
 def test_a_certificate_that_never_comes_does_not_hold_the_person_forever(hosted, monkeypatch):
     from dina_cli import dot_bridge
 

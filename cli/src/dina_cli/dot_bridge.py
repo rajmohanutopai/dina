@@ -87,6 +87,7 @@ MAX_LINK_ATTEMPTS = 3
 ORIGIN_WAIT_SECONDS = 90
 # A hosted owner's code from their Dina page, for linking ChatGPT again:
 # `dina-link:<cell label>:<pairing code>` (HOSTED_DINA §4.1).
+SIGNUP_COOKIE = "dina_signup"
 CELL_LINK_CODE = re.compile(r"^dina-link:([a-z0-9]{6,32}):([0-9A-Z]{6,16})$")
 INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
@@ -117,6 +118,10 @@ class _Pending:
     # shows) until the cell's page answers; and when the wait began.
     ticket: str = ""
     cell_made_at: float = 0.0
+    # A cookie set on the browser that made the cell: `/link/open` hands the
+    # ticket only to that browser, and only once. The request id is in URLs
+    # (and so in access logs); it must not be enough to claim a cell.
+    browser_nonce: str = ""
 
 
 class BridgeState:
@@ -487,9 +492,20 @@ class DotBridge(OAuthProvider):
         ).start()
         pending.ticket = ticket
         pending.cell_made_at = time.time()
-        return RedirectResponse(
+        pending.browser_nonce = secrets.token_urlsafe(24)
+        resp = RedirectResponse(
             f"{self.public_url}/link/open?req={request_id}", status_code=303, headers=_NO_STORE
         )
+        resp.set_cookie(
+            SIGNUP_COOKIE,
+            pending.browser_nonce,
+            max_age=SIGNUP_TTL_SECONDS,
+            path="/link",
+            secure=self.public_url.startswith("https://"),
+            httponly=True,
+            samesite="lax",
+        )
+        return resp
 
     async def link_open(self, request: Request) -> Response:
         """HOSTED_DINA §4 step 3: send the person to their cell's page once it answers.
@@ -503,6 +519,8 @@ class DotBridge(OAuthProvider):
         pending = self._live_pending(request_id)
         if pending is None or pending.ticket == "" or self.hosting is None:
             return _page("This link request has expired. Start again from ChatGPT.", 400)
+        if not secrets.compare_digest(request.cookies.get(SIGNUP_COOKIE, ""), pending.browser_nonce):
+            return _page("Open this from the browser you signed up in.", 403)
         label = pending.cell
         if self.hosting.state(label) in ("failed", "stopped"):
             self._pending.pop(request_id, None)
@@ -516,6 +534,8 @@ class DotBridge(OAuthProvider):
             return _waiting_page("Making your Dina…")
         back = f"{self.public_url}/link/done?req={request_id}"
         target = f"{origin}/#ticket={quote(pending.ticket, safe='')}&return={quote(back, safe='')}"
+        # Once: from here the ticket lives in that browser's address bar.
+        pending.ticket = ""
         return RedirectResponse(target, status_code=303, headers=_NO_STORE)
 
     @staticmethod
