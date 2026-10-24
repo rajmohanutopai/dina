@@ -29,10 +29,20 @@ import {
   installCommerceRuntime,
   type CommerceRuntime,
 } from '../../../src/commerce/runtime';
+import {
+  installSupplierDirectory,
+  trustIsGood,
+  type SupplierFinding,
+} from '../../../src/commerce/supplier_directory';
 import { TENDER_DRAFT_TYPE } from '../../../src/commerce/tender_drafts';
 import { addContact, resetContactDirectory } from '../../../src/contacts/directory';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { setPeopleRepository, SQLitePeopleRepository } from '../../../src/people/repository';
+import { setOwnerReviewIdentity } from '../../../src/review/owner_review';
+import {
+  InMemoryReviewPublishRepository,
+  setReviewPublishRepository,
+} from '../../../src/review/publish_job_repository';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
 import { CORE_MINTED_PAYLOAD_TYPES } from '../../../src/server/routes/workflow';
@@ -154,6 +164,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  installSupplierDirectory(null);
+  setOwnerReviewIdentity(null);
+  setReviewPublishRepository(null);
   pack.dispose();
   installOwnerPresenceVerifier(null);
   clearOwnerPresence();
@@ -564,8 +577,8 @@ describe("the owner's supplier list (HOSTED_DINA §6)", () => {
     const res = await draft();
     const id = String(res.body.draft_id);
     expect(runtime.tenderDrafts.get(id)?.suppliers).toEqual([
-      { supplier_did: SUPPLIER_B, service_rkey: 'wholesale' },
-      { supplier_did: SUPPLIER_A, service_rkey: 'self' },
+      { supplier_did: SUPPLIER_B, service_rkey: 'wholesale', source: 'known', selected: true },
+      { supplier_did: SUPPLIER_A, service_rkey: 'self', source: 'known', selected: true },
     ]);
   });
 
@@ -644,5 +657,304 @@ describe('opening a draft twice at once (code review round 1)', () => {
     // One tender's worth of quote requests: one per supplier.
     expect(sent.map((m) => m.toDid).sort()).toEqual([SUPPLIER_A, SUPPLIER_B]);
     expect(runtime.tenderDrafts.get(id)?.state).toBe('opened');
+  });
+});
+
+// ── HOSTED_DINA §6.1–§6.2: suppliers found on the network, and the owner's verdict ──
+
+const NET_GOOD = 'did:plc:netgoodbakery';
+const NET_NEW = 'did:plc:netnewbakery';
+
+function finding(
+  did: string,
+  name: string,
+  score: number | null,
+  reviews: number,
+): SupplierFinding {
+  return {
+    supplierDid: did,
+    serviceRkey: 'self',
+    name,
+    items: [
+      {
+        product: 'manufacturer_sku:CROI',
+        indicativePrice: { currency: 'INR', minorUnits: '4500' },
+      },
+    ],
+    trust: { score, reviews },
+  };
+}
+
+function setBuyer(extra: Record<string, unknown> = {}): void {
+  const stored = runtime.settings.readBuyer();
+  const base = stored.ok
+    ? stored.settings
+    : {
+        actingIdentityDid: BUYER_DID,
+        locations: [],
+        preferredSuppliers: [],
+        blockedSuppliers: [],
+        allowedCategoryIds: [],
+        quoteFanoutCeiling: 5,
+        approvalPolicySummary: '',
+        currency: 'INR',
+        preferredUnitCodes: [],
+        publishReviews: false,
+      };
+  expect(
+    runtime.settings.writeBuyer({
+      ...base,
+      locations: [{ scheme: 'postal_area', value: '560001' }],
+      ...extra,
+    } as never),
+  ).toEqual({ ok: true });
+}
+
+describe('network suppliers in an agent’s draft (HOSTED_DINA §6.1)', () => {
+  let searches: { text: string; region?: string }[];
+  let findings: SupplierFinding[];
+  beforeEach(() => {
+    searches = [];
+    findings = [finding(NET_GOOD, 'Good Bakes', 0.9, 4), finding(NET_NEW, 'New Bakes', null, 0)];
+    installSupplierDirectory({
+      findSuppliers: async (q) => {
+        searches.push({ text: q.text, ...(q.region !== undefined ? { region: q.region } : {}) });
+        return findings;
+      },
+    });
+    setBuyer();
+  });
+
+  it('offers a new Dina network finds: ticked when trust is good, unticked when not', async () => {
+    const res = await draft();
+    expect(res.status).toBe(200);
+    expect(searches).toEqual([{ text: 'butter croissants', region: 'postal_area:560001' }]);
+    const stored = runtime.tenderDrafts.get(String(res.body.draft_id));
+    expect(stored?.suppliers).toEqual([
+      {
+        supplier_did: NET_GOOD,
+        service_rkey: 'self',
+        source: 'network',
+        selected: true,
+        name: 'Good Bakes',
+        trust: { score: 0.9, reviews: 4 },
+      },
+      {
+        supplier_did: NET_NEW,
+        service_rkey: 'self',
+        source: 'network',
+        selected: false,
+        name: 'New Bakes',
+        trust: { score: null, reviews: 0 },
+      },
+    ]);
+    // The agent reads names only.
+    expect(res.body.suppliers).toEqual([{ name: 'Good Bakes' }, { name: 'New Bakes' }]);
+    // The owner's card says where they came from.
+    const card = workflow.store().getById(`tender-draft-${String(res.body.draft_id)}`);
+    expect(card?.description).toContain('2 found on the network');
+  });
+
+  it('opens to the ticked suppliers only, unless the owner ticks others', async () => {
+    const id = String((await draft()).body.draft_id);
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    expect((await openDraft(id)).status).toBe(200);
+    expect(sent.map((m) => m.toDid)).toEqual([NET_GOOD]);
+
+    sent = [];
+    const second = String((await draft()).body.draft_id);
+    expect((await openDraft(second, { suppliers: [NET_NEW] })).status).toBe(200);
+    expect(sent.map((m) => m.toDid)).toEqual([NET_NEW]);
+  });
+
+  it('never offers a supplier already offered, a blocked one, or the café itself', async () => {
+    await router.handle(
+      owner('POST', '/v1/commerce/trade/suppliers', {
+        supplier_did: NET_GOOD,
+        service_rkey: 'shop',
+      }),
+    );
+    setBuyer({ blockedSuppliers: [NET_NEW] });
+    findings = [...findings, finding(BUYER_DID, 'Myself', 1, 9)];
+    const id = String((await draft()).body.draft_id);
+    expect(runtime.tenderDrafts.get(id)?.suppliers).toEqual([
+      { supplier_did: NET_GOOD, service_rkey: 'shop', source: 'known', selected: true },
+    ]);
+  });
+
+  it('ticks no more than one tender asks, best trust first', async () => {
+    findings = Array.from({ length: 7 }, (_, i) =>
+      finding(`did:plc:bake${String(i)}xxxx`, `Bake ${String(i)}`, 0.6 + i * 0.05, 3),
+    );
+    const id = String((await draft()).body.draft_id);
+    const offered = runtime.tenderDrafts.get(id)?.suppliers ?? [];
+    expect(offered).toHaveLength(7);
+    expect(offered.filter((s) => s.selected).map((s) => s.name)).toEqual([
+      'Bake 6',
+      'Bake 5',
+      'Bake 4',
+      'Bake 3',
+      'Bake 2',
+    ]);
+  });
+
+  it('a failing directory leaves the café’s own suppliers, or no draft at all', async () => {
+    installSupplierDirectory({
+      findSuppliers: async () => {
+        throw new Error('appview down');
+      },
+    });
+    expect((await draft()).body).toEqual({ error: 'no_known_suppliers' });
+    await pastTender();
+    const res = await draft();
+    expect(res.status).toBe(200);
+    expect(res.body.suppliers).toEqual([
+      { name: "Rosa's Bakery" },
+      { name: 'Blue Door Bakehouse' },
+    ]);
+  });
+});
+
+describe('the owner finds suppliers and gives a verdict (HOSTED_DINA §6.1–§6.2)', () => {
+  let reviews: InMemoryReviewPublishRepository;
+  beforeEach(() => {
+    installSupplierDirectory({
+      findSuppliers: async () => [
+        finding(NET_GOOD, 'Good Bakes', 0.9, 4),
+        finding(NET_NEW, 'New Bakes', null, 0),
+      ],
+    });
+    reviews = new InMemoryReviewPublishRepository();
+    setReviewPublishRepository(reviews);
+    setOwnerReviewIdentity(BUYER_DID);
+    setBuyer();
+  });
+
+  const search = (query: Record<string, string>) =>
+    router.handle(owner('GET', '/v1/commerce/trade/suppliers/search', {}, query));
+  const verdict = (body: Record<string, unknown>) =>
+    router.handle(owner('POST', '/v1/commerce/trade/suppliers/review', body));
+
+  it('searches the network with trust, and marks who is listed or blocked', async () => {
+    await router.handle(
+      owner('POST', '/v1/commerce/trade/suppliers', {
+        supplier_did: NET_GOOD,
+        service_rkey: 'self',
+      }),
+    );
+    const res = await search({ q: 'croissants' });
+    expect(res.status).toBe(200);
+    const body = res.body as { region: string; suppliers: Record<string, unknown>[] };
+    expect(body.region).toBe('postal_area:560001');
+    expect(body.suppliers).toEqual([
+      expect.objectContaining({
+        supplier_did: NET_GOOD,
+        name: 'Good Bakes',
+        listed: true,
+        blocked: false,
+        trust: { score: 0.9, reviews: 4, good: true },
+      }),
+      expect.objectContaining({
+        supplier_did: NET_NEW,
+        listed: false,
+        trust: { score: null, reviews: 0, good: false },
+      }),
+    ]);
+    expect((await search({ q: '' })).status).toBe(400);
+    expect((await search({ q: 'x', region: 'not a region!' })).status).toBe(400);
+  });
+
+  it('“I trust this supplier” needs a person present, then publishes a review and lists it', async () => {
+    const body = {
+      supplier_did: NET_NEW,
+      service_rkey: 'self',
+      label: 'New Bakes',
+      verdict: 'trust',
+      note: 'Lovely croissants',
+    };
+    const refused = await verdict(body);
+    expect(refused.status).toBe(403);
+    expect(reviews.listForOwner(BUYER_DID)).toEqual([]);
+
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    const res = await verdict(body);
+    expect(res.status).toBe(200);
+    expect(runtime.ownerSuppliers.list()).toEqual([
+      expect.objectContaining({ supplierDid: NET_NEW, serviceRkey: 'self', label: 'New Bakes' }),
+    ]);
+    const [job] = reviews.listForOwner(BUYER_DID);
+    const record = JSON.parse(job?.recordJSON ?? '{}') as Record<string, unknown>;
+    expect(record).toMatchObject({
+      subject: { type: 'did', did: NET_NEW, name: 'New Bakes' },
+      category: 'supplier',
+      sentiment: 'positive',
+      text: 'Lovely croissants',
+    });
+    expect(record.isAgentGenerated).toBeUndefined();
+    expect(job?.rkey).toMatch(/^owner-[0-9a-f]{24}$/);
+  });
+
+  it('“Not for me” publishes a negative review, unlists and blocks; trusting again lifts the block', async () => {
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    await verdict({ supplier_did: NET_GOOD, service_rkey: 'self', verdict: 'trust' });
+    const res = await verdict({
+      supplier_did: NET_GOOD,
+      service_rkey: 'self',
+      verdict: 'distrust',
+    });
+    expect(res.status).toBe(200);
+    expect(runtime.ownerSuppliers.list()).toEqual([]);
+    const buyer = runtime.settings.readBuyer();
+    expect(buyer.ok && buyer.settings.blockedSuppliers).toEqual([NET_GOOD]);
+    expect(
+      reviews
+        .listForOwner(BUYER_DID)
+        .map((j) => (JSON.parse(j.recordJSON) as { sentiment: string }).sentiment)
+        // Both queued in the same millisecond: the queue's order between them is not fixed.
+        .sort(),
+    ).toEqual(['negative', 'positive']);
+
+    await verdict({ supplier_did: NET_GOOD, service_rkey: 'self', verdict: 'trust' });
+    const after = runtime.settings.readBuyer();
+    expect(after.ok && after.settings.blockedSuppliers).toEqual([]);
+  });
+
+  it('changes nothing when this Dina cannot publish reviews, and refuses itself', async () => {
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    setOwnerReviewIdentity(null);
+    const res = await verdict({ supplier_did: NET_GOOD, service_rkey: 'self', verdict: 'trust' });
+    expect([res.status, (res.body as { error: string }).error]).toEqual([
+      503,
+      'reviews_unavailable',
+    ]);
+    expect(runtime.ownerSuppliers.list()).toEqual([]);
+    setOwnerReviewIdentity(BUYER_DID);
+    expect(
+      (await verdict({ supplier_did: BUYER_DID, service_rkey: 'self', verdict: 'trust' })).status,
+    ).toBe(400);
+    expect(
+      (await verdict({ supplier_did: NET_GOOD, service_rkey: 'self', verdict: 'maybe' })).status,
+    ).toBe(400);
+  });
+
+  it('is the owner’s alone: no agent may search or review', () => {
+    for (const p of [
+      '/v1/commerce/trade/suppliers/search',
+      '/v1/commerce/trade/suppliers/review',
+    ]) {
+      expect(isAuthorized('agent', 'GET', p)).toBe(false);
+      expect(isAuthorized('agent', 'POST', p)).toBe(false);
+      expect(isAuthorized('owner', 'POST', p)).toBe(true);
+    }
+  });
+});
+
+describe('good trust (HOSTED_DINA §6.1)', () => {
+  it('needs two reviews and a score of at least 0.2: a young network’s two positive reviews pass', () => {
+    // Kumar Bakes on the test network, 2026-10-24: two positive reviews from new Dinas.
+    expect(trustIsGood({ score: 0.24, reviews: 2 })).toBe(true);
+    expect(trustIsGood({ score: 0.19, reviews: 5 })).toBe(false);
+    expect(trustIsGood({ score: 0.9, reviews: 1 })).toBe(false);
+    expect(trustIsGood({ score: null, reviews: 0 })).toBe(false);
   });
 });

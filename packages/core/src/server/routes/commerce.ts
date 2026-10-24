@@ -297,6 +297,7 @@ import {
   type StaffScope,
 } from '../../commerce/staff_grants';
 import { setStaffPin } from '../../commerce/staff_pins';
+import { getSupplierDirectory, trustIsGood } from '../../commerce/supplier_directory';
 import { buildSupplierInbox } from '../../commerce/supplier_inbox';
 import {
   bindSupplierListing,
@@ -317,6 +318,7 @@ import {
   createTenderDraft,
   parseDraftLines,
   retireDraftCard,
+  selectedSuppliers,
   type TenderDraft,
 } from '../../commerce/tender_drafts';
 import { tenderStory } from '../../commerce/tender_story';
@@ -342,6 +344,7 @@ import {
   uninstall,
 } from '../../plugins/install_service';
 import { getPluginInstallRepository, type PluginInstall } from '../../plugins/registry';
+import { queueOwnerReview } from '../../review/owner_review';
 import { getSessionRegistry } from '../../session/registry';
 import { getOwnerTimeZone } from '../../settings/owner_settings';
 import { WorkflowTaskState } from '../../workflow/domain';
@@ -7400,7 +7403,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     }
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
-    const created = createTenderDraft({
+    const created = await createTenderDraft({
       agentDid: agent.agentDid,
       lines: parsed.lines,
       requiredBy,
@@ -7448,7 +7451,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           agent_did: draft.agentDid,
           lines: draft.lines,
           required_by: draft.requiredBy === '' ? null : draft.requiredBy,
-          suppliers: draft.suppliers.map((s) => ({ ...s, name: supplierNameFor(s.supplier_did) })),
+          suppliers: draft.suppliers.map((s) => ({
+            ...s,
+            source: s.source ?? 'known',
+            selected: s.selected !== false,
+            name: supplierNameFor(s.supplier_did) ?? s.name ?? null,
+          })),
           region: draft.region,
           currency: draft.currency === '' ? null : draft.currency,
           created_at: draft.createdAt,
@@ -7498,7 +7506,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 400, body: { error: 'region is required: the draft has no delivery area' } };
     }
     // The owner may leave suppliers out, never add one the draft did not name.
-    let suppliers = draft.suppliers;
+    // With no list, the draft's ticks stand (HOSTED_DINA §6.1).
+    let suppliers = selectedSuppliers(draft);
     if (body.suppliers !== undefined) {
       if (!Array.isArray(body.suppliers) || !body.suppliers.every((d) => typeof d === 'string')) {
         return { status: 400, body: { error: 'suppliers must be a list of supplier DIDs' } };
@@ -7532,7 +7541,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     body: Record<string, unknown>,
   ): Promise<CoreResponse> {
     const opened = await openTenderFromBody(runtime, {
-      suppliers,
+      suppliers: suppliers.map((s) => ({
+        supplier_did: s.supplier_did,
+        service_rkey: s.service_rkey,
+      })),
       lines: draft.lines,
       projection: { region },
       currency,
@@ -7620,6 +7632,194 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 404, body: { error: 'no_such_supplier' } };
     }
     return { status: 200, body: { ok: true, supplier_did: did } };
+  });
+
+  // HOSTED_DINA §6.1 — find suppliers on the network: businesses whose
+  // published catalogue matches what the owner typed, in the café's delivery
+  // area unless the owner names another, with their PeerLens trust. Owner only;
+  // reading the AppView changes nothing.
+  router.get('/v1/commerce/trade/suppliers/search', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const directory = getSupplierDirectory();
+    if (directory === null) return { status: 503, body: { error: 'supplier_search_unavailable' } };
+    const text = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    if (text === '' || text.length > 200) {
+      return { status: 400, body: { error: 'q must be 1 to 200 characters' } };
+    }
+    const buyer = runtime.settings.readBuyer();
+    const home = buyer.ok ? buyer.settings.locations[0] : undefined;
+    let region = home === undefined ? undefined : `${home.scheme}:${home.value}`;
+    if (typeof req.query.region === 'string') {
+      const asked = req.query.region.trim();
+      if (asked !== '' && !/^[a-z_]{1,32}:[A-Za-z0-9 _-]{1,32}$/.test(asked)) {
+        return {
+          status: 400,
+          body: { error: 'region must be scheme:value, e.g. postal_area:560001' },
+        };
+      }
+      region = asked === '' ? undefined : asked;
+    }
+    let findings;
+    try {
+      findings = await directory.findSuppliers({
+        text,
+        ...(region !== undefined ? { region } : {}),
+        limit: 20,
+      });
+    } catch {
+      return { status: 502, body: { error: 'supplier_search_failed' } };
+    }
+    const listed = new Set(runtime.ownerSuppliers.list().map((s) => s.supplierDid));
+    const blocked = new Set(buyer.ok ? buyer.settings.blockedSuppliers : []);
+    const self = runtime.nodeDid();
+    return {
+      status: 200,
+      body: {
+        region: region ?? null,
+        suppliers: findings
+          .filter((f) => f.supplierDid !== self)
+          .map((f) => ({
+            supplier_did: f.supplierDid,
+            service_rkey: f.serviceRkey,
+            name: supplierNameFor(f.supplierDid) ?? f.name,
+            items: f.items.map((i) => ({
+              product: i.product,
+              ...(i.indicativePrice !== undefined
+                ? {
+                    indicative_price: {
+                      currency: i.indicativePrice.currency,
+                      minor_units: i.indicativePrice.minorUnits,
+                    },
+                  }
+                : {}),
+            })),
+            trust: { score: f.trust.score, reviews: f.trust.reviews, good: trustIsGood(f.trust) },
+            listed: listed.has(f.supplierDid),
+            blocked: blocked.has(f.supplierDid),
+          })),
+      },
+    };
+  });
+
+  // HOSTED_DINA §6.2 — the owner's verdict on a supplier, behind their
+  // passphrase. `trust` publishes a positive PeerLens review in the owner's
+  // name and lists the supplier; `distrust` publishes a negative one, takes it
+  // off the list and blocks it, so no draft offers it again. The review goes
+  // on the durable publish queue; the list changes at once.
+  router.post('/v1/commerce/trade/suppliers/review', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const parsed = parseOwnerSupplier(body);
+    if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
+    const supplier = parsed.supplier;
+    if (supplier.supplierDid === runtime.nodeDid()) {
+      return { status: 400, body: { error: 'a Dina cannot review itself' } };
+    }
+    const verdict = body.verdict;
+    if (verdict !== 'trust' && verdict !== 'distrust') {
+      return { status: 400, body: { error: 'verdict must be trust or distrust' } };
+    }
+    const note = typeof body.note === 'string' ? body.note.trim() : '';
+    if (note.length > 1000)
+      return { status: 400, body: { error: 'note must be at most 1000 characters' } };
+    const category =
+      typeof body.category === 'string' && body.category.trim() !== ''
+        ? body.category.trim()
+        : 'supplier';
+    if (category.length > 200)
+      return { status: 400, body: { error: 'category must be at most 200 characters' } };
+    if (!ownerPresenceCanBeEstablished()) {
+      return {
+        status: 409,
+        body: {
+          error: 'presence_unavailable',
+          detail: 'a public review needs a node that can check the owner’s passphrase',
+        },
+      };
+    }
+    const nowMs = runtime.now();
+    if (!ownerPresentNow(nowMs, ownerPresencePrincipal(req))) {
+      return {
+        status: 403,
+        body: { error: 'no_user_presence', detail: 'a public review needs a person present' },
+      };
+    }
+    const listedNow = runtime.ownerSuppliers
+      .list()
+      .some((s) => s.supplierDid === supplier.supplierDid);
+    if (
+      verdict === 'trust' &&
+      !listedNow &&
+      runtime.ownerSuppliers.count() >= MAX_OWNER_SUPPLIERS
+    ) {
+      return { status: 409, body: { error: 'too_many_suppliers' } };
+    }
+    const queued = queueOwnerReview(
+      {
+        subject: {
+          type: 'did',
+          did: supplier.supplierDid,
+          ...(supplier.label !== '' ? { name: supplier.label } : {}),
+        },
+        category,
+        sentiment: verdict === 'trust' ? 'positive' : 'negative',
+        ...(note !== '' ? { text: note } : {}),
+      },
+      nowMs,
+    );
+    if (!queued.ok) {
+      return {
+        status:
+          queued.refusal === 'lexicon_invalid'
+            ? 400
+            : queued.refusal === 'reviews_unavailable'
+              ? 503
+              : 429,
+        body: {
+          error: queued.refusal,
+          ...(queued.detail !== undefined ? { detail: queued.detail } : {}),
+        },
+      };
+    }
+    const buyer = runtime.settings.readBuyer();
+    if (verdict === 'trust') {
+      runtime.ownerSuppliers.put({ ...supplier, addedAt: nowMs });
+      // Trusting a supplier the owner once blocked lifts the block.
+      if (buyer.ok && buyer.settings.blockedSuppliers.includes(supplier.supplierDid)) {
+        runtime.settings.writeBuyer({
+          ...buyer.settings,
+          blockedSuppliers: buyer.settings.blockedSuppliers.filter(
+            (d) => d !== supplier.supplierDid,
+          ),
+        });
+      }
+    } else {
+      runtime.ownerSuppliers.remove(supplier.supplierDid);
+      if (buyer.ok && !buyer.settings.blockedSuppliers.includes(supplier.supplierDid)) {
+        runtime.settings.writeBuyer({
+          ...buyer.settings,
+          blockedSuppliers: [...buyer.settings.blockedSuppliers, supplier.supplierDid],
+        });
+      }
+    }
+    appendAudit('negotiation', 'owner_supplier_review', supplier.supplierDid, verdict);
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        supplier_did: supplier.supplierDid,
+        verdict,
+        review: { job_id: queued.jobId, rkey: queued.rkey },
+        listed: verdict === 'trust',
+        blocked: verdict === 'distrust' && buyer.ok,
+      },
+    };
   });
 
   // NEGOTIATION_PLAN §4.5 — the offers a tender holds, filtered then ordered.

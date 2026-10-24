@@ -232,6 +232,8 @@ export {
   rowToPublishJob,
 } from './review/publish_job_repository';
 export type { ReviewPublishRepository } from './review/publish_job_repository';
+export { setOwnerReviewIdentity, queueOwnerReview } from './review/owner_review';
+export type { OwnerReviewOutcome } from './review/owner_review';
 export { publishClaimedReview, runReviewPublishTick } from './review/publish_pipeline';
 export type {
   PublishReceipt,
@@ -933,6 +935,20 @@ export type {
 // composition root's logger, and the event type carries ids, states,
 // counts and latencies ONLY.
 export { installCommerceObserver, recordCommerceEvent } from './commerce/observability';
+// HOSTED_DINA §6.1 — the host installs the AppView-backed supplier directory.
+export {
+  getSupplierDirectory,
+  installSupplierDirectory,
+  trustIsGood,
+  TRUST_GOOD_MIN_REVIEWS,
+  TRUST_GOOD_SCORE,
+} from './commerce/supplier_directory';
+export type {
+  SupplierDirectory,
+  SupplierFinding,
+  SupplierFindingItem,
+  SupplierSearch,
+} from './commerce/supplier_directory';
 export type { CommerceEvent, CommerceEventName, CommerceObserver } from './commerce/observability';
 // §18.1 — the first-party commerce install step (PC-9a): mobile drives the
 // same ceremony in-process that the server drives over its owner routes.

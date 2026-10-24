@@ -24,6 +24,7 @@ import { getWorkflowService } from '../workflow/service';
 
 import { rankTender } from './buyer_negotiation';
 import { getCommerceRuntime, type CommerceRuntime } from './runtime';
+import { getSupplierDirectory, trustIsGood, type SupplierFinding } from './supplier_directory';
 import { DEFAULT_TENDER_FANOUT } from './tender';
 
 
@@ -35,6 +36,14 @@ export const TENDER_DRAFT_TTL_MS = 24 * 60 * 60 * 1000;
 export const MAX_PENDING_DRAFTS_PER_AGENT = 5;
 export const MAX_DRAFT_LINES = 20;
 export const MAX_REQUIREMENT_TEXT = 200;
+/**
+ * Suppliers one draft may offer the owner: the café's own first, then
+ * businesses found on the network (HOSTED_DINA §6.1). At most
+ * DEFAULT_TENDER_FANOUT of them start ticked, since a tender asks no more.
+ */
+export const MAX_DRAFT_SUPPLIERS = 8;
+/** Network searches one draft makes: one per line, the first lines only. */
+export const MAX_NETWORK_SEARCHES = 3;
 
 export type TenderDraftState = 'pending' | 'opened' | 'dismissed';
 
@@ -47,6 +56,23 @@ export interface TenderDraftLine {
 export interface TenderDraftSupplier {
   supplier_did: string;
   service_rkey: string;
+  /**
+   * `known`: the owner's list or trade history. `network`: found on the
+   * PeerLens AppView for this draft; the owner has not picked it. Absent on
+   * a draft stored before network finds existed, and reads as `known`.
+   */
+  source?: 'known' | 'network';
+  /** Ticked on the owner's open form. Absent reads as ticked. */
+  selected?: boolean;
+  /** A network find's listing name. */
+  name?: string;
+  /** A network find's PeerLens trust when the draft was made. */
+  trust?: { score: number | null; reviews: number };
+}
+
+/** The suppliers a draft asks when the owner opens it without changing the ticks. */
+export function selectedSuppliers(draft: TenderDraft): TenderDraftSupplier[] {
+  return draft.suppliers.filter((s) => s.selected !== false);
 }
 
 export interface TenderDraft {
@@ -95,7 +121,66 @@ export function knownSuppliers(runtime: CommerceRuntime, limit: number): TenderD
       add(member.supplierDid, member.serviceRkey);
     }
   }
-  return [...seen.values()].slice(0, limit);
+  return [...seen.values()].slice(0, limit).map((s) => ({ ...s, source: 'known', selected: true }));
+}
+
+/**
+ * Businesses on the network that sell what the lines ask for, in the café's
+ * delivery area: never one already offered, blocked, or the café itself.
+ * Ticked only when its PeerLens trust is good (`trustIsGood`), and only while
+ * the ticked count stays within one tender's fan-out. The directory failing
+ * or missing offers no one; the draft still has the café's own.
+ */
+export async function networkSuppliers(
+  runtime: CommerceRuntime,
+  lines: TenderDraftLine[],
+  region: RegionRef | null,
+  offered: TenderDraftSupplier[],
+): Promise<TenderDraftSupplier[]> {
+  const directory = getSupplierDirectory();
+  if (directory === null || offered.length >= MAX_DRAFT_SUPPLIERS) return [];
+  const buyer = runtime.settings.readBuyer();
+  const skip = new Set([
+    ...offered.map((s) => s.supplier_did),
+    ...(buyer.ok ? buyer.settings.blockedSuppliers : []),
+    runtime.nodeDid(),
+  ]);
+  const regionKey = region === null ? undefined : `${region.scheme}:${region.value}`;
+  const found = new Map<string, SupplierFinding>();
+  for (const line of lines.slice(0, MAX_NETWORK_SEARCHES)) {
+    let findings: SupplierFinding[];
+    try {
+      findings = await directory.findSuppliers({
+        text: line.requirement.text,
+        ...(regionKey !== undefined ? { region: regionKey } : {}),
+        limit: MAX_DRAFT_SUPPLIERS,
+      });
+    } catch {
+      continue;
+    }
+    for (const f of findings) {
+      if (!skip.has(f.supplierDid) && !found.has(f.supplierDid)) found.set(f.supplierDid, f);
+    }
+  }
+  let ticked = offered.filter((s) => s.selected !== false).length;
+  const out: TenderDraftSupplier[] = [];
+  // Better-trusted first, so the ticks go to them.
+  const ranked = [...found.values()].sort(
+    (a, b) => (b.trust.score ?? -1) - (a.trust.score ?? -1) || b.trust.reviews - a.trust.reviews,
+  );
+  for (const f of ranked.slice(0, MAX_DRAFT_SUPPLIERS - offered.length)) {
+    const selected = trustIsGood(f.trust) && ticked < DEFAULT_TENDER_FANOUT;
+    if (selected) ticked += 1;
+    out.push({
+      supplier_did: f.supplierDid,
+      service_rkey: f.serviceRkey,
+      source: 'network',
+      selected,
+      ...(f.name !== null && f.name !== '' ? { name: f.name } : {}),
+      trust: { score: f.trust.score, reviews: f.trust.reviews },
+    });
+  }
+  return out;
 }
 
 export type DraftLinesResult =
@@ -142,12 +227,12 @@ export type CreateDraftOutcome =
     };
 
 /** Store the draft and raise the owner's card. */
-export function createTenderDraft(args: {
+export async function createTenderDraft(args: {
   agentDid: string;
   lines: TenderDraftLine[];
   requiredBy: string;
   nowMs: number;
-}): CreateDraftOutcome {
+}): Promise<CreateDraftOutcome> {
   const runtime = getCommerceRuntime();
   if (runtime === null) return { ok: false, refusal: 'commerce_unavailable' };
   if (
@@ -155,16 +240,18 @@ export function createTenderDraft(args: {
   ) {
     return { ok: false, refusal: 'too_many_pending_drafts' };
   }
-  const suppliers = knownSuppliers(runtime, DEFAULT_TENDER_FANOUT);
-  if (suppliers.length === 0) return { ok: false, refusal: 'no_known_suppliers' };
   const buyer = runtime.settings.readBuyer();
+  const region = buyer.ok ? (buyer.settings.locations[0] ?? null) : null;
+  const known = knownSuppliers(runtime, DEFAULT_TENDER_FANOUT);
+  const suppliers = [...known, ...(await networkSuppliers(runtime, args.lines, region, known))];
+  if (suppliers.length === 0) return { ok: false, refusal: 'no_known_suppliers' };
   const draft: TenderDraft = {
     draftId: `tdr_${bytesToHex(randomBytes(12))}`,
     agentDid: args.agentDid,
     lines: args.lines,
     requiredBy: args.requiredBy,
     suppliers,
-    region: buyer.ok ? (buyer.settings.locations[0] ?? null) : null,
+    region,
     currency: buyer.ok ? buyer.settings.currency : '',
     state: 'pending',
     tenderId: '',
@@ -192,6 +279,17 @@ function draftSubject(draft: TenderDraft): string {
   return `“${shown}”${more}`;
 }
 
+/** Who the draft would ask, as the owner's card says it. */
+function draftAudience(draft: TenderDraft): string {
+  const known = draft.suppliers.filter((s) => s.source !== 'network').length;
+  const found = draft.suppliers.length - known;
+  const parts = [
+    ...(known > 0 ? [`${String(known)} of your suppliers`] : []),
+    ...(found > 0 ? [`${String(found)} found on the network`] : []),
+  ];
+  return parts.length === 0 ? '' : ` to ${parts.join(' and ')}`;
+}
+
 function raiseDraftCard(draft: TenderDraft): void {
   const workflow = getWorkflowService();
   if (workflow === null) return;
@@ -206,7 +304,7 @@ function raiseDraftCard(draft: TenderDraft): void {
     workflow.create({
       id: `tender-draft-${draft.draftId}`,
       kind: WorkflowTaskKind.Approval,
-      description: `An agent drafted a tender for ${draftSubject(draft)} to ${String(draft.suppliers.length)} of your suppliers. Add your target and ceiling to open it.`,
+      description: `An agent drafted a tender for ${draftSubject(draft)}${draftAudience(draft)}. Add your target and ceiling to open it.`,
       payload: JSON.stringify(payload),
       idempotencyKey: `tender_draft:${draft.draftId}`,
       correlationId: draft.draftId,
@@ -265,7 +363,7 @@ export function agentDraftStatus(
   const status: AgentDraftStatus = {
     draft_id: draft.draftId,
     draft_state: lapsed ? 'lapsed' : draft.state,
-    suppliers: draft.suppliers.map((s) => ({ name: nameFor(s.supplier_did) })),
+    suppliers: draft.suppliers.map((s) => ({ name: nameFor(s.supplier_did) ?? s.name ?? null })),
   };
   if (runtime === null || draft.state !== 'opened' || draft.tenderId === '') return status;
   const policy = runtime.buyerNegotiation.getTender(draft.tenderId);

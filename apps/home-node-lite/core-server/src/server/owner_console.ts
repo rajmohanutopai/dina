@@ -283,7 +283,15 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
 
 <section>
   <h2>Suppliers</h2>
-  <p class="muted">The suppliers your tenders go to. A tender an agent drafts asks these first. Only you can add or remove one.</p>
+  <p class="muted">The suppliers your tenders go to. A tender an agent drafts asks these first, then offers businesses found on the network for you to tick. Only you can add or remove one.</p>
+  <div class="row">
+    <input id="supSearch" type="text" placeholder="What you buy, e.g. butter croissants" size="34" maxlength="200" aria-label="What you buy" />
+    <input id="supRegion" type="text" placeholder="Postal area (yours if empty)" size="18" aria-label="Postal area to search" />
+    <button id="findSuppliers" class="primary">Find suppliers</button>
+  </div>
+  <div id="supplierResults"></div>
+  <p class="muted">&ldquo;I trust this supplier&rdquo; publishes a public review in your name and adds it here. &ldquo;Not for me&rdquo; publishes a negative one and keeps it out of your tenders. Both ask for your passphrase.</p>
+  <p class="muted">Or add one by its Dina ID:</p>
   <div class="row">
     <input id="supDid" type="text" placeholder="Supplier's Dina ID (did:…)" size="34" aria-label="Supplier's Dina ID" />
     <input id="supRkey" type="text" placeholder="Listing key" size="14" aria-label="Supplier's listing key" />
@@ -947,6 +955,11 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       approval_already_used: "This order has already been sent.",
       buyer_sender_unavailable: "Dina cannot send orders right now. Try again shortly.",
       presence_unavailable: "This node cannot check your passphrase, so it cannot open an agent's tender. Run it in security mode.",
+      supplier_search_unavailable: "This Dina cannot search the network yet.",
+      supplier_search_failed: "The network search did not answer. Try again in a moment.",
+      reviews_unavailable: "This Dina cannot publish reviews: it has no identity on the network yet.",
+      review_publish_queue_full: "Too many reviews are still waiting to publish. Try again in a few minutes.",
+      too_many_suppliers: "Your supplier list is full. Remove one first.",
       draft_not_pending: "This draft was already opened, dismissed or has lapsed.",
       no_such_draft: "This draft is gone.",
       negotiation_invalid: "Check the target and ceiling: the target must be at or below the ceiling."
@@ -1108,14 +1121,17 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
           String((line.requirement && line.requirement.text) || "") }));
       });
       if (d.required_by) box.appendChild(el("div", { class: "muted", text: "Needed by " + String(d.required_by) }));
-      box.appendChild(el("div", { class: "muted", text: "Ask these suppliers:" }));
+      box.appendChild(el("div", { class: "muted", text: "Ask these suppliers (at most 5):" }));
       var picks = [];
       (Array.isArray(d.suppliers) ? d.suppliers : []).forEach(function (s, i) {
         var id = "draft-" + draftId + "-supplier-" + i;
-        var box1 = el("input", { type: "checkbox", id: id, checked: "checked" });
+        var attrs = { type: "checkbox", id: id };
+        if (s.selected !== false) attrs.checked = "checked";
+        var box1 = el("input", attrs);
         picks.push({ did: String(s.supplier_did || ""), input: box1 });
-        box.appendChild(el("div", { class: "row" }, [box1,
-          el("label", { for: id, text: String(s.name || s.supplier_did || "") })]));
+        var label = String(s.name || s.supplier_did || "");
+        if (s.source === "network") label += " · found on the network · " + trustText(s.trust);
+        box.appendChild(el("div", { class: "row" }, [box1, el("label", { for: id, text: label })]));
       });
       var currency = el("input", { id: "draft-" + draftId + "-currency", size: "4", placeholder: "USD",
         value: String(d.currency || "") });
@@ -1131,6 +1147,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
         if (t === "" || c === "") { alert("Enter the target and the ceiling as amounts, like 2000 or 2000.50."); return; }
         var chosen = picks.filter(function (x) { return x.input.checked; }).map(function (x) { return x.did; });
         if (chosen.length === 0) { alert("Pick at least one supplier."); return; }
+        if (chosen.length > 5) { alert("A tender asks at most 5 suppliers. Untick some."); return; }
         openDraft({
           draft_id: draftId,
           target_total: t,
@@ -1999,6 +2016,63 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       });
     }).catch(function (e) { box.textContent = e.message; });
   }
+  // HOSTED_DINA §6.1–§6.2 — find suppliers on the network, and the owner's verdict.
+  function trustText(t) {
+    if (!t || t.score === null || t.score === undefined) return "no reviews yet";
+    var n = Number(t.reviews || 0);
+    return "trust " + Number(t.score).toFixed(2) + " from " + n + (n === 1 ? " review" : " reviews");
+  }
+  function findSuppliers() {
+    var q = document.getElementById("supSearch").value.trim();
+    var postal = document.getElementById("supRegion").value.trim();
+    var box = document.getElementById("supplierResults");
+    if (q === "") { alert("Type what you buy, for example butter croissants."); return; }
+    var path = "/v1/commerce/trade/suppliers/search?q=" + encodeURIComponent(q) +
+      (postal !== "" ? "&region=" + encodeURIComponent("postal_area:" + postal) : "");
+    clear(box);
+    box.appendChild(el("div", { class: "muted", text: "Searching the network…" }));
+    call("GET", path).then(function (r) {
+      clear(box);
+      if (r.status !== 200) { box.appendChild(el("div", { class: "muted", text: refusal(r.body && r.body.error) })); return; }
+      var found = Array.isArray(r.body.suppliers) ? r.body.suppliers : [];
+      var where = r.body.region ? " in " + String(r.body.region).replace("postal_area:", "postal area ") : "";
+      if (found.length === 0) { box.appendChild(el("div", { class: "muted", text: "No one on the network sells that" + where + " yet." })); return; }
+      found.forEach(function (f) {
+        var name = String(f.name || f.supplier_did || "");
+        var items = (Array.isArray(f.items) ? f.items : []).map(function (i) {
+          var label = String(i.product || "").replace(/^[a-z_]+:/, "");
+          return i.indicative_price ? label + " " + money(i.indicative_price.minor_units, i.indicative_price.currency) : label;
+        }).join(", ");
+        var state = f.blocked ? "Not for you" : (f.listed ? "In your suppliers" : "");
+        var card = el("div", { class: "card" }, [
+          el("div", { class: "row" }, [el("strong", { text: name }), el("span", { class: "muted", text: trustText(f.trust) }),
+            state ? el("span", { class: "muted", text: "· " + state }) : el("span", {})]),
+          el("div", { class: "muted", text: items }),
+          el("code", { text: String(f.supplier_did || "") })
+        ]);
+        var row = el("div", { class: "row decision" });
+        if (!f.listed) row.appendChild(btn("I trust this supplier", "primary", function () {
+          reviewSupplier({ supplier_did: f.supplier_did, service_rkey: f.service_rkey, label: name.slice(0, 80), verdict: "trust" });
+        }));
+        if (!f.blocked) row.appendChild(btn("Not for me", "danger", function () {
+          reviewSupplier({ supplier_did: f.supplier_did, service_rkey: f.service_rkey, label: name.slice(0, 80), verdict: "distrust" });
+        }));
+        card.appendChild(row);
+        box.appendChild(card);
+      });
+    });
+  }
+  function reviewSupplier(body) {
+    call("POST", "/v1/commerce/trade/suppliers/review", body).then(function (r) {
+      if (r.status === 403 && r.body && r.body.error === "no_user_presence") {
+        needPresence(function () { reviewSupplier(body); });
+        return;
+      }
+      if (r.status !== 200) { alert(refusal(r.body && r.body.error)); return; }
+      loadSuppliers();
+      findSuppliers();
+    });
+  }
   function addSupplier() {
     var body = {
       supplier_did: document.getElementById("supDid").value.trim(),
@@ -2022,6 +2096,7 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
     loadSetup(); loadReasoningJobs(); loadRuns(); loadWatches(); loadApprovals(); loadShopOrders(); loadPublication(); loadLinks(); loadTenders(); loadSuppliers(); loadPacks(); loadA2A(); loadDirectory(); loadUcpSettings();
   });
   document.getElementById("addSupplier").addEventListener("click", addSupplier);
+  document.getElementById("findSuppliers").addEventListener("click", findSuppliers);
   document.getElementById("saveUcpSettings").addEventListener("click", saveUcpSettings);
   document.getElementById("refreshUcpSettings").addEventListener("click", loadUcpSettings);
   document.getElementById("refreshShopOrders").addEventListener("click", loadShopOrders);

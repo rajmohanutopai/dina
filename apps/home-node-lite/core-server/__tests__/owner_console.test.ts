@@ -1245,6 +1245,15 @@ describe('the owner console’s tender-draft card (OPENAI_DOTS_INTEGRATION §6.4
     suppliers: [
       { supplier_did: 'did:plc:a', service_rkey: 'self', name: "Rosa's Bakery" },
       { supplier_did: 'did:plc:b', service_rkey: 'shop', name: null },
+      // HOSTED_DINA §6.1: found on the network, trust not good enough to tick.
+      {
+        supplier_did: 'did:plc:c',
+        service_rkey: 'self',
+        name: 'New Bakes',
+        source: 'network',
+        selected: false,
+        trust: { score: 0.4, reviews: 1 },
+      },
     ],
     region: { scheme: 'postal_area', value: '78701' },
     currency: 'USD',
@@ -1262,18 +1271,21 @@ describe('the owner console’s tender-draft card (OPENAI_DOTS_INTEGRATION §6.4
     const presence: (() => void)[] = [];
     const alerts: string[] = [];
     const opened: string[] = [];
-    const page = await consoleFunctions(['loadDraftForm', 'openDraft', 'toMinor', 'refusal'], {
-      call: (method: string, path: string, body: unknown) => {
-        sent.push([method, path, body]);
-        if (method === 'GET') return Promise.resolve({ status: 200, body: { drafts: [DRAFT] } });
-        return Promise.resolve(answers.shift() ?? { status: 500, body: {} });
+    const page = await consoleFunctions(
+      ['loadDraftForm', 'openDraft', 'toMinor', 'refusal', 'trustText'],
+      {
+        call: (method: string, path: string, body: unknown) => {
+          sent.push([method, path, body]);
+          if (method === 'GET') return Promise.resolve({ status: 200, body: { drafts: [DRAFT] } });
+          return Promise.resolve(answers.shift() ?? { status: 500, body: {} });
+        },
+        alert: (m: string) => alerts.push(m),
+        needPresence: (retry: () => void) => presence.push(retry),
+        loadApprovals: () => undefined,
+        loadTenders: () => undefined,
+        openTender: (id: string) => opened.push(id),
       },
-      alert: (m: string) => alerts.push(m),
-      needPresence: (retry: () => void) => presence.push(retry),
-      loadApprovals: () => undefined,
-      loadTenders: () => undefined,
-      openTender: (id: string) => opened.push(id),
-    });
+    );
     return { page, sent, presence, alerts, opened };
   };
 
@@ -1298,6 +1310,10 @@ describe('the owner console’s tender-draft card (OPENAI_DOTS_INTEGRATION §6.4
     expect(text).toContain('200 each · butter croissants');
     expect(text).toContain("Rosa's Bakery");
     expect(text).toContain('did:plc:b');
+    expect(text).toContain('New Bakes · found on the network · trust 0.40 from 1 review');
+    // The draft's ticks: its own suppliers ticked, the network find not.
+    expect(byId(box, 'draft-tdr_1-supplier-0')?.attrs.checked).toBe('checked');
+    expect(byId(box, 'draft-tdr_1-supplier-2')?.attrs.checked).toBeUndefined();
     expect(text).toContain('the agent never sees them');
     (byId(box, 'draft-tdr_1-currency') as Record<string, unknown>).value = 'usd';
     (byId(box, 'draft-tdr_1-postal') as Record<string, unknown>).value = '78701';

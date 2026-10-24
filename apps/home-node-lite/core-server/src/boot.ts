@@ -67,6 +67,8 @@ import {
   getReasoningContextRepository,
   getReviewPublishRepository,
   getSessionRegistry,
+  installSupplierDirectory,
+  setOwnerReviewIdentity,
   getNodeDID,
   HEALTHZ_PATH,
   getWorkflowRepository,
@@ -180,6 +182,7 @@ import { PhoneApprovalManager } from './approval/phone_approval_manager';
 import { A2ACardPublisher, cardKeyCheck, cardRepoOverPds } from './appview/a2a_card_publisher';
 import { wireServiceProfilePublisher, type WiredServicePublisher } from './appview/wire_publisher';
 import { createSignedBrainFetch } from './brain_link';
+import { createAppViewSupplierDirectory } from './commerce/appview_supplier_directory';
 import { wireCommerceEpoch } from './commerce/wire_epoch';
 import { acquireLock, releaseLock, writeLock } from './core_lock';
 import { createCodingGate } from './gate/coding_gate_impl';
@@ -1167,8 +1170,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
             classifyError: classifyAttestationPublishError,
             logger,
           });
+          // HOSTED_DINA §6.2 — the owner's own reviews ("I trust this
+          // supplier") join the same queue, under the same identity.
+          setOwnerReviewIdentity(reviewOwnerDid);
         }
       }
+      // HOSTED_DINA §6.1 — finding suppliers on the network, for the owner's
+      // search and for agent tender drafts.
+      installSupplierDirectory(
+        createAppViewSupplierDirectory(
+          new AppViewClient({ appViewURL: config.endpoints.appViewBaseUrl }),
+        ),
+      );
     } catch (err) {
       trace.push({
         step: 'db_open',

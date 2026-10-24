@@ -77,7 +77,21 @@ function suppliersOf(raw: unknown): TenderDraftSupplier[] | null {
     ) {
       return null;
     }
-    out.push({ supplier_did: s.supplier_did, service_rkey: s.service_rkey });
+    const entry: TenderDraftSupplier = {
+      supplier_did: s.supplier_did,
+      service_rkey: s.service_rkey,
+    };
+    if (s.source === 'known' || s.source === 'network') entry.source = s.source;
+    if (typeof s.selected === 'boolean') entry.selected = s.selected;
+    if (typeof s.name === 'string' && s.name !== '') entry.name = s.name.slice(0, 120);
+    if (
+      isRecord(s.trust) &&
+      (s.trust.score === null || typeof s.trust.score === 'number') &&
+      typeof s.trust.reviews === 'number'
+    ) {
+      entry.trust = { score: s.trust.score as number | null, reviews: s.trust.reviews };
+    }
+    out.push(entry);
   }
   return out;
 }

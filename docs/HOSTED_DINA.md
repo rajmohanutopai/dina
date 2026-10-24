@@ -1,9 +1,9 @@
 # Hosted Dina: add the plugin, get a Dina
 
 **Status:** DESIGN, 2026-10-21. The demo cut (§10) is built and committed
-(76961fab, 1c43b6f9, bab9fd78) and runs on the test box. The 2026-10-24
-fixes (the wait for a new cell's certificate, §4 step 3; linking ChatGPT
-again, §4.1; provisioner faults logged) are not committed yet. §12 says what
+(76961fab, 1c43b6f9, bab9fd78, 607011da, aa75efec) and runs on the test
+box. Finding suppliers on the network and "I trust this supplier" (§6.1,
+§6.2) are built but not committed. §12 says what
 was built, how it was checked, and what is not built.
 **Related:** `docs/OPENAI_DOTS_INTEGRATION.md` (the dot flow and the bridge),
 `docs/USER_BACKUP.md` (backup), `docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md`
@@ -305,7 +305,7 @@ So:
   first, then orders and tenders as today; blocked suppliers stay out.
 - **On the owner page, "Add a supplier":** the supplier's Dina ID, its
   listing key and the owner's own name for it. Built. Finding a supplier by
-  handle, invite link or PeerLens search is later work.
+  handle or invite link is later work; finding one on the network is §6.1.
 - A supplier the owner lists is named by the owner's label wherever no
   contact names it, so the dot reads "Albert", not a blank.
 - The dot can suggest ("you have no bakeries yet; add some on your Dina
@@ -313,6 +313,58 @@ So:
 
 Test (built): a fresh Dina with no orders or tenders drafts against a
 supplier the owner listed.
+
+### 6.1 Finding suppliers on the network
+
+The PeerLens AppView indexes every supplier's published catalogue
+(`com.dinakernel.commerce.searchCatalog`, which already drops suppliers with
+poor trust). Core does no I/O, so the server installs a supplier directory
+(`apps/home-node-lite/core-server/src/commerce/appview_supplier_directory.ts`)
+that searches the catalogue, then reads each listing's name
+(`service.getByUri`) and its PeerLens trust (`peerlens.getProfile`: score and
+review count). Core decides what a finding means (`commerce/supplier_directory.ts`).
+
+- **Owner search:** `GET /v1/commerce/trade/suppliers/search?q=&region=`, owner
+  only. The region defaults to the café's first delivery area. Each result
+  says whether the supplier is already listed or blocked.
+- **Agent drafts:** a draft first takes the café's own suppliers (§6), then
+  searches the network for each of its first three lines in the café's
+  delivery area. It offers at most eight suppliers in all, never one blocked
+  or the café itself. Network finds are marked `network` with their trust,
+  and start **ticked only when their trust is good**: a score of 0.2 or more
+  from at least two reviews (`trustIsGood`). The bar is low because PeerLens
+  weighs each review by its reviewer's standing: on the young test network
+  two positive reviews from new Dinas scored 0.24 (decided 2026-10-24). No more than five start ticked,
+  since a tender asks five at most. The owner's open form shows the ticks and
+  the trust, and the owner changes them. Opening without a list asks the
+  ticked ones. (Decided 2026-10-24: network finds with good trust start
+  ticked, so the demo runs from the AppView; the dot still never names a
+  supplier.)
+- A directory that fails or is missing offers no one; the draft still has the
+  café's own suppliers, and with none it answers `no_known_suppliers`.
+
+### 6.2 "I trust this supplier"
+
+`POST /v1/commerce/trade/suppliers/review`, owner only, **with a person
+present** (the passphrase in the last five minutes), because it publishes in
+the owner's name:
+
+- `trust`: a positive PeerLens review (`com.dinakernel.peerlens.attestation`,
+  subject the supplier's DID, category `supplier`, the owner's optional note,
+  no `isAgentGenerated` mark), then the supplier joins the owner's list. A
+  supplier the owner once blocked is unblocked.
+- `distrust` ("Not for me"): a negative review; the supplier leaves the list
+  and joins the buyer settings' `blockedSuppliers`, so no draft offers it.
+
+The review goes on the durable PeerLens publish queue that the server's
+publish supervisor drains to the owner's PDS (`review/owner_review.ts`); a
+hosted cell has a PDS identity, so it publishes like any other Dina. The
+AppView's scorer turns reviews into the trust the next search shows. A
+Dina that cannot publish (no PDS identity) refuses and changes nothing; the
+plain "Add a supplier" still works there.
+
+The owner page's Suppliers section has the search box, each result's trust
+and items, and the two buttons.
 
 ## 7. Running cells
 
@@ -512,5 +564,9 @@ phone as a second owner device.
 - Backup, stopping idle cells, "Delete my Dina", moving out.
 - The Dina page does not list or revoke its ChatGPT links; the generic
   device list (Agents) does.
+- Supplier search and "I trust this supplier" (§6.1, §6.2) are built and
+  tested against fakes; not yet run against the live AppView from a cell.
+  A supplier whose quote access is `known_only` (TRADE_FIRST_STRATEGY §3)
+  may refuse a stranger's quote request; trusting it does not invite it.
 - Finding suppliers by handle or search; the phone as a second owner device.
 - Cells run Core from source (`node --import tsx`), not a release bundle.
