@@ -164,6 +164,10 @@ services:
     restart: always
     environment:
       DATABASE_URL: postgresql://dina:${POSTGRES_PASSWORD}@postgres:5432/dina_trust
+      # The scorer reads no events, but appview/src/config/env.ts requires
+      # this in production for every AppView process; without it the scorer
+      # exits at start (it crash-looped on test from 2026-10-14).
+      JETSTREAM_URL: ws://jetstream:6008
       NODE_ENV: production
       LOG_LEVEL: info
     depends_on:
@@ -241,7 +245,9 @@ services:
     volumes:
       - grants-data:/data
     healthcheck:
-      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8300/healthz"]
+      # 127.0.0.1, not localhost: in this image localhost is ::1, and grants
+      # listens on IPv4, so the check always failed while grants worked.
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8300/healthz"]
       interval: 10s
       timeout: 5s
       retries: 5
