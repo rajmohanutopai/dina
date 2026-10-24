@@ -288,9 +288,13 @@ reload_caddy() {
     # `up --build` first: Caddy is built (caddy/Dockerfile) and reads its DNS
     # token from .env, so a changed image or token recreates the container. The
     # restart then applies the mounted Caddyfile, which Caddy does not watch.
+    # `--no-deps`: without it compose also rebuilt Caddy's dependencies (msgbox,
+    # AppView web) here, without the version stamps, over the stamped images
+    # the deploy had just built, so /version said "dev" and verify_versions
+    # failed.
     ssh "$REMOTE" "
         cd $REMOTE_DIR/deploy
-        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d --build caddy
+        COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml up -d --build --no-deps caddy
         COMPOSE_PROJECT_NAME=$COMPOSE_PROJECT docker compose -f docker-compose.infra.yml restart caddy
     "
 }
