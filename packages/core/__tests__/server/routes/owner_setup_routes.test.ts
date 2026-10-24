@@ -143,6 +143,7 @@ describe('only the owner', () => {
     ['POST', '/server-node', {}],
     ['POST', '/staff', { device_name: 'till' }],
     ['POST', '/owner-device', { device_name: 'laptop' }],
+    ['POST', '/chatgpt', {}],
     ['DELETE', '/staff/x', undefined],
     ['DELETE', '/device/x', undefined],
   ] as const)('%s %s refuses an unstamped or mis-stamped caller', async (method, path, body) => {
@@ -165,6 +166,7 @@ describe('minting needs a person present', () => {
     ['/server-node', {}],
     ['/staff', { device_name: 'Clerk phone' }],
     ['/owner-device', { device_name: 'Office laptop' }],
+    ['/chatgpt', {}],
   ] as const)('%s: refused until presence is proven, then minted', async (path, body) => {
     const refused = await owner('POST', path, body);
     expect([refused.status, errorOf(refused)]).toEqual([403, 'no_user_presence']);
@@ -175,6 +177,32 @@ describe('minting needs a person present', () => {
 
 describe('each code pairs exactly what it says', () => {
   beforeEach(present);
+
+  it('ChatGPT (HOSTED_DINA §4.1): the dot scope; a hosted cell’s code names the cell', async () => {
+    const own = (await owner('POST', '/chatgpt', {})).body as { link_code: string };
+    const parsed = parseAgentSetupCode(own.link_code);
+    expect(parsed).toMatchObject({
+      msgboxUrl: RELAY,
+      homenodeDid: NODE_DID,
+      deviceName: 'ChatGPT',
+    });
+    expect(getPairingIntent(parsed.code)).toEqual({
+      deviceName: 'ChatGPT',
+      role: 'agent',
+      scope: 'dot',
+    });
+
+    const cell = createCoreRouter({
+      ownerCapability: CAP,
+      ownerSetup: { msgboxURL: () => RELAY, hostedCellLabel: () => 'dtbc4ucz9uh8' },
+    });
+    const res = await cell.handle(request('POST', '/v1/owner/setup/chatgpt', {}, 'owner'));
+    expect([res.status, res.headers?.['cache-control']]).toEqual([201, 'no-store']);
+    const { link_code: linkCode } = res.body as { link_code: string };
+    const code = /^dina-link:dtbc4ucz9uh8:([0-9A-Z]+)$/.exec(linkCode)?.[1] ?? '';
+    expect(code).not.toBe('');
+    expect(getPairingIntent(code)).toEqual({ deviceName: 'ChatGPT', role: 'agent', scope: 'dot' });
+  });
 
   it('a coding agent: default name, or the owner’s; coding scope; the node’s relay', async () => {
     const plain = await owner('POST', '/coding-agent', {});

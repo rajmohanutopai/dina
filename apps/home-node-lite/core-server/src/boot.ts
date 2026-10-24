@@ -1227,6 +1227,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       ownerSetup: {
         msgboxURL: () => config.msgbox.url,
         extraStatus: () => phoneStatusForOwnerSetup(phoneApprovalManager),
+        // Set by the hosting provisioner on a hosted cell (HOSTED_DINA §4.1).
+        hostedCellLabel: () => process.env.DINA_HOSTED_CELL_LABEL ?? '',
       },
       codingGate: codingGateHandle.gate,
       onAgentGatingPolicyChanged: (agentDid) => {

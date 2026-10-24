@@ -90,6 +90,9 @@ def hosted(tmp_path, monkeypatch):
     calls: list = []
     monkeypatch.setattr(bridge, "_cell_transport", lambda label: FakeCellTransport(calls))
     bridge.cell_calls = calls
+    # Whether the new cell's page answers yet (its certificate is in).
+    bridge.origin_up = True
+    monkeypatch.setattr(bridge, "_origin_ready", lambda origin: bridge.origin_up)
     bridge.fake_hosting = hosting
     server = build_bridge_server(bridge)
     app = server.http_app(path="/mcp", json_response=True, stateless_http=True)
@@ -140,6 +143,9 @@ def test_create_needs_a_fresh_invite_then_hands_the_browser_to_the_cell(hosted):
     assert "not valid" in _create(client, req, "AAAA-BBBB-CCCC").text
     resp = _create(client, req, invite.lower())
     assert resp.status_code == 303
+    assert resp.headers["location"] == f"https://dot.test/link/open?req={req}"
+    resp = client.get(f"/link/open?req={req}", follow_redirects=False)
+    assert resp.status_code == 303
     target = urlparse(resp.headers["location"])
     assert target.netloc == "cell00000000.dina-owner.test"
     assert target.query == ""  # the ticket travels in the fragment only
@@ -151,6 +157,78 @@ def test_create_needs_a_fresh_invite_then_hands_the_browser_to_the_cell(hosted):
     # The invite is spent; a second sign-up cannot reuse it.
     _, req2 = _start(client)
     assert "not valid" in _create(client, req2, invite).text
+
+
+def test_the_person_waits_on_the_front_door_until_their_cells_page_answers(hosted, monkeypatch):
+    # A new cell's Caddy needs a few seconds for its certificate; sent there at
+    # once, the person's first sight of their Dina was a browser error.
+    bridge, client = hosted
+    [invite] = bridge.state.add_invites(1)
+    _, req = _start(client)
+    bridge.origin_up = False
+    assert _create(client, req, invite).status_code == 303
+    waiting = client.get(f"/link/open?req={req}", follow_redirects=False)
+    assert waiting.status_code == 200 and "http-equiv=refresh" in waiting.text
+    assert "TICKET-1" not in waiting.text  # the ticket never sits in a page
+    bridge.origin_up = True
+    ready = client.get(f"/link/open?req={req}", follow_redirects=False)
+    assert ready.status_code == 303
+    assert urlparse(ready.headers["location"]).netloc == "cell00000000.dina-owner.test"
+
+
+def test_a_certificate_that_never_comes_does_not_hold_the_person_forever(hosted, monkeypatch):
+    from dina_cli import dot_bridge
+
+    bridge, client = hosted
+    [invite] = bridge.state.add_invites(1)
+    _, req = _start(client)
+    bridge.origin_up = False
+    _create(client, req, invite)
+    monkeypatch.setattr(dot_bridge, "ORIGIN_WAIT_SECONDS", 0)
+    assert client.get(f"/link/open?req={req}", follow_redirects=False).status_code == 303
+
+
+def test_a_hosted_owner_links_again_with_a_code_from_their_dina_page(hosted):
+    bridge, client = hosted
+    client_id, req = _start(client)
+    assert "I already have a Dina here" in client.get(f"/link?req={req}").text
+    resp = client.post(
+        "/link",
+        data={"req": req, "action": "cell", "link_code": " dina-link:cell00000007:7KQ2M9XA "},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    back = urlparse(resp.headers["location"])
+    assert f"{back.scheme}://{back.netloc}{back.path}" == REDIRECT
+    method, path, body = bridge.cell_calls[0]
+    assert (method, path, body["code"], body["narrow_scope"]) == ("POST", "/v1/pair/complete", "7KQ2M9XA", "dot")
+    (link,) = bridge.state.links().values()
+    assert link["kind"] == "cell" and link["cell"] == "cell00000007"
+    tokens = client.post(
+        "/token",
+        data={"client_id": client_id, "grant_type": "authorization_code",
+              "code": parse_qs(back.query)["code"][0], "redirect_uri": REDIRECT, "code_verifier": VERIFIER},
+    )
+    assert tokens.status_code == 200
+
+
+def test_a_bad_link_code_says_the_same_thing_whatever_went_wrong_and_tries_run_out(hosted, monkeypatch):
+    bridge, client = hosted
+    _, req = _start(client)
+
+    def no_such_cell(label):
+        raise RuntimeError("no such cell")
+
+    monkeypatch.setattr(bridge, "_cell_transport", no_such_cell)
+    said = set()
+    for code in ("dina-link:cell00000000:7KQ2M9XA", "not a code"):
+        page = client.post("/link", data={"req": req, "action": "cell", "link_code": code})
+        assert page.status_code == 400
+        said.add(page.text.split("class=err>")[1].split("<")[0])
+    assert len(said) == 1  # a missing cell and a malformed code look alike
+    last = client.post("/link", data={"req": req, "action": "cell", "link_code": "x"})
+    assert "No tries left" in last.text
+    assert bridge.state.links() == {}
 
 
 def test_a_failed_create_gives_the_invite_back(hosted):
@@ -442,6 +520,34 @@ def test_the_front_door_reaches_the_provisioner_only_through_its_narrow_socket(s
             remote.state("../etc")
         with pytest.raises(HostingError, match="unknown operation"):
             remote._call("delete", label="abcdefghijkm")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_provisioner_fault_is_logged_though_the_front_door_hears_only_its_kind(short_root, caplog):
+    # On the test box a missing `useradd` came back as "provisioner error" with
+    # nothing in the journal.
+    import logging
+    import threading
+
+    from dina_cli.hosting import HostingError, RemoteProvisioner, serve_provisioner
+
+    class Broken:
+        def create(self, name):
+            raise FileNotFoundError("useradd")
+
+    sock = str(short_root / "prov.sock")
+    server = serve_provisioner(Broken(), sock)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        with caplog.at_level(logging.ERROR, logger="dina_cli.hosting"):
+            with pytest.raises(HostingError, match="^provisioner error$"):
+                RemoteProvisioner(sock, timeout=5).create("Café")
+        (record,) = [r for r in caplog.records if r.name == "dina_cli.hosting"]
+        assert record.getMessage() == "provisioner create failed"
+        assert "useradd" in caplog.text  # the reason, with its traceback
+        assert "Café" not in caplog.text  # never the person's name
     finally:
         server.shutdown()
         server.server_close()

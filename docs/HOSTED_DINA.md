@@ -1,8 +1,10 @@
 # Hosted Dina: add the plugin, get a Dina
 
 **Status:** DESIGN, 2026-10-21. The demo cut (§10) is built and committed
-(76961fab, 1c43b6f9); the 2026-10-22 fixes in §12 are not committed yet. §12
-says what was built, how it was checked, and what is not built.
+(76961fab, 1c43b6f9, bab9fd78) and runs on the test box. The 2026-10-24
+fixes (the wait for a new cell's certificate, §4 step 3; linking ChatGPT
+again, §4.1; provisioner faults logged) are not committed yet. §12 says what
+was built, how it was checked, and what is not built.
 **Related:** `docs/OPENAI_DOTS_INTEGRATION.md` (the dot flow and the bridge),
 `docs/USER_BACKUP.md` (backup), `docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md`
 §17 (managed runtime rules), `docs/WEB_OWNER_SURFACE_PLAN.md` (owner in a
@@ -194,7 +196,13 @@ narrow), and takes back a link that does not come back `dot`.
    random label and a port, and starts the cell's gate. Core does not run
    yet. The gate mints a **sign-up ticket** and reports it to the provisioner
    over an inherited pipe.
-3. The front door sends the browser to the cell's owner origin with the
+3. The front door holds the browser on a short "Making your Dina…" page
+   (`/link/open`) until the cell's owner origin answers over TLS that
+   verifies: a new cell's Caddy needs a few seconds for its certificate, and
+   sent there at once, the person's first sight of their Dina was a browser
+   error (found on the test box, 2026-10-24). After 90 seconds it sends them
+   anyway. Until then the ticket stays in the front door's memory, never in
+   a page. It then sends the browser to the cell's owner origin with the
    ticket in the URL fragment, so no server log sees it. The ticket is
    single-use and lasts ten minutes; the gate spends it on the first
    passphrase set with it. Whoever holds the ticket first claims the cell,
@@ -222,6 +230,23 @@ narrow), and takes back a link that does not come back `dot`.
 
 The front door sees the invite code, the display name and the ticket. It
 never sees the passphrase, the words or the owner page.
+
+### 4.1 Linking ChatGPT again
+
+A hosted owner can be left with a Dina and no link: the hand-back to ChatGPT
+failed, they removed the connector, or they use a new ChatGPT account. On
+their Dina page, **Link to ChatGPT** (`POST /v1/owner/setup/chatgpt`, owner
+and a person present) mints a five-minute, single-use code for an agent with
+the `dot` scope. On a hosted cell the code is `dina-link:<label>:<code>`: the
+provisioner gives Core its label (`DINA_HOSTED_CELL_LABEL`) so the code can
+name the cell whose socket the front door must pair on. On the owner's own
+node the same button gives an ordinary `dina1:` setup code for "I have a
+Dina". The link page's **I already have a Dina here** takes the
+`dina-link:` code and pairs a new link key over that cell's socket, the same
+way as step 7. Every failure (a malformed code, a cell that is not there, a
+used or expired code, a locked Dina) gets the same answer, and three tries
+end the request. The label is no secret (it is in public certificate logs);
+the pairing code is the credential.
 
 ## 5. The owner's own steps
 
@@ -387,7 +412,7 @@ phone as a second owner device.
    from the one running MsgBox and the PDS. The CEO demo may use the test
    machine.
 
-## 12. What is built (committed 2026-10-22; later fixes below are not)
+## 12. What is built
 
 **Code.**
 - Core: the `dot` scope (`auth/agent_scope.ts`), the owner supplier list
@@ -472,20 +497,18 @@ phone as a second owner device.
 - A guesser with many addresses (IPv4, or many IPv6 /64s) counts as many
   fresh clients: each is ahead of the repeat guessers, in the gate and in
   the machine's turns, and level with the owner.
-- No real browser runs the cell page's script. A test runs the sign-up
-  path on a small fake DOM: pairing starts when the words appear, and a
-  failed pairing keeps the way back and the passphrase page. IndexedDB and
-  the other pages are not covered.
-- A cell's Caddy on a Unix socket with TLS-ALPN-01 and the PROXY line, and
-  the router's group, have not been run against a real Caddy and ACME.
-- Production mode (`isolate`): the separate provisioner, per-cell OS users,
-  folder and socket permissions, per-cell Caddy (its Caddyfile, PROXY
-  protocol included, has not been parsed by a real Caddy) and the SNI router
-  on a real Linux host with DNS. Written, not run.
+- Run once on the test box (2026-10-24), production mode: one sign-up in
+  Chrome through the front door, the router, the cell's own Caddy (a Let's
+  Encrypt certificate by TLS-ALPN-01 through the router), the gate's pages,
+  Core's first boot (PDS account, MsgBox), the link's pairing over the
+  cell's socket and `dot` tool calls through the link. Not yet run: the
+  token exchange and `/mcp` from ChatGPT itself, re-linking by code (§4.1),
+  and a second browser connecting.
+- The cell page's script has run in one real browser (Chrome), on the
+  sign-up path only. A test runs that path on a small fake DOM; IndexedDB
+  and the other pages are not covered.
 - Backup, stopping idle cells, "Delete my Dina", moving out.
-- Linking ChatGPT again to an existing cell (if pairing fails after a
-  sign-up that otherwise worked, the cell has no link and the invite is
-  spent). A sign-up that fails before then removes its cell and gives the
-  invite back.
+- The Dina page does not list or revoke its ChatGPT links; the generic
+  device list (Agents) does.
 - Finding suppliers by handle or search; the phone as a second owner device.
 - Cells run Core from source (`node --import tsx`), not a release bundle.

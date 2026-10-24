@@ -23,6 +23,7 @@ import hashlib
 import html
 import json
 import os
+import re
 import secrets
 import shutil
 import threading
@@ -80,6 +81,13 @@ ACCESS_TOKEN_TTL_SECONDS = 60 * 60
 REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60
 # Core burns a pairing code after three failures; stop asking at the same point.
 MAX_LINK_ATTEMPTS = 3
+# HOSTED_DINA §4: how long the front door holds a new cell's owner back while
+# the cell's own Caddy gets its certificate (seconds, usually); past this it
+# sends them anyway, so a certificate that never comes shows as an error.
+ORIGIN_WAIT_SECONDS = 90
+# A hosted owner's code from their Dina page, for linking ChatGPT again:
+# `dina-link:<cell label>:<pairing code>` (HOSTED_DINA §4.1).
+CELL_LINK_CODE = re.compile(r"^dina-link:([a-z0-9]{6,32}):([0-9A-Z]{6,16})$")
 INVITE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 
 
@@ -105,6 +113,10 @@ class _Pending:
     # Set by the pairing thread as soon as the cell's bootstrap code arrives.
     link_id: str = ""
     pair_error: str = ""
+    # The cell's sign-up ticket, kept here (never in a URL the front door
+    # shows) until the cell's page answers; and when the wait began.
+    ticket: str = ""
+    cell_made_at: float = 0.0
 
 
 class BridgeState:
@@ -422,8 +434,11 @@ class DotBridge(OAuthProvider):
         pending.attempts += 1
         import anyio.to_thread
 
-        if str(form.get("action", "own")) == "create":
+        action = str(form.get("action", "own"))
+        if action == "create":
             return await self._create(request_id, pending, form)
+        if action == "cell":
+            return await self._link_cell(request_id, pending, form)
         setup_code = str(form.get("setup_code", ""))
         if self.homenode_did == "":
             return self._link_form(request_id, pending, "Linking your own Dina is not offered here.")
@@ -470,12 +485,75 @@ class DotBridge(OAuthProvider):
         threading.Thread(
             target=self._pair_when_ready, args=(request_id, pending, label), daemon=True
         ).start()
-        back = f"{self.public_url}/link/done?req={request_id}"
-        target = (
-            f"{self.hosting.owner_origin(label)}/#ticket={quote(ticket, safe='')}"
-            f"&return={quote(back, safe='')}"
+        pending.ticket = ticket
+        pending.cell_made_at = time.time()
+        return RedirectResponse(
+            f"{self.public_url}/link/open?req={request_id}", status_code=303, headers=_NO_STORE
         )
+
+    async def link_open(self, request: Request) -> Response:
+        """HOSTED_DINA §4 step 3: send the person to their cell's page once it answers.
+
+        A new cell's Caddy needs a few seconds for its certificate; sent there
+        at once, the person's first sight of their Dina is a browser error.
+        """
+        import anyio.to_thread
+
+        request_id = request.query_params.get("req", "")
+        pending = self._live_pending(request_id)
+        if pending is None or pending.ticket == "" or self.hosting is None:
+            return _page("This link request has expired. Start again from ChatGPT.", 400)
+        label = pending.cell
+        if self.hosting.state(label) in ("failed", "stopped"):
+            self._pending.pop(request_id, None)
+            message = await anyio.to_thread.run_sync(self._remove_failed, pending, label)
+            return _page(f"{message} Start again from ChatGPT.", 400)
+        origin = self.hosting.owner_origin(label)
+        waited = time.time() - pending.cell_made_at
+        if waited < ORIGIN_WAIT_SECONDS and not await anyio.to_thread.run_sync(
+            self._origin_ready, origin
+        ):
+            return _waiting_page("Making your Dina…")
+        back = f"{self.public_url}/link/done?req={request_id}"
+        target = f"{origin}/#ticket={quote(pending.ticket, safe='')}&return={quote(back, safe='')}"
         return RedirectResponse(target, status_code=303, headers=_NO_STORE)
+
+    @staticmethod
+    def _origin_ready(origin: str) -> bool:
+        """True once the cell's page answers over a TLS connection that verifies."""
+        import ssl
+        import urllib.error
+        import urllib.request
+
+        try:
+            with urllib.request.urlopen(f"{origin}/", timeout=3):
+                return True
+        except urllib.error.HTTPError:
+            return True  # an answer: TLS and the gate are up
+        except (urllib.error.URLError, ssl.SSLError, OSError):
+            return False
+
+    async def _link_cell(self, request_id: str, pending: _Pending, form: Any) -> Response:
+        """HOSTED_DINA §4.1: link a hosted Dina again with a code from its own page."""
+        import anyio.to_thread
+
+        if self.hosting is None:
+            return self._link_form(request_id, pending, "Linking a Dina this way is not offered here.")
+        match = CELL_LINK_CODE.match(str(form.get("link_code", "")).strip())
+        try:
+            if match is None:
+                raise BridgeError("bad code")
+            label, code = match.group(1), match.group(2)
+            link_id = await anyio.to_thread.run_sync(self.pair_cell, label, code)
+        except Exception:
+            # One answer for every failure: a wrong label, a used or expired
+            # code and a locked Dina look alike to whoever is guessing.
+            message = "That code did not work. Make a new one on your Dina page and paste it here."
+            if pending.attempts >= MAX_LINK_ATTEMPTS:
+                self._pending.pop(request_id, None)
+                return _page(f"{message} No tries left. Start again from ChatGPT.", 400)
+            return self._link_form(request_id, pending, message)
+        return self._finish(request_id, pending, link_id)
 
     def _pair_when_ready(self, request_id: str, pending: _Pending, label: str) -> None:
         assert self.hosting is not None
@@ -909,6 +987,16 @@ def _link_form(
         if create
         else ""
     )
+    cell_form = (
+        f"<h2>I already have a Dina here</h2>"
+        f"<p>Open your Dina page, choose <b>Link to ChatGPT</b>, and paste the code here.</p>"
+        f"<form method=post action=/link><input type=hidden name=req value='{req}'>"
+        f"<input type=hidden name=action value=cell>"
+        f"<p><input name=link_code required autocomplete=off size=40 "
+        f"placeholder='dina-link:…'></p><p><button type=submit>Link</button></p></form>"
+        if create
+        else ""
+    )
     own_form = (
         f"<h2>I have a Dina</h2>"
         f"<p>In the Dina app, open Settings → Agents, make a setup code, and paste it here.</p>"
@@ -925,7 +1013,7 @@ def _link_form(
         f"<p class=who><b>{html.escape(name)}</b> at <b>{html.escape(host)}</b> wants to act "
         f"for you as an agent. It can draft tenders and read how they go. It cannot see "
         f"prices, your limits or your vault, and it cannot open a tender or pay.</p>"
-        f"{err}{create_form}{own_form}"
+        f"{err}{create_form}{cell_form}{own_form}"
     )
     return HTMLResponse(body, status_code=400 if error else 200, headers=_PAGE_HEADERS)
 
@@ -941,6 +1029,7 @@ def build_bridge_server(bridge: DotBridge):
     mcp_server.mcp.auth = bridge
     mcp_server.set_client_resolver(bridge.current_client)
     mcp_server.mcp.custom_route("/link", methods=["GET", "POST"])(bridge.link_page)
+    mcp_server.mcp.custom_route("/link/open", methods=["GET"])(bridge.link_open)
     mcp_server.mcp.custom_route("/link/done", methods=["GET"])(bridge.link_done)
     return mcp_server.mcp
 

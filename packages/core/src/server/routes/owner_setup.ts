@@ -38,10 +38,18 @@ export interface OwnerSetupRouteOptions {
   msgboxURL: () => string;
   /** More status from the host (the server adds its approval phone). */
   extraStatus?: () => Record<string, unknown>;
+  /**
+   * The cell's label when this node is a hosted Dina (HOSTED_DINA §4.1): its
+   * "Link to ChatGPT" code then names the cell for the front door. Empty or
+   * absent on the owner's own node.
+   */
+  hostedCellLabel?: () => string;
 }
 
 /** The coding-agent name when the owner gives none (the console's fixed name). */
 const DEFAULT_AGENT_NAME = 'coding-agent';
+/** The name a ChatGPT link carries on owner cards and in the device list. */
+const CHATGPT_DEVICE_NAME = 'ChatGPT';
 /** The server node's name when the owner gives none. */
 const DEFAULT_NODE_NAME = 'server node';
 
@@ -260,6 +268,38 @@ export function registerOwnerSetupRoutes(
       });
     } catch {
       return answer(503, { error: 'Could not create a setup code; retry shortly' });
+    }
+  });
+
+  // HOSTED_DINA §4.1 — link ChatGPT (again): a single-use code for an agent
+  // with the `dot` scope, the narrowest there is. A hosted Dina's code names
+  // its cell, so the front door knows whose socket to pair on; the owner's own
+  // node answers with an ordinary setup code for the front door's "I have a
+  // Dina". Minting hands out authority, so a person must be present.
+  router.post(`${OWNER_SETUP_PREFIX}/chatgpt`, async (req) => {
+    const refused = owner(req) ?? presence(req, 'linking ChatGPT needs a person present');
+    if (refused !== null) return refused;
+    const nodeDID = getNodeDID();
+    if (nodeDID === null) return answer(503, { error: 'Home Node identity is not ready' });
+    const label = options.hostedCellLabel?.().trim() ?? '';
+    try {
+      const { code, expiresAt } = generatePairingCode({
+        deviceName: CHATGPT_DEVICE_NAME,
+        role: 'agent',
+        scope: 'dot',
+      });
+      const linkCode =
+        label !== ''
+          ? `dina-link:${label}:${code}`
+          : buildAgentSetupCode({
+              msgboxUrl: options.msgboxURL(),
+              homenodeDid: nodeDID,
+              code,
+              deviceName: CHATGPT_DEVICE_NAME,
+            });
+      return answer(201, { link_code: linkCode, expires_at: expiresAt });
+    } catch {
+      return answer(503, { error: 'Could not create a link code; retry shortly' });
     }
   });
 

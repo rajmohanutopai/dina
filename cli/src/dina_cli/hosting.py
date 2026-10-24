@@ -22,6 +22,7 @@ Two ways to run:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import re
 import secrets
@@ -35,6 +36,8 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 LABEL_ALPHABET = "abcdefghijkmnpqrstuvwxyz23456789"
 # A Unix socket path must fit sun_path: 104 bytes on macOS, 108 on Linux.
@@ -549,6 +552,9 @@ class Provisioner:
             **self.config.core_env,
             "DINA_PDS_PROVISION": "1",
             "DINA_PDS_HANDLE": f"{label}.{self.config.pds_handle_domain}",
+            # Passed through to Core (the gate keeps DINA_CELL_* to itself):
+            # its "Link to ChatGPT" code names the cell (HOSTED_DINA §4.1).
+            "DINA_HOSTED_CELL_LABEL": label,
             "DINA_CELL_VAULT_DIR": str(cell / "vault"),
             "DINA_CELL_CORE_SOCKET": self.core_socket(label),
             "DINA_CELL_LISTEN": listen,
@@ -728,6 +734,7 @@ def serve_provisioner(provisioner: "Provisioner", socket_path: str, group: str =
     class Handler(socketserver.StreamRequestHandler):
         def handle(self) -> None:
             line = self.rfile.readline(64 * 1024)
+            op: Any = None
             try:
                 request = json.loads(line)
                 op = request.get("op")
@@ -744,6 +751,9 @@ def serve_provisioner(provisioner: "Provisioner", socket_path: str, group: str =
             except HostingError as exc:
                 reply = {"ok": False, "error": str(exc)}
             except Exception:
+                # The front door hears only "provisioner error"; the reason
+                # goes to this process's log (systemd's journal).
+                logger.exception("provisioner %s failed", op if op in PROVISIONER_OPS else "request")
                 reply = {"ok": False, "error": "provisioner error"}
             self.wfile.write((json.dumps(reply) + "\n").encode())
 

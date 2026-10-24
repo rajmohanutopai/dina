@@ -122,6 +122,15 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   directly using this agent. Requests from contacts, services, delegated work,
   background jobs, and unknown sources always use Full supervision.</p>
 
+  <h2>ChatGPT</h2>
+  <p class="muted">Link ChatGPT to this Dina, or link it again. In ChatGPT, connect Dina; on the page that opens, paste this five-minute, single-use code under &ldquo;I already have a Dina&rdquo;. ChatGPT gets its own revocable key: it can draft tenders and read how they go, never prices, your limits or your vault.</p>
+  <div class="bar">
+    <button id="linkChatgpt" class="primary">Link to ChatGPT</button>
+    <button id="copyChatgpt" class="hidden">Copy code</button>
+    <span id="chatgptExpiry" class="muted"></span>
+  </div>
+  <textarea id="chatgptCode" class="hidden" readonly spellcheck="false"></textarea>
+
   <h2>Staff devices</h2>
   <p class="muted">Name a till, a clerk's phone or a connector, then give it the five-minute, single-use setup code. The device gets its own revocable key and no authority until you grant it a scope. Cards it raises show the name you give here.</p>
   <div class="bar">
@@ -624,6 +633,31 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       document.getElementById("staffExpiry").textContent =
         "Expires " + new Date(Number(data.expires_at) * 1000).toLocaleTimeString();
     }).catch(function (e) { alert(e.message); });
+  }
+  // HOSTED_DINA §4.1 — a code for the front door's "I already have a Dina".
+  function linkChatgpt() {
+    call("POST", "/v1/owner/setup/chatgpt", {}).then(function (r) {
+      if (r.status === 403 && r.body && r.body.error === "no_user_presence") {
+        needPresence(linkChatgpt);
+        return;
+      }
+      if (r.status !== 201) { alert(refusal(r.body && r.body.error)); return; }
+      var code = document.getElementById("chatgptCode");
+      code.value = String(r.body.link_code || "");
+      code.classList.remove("hidden");
+      var copy = document.getElementById("copyChatgpt");
+      copy.textContent = "Copy code";
+      copy.classList.remove("hidden");
+      document.getElementById("chatgptExpiry").textContent =
+        "Expires " + new Date(Number(r.body.expires_at) * 1000).toLocaleTimeString();
+    }).catch(function (e) { alert(e.message); });
+  }
+  function copyChatgptCode() {
+    var code = document.getElementById("chatgptCode").value;
+    if (!code) return;
+    navigator.clipboard.writeText(code).then(function () {
+      document.getElementById("copyChatgpt").textContent = "Copied";
+    }).catch(function () { alert("Could not access the clipboard. Select and copy the code."); });
   }
   function copyStaffSetup() {
     var code = document.getElementById("staffCode").value;
@@ -2006,6 +2040,8 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   });
   document.getElementById("pairCoding").addEventListener("click", createCodingSetup);
   document.getElementById("copyCoding").addEventListener("click", copyCodingSetup);
+  document.getElementById("linkChatgpt").addEventListener("click", linkChatgpt);
+  document.getElementById("copyChatgpt").addEventListener("click", copyChatgptCode);
   document.getElementById("pairStaff").addEventListener("click", createStaffSetup);
   document.getElementById("copyStaff").addEventListener("click", copyStaffSetup);
   document.getElementById("pairPhone").addEventListener("click", pairPhone);
