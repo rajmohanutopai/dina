@@ -13,28 +13,30 @@
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
+import {
+  ORDER_STEPS as CORE_ORDER_STEPS,
+  orderStepsReached as coreOrderStepsReached,
+} from '@dina/core';
+
 import { colors, spacing, textStyles } from '../theme';
 
 import type { PlacedOrderDto } from '@dina/core';
 
 type Progress = NonNullable<PlacedOrderDto['progress']>;
 
-export const ORDER_STEPS = ['Sent', 'Accepted', 'Paid', 'Being made', 'On the way'] as const;
+export const ORDER_STEPS = CORE_ORDER_STEPS;
 
 function paid(progress: Progress | null): boolean {
   return progress !== null && (progress.paymentRecorded || progress.payment?.state === 'captured');
 }
 
-/** How many of `ORDER_STEPS` the order has reached; null when it has no track. */
+/**
+ * How many of `ORDER_STEPS` the order has reached; null when it has no track.
+ * Core's rule (`client/tender_card.ts`), so the tender card and this track
+ * always agree.
+ */
 export function orderStepsReached(order: PlacedOrderDto): number | null {
-  if (order.state === 'submitted_unconfirmed' || order.state === 'outcome_unknown') return 1;
-  if (order.state !== 'accepted') return null;
-  const progress = order.progress;
-  const fulfilment = progress?.fulfilment?.state;
-  if (fulfilment === 'handed_to_carrier') return 5;
-  if (fulfilment === 'production_started' || fulfilment === 'ready') return 4;
-  if (paid(progress)) return 3;
-  return 2;
+  return coreOrderStepsReached(order);
 }
 
 /** The one sentence under the track: what happens next, and who does it. */

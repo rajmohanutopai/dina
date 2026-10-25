@@ -93,6 +93,21 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
   .muted { opacity: .7; font-size: .85rem; }
   .status { min-width: 8rem; }
   .decision { border-top: 1px solid #8883; margin-top: .6rem; padding-top: .6rem; }
+  .dcard { display: flex; flex-direction: column; gap: .4rem; }
+  .dcard-title { font-weight: 600; font-size: 1.05rem; }
+  .dcard-section { font-size: .72rem; letter-spacing: .06em; text-transform: uppercase; opacity: .6; margin-top: .5rem; }
+  .dcard-stat .total { font-size: 1.6rem; }
+  .dcard-kv { justify-content: space-between; }
+  .dcard-row { flex-wrap: nowrap; }
+  .dcard-main { flex: 1; min-width: 0; }
+  .dcard-sub { white-space: pre-line; }
+  .dcard-timeline { margin: .2rem 0; padding-left: 1.2rem; }
+  .dcard-timeline .step-done { font-weight: 600; }
+  .dcard-timeline .step-upcoming { opacity: .55; }
+  .tone-positive { color: #059669; }
+  .tone-caution { color: #D97706; }
+  .tone-critical { color: #DC2626; }
+  .tone-info, .tone-accent { color: #2563EB; }
   form.start { display: grid; grid-template-columns: max-content 1fr; gap: .5rem .8rem; align-items: center; margin: .6rem 0; }
   .hidden { display: none; }
   code { font-size: .85rem; word-break: break-all; }
@@ -1462,66 +1477,83 @@ const OWNER_CONSOLE_HTML = `<!doctype html>
       });
     });
   }
-  var stateWords = {
-    negotiating: "Dina is asking the suppliers for better prices",
-    ready: "Ready to award",
-    awarded: "Awarded",
-    closed: "Closed",
-    no_policy: "Collecting quotes"
-  };
-  var excludedWords = {
-    no_quote: "No quote yet", declined: "Declined to quote", expired: "Quote expired",
-    currency_mismatch: "Quoted in another currency", over_budget: "Over your budget"
-  };
-  function openTender(id, notice, held) {
+  // HOSTED_DINA §6.4 — the tender is Core's card (client/tender_card.ts), the
+  // one the phone and the owner's ChatGPT dot draw too; this page draws its
+  // blocks and carries its buttons. Every value goes in as text.
+  var CARD_TONES = { positive: 1, caution: 1, critical: 1, info: 1, accent: 1 };
+  function cardText(v) { return typeof v === "string" ? v : typeof v === "number" ? String(v) : ""; }
+  function toneOf(node, tone) {
+    if (CARD_TONES[tone]) node.className = (node.className ? node.className + " " : "") + "tone-" + tone;
+    return node;
+  }
+  function cardButton(action, onAction) {
+    if (!action || (action.command !== "tender.award" && action.command !== "tender.send")) return null;
+    var b = btn(cardText(action.label) || "Go", action.tone === "positive" ? "primary" : "", function () { onAction(action); });
+    b.setAttribute("data-command", action.command);
+    if (action.params && action.params.supplier_did) b.setAttribute("data-supplier", String(action.params.supplier_did));
+    return b;
+  }
+  function renderCard(spec, onAction) {
+    var out = el("div", { class: "dcard" });
+    if (!spec || spec.version !== 1 || !Array.isArray(spec.blocks)) return out;
+    spec.blocks.forEach(function (b) {
+      if (!b || typeof b !== "object") return;
+      if (b.kind === "title") out.appendChild(toneOf(el("div", { class: "dcard-title status", text: cardText(b.text) }), b.tone));
+      else if (b.kind === "section") out.appendChild(el("div", { class: "dcard-section", text: cardText(b.label) }));
+      else if (b.kind === "body") out.appendChild(el("div", { class: "dcard-body", text: cardText(b.text) }));
+      else if (b.kind === "keyValue") out.appendChild(el("div", { class: "row dcard-kv" }, [el("span", { class: "muted", text: cardText(b.label) }), toneOf(el("span", { text: cardText(b.value) }), b.tone)]));
+      else if (b.kind === "stat") out.appendChild(el("div", { class: "dcard-stat" }, [toneOf(el("strong", { class: "total", text: cardText(b.value) }), b.tone), el("div", { class: "muted", text: cardText(b.caption) })]));
+      else if (b.kind === "list") {
+        var list = el("div", { class: "dcard-list" });
+        (Array.isArray(b.rows) ? b.rows : []).forEach(function (r) {
+          if (!r || !cardText(r.text)) return;
+          var kids = [el("div", { class: "dcard-main" }, [el("div", { text: cardText(r.text) }), el("div", { class: "muted dcard-sub", text: cardText(r.sub) })])];
+          if (cardText(r.trailing)) kids.push(toneOf(el("strong", { class: "total", text: cardText(r.trailing) }), r.tone));
+          var button = cardButton(r.action, onAction);
+          if (button) kids.push(button);
+          list.appendChild(el("div", { class: "row decision dcard-row" }, kids));
+        });
+        out.appendChild(list);
+      } else if (b.kind === "timeline") {
+        var t = el("ol", { class: "dcard-timeline" });
+        (Array.isArray(b.steps) ? b.steps : []).forEach(function (st) {
+          if (st && cardText(st.label)) t.appendChild(el("li", { class: "step-" + (st.state === "done" || st.state === "active" ? st.state : "upcoming"), text: cardText(st.label) }));
+        });
+        out.appendChild(t);
+      } else if (b.kind === "chips") {
+        out.appendChild(el("div", { class: "row" }, (Array.isArray(b.items) ? b.items : []).map(function (i) { return el("span", { class: "muted", text: cardText(i && i.text) }); })));
+      } else if (b.kind === "action") {
+        var a = cardButton(b.action, onAction);
+        if (a) out.appendChild(el("div", { class: "row decision" }, [a]));
+      }
+    });
+    if (cardText(spec.sourceLabel)) out.appendChild(el("div", { class: "muted", text: cardText(spec.sourceLabel) }));
+    return out;
+  }
+  function openTender(id, notice) {
     var box = document.getElementById("tenderDetail");
-    call("GET", "/v1/commerce/trade/tender/ranking?tender_id=" + encodeURIComponent(id)).then(function (r) {
+    call("GET", "/v1/commerce/trade/tender/card?tender_id=" + encodeURIComponent(id)).then(function (r) {
       box.textContent = "";
       var card = el("div", { class: "card", id: "tender-" + id });
       if (r.status !== 200) { card.appendChild(el("div", { text: refusal(r.body && r.body.error) })); box.appendChild(card); return; }
-      var v = r.body;
-      card.appendChild(el("strong", { text: "Tender " + id }));
-      card.appendChild(el("div", { class: "status", "data-state": v.state, text: stateWords[v.state] || v.state }));
-      if (v.target_total && v.currency) {
-        card.appendChild(el("div", { class: "muted", text: "Target " + money(v.target_total, v.currency) +
-          (v.budget_ceiling ? " · budget " + money(v.budget_ceiling, v.currency) : "") }));
-      }
-      var canAward = v.state === "ready" || v.state === "negotiating" || v.state === "no_policy";
-      (v.ranked || []).forEach(function (o, i) {
-        var row = el("div", { class: "row decision", "data-supplier": o.supplier_did }, [
-          el("span", { text: (i === 0 ? "Best offer · " : "") + o.supplier_did }),
-          el("strong", { class: "total", text: money(o.total_minor, o.currency) }),
-          el("span", { class: "muted", text: "valid until " + String(o.valid_until || "").slice(0, 10) +
-            (o.revision && o.revision !== "1" ? " · revised " + (Number(o.revision) - 1) + "×" : "") })
-        ]);
-        if (canAward) row.appendChild(btn("Award", "primary", function () { award(id, o.supplier_did); }));
-        if (v.state === "awarded" && v.awarded_supplier_did === o.supplier_did) row.appendChild(el("span", { class: "muted", text: "Awarded" }));
-        card.appendChild(row);
-      });
-      (v.excluded || []).forEach(function (x) {
-        card.appendChild(el("div", { class: "muted", "data-excluded": x.supplier_did, text: x.supplier_did + " — " + (excludedWords[x.reason] || x.reason) }));
-      });
-      var approval = held || (v.held_order === "held" ? v.approval_id : null);
-      if (!held && v.held_order === "sent") card.appendChild(el("div", { class: "decision", id: "tender-sent", text: "Order sent to the supplier." }));
-      if (!held && v.held_order === "lapsed") card.appendChild(el("div", { class: "decision muted", text: "The held order lapsed before it was sent." }));
-      if (approval) {
-        var send = el("div", { class: "decision", id: "tender-held" }, [
-          el("div", { text: "Order held. Nothing has gone to the supplier yet." }),
-          btn("Send order", "primary", function () { sendHeld(id, approval); })
-        ]);
-        card.appendChild(send);
-      }
+      card.appendChild(renderCard(r.body.card, function (action) {
+        var p = action.params || {};
+        if (action.command === "tender.award") award(id, String(p.supplier_did || ""), p.alternative_id ? String(p.alternative_id) : undefined);
+        else if (action.command === "tender.send") sendHeld(id, String(p.approval_id || ""));
+      }));
       if (notice) card.appendChild(el("div", { class: "decision", id: "tender-notice", text: notice }));
       box.appendChild(card);
     });
   }
-  function award(id, supplierDid) {
-    call("POST", "/v1/commerce/trade/tender/award", { tender_id: id, supplier_did: supplierDid }).then(function (r) {
+  function award(id, supplierDid, alternativeId) {
+    var body = { tender_id: id, supplier_did: supplierDid };
+    if (alternativeId) body.alternative_id = alternativeId;
+    call("POST", "/v1/commerce/trade/tender/award", body).then(function (r) {
       if (r.status === 403 && r.body && r.body.error === "no_user_presence") {
-        needPresence(function () { award(id, supplierDid); });
+        needPresence(function () { award(id, supplierDid, alternativeId); });
         return;
       }
-      if (r.status === 200) { openTender(id, "Order held. Review it, then send it to the supplier.", r.body.approval_id); return; }
+      if (r.status === 200) { openTender(id, "Order held. Review it, then send it to the supplier."); return; }
       openTender(id, refusal(r.body && r.body.error));
     });
   }

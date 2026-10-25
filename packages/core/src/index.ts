@@ -1238,6 +1238,17 @@ export type {
   TenderStoryView,
   TenderStorySupplierView,
 } from './client/tender_views';
+// HOSTED_DINA §6.4 — the tender as one card, drawn the same on every surface.
+export {
+  buildTenderCard,
+  buildTenderDraftCard,
+  orderStepsReached,
+  ORDER_STEPS,
+  type OrderTrackInput,
+  type TenderCardInput,
+  type TenderCardOrder,
+  type TenderDraftCardSupplier,
+} from './client/tender_card';
 // ASK_FOR_QUOTES_PLAN §2 — the rules the "Ask for quotes" screen checks
 // before sending, the same ones Core applies (pure; no runtime needed).
 export {

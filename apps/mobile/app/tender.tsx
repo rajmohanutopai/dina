@@ -3,6 +3,12 @@
  * Award button on each, and Send once the order is held. One screen for the
  * owner (in-process client) and a clerk (`as=staff`, the sealed relay).
  *
+ * The tender is drawn as Dina's tender card (HOSTED_DINA §6.4):
+ * `buildTenderCard` from `@dina/core`, the builder the owner's Dina page and
+ * the owner's ChatGPT dot use, drawn by `SafeCardRenderer`. This screen loads
+ * what the card shows (names and trust looked up here) and carries its
+ * buttons.
+ *
  * Every gate is Core's: presence, the clerk's grant and cap, a counter still
  * in flight, a tender already awarded. The screen carries the taps and says
  * what Core answered — including "waiting for the owner" when a clerk's award
@@ -13,23 +19,14 @@ import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-rou
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { formatMoneyAmount, StaffCoreClient, staffTransportFor } from '@dina/core';
+import { buildTenderCard, orderStepsReached, StaffCoreClient, staffTransportFor } from '@dina/core';
 
-import { BargainingTimeline } from '../src/components/BargainingTimeline';
-import {
-  OfferedItemCard,
-  type OfferedItem,
-  type SupplierTrust,
-} from '../src/components/OfferedItemCard';
-import { OrderProgress, orderStepsReached } from '../src/components/OrderProgress';
+import { type SupplierTrust } from '../src/components/OfferedItemCard';
 import { PresenceSheet } from '../src/components/PresenceSheet';
+import { SafeCardRenderer } from '../src/components/SafeCardRenderer';
 import { usePresenceGate } from '../src/hooks/usePresenceGate';
 import { confirmDecision } from '../src/services/confirm_decision';
-import {
-  publishedItemFor,
-  supplierTrustFor,
-  type OfferedProduct,
-} from '../src/services/offered_catalog';
+import { supplierTrustFor } from '../src/services/offered_catalog';
 import { getOwnerCommerceClient } from '../src/services/owner_commerce_client';
 import { CONNECT_OWNER_DEVICE_MESSAGE, errorKeyOf } from '../src/services/owner_errors';
 import { loadStaffIdentity } from '../src/services/staff_identity_store';
@@ -41,20 +38,17 @@ import {
   setAsideFor,
   type OwnReview,
 } from '../src/services/supplier_trust';
-import { colors, radius, spacing, textStyles } from '../src/theme';
+import { colors, spacing, textStyles } from '../src/theme';
 
 import type {
-  CatalogItem,
   OrderSendOutcome,
   PlacedOrderDto,
   PlacedOrdersAnswer,
   TenderAwardOutcome,
-  TenderExclusionReason,
-  TenderNotAskedView,
   TenderRankingView,
-  TenderStorySupplierView,
   TenderStoryView,
 } from '@dina/core';
+import type { CardAction } from '@dina/protocol';
 
 /** What the screen needs from either client. */
 export interface TenderBackend {
@@ -62,8 +56,6 @@ export interface TenderBackend {
   tenderRanking(tenderId: string): Promise<TenderRankingView>;
   /** How each supplier got here; absent where the client cannot read it. */
   tenderStory?(tenderId: string): Promise<TenderStoryView>;
-  /** The supplier's published catalogue item for an offered product (photo, description). */
-  offeredItem?(supplierDid: string, product: OfferedProduct): Promise<CatalogItem | null>;
   /** The supplier's PeerLens trust, shown beside what it offered. */
   supplierTrust?(supplierDid: string): Promise<SupplierTrust | null>;
   /** The owner's placed orders, to follow this tender's order once it is sent. */
@@ -91,49 +83,6 @@ export function setTenderBackendForTest(backend: TenderBackend | null): void {
 
 /** How often an open tender re-reads its ranking while the screen is in front. */
 const REFRESH_MS = 10_000;
-
-/**
- * What the supplier offered, as its catalogue shows it: the quote's first line
- * named in the supplier's own signed words, with the catalogue's photo and
- * description when its published catalogue lists the product.
- */
-export function offeredItem(
-  story: TenderStorySupplierView | undefined,
-  published: CatalogItem | null | undefined,
-): OfferedItem | null {
-  const line = story?.lines[0];
-  if (story === undefined || line === undefined) return null;
-  const more = story.lines.length > 1 ? ` · and ${String(story.lines.length - 1)} more` : '';
-  return {
-    name: line.name ?? published?.name ?? line.product.value,
-    description: published?.description ?? null,
-    quantityText: `${line.quantity.value} ${line.quantity.unit_code}${more}`,
-    imageUrl: published?.images?.[0] ?? null,
-  };
-}
-
-const STATE_LABEL: Record<TenderRankingView['state'], string> = {
-  negotiating: 'Dina is asking the suppliers for better prices',
-  ready: 'Ready to award',
-  awarded: 'Awarded',
-  closed: 'Closed',
-  no_policy: 'Collecting quotes',
-};
-
-const EXCLUDED_LABEL: Record<TenderExclusionReason, string> = {
-  no_quote: 'No quote yet',
-  declined: 'Declined to quote',
-  expired: 'Quote expired',
-  currency_mismatch: 'Quoted in another currency',
-  over_budget: 'Over your budget',
-  ruled_out: 'Against one of your rules',
-};
-
-/** Why a supplier was set aside and never asked (PeerLens), in the owner's words. */
-const NOT_ASKED_LABEL: Record<TenderNotAskedView['reason'], string> = {
-  own_poor_review: 'you rated them poorly on PeerLens',
-  low_peerlens_trust: 'low PeerLens trust',
-};
 
 /** Core's refusal keys, in words a buyer acts on. */
 export function refusalText(key: string): string {
@@ -166,23 +115,6 @@ export function refusalText(key: string): string {
   }
 }
 
-function money(minor: string, currency: string): string {
-  if (!/^\d+$/.test(minor)) return minor;
-  // The currency's own decimals (yen none, dinar three), not always two.
-  try {
-    return `${currency} ${formatMoneyAmount({ currency, minor_units: minor })}`;
-  } catch {
-    const padded = minor.padStart(3, '0');
-    const amount = `${padded.slice(0, -2)}.${padded.slice(-2)}`;
-    return currency === '' ? amount : `${currency} ${amount}`;
-  }
-}
-
-/** A test id's suffix for a version other than the quote's own terms. */
-function versionSuffix(offer: { alternative_id?: string }): string {
-  return offer.alternative_id === undefined ? '' : `-${offer.alternative_id}`;
-}
-
 export default function TenderScreen(): React.ReactElement {
   const params = useLocalSearchParams<{ tender_id?: string; as?: string }>();
   const tenderId = typeof params.tender_id === 'string' ? params.tender_id : '';
@@ -190,19 +122,15 @@ export default function TenderScreen(): React.ReactElement {
   const staffRef = useRef<StaffCoreClient | null>(null);
 
   const [view, setView] = useState<TenderRankingView | null>(null);
-  const [story, setStory] = useState<ReadonlyMap<string, TenderStorySupplierView>>(new Map());
-  // Per supplier, read once: its catalogue item for what it offered, and its
-  // PeerLens trust. Both are detail; the ranking never waits for them.
-  const [catalog, setCatalog] = useState<ReadonlyMap<string, CatalogItem | null>>(new Map());
+  const [story, setStory] = useState<TenderStoryView | null>(null);
+  // Per supplier, read once: its PeerLens trust. Detail; the card never waits for it.
   const [trust, setTrust] = useState<ReadonlyMap<string, SupplierTrust | null>>(new Map());
-  const detailAsked = useRef(new Set<string>());
+  const trustAsked = useRef(new Set<string>());
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** The held order to send: from this visit's award, or the tender's own record. */
-  const [heldApproval, setHeldApproval] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // The order this tender sent, as My Orders sees it: followed live until it
-  // is on its way, so the screen does not stop at "sent".
+  // is on its way, so the card does not stop at "sent".
   const [myOrder, setMyOrder] = useState<PlacedOrderDto | null>(null);
   const router = useRouter();
 
@@ -215,7 +143,6 @@ export default function TenderScreen(): React.ReactElement {
         presence: 'passphrase',
         tenderRanking: (id) => owner.tenderRanking(id),
         tenderStory: (id) => owner.tenderStory(id),
-        offeredItem: (did, product) => publishedItemFor(did, product),
         supplierTrust: (did) => supplierTrustFor(did),
         placedOrders: () => owner.placedOrders(),
         ownReviews: async () => loadOwnSupplierReviews(await ownerDidHere()),
@@ -236,10 +163,9 @@ export default function TenderScreen(): React.ReactElement {
       presence: 'pin',
       tenderRanking: (id) => staff.tenderRanking(id),
       // The clerk sees what the owner sees of the bargaining: the story (the
-      // same purchasing check as the ranking), the catalogue photo and the
-      // supplier's PeerLens trust (public reads). Placed orders stay the owner's.
+      // same purchasing check as the ranking) and the supplier's PeerLens
+      // trust (a public read). Placed orders stay the owner's.
       tenderStory: (id) => staff.tenderStory(id),
-      offeredItem: (did, product) => publishedItemFor(did, product),
       supplierTrust: (did) => supplierTrustFor(did),
       awardTender: (args) => staff.awardTender(args),
       sendHeldOrder: (id) => staff.sendHeldOrder(id),
@@ -260,10 +186,6 @@ export default function TenderScreen(): React.ReactElement {
     try {
       const answer = await client.tenderRanking(tenderId);
       setView(answer);
-      // Offer "Send" only while the order is still held: the tender's own
-      // held order when it has one, and nothing once it has gone or lapsed.
-      if (answer.held_order === 'sent' || answer.held_order === 'lapsed') setHeldApproval(null);
-      else if (answer.approval_id !== undefined) setHeldApproval(answer.approval_id);
       setError(null);
       if (answer.held_order === 'sent' && client.placedOrders !== undefined) {
         try {
@@ -285,8 +207,7 @@ export default function TenderScreen(): React.ReactElement {
       }
       if (client.tenderStory !== undefined) {
         try {
-          const told = await client.tenderStory(tenderId);
-          setStory(new Map(told.suppliers.map((s) => [s.supplier_did, s])));
+          setStory(await client.tenderStory(tenderId));
         } catch {
           // The ranking still stands on its own; the story is detail.
         }
@@ -295,31 +216,6 @@ export default function TenderScreen(): React.ReactElement {
       setError(refusalText(errorKeyOf(err)));
     }
   }, [backend, tenderId]);
-
-  useEffect(() => {
-    const wanted = [...story.values()].flatMap((s) => {
-      const product = s.lines[0]?.product;
-      return product === undefined || detailAsked.current.has(s.supplier_did)
-        ? []
-        : [{ did: s.supplier_did, product }];
-    });
-    if (wanted.length === 0) return;
-    for (const w of wanted) detailAsked.current.add(w.did);
-    void (async () => {
-      const client = await backend();
-      if (client === null) return;
-      await Promise.all(
-        wanted.map(async ({ did, product }) => {
-          const [item, rated] = await Promise.all([
-            client.offeredItem?.(did, product).catch(() => null) ?? null,
-            client.supplierTrust?.(did).catch(() => null) ?? null,
-          ]);
-          setCatalog((prev) => new Map(prev).set(did, item));
-          setTrust((prev) => new Map(prev).set(did, rated));
-        }),
-      );
-    })();
-  }, [story, backend]);
 
   // Quotes and counters land while the owner watches (Ask for quotes opens
   // this screen right after sending), so refresh while the tender can still
@@ -340,6 +236,64 @@ export default function TenderScreen(): React.ReactElement {
       return () => clearInterval(timer);
     }, [reload]),
   );
+
+  // Core's tender knows suppliers by DID only; show the owner's name for
+  // them (contact, else listing), and the DID only where no name is known or
+  // two suppliers share one.
+  const [names, setNames] = useState<Map<string, string | null>>(new Map());
+  const refsKey =
+    view === null
+      ? ''
+      : [
+          ...view.ranked.map((o) => `${o.supplier_did}|${o.service_rkey}`),
+          ...view.excluded.map((r) => `${r.supplier_did}|${r.service_rkey ?? 'self'}`),
+          ...(view.not_asked ?? []).map((n) => `${n.supplier_did}|${n.service_rkey}`),
+        ].join(',');
+  useEffect(() => {
+    if (refsKey === '') return;
+    let live = true;
+    const refs = refsKey.split(',').map((pair) => {
+      const [supplierDid = '', serviceRkey = 'self'] = pair.split('|');
+      return { supplierDid, serviceRkey };
+    });
+    void supplierNamesHere(refs).then((resolved) => {
+      if (live) setNames(resolved);
+    });
+    // Each supplier's PeerLens trust, once.
+    const wanted = [...new Set(refs.map((r) => r.supplierDid))].filter(
+      (did) => did !== '' && !trustAsked.current.has(did),
+    );
+    for (const did of wanted) trustAsked.current.add(did);
+    if (wanted.length > 0) {
+      void (async () => {
+        const client = await backend();
+        if (client === null || client.supplierTrust === undefined) return;
+        const lookup = client.supplierTrust;
+        await Promise.all(
+          wanted.map(async (did) => {
+            const rated = await lookup(did).catch(() => null);
+            setTrust((prev) => new Map(prev).set(did, rated));
+          }),
+        );
+      })();
+    }
+    return () => {
+      live = false;
+    };
+  }, [refsKey, backend]);
+  const labels = useMemo(
+    () =>
+      supplierLabels(
+        [...(view?.ranked ?? []), ...(view?.excluded ?? []), ...(view?.not_asked ?? [])].map(
+          (row) => ({
+            supplierDid: row.supplier_did,
+            name: names.get(row.supplier_did) ?? null,
+          }),
+        ),
+      ),
+    [names, view],
+  );
+  const labelOf = useCallback((did: string): string => labels.get(did) ?? shortDid(did), [labels]);
 
   const { run: runGated, sheet: presenceSheet } = usePresenceGate({
     prove: async (secret) => {
@@ -385,71 +339,25 @@ export default function TenderScreen(): React.ReactElement {
           );
           return;
         }
-        setHeldApproval(outcome.approvalId);
         setNotice('Order held. Review it, then send it to the supplier.');
       }),
     [backend, tenderId, withPresence],
   );
 
   const send = useCallback(
-    () =>
+    (approvalId: string) =>
       withPresence(async () => {
         const client = await backend();
-        if (client === null || heldApproval === null) return;
-        const outcome = await client.sendHeldOrder(heldApproval);
+        if (client === null) return;
+        const outcome = await client.sendHeldOrder(approvalId);
         setNotice(
           outcome.kind === 'pending_approval'
             ? 'This order is over your limit, so the owner has to approve it. Send again once they do.'
             : outcome.headline,
         );
       }),
-    [backend, heldApproval, withPresence],
+    [backend, withPresence],
   );
-
-  const canAward =
-    view !== null &&
-    (view.state === 'ready' || view.state === 'no_policy' || view.state === 'negotiating');
-  const awardedTo = view?.awarded_supplier_did ?? '';
-
-  // Core's tender knows suppliers by DID only; show the owner's name for
-  // them (contact, else listing), and the DID only where no name is known or
-  // two suppliers share one.
-  const [names, setNames] = useState<Map<string, string | null>>(new Map());
-  const refsKey =
-    view === null
-      ? ''
-      : [
-          ...view.ranked.map((o) => `${o.supplier_did}|${o.service_rkey}`),
-          ...view.excluded.map((r) => `${r.supplier_did}|${r.service_rkey ?? 'self'}`),
-          ...(view.not_asked ?? []).map((n) => `${n.supplier_did}|${n.service_rkey}`),
-        ].join(',');
-  useEffect(() => {
-    if (refsKey === '') return;
-    let live = true;
-    const refs = refsKey.split(',').map((pair) => {
-      const [supplierDid = '', serviceRkey = 'self'] = pair.split('|');
-      return { supplierDid, serviceRkey };
-    });
-    void supplierNamesHere(refs).then((resolved) => {
-      if (live) setNames(resolved);
-    });
-    return () => {
-      live = false;
-    };
-  }, [refsKey]);
-  const labels = useMemo(
-    () =>
-      supplierLabels(
-        [...(view?.ranked ?? []), ...(view?.excluded ?? []), ...(view?.not_asked ?? [])].map(
-          (row) => ({
-            supplierDid: row.supplier_did,
-            name: names.get(row.supplier_did) ?? null,
-          }),
-        ),
-      ),
-    [names, view],
-  );
-  const labelOf = (did: string): string => labels.get(did) ?? shortDid(did);
 
   /**
    * Award, after a word of warning when the supplier is one Ask for quotes
@@ -497,17 +405,39 @@ export default function TenderScreen(): React.ReactElement {
     }
     await award(supplierDid, alternativeId);
   };
-  const heading = useMemo(() => {
-    if (view === null) return '';
-    // Before any supplier has answered there is nothing to negotiate yet.
-    const waiting =
-      view.ranked.length === 0 &&
-      view.excluded.length > 0 &&
-      view.excluded.every((row) => row.reason === 'no_quote');
-    return waiting && (view.state === 'negotiating' || view.state === 'no_policy')
-      ? 'Waiting for the suppliers to quote'
-      : STATE_LABEL[view.state];
-  }, [view]);
+
+  /** A card button, carried out here with this screen's own gates. */
+  const onAction = (action: CardAction): void => {
+    if (action.command === 'tender.award' && action.params.supplier_did !== undefined) {
+      void awardChecked(action.params.supplier_did, action.params.alternative_id);
+    } else if (action.command === 'tender.send' && action.params.approval_id !== undefined) {
+      void send(action.params.approval_id);
+    }
+  };
+
+  const card = useMemo(
+    () =>
+      view === null
+        ? null
+        : buildTenderCard({
+            ranking: view,
+            story,
+            nameOf: (did) => labelOf(did),
+            trustOf: (did) => {
+              const rated = trust.get(did);
+              return rated === null || rated === undefined
+                ? null
+                : { score: rated.score, reviews: rated.reviewCount ?? 0 };
+            },
+            order:
+              myOrder === null
+                ? null
+                : { headline: myOrder.headline, stepsReached: orderStepsReached(myOrder) },
+            audience: asStaff ? 'staff' : 'owner',
+            buttons: true,
+          }),
+    [view, story, labelOf, trust, myOrder, asStaff],
+  );
 
   return (
     <View style={styles.container} testID="tender-screen">
@@ -519,218 +449,19 @@ export default function TenderScreen(): React.ReactElement {
             {error}
           </Text>
         )}
-        {view !== null && (
-          <>
-            <Text style={styles.state} testID="tender-state">
-              {heading}
-            </Text>
-            {view.target_total !== undefined && view.currency !== undefined && (
-              <Text style={styles.meta}>
-                Target {money(view.target_total, view.currency)}
-                {view.budget_ceiling !== undefined
-                  ? ` · budget ${money(view.budget_ceiling, view.currency)}`
-                  : ''}
-              </Text>
-            )}
-            {view.state === 'negotiating' && (
-              <Text style={styles.meta}>
-                You can award now, or wait: Dina tells you once when the tender is ready.
-              </Text>
-            )}
-
-            <Text style={styles.sectionTitle}>Offers</Text>
-            {view.ranked.length === 0 && (
-              <Text style={styles.empty} testID="tender-no-offers">
-                No offer can be awarded yet.
-              </Text>
-            )}
-            {view.ranked.map((offer, index) => (
-              <View
-                // One supplier may rank in several versions (COMMITMENT_KERNEL §6).
-                key={`${offer.supplier_did}:${offer.alternative_id ?? ''}`}
-                style={styles.offer}
-                testID={`tender-offer-${offer.supplier_did}${versionSuffix(offer)}`}
-              >
-                <View style={styles.offerText}>
-                  <Text style={styles.offerTitle}>
-                    {index === 0 ? 'Best offer · ' : ''}
-                    {labelOf(offer.supplier_did)}
-                  </Text>
-                  {(() => {
-                    const item = offeredItem(
-                      story.get(offer.supplier_did),
-                      catalog.get(offer.supplier_did),
-                    );
-                    return item === null ? null : (
-                      <OfferedItemCard
-                        item={item}
-                        trust={trust.get(offer.supplier_did) ?? null}
-                        testID={`tender-offered-${offer.supplier_did}`}
-                      />
-                    );
-                  })()}
-                  <Text style={styles.offerTotal} testID={`tender-total-${offer.supplier_did}`}>
-                    {money(offer.total_minor, offer.currency)}
-                  </Text>
-                  <BargainingTimeline
-                    story={story.get(offer.supplier_did)}
-                    supplierLabel={labelOf(offer.supplier_did)}
-                    testID={`tender-bargaining-${offer.supplier_did}`}
-                  />
-                  <Text style={styles.meta}>
-                    {offer.credit_days > 0 ? `${String(offer.credit_days)} days' credit · ` : ''}
-                    valid until {offer.valid_until.slice(0, 10)}
-                    {offer.revision !== '1'
-                      ? ` · revised ${String(Number(offer.revision) - 1)}×`
-                      : ''}
-                  </Text>
-                  {offer.estimated_delivery_at !== undefined && (
-                    <Text style={styles.meta} testID={`tender-delivery-${offer.supplier_did}${versionSuffix(offer)}`}>
-                      Delivered {offer.estimated_delivery_at.slice(0, 10)}
-                    </Text>
-                  )}
-                  {offer.partner_run !== undefined && (
-                    <Text style={styles.meta} testID={`tender-partner-run-${offer.supplier_did}${versionSuffix(offer)}`}>
-                      On a partner&apos;s delivery run. Award by {offer.partner_run.offer_ends_at.slice(0, 16).replace('T', ' ')} UTC. If the run
-                      falls through, standard delivery
-                      {offer.partner_run.fallback_delivery_at !== undefined
-                        ? ` on ${offer.partner_run.fallback_delivery_at.slice(0, 10)}`
-                        : ''}{' '}
-                      at {money(offer.partner_run.fallback_total_minor, offer.currency)}
-                      {offer.partner_run.exit_if_run_fails === true
-                        ? ', or you may cancel without charge.'
-                        : '.'}
-                    </Text>
-                  )}
-                  {offer.comparison_cost_minor !== offer.total_minor && (
-                    <Text style={styles.meta}>
-                      Costs you {money(offer.comparison_cost_minor, offer.currency)} after the
-                      credit
-                    </Text>
-                  )}
-                </View>
-                {canAward && (
-                  <Pressable
-                    style={[styles.awardButton, busy && styles.disabled]}
-                    disabled={busy}
-                    onPress={() => void awardChecked(offer.supplier_did, offer.alternative_id)}
-                    testID={`tender-award-${offer.supplier_did}${versionSuffix(offer)}`}
-                    accessibilityRole="button"
-                  >
-                    <Text style={styles.awardLabel}>Award</Text>
-                  </Pressable>
-                )}
-                {view.state === 'awarded' && awardedTo === offer.supplier_did && (
-                  <Text style={styles.awardedTag}>Awarded</Text>
-                )}
-              </View>
-            ))}
-
-            {view.excluded.length > 0 && (
-              <>
-                <Text style={styles.sectionTitle}>Not in the running</Text>
-                {view.excluded.map((row) => {
-                  // The offer's own price beside why it is out: an exclusion
-                  // with the number hidden reads as arbitrary.
-                  const told = story.get(row.supplier_did);
-                  const head = told?.revisions.at(-1);
-                  return (
-                    <View key={row.supplier_did}>
-                      <Text style={styles.meta} testID={`tender-excluded-${row.supplier_did}`}>
-                        {labelOf(row.supplier_did)} —{' '}
-                        {head !== undefined
-                          ? `${money(head.total.minor_units, head.total.currency)} · `
-                          : ''}
-                        {EXCLUDED_LABEL[row.reason]}
-                      </Text>
-                      {(() => {
-                        const item = offeredItem(told, catalog.get(row.supplier_did));
-                        return item === null ? null : (
-                          <OfferedItemCard
-                            item={item}
-                            trust={trust.get(row.supplier_did) ?? null}
-                            testID={`tender-offered-${row.supplier_did}`}
-                          />
-                        );
-                      })()}
-                      <BargainingTimeline
-                        story={told}
-                        supplierLabel={labelOf(row.supplier_did)}
-                        testID={`tender-bargaining-${row.supplier_did}`}
-                      />
-                    </View>
-                  );
-                })}
-              </>
-            )}
-
-            {(view.not_asked ?? []).length > 0 && (
-              <>
-                <Text style={styles.sectionTitle}>Not asked</Text>
-                {(view.not_asked ?? []).map((row) => (
-                  <View key={row.supplier_did} testID={`tender-not-asked-${row.supplier_did}`}>
-                    <Text style={styles.meta}>
-                      {labelOf(row.supplier_did)} —{' '}
-                      {row.listed_from !== undefined
-                        ? `listed from ${money(row.listed_from.minor_units, row.listed_from.currency)} · `
-                        : ''}
-                      {NOT_ASKED_LABEL[row.reason]}
-                    </Text>
-                    {row.note !== '' && (
-                      <Text style={styles.meta} numberOfLines={2}>
-                        {`“${row.note}”`}
-                      </Text>
-                    )}
-                  </View>
-                ))}
-              </>
-            )}
-
-            {heldApproval === null && view.held_order === 'sent' && (
-              <View style={styles.heldCard} testID="tender-sent">
-                <Text style={styles.offerTitle}>Your order</Text>
-                <Text style={styles.meta} testID="tender-order-headline">
-                  {myOrder?.headline ?? 'Order sent to the supplier.'}
-                </Text>
-                {myOrder !== null && (
-                  <OrderProgress
-                    order={myOrder}
-                    supplier={labelOf(myOrder.supplierDid)}
-                    testID="tender-order-progress"
-                  />
-                )}
-                <Pressable
-                  onPress={() => router.push('/orders')}
-                  testID="tender-open-orders"
-                  accessibilityRole="link"
-                >
-                  <Text style={styles.link}>Open in My Orders</Text>
-                </Pressable>
-              </View>
-            )}
-            {heldApproval === null && view.held_order === 'lapsed' && (
-              <Text style={styles.meta} testID="tender-lapsed">
-                The held order lapsed before it was sent.
-              </Text>
-            )}
-            {heldApproval !== null && (
-              <View style={styles.heldCard} testID="tender-held">
-                <Text style={styles.offerTitle}>Order held</Text>
-                <Text style={styles.meta}>
-                  Nothing has gone to the supplier yet. Send it when you are ready.
-                </Text>
-                <Pressable
-                  style={[styles.sendButton, busy && styles.disabled]}
-                  disabled={busy}
-                  onPress={() => void send()}
-                  testID="tender-send"
-                  accessibilityRole="button"
-                >
-                  <Text style={styles.sendLabel}>Send order</Text>
-                </Pressable>
-              </View>
-            )}
-          </>
+        {card !== null && (
+          <View testID="tender-card">
+            <SafeCardRenderer spec={card} onAction={onAction} actionsDisabled={busy} />
+          </View>
+        )}
+        {view?.held_order === 'sent' && (
+          <Pressable
+            onPress={() => router.push('/orders')}
+            testID="tender-open-orders"
+            accessibilityRole="link"
+          >
+            <Text style={styles.link}>Open in My Orders</Text>
+          </Pressable>
         )}
         {notice !== null && (
           <Text style={styles.notice} testID="tender-notice">
@@ -739,7 +470,6 @@ export default function TenderScreen(): React.ReactElement {
         )}
         {busy && <ActivityIndicator style={styles.spinner} />}
       </ScrollView>
-
       <PresenceSheet {...presenceSheet} />
     </View>
   );
@@ -750,51 +480,6 @@ const styles = StyleSheet.create({
   scroll: { padding: spacing.lg },
   spinner: { marginTop: spacing.md },
   error: { ...textStyles.body, color: colors.error },
-  state: { ...textStyles.body, fontWeight: '600', color: colors.textPrimary },
-  meta: { ...textStyles.caption, color: colors.textSecondary, marginTop: 2 },
-  empty: { ...textStyles.body, color: colors.textSecondary },
-  sectionTitle: {
-    ...textStyles.caption,
-    color: colors.textSecondary,
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-    textTransform: 'uppercase',
-  },
-  offer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: colors.bgCard,
-    borderRadius: radius.md,
-    padding: spacing.md,
-    marginBottom: spacing.sm,
-    gap: spacing.sm,
-  },
-  offerText: { flex: 1 },
-  offerTitle: { ...textStyles.body, color: colors.textPrimary },
-  offerTotal: { ...textStyles.body, fontWeight: '600', color: colors.textPrimary, marginTop: 2 },
-  awardButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-  },
-  awardLabel: { ...textStyles.button, color: colors.bgPrimary },
-  awardedTag: { ...textStyles.caption, color: colors.textSecondary, fontWeight: '600' },
-  disabled: { opacity: 0.5 },
   link: { ...textStyles.caption, color: colors.accent, marginTop: spacing.sm },
-  heldCard: {
-    backgroundColor: colors.bgSecondary,
-    borderRadius: radius.lg,
-    padding: spacing.md,
-    marginTop: spacing.lg,
-  },
-  sendButton: {
-    backgroundColor: colors.accent,
-    borderRadius: radius.lg,
-    paddingVertical: spacing.md,
-    alignItems: 'center',
-    marginTop: spacing.md,
-  },
-  sendLabel: { ...textStyles.button, color: colors.bgPrimary },
   notice: { ...textStyles.body, color: colors.textPrimary, marginTop: spacing.md },
 });

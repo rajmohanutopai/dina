@@ -667,13 +667,24 @@ class DinaClient:
         )
         return resp.json()
 
-    def tender_award(self, session: str, draft_id: str, rank: int = 1) -> dict:
-        """Award an opened draft to one ranked quote; the order goes out."""
+    def tender_award(
+        self,
+        session: str,
+        draft_id: str,
+        rank: int = 1,
+        supplier_did: str = "",
+        alternative_id: str = "",
+    ) -> dict:
+        """Award an opened draft to one quote, by rank or by supplier; the order goes out."""
+        body: dict = {"session_id": session, "draft_id": draft_id}
+        if supplier_did:
+            body["supplier_did"] = supplier_did
+            if alternative_id:
+                body["alternative_id"] = alternative_id
+        else:
+            body["rank"] = rank
         resp = self._request(
-            self._core,
-            "POST",
-            "/v1/commerce/agent/tender-drafts/award",
-            json={"session_id": session, "draft_id": draft_id, "rank": rank},
+            self._core, "POST", "/v1/commerce/agent/tender-drafts/award", json=body
         )
         return resp.json()
 

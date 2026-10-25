@@ -3,8 +3,9 @@
 **Status:** DESIGN, 2026-10-21. The demo cut (§10) is built and committed
 (76961fab, 1c43b6f9, bab9fd78, 607011da, aa75efec) and runs on the test
 box, with finding suppliers on the network and "I trust this supplier"
-(§6.1, §6.2; 48b49cd1, c7540206). The dot driving the whole tender (§6.3)
-is built but not committed. §12 says what
+(§6.1, §6.2; 48b49cd1, c7540206), the dot driving the whole tender (§6.3;
+ee88ae50, 56058a4f). The tender as one card on every surface (§6.4) is built
+but not committed. §12 says what
 was built, how it was checked, and what is not built.
 **Related:** `docs/OPENAI_DOTS_INTEGRATION.md` (the dot flow and the bridge),
 `docs/USER_BACKUP.md` (backup), `docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md`
@@ -426,6 +427,45 @@ chat rather than on the page:
   owner's name. The tools tell ChatGPT to confirm amounts and the winner with
   the owner first, and ChatGPT asks before calling a tool that changes
   something; the owner's page shows every tender and order.
+
+### 6.4 The tender as one card
+
+Decided 2026-10-25: the tender is a card, drawn the same on the phone, on the
+owner's Dina page and in ChatGPT. `buildTenderCard`
+(`packages/core/src/client/tender_card.ts`, exported from `@dina/core`) turns
+what the tender routes return (the ranking, the story, the order) into a
+CardSpec, the fixed block vocabulary every Dina surface draws. It is pure, so:
+
+- **The phone** (`apps/mobile/app/tender.tsx`) calls it with what it loads,
+  including the names and PeerLens trust it looks up, and draws it with
+  `SafeCardRenderer`. The card replaced the old screen; product photos and
+  the bargaining rounds are not drawn until the card vocabulary has blocks
+  for them.
+- **The owner's Dina page** reads `GET /v1/commerce/trade/tender/card`
+  (owner only) and draws it with a small renderer of its own.
+- **The owner's dot** reads it inside `dina_tender_status`: a draft gets
+  `buildTenderDraftCard` (who Dina would ask), an opened tender the tender
+  card. ChatGPT draws it through the MCP Apps page `ui://dina/card-v1.html`
+  (`cli/src/dina_cli/widgets/card-v1.html`), which takes the host's theme,
+  draws every value as text and fetches nothing.
+
+**Buttons.** CardSpec gained one block, `action`, and an optional `action` on
+a list row: a label, a command (`tender.award` or `tender.send`) and short
+string parameters. Only Dina's own cards keep them; `validateCardSpec`
+strips them from any untrusted card, as it strips trust badges, so no
+plugin, provider or model can put an Award button in front of the owner.
+Each surface carries a button its own way and keeps its own gates: the
+phone and the page call the award and send routes behind the passphrase
+(or a clerk's PIN and cap, and the warning before awarding a supplier the
+owner rated poorly); the ChatGPT page asks for a second tap, then calls
+`dina_tender_award` with the supplier the button named.
+
+**What the dot's card leaves out:** the ceiling, the offers the owner's
+rules removed, and the owner's notes on suppliers not asked. It never shows
+Send, because the dot's award sends the order at once.
+
+Not yet known: whether a dot's own conversation draws plugin cards (ChatGPT
+documents MCP Apps for chats; dots are said to use the same plugins).
 
 ## 7. Running cells
 

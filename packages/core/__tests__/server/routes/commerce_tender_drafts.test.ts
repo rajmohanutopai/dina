@@ -645,6 +645,98 @@ describe("the agent's status read", () => {
     }
   });
 
+  it('gives the dot and the owner’s page the same tender card, and awards from its button', async () => {
+    await pastTender();
+    const id = String((await draft()).body.draft_id);
+    const pendingRead = await router.handle(
+      dot(
+        'GET',
+        '/v1/commerce/agent/tender-drafts/status',
+        {},
+        { draft_id: id, session_id: session },
+      ),
+    );
+    const pendingCard = (
+      pendingRead.body as { card: { blocks: { kind: string; text?: string }[] } }
+    ).card;
+    expect(pendingCard.blocks[0]).toEqual({ kind: 'title', text: 'Tender draft · not sent yet' });
+    // Any other agent reads no card.
+    expect((await status(id)).body.card).toBeUndefined();
+
+    const orders: string[] = [];
+    installBuyerOrderSender(async ({ order }) => {
+      orders.push(order.supplier_did);
+      return { kind: 'ambiguous', reason: 'sent' };
+    });
+    try {
+      const opened = await router.handle(
+        dot('POST', '/v1/commerce/agent/tender-drafts/open', {
+          session_id: session,
+          draft_id: id,
+          target_total: '200000',
+          budget_ceiling: '260000',
+          currency: 'INR',
+          region: { scheme: 'postal_area', value: '682001' },
+        }),
+      );
+      const tenderId = String((opened.body as { tender_id: string }).tender_id);
+      quotesArrive({ [SUPPLIER_A]: '1150', [SUPPLIER_B]: '1090' });
+
+      const dotCard = (
+        (
+          await router.handle(
+            dot(
+              'GET',
+              '/v1/commerce/agent/tender-drafts/status',
+              {},
+              { draft_id: id, session_id: session },
+            ),
+          )
+        ).body as { card: unknown }
+      ).card;
+      const pageCard = (
+        (
+          await router.handle(
+            owner('GET', '/v1/commerce/trade/tender/card', {}, { tender_id: tenderId }),
+          )
+        ).body as { card: unknown }
+      ).card;
+      const text = JSON.stringify(dotCard);
+      expect(text).toContain('Blue Door Bakehouse');
+      expect(text).toContain('INR 2180.00');
+      expect(text).toContain('"command":"tender.award"');
+      // The ceiling is on the owner's page, never read back to the dot.
+      expect(text).not.toContain('2600.00');
+      expect(JSON.stringify(pageCard)).toContain('INR 2600.00');
+
+      // The card's button names the supplier; the dot awards that one.
+      const awarded = await router.handle(
+        dot('POST', '/v1/commerce/agent/tender-drafts/award', {
+          session_id: session,
+          draft_id: id,
+          supplier_did: SUPPLIER_A,
+        }),
+      );
+      expect((awarded.body as { awarded_to: string }).awarded_to).toBe("Rosa's Bakery");
+      expect(orders).toEqual([SUPPLIER_A]);
+    } finally {
+      installBuyerOrderSender(null);
+    }
+  });
+
+  it('keeps the owner’s tender card the owner’s', async () => {
+    const res = await router.handle(
+      agent(
+        'GET',
+        '/v1/commerce/trade/tender/card',
+        {},
+        { tender_id: 'tnd_x', session_id: session },
+      ),
+    );
+    expect(res.status).toBe(403);
+    expect(isAuthorized('agent', 'GET', '/v1/commerce/trade/tender/card')).toBe(false);
+  });
+
   it('lets no other agent open or award, and reads another agent’s draft as absent to the dot', async () => {
     await pastTender();
     const id = String((await draft()).body.draft_id);

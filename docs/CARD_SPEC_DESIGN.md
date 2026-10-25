@@ -330,6 +330,16 @@ The §4 scenario sketches that show `( … )` provider badges (S2,S3,S6,S7,S8,
 S11,S13) therefore render as toned `keyValue`/`stat` rows in v1; only S14's
 Dina/PeerLens "Disputed" is an actual `badge` (trusted channel).
 
+**Buttons follow the same rule (2026-10-25, `docs/HOSTED_DINA.md` §6.4).**
+The `action` block and a list row's `action` carry a decision (`tender.award`,
+`tender.send`) with short string parameters. They are Dina-owned like
+`badge`: the untrusted path strips every action, so only Dina's own cards
+(the tender card from `@dina/core`'s `buildTenderCard`) can put a button in
+front of the owner. A renderer draws buttons only when its screen passes a
+handler (`SafeCardRenderer`'s `onAction`), and carries each one out through
+that screen's own gates (presence, a clerk's cap). Additive, so still
+`version: 1`; an older renderer drops the unknown block.
+
 ## 8. URL & map safety (Codex #5)
 
 - **`map` carries STRUCTURED location, never a URL** — lat/lng (WGS84-bounds

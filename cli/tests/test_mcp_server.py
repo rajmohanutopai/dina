@@ -1016,7 +1016,9 @@ def test_dina_tender_award_names_the_rank(fake_client):
     out = mcp_server.dina_tender_award.fn(session="s1", draft_id="tdr_1", rank=2)
 
     assert out["awarded_to"] == "Fogline Bakehouse"
-    fake_client.tender_award.assert_called_once_with(session="s1", draft_id="tdr_1", rank=2)
+    fake_client.tender_award.assert_called_once_with(
+        session="s1", draft_id="tdr_1", rank=2, supplier_did="", alternative_id=""
+    )
 
 
 def test_dina_supplier_search_and_review(fake_client):

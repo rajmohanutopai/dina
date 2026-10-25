@@ -366,3 +366,42 @@ it('round-trips a validated spec (idempotent), incl. trusted badge', () => {
   ) as CardSpec
   expect(validateCardSpec(once, { trusted: true })).toEqual(once)
 })
+
+describe('validateCardSpec — buttons are Dina-owned (HOSTED_DINA §6.4)', () => {
+  const award = {
+    label: 'Award',
+    command: 'tender.award',
+    params: { tender_id: 'tnd_1', supplier_did: 'did:plc:fogline' },
+  };
+  const card = {
+    version: 1,
+    blocks: [
+      { kind: 'list', rows: [{ text: 'Fogline Bakehouse', trailing: '$700.00', action: award }] },
+      {
+        kind: 'action',
+        action: { label: 'Send order', command: 'tender.send', params: { approval_id: 'ap_1' } },
+      },
+    ],
+  };
+
+  it('STRIPS every action from an untrusted card: a stranger cannot put Award in front of the owner', () => {
+    const spec = validateCardSpec(card) as CardSpec;
+    expect(spec.blocks).toEqual([
+      { kind: 'list', rows: [{ text: 'Fogline Bakehouse', trailing: '$700.00' }] },
+    ]);
+  });
+
+  it('KEEPS row and block actions on a trusted card', () => {
+    expect(validateCardSpec(card, { trusted: true })).toEqual(card);
+  });
+
+  it('refuses an unknown command, a non-string parameter or a long label', () => {
+    const bad = (action: unknown) =>
+      validateCardSpec({ version: 1, blocks: [{ kind: 'action', action }] }, { trusted: true });
+    expect(bad({ ...award, command: 'money.send' })).toBeNull();
+    expect(bad({ ...award, params: { tender_id: 7 } })).toBeNull();
+    expect(bad({ ...award, params: { 'Bad-Key': 'x' } })).toBeNull();
+    expect(bad({ ...award, label: 'x'.repeat(41) })).toBeNull();
+    expect(bad({ ...award, params: 'tender_id=1' })).toBeNull();
+  });
+});

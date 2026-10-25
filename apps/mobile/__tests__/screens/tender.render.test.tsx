@@ -1,10 +1,12 @@
 /**
  * Render tests for the Tender screen (NEGOTIATION_PLAN §4.5, §4.7). The screen
  * judges nothing: Core ranks, gates presence, applies a clerk's cap and
- * refuses an award while a counter is in flight. These pin that the offers
- * render as Core ranked them, that Award then Send carry the right ids, that
- * a clerk over the cap reads "waiting for the owner", that a refusal reads in
- * words, and that a lapsed presence raises the sheet and retries.
+ * refuses an award while a counter is in flight. The tender is drawn as
+ * Dina's tender card (HOSTED_DINA §6.4, `buildTenderCard`); these pin that
+ * the card shows the offers as Core ranked them, that its Award and Send
+ * buttons carry the right ids, that a clerk over the cap reads "waiting for
+ * the owner", that a refusal reads in words, and that a lapsed presence
+ * raises the sheet and retries.
  */
 
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
@@ -94,27 +96,47 @@ beforeEach(() => {
 });
 afterEach(() => setTenderBackendForTest(null));
 
+const AWARD = (did: string, alt?: string): string =>
+  `card-action-tender.award-${did}${alt !== undefined ? `-${alt}` : ''}`;
+const SEND = (approvalId: string): string => `card-action-tender.send-${approvalId}`;
+const HELD = (approvalId: string) => ({
+  ...RANKING,
+  state: 'awarded' as const,
+  awarded_supplier_did: B,
+  approval_id: approvalId,
+  held_order: 'held' as const,
+});
+/** Core's ranking before the award, and the held order after it. */
+function rankingAfterAward(b: { awardTender: jest.Mock }, approvalId: string): jest.Mock {
+  return jest.fn(async () => (b.awardTender.mock.calls.length > 0 ? HELD(approvalId) : RANKING));
+}
+
 describe('the tender screen', () => {
   it('shows the offers as Core ranked them, and why the others are out', async () => {
     setTenderBackendForTest(backend());
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-offer-${B}`)).toBeTruthy());
-    expect(view.getByTestId('tender-state').props.children).toBe('Ready to award');
-    expect(view.getByTestId(`tender-total-${B}`).props.children).toBe('INR 480.00');
+    await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+    expect(view.getByText('Ready to award')).toBeTruthy();
     expect(view.getByText(/Best offer/)).toBeTruthy();
-    expect(view.getByTestId(`tender-excluded-${A}`)).toBeTruthy();
-    expect(view.getByText(/Over your budget/)).toBeTruthy();
+    expect(view.getAllByText('INR 480.00').length).toBeGreaterThan(0);
+    expect(view.getByText(/revised 2×/)).toBeTruthy();
+    expect(view.getByText('Not in the running'.toUpperCase())).toBeTruthy();
+    expect(view.getByText('Over your budget')).toBeTruthy();
+    // The owner sees the target and the ceiling.
+    expect(view.getByText('INR 420.00')).toBeTruthy();
+    expect(view.getByText('INR 490.00')).toBeTruthy();
   });
 
   it('Award holds the order for that supplier; Send sends that held order and says what Core said', async () => {
     const b = backend();
+    b.tenderRanking = rankingAfterAward(b, 'oap_1');
     setTenderBackendForTest(b);
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
-    fireEvent.press(view.getByTestId(`tender-award-${B}`));
-    await waitFor(() => expect(view.getByTestId('tender-send')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+    fireEvent.press(view.getByTestId(AWARD(B)));
+    await waitFor(() => expect(view.getByTestId(SEND('oap_1'))).toBeTruthy());
     expect(b.awardTender).toHaveBeenCalledWith({ tenderId: 'tnd-1', supplierDid: B });
-    fireEvent.press(view.getByTestId('tender-send'));
+    fireEvent.press(view.getByTestId(SEND('oap_1')));
     await waitFor(() =>
       expect(view.getByTestId('tender-notice').props.children).toBe(
         'Sent. Waiting for the supplier to confirm.',
@@ -135,9 +157,8 @@ describe('the tender screen', () => {
     };
     setTenderBackendForTest(backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner] })) }));
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-partner-run-${B}-partner_00112233`)).toBeTruthy());
-    const words = JSON.stringify(view.getByTestId(`tender-partner-run-${B}-partner_00112233`).props.children);
-    expect(words).toMatch(/cancel without charge/);
+    await waitFor(() => expect(view.getByText(/partner's delivery run/)).toBeTruthy());
+    expect(view.getByText(/cancel without charge/)).toBeTruthy();
   });
 
   it('one supplier in two versions: each its own row; a partner run says its end and its fallback', async () => {
@@ -157,17 +178,16 @@ describe('the tender screen', () => {
     const b = backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner, own] })) });
     setTenderBackendForTest(b);
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-offer-${B}-partner_00112233`)).toBeTruthy());
-    expect(view.getByTestId(`tender-offer-${B}`)).toBeTruthy();
-    expect(view.getByTestId(`tender-delivery-${B}-partner_00112233`)).toBeTruthy();
-    const words = JSON.stringify(view.getByTestId(`tender-partner-run-${B}-partner_00112233`).props.children);
-    expect(words).toMatch(/partner/);
-    expect(words).toMatch(/2026-08-08 09:00/);
-    expect(words).toMatch(/2026-08-20/);
-    expect(words).toMatch(/480\.00/);
+    await waitFor(() => expect(view.getByTestId(AWARD(B, 'partner_00112233'))).toBeTruthy());
+    expect(view.getByTestId(AWARD(B))).toBeTruthy();
+    const run = view.getByText(/partner's delivery run/).props.children as string;
+    expect(run).toMatch(/delivered 2026-08-18/);
+    expect(run).toMatch(/2026-08-08 09:00/);
+    expect(run).toMatch(/2026-08-20/);
+    expect(run).toMatch(/480\.00/);
     // No exit right on this version: nothing says the buyer may cancel.
-    expect(words).not.toMatch(/cancel/);
-    fireEvent.press(view.getByTestId(`tender-award-${B}-partner_00112233`));
+    expect(run).not.toMatch(/cancel/);
+    fireEvent.press(view.getByTestId(AWARD(B, 'partner_00112233')));
     await waitFor(() =>
       expect(b.awardTender).toHaveBeenCalledWith({
         tenderId: 'tnd-1',
@@ -186,14 +206,14 @@ describe('the tender screen', () => {
       }),
     );
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
-    fireEvent.press(view.getByTestId(`tender-award-${B}`));
+    await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+    fireEvent.press(view.getByTestId(AWARD(B)));
     await waitFor(() =>
       expect(String(view.getByTestId('tender-notice').props.children)).toMatch(
         /owner has to approve/,
       ),
     );
-    expect(view.queryByTestId('tender-send')).toBeNull();
+    expect(view.queryByText('Send order')).toBeNull();
   });
 
   it('a refusal reads in words: a counter still out means try again shortly', async () => {
@@ -205,8 +225,8 @@ describe('the tender screen', () => {
       }),
     );
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
-    fireEvent.press(view.getByTestId(`tender-award-${B}`));
+    await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+    fireEvent.press(view.getByTestId(AWARD(B)));
     await waitFor(() =>
       expect(String(view.getByTestId('tender-notice').props.children)).toMatch(/still waiting/),
     );
@@ -223,14 +243,15 @@ describe('the tender screen', () => {
         return { kind: 'awarded' as const, approvalId: 'oap_2', supplierDid: B, replayed: false };
       }),
     });
+    b.tenderRanking = jest.fn(async () => (first ? RANKING : HELD('oap_2')));
     setTenderBackendForTest(b);
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
-    fireEvent.press(view.getByTestId(`tender-award-${B}`));
+    await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+    fireEvent.press(view.getByTestId(AWARD(B)));
     await waitFor(() => expect(view.getByTestId('presence-passphrase')).toBeTruthy());
     fireEvent.changeText(view.getByTestId('presence-passphrase'), 'correct horse');
     fireEvent.press(view.getByTestId('presence-submit'));
-    await waitFor(() => expect(view.getByTestId('tender-send')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId(SEND('oap_2'))).toBeTruthy());
     expect(b.provePresence).toHaveBeenCalledWith('correct horse');
     expect(b.awardTender).toHaveBeenCalledTimes(2);
   });
@@ -250,22 +271,25 @@ describe('the tender screen', () => {
         return { kind: 'awarded' as const, approvalId: 'oap_3', supplierDid: B, replayed: false };
       }),
     });
+    let done = false;
+    b.tenderRanking = jest.fn(async () => (done ? HELD('oap_3') : RANKING));
     setTenderBackendForTest(b);
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
-    fireEvent.press(view.getByTestId(`tender-award-${B}`));
+    await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+    fireEvent.press(view.getByTestId(AWARD(B)));
     await waitFor(() => expect(view.getByTestId('presence-passphrase')).toBeTruthy());
     fireEvent.changeText(view.getByTestId('presence-passphrase'), 'correct horse ');
     fireEvent.press(view.getByTestId('presence-submit'));
     await waitFor(() => expect(b.awardTender).toHaveBeenCalledTimes(2));
     // The passphrase goes as typed, trailing space included.
     expect(b.provePresence).toHaveBeenCalledWith('correct horse ');
-    // The retry is in flight: Award stays disabled and the spinner shows, so
-    // a second tap cannot send a second award. (The test renderer's Pressable
-    // does not honour `disabled`, so the prop is what is asserted.)
-    expect(view.getByTestId(`tender-award-${B}`).props.disabled).toBe(true);
+    // The retry is in flight: Award stays disabled, so a second tap cannot
+    // send a second award. (The test renderer does not honour `disabled`, so
+    // the prop is what is asserted.)
+    await waitFor(() => expect(view.getByTestId(AWARD(B)).props.disabled).toBe(true));
+    done = true;
     finish?.();
-    await waitFor(() => expect(view.getByTestId('tender-send')).toBeTruthy());
+    await waitFor(() => expect(view.getByTestId(SEND('oap_3'))).toBeTruthy());
     expect(b.awardTender).toHaveBeenCalledTimes(2);
   });
 
@@ -281,52 +305,31 @@ describe('the tender screen', () => {
   });
 
   it('an awarded tender offers the send of its held order, and no further award', async () => {
+    setTenderBackendForTest(backend({ tenderRanking: jest.fn(async () => HELD('oap_9')) }));
+    const view = render(<TenderScreen />);
+    await waitFor(() => expect(view.getByTestId(SEND('oap_9'))).toBeTruthy());
+    expect(view.queryByTestId(AWARD(B))).toBeNull();
+    expect(view.getByText('Awarded')).toBeTruthy();
+    expect(view.getByText('Awarded · INR 480.00')).toBeTruthy();
+  });
+
+  it('once the held order has gone, the card says so and offers no Send', async () => {
     setTenderBackendForTest(
       backend({
-        tenderRanking: jest.fn(async () => ({
-          ...RANKING,
-          state: 'awarded' as const,
-          awarded_supplier_did: B,
-          approval_id: 'oap_9',
-          held_order: 'held' as const,
-        })),
+        tenderRanking: jest.fn(async () => ({ ...HELD('oap_9'), held_order: 'sent' as const })),
       }),
     );
     const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId('tender-send')).toBeTruthy());
-    expect(view.queryByTestId(`tender-award-${B}`)).toBeNull();
-    expect(view.getByTestId('tender-state').props.children).toBe('Awarded');
-    expect(view.getAllByText('Awarded', { exact: true })).toHaveLength(2); // the state and the winner's tag
+    await waitFor(() => expect(view.getByText('Order sent to the supplier.')).toBeTruthy());
+    expect(view.queryByTestId(SEND('oap_9'))).toBeNull();
+    expect(view.getByTestId('tender-open-orders')).toBeTruthy();
   });
 
-  it('once the held order has gone, the screen says so and offers no Send', async () => {
-    setTenderBackendForTest(
-      backend({
-        tenderRanking: jest.fn(async () => ({
-          ...RANKING,
-          state: 'awarded' as const,
-          awarded_supplier_did: B,
-          approval_id: 'oap_9',
-          held_order: 'sent' as const,
-        })),
-      }),
-    );
-    const view = render(<TenderScreen />);
-    await waitFor(() => expect(view.getByTestId('tender-sent')).toBeTruthy());
-    expect(view.queryByTestId('tender-send')).toBeNull();
-  });
-
-  it('after Send the order is followed live — its track and next step — until it is on its way', async () => {
+  it('after Send the order is followed live until it is on its way', async () => {
     // Reported: after Send the screen ended at "The supplier has not
     // confirmed yet" and never moved, though the supplier had accepted.
     jest.useFakeTimers();
-    const SENT = {
-      ...RANKING,
-      state: 'awarded' as const,
-      awarded_supplier_did: B,
-      approval_id: 'oap_9',
-      held_order: 'sent' as const,
-    };
+    const SENT = { ...HELD('oap_9'), held_order: 'sent' as const };
     const base = {
       purchaseOrderId: 'po-7',
       supplierDid: B,
@@ -356,7 +359,7 @@ describe('the tender screen', () => {
           {
             ...base,
             state: 'accepted',
-            headline: 'Accepted by the supplier.',
+            headline: 'On its way to you.',
             progress: {
               ...none,
               paymentRecorded: true,
@@ -369,23 +372,13 @@ describe('the tender screen', () => {
     const ranking = jest.fn(async () => SENT);
     setTenderBackendForTest(backend({ tenderRanking: ranking, placedOrders }));
     const view = render(<TenderScreen />);
-    await waitFor(() =>
-      expect(view.getByTestId('tender-order-headline').props.children).toBe(
-        'Accepted by the supplier.',
-      ),
-    );
-    expect(String(view.getByTestId('tender-order-progress-next').props.children)).toMatch(
-      /sends a payment link/,
-    );
+    await waitFor(() => expect(view.getByText('Accepted by the supplier.')).toBeTruthy());
+    expect(view.getByText('Paid')).toBeTruthy();
     // Still moving, so the screen reads again…
     await act(async () => {
       jest.advanceTimersByTime(10_000);
     });
-    await waitFor(() =>
-      expect(view.getByTestId('tender-order-progress-next').props.children).toBe(
-        'On the way to you.',
-      ),
-    );
+    await waitFor(() => expect(view.getByText('On its way to you.')).toBeTruthy());
     // …and stops once the order is on its way.
     const calls = ranking.mock.calls.length;
     await act(async () => {
@@ -412,9 +405,7 @@ describe('the tender screen', () => {
       setTenderBackendForTest(backend({ tenderRanking: jest.fn(async () => WAITING) }));
       const view = render(<TenderScreen />);
       await waitFor(() =>
-        expect(view.getByTestId('tender-state').props.children).toBe(
-          'Waiting for the suppliers to quote',
-        ),
+        expect(view.getByText('Waiting for the suppliers to quote')).toBeTruthy(),
       );
     });
 
@@ -423,12 +414,12 @@ describe('the tender screen', () => {
       const ranking = jest.fn().mockResolvedValueOnce(WAITING).mockResolvedValue(RANKING);
       setTenderBackendForTest(backend({ tenderRanking: ranking }));
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-excluded-${B}`)).toBeTruthy());
-      expect(view.queryByTestId(`tender-offer-${B}`)).toBeNull();
+      await waitFor(() => expect(view.getByText('No offer can be awarded yet.')).toBeTruthy());
+      expect(view.queryByTestId(AWARD(B))).toBeNull();
       await act(async () => {
         jest.advanceTimersByTime(10_000);
       });
-      await waitFor(() => expect(view.getByTestId(`tender-offer-${B}`)).toBeTruthy());
+      await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
     });
 
     it('an awarded tender is final: no more refreshes', async () => {
@@ -448,7 +439,7 @@ describe('the tender screen', () => {
     });
   });
 
-  describe('the tender story: what each bakery offered and how the price moved', () => {
+  describe('what each bakery offered, and whether to trust it', () => {
     const money = (minor: string) => ({ currency: 'INR', minor_units: minor });
     const STORY = {
       tender_id: 'tnd-1',
@@ -459,25 +450,9 @@ describe('the tender screen', () => {
           quote_id: 'q-b',
           revisions: [
             { revision: '1', total: money('52000'), issued_at: '2026-09-30T07:00:00Z' },
-            { revision: '2', total: money('50000'), issued_at: '2026-09-30T07:01:00Z' },
             { revision: '3', total: money('48000'), issued_at: '2026-09-30T07:02:00Z' },
           ],
-          counters: [
-            {
-              round: 1,
-              target_total: money('42000'),
-              state: 'revised' as const,
-              sent_at: 1,
-              answered_at: 2,
-            },
-            {
-              round: 2,
-              target_total: money('42000'),
-              state: 'revised' as const,
-              sent_at: 3,
-              answered_at: 4,
-            },
-          ],
+          counters: [],
           lines: [
             {
               line_id: 'l1',
@@ -494,88 +469,25 @@ describe('the tender screen', () => {
           service_rkey: 'self',
           quote_id: 'q-a',
           revisions: [{ revision: '1', total: money('61000'), issued_at: '2026-09-30T07:00:00Z' }],
-          counters: [
-            {
-              round: 1,
-              target_total: money('42000'),
-              state: 'refused' as const,
-              sent_at: 1,
-              answered_at: 2,
-            },
-          ],
+          counters: [],
           lines: [],
         },
       ],
     };
 
-    it('an offer shows the item offered and a folded bargaining card that opens round by round', async () => {
-      setTenderBackendForTest(backend({ tenderStory: jest.fn(async () => STORY) }));
-      const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-offered-${B}`)).toBeTruthy());
-      expect(view.getByTestId(`tender-offered-${B}-name`).props.children).toBe(
-        'Floral Celebration Cake',
-      );
-      expect(view.getByTestId(`tender-offered-${B}-quantity`).props.children).toBe('1 each');
-      expect(view.getByTestId(`tender-bargaining-${B}-summary`).props.children).toBe(
-        'Bargaining · 2 rounds · INR 520.00 → INR 480.00 · saved INR 40.00',
-      );
-      // Folded until asked, so the screen stays quiet.
-      expect(view.queryByTestId(`tender-bargaining-${B}-steps`)).toBeNull();
-      fireEvent.press(view.getByTestId(`tender-bargaining-${B}-toggle`));
-      expect(view.getByTestId(`tender-bargaining-${B}-steps`)).toBeTruthy();
-      expect(view.getByText('Opening quote')).toBeTruthy();
-      expect(view.getByText('Round 2 · Dina asked INR 420.00')).toBeTruthy();
-      expect(view.getAllByText(/ came down to$/)).toHaveLength(2);
-      expect(view.getByText('INR 500.00')).toBeTruthy();
-      fireEvent.press(view.getByTestId(`tender-bargaining-${B}-toggle`));
-      expect(view.queryByTestId(`tender-bargaining-${B}-steps`)).toBeNull();
-    });
-
-    it('an offer over budget shows its price and that the bakery would not bargain', async () => {
-      setTenderBackendForTest(backend({ tenderStory: jest.fn(async () => STORY) }));
-      const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-bargaining-${A}-summary`)).toBeTruthy());
-      expect(view.getByText(/INR 610.00 · Over your budget/)).toBeTruthy();
-      expect(view.getByTestId(`tender-bargaining-${A}-summary`).props.children).toBe(
-        'Bargaining · 1 round · held at INR 610.00',
-      );
-      fireEvent.press(view.getByTestId(`tender-bargaining-${A}-toggle`));
-      expect(view.getByText(/ would not bargain$/)).toBeTruthy();
-    });
-
-    it('an offer reads like its catalogue: the published photo and description, and PeerLens trust', async () => {
-      const offeredItem = jest.fn(async () => ({
-        product: { scheme: 'manufacturer_sku' as const, value: 'B342' },
-        supplier_did: B,
-        catalog_id: 'shop',
-        item_revision: 'r1',
-        name: 'Floral cake (catalogue name)',
-        description: 'Vanilla sponge, buttercream flowers',
-        category_ids: ['bakery'],
-        pack: { sell_unit: { value: '1', unit_code: 'each' } },
-        fulfilment_regions: [],
-        freshness: { generated_at: '2026-09-30T00:00:00Z' },
-        images: ['https://images.example.test/floral.jpg'],
-      }));
+    it('an offer names the item in the supplier’s own signed words, with its PeerLens trust', async () => {
       const supplierTrust = jest.fn(async () => ({ score: 0.8, reviewCount: 7 }));
-      setTenderBackendForTest(
-        backend({ tenderStory: jest.fn(async () => STORY), offeredItem, supplierTrust }),
-      );
+      setTenderBackendForTest(backend({ tenderStory: jest.fn(async () => STORY), supplierTrust }));
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-offered-${B}-photo`)).toBeTruthy());
-      expect(offeredItem).toHaveBeenCalledWith(B, { scheme: 'manufacturer_sku', value: 'B342' });
-      // The signed quote's own name wins; the catalogue adds the photo and words.
-      expect(view.getByTestId(`tender-offered-${B}-name`).props.children).toBe(
-        'Floral Celebration Cake',
-      );
-      expect(view.getByTestId(`tender-offered-${B}-description`).props.children).toBe(
-        'Vanilla sponge, buttercream flowers',
-      );
-      expect(view.getByTestId(`tender-offered-${B}-trust`).props.children).toBe(
-        'Well trusted · 7 reviews',
-      );
-      // A supplier whose quote has no lines is not looked up.
-      expect(offeredItem).toHaveBeenCalledTimes(1);
+      await waitFor(() => expect(view.getByText(/1 each · Floral Celebration Cake/)).toBeTruthy());
+      await waitFor(() => expect(view.getByText(/Trust 0\.80 · 7 reviews/)).toBeTruthy());
+    });
+
+    it('an offer over budget shows its price beside why it is out', async () => {
+      setTenderBackendForTest(backend({ tenderStory: jest.fn(async () => STORY) }));
+      const view = render(<TenderScreen />);
+      await waitFor(() => expect(view.getByText('INR 610.00')).toBeTruthy());
+      expect(view.getByText('Over your budget')).toBeTruthy();
     });
 
     it('awarding a supplier PeerLens rates poorly asks first; declining awards nothing', async () => {
@@ -585,39 +497,42 @@ describe('the tender screen', () => {
       setTenderBackendForTest(b);
       const view = render(<TenderScreen />);
       await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
-      await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
+      await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
 
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
       expect(mockConfirm.mock.calls[0]?.[1]).toMatch(
         /poor reviews on PeerLens \(6 reviews\)\. Award anyway\?$/,
       );
       expect(b.awardTender).not.toHaveBeenCalled();
 
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() =>
         expect(b.awardTender).toHaveBeenCalledWith({ tenderId: 'tnd-1', supplierDid: B }),
       );
     });
 
     it('Award tapped before trust has loaded still checks it first', async () => {
-      // The story never arrives, so the background lookup never runs; the
-      // award must not read "no answer yet" as "fine".
-      const supplierTrust = jest.fn(async () => ({ score: 0.15, reviewCount: 6 }));
-      const b = backend({
-        tenderStory: jest.fn(() => new Promise<never>(() => undefined)),
-        supplierTrust,
-      });
+      // The trust lookup is slow; the award must not read "no answer yet" as "fine".
+      let release: ((t: { score: number; reviewCount: number }) => void) | null = null;
+      const supplierTrust = jest
+        .fn()
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              release = resolve;
+            }),
+        )
+        .mockResolvedValue({ score: 0.15, reviewCount: 6 });
+      const b = backend({ supplierTrust });
       setTenderBackendForTest(b);
       mockConfirm.mockResolvedValueOnce(false);
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-award-${B}`)).toBeTruthy());
-      expect(supplierTrust).not.toHaveBeenCalled();
-
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
-      expect(supplierTrust).toHaveBeenCalledWith(B);
       expect(b.awardTender).not.toHaveBeenCalled();
+      release?.({ score: 0.15, reviewCount: 6 });
     });
 
     it("the owner's own poor review asks first even when PeerLens trust is fine", async () => {
@@ -640,7 +555,7 @@ describe('the tender screen', () => {
       mockConfirm.mockResolvedValueOnce(false);
       const view = render(<TenderScreen />);
       await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
       expect(mockConfirm.mock.calls[0]?.[1]).toMatch(
         /^You rated .+ poorly on PeerLens\. Award anyway\?$/,
@@ -662,11 +577,12 @@ describe('the tender screen', () => {
       const view = render(<TenderScreen />);
       await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
       // The first lookup fails: only PeerLens applies, and it is fine.
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() => expect(b.awardTender).toHaveBeenCalledTimes(1));
       expect(mockConfirm).not.toHaveBeenCalled();
       // The next award reads again and finds the owner's poor review.
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      await waitFor(() => expect(view.getByTestId(AWARD(B)).props.disabled).toBe(false));
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() => expect(mockConfirm).toHaveBeenCalledTimes(1));
       expect(ownReviews).toHaveBeenCalledTimes(2);
       expect(b.awardTender).toHaveBeenCalledTimes(1);
@@ -678,7 +594,7 @@ describe('the tender screen', () => {
       setTenderBackendForTest(b);
       const view = render(<TenderScreen />);
       await waitFor(() => expect(supplierTrust).toHaveBeenCalled());
-      fireEvent.press(view.getByTestId(`tender-award-${B}`));
+      fireEvent.press(view.getByTestId(AWARD(B)));
       await waitFor(() => expect(b.awardTender).toHaveBeenCalled());
       expect(mockConfirm).not.toHaveBeenCalled();
     });
@@ -702,11 +618,8 @@ describe('the tender screen', () => {
         }),
       );
       const view = render(<TenderScreen />);
-      await waitFor(() =>
-        expect(
-          view.getByText(/listed from USD 129.00 · you rated them poorly on PeerLens/),
-        ).toBeTruthy(),
-      );
+      await waitFor(() => expect(view.getByText('from USD 129.00')).toBeTruthy());
+      expect(view.getByText('you rated them poorly on PeerLens')).toBeTruthy();
     });
 
     it('a story that cannot be read leaves the ranking as it was', async () => {
@@ -714,8 +627,8 @@ describe('the tender screen', () => {
         backend({ tenderStory: jest.fn(async () => Promise.reject(new Error('offline'))) }),
       );
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-total-${B}`)).toBeTruthy());
-      expect(view.queryByTestId(`tender-bargaining-${B}-toggle`)).toBeNull();
+      await waitFor(() => expect(view.getByTestId(AWARD(B))).toBeTruthy());
+      expect(view.getByText(/Best offer/)).toBeTruthy();
     });
   });
 
@@ -728,9 +641,9 @@ describe('the tender screen', () => {
       mockNames.set(A, 'Alonso Furniture');
       setTenderBackendForTest(backend());
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByText(/Albert Timber/)).toBeTruthy());
-      expect(view.getByText(/Best offer · Albert Timber/)).toBeTruthy();
-      expect(view.getByText(/Alonso Furniture — Over your budget/)).toBeTruthy();
+      await waitFor(() => expect(view.getByText('Best offer · Albert Timber')).toBeTruthy());
+      expect(view.getByText('1. Albert Timber')).toBeTruthy();
+      expect(view.getByText('Alonso Furniture')).toBeTruthy();
       expect(view.queryByText(/did:plc/)).toBeNull();
     });
 
@@ -755,19 +668,20 @@ describe('the tender screen', () => {
         }),
       );
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId(`tender-not-asked-${POOR}`)).toBeTruthy());
-      expect(view.getByText('Not asked')).toBeTruthy();
-      expect(view.getByText(/Crumb & Co — you rated them poorly on PeerLens/)).toBeTruthy();
-      expect(view.getByText('“Stale bread, delivered late”')).toBeTruthy();
+      await waitFor(() => expect(view.getByText('Crumb & Co')).toBeTruthy());
+      expect(view.getByText('NOT ASKED')).toBeTruthy();
+      expect(
+        view.getByText('you rated them poorly on PeerLens · “Stale bread, delivered late”'),
+      ).toBeTruthy();
       // Never an offer: no award button for it.
-      expect(view.queryByTestId(`tender-award-${POOR}`)).toBeNull();
+      expect(view.queryByTestId(AWARD(POOR))).toBeNull();
     });
 
     it('an older Core with no not-asked list shows no such section', async () => {
       setTenderBackendForTest(backend());
       const view = render(<TenderScreen />);
-      await waitFor(() => expect(view.getByTestId('tender-state')).toBeTruthy());
-      expect(view.queryByText('Not asked')).toBeNull();
+      await waitFor(() => expect(view.getByText('Ready to award')).toBeTruthy());
+      expect(view.queryByText('NOT ASKED')).toBeNull();
     });
 
     it('two suppliers with the same name keep their DIDs beside it', async () => {
@@ -776,11 +690,9 @@ describe('the tender screen', () => {
       setTenderBackendForTest(backend());
       const view = render(<TenderScreen />);
       await waitFor(() =>
-        expect(view.getByText(/ChairMaker Workshop · did:plc:supplierbbbb/)).toBeTruthy(),
+        expect(view.getByText('1. ChairMaker Workshop · did:plc:supplierbbbb')).toBeTruthy(),
       );
-      expect(
-        view.getByText(/ChairMaker Workshop · did:plc:supplieraaaa — Over your budget/),
-      ).toBeTruthy();
+      expect(view.getByText('ChairMaker Workshop · did:plc:supplieraaaa')).toBeTruthy();
     });
   });
 });

@@ -28,6 +28,7 @@ import { Linking, StyleSheet, Text, TouchableOpacity, View } from 'react-native'
 import {
   linkDisplayHost,
   isCardStale,
+  type CardAction,
   type CardBlock,
   type CardIcon,
   type CardSpec,
@@ -38,6 +39,53 @@ import { colors, radius, spacing, textStyles } from '../theme';
 
 interface SafeCardRendererProps {
   spec: CardSpec;
+  /**
+   * Dina's own screens only (HOSTED_DINA §6.4): carries a card's buttons. A
+   * card from anyone else has its actions stripped by `validateCardSpec`, and
+   * without this prop no button is drawn at all.
+   */
+  onAction?: (action: CardAction) => void;
+  /** Greys the buttons out while a decision is under way. */
+  actionsDisabled?: boolean;
+}
+
+/** A stable test id for a button: its command and what it acts on. */
+function actionTestId(action: CardAction): string {
+  const subject =
+    action.params.alternative_id !== undefined
+      ? `${action.params.supplier_did ?? ''}-${action.params.alternative_id}`
+      : (action.params.supplier_did ?? action.params.approval_id ?? '');
+  return `card-action-${action.command}${subject !== '' ? `-${subject}` : ''}`;
+}
+
+function ActionButton({
+  action,
+  onAction,
+  disabled,
+  wide,
+}: {
+  action: CardAction;
+  onAction: (action: CardAction) => void;
+  disabled: boolean;
+  wide: boolean;
+}): React.JSX.Element {
+  const primary = action.tone === 'positive';
+  return (
+    <TouchableOpacity
+      style={[
+        styles.actionButton,
+        primary && styles.actionButtonPrimary,
+        wide && styles.actionButtonWide,
+        disabled && styles.actionButtonDisabled,
+      ]}
+      disabled={disabled}
+      onPress={() => onAction(action)}
+      accessibilityRole="button"
+      testID={actionTestId(action)}
+    >
+      <Text style={[styles.actionLabel, primary && styles.actionLabelPrimary]}>{action.label}</Text>
+    </TouchableOpacity>
+  );
 }
 
 /** Semantic icon → Ionicons glyph. Unknown icons fall back to a dot. */
@@ -134,7 +182,11 @@ function staleLabel(spec: CardSpec): string | null {
   return null;
 }
 
-export function SafeCardRenderer({ spec }: SafeCardRendererProps): React.JSX.Element {
+export function SafeCardRenderer({
+  spec,
+  onAction,
+  actionsDisabled = false,
+}: SafeCardRendererProps): React.JSX.Element {
   const stale = staleLabel(spec);
   // Mark a card whose freshness window has passed (expiresAt in the past, or
   // generatedAt + ttlSeconds elapsed). For price/product cards this matters —
@@ -144,7 +196,7 @@ export function SafeCardRenderer({ spec }: SafeCardRendererProps): React.JSX.Ele
   return (
     <View style={[styles.container, expired && styles.containerStale]}>
       {spec.blocks.map((block, i) => (
-        <BlockView key={i} block={block} />
+        <BlockView key={i} block={block} onAction={onAction} actionsDisabled={actionsDisabled} />
       ))}
       {expired ? (
         <Text style={styles.expiredLabel}>
@@ -157,8 +209,21 @@ export function SafeCardRenderer({ spec }: SafeCardRendererProps): React.JSX.Ele
   );
 }
 
-function BlockView({ block }: { block: CardBlock }): React.JSX.Element | null {
+function BlockView({
+  block,
+  onAction,
+  actionsDisabled,
+}: {
+  block: CardBlock;
+  onAction: ((action: CardAction) => void) | undefined;
+  actionsDisabled: boolean;
+}): React.JSX.Element | null {
   switch (block.kind) {
+    case 'action':
+      return onAction === undefined ? null : (
+        <ActionButton action={block.action} onAction={onAction} disabled={actionsDisabled} wide />
+      );
+
     case 'title':
       return (
         <View style={styles.titleRow}>
@@ -268,6 +333,14 @@ function BlockView({ block }: { block: CardBlock }): React.JSX.Element | null {
                 <Text style={[styles.listTrailing, row.tone !== undefined && { color: toneColor(row.tone) }]}>
                   {row.trailing}
                 </Text>
+              )}
+              {row.action !== undefined && onAction !== undefined && (
+                <ActionButton
+                  action={row.action}
+                  onAction={onAction}
+                  disabled={actionsDisabled}
+                  wide={false}
+                />
               )}
             </View>
           ))}
@@ -499,6 +572,33 @@ const styles = StyleSheet.create({
   listTrailing: {
     ...textStyles.bodyStrong,
     color: colors.textSecondary,
+  },
+  actionButton: {
+    marginLeft: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.textPrimary,
+    alignItems: 'center',
+  },
+  actionButtonPrimary: {
+    backgroundColor: colors.textPrimary,
+  },
+  actionButtonWide: {
+    marginLeft: 0,
+    marginTop: spacing.sm,
+    paddingVertical: spacing.sm,
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
+  },
+  actionLabel: {
+    ...textStyles.bodyStrong,
+    color: colors.textPrimary,
+  },
+  actionLabelPrimary: {
+    color: colors.white,
   },
   timeline: {
     marginTop: spacing.xs,

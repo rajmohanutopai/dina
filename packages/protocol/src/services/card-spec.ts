@@ -78,6 +78,17 @@ export type MediaAspect = (typeof MEDIA_ASPECTS)[number];
 export const LINK_ACTIONS = ['open_url'] as const;
 export type LinkAction = (typeof LINK_ACTIONS)[number];
 
+/**
+ * Commands a Dina-owned card's buttons carry (HOSTED_DINA §6.4). TRUSTED
+ * ONLY, like `badge`: a provider, plugin or LLM card has every action
+ * stripped, so a stranger's card can never put an Award button in front of
+ * the owner. The renderer maps a command to its own call (the phone's
+ * client, the owner page's route, ChatGPT's tool); the card names the
+ * decision and its parameters, never how it is carried out.
+ */
+export const CARD_COMMANDS = ['tender.award', 'tender.send'] as const;
+export type CardCommand = (typeof CARD_COMMANDS)[number];
+
 /** The closed set of block kinds a conformant renderer understands. */
 export const CARD_BLOCK_KINDS = [
   'title',
@@ -95,6 +106,7 @@ export const CARD_BLOCK_KINDS = [
   'map',
   'link',
   'media',
+  'action',
 ] as const;
 export type CardBlockKind = (typeof CARD_BLOCK_KINDS)[number];
 
@@ -166,11 +178,21 @@ export interface ChipsBlock {
   items: { text: string; tone?: CardTone }[];
 }
 
+/** A button on a Dina-owned card. Parameters are short strings; the renderer reads them. */
+export interface CardAction {
+  label: string;
+  command: CardCommand;
+  params: Record<string, string>;
+  tone?: CardTone;
+}
+
 export interface ListRow {
   text: string;
   sub?: string;
   trailing?: string;
   tone?: CardTone;
+  /** Trusted cards only: one button on the row (an offer's Award). */
+  action?: CardAction;
 }
 export interface ListBlock {
   kind: 'list';
@@ -214,6 +236,12 @@ export interface LinkBlock {
  * deferred until the Dina image proxy exists; specified now so the wire
  * format is ready.
  */
+/** Trusted cards only: a button of its own (a held order's Send). */
+export interface ActionBlock {
+  kind: 'action';
+  action: CardAction;
+}
+
 export interface MediaBlock {
   kind: 'media';
   did: string;
@@ -237,7 +265,8 @@ export type CardBlock =
   | TimelineBlock
   | MapBlock
   | LinkBlock
-  | MediaBlock;
+  | MediaBlock
+  | ActionBlock;
 
 export interface CardSpec {
   version: 1;
@@ -390,7 +419,12 @@ function normalizeBlock(raw: unknown, trusted: boolean): CardBlock | null {
         rows.push(
           withOptional<ListRow>(
             { text },
-            { sub: cleanText(rObj.sub) ?? undefined, trailing: cleanText(rObj.trailing) ?? undefined, tone: cleanTone(rObj.tone) },
+            {
+              sub: cleanText(rObj.sub) ?? undefined,
+              trailing: cleanText(rObj.trailing) ?? undefined,
+              tone: cleanTone(rObj.tone),
+              action: trusted ? (cleanAction(rObj.action) ?? undefined) : undefined,
+            },
           ),
         );
       }
@@ -446,6 +480,12 @@ function normalizeBlock(raw: unknown, trusted: boolean): CardBlock | null {
       if (aspect !== undefined) out.aspect = aspect;
       return out;
     }
+    case 'action': {
+      // Dina's own cards only; anyone else's button is dropped.
+      if (!trusted) return null;
+      const action = cleanAction(b.action);
+      return action === null ? null : { kind: 'action', action };
+    }
     default:
       return null; // unknown kind — dropped (forward-compat)
   }
@@ -464,6 +504,33 @@ function withOptional<T extends CardBlock | ListRow>(base: T, optionals: Record<
     if (v !== undefined) out[k] = v;
   }
   return out as unknown as T;
+}
+
+const ACTION_PARAM_KEY = /^[a-z_]{1,32}$/;
+const ACTION_MAX_PARAMS = 8;
+const ACTION_MAX_PARAM_LENGTH = 256;
+
+function cleanAction(v: unknown): CardAction | null {
+  if (typeof v !== 'object' || v === null) return null;
+  const a = v as Record<string, unknown>;
+  const label = cleanText(a.label);
+  if (label === null || label.length > 40) return null;
+  if (typeof a.command !== 'string' || !(CARD_COMMANDS as readonly string[]).includes(a.command))
+    return null;
+  if (typeof a.params !== 'object' || a.params === null || Array.isArray(a.params)) return null;
+  const entries = Object.entries(a.params as Record<string, unknown>);
+  if (entries.length > ACTION_MAX_PARAMS) return null;
+  const params: Record<string, string> = {};
+  for (const [key, value] of entries) {
+    if (!ACTION_PARAM_KEY.test(key)) return null;
+    if (typeof value !== 'string' || value.length === 0 || value.length > ACTION_MAX_PARAM_LENGTH)
+      return null;
+    params[key] = value;
+  }
+  const action: CardAction = { label, command: a.command as CardCommand, params };
+  const tone = cleanTone(a.tone);
+  if (tone !== undefined) action.tone = tone;
+  return action;
 }
 
 function cleanText(v: unknown): string | null {

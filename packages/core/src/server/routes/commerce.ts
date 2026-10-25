@@ -83,6 +83,12 @@ import {
 } from '@dina/commerce-protocol';
 
 import { appendAudit } from '../../audit/service';
+import {
+  buildTenderCard,
+  buildTenderDraftCard,
+  orderStepsReached,
+  type TenderCardOrder,
+} from '../../client/tender_card';
 import { resolveActingInstall } from '../../commerce/acting_install';
 import {
   buildBuyerApprovalPayload,
@@ -359,6 +365,8 @@ import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 import { teardownResponse } from './plugin_install';
 import { readWidening, statusForConfirm, statusForPrepare } from './plugin_updates';
 
+import type { PlacedOrderDto } from '../../client/owner-commerce-client';
+import type { TenderRankingView } from '../../client/tender_views';
 import type {
   CatalogDraft,
   CatalogDraftRepository,
@@ -366,6 +374,7 @@ import type {
 } from '../../commerce/catalog_draft_store';
 import type { ValueModel } from '../../commitment';
 import type { CoreRouter, CoreResponse, CoreRequest } from '../router';
+import type { CardSpec } from '@dina/protocol';
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -7439,11 +7448,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: created.refusal },
       };
     }
+    const status = agentDraftStatus(created.draft, runtime.now(), supplierNameFor, {
+      prices: req.agentScope === 'dot',
+    });
     return {
       status: 200,
-      body: agentDraftStatus(created.draft, runtime.now(), supplierNameFor, {
-        prices: req.agentScope === 'dot',
-      }),
+      body: req.agentScope === 'dot' ? await withDotCard(runtime, created.draft, status) : status,
     };
   });
 
@@ -7460,13 +7470,34 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (draft === null || draft.agentDid !== agent.agentDid) {
       return { status: 404, body: { error: 'no_such_draft' } };
     }
+    const status = agentDraftStatus(draft, runtime.now(), supplierNameFor, {
+      prices: req.agentScope === 'dot',
+    });
     return {
       status: 200,
-      body: agentDraftStatus(draft, runtime.now(), supplierNameFor, {
-        prices: req.agentScope === 'dot',
-      }),
+      body: req.agentScope === 'dot' ? await withDotCard(runtime, draft, status) : status,
     };
   });
+
+  /**
+   * HOSTED_DINA §6.4 — the card the owner's dot draws (ChatGPT shows it
+   * through Dina's card page): the draft while it waits, then the tender's
+   * own card, the one the phone and the owner's page draw.
+   */
+  async function withDotCard(
+    runtime: CommerceRuntime,
+    draft: TenderDraft,
+    status: ReturnType<typeof agentDraftStatus>,
+  ): Promise<Record<string, unknown>> {
+    if (status.draft_state === 'pending') {
+      return { ...status, card: buildTenderDraftCard(status.suppliers) };
+    }
+    if (status.draft_state === 'opened' && draft.tenderId !== '') {
+      const built = await tenderCardFor(runtime, draft.tenderId, 'agent');
+      if ('card' in built) return { ...status, card: built.card };
+    }
+    return { ...status };
+  }
 
   // The owner's view of waiting drafts: everything the open form needs.
   router.get('/v1/commerce/trade/tender-drafts', async (req): Promise<CoreResponse> => {
@@ -7945,6 +7976,108 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (ceiling !== undefined && !/^(0|[1-9][0-9]{0,17})$/.test(ceiling)) {
       return { status: 400, body: { error: 'budget_ceiling must be whole minor units' } };
     }
+    return tenderRankingView(runtime, caller.kind, tenderId, ceiling);
+  });
+
+  // HOSTED_DINA §6.4 — the tender as one card (`client/tender_card.ts`), for
+  // the owner's Dina page: the same builder the phone and the owner's dot use.
+  router.get('/v1/commerce/trade/tender/card', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const tenderId = req.query?.tender_id;
+    if (typeof tenderId !== 'string' || tenderId === '') {
+      return { status: 400, body: { error: 'tender_id is required' } };
+    }
+    const card = await tenderCardFor(runtime, tenderId, 'owner');
+    if ('status' in card) return card;
+    return { status: 200, body: { tender_id: tenderId, card: card.card } };
+  });
+
+  /**
+   * One tender's card for a reader: the ranking that reader may see, the
+   * story, the suppliers' names (contact, owner's label, else the listing's
+   * own name) and, once sent, the order's progress (the owner's only).
+   */
+  async function tenderCardFor(
+    runtime: CommerceRuntime,
+    tenderId: string,
+    audience: 'owner' | 'agent',
+  ): Promise<{ card: CardSpec } | CoreResponse> {
+    const view = await tenderRankingView(runtime, 'owner', tenderId, undefined);
+    if (view.status !== 200) return view;
+    const ranking = view.body as TenderRankingView;
+    const told = tenderStory(tenderId);
+    const story = told.ok ? { tender_id: tenderId, suppliers: told.suppliers } : null;
+    const dids = [
+      ...new Set([
+        ...ranking.ranked.map((o) => `${o.supplier_did}|${o.service_rkey}`),
+        ...ranking.excluded.map((r) => `${r.supplier_did}|${r.service_rkey ?? 'self'}`),
+        ...(ranking.not_asked ?? []).map((n) => `${n.supplier_did}|${n.service_rkey}`),
+      ]),
+    ];
+    const labels = new Map(
+      runtime.ownerSuppliers.list().map((s) => [s.supplierDid, s.label] as const),
+    );
+    const directory = getSupplierDirectory();
+    const names = new Map<string, string | null>();
+    await Promise.all(
+      dids.map(async (pair) => {
+        const [did = '', rkey = 'self'] = pair.split('|');
+        if (names.has(did)) return;
+        let name = supplierNameFor(did) ?? labels.get(did) ?? null;
+        if ((name === null || name === '') && directory?.listingName !== undefined) {
+          name = await directory.listingName(did, rkey).catch(() => null);
+        }
+        names.set(did, name === '' ? null : name);
+      }),
+    );
+    let order: TenderCardOrder | null = null;
+    if (audience === 'owner' && ranking.state === 'awarded' && ranking.held_order === 'sent') {
+      const money = runtime.money();
+      const placed = listPlacedOrders(runtime, { limit: 50, nameFor: () => null }).find(
+        (o) => o.tenderId === tenderId && o.supplierDid === ranking.awarded_supplier_did,
+      );
+      if (placed !== undefined) {
+        const { orderDigest, ...rest } = placed;
+        const wire = placedOrderWire(
+          rest,
+          money.available
+            ? summarizePlacedOrderProgress(
+                money.stores,
+                {
+                  orderDigest,
+                  supplierDid: rest.supplierDid,
+                  purchaseOrderId: rest.purchaseOrderId,
+                },
+                runtime.now(),
+              )
+            : null,
+        ) as unknown as PlacedOrderDto;
+        order = { headline: wire.headline, stepsReached: orderStepsReached(wire) };
+      }
+    }
+    return {
+      card: buildTenderCard({
+        ranking,
+        story,
+        nameOf: (did) => names.get(did) ?? null,
+        order,
+        audience,
+        buttons: true,
+      }),
+    };
+  }
+
+  /** The ranking a reader may see: a clerk's is built on the signed offers alone. */
+  async function tenderRankingView(
+    runtime: CommerceRuntime,
+    kind: 'owner' | 'staff',
+    tenderId: string,
+    ceiling: string | undefined,
+  ): Promise<CoreResponse> {
+    const caller = { kind };
     // The owner's rules and worths stay with the owner: a clerk's ranking is
     // built on the signed offers alone, so neither which versions a rule
     // removed, nor the owner's worth in a comparison cost, nor the names of
@@ -8004,7 +8137,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         })),
       },
     };
-  });
+  }
 
   // NEGOTIATION_PLAN §4.5 — how each supplier got where the ranking shows it:
   // the offered lines, every signed revision, and this tender's counters.
@@ -8044,7 +8177,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
 
   // HOSTED_DINA §6.3 — the dot awards its own opened draft and the order goes
   // out: the owner said which offer in the chat. `rank` names an entry of the
-  // status's ranked list; absent, the best. No passphrase; the award's own
+  // status's ranked list, or `supplier_did` (and `alternative_id`) the offer a
+  // card's Award button named; neither, the best. No passphrase; the award's own
   // rules (closed personas, a counter in flight, one award per tender) hold.
   router.post('/v1/commerce/agent/tender-drafts/award', async (req): Promise<CoreResponse> => {
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -8079,7 +8213,17 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     for (const offer of ranking.ok ? ranking.ranking.ranked : []) {
       if (!firsts.some((f) => f.supplier_did === offer.supplier_did)) firsts.push(offer);
     }
-    const pick = firsts[rank - 1];
+    // A card's Award names the supplier (and the version); a chat names the rank.
+    const named = typeof body.supplier_did === 'string' && body.supplier_did !== '';
+    const wanted =
+      typeof body.alternative_id === 'string' && body.alternative_id !== ''
+        ? body.alternative_id
+        : undefined;
+    const pick = named
+      ? (ranking.ok ? ranking.ranking.ranked : []).find(
+          (o) => o.supplier_did === body.supplier_did && o.alternative_id === wanted,
+        )
+      : firsts[rank - 1];
     const policy = runtime.buyerNegotiation.getTender(draft.tenderId);
     const awardBody: Record<string, unknown> =
       pick !== undefined

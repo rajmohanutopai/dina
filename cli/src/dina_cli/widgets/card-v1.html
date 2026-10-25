@@ -12,6 +12,8 @@
 
   Every value is untrusted data and goes in as text, never as markup. The
   page fetches nothing: the host's default CSP (connect-src 'none') holds.
+  A card's buttons (`tender.award`) call Dina's own tools through the host,
+  after a second tap to confirm.
   Colours and type come from the host's theme variables when it sends them,
   else from the phone app's own tokens.
 -->
@@ -126,6 +128,18 @@
   .fill.tone-positive { background: var(--dina-positive); }
   .fill.tone-caution { background: var(--dina-caution); }
   .fill.tone-critical { background: var(--dina-critical); }
+  .row .sub { white-space: pre-line; }
+  .act {
+    font: inherit; font-size: 13px; font-weight: var(--font-weight-semibold, 600);
+    padding: 6px 14px; border-radius: 999px; cursor: pointer; white-space: nowrap;
+    border: 1px solid var(--dina-text); background: transparent; color: var(--dina-text);
+  }
+  .act.tone-positive { background: var(--dina-text); color: var(--dina-surface); }
+  .act.confirming { background: var(--dina-positive); border-color: var(--dina-positive); color: #fff; }
+  .act:disabled { opacity: 0.5; cursor: default; }
+  .act:focus-visible { outline: 2px solid var(--dina-info); outline-offset: 2px; }
+  .notice { font-size: 13px; color: var(--dina-muted); }
+  .notice.bad { color: var(--dina-critical); }
   .footer { font-size: 12px; color: var(--dina-faint); }
   .empty { color: var(--dina-muted); }
 </style>
@@ -197,6 +211,8 @@
           if (str(r.sub)) main.appendChild(el("div", "sub", str(r.sub)));
           row.appendChild(main);
           if (str(r.trailing)) row.appendChild(toned(el("div", "trailing", str(r.trailing)), r.tone));
+          var button = actionButton(r.action, str(r.text));
+          if (button) row.appendChild(button);
           l.appendChild(row);
         });
         return l.childNodes.length ? l : null;
@@ -230,8 +246,96 @@
         var text = value.toFixed(1) + " / 5" + (typeof b.count === "number" ? " · " + b.count + " reviews" : "");
         return toned(el("div", "", text), b.tone);
       }
+      case "action": return actionButton(b.action, "");
       default: return null;
     }
+  }
+
+  // ── Buttons ────────────────────────────────────────────────────────────
+  // A Dina card's button names a decision; here it becomes one of Dina's
+  // tools, called through the host with the arguments this card was drawn
+  // for. Two taps: the first asks, the second does. Commands this page has
+  // no tool for draw no button.
+  var COMMAND_TOOL = { "tender.award": "dina_tender_award" };
+  var toolArgs = null, busy = false;
+
+  function actionButton(action, subject) {
+    if (!action || typeof action !== "object" || !COMMAND_TOOL[action.command]) return null;
+    if (!toolArgs || !toolArgs.session || !toolArgs.draft_id) return null;
+    var label = str(action.label).slice(0, 40) || "Go";
+    var button = toned(el("button", "act", label), action.tone);
+    button.type = "button";
+    var armed = null;
+    button.addEventListener("click", function () {
+      if (busy) return;
+      if (!armed) {
+        button.textContent = "Confirm " + label.toLowerCase();
+        button.classList.add("confirming");
+        armed = setTimeout(function () {
+          armed = null;
+          button.textContent = label;
+          button.classList.remove("confirming");
+        }, 6000);
+        return;
+      }
+      clearTimeout(armed);
+      armed = null;
+      run(action, subject);
+    });
+    return button;
+  }
+
+  function run(action, subject) {
+    var params = action.params && typeof action.params === "object" ? action.params : {};
+    var args = { session: String(toolArgs.session), draft_id: String(toolArgs.draft_id) };
+    if (typeof params.supplier_did === "string") args.supplier_did = params.supplier_did;
+    if (typeof params.alternative_id === "string") args.alternative_id = params.alternative_id;
+    setBusy(true, "Working…");
+    callTool(COMMAND_TOOL[action.command], args).then(function (result) {
+      var out = result && (result.structuredContent || result);
+      if (out && out.error) {
+        setBusy(false, "Dina could not do that (" + str(out.error).replace(/_/g, " ") + ").", true);
+        return;
+      }
+      setBusy(false, out && out.awarded_to ? "Awarded to " + str(out.awarded_to) + ". The order is on its way." : "Done.");
+      return refresh();
+    }, function () {
+      setBusy(false, "Dina could not be reached. Try again.", true);
+    });
+  }
+
+  function refresh() {
+    if (!toolArgs) return Promise.resolve();
+    return callTool("dina_tender_status", { session: String(toolArgs.session), draft_id: String(toolArgs.draft_id) })
+      .then(function (result) {
+        var out = result && (result.structuredContent || result);
+        var keep = lastNotice;
+        if (render(out)) showNotice(keep.text, keep.bad);
+      }, function () {});
+  }
+
+  function callTool(name, args) {
+    if (window.openai && typeof window.openai.callTool === "function") return window.openai.callTool(name, args);
+    return request("tools/call", { name: name, arguments: args });
+  }
+
+  var lastNotice = { text: "", bad: false };
+  function showNotice(text, bad) {
+    lastNotice = { text: text || "", bad: !!bad };
+    var card = document.getElementById("card");
+    var old = document.getElementById("notice");
+    if (old) card.removeChild(old);
+    if (!text) return;
+    var n = el("div", bad ? "notice bad" : "notice", text);
+    n.id = "notice";
+    n.setAttribute("role", "status");
+    card.appendChild(n);
+    reportSize();
+  }
+  function setBusy(on, text, bad) {
+    busy = on;
+    Array.prototype.forEach.call(document.querySelectorAll(".act"), function (b) { b.disabled = on; });
+    showNotice(text, bad);
   }
 
   function render(output) {
@@ -294,7 +398,9 @@
       done(m.result || null);
       return;
     }
-    if (m.method === "ui/notifications/tool-result") render(m.params && m.params.structuredContent);
+    if (m.method === "ui/notifications/tool-input") {
+      toolArgs = m.params && m.params.arguments && typeof m.params.arguments === "object" ? m.params.arguments : null;
+    } else if (m.method === "ui/notifications/tool-result") render(m.params && m.params.structuredContent);
     else if (m.method === "ui/notifications/host-context-changed") applyHost(m.params);
   });
 
@@ -311,6 +417,7 @@
     var o = window.openai;
     if (!o) return;
     if (o.theme) applyHost({ theme: o.theme });
+    if (o.toolInput && typeof o.toolInput === "object") toolArgs = o.toolInput;
     render(o.toolOutput);
   }
   window.addEventListener("openai:set_globals", fromOpenAI);

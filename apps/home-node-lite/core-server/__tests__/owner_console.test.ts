@@ -224,7 +224,7 @@ describe('Core owner console (B-02)', () => {
       // decided here because Core refuses Brain these cards.
       expect(body).toContain('/v1/workflow/tasks?kind=approval&state=pending_approval');
       expect(body).toContain('A buyer asks for a lower price');
-      expect(body).toContain('/v1/commerce/trade/tender/ranking?tender_id=');
+      expect(body).toContain('/v1/commerce/trade/tender/card?tender_id=');
       expect(body).toContain('/v1/commerce/trade/tender/award');
       expect(body).toContain('/v1/commerce/orders/submit');
       // A presence 403 raises the passphrase box; it is not a wrong key.
@@ -1424,5 +1424,93 @@ describe('signing with this browser as the owner key (HOSTED_DINA §5)', () => {
       '',
     );
     expect(h).toEqual({ 'content-type': 'application/json', 'x-dina-owner-capability': 'typed-capability' });
+  });
+});
+
+describe('the owner console’s tender is Core’s card (HOSTED_DINA §6.4)', () => {
+  const settle = () => new Promise((r) => setImmediate(r));
+  const CARD = {
+    version: 1,
+    blocks: [
+      { kind: 'title', text: 'Ready to award', tone: 'positive' },
+      {
+        kind: 'stat',
+        value: 'USD 700.00',
+        caption: 'Best offer · Fogline Bakehouse',
+        tone: 'positive',
+      },
+      {
+        kind: 'list',
+        rows: [
+          {
+            text: '1. Fogline Bakehouse',
+            sub: '200 each · Butter croissant',
+            trailing: 'USD 700.00',
+            action: {
+              label: 'Award',
+              command: 'tender.award',
+              params: { tender_id: 'tnd_1', supplier_did: 'did:plc:fog' },
+              tone: 'positive',
+            },
+          },
+          // A command the page does not know draws no button.
+          {
+            text: '2. Morning Crumb Bakery',
+            trailing: 'USD 750.00',
+            action: { label: 'Pay', command: 'money.send', params: {} },
+          },
+        ],
+      },
+      {
+        kind: 'action',
+        action: { label: 'Send order', command: 'tender.send', params: { approval_id: 'ap_1' } },
+      },
+    ],
+  };
+
+  it('draws the card and carries its buttons to the award and the send', async () => {
+    const box = pageNode();
+    const sent: [string, string, unknown][] = [];
+    const page = await consoleFunctions(
+      [
+        'openTender',
+        'renderCard',
+        'cardButton',
+        'toneOf',
+        'cardText',
+        'award',
+        'sendHeld',
+        'refusal',
+        'CARD_TONES',
+      ],
+      {
+        call: (method: string, path: string, body: unknown) => {
+          sent.push([method, path, body]);
+          if (method === 'GET')
+            return Promise.resolve({ status: 200, body: { tender_id: 'tnd_1', card: CARD } });
+          return Promise.resolve({ status: 200, body: { headline: 'Sent.' } });
+        },
+        needPresence: () => undefined,
+      },
+      { tenderDetail: box },
+    );
+    (page.openTender as (id: string) => void)('tnd_1');
+    await settle();
+    expect(sent[0]).toEqual(['GET', '/v1/commerce/trade/tender/card?tender_id=tnd_1', undefined]);
+    const text = textsOf(box).join(' | ');
+    expect(text).toContain('Ready to award');
+    expect(text).toContain('Best offer · Fogline Bakehouse');
+    expect(text).toContain('200 each · Butter croissant');
+    expect(buttonsOf(box)).toEqual(['Award', 'Send order']);
+    buttonOf(box, 'Award').clicks.forEach((fn) => fn());
+    await settle();
+    expect(sent).toContainEqual([
+      'POST',
+      '/v1/commerce/trade/tender/award',
+      { tender_id: 'tnd_1', supplier_did: 'did:plc:fog' },
+    ]);
+    buttonOf(box, 'Send order').clicks.forEach((fn) => fn());
+    await settle();
+    expect(sent).toContainEqual(['POST', '/v1/commerce/orders/submit', { approval_id: 'ap_1' }]);
   });
 });

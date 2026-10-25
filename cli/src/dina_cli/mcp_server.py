@@ -715,11 +715,9 @@ def dina_tender_status(session: str, draft_id: str) -> dict:
     Do not tell the owner an order was placed until ``held_order`` is
     ``sent`` and ``supplier_answer`` is ``accepted``.
     """
-    status = _get_client().tender_draft_status(session=session, draft_id=draft_id)
-    if isinstance(status, dict) and "draft_state" in status:
-        # The card the chat draws (`dot_widgets.py`); the fields stay for the model.
-        status = {**status, "card": dot_widgets.tender_card(status)}
-    return status
+    # Core puts the tender's card in the status (HOSTED_DINA §6.4); ChatGPT
+    # draws it with Dina's card page, and the fields stay for the model.
+    return _get_client().tender_draft_status(session=session, draft_id=draft_id)
 
 
 @mcp.tool()
@@ -778,15 +776,28 @@ def _draft_supplier_dids(client, session: str, draft_id: str, names: list[str]):
 
 
 @mcp.tool()
-def dina_tender_award(session: str, draft_id: str, rank: int = 1) -> dict:
+def dina_tender_award(
+    session: str,
+    draft_id: str,
+    rank: int = 1,
+    supplier_did: str = "",
+    alternative_id: str = "",
+) -> dict:
     """Award the tender and send the order, as the owner decided.
 
-    ``rank`` is the quote's place in ``tender.ranked`` (1 is best). Only call
-    this once the owner has said which quote to take: the order goes to that
-    supplier straight away. Then poll ``dina_tender_status`` for the
+    ``rank`` is the quote's place in ``tender.ranked`` (1 is best). Dina's card
+    names the offer by ``supplier_did`` (and ``alternative_id``) instead. Only
+    call this once the owner has said which quote to take: the order goes to
+    that supplier straight away. Then poll ``dina_tender_status`` for the
     supplier's answer.
     """
-    return _get_client().tender_award(session=session, draft_id=draft_id, rank=rank)
+    return _get_client().tender_award(
+        session=session,
+        draft_id=draft_id,
+        rank=rank,
+        supplier_did=supplier_did,
+        alternative_id=alternative_id,
+    )
 
 
 @mcp.tool()
