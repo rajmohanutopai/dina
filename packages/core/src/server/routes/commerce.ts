@@ -7518,6 +7518,17 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         return { status: 400, body: { error: 'suppliers must be a non-empty subset of the draft' } };
       }
     }
+    // A supplier the owner blocked after the draft was made ("Not for me")
+    // is never asked, whichever list chose it.
+    const buyerNow = runtime.settings.readBuyer();
+    const blockedNow = new Set(buyerNow.ok ? buyerNow.settings.blockedSuppliers : []);
+    if (suppliers.some((s) => blockedNow.has(s.supplier_did))) {
+      if (body.suppliers !== undefined) {
+        return { status: 400, body: { error: 'supplier_blocked' } };
+      }
+      suppliers = suppliers.filter((s) => !blockedNow.has(s.supplier_did));
+      if (suppliers.length === 0) return { status: 409, body: { error: 'no_unblocked_suppliers' } };
+    }
     // Reserve the draft before anything reaches a supplier: a second open, or
     // a dismiss, while this one is sending is refused, so one draft never
     // starts two tenders. Core is one process, so a set held here is enough.

@@ -17,6 +17,7 @@
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import { validateQuantity, type Quantity, type RegionRef } from '@dina/commerce-protocol';
+import { isValidServiceListingRkey } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
@@ -159,6 +160,10 @@ export async function networkSuppliers(
       continue;
     }
     for (const f of findings) {
+      // The AppView's word, checked before it is stored: one malformed entry
+      // would make the whole stored draft fail its read-back check.
+      if (!/^did:[a-z0-9]+:[A-Za-z0-9._:%-]{1,2048}$/.test(f.supplierDid)) continue;
+      if (!isValidServiceListingRkey(f.serviceRkey)) continue;
       if (!skip.has(f.supplierDid) && !found.has(f.supplierDid)) found.set(f.supplierDid, f);
     }
   }
@@ -176,7 +181,7 @@ export async function networkSuppliers(
       service_rkey: f.serviceRkey,
       source: 'network',
       selected,
-      ...(f.name !== null && f.name !== '' ? { name: f.name } : {}),
+      ...(f.name !== null && f.name !== '' ? { name: f.name.slice(0, 120) } : {}),
       trust: { score: f.trust.score, reviews: f.trust.reviews },
     });
   }

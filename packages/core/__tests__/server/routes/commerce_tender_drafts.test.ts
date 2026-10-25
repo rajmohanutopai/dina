@@ -798,6 +798,32 @@ describe('network suppliers in an agent’s draft (HOSTED_DINA §6.1)', () => {
     ]);
   });
 
+  it('drops a malformed AppView entry instead of storing a draft that cannot be read back', async () => {
+    findings = [
+      { ...finding('not-a-did', 'Bad', 0.9, 4) },
+      { ...finding('did:plc:badrkeyyyyy', 'Bad rkey', 0.9, 4), serviceRkey: 'has space' },
+      finding(NET_GOOD, 'x'.repeat(300), 0.9, 4),
+    ];
+    const id = String((await draft()).body.draft_id);
+    const stored = runtime.tenderDrafts.get(id);
+    expect(stored?.suppliers.map((s) => s.supplier_did)).toEqual([NET_GOOD]);
+    expect(stored?.suppliers[0]?.name).toHaveLength(120);
+  });
+
+  it('never asks a supplier the owner blocked after the draft was made', async () => {
+    const id = String((await draft()).body.draft_id);
+    setBuyer({ blockedSuppliers: [NET_GOOD] });
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    expect((await openDraft(id, { suppliers: [NET_GOOD, NET_NEW] })).body).toEqual({
+      error: 'supplier_blocked',
+    });
+    // With the draft's own ticks, the blocked one is dropped; none left is a refusal.
+    expect((await openDraft(id)).body).toEqual({ error: 'no_unblocked_suppliers' });
+    expect(sent).toEqual([]);
+    expect((await openDraft(id, { suppliers: [NET_NEW] })).status).toBe(200);
+    expect(sent.map((m) => m.toDid)).toEqual([NET_NEW]);
+  });
+
   it('a failing directory leaves the café’s own suppliers, or no draft at all', async () => {
     installSupplierDirectory({
       findSuppliers: async () => {
