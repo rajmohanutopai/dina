@@ -608,11 +608,22 @@ class DinaClient:
 
     # -- Tender drafts (OPENAI_DOTS_INTEGRATION §6.4) ---------------------------
 
-    def tender_draft(self, session: str, lines: list[dict], required_by: str = "") -> dict:
-        """Draft a tender: what is needed, never who is asked."""
+    def tender_draft(
+        self,
+        session: str,
+        lines: list[dict],
+        required_by: str = "",
+        region: dict | None = None,
+        currency: str = "",
+    ) -> dict:
+        """Draft a tender: what is needed and where, never who is asked."""
         body: dict = {"session_id": session, "lines": lines}
         if required_by:
             body["required_by"] = required_by
+        if region is not None:
+            body["region"] = region
+        if currency:
+            body["currency"] = currency
         resp = self._request(self._core, "POST", "/v1/commerce/agent/tender-drafts", json=body)
         return resp.json()
 

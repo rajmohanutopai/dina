@@ -664,18 +664,30 @@ def dina_service_publication_status(rkey: str, session: str) -> dict:
 
 
 @mcp.tool()
-def dina_tender_draft(session: str, lines: list[dict], required_by: str = "") -> dict:
+def dina_tender_draft(
+    session: str,
+    lines: list[dict],
+    required_by: str = "",
+    postal_code: str = "",
+    currency: str = "",
+) -> dict:
     """Draft a tender: ask suppliers to price what the owner needs.
 
     ``lines`` is a list of needs in words with a quantity, for example
     ``[{"text": "butter croissants", "quantity": {"value": "200", "unit_code": "each"}}]``.
-    ``required_by`` is an optional ISO date-time. Dina picks the suppliers:
+    ``required_by`` is an optional ISO date-time. ``postal_code`` is where the
+    goods go and ``currency`` a three-letter code (USD); both default to the
+    owner's settings, so pass them when the owner names a place or the
+    answer is ``no_known_suppliers``. Dina picks the suppliers:
     the owner's own list and past orders first, then suppliers on the network
     that sell the thing in the owner's area. You cannot name one. ``suppliers``
     in the answer says who would be asked (``selected``) and their trust.
     Nothing reaches a supplier until ``dina_tender_open``.
     """
-    return _get_client().tender_draft(session=session, lines=lines, required_by=required_by)
+    region = {"scheme": "postal_area", "value": postal_code} if postal_code else None
+    return _get_client().tender_draft(
+        session=session, lines=lines, required_by=required_by, region=region, currency=currency
+    )
 
 
 @mcp.tool()

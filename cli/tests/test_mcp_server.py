@@ -937,7 +937,23 @@ def test_dina_tender_draft_sends_the_need_only(fake_client):
 
     assert out == {"draft_id": "tdr_1", "draft_state": "pending"}
     fake_client.tender_draft.assert_called_once_with(
-        session="s1", lines=lines, required_by="2036-01-09T07:00:00Z"
+        session="s1", lines=lines, required_by="2036-01-09T07:00:00Z", region=None, currency=""
+    )
+
+
+def test_dina_tender_draft_names_the_place_and_currency(fake_client):
+    lines = [{"text": "butter croissants", "quantity": {"value": "200", "unit_code": "each"}}]
+
+    mcp_server.dina_tender_draft.fn(
+        session="s1", lines=lines, postal_code="94103", currency="USD"
+    )
+
+    fake_client.tender_draft.assert_called_once_with(
+        session="s1",
+        lines=lines,
+        required_by="",
+        region={"scheme": "postal_area", "value": "94103"},
+        currency="USD",
     )
 
 

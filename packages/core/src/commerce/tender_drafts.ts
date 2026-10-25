@@ -242,6 +242,12 @@ export async function createTenderDraft(args: {
   lines: TenderDraftLine[];
   requiredBy: string;
   nowMs: number;
+  /**
+   * The owner's dot may say where and in what currency (HOSTED_DINA §6.3);
+   * absent, the buyer settings decide.
+   */
+  region?: RegionRef;
+  currency?: string;
 }): Promise<CreateDraftOutcome> {
   const runtime = getCommerceRuntime();
   if (runtime === null) return { ok: false, refusal: 'commerce_unavailable' };
@@ -251,7 +257,7 @@ export async function createTenderDraft(args: {
     return { ok: false, refusal: 'too_many_pending_drafts' };
   }
   const buyer = runtime.settings.readBuyer();
-  const region = buyer.ok ? (buyer.settings.locations[0] ?? null) : null;
+  const region = args.region ?? (buyer.ok ? (buyer.settings.locations[0] ?? null) : null);
   const known = knownSuppliers(runtime, DEFAULT_TENDER_FANOUT);
   const suppliers = [...known, ...(await networkSuppliers(runtime, args.lines, region, known))];
   if (suppliers.length === 0) return { ok: false, refusal: 'no_known_suppliers' };
@@ -262,7 +268,7 @@ export async function createTenderDraft(args: {
     requiredBy: args.requiredBy,
     suppliers,
     region,
-    currency: buyer.ok ? buyer.settings.currency : '',
+    currency: args.currency ?? (buyer.ok ? buyer.settings.currency : ''),
     state: 'pending',
     tenderId: '',
     createdAt: args.nowMs,

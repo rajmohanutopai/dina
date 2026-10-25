@@ -66,6 +66,7 @@ import {
   validateDeliveryProjection,
   validateExtractionCommitment,
   validatePurchaseOrderProposal,
+  validateRegionRef,
   readPurchaseOrderProposal,
   type CatalogExtractionBinding,
   type CatalogItem,
@@ -76,6 +77,7 @@ import {
   type Money,
   type OrderState,
   type PurchaseOrderProposal,
+  type RegionRef,
   type Sha256Fn,
   type SignedQuote,
 } from '@dina/commerce-protocol';
@@ -7402,6 +7404,25 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       }
       requiredBy = new Date(Date.parse(body.required_by)).toISOString();
     }
+    // The owner's dot may say where the goods go and in what currency
+    // (HOSTED_DINA §6.3); any other agent's say is ignored, as its suppliers
+    // and prices are.
+    let region: RegionRef | undefined;
+    let currency: string | undefined;
+    if (req.agentScope === 'dot') {
+      if (body.region !== undefined) {
+        const bad = validateRegionRef(body.region);
+        if (bad !== null) return { status: 400, body: { error: bad } };
+        const r = body.region as RegionRef;
+        region = { scheme: r.scheme, value: r.value };
+      }
+      if (body.currency !== undefined) {
+        if (typeof body.currency !== 'string' || !/^[A-Z]{3}$/.test(body.currency)) {
+          return { status: 400, body: { error: 'currency must be a three-letter code' } };
+        }
+        currency = body.currency;
+      }
+    }
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     const created = await createTenderDraft({
@@ -7409,6 +7430,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       lines: parsed.lines,
       requiredBy,
       nowMs: runtime.now(),
+      ...(region !== undefined ? { region } : {}),
+      ...(currency !== undefined ? { currency } : {}),
     });
     if (!created.ok) {
       return {
@@ -8076,7 +8099,16 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       { kind: 'owner', principal: agent.agentDid },
       awardBody,
     );
-    if (awarded.status !== 200) return awarded;
+    if (awarded.status !== 200) {
+      // Which personas are closed, and which offers the owner's rules
+      // removed, stay with the owner's page.
+      const {
+        personas: _personas,
+        excluded: _excluded,
+        ...rest
+      } = awarded.body as Record<string, unknown>;
+      return { status: awarded.status, body: rest };
+    }
     const approvalId = (awarded.body as { approval_id?: unknown }).approval_id;
     if (typeof approvalId !== 'string' || approvalId === '') {
       return { status: 409, body: { error: 'order_no_longer_held' } };

@@ -892,6 +892,36 @@ describe('network suppliers in an agent’s draft (HOSTED_DINA §6.1)', () => {
     expect(card?.description).toContain('2 found on the network');
   });
 
+  it('searches where the owner’s dot says the goods go, in its currency; another agent’s say is ignored', async () => {
+    const where = { scheme: 'postal_area', value: '94103' };
+    const res = await router.handle(
+      dot('POST', '/v1/commerce/agent/tender-drafts', {
+        session_id: session,
+        ...NEED,
+        region: where,
+        currency: 'USD',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(searches).toEqual([{ text: 'butter croissants', region: 'postal_area:94103' }]);
+    const stored = runtime.tenderDrafts.get(String((res.body as { draft_id: string }).draft_id));
+    expect(stored?.region).toEqual(where);
+    expect(stored?.currency).toBe('USD');
+
+    const coded = await draft({ ...NEED, region: where, currency: 'USD' });
+    expect(searches[1]).toEqual({ text: 'butter croissants', region: 'postal_area:560001' });
+    expect(runtime.tenderDrafts.get(String(coded.body.draft_id))?.currency).toBe('INR');
+
+    const bad = await router.handle(
+      dot('POST', '/v1/commerce/agent/tender-drafts', {
+        session_id: session,
+        ...NEED,
+        region: { scheme: 'planet', value: 'mars' },
+      }),
+    );
+    expect(bad.status).toBe(400);
+  });
+
   it('opens to the ticked suppliers only, unless the owner ticks others', async () => {
     const id = String((await draft()).body.draft_id);
     await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
