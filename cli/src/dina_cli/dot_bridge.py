@@ -1046,6 +1046,10 @@ def build_bridge_server(bridge: DotBridge):
     from . import mcp_server
 
     mcp_server.configure_profile("dot")
+    # HOSTED_DINA §6.4 — which hosts offer to draw Dina's card.
+    from .dot_widgets import HostUiProbe
+
+    mcp_server.mcp.add_middleware(HostUiProbe())
     mcp_server.mcp.auth = bridge
     mcp_server.set_client_resolver(bridge.current_client)
     mcp_server.mcp.custom_route("/link", methods=["GET", "POST"])(bridge.link_page)
