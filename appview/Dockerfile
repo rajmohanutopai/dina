@@ -86,8 +86,18 @@ WORKDIR /repo/appview
 # against both fresh and existing databases.
 CMD ["npx", "drizzle-kit", "migrate"]
 
-# Runtime stage: production dependencies only
-FROM node:22-alpine AS runner
+# Runtime stage: production dependencies only.
+#
+# DEBIAN, NOT ALPINE, for this stage alone: catalogue search by meaning runs
+# its model through onnxruntime-node, whose prebuilt binaries need glibc
+# (appview/src/shared/semantic/catalog-semantic.ts). The build stages stay on
+# Alpine; they never run the model. `wget` comes along for the compose
+# healthchecks, which Alpine's busybox used to provide.
+FROM node:22-bookworm-slim AS runner
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends wget ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /repo
 COPY package.json package-lock.json ./
@@ -108,6 +118,17 @@ COPY --from=builder /repo/packages/net-policy/dist packages/net-policy/dist/
 COPY --from=builder /repo/packages/net-socket-node/dist packages/net-socket-node/dist/
 COPY --from=builder /repo/appview/dist appview/dist/
 WORKDIR /repo/appview
+
+# THE MODEL IS BAKED IN. Fetched once here (about 34 MB), so the running
+# service never downloads anything: production sets no
+# CATALOG_EMBED_ALLOW_REMOTE, and transformers.js refuses remote files.
+ENV CATALOG_EMBED_MODEL_DIR=/repo/appview/models
+RUN node --conditions=compiled -e "import('./dist/src/shared/semantic/catalog-semantic.js').then(async (m) => { \
+      const e = await m.loadLocalEmbedder({ modelDir: process.env.CATALOG_EMBED_MODEL_DIR, allowRemote: true }); \
+      const [v] = await e.embed(['butter croissant']); \
+      if (v.length !== m.CATALOG_EMBEDDING_DIMS) throw new Error('unexpected embedding size ' + v.length); \
+    })" \
+ && chown -R node:node /repo/appview/models
 
 # Build identity for the /version endpoint (scripts/release/component_version.sh).
 # Declared LAST so a version/tree change only invalidates this final layer,

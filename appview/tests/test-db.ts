@@ -6,6 +6,9 @@
  */
 import { drizzle } from 'drizzle-orm/node-postgres'
 import { sql } from 'drizzle-orm'
+
+import { ensureCatalogEmbeddingColumns } from '@/db/catalog_embeddings.js'
+import { ensureFtsColumns } from '@/db/fts_columns.js'
 import pg from 'pg'
 import pino from 'pino'
 const { Pool } = pg
@@ -99,4 +102,14 @@ export function createTestHandlerContext(db: TestDB) {
     },
     logger: TEST_SILENT_LOGGER,
   }
+}
+
+/**
+ * The columns the web server and ingester add at boot rather than through a
+ * migration (`fts_columns.ts`, `catalog_embeddings.ts`). A suite that runs
+ * the catalogue search needs them, as production has them.
+ */
+export async function prepareSearchColumns(db: TestDB): Promise<void> {
+  await ensureFtsColumns(db)
+  await ensureCatalogEmbeddingColumns(db)
 }

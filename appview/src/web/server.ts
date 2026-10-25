@@ -3,6 +3,7 @@ import { URL } from 'node:url'
 import { buildOAuthClientMetadata } from '@/web/oauth_metadata.js'
 import { createDb } from '@/db/connection.js'
 import { ensureFtsColumns } from '@/db/fts_columns.js'
+import { startCatalogSemantic } from '@/web/catalog-semantic-boot.js'
 import { sql } from 'drizzle-orm'
 import {
   InjectAttestationBody,
@@ -34,6 +35,11 @@ const port = Number(process.env.PORT ?? 3000)
 ;(async () => {
   await ensureFtsColumns(db)
 })()
+
+// HOSTED_DINA §6.1 — catalogue search by meaning: the model, the vector
+// column and the loop that embeds new catalogue rows. Off or not ready, the
+// search answers by words alone.
+startCatalogSemantic(db)
 
 // --- Per-IP, per-method rate limiting (TN-API-007 / Plan §6) ---
 // HIGH-01: bounded LRU, proxy guard preserved. Tier table lives in

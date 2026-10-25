@@ -63,11 +63,22 @@ function captureExecutedSql(): { db: FtsCapableDb; calls: string[] } {
 }
 
 describe('FTS_DDL_STATEMENTS — contract', () => {
-  it('lists exactly 4 statements: 2 column-creates + 2 indexes', () => {
-    // Pinning the count defends against accidental dropping of either
-    // the subjects FTS surface or one of the GIN indexes during a
-    // refactor.
-    expect(FTS_DDL_STATEMENTS).toHaveLength(4)
+  it('lists exactly 6 statements: 3 column-creates + 3 indexes', () => {
+    // Pinning the count defends against accidental dropping of the
+    // subjects or catalogue FTS surface, or one of the GIN indexes,
+    // during a refactor.
+    expect(FTS_DDL_STATEMENTS).toHaveLength(6)
+  })
+
+  it('commerce_catalog_products: ALTER comes before CREATE INDEX', () => {
+    const alter = FTS_DDL_STATEMENTS.findIndex(
+      (s) => s.includes('ALTER TABLE commerce_catalog_products'),
+    )
+    const index = FTS_DDL_STATEMENTS.findIndex((s) =>
+      s.includes('ON commerce_catalog_products'),
+    )
+    expect(alter).toBeGreaterThanOrEqual(0)
+    expect(index).toBeGreaterThan(alter)
   })
 
   it('every statement uses IF NOT EXISTS (idempotent)', () => {
@@ -102,19 +113,19 @@ describe('FTS_DDL_STATEMENTS — contract', () => {
     expect(indexIdx).toBeGreaterThan(alterIdx)
   })
 
-  it('both ALTER statements use GENERATED ALWAYS AS ... STORED', () => {
+  it('every ALTER statement uses GENERATED ALWAYS AS ... STORED', () => {
     // STORED is required for the GIN index; VIRTUAL columns can't be
     // indexed. A refactor that drops STORED would silently make the
     // index useless → catch that here.
     const alters = FTS_DDL_STATEMENTS.filter((s) => s.includes('ALTER TABLE'))
-    expect(alters).toHaveLength(2)
+    expect(alters).toHaveLength(3)
     for (const stmt of alters) {
       expect(stmt).toMatch(/GENERATED\s+ALWAYS\s+AS/)
       expect(stmt).toContain('STORED')
     }
   })
 
-  it('both ALTER statements use to_tsvector(\'english\', coalesce(...))', () => {
+  it('every ALTER statement uses to_tsvector(\'english\', coalesce(...))', () => {
     // NULL-safety guard: `to_tsvector('english', NULL)` returns NULL,
     // which the GIN index treats as missing. Wrapping in coalesce
     // keeps every row indexable. Drift here would silently regress
@@ -125,9 +136,9 @@ describe('FTS_DDL_STATEMENTS — contract', () => {
     }
   })
 
-  it('both indexes use GIN (the only operator class for tsvector @@ queries)', () => {
+  it('every index uses GIN (the only operator class for tsvector @@ queries)', () => {
     const indexes = FTS_DDL_STATEMENTS.filter((s) => s.includes('CREATE INDEX'))
-    expect(indexes).toHaveLength(2)
+    expect(indexes).toHaveLength(3)
     for (const stmt of indexes) {
       expect(stmt).toMatch(/USING\s+GIN/)
     }

@@ -27,6 +27,9 @@
  *      Landing the column now lets the search xRPC extension be a
  *      pure handler change rather than a schema migration.
  *
+ *   3. `commerce_catalog_products.search_tsv` — generated from name,
+ *      brand and description, for the catalogue search's word match.
+ *
  * Both columns are NULL-safe via `coalesce(<source>, '')` — Postgres
  * generated columns evaluate the expression on every row, and a NULL
  * source would otherwise produce a NULL tsvector that the GIN index
@@ -88,6 +91,15 @@ export const FTS_DDL_STATEMENTS: readonly string[] = Object.freeze([
      GENERATED ALWAYS AS (to_tsvector('english', coalesce(name, ''))) STORED`,
   `CREATE INDEX IF NOT EXISTS idx_subjects_search
      ON subjects USING GIN (search_tsv)`,
+  // commerce_catalog_products.search_tsv — name, brand and description,
+  // stemmed, so "butter croissants" finds "Butter croissant" (HOSTED_DINA
+  // §6.1). The catalogue search's word match reads it; meaning-based
+  // matching is `catalog_embeddings.ts`.
+  `ALTER TABLE commerce_catalog_products ADD COLUMN IF NOT EXISTS search_tsv tsvector
+     GENERATED ALWAYS AS (to_tsvector('english',
+       coalesce(name, '') || ' ' || coalesce(brand, '') || ' ' || coalesce(description, ''))) STORED`,
+  `CREATE INDEX IF NOT EXISTS idx_commerce_catalog_products_search
+     ON commerce_catalog_products USING GIN (search_tsv)`,
 ])
 
 /**

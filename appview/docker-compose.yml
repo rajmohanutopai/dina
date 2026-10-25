@@ -1,7 +1,10 @@
 services:
   # ── Database ──
   postgres:
-    image: postgres:17
+    # pgvector/pgvector is the official postgres:17 image plus the
+    # `vector` extension (pinned), which catalogue search by meaning needs
+    # (appview/src/db/catalog_embeddings.ts). Same data directory format.
+    image: pgvector/pgvector:0.8.0-pg17
     environment:
       POSTGRES_DB: dina_trust
       POSTGRES_USER: dina

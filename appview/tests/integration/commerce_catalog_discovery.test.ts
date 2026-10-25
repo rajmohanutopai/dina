@@ -25,11 +25,18 @@
  *     npx vitest run tests/integration/commerce_catalog_discovery.test.ts
  */
 
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest'
 
 import { searchCommerceCatalog } from '@/api/xrpc/commerce-catalog-search.js'
 import { commerceProductRelationships, subjectScores, subjects } from '@/db/schema/index.js'
 import { productKey } from '@/shared/commerce/catalog-projection.js'
+import {
+  CATALOG_EMBEDDING_DIMS,
+  backfillCatalogEmbeddings,
+  createCatalogSemantic,
+  installCatalogSemantic,
+  type TextEmbedder,
+} from '@/shared/semantic/catalog-semantic.js'
 import {
   commerceCatalogPointerHandler,
   commerceCatalogSnapshotHandler,
@@ -48,6 +55,7 @@ import {
   closeTestDb,
   createTestHandlerContext,
   getTestDb,
+  prepareSearchColumns,
   type TestDB,
 } from '../test-db'
 
@@ -165,9 +173,10 @@ const search = async (
 ): Promise<Awaited<ReturnType<typeof searchCommerceCatalog>>> =>
   searchCommerceCatalog(db, params, nowIso)
 
-beforeAll(() => {
+beforeAll(async () => {
   db = getTestDb()
   ctx = createTestHandlerContext(db)
+  await prepareSearchColumns(db)
 })
 
 beforeEach(async () => {
@@ -288,6 +297,79 @@ describe('a buyer with no prior supplier reference finds one', () => {
     // because a UI sent an empty form.
     const found = await search({ limit: 20 })
     expect(found.candidates).toEqual([])
+  })
+})
+
+describe('finding by stemmed words and by meaning (HOSTED_DINA §6.1)', () => {
+  /**
+   * A stand-in model with three directions: seating, tables, anything else.
+   * The real model's numbers are pinned in the unit suite; this one proves
+   * the SQL, the region constraint and the matcher agree on what it returns.
+   */
+  const embedder: TextEmbedder = {
+    model: 'test-concepts',
+    async embed(texts) {
+      return texts.map((t) => {
+        const v = new Float32Array(CATALOG_EMBEDDING_DIMS)
+        const lower = t.toLowerCase()
+        if (lower === 'somewhere to sit') {
+          v[0] = 0.9
+          v[1] = Math.sqrt(1 - 0.81)
+        } else if (lower.includes('chair')) v[0] = 1
+        else if (lower.includes('table')) v[1] = 1
+        else v[2] = 1
+        return v
+      })
+    },
+  }
+
+  beforeEach(async () => {
+    await publish(CHAIRMAKER, 'chairmaker-main', [
+      { sku: 'CHAIR-OAK', name: 'Oak dining chair' },
+      { sku: 'TABLE-OAK', name: 'Oak dining table', categories: ['furniture.tables'] },
+    ])
+    await publish(RIVALWOOD, 'rivalwood-main', [
+      { sku: 'RW-CHAIR-1', name: 'Ash dining chair', region: 'IN-MH' },
+    ])
+  })
+
+  afterEach(() => installCatalogSemantic(null))
+
+  it('finds "dining chairs" by its stemmed words, though no name says it', async () => {
+    const found = await search({ q: 'dining chairs', limit: 20 })
+    expect(found.candidates.map((c) => c.supplier_did).sort()).toEqual(
+      [CHAIRMAKER, RIVALWOOD].sort(),
+    )
+    expect(found.candidates.every((c) => c.matched_fields.includes('text'))).toBe(true)
+  })
+
+  it('finds rows by meaning once embedded, within the region, and says so', async () => {
+    expect(await backfillCatalogEmbeddings(db, embedder)).toBe(3)
+    expect(await backfillCatalogEmbeddings(db, embedder)).toBe(0)
+    installCatalogSemantic(createCatalogSemantic(embedder))
+
+    const anywhere = await search({ q: 'somewhere to sit', limit: 20 })
+    // The chairs (0.9) and not the table (0.44, below the cut-off).
+    expect(anywhere.candidates.map((c) => c.product.value).sort()).toEqual(
+      ['CHAIR-OAK', 'RW-CHAIR-1'].sort(),
+    )
+    expect(anywhere.candidates.every((c) => c.matched_fields.includes('meaning'))).toBe(true)
+
+    const here = await search({ q: 'somewhere to sit', region: 'admin_area:IN-KA', limit: 20 })
+    expect(here.candidates.map((c) => c.product.value)).toEqual(['CHAIR-OAK'])
+  })
+
+  it('finds nothing by meaning for an unrelated ask', async () => {
+    await backfillCatalogEmbeddings(db, embedder)
+    installCatalogSemantic(createCatalogSemantic(embedder))
+    expect((await search({ q: 'plumber', limit: 20 })).candidates).toEqual([])
+  })
+
+  it('embeds a replaced row again: a new snapshot arrives without vectors', async () => {
+    await backfillCatalogEmbeddings(db, embedder)
+    await cleanAllTables(db)
+    await publish(CHAIRMAKER, 'chairmaker-main', [{ sku: 'CHAIR-OAK', name: 'Oak dining chair' }])
+    expect(await backfillCatalogEmbeddings(db, embedder)).toBe(1)
   })
 })
 

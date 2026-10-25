@@ -67,7 +67,13 @@ import {
 import { commerceRelationshipClaimHandler } from '@/ingester/handlers/commerce-relationship.js'
 import { searchCommerceCatalog } from '@/api/xrpc/commerce-catalog-search.js'
 
-import { cleanAllTables, createTestHandlerContext, getTestDb, type TestDB } from '../test-db.js'
+import {
+  cleanAllTables,
+  createTestHandlerContext,
+  getTestDb,
+  prepareSearchColumns,
+  type TestDB,
+} from '../test-db.js'
 
 import {
   catalogPageDigest,
@@ -288,9 +294,10 @@ function taintItems(
   }) as CatalogSnapshotPage
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   db = getTestDb()
   ctx = createTestHandlerContext(db)
+  await prepareSearchColumns(db)
 })
 
 beforeEach(async () => {

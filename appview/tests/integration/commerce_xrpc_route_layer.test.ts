@@ -26,7 +26,13 @@ import { subjects } from '@/db/schema/subjects.js'
 import { dispatchXrpc } from '@/web/xrpc-dispatch.js'
 import { XRPC_ROUTES } from '@/web/xrpc-routes.js'
 
-import { cleanAllTables, createTestHandlerContext, getTestDb, type TestDB } from '../test-db.js'
+import {
+  cleanAllTables,
+  createTestHandlerContext,
+  getTestDb,
+  prepareSearchColumns,
+  type TestDB,
+} from '../test-db.js'
 
 import { readFileSync } from 'node:fs'
 import path from 'node:path'
@@ -91,9 +97,10 @@ async function publishCatalog(): Promise<void> {
   } satisfies RecordOp)
 }
 
-beforeAll(() => {
+beforeAll(async () => {
   db = getTestDb()
   ctx = createTestHandlerContext(db)
+  await prepareSearchColumns(db)
 })
 
 beforeEach(async () => {

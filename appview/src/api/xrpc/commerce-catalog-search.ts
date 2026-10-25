@@ -10,7 +10,9 @@ import {
   subjectScores,
   subjects,
 } from '@/db/schema/index.js'
+import { getCatalogSemantic } from '@/shared/semantic/catalog-semantic.js'
 import { readLivenessSettings, tierSql } from '@/shared/service-liveness.js'
+import { logger } from '@/shared/utils/logger.js'
 import { productKey, type CatalogProductRow } from '@/shared/commerce/catalog-projection.js'
 import {
   belowCommerceTrustFloor,
@@ -32,8 +34,8 @@ import {
  * is recall confidence rather than the buyer's ranking — that happens in the
  * buyer's own node against signed quotes.
  *
- * TWO-STAGE ON PURPOSE. SQL narrows (identifier, category, region, text) and
- * the pure matcher scores. The narrowing is an optimisation and the scoring is
+ * TWO-STAGE ON PURPOSE. SQL narrows (identifier, category, region, text, and
+ * meaning when the model is loaded) and the pure matcher scores. The narrowing is an optimisation and the scoring is
  * the contract, so every row SQL returns is re-checked by
  * `matchCatalogRow` — a WHERE clause that drifted from the matcher would
  * otherwise silently change what is returned and nothing would fail. The cost
@@ -203,13 +205,20 @@ export async function searchCommerceCatalog(
       )}))`,
     )
   }
-  if (params.q !== undefined && params.q.trim() !== '') {
-    const pattern = `%${escapeLike(params.q.trim())}%`
+  const text = params.q?.trim() ?? ''
+  // Stemmed words (`fts_columns.ts`): "butter croissants" finds "Butter
+  // croissant". The phrase match stays beside it for brands and odd tokens
+  // the stemmer would split.
+  const wordsMatch =
+    text === '' ? null : sql`commerce_catalog_products.search_tsv @@ plainto_tsquery('english', ${text})`
+  if (wordsMatch !== null) {
+    const pattern = `%${escapeLike(text)}%`
     anyOf.push(
       or(
         sql`${commerceCatalogProducts.name} ILIKE ${pattern}`,
         sql`${commerceCatalogProducts.brand} ILIKE ${pattern}`,
         sql`${commerceCatalogProducts.description} ILIKE ${pattern}`,
+        wordsMatch,
       ) as SQL,
     )
   }
@@ -229,6 +238,25 @@ export async function searchCommerceCatalog(
     // region-filtered search failed at the database, and a stub that records
     // "a select happened" reports it as working.
     regionConstraint = sql`EXISTS (SELECT 1 FROM jsonb_array_elements(${commerceCatalogProducts.fulfilmentRegions}) r WHERE lower((r->>'scheme') || ':' || (r->>'value')) = ${params.region.toLowerCase()})`
+  }
+  // By meaning (`semantic/catalog-semantic.ts`): rows whose vector is close
+  // enough to the query's, inside the same region. They join the candidates
+  // and the matcher scores them as `meaning`. Without the model or pgvector
+  // the search is by words alone; a failure here never fails the search.
+  let meaning = new Map<string, number>()
+  const semantic = getCatalogSemantic()
+  if (text !== '' && semantic !== null) {
+    try {
+      meaning = await semantic.similar(db, text, regionConstraint)
+    } catch (err) {
+      logger.warn(
+        { errorClass: err instanceof Error ? err.constructor.name : typeof err },
+        'catalog search by meaning failed; words only',
+      )
+    }
+    if (meaning.size > 0) {
+      anyOf.push(inArray(commerceCatalogProducts.rowKey, [...meaning.keys()]))
+    }
   }
   if (anyOf.length === 0 && regionConstraint !== null) {
     anyOf.push(regionConstraint)
@@ -318,7 +346,11 @@ export async function searchCommerceCatalog(
       : [sql`${tierExpr} ASC`, commerceCatalogProducts.rowKey]
 
   const joined = await db
-    .select({ row: commerceCatalogProducts, tier: sql<number>`${tierExpr}` })
+    .select({
+      row: commerceCatalogProducts,
+      tier: sql<number>`${tierExpr}`,
+      wordsHit: wordsMatch === null ? sql<boolean>`false` : sql<boolean>`${wordsMatch}`,
+    })
     .from(commerceCatalogProducts)
     .leftJoin(serviceOperatorPresence, eq(commerceCatalogProducts.supplierDid, serviceOperatorPresence.did))
     .leftJoin(serviceAccountStatus, eq(commerceCatalogProducts.supplierDid, serviceAccountStatus.did))
@@ -327,6 +359,7 @@ export async function searchCommerceCatalog(
     .limit(params.limit * 4)
   const rows = joined.map((j) => j.row)
   const tierBySupplier = new Map(joined.map((j) => [j.row.supplierDid, Number(j.tier)]))
+  const textHits = new Set(joined.filter((j) => j.wordsHit === true).map((j) => j.row.rowKey))
 
   const query: CatalogSearchQuery = {
     atIso: nowIso,
@@ -334,6 +367,8 @@ export async function searchCommerceCatalog(
     ...(relatedKeys.size > 0 ? { relatedKeys } : {}),
     ...(params.category !== undefined ? { categoryIds: params.category } : {}),
     ...(params.q !== undefined ? { text: params.q } : {}),
+    ...(textHits.size > 0 ? { textHits } : {}),
+    ...(meaning.size > 0 ? { meaning } : {}),
     ...(params.region !== undefined ? { region: params.region } : {}),
   }
 

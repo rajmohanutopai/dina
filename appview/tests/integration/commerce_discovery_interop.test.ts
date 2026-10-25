@@ -49,7 +49,13 @@ import {
   type CatalogSnapshotPage,
 } from '@/shared/commerce/catalog-verify.js'
 
-import { cleanAllTables, createTestHandlerContext, getTestDb, type TestDB } from '../test-db.js'
+import {
+  cleanAllTables,
+  createTestHandlerContext,
+  getTestDb,
+  prepareSearchColumns,
+  type TestDB,
+} from '../test-db.js'
 
 import type { RecordOp } from '@/ingester/handlers/index.js'
 
@@ -114,9 +120,10 @@ async function deliver(pointerFirst = false): Promise<void> {
 const search = (params: Parameters<typeof searchCommerceCatalog>[1]) =>
   searchCommerceCatalog(db, params, NOW)
 
-beforeAll(() => {
+beforeAll(async () => {
   db = getTestDb()
   ctx = createTestHandlerContext(db)
+  await prepareSearchColumns(db)
 })
 
 beforeEach(async () => {

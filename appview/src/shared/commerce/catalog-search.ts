@@ -26,6 +26,18 @@ export interface CatalogSearchQuery {
   categoryIds?: string[]
   /** Free text, matched against name/brand/description. */
   text?: string
+  /**
+   * Rows whose words match `text` once stemmed ("croissants" finds
+   * "croissant"), by row key. SQL decides this with Postgres's English
+   * stemmer; the matcher takes its word.
+   */
+  textHits?: Set<string>
+  /**
+   * Rows that match `text` by meaning, with their cosine similarity, by row
+   * key (`semantic/catalog-semantic.ts`). Only rows at or above
+   * `MEANING_MIN_SIMILARITY` count.
+   */
+  meaning?: Map<string, number>
   /** `scheme:value`, matched against the item's published regions. */
   region?: string
   /**
@@ -77,6 +89,12 @@ export const RELATED_WEIGHT_BP = 1200
 
 /** Nothing below this is worth returning; it is noise wearing a score. */
 export const MIN_RETRIEVAL_SCORE_BP = 1
+
+/**
+ * The cosine similarity below which a match by meaning is noise, measured on
+ * the test catalogues (`semantic/catalog-semantic.ts` has the numbers).
+ */
+export const MEANING_MIN_SIMILARITY = 0.6
 
 function normalize(value: string): string {
   return value.trim().toLowerCase()
@@ -159,9 +177,18 @@ export function matchCatalogRow(
   if (query.text !== undefined && query.text.trim() !== '') {
     const needle = normalize(query.text)
     const haystack = [row.name, row.brand ?? '', row.description ?? ''].map(normalize)
-    if (haystack.some((field) => field.includes(needle))) {
+    const similarity = query.meaning?.get(row.rowKey)
+    if (
+      haystack.some((field) => field.includes(needle)) ||
+      (query.textHits?.has(row.rowKey) ?? false)
+    ) {
       matchedFields.push('text')
       scoreBp += TEXT_WEIGHT_BP
+    } else if (similarity !== undefined && similarity >= MEANING_MIN_SIMILARITY) {
+      // Found by meaning, not by its words: it says so, and it scores below
+      // any row whose words matched, by how close it came.
+      matchedFields.push('meaning')
+      scoreBp += Math.round(TEXT_WEIGHT_BP * Math.min(similarity, 0.99))
     }
   }
 

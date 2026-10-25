@@ -329,6 +329,31 @@ that searches the catalogue, then reads each listing's name
 (`service.getByUri`) and its PeerLens trust (`peerlens.getProfile`: score and
 review count). Core decides what a finding means (`commerce/supplier_directory.ts`).
 
+**The AppView searches by meaning, not only by the words typed** (decided
+2026-10-25, after "butter croissants" found nothing because the catalogue
+said "Butter croissant"). Two signals join the catalogue search:
+
+- **Stemmed words:** a Postgres English full-text column over each item's
+  name, brand and description (`appview/src/db/fts_columns.ts`), so plurals
+  and word order no longer matter. A hit is matched field `text`.
+- **Meaning:** each item's name, brand, description and categories become a
+  384-number vector from `bge-small-en-v1.5`, run inside the AppView's web
+  process from files baked into its image (no API key, no per-search cost, no
+  text sent anywhere), and kept in Postgres with pgvector
+  (`appview/src/shared/semantic/catalog-semantic.ts`). A query is embedded
+  the same way and compared by cosine inside the delivery area; at or above
+  0.60 it is matched field `meaning`, scored below any word match by how
+  close it came. The cut-off was measured on the test catalogues: "pastries
+  for a cafe" and "something buttery for breakfast" find the bakeries;
+  "coffee beans", "laptop" and "plumber" find nothing. English only; the
+  model's name sits beside each vector, so a multilingual model can replace
+  it and every row is embedded again.
+
+The web process embeds new catalogue rows in the background; until a row has
+its vector it is found by its words. Without pgvector or the model the search
+answers by words alone. Postgres runs as `pgvector/pgvector:0.8.0-pg17`, the
+official image plus the extension.
+
 - **Owner search:** `GET /v1/commerce/trade/suppliers/search?q=&region=`, owner
   only. The region defaults to the café's first delivery area. Each result
   says whether the supplier is already listed or blocked.
