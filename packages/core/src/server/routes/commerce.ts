@@ -8005,7 +8005,14 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     tenderId: string,
     audience: 'owner' | 'agent',
   ): Promise<{ card: CardSpec } | CoreResponse> {
-    const view = await tenderRankingView(runtime, 'owner', tenderId, undefined);
+    // The dot's card is ranked as a clerk's is, on the signed offers alone:
+    // the owner's worths and never-rules stay off ChatGPT.
+    const view = await tenderRankingView(
+      runtime,
+      audience === 'owner' ? 'owner' : 'staff',
+      tenderId,
+      undefined,
+    );
     if (view.status !== 200) return view;
     const ranking = view.body as TenderRankingView;
     const told = tenderStory(tenderId);

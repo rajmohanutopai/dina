@@ -143,6 +143,7 @@ function offerSub(
   offer: TenderOfferView,
   story: TenderStorySupplierView | undefined,
   trust: string,
+  audience: TenderCardInput['audience'],
 ): string {
   const parts = [offered(story), trust].filter((p) => p !== '');
   const terms: string[] = [];
@@ -152,7 +153,8 @@ function offerSub(
   if (offer.estimated_delivery_at !== undefined)
     terms.push(`delivered ${day(offer.estimated_delivery_at)}`);
   parts.push(terms.join(' · '));
-  if (offer.comparison_cost_minor !== offer.total_minor) {
+  // The cost after credit weighs the owner's own worths: not for the dot.
+  if (audience !== 'agent' && offer.comparison_cost_minor !== offer.total_minor) {
     parts.push(`costs you ${money(offer.comparison_cost_minor, offer.currency)} after the credit`);
   }
   const run = offer.partner_run;
@@ -230,6 +232,7 @@ export function buildTenderCard(input: TenderCardInput): CardSpec {
           offer,
           story.get(offer.supplier_did),
           trustText(input.trustOf?.(offer.supplier_did)),
+          audience,
         ),
         trailing: awarded
           ? `Awarded · ${money(offer.total_minor, offer.currency)}`

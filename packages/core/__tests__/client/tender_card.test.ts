@@ -111,6 +111,8 @@ describe('the tender card', () => {
     expect(text).not.toContain('rules');
     expect(text).not.toContain('stale bread');
     expect(text).toContain('USD 700.00');
+    // The cost after credit weighs the owner's own worths.
+    expect(JSON.stringify(card({ audience: 'agent' }))).not.toContain('after the credit');
   });
 
   it('draws no buttons when asked not to, and none once the tender is awarded', () => {
