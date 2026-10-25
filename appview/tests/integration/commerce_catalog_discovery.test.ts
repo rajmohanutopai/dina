@@ -359,6 +359,18 @@ describe('finding by stemmed words and by meaning (HOSTED_DINA §6.1)', () => {
     expect(here.candidates.map((c) => c.product.value)).toEqual(['CHAIR-OAK'])
   })
 
+  it('lets no one supplier fill the meaning slots', async () => {
+    await publish(CHAIRMAKER, 'chairmaker-extra', [
+      ...['A', 'B', 'C', 'D', 'E', 'F'].map((x) => ({ sku: `CHAIR-${x}`, name: `Oak chair ${x}` })),
+    ])
+    await backfillCatalogEmbeddings(db, embedder, 64)
+    installCatalogSemantic(createCatalogSemantic(embedder))
+    const found = await search({ q: 'somewhere to sit', limit: 50 })
+    const bySupplier = (did: string) => found.candidates.filter((c) => c.supplier_did === did).length
+    expect(bySupplier(CHAIRMAKER)).toBe(3)
+    expect(bySupplier(RIVALWOOD)).toBe(1)
+  })
+
   it('finds nothing by meaning for an unrelated ask', async () => {
     await backfillCatalogEmbeddings(db, embedder)
     installCatalogSemantic(createCatalogSemantic(embedder))

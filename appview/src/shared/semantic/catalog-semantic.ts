@@ -30,8 +30,12 @@ import { MEANING_MIN_SIMILARITY } from '@/shared/commerce/catalog-search.js'
 
 export const CATALOG_EMBEDDING_MODEL = 'Xenova/bge-small-en-v1.5'
 export const CATALOG_EMBEDDING_DIMS = 384
-/** Nearest rows one query looks at before the cut-off. */
+/** Rows the meaning layer hands the search, best first. */
 export const MEANING_CANDIDATES = 50
+/** Nearest rows one query reads before the per-supplier cap. */
+export const MEANING_NEAREST = 400
+/** No more than this many rows from one supplier reach the search by meaning. */
+export const MEANING_PER_SUPPLIER = 3
 
 export interface TextEmbedder {
   readonly model: string
@@ -89,6 +93,8 @@ export function vectorLiteral(vector: Float32Array): string {
 
 export interface SemanticDb {
   execute(query: SQL): Promise<unknown>
+  /** Drizzle's; the search uses it to scope its index settings. */
+  transaction?<T>(run: (tx: { execute(query: SQL): Promise<unknown> }) => Promise<T>): Promise<T>
 }
 
 function rowsOf(result: unknown): Record<string, unknown>[] {
@@ -172,15 +178,46 @@ export function createCatalogSemantic(embedder: TextEmbedder): CatalogSemantic {
       const vector = await queryVector(text)
       if (vector === null) return new Map()
       const literal = vectorLiteral(vector)
+      // Nearest rows first, then no more than MEANING_PER_SUPPLIER from any
+      // one supplier, so a publisher with many similar items cannot fill
+      // every slot and push the others out before the matcher sees them.
+      // Inactive accounts are left out here, before the cap, as the main
+      // query leaves them out after it.
+      const query = sql`
+        SELECT row_key, similarity FROM (
+          SELECT row_key, similarity,
+                 row_number() OVER (PARTITION BY supplier_did ORDER BY similarity DESC, row_key)
+                   AS rank_in_supplier
+          FROM (
+            SELECT commerce_catalog_products.row_key,
+                   commerce_catalog_products.supplier_did,
+                   1 - (commerce_catalog_products.embedding <=> ${literal}::vector) AS similarity
+            FROM commerce_catalog_products
+            LEFT JOIN service_account_status
+              ON service_account_status.did = commerce_catalog_products.supplier_did
+            WHERE commerce_catalog_products.embedding IS NOT NULL
+              AND commerce_catalog_products.embedding_model = ${embedder.model}
+              AND COALESCE(service_account_status.active, true)
+              ${regionConstraint === null ? sql`` : sql`AND ${regionConstraint}`}
+            ORDER BY commerce_catalog_products.embedding <=> ${literal}::vector
+            LIMIT ${MEANING_NEAREST}
+          ) nearest
+        ) ranked
+        WHERE rank_in_supplier <= ${MEANING_PER_SUPPLIER}
+        ORDER BY similarity DESC, row_key
+        LIMIT ${MEANING_CANDIDATES}`
+      // pgvector's HNSW scan returns about `ef_search` rows (40 by default)
+      // and the region filter runs after it, so a far-off region could come
+      // back empty. Keep scanning until enough rows pass (pgvector 0.8's
+      // iterative scan), inside one transaction so the settings end with it.
       const rows = rowsOf(
-        await db.execute(sql`
-          SELECT row_key, 1 - (embedding <=> ${literal}::vector) AS similarity
-          FROM commerce_catalog_products
-          WHERE embedding IS NOT NULL
-            AND embedding_model = ${embedder.model}
-            ${regionConstraint === null ? sql`` : sql`AND ${regionConstraint}`}
-          ORDER BY embedding <=> ${literal}::vector
-          LIMIT ${MEANING_CANDIDATES}`),
+        db.transaction === undefined
+          ? await db.execute(query)
+          : await db.transaction(async (tx) => {
+              await tx.execute(sql`SET LOCAL hnsw.ef_search = ${sql.raw(String(MEANING_NEAREST))}`)
+              await tx.execute(sql`SET LOCAL hnsw.iterative_scan = relaxed_order`)
+              return tx.execute(query)
+            }),
       )
       const out = new Map<string, number>()
       for (const row of rows) {
