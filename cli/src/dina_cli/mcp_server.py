@@ -665,31 +665,141 @@ def dina_service_publication_status(rkey: str, session: str) -> dict:
 
 @mcp.tool()
 def dina_tender_draft(session: str, lines: list[dict], required_by: str = "") -> dict:
-    """Draft a tender for the owner's suppliers to price.
+    """Draft a tender: ask suppliers to price what the owner needs.
 
     ``lines`` is a list of needs in words with a quantity, for example
     ``[{"text": "butter croissants", "quantity": {"value": "200", "unit_code": "each"}}]``.
-    ``required_by`` is an optional ISO date-time. Dina picks the suppliers from
-    the owner's own trade history; you cannot name one. Nothing is sent to any
-    supplier until the owner adds a target and ceiling and opens the tender.
-    You never see prices or the owner's limits. Poll ``dina_tender_status``
-    with the returned ``draft_id``.
+    ``required_by`` is an optional ISO date-time. Dina picks the suppliers:
+    the owner's own list and past orders first, then suppliers on the network
+    that sell the thing in the owner's area. You cannot name one. ``suppliers``
+    in the answer says who would be asked (``selected``) and their trust.
+    Nothing reaches a supplier until ``dina_tender_open``.
     """
     return _get_client().tender_draft(session=session, lines=lines, required_by=required_by)
 
 
 @mcp.tool()
 def dina_tender_status(session: str, draft_id: str) -> dict:
-    """Read a tender draft's progress.
+    """Read a tender's progress.
 
-    ``draft_state`` is pending (waiting for the owner), opened, dismissed or
-    lapsed. Once opened, ``tender`` gives the state, the suppliers ranked best
-    first (names only), whether the order is held or sent, and the supplier's
-    answer. It never carries a price. The owner awards and sends; tell them
-    when the tender is ready, and do not claim an order was placed until
-    ``held_order`` is ``sent`` and ``supplier_answer`` is ``accepted``.
+    ``draft_state`` is pending (not opened yet), opened, dismissed or lapsed.
+    Once opened, ``tender.ranked`` lists the quotes best first, each with its
+    supplier, ``total`` (``minor_units`` are cents, pence or paise), how long
+    it holds and when it would arrive. ``tender.state`` says when the tender
+    is ready to award. After ``dina_tender_award``, ``held_order`` and
+    ``supplier_answer`` say whether the order went and what the supplier said.
+    Do not tell the owner an order was placed until ``held_order`` is
+    ``sent`` and ``supplier_answer`` is ``accepted``.
     """
     return _get_client().tender_draft_status(session=session, draft_id=draft_id)
+
+
+@mcp.tool()
+def dina_tender_open(
+    session: str,
+    draft_id: str,
+    target_total: str,
+    budget_ceiling: str,
+    currency: str = "",
+    postal_code: str = "",
+    suppliers: list[str] | None = None,
+) -> dict:
+    """Open a drafted tender: Dina sends the quote requests and negotiates.
+
+    Ask the owner what they hope to pay (``target_total``) and the most they
+    will pay (``budget_ceiling``), both in minor units (cents for USD), as
+    strings. Dina counters within them; suppliers never see the ceiling.
+    ``currency`` and ``postal_code`` default to the draft's. ``suppliers`` is
+    optional: names from the draft's ``suppliers`` to ask, if the owner wants
+    other than the ticked ones. Confirm the amounts with the owner first. Then
+    poll ``dina_tender_status``.
+    """
+    client = _get_client()
+    dids: list[str] | None = None
+    if suppliers is not None:
+        dids = _draft_supplier_dids(client, session, draft_id, suppliers)
+        if isinstance(dids, dict):
+            return dids
+    region = {"scheme": "postal_area", "value": postal_code} if postal_code else None
+    return client.tender_open(
+        session=session,
+        draft_id=draft_id,
+        target_total=target_total,
+        budget_ceiling=budget_ceiling,
+        currency=currency,
+        region=region,
+        suppliers=dids,
+    )
+
+
+def _draft_supplier_dids(client, session: str, draft_id: str, names: list[str]):
+    """The DIDs behind the supplier names a draft showed, or an error."""
+    status = client.tender_draft_status(session=session, draft_id=draft_id)
+    known = {
+        (s.get("name") or "").strip().casefold(): s["supplier_did"]
+        for s in status.get("suppliers", [])
+        if s.get("supplier_did")
+    }
+    picked = []
+    for name in names:
+        did = name if name in known.values() else known.get(name.strip().casefold())
+        if did is None:
+            return {"error": "unknown_supplier", "name": name}
+        picked.append(did)
+    return picked
+
+
+@mcp.tool()
+def dina_tender_award(session: str, draft_id: str, rank: int = 1) -> dict:
+    """Award the tender and send the order, as the owner decided.
+
+    ``rank`` is the quote's place in ``tender.ranked`` (1 is best). Only call
+    this once the owner has said which quote to take: the order goes to that
+    supplier straight away. Then poll ``dina_tender_status`` for the
+    supplier's answer.
+    """
+    return _get_client().tender_award(session=session, draft_id=draft_id, rank=rank)
+
+
+@mcp.tool()
+def dina_supplier_search(session: str, query: str, postal_code: str = "") -> dict:
+    """Find suppliers on the network that sell something, with their trust.
+
+    ``query`` is the thing in words ("butter croissants"). ``postal_code``
+    defaults to the owner's own area. Each supplier shows its items and
+    indicative prices (minor units), its PeerLens trust (``score`` 0 to 1 and
+    review count; ``good`` when Dina would tick it), and whether the owner
+    already listed or blocked it.
+    """
+    region = f"postal_area:{postal_code}" if postal_code else ""
+    return _get_client().supplier_search(session=session, query=query, region=region)
+
+
+@mcp.tool()
+def dina_supplier_review(
+    session: str,
+    supplier_did: str,
+    service_rkey: str,
+    verdict: str,
+    name: str = "",
+    note: str = "",
+) -> dict:
+    """Say what the owner thinks of a supplier, in public, in their name.
+
+    ``verdict`` is ``trust`` (a positive review, and the supplier joins the
+    owner's list) or ``distrust`` (a negative review, and Dina never asks
+    that supplier again). Take ``supplier_did`` and ``service_rkey`` from
+    ``dina_supplier_search``. Only call this when the owner said so: the
+    review is public and carries their name. ``note`` is their own words.
+    """
+    return _get_client().supplier_review(
+        session=session,
+        supplier_did=supplier_did,
+        service_rkey=service_rkey,
+        verdict=verdict,
+        name=name,
+        note=note,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1023,6 +1133,10 @@ DOT_PROFILE_TOOLS = (
     "dina_session_end",
     "dina_tender_draft",
     "dina_tender_status",
+    "dina_tender_open",
+    "dina_tender_award",
+    "dina_supplier_search",
+    "dina_supplier_review",
     "dina_peerlens",
     "dina_validate",
     "dina_validate_status",
@@ -1077,6 +1191,10 @@ def configure_profile(profile: str) -> None:
             "dina_service_publication_status",
             "dina_tender_draft",
             "dina_tender_status",
+            "dina_tender_open",
+            "dina_tender_award",
+            "dina_supplier_search",
+            "dina_supplier_review",
             "dina_peerlens",
             "dina_review",
             "dina_review_status",

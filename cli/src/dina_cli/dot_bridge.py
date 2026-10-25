@@ -1031,8 +1031,8 @@ def _link_form(
         f"<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width'>"
         f"<title>Link to Dina</title><style>{_STYLE}</style><h1>Link to Dina</h1>"
         f"<p class=who><b>{html.escape(name)}</b> at <b>{html.escape(host)}</b> wants to act "
-        f"for you as an agent. It can draft tenders and read how they go. It cannot see "
-        f"prices, your limits or your vault, and it cannot open a tender or pay.</p>"
+        f"for you. When you tell it to, it can find suppliers, review them in your name, "
+        f"ask them for quotes and place orders. It cannot read your vault or pay.</p>"
         f"{err}{create_form}{cell_form}{own_form}"
     )
     return HTMLResponse(body, status_code=400 if error else 200, headers=_PAGE_HEADERS)

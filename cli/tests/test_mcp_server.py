@@ -950,6 +950,75 @@ def test_dina_tender_status_reads_one_draft(fake_client):
     fake_client.tender_draft_status.assert_called_once_with(session="s1", draft_id="tdr_1")
 
 
+def test_dina_tender_open_maps_names_to_the_draft_suppliers(fake_client):
+    fake_client.tender_draft_status.return_value = {
+        "suppliers": [
+            {"name": "Morning Crumb Bakery", "supplier_did": "did:plc:mc"},
+            {"name": "Fogline Bakehouse", "supplier_did": "did:plc:fb"},
+        ]
+    }
+    fake_client.tender_open.return_value = {"tender_id": "t1"}
+
+    out = mcp_server.dina_tender_open.fn(
+        session="s1",
+        draft_id="tdr_1",
+        target_total="70000",
+        budget_ceiling="80000",
+        postal_code="94103",
+        suppliers=["morning crumb bakery"],
+    )
+
+    assert out == {"tender_id": "t1"}
+    fake_client.tender_open.assert_called_once_with(
+        session="s1",
+        draft_id="tdr_1",
+        target_total="70000",
+        budget_ceiling="80000",
+        currency="",
+        region={"scheme": "postal_area", "value": "94103"},
+        suppliers=["did:plc:mc"],
+    )
+
+
+def test_dina_tender_open_refuses_a_supplier_the_draft_never_named(fake_client):
+    fake_client.tender_draft_status.return_value = {
+        "suppliers": [{"name": "Fogline Bakehouse", "supplier_did": "did:plc:fb"}]
+    }
+
+    out = mcp_server.dina_tender_open.fn(
+        session="s1", draft_id="tdr_1", target_total="1", budget_ceiling="2",
+        suppliers=["Some Other Bakery"],
+    )
+
+    assert out == {"error": "unknown_supplier", "name": "Some Other Bakery"}
+    fake_client.tender_open.assert_not_called()
+
+
+def test_dina_tender_award_names_the_rank(fake_client):
+    fake_client.tender_award.return_value = {"awarded_to": "Fogline Bakehouse"}
+
+    out = mcp_server.dina_tender_award.fn(session="s1", draft_id="tdr_1", rank=2)
+
+    assert out["awarded_to"] == "Fogline Bakehouse"
+    fake_client.tender_award.assert_called_once_with(session="s1", draft_id="tdr_1", rank=2)
+
+
+def test_dina_supplier_search_and_review(fake_client):
+    fake_client.supplier_search.return_value = {"suppliers": []}
+    mcp_server.dina_supplier_search.fn(session="s1", query="croissants", postal_code="94103")
+    fake_client.supplier_search.assert_called_once_with(
+        session="s1", query="croissants", region="postal_area:94103"
+    )
+
+    mcp_server.dina_supplier_review.fn(
+        session="s1", supplier_did="did:plc:mc", service_rkey="self", verdict="trust"
+    )
+    fake_client.supplier_review.assert_called_once_with(
+        session="s1", supplier_did="did:plc:mc", service_rkey="self", verdict="trust",
+        name="", note="",
+    )
+
+
 def test_dot_profile_keeps_only_its_allowlist(monkeypatch):
     removed = []
     monkeypatch.setattr(mcp_server.mcp, "remove_tool", removed.append)

@@ -103,6 +103,7 @@ import {
   sendNotAwardedNotices,
   startTenderNegotiation,
   tenderPolicyError,
+  type RankedTenderOffer,
   type TenderPolicyInput,
 } from '../../commerce/buyer_negotiation';
 import { requestQuote } from '../../commerce/buyer_quote_request';
@@ -7417,12 +7418,14 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     }
     return {
       status: 200,
-      body: agentDraftStatus(created.draft, runtime.now(), supplierNameFor),
+      body: agentDraftStatus(created.draft, runtime.now(), supplierNameFor, {
+        prices: req.agentScope === 'dot',
+      }),
     };
   });
 
-  // The agent's read of its own draft: ranks and names, never a price, a
-  // quote, or the owner's limits.
+  // The agent's read of its own draft: who it would ask, then the quotes
+  // ranked best first, priced for the owner's dot alone.
   router.get('/v1/commerce/agent/tender-drafts/status', async (req): Promise<CoreResponse> => {
     const agent = tenderDraftAgent(req, { session_id: req.query.session_id });
     if ('status' in agent) return agent;
@@ -7434,7 +7437,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (draft === null || draft.agentDid !== agent.agentDid) {
       return { status: 404, body: { error: 'no_such_draft' } };
     }
-    return { status: 200, body: agentDraftStatus(draft, runtime.now(), supplierNameFor) };
+    return {
+      status: 200,
+      body: agentDraftStatus(draft, runtime.now(), supplierNameFor, {
+        prices: req.agentScope === 'dot',
+      }),
+    };
   });
 
   // The owner's view of waiting drafts: everything the open form needs.
@@ -7490,9 +7498,33 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: 'no_user_presence', detail: 'opening an agent’s tender needs a person present' },
       };
     }
+    return openPendingDraft(runtime, (req.body ?? {}) as Record<string, unknown>, null);
+  });
+
+  // HOSTED_DINA §6.3 — the dot opens its own draft: the owner drives Dina
+  // from ChatGPT, so the target and ceiling come from the conversation. No
+  // passphrase (the owner is in the chat, not on this page); every other rule
+  // of the owner's open holds. Another agent's draft reads as absent.
+  router.post('/v1/commerce/agent/tender-drafts/open', async (req): Promise<CoreResponse> => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const agent = ownerDotAgent(req, body);
+    if ('status' in agent) return agent;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return openPendingDraft(runtime, body, agent.agentDid);
+  });
+
+  /** The open itself, after the caller is let in. `agentDid` set: only that agent's draft. */
+  async function openPendingDraft(
+    runtime: CommerceRuntime,
+    body: Record<string, unknown>,
+    agentDid: string | null,
+  ): Promise<CoreResponse> {
+    const nowMs = runtime.now();
     const draft = typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
-    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    if (draft === null || (agentDid !== null && draft.agentDid !== agentDid)) {
+      return { status: 404, body: { error: 'no_such_draft' } };
+    }
     if (draft.state !== 'pending' || draft.expiresAt <= nowMs) {
       return { status: 409, body: { error: 'draft_not_pending' } };
     }
@@ -7541,7 +7573,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     } finally {
       draftsOpening.delete(draft.draftId);
     }
-  });
+  }
 
   async function openDraftNow(
     runtime: CommerceRuntime,
@@ -7654,17 +7686,34 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (denied !== null) return denied;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return searchSuppliers(runtime, req.query);
+  });
+
+  // HOSTED_DINA §6.3 — the same search for the dot, so the owner can ask
+  // "who sells croissants near me?" in the chat.
+  router.get('/v1/commerce/agent/suppliers/search', async (req): Promise<CoreResponse> => {
+    const agent = ownerDotAgent(req, { session_id: req.query.session_id });
+    if ('status' in agent) return agent;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return searchSuppliers(runtime, req.query);
+  });
+
+  async function searchSuppliers(
+    runtime: CommerceRuntime,
+    query: Record<string, string>,
+  ): Promise<CoreResponse> {
     const directory = getSupplierDirectory();
     if (directory === null) return { status: 503, body: { error: 'supplier_search_unavailable' } };
-    const text = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const text = typeof query.q === 'string' ? query.q.trim() : '';
     if (text === '' || text.length > 200) {
       return { status: 400, body: { error: 'q must be 1 to 200 characters' } };
     }
     const buyer = runtime.settings.readBuyer();
     const home = buyer.ok ? buyer.settings.locations[0] : undefined;
     let region = home === undefined ? undefined : `${home.scheme}:${home.value}`;
-    if (typeof req.query.region === 'string') {
-      const asked = req.query.region.trim();
+    if (typeof query.region === 'string') {
+      const asked = query.region.trim();
       if (asked !== '' && !/^[a-z_]{1,32}:[A-Za-z0-9 _-]{1,32}$/.test(asked)) {
         return {
           status: 400,
@@ -7713,7 +7762,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           })),
       },
     };
-  });
+  }
 
   // HOSTED_DINA §6.2 — the owner's verdict on a supplier, behind their
   // passphrase. `trust` publishes a positive PeerLens review in the owner's
@@ -7725,7 +7774,31 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (denied !== null) return denied;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return reviewSupplier(
+      runtime,
+      (req.body ?? {}) as Record<string, unknown>,
+      ownerPresencePrincipal(req),
+    );
+  });
+
+  // HOSTED_DINA §6.3 — the owner's verdict, said in the chat. The review is
+  // the owner's word, published in their name as on their page; the dot only
+  // carries it, so it needs no passphrase.
+  router.post('/v1/commerce/agent/suppliers/review', async (req): Promise<CoreResponse> => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const agent = ownerDotAgent(req, body);
+    if ('status' in agent) return agent;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return reviewSupplier(runtime, body, null);
+  });
+
+  /** The verdict itself. `presencePrincipal` set: the owner's page, which proves a person is there. */
+  async function reviewSupplier(
+    runtime: CommerceRuntime,
+    body: Record<string, unknown>,
+    presencePrincipal: string | null,
+  ): Promise<CoreResponse> {
     const parsed = parseOwnerSupplier(body);
     if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
     const supplier = parsed.supplier;
@@ -7745,21 +7818,23 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         : 'supplier';
     if (category.length > 200)
       return { status: 400, body: { error: 'category must be at most 200 characters' } };
-    if (!ownerPresenceCanBeEstablished()) {
-      return {
-        status: 409,
-        body: {
-          error: 'presence_unavailable',
-          detail: 'a public review needs a node that can check the owner’s passphrase',
-        },
-      };
-    }
     const nowMs = runtime.now();
-    if (!ownerPresentNow(nowMs, ownerPresencePrincipal(req))) {
-      return {
-        status: 403,
-        body: { error: 'no_user_presence', detail: 'a public review needs a person present' },
-      };
+    if (presencePrincipal !== null) {
+      if (!ownerPresenceCanBeEstablished()) {
+        return {
+          status: 409,
+          body: {
+            error: 'presence_unavailable',
+            detail: 'a public review needs a node that can check the owner’s passphrase',
+          },
+        };
+      }
+      if (!ownerPresentNow(nowMs, presencePrincipal)) {
+        return {
+          status: 403,
+          body: { error: 'no_user_presence', detail: 'a public review needs a person present' },
+        };
+      }
     }
     const listedNow = runtime.ownerSuppliers
       .list()
@@ -7831,7 +7906,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         blocked: verdict === 'distrust' && buyer.ok,
       },
     };
-  });
+  }
 
   // NEGOTIATION_PLAN §4.5 — the offers a tender holds, filtered then ordered.
   router.get('/v1/commerce/trade/tender/ranking', async (req): Promise<CoreResponse> => {
@@ -7941,7 +8016,95 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (!('kind' in caller)) return caller;
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    return awardTender(runtime, caller, (req.body ?? {}) as Record<string, unknown>);
+  });
+
+  // HOSTED_DINA §6.3 — the dot awards its own opened draft and the order goes
+  // out: the owner said which offer in the chat. `rank` names an entry of the
+  // status's ranked list; absent, the best. No passphrase; the award's own
+  // rules (closed personas, a counter in flight, one award per tender) hold.
+  router.post('/v1/commerce/agent/tender-drafts/award', async (req): Promise<CoreResponse> => {
     const body = (req.body ?? {}) as Record<string, unknown>;
+    const agent = ownerDotAgent(req, body);
+    if ('status' in agent) return agent;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const draft =
+      typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
+    if (draft === null || draft.agentDid !== agent.agentDid) {
+      return { status: 404, body: { error: 'no_such_draft' } };
+    }
+    if (draft.state !== 'opened' || draft.tenderId === '') {
+      return { status: 409, body: { error: 'draft_not_opened' } };
+    }
+    let rank = 1;
+    if (body.rank !== undefined) {
+      if (typeof body.rank !== 'number' || !Number.isInteger(body.rank) || body.rank < 1) {
+        return { status: 400, body: { error: 'rank must be a whole number from 1' } };
+      }
+      rank = body.rank;
+    }
+    // Each supplier at its best version, ranked as the award ranks them.
+    const values = await goodsBuyerModelNow();
+    const ranking = rankTender({
+      tenderId: draft.tenderId,
+      nowMs: runtime.now(),
+      valueModel: values.model,
+      timeZone: values.timeZone,
+    });
+    const firsts: RankedTenderOffer[] = [];
+    for (const offer of ranking.ok ? ranking.ranking.ranked : []) {
+      if (!firsts.some((f) => f.supplier_did === offer.supplier_did)) firsts.push(offer);
+    }
+    const pick = firsts[rank - 1];
+    const policy = runtime.buyerNegotiation.getTender(draft.tenderId);
+    const awardBody: Record<string, unknown> =
+      pick !== undefined
+        ? {
+            tender_id: draft.tenderId,
+            supplier_did: pick.supplier_did,
+            ...(pick.alternative_id !== undefined ? { alternative_id: pick.alternative_id } : {}),
+          }
+        : policy !== null && policy.state === 'awarded'
+          ? { tender_id: draft.tenderId }
+          : {};
+    if (awardBody.tender_id === undefined) {
+      return { status: 409, body: { error: 'no_awardable_offer' } };
+    }
+    const awarded = await awardTender(
+      runtime,
+      { kind: 'owner', principal: agent.agentDid },
+      awardBody,
+    );
+    if (awarded.status !== 200) return awarded;
+    const approvalId = (awarded.body as { approval_id?: unknown }).approval_id;
+    if (typeof approvalId !== 'string' || approvalId === '') {
+      return { status: 409, body: { error: 'order_no_longer_held' } };
+    }
+    const sent = await dispatchUnderRetainedApproval(runtime, approvalId, Date.now());
+    return {
+      status: sent.status,
+      body: {
+        draft_id: draft.draftId,
+        awarded_to: supplierNameFor(awardedDid(awarded.body)),
+        order: sent.body,
+      },
+    };
+  });
+
+  /** The winner a first award or its replay names. */
+  function awardedDid(body: unknown): string {
+    const b = body as { awarded?: { supplier_did?: unknown }; awarded_supplier_did?: unknown };
+    const did = b.awarded?.supplier_did ?? b.awarded_supplier_did;
+    return typeof did === 'string' ? did : '';
+  }
+
+  /** The award itself, after the caller is let in. */
+  async function awardTender(
+    runtime: CommerceRuntime,
+    caller: CommerceRouteCaller,
+    body: Record<string, unknown>,
+  ): Promise<CoreResponse> {
     if (typeof body.tender_id !== 'string' || body.tender_id === '') {
       return { status: 400, body: { error: 'tender_id is required' } };
     }
@@ -8113,7 +8276,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         not_awarded_notices: notices,
       },
     };
-  });
+  }
 
   // NEGOTIATION_PLAN §4.2 — one counter by hand, outside any loop.
   router.post('/v1/commerce/trade/counter', async (req): Promise<CoreResponse> => {
@@ -8884,6 +9047,22 @@ function supplierNameFor(did: string): string | null {
  * (never a runner), on a live session of its own, with no non-owner job
  * reserved on it. Unknown, foreign and ended sessions read alike.
  */
+/**
+ * HOSTED_DINA §6.3 — the steps the owner takes through their ChatGPT dot
+ * (open, award, supplier search and review). Only a `dot` device, the link
+ * the owner made for ChatGPT, acts for the owner; any other agent drafts and
+ * the owner decides.
+ */
+function ownerDotAgent(
+  req: CoreRequest,
+  fields: Record<string, unknown>,
+): { agentDid: string } | CoreResponse {
+  if (req.callerType === 'agent' && req.agentScope !== 'dot') {
+    return { status: 403, body: { error: 'agent_scope_not_allowed' } };
+  }
+  return tenderDraftAgent(req, fields);
+}
+
 function tenderDraftAgent(
   req: CoreRequest,
   fields: Record<string, unknown>,

@@ -609,7 +609,7 @@ class DinaClient:
     # -- Tender drafts (OPENAI_DOTS_INTEGRATION §6.4) ---------------------------
 
     def tender_draft(self, session: str, lines: list[dict], required_by: str = "") -> dict:
-        """Draft a tender for the owner to open: what is needed, never who or how much."""
+        """Draft a tender: what is needed, never who is asked."""
         body: dict = {"session_id": session, "lines": lines}
         if required_by:
             body["required_by"] = required_by
@@ -617,12 +617,87 @@ class DinaClient:
         return resp.json()
 
     def tender_draft_status(self, session: str, draft_id: str) -> dict:
-        """One draft's progress: ranks and supplier names, never a price."""
+        """One draft's progress: who it would ask, then the quotes ranked."""
         resp = self._request(
             self._core,
             "GET",
             "/v1/commerce/agent/tender-drafts/status",
             params={"draft_id": draft_id, "session_id": session},
+        )
+        return resp.json()
+
+    # -- The owner's steps through their dot (HOSTED_DINA §6.3) ----------------
+
+    def tender_open(
+        self,
+        session: str,
+        draft_id: str,
+        target_total: str,
+        budget_ceiling: str,
+        currency: str = "",
+        region: dict | None = None,
+        suppliers: list[str] | None = None,
+    ) -> dict:
+        """Open a draft: the quote requests go out to its suppliers."""
+        body: dict = {
+            "session_id": session,
+            "draft_id": draft_id,
+            "target_total": target_total,
+            "budget_ceiling": budget_ceiling,
+        }
+        if currency:
+            body["currency"] = currency
+        if region is not None:
+            body["region"] = region
+        if suppliers is not None:
+            body["suppliers"] = suppliers
+        resp = self._request(
+            self._core, "POST", "/v1/commerce/agent/tender-drafts/open", json=body
+        )
+        return resp.json()
+
+    def tender_award(self, session: str, draft_id: str, rank: int = 1) -> dict:
+        """Award an opened draft to one ranked quote; the order goes out."""
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/commerce/agent/tender-drafts/award",
+            json={"session_id": session, "draft_id": draft_id, "rank": rank},
+        )
+        return resp.json()
+
+    def supplier_search(self, session: str, query: str, region: str = "") -> dict:
+        """Suppliers on the network that sell the thing, with their trust."""
+        params = {"session_id": session, "q": query}
+        if region:
+            params["region"] = region
+        resp = self._request(
+            self._core, "GET", "/v1/commerce/agent/suppliers/search", params=params
+        )
+        return resp.json()
+
+    def supplier_review(
+        self,
+        session: str,
+        supplier_did: str,
+        service_rkey: str,
+        verdict: str,
+        name: str = "",
+        note: str = "",
+    ) -> dict:
+        """The owner's verdict on a supplier, published in their name."""
+        body: dict = {
+            "session_id": session,
+            "supplier_did": supplier_did,
+            "service_rkey": service_rkey,
+            "verdict": verdict,
+        }
+        if name:
+            body["label"] = name
+        if note:
+            body["note"] = note
+        resp = self._request(
+            self._core, "POST", "/v1/commerce/agent/suppliers/review", json=body
         )
         return resp.json()
 

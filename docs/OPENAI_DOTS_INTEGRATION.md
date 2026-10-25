@@ -208,6 +208,11 @@ profile (§4.4) and the new negotiation tools.
 
 ### 6.3 Recommended demo shape
 
+> **Superseded for hosted Dinas (2026-10-25).** The owner's ChatGPT dot now
+> opens, reads the quotes and awards too (`docs/HOSTED_DINA.md` §6.3): few
+> people will install Dina, so the plugin has to do everything. The shape
+> below still holds for any other agent.
+
 This keeps every owner decision with the owner and needs no new spending power
 for the dot.
 

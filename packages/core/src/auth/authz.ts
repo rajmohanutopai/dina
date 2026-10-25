@@ -100,6 +100,20 @@ const AUTHZ_RULES: {
     exact: true,
     allowed: new Set(['agent']),
   },
+  // HOSTED_DINA §6.3 — the owner drives Dina from ChatGPT: the dot opens
+  // and awards its own drafts, searches suppliers and carries the owner's
+  // verdict on one. The handlers admit the `dot` scope alone.
+  ...[
+    ['/v1/commerce/agent/tender-drafts/open', 'POST'],
+    ['/v1/commerce/agent/tender-drafts/award', 'POST'],
+    ['/v1/commerce/agent/suppliers/search', 'GET'],
+    ['/v1/commerce/agent/suppliers/review', 'POST'],
+  ].map(([prefix, method]) => ({
+    prefix: prefix as string,
+    method: method as string,
+    exact: true,
+    allowed: new Set<CallerType>(['agent']),
+  })),
   // TRADE_FIRST_STRATEGY §6 — the staff surface: EXACTLY the routes the
   // grant scopes act through (§6.5's table) plus the two clerk reads and
   // the PIN prover. The route handlers apply the staff-grant gate

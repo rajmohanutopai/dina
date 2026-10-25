@@ -2,8 +2,9 @@
 
 **Status:** DESIGN, 2026-10-21. The demo cut (§10) is built and committed
 (76961fab, 1c43b6f9, bab9fd78, 607011da, aa75efec) and runs on the test
-box. Finding suppliers on the network and "I trust this supplier" (§6.1,
-§6.2) are built but not committed. §12 says what
+box, with finding suppliers on the network and "I trust this supplier"
+(§6.1, §6.2; 48b49cd1, c7540206). The dot driving the whole tender (§6.3)
+is built but not committed. §12 says what
 was built, how it was checked, and what is not built.
 **Related:** `docs/OPENAI_DOTS_INTEGRATION.md` (the dot flow and the bridge),
 `docs/USER_BACKUP.md` (backup), `docs/COMMERCE_PROCUREMENT_PLUGIN_ARCHITECTURE.md`
@@ -252,8 +253,12 @@ the pairing code is the credential.
 
 ## 5. The owner's own steps
 
-Some steps need the owner, not the dot: unlocking, opening a tender with a
-target and ceiling, awarding, adding suppliers, deleting.
+Few people will install Dina; the ChatGPT plugin is the product, so the
+owner drives Dina from the chat (§6.3): drafting, opening and awarding a
+tender, finding suppliers and reviewing them. Dina does the work; the dot
+carries the owner's word. Some steps still need the owner's page: unlocking,
+linking ChatGPT again, adding a supplier by hand, deleting. Every dot step
+also works there.
 
 - **The page:** the Core-served owner console, on the cell's own origin. TLS
   ends in the cell, so the front door can neither read nor change the page.
@@ -365,6 +370,37 @@ plain "Add a supplier" still works there.
 
 The owner page's Suppliers section has the search box, each result's trust
 and items, and the two buttons.
+
+### 6.3 The owner drives Dina through the dot
+
+Decided 2026-10-25: nobody installs Dina, so the plugin must do everything.
+The owner's dot (an agent with the `dot` scope, the link the owner made for
+ChatGPT) takes the owner's steps through four routes, each reusing the
+owner's own code without the passphrase step, because the owner is in the
+chat rather than on the page:
+
+| Tool | Route | What happens |
+|---|---|---|
+| `dina_tender_open` | `POST /v1/commerce/agent/tender-drafts/open` | The dot's own draft opens with the target and ceiling the owner gave in the chat; the quote requests go out and Dina negotiates. The draft's ticked suppliers are asked unless the owner names others from the draft. |
+| `dina_tender_award` | `POST /v1/commerce/agent/tender-drafts/award` | Awards one quote by its `rank` in the status, and the held order goes out at once. |
+| `dina_supplier_search` | `GET /v1/commerce/agent/suppliers/search` | The §6.1 search. |
+| `dina_supplier_review` | `POST /v1/commerce/agent/suppliers/review` | The §6.2 verdict, published in the owner's name. |
+
+- **Only the dot.** Any other agent (a coding agent, a runner) still stops at
+  the draft, and the owner opens it on the page with the passphrase.
+- **What the dot reads.** Its status shows who the draft would ask (with
+  their DIDs, ticks and trust) and, once opened, the quotes ranked best
+  first with their totals. Another agent reads ranks and names only. Nobody
+  reads the ceiling back.
+- **What still holds.** The dot never names a supplier the draft did not
+  offer, never asks a blocked one, awards once per tender, and cannot award
+  past a closed persona or a counter in flight. It cannot pay: the order is
+  a purchase order, and payment stays with the owner (Cart Handover).
+- **What changed.** Before this, a prompt injection in ChatGPT could at most
+  write a draft. Now it can open a tender, award one and post a review in the
+  owner's name. The tools tell ChatGPT to confirm amounts and the winner with
+  the owner first, and ChatGPT asks before calling a tool that changes
+  something; the owner's page shows every tender and order.
 
 ## 7. Running cells
 
@@ -561,6 +597,9 @@ phone as a second owner device.
 - The cell page's script has run in one real browser (Chrome), on the
   sign-up path only. A test runs that path on a small fake DOM; IndexedDB
   and the other pages are not covered.
+- The dot driving the tender (§6.3, 2026-10-25): route tests (open, quotes
+  with prices, award and send; other agents refused) and tool tests pass.
+  Not yet run from ChatGPT against the test bakeries.
 - Backup, stopping idle cells, "Delete my Dina", moving out.
 - The Dina page does not list or revoke its ChatGPT links; the generic
   device list (Agents) does.

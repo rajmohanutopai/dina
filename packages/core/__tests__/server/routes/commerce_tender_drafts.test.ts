@@ -17,6 +17,7 @@ import {
   installBuyerAuthorityProvider,
   singleOwnerAuthority,
 } from '../../../src/commerce/buyer_authority';
+import { installBuyerOrderSender } from '../../../src/commerce/buyer_executor';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import {
   clearOwnerPresence,
@@ -118,6 +119,14 @@ const agent = (
   ...over,
 });
 
+/** The owner's ChatGPT dot: an agent with the `dot` scope (HOSTED_DINA §6.3). */
+const dot = (
+  method: 'GET' | 'POST',
+  p: string,
+  body: Record<string, unknown> = {},
+  query: Record<string, string> = {},
+): CoreRequest => agent(method, p, body, query, { agentScope: 'dot' });
+
 const NEED = {
   lines: [{ text: 'butter croissants', quantity: { value: '200', unit_code: 'each' } }],
   required_by: '2036-01-09T07:00:00Z',
@@ -204,6 +213,11 @@ async function pastTender(): Promise<void> {
   sent = [];
 }
 
+/** The draft's suppliers as the agent reads them, by name alone. */
+function supplierNames(body: Record<string, unknown>): { name: string | null }[] {
+  return (body.suppliers as { name: string | null }[]).map((s) => ({ name: s.name }));
+}
+
 async function draft(
   body: Record<string, unknown> = NEED,
 ): Promise<{ status: number; body: Record<string, unknown> }> {
@@ -243,8 +257,8 @@ async function openDraft(
   return { status: res.status, body: res.body as Record<string, unknown> };
 }
 
-describe('authz: the draft lane is the only commerce door an agent has', () => {
-  it('admits an agent to exactly the two draft routes', () => {
+describe('authz: the agent lane is the only commerce door an agent has', () => {
+  it('admits an agent to exactly the two draft routes on the owner’s side', () => {
     expect(isAuthorized('agent', 'POST', '/v1/commerce/agent/tender-drafts')).toBe(true);
     expect(isAuthorized('agent', 'GET', '/v1/commerce/agent/tender-drafts/status')).toBe(true);
     expect(isAuthorized('agent', 'POST', '/v1/commerce/agent/tender-drafts/status')).toBe(false);
@@ -263,6 +277,18 @@ describe('authz: the draft lane is the only commerce door an agent has', () => {
     }
   });
 
+  it('opens the owner’s dot steps to an agent, each on its one method', () => {
+    for (const [method, p] of [
+      ['POST', '/v1/commerce/agent/tender-drafts/open'],
+      ['POST', '/v1/commerce/agent/tender-drafts/award'],
+      ['GET', '/v1/commerce/agent/suppliers/search'],
+      ['POST', '/v1/commerce/agent/suppliers/review'],
+    ] as const) {
+      expect(isAuthorized('agent', method, p)).toBe(true);
+      expect(isAuthorized('agent', method === 'GET' ? 'POST' : 'GET', p)).toBe(false);
+    }
+  });
+
   it('keeps the draft card Core-minted', () => {
     expect(CORE_MINTED_PAYLOAD_TYPES.has(TENDER_DRAFT_TYPE)).toBe(true);
   });
@@ -274,7 +300,7 @@ describe('drafting a tender', () => {
     const res = await draft();
     expect(res.status).toBe(200);
     expect(res.body.draft_state).toBe('pending');
-    expect(res.body.suppliers).toEqual([
+    expect(supplierNames(res.body)).toEqual([
       { name: "Rosa's Bakery" },
       { name: 'Blue Door Bakehouse' },
     ]);
@@ -325,7 +351,7 @@ describe('drafting a tender', () => {
       ok: true,
     });
     const res = await draft();
-    expect(res.body.suppliers).toEqual([{ name: "Rosa's Bakery" }]);
+    expect(supplierNames(res.body)).toEqual([{ name: "Rosa's Bakery" }]);
   });
 
   it('checks the lines', async () => {
@@ -527,6 +553,117 @@ describe("the agent's status read", () => {
     expect(JSON.stringify(tender)).not.toContain('218000');
   });
 
+  it('lets the owner’s dot open the draft, read the quotes and award; the order goes out', async () => {
+    await pastTender();
+    const id = String((await draft()).body.draft_id);
+    const orders: string[] = [];
+    installBuyerOrderSender(async ({ order }) => {
+      orders.push(order.supplier_did);
+      return { kind: 'ambiguous', reason: 'sent; awaiting the supplier acknowledgement' };
+    });
+    try {
+      // No passphrase: the owner is in the chat.
+      const opened = await router.handle(
+        dot('POST', '/v1/commerce/agent/tender-drafts/open', {
+          session_id: session,
+          draft_id: id,
+          target_total: '200000',
+          budget_ceiling: '260000',
+          currency: 'INR',
+          region: { scheme: 'postal_area', value: '682001' },
+        }),
+      );
+      expect(opened.status).toBe(200);
+      expect(sent.map((w) => w.toDid).sort()).toEqual([SUPPLIER_A, SUPPLIER_B]);
+      const policy = runtime.buyerNegotiation.getTender(
+        String((opened.body as { tender_id: string }).tender_id),
+      );
+      expect(policy?.budgetCeilingMinor).toBe('260000');
+      expect(workflow.store().getById(`tender-draft-${id}`)?.status).toBe('cancelled');
+
+      quotesArrive({ [SUPPLIER_A]: '1150', [SUPPLIER_B]: '1090' });
+      const read = await router.handle(
+        dot(
+          'GET',
+          '/v1/commerce/agent/tender-drafts/status',
+          {},
+          { draft_id: id, session_id: session },
+        ),
+      );
+      const body = read.body as Record<string, unknown>;
+      expect((body.tender as { ranked: unknown[] }).ranked).toEqual([
+        {
+          rank: 1,
+          name: 'Blue Door Bakehouse',
+          total: { currency: 'INR', minor_units: '218000' },
+          valid_until: '2036-01-01T00:00:00.000Z',
+        },
+        {
+          rank: 2,
+          name: "Rosa's Bakery",
+          total: { currency: 'INR', minor_units: '230000' },
+          valid_until: '2036-01-01T00:00:00.000Z',
+        },
+      ]);
+      expect((body.suppliers as { supplier_did?: string }[]).map((s) => s.supplier_did)).toEqual([
+        SUPPLIER_A,
+        SUPPLIER_B,
+      ]);
+      // The ceiling the dot set is never read back.
+      expect(JSON.stringify(body)).not.toContain('260000');
+
+      const awarded = await router.handle(
+        dot('POST', '/v1/commerce/agent/tender-drafts/award', {
+          session_id: session,
+          draft_id: id,
+          rank: 2,
+        }),
+      );
+      expect((awarded.body as { awarded_to: string }).awarded_to).toBe("Rosa's Bakery");
+      expect(orders).toEqual([SUPPLIER_A]);
+      const after = (await status(id)).body.tender as Record<string, unknown>;
+      expect(after.state).toBe('awarded');
+      expect(after.held_order).toBe('sent');
+    } finally {
+      installBuyerOrderSender(null);
+    }
+  });
+
+  it('lets no other agent open or award, and reads another agent’s draft as absent to the dot', async () => {
+    await pastTender();
+    const id = String((await draft()).body.draft_id);
+    const limits = {
+      session_id: session,
+      draft_id: id,
+      target_total: '200000',
+      budget_ceiling: '260000',
+    };
+    // A coding agent drafts; the owner decides.
+    for (const p of [
+      '/v1/commerce/agent/tender-drafts/open',
+      '/v1/commerce/agent/tender-drafts/award',
+    ]) {
+      const res = await router.handle(agent('POST', p, limits));
+      expect(res).toEqual({ status: 403, body: { error: 'agent_scope_not_allowed' } });
+    }
+    const other = sessions.start({ agentDid: OTHER_AGENT, hostSessionId: 'z' }).sessionId;
+    const foreign = await router.handle(
+      agent(
+        'POST',
+        '/v1/commerce/agent/tender-drafts/open',
+        { ...limits, session_id: other },
+        {},
+        { agentScope: 'dot', callerDID: OTHER_AGENT },
+      ),
+    );
+    expect(foreign).toEqual({ status: 404, body: { error: 'no_such_draft' } });
+    expect(sent).toEqual([]);
+    const early = await router.handle(
+      dot('POST', '/v1/commerce/agent/tender-drafts/award', { session_id: session, draft_id: id }),
+    );
+    expect(early).toEqual({ status: 409, body: { error: 'draft_not_opened' } });
+  });
+
   it("reads another agent's draft as absent", async () => {
     await pastTender();
     const id = String((await draft()).body.draft_id);
@@ -546,7 +683,7 @@ describe("the owner's supplier list (HOSTED_DINA §6)", () => {
 
     const res = await draft();
     expect(res.status).toBe(200);
-    expect(res.body.suppliers).toEqual([{ name: "Rosa's Bakery" }]);
+    expect(supplierNames(res.body)).toEqual([{ name: "Rosa's Bakery" }]);
     const listed = await router.handle(owner('GET', '/v1/commerce/trade/suppliers'));
     expect((listed.body as { suppliers: unknown[] }).suppliers).toEqual([
       expect.objectContaining({ supplier_did: SUPPLIER_A, service_rkey: 'self', label: 'Rosa' }),
@@ -586,7 +723,7 @@ describe("the owner's supplier list (HOSTED_DINA §6)", () => {
     resetContactDirectory();
     await add({ supplier_did: STRANGER, service_rkey: 'self', label: 'Corner Bakery' });
     const res = await draft();
-    expect(res.body.suppliers).toEqual([{ name: 'Corner Bakery' }]);
+    expect(supplierNames(res.body)).toEqual([{ name: 'Corner Bakery' }]);
   });
 
   it('checks what the owner typed, replaces an entry, and removes one', async () => {
@@ -749,7 +886,7 @@ describe('network suppliers in an agent’s draft (HOSTED_DINA §6.1)', () => {
       },
     ]);
     // The agent reads names only.
-    expect(res.body.suppliers).toEqual([{ name: 'Good Bakes' }, { name: 'New Bakes' }]);
+    expect(supplierNames(res.body)).toEqual([{ name: 'Good Bakes' }, { name: 'New Bakes' }]);
     // The owner's card says where they came from.
     const card = workflow.store().getById(`tender-draft-${String(res.body.draft_id)}`);
     expect(card?.description).toContain('2 found on the network');
@@ -834,7 +971,7 @@ describe('network suppliers in an agent’s draft (HOSTED_DINA §6.1)', () => {
     await pastTender();
     const res = await draft();
     expect(res.status).toBe(200);
-    expect(res.body.suppliers).toEqual([
+    expect(supplierNames(res.body)).toEqual([
       { name: "Rosa's Bakery" },
       { name: 'Blue Door Bakehouse' },
     ]);
@@ -961,6 +1098,59 @@ describe('the owner finds suppliers and gives a verdict (HOSTED_DINA §6.1–§6
     expect(
       (await verdict({ supplier_did: NET_GOOD, service_rkey: 'self', verdict: 'maybe' })).status,
     ).toBe(400);
+  });
+
+  it('lets the owner’s dot search and carry the owner’s verdict, with no passphrase', async () => {
+    const found = await router.handle(
+      dot(
+        'GET',
+        '/v1/commerce/agent/suppliers/search',
+        {},
+        { session_id: session, q: 'croissants' },
+      ),
+    );
+    expect(found.status).toBe(200);
+    expect(
+      (found.body as { suppliers: { supplier_did: string }[] }).suppliers.map(
+        (s) => s.supplier_did,
+      ),
+    ).toEqual([NET_GOOD, NET_NEW]);
+    const res = await router.handle(
+      dot('POST', '/v1/commerce/agent/suppliers/review', {
+        session_id: session,
+        supplier_did: NET_NEW,
+        service_rkey: 'self',
+        label: 'New Bakes',
+        verdict: 'trust',
+      }),
+    );
+    expect(res.status).toBe(200);
+    expect(runtime.ownerSuppliers.list()).toEqual([
+      expect.objectContaining({ supplierDid: NET_NEW, label: 'New Bakes' }),
+    ]);
+    expect(reviews.listForOwner(BUYER_DID)).toHaveLength(1);
+  });
+
+  it('refuses both to any agent but the owner’s dot', async () => {
+    const searched = await router.handle(
+      agent(
+        'GET',
+        '/v1/commerce/agent/suppliers/search',
+        {},
+        { session_id: session, q: 'croissants' },
+      ),
+    );
+    expect(searched).toEqual({ status: 403, body: { error: 'agent_scope_not_allowed' } });
+    const reviewed = await router.handle(
+      agent('POST', '/v1/commerce/agent/suppliers/review', {
+        session_id: session,
+        supplier_did: NET_NEW,
+        service_rkey: 'self',
+        verdict: 'trust',
+      }),
+    );
+    expect(reviewed).toEqual({ status: 403, body: { error: 'agent_scope_not_allowed' } });
+    expect(reviews.listForOwner(BUYER_DID)).toEqual([]);
   });
 
   it('is the owner’s alone: no agent may search or review', () => {

@@ -33,7 +33,7 @@ export interface SupplierFinding {
 export interface SupplierSearch {
   /** What is needed, in words ("butter croissants"). */
   text: string;
-  /** `scheme:value`, e.g. `postal_area:560001`; absent searches everywhere. */
+  /** `scheme:value`, e.g. `postal_area:94103`; absent searches everywhere. */
   region?: string;
   limit?: number;
 }

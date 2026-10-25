@@ -3,15 +3,20 @@
  *
  * An agent the owner paired (an OpenAI dot through the Dina plugin, or any
  * `dina-agent`) may say WHAT the café needs: lines, a date. It never says who
- * is asked, never names a price, and never opens, counters, awards or sends.
- * Core fills the suppliers from the café's own trade history, so a bakery
- * named in text the agent read never reaches the owner's card; the owner adds
- * the target and the ceiling on a Core form that needs a person present, and
- * opens the tender.
+ * is asked: Core fills the suppliers from the café's own list and trade
+ * history, then from the network, so a bakery named in text the agent read
+ * never reaches a tender.
  *
- * What the agent reads back is one draft's progress: ranks and supplier
- * names, the held order's state and the supplier's answer. Never a price, a
- * quote, or the owner's limits (TRADE_FIRST_STRATEGY §3.5, COMMITMENT_KERNEL §7).
+ * Who decides depends on the agent (HOSTED_DINA §6.3). The owner's ChatGPT
+ * dot is the owner's own interface: it opens the draft with a target and
+ * ceiling, reads the quotes and awards, and the order goes out. Any other
+ * agent stops at the draft, and the owner opens it on a Core form that needs
+ * a person present.
+ *
+ * What the agent reads back is one draft's progress: who it would ask, the
+ * quotes ranked best first (with prices for the owner's dot alone), the held
+ * order's state and the supplier's answer. Never the owner's ceiling or the
+ * rules that ranked the quotes.
  */
 
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
@@ -342,11 +347,32 @@ export interface AgentDraftStatus {
   draft_id: string;
   /** `lapsed`: still pending past its window. */
   draft_state: TenderDraftState | 'lapsed';
-  suppliers: { name: string | null }[];
+  /** Who the draft would ask; `selected` ones are asked when it opens without a list. */
+  suppliers: {
+    name: string | null;
+    /** The owner's dot only, so it can name who to ask. */
+    supplier_did?: string;
+    source: 'known' | 'network';
+    selected: boolean;
+    trust?: { score: number | null; reviews: number };
+  }[];
+  /** The delivery area and currency an open takes when the dot names none. */
+  region: unknown;
+  currency: string | null;
   tender?: {
     state: string;
-    /** Best first; names only, never a price. */
-    ranked: { rank: number; name: string | null }[];
+    /**
+     * Best first, each supplier at its best version. The owner reads and
+     * decides through the dot (HOSTED_DINA §6.3), so the price is here.
+     */
+    ranked: {
+      rank: number;
+      name: string | null;
+      /** The owner's dot only; any other agent reads ranks and names. */
+      total?: { currency: string; minor_units: string };
+      valid_until?: string;
+      estimated_delivery_at?: string;
+    }[];
     excluded: number;
     held_order?: 'held' | 'sent' | 'lapsed';
     supplier_answer: SupplierAnswer;
@@ -362,30 +388,52 @@ export function agentDraftStatus(
   draft: TenderDraft,
   nowMs: number,
   nameFor: (did: string) => string | null,
+  opts: { prices: boolean } = { prices: false },
 ): AgentDraftStatus {
   const runtime = getCommerceRuntime();
   const lapsed = draft.state === 'pending' && draft.expiresAt <= nowMs;
   const status: AgentDraftStatus = {
     draft_id: draft.draftId,
     draft_state: lapsed ? 'lapsed' : draft.state,
-    suppliers: draft.suppliers.map((s) => ({ name: nameFor(s.supplier_did) ?? s.name ?? null })),
+    suppliers: draft.suppliers.map((s) => ({
+      name: nameFor(s.supplier_did) ?? s.name ?? null,
+      ...(opts.prices ? { supplier_did: s.supplier_did } : {}),
+      source: s.source ?? 'known',
+      selected: s.selected !== false,
+      ...(s.trust !== undefined ? { trust: s.trust } : {}),
+    })),
+    region: draft.region,
+    currency: draft.currency === '' ? null : draft.currency,
   };
   if (runtime === null || draft.state !== 'opened' || draft.tenderId === '') return status;
   const policy = runtime.buyerNegotiation.getTender(draft.tenderId);
   const ranking = rankTender({ tenderId: draft.tenderId, nowMs });
   const ranked = ranking.ok ? ranking.ranking.ranked : [];
-  const bySupplier: string[] = [];
+  const firsts: typeof ranked = [];
   for (const offer of ranked) {
-    if (!bySupplier.includes(offer.supplier_did)) bySupplier.push(offer.supplier_did);
+    if (!firsts.some((f) => f.supplier_did === offer.supplier_did)) firsts.push(offer);
   }
   const tender: NonNullable<AgentDraftStatus['tender']> = {
     state: policy?.state ?? 'no_policy',
-    ranked: bySupplier.map((did, index) => ({ rank: index + 1, name: nameFor(did) })),
+    ranked: firsts.map((offer, index) => ({
+      rank: index + 1,
+      name: nameFor(offer.supplier_did) ?? draftName(draft, offer.supplier_did),
+      ...(opts.prices
+        ? {
+            total: { currency: offer.currency, minor_units: offer.total_minor },
+            valid_until: offer.valid_until,
+            ...(offer.estimated_delivery_at !== undefined
+              ? { estimated_delivery_at: offer.estimated_delivery_at }
+              : {}),
+          }
+        : {}),
+    })),
     excluded: ranking.ok ? ranking.ranking.excluded.length : 0,
     supplier_answer: 'none',
   };
   if (policy !== null && policy.state === 'awarded' && policy.approvalId !== '') {
-    tender.awarded_to = nameFor(policy.awardedSupplierDid);
+    tender.awarded_to =
+      nameFor(policy.awardedSupplierDid) ?? draftName(draft, policy.awardedSupplierDid);
     const approval = runtime.orderApprovals.get(policy.approvalId);
     if (approval === null) {
       tender.held_order = 'lapsed';
@@ -402,6 +450,11 @@ export function agentDraftStatus(
   }
   status.tender = tender;
   return status;
+}
+
+/** The name the draft kept for a supplier (a network find's listing name). */
+function draftName(draft: TenderDraft, supplierDid: string): string | null {
+  return draft.suppliers.find((s) => s.supplier_did === supplierDid)?.name ?? null;
 }
 
 function supplierAnswer(
