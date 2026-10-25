@@ -18,7 +18,7 @@ from typing import Any, Callable
 from fastmcp import FastMCP
 from fastmcp.tools import FunctionTool
 
-from . import __version__
+from . import __version__, dot_widgets
 from .spend import spend_fields
 from .client import DinaClient, DinaClientError
 from .config import load_config
@@ -690,7 +690,19 @@ def dina_tender_draft(
     )
 
 
-@mcp.tool()
+@mcp.resource(
+    dot_widgets.CARD_URI,
+    name="dina-card",
+    description="Dina's card: a tender, its quotes and its order, drawn in the chat.",
+    mime_type=dot_widgets.MCP_APP_MIME,
+    meta={"ui": {"prefersBorder": False}},
+)
+def dina_card_page() -> str:
+    """HOSTED_DINA §6.4 — the page ChatGPT draws Dina's cards with."""
+    return dot_widgets.card_html()
+
+
+@mcp.tool(meta=dot_widgets.CARD_TOOL_META)
 def dina_tender_status(session: str, draft_id: str) -> dict:
     """Read a tender's progress.
 
@@ -703,7 +715,11 @@ def dina_tender_status(session: str, draft_id: str) -> dict:
     Do not tell the owner an order was placed until ``held_order`` is
     ``sent`` and ``supplier_answer`` is ``accepted``.
     """
-    return _get_client().tender_draft_status(session=session, draft_id=draft_id)
+    status = _get_client().tender_draft_status(session=session, draft_id=draft_id)
+    if isinstance(status, dict) and "draft_state" in status:
+        # The card the chat draws (`dot_widgets.py`); the fields stay for the model.
+        status = {**status, "card": dot_widgets.tender_card(status)}
+    return status
 
 
 @mcp.tool()

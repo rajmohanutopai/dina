@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dina card</title>
+<!--
+  Dina's card in a ChatGPT dot (HOSTED_DINA §6.4). Draws a CardSpec — the
+  same fixed block vocabulary the phone app draws (packages/protocol
+  services/card-spec.ts, apps/mobile SafeCardRenderer) — from the tool
+  result's structuredContent.card.
+
+  Every value is untrusted data and goes in as text, never as markup. The
+  page fetches nothing: the host's default CSP (connect-src 'none') holds.
+  Colours and type come from the host's theme variables when it sends them,
+  else from the phone app's own tokens.
+-->
+<style>
+  :root {
+    --dina-bg: var(--color-background-primary, #FAF8F5);
+    --dina-surface: var(--color-background-secondary, #FFFFFF);
+    --dina-text: var(--color-text-primary, #1C1917);
+    --dina-muted: var(--color-text-secondary, #57534E);
+    --dina-faint: var(--color-text-tertiary, #8A847E);
+    --dina-border: var(--color-border-tertiary, rgba(0, 0, 0, 0.07));
+    --dina-positive: var(--color-text-success, #059669);
+    --dina-caution: var(--color-text-warning, #D97706);
+    --dina-critical: var(--color-text-danger, #DC2626);
+    --dina-info: var(--color-text-info, #2563EB);
+    --dina-positive-bg: var(--color-background-success, rgba(5, 150, 105, 0.10));
+    --dina-caution-bg: var(--color-background-warning, rgba(217, 119, 6, 0.12));
+    --dina-critical-bg: var(--color-background-danger, rgba(220, 38, 38, 0.10));
+    --dina-info-bg: var(--color-background-info, rgba(37, 99, 235, 0.10));
+    --dina-radius: var(--border-radius-lg, 14px);
+    --dina-radius-sm: var(--border-radius-sm, 8px);
+    --dina-font: var(--font-sans, ui-sans-serif, -apple-system, "Segoe UI", Roboto, sans-serif);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --dina-bg: var(--color-background-primary, #1A1917);
+      --dina-surface: var(--color-background-secondary, #23221F);
+      --dina-text: var(--color-text-primary, #F5F2EE);
+      --dina-muted: var(--color-text-secondary, #B8B2AB);
+      --dina-faint: var(--color-text-tertiary, #8A847E);
+      --dina-border: var(--color-border-tertiary, rgba(255, 255, 255, 0.10));
+    }
+  }
+  :root[data-theme="dark"] {
+    --dina-bg: var(--color-background-primary, #1A1917);
+    --dina-surface: var(--color-background-secondary, #23221F);
+    --dina-text: var(--color-text-primary, #F5F2EE);
+    --dina-muted: var(--color-text-secondary, #B8B2AB);
+    --dina-faint: var(--color-text-tertiary, #8A847E);
+    --dina-border: var(--color-border-tertiary, rgba(255, 255, 255, 0.10));
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: transparent; }
+  body {
+    font-family: var(--dina-font);
+    color: var(--dina-text);
+    font-size: var(--font-text-sm-size, 14px);
+    line-height: var(--font-text-sm-line-height, 1.45);
+    -webkit-font-smoothing: antialiased;
+  }
+  .card {
+    background: var(--dina-surface);
+    border: 1px solid var(--dina-border);
+    border-radius: var(--dina-radius);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    max-width: 640px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase;
+    color: var(--dina-faint);
+  }
+  .brand::before {
+    content: ""; width: 8px; height: 8px; border-radius: 50%;
+    background: var(--dina-text);
+  }
+  .title { font-size: var(--font-heading-sm-size, 17px); font-weight: var(--font-weight-semibold, 600); text-wrap: balance; }
+  .section {
+    font-size: 11px; font-weight: var(--font-weight-semibold, 600);
+    letter-spacing: 0.06em; text-transform: uppercase; color: var(--dina-faint);
+    margin-top: 4px;
+  }
+  .divider { height: 1px; background: var(--dina-border); }
+  .stat { display: flex; flex-direction: column; gap: 2px; }
+  .stat .value { font-size: var(--font-heading-lg-size, 28px); font-weight: var(--font-weight-semibold, 600); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+  .stat .unit { font-size: 15px; color: var(--dina-muted); margin-left: 4px; font-weight: 500; }
+  .stat .caption, .muted { color: var(--dina-muted); }
+  .kv { display: flex; justify-content: space-between; gap: 16px; }
+  .kv .label { color: var(--dina-muted); }
+  .kv .val { font-variant-numeric: tabular-nums; text-align: right; }
+  .list { display: flex; flex-direction: column; border: 1px solid var(--dina-border); border-radius: var(--dina-radius-sm); overflow: hidden; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; }
+  .row + .row { border-top: 1px solid var(--dina-border); }
+  .row .main { flex: 1; min-width: 0; }
+  .row .text { font-weight: var(--font-weight-medium, 500); overflow-wrap: anywhere; }
+  .row .sub { color: var(--dina-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  .row .trailing { font-variant-numeric: tabular-nums; font-weight: var(--font-weight-semibold, 600); white-space: nowrap; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip, .badge { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--dina-border); }
+  .timeline { display: flex; flex-direction: column; gap: 0; }
+  .step { display: flex; gap: 10px; align-items: flex-start; position: relative; padding-bottom: 12px; }
+  .step:last-child { padding-bottom: 0; }
+  .step .dot { width: 12px; height: 12px; border-radius: 50%; margin-top: 4px; flex: none; border: 2px solid var(--dina-faint); background: transparent; }
+  .step.done .dot { background: var(--dina-positive); border-color: var(--dina-positive); }
+  .step.active .dot { border-color: var(--dina-info); }
+  .step.upcoming .label { color: var(--dina-faint); }
+  .step:not(:last-child)::after { content: ""; position: absolute; left: 5px; top: 18px; bottom: 2px; width: 2px; background: var(--dina-border); }
+  .bar { display: flex; flex-direction: column; gap: 4px; }
+  .bar .track { height: 6px; border-radius: 3px; background: var(--dina-border); overflow: hidden; }
+  .bar .fill { height: 100%; background: var(--dina-text); }
+  .tone-positive { color: var(--dina-positive); }
+  .tone-caution { color: var(--dina-caution); }
+  .tone-critical { color: var(--dina-critical); }
+  .tone-info, .tone-accent { color: var(--dina-info); }
+  .chip.tone-positive, .badge.tone-positive { background: var(--dina-positive-bg); border-color: transparent; }
+  .chip.tone-caution, .badge.tone-caution { background: var(--dina-caution-bg); border-color: transparent; }
+  .chip.tone-critical, .badge.tone-critical { background: var(--dina-critical-bg); border-color: transparent; }
+  .chip.tone-info, .badge.tone-info { background: var(--dina-info-bg); border-color: transparent; }
+  .fill.tone-positive { background: var(--dina-positive); }
+  .fill.tone-caution { background: var(--dina-caution); }
+  .fill.tone-critical { background: var(--dina-critical); }
+  .footer { font-size: 12px; color: var(--dina-faint); }
+  .empty { color: var(--dina-muted); }
+</style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="brand" id="brand">Dina</div>
+  <div class="empty" id="empty">Waiting for Dina…</div>
+</div>
+<script>
+(function () {
+  "use strict";
+  var TONES = { neutral: 1, positive: 1, caution: 1, critical: 1, info: 1, accent: 1 };
+  var STEP_STATES = { done: 1, active: 1, upcoming: 1 };
+  var MAX_BLOCKS = 60, MAX_ROWS = 40, MAX_TEXT = 400;
+
+  function str(v) {
+    return typeof v === "string" ? v.slice(0, MAX_TEXT) : typeof v === "number" && isFinite(v) ? String(v) : "";
+  }
+  function el(tag, cls, text) {
+    var node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+  function toned(node, tone) {
+    if (typeof tone === "string" && TONES[tone] && tone !== "neutral") node.classList.add("tone-" + tone);
+    return node;
+  }
+
+  // One block of the CardSpec vocabulary. Unknown kinds are dropped, as the
+  // phone's renderer drops them. `map`, `link` and `media` are not drawn
+  // here: this page opens nothing and loads nothing.
+  function block(b) {
+    if (!b || typeof b !== "object") return null;
+    switch (b.kind) {
+      case "title": return toned(el("div", "title", str(b.text)), b.tone);
+      case "section": return el("div", "section", str(b.label));
+      case "divider": return el("div", "divider");
+      case "body": return el("div", "", str(b.text));
+      case "badge": return toned(el("span", "badge", str(b.text)), b.tone);
+      case "stat": {
+        var s = el("div", "stat");
+        var v = toned(el("div", "value", str(b.value)), b.tone);
+        if (str(b.unit)) v.appendChild(el("span", "unit", str(b.unit)));
+        s.appendChild(v);
+        if (str(b.caption)) s.appendChild(el("div", "caption", str(b.caption)));
+        return s;
+      }
+      case "keyValue": {
+        var kv = el("div", "kv");
+        kv.appendChild(el("span", "label", str(b.label)));
+        kv.appendChild(toned(el("span", "val", str(b.value)), b.tone));
+        return kv;
+      }
+      case "chips": {
+        var c = el("div", "chips");
+        (Array.isArray(b.items) ? b.items : []).slice(0, MAX_ROWS).forEach(function (i) {
+          if (i && str(i.text)) c.appendChild(toned(el("span", "chip", str(i.text)), i.tone));
+        });
+        return c;
+      }
+      case "list": {
+        var l = el("div", "list");
+        (Array.isArray(b.rows) ? b.rows : []).slice(0, MAX_ROWS).forEach(function (r) {
+          if (!r || !str(r.text)) return;
+          var row = el("div", "row"), main = el("div", "main");
+          main.appendChild(el("div", "text", str(r.text)));
+          if (str(r.sub)) main.appendChild(el("div", "sub", str(r.sub)));
+          row.appendChild(main);
+          if (str(r.trailing)) row.appendChild(toned(el("div", "trailing", str(r.trailing)), r.tone));
+          l.appendChild(row);
+        });
+        return l.childNodes.length ? l : null;
+      }
+      case "timeline": {
+        var t = el("div", "timeline");
+        (Array.isArray(b.steps) ? b.steps : []).slice(0, MAX_ROWS).forEach(function (st) {
+          if (!st || !str(st.label)) return;
+          var state = STEP_STATES[st.state] ? st.state : "upcoming";
+          var step = el("div", "step " + state);
+          step.appendChild(el("span", "dot"));
+          step.appendChild(el("span", "label", str(st.label)));
+          t.appendChild(step);
+        });
+        return t;
+      }
+      case "bar": {
+        var ratio = typeof b.ratio === "number" && isFinite(b.ratio) ? Math.max(0, Math.min(1, b.ratio)) : 0;
+        var bar = el("div", "bar"), head = el("div", "kv");
+        head.appendChild(el("span", "label", str(b.label)));
+        head.appendChild(el("span", "val", str(b.valueLabel)));
+        var track = el("div", "track"), fill = toned(el("div", "fill"), b.tone);
+        fill.style.width = (ratio * 100).toFixed(1) + "%";
+        track.appendChild(fill);
+        bar.appendChild(head);
+        bar.appendChild(track);
+        return bar;
+      }
+      case "rating": {
+        var value = typeof b.value === "number" && isFinite(b.value) ? Math.max(0, Math.min(5, b.value)) : 0;
+        var text = value.toFixed(1) + " / 5" + (typeof b.count === "number" ? " · " + b.count + " reviews" : "");
+        return toned(el("div", "", text), b.tone);
+      }
+      default: return null;
+    }
+  }
+
+  function render(output) {
+    var card = document.getElementById("card");
+    var spec = output && typeof output === "object" ? output.card : null;
+    if (!spec || spec.version !== 1 || !Array.isArray(spec.blocks)) return false;
+    Array.prototype.slice.call(card.children).forEach(function (child) {
+      if (child.id !== "brand") card.removeChild(child);
+    });
+    spec.blocks.slice(0, MAX_BLOCKS).forEach(function (b) {
+      var node = block(b);
+      if (node) card.appendChild(node);
+    });
+    if (str(spec.sourceLabel)) card.appendChild(el("div", "footer", str(spec.sourceLabel)));
+    reportSize();
+    return true;
+  }
+
+  // ── The host bridge ────────────────────────────────────────────────────
+  // MCP Apps (JSON-RPC over postMessage) is the standard; ChatGPT also
+  // offers window.openai. Whichever delivers the tool result first draws.
+  var nextId = 1, pending = {};
+  function send(message) { window.parent.postMessage(message, "*"); }
+  function request(method, params) {
+    var id = nextId++;
+    send({ jsonrpc: "2.0", id: id, method: method, params: params });
+    return new Promise(function (resolve) { pending[id] = resolve; });
+  }
+  function notify(method, params) { send({ jsonrpc: "2.0", method: method, params: params || {} }); }
+
+  function applyHost(ctx) {
+    if (!ctx || typeof ctx !== "object") return;
+    if (ctx.theme === "light" || ctx.theme === "dark") document.documentElement.setAttribute("data-theme", ctx.theme);
+    var vars = ctx.styles && ctx.styles.variables;
+    if (vars && typeof vars === "object") {
+      Object.keys(vars).forEach(function (k) {
+        if (/^--[a-z0-9-]{1,64}$/.test(k) && typeof vars[k] === "string") {
+          document.documentElement.style.setProperty(k, vars[k]);
+        }
+      });
+    }
+    if (typeof ctx.locale === "string") document.documentElement.lang = ctx.locale;
+  }
+
+  var lastHeight = 0;
+  function reportSize() {
+    var h = Math.ceil(document.documentElement.scrollHeight);
+    if (h === lastHeight) return;
+    lastHeight = h;
+    notify("ui/notifications/size-changed", { width: Math.ceil(document.documentElement.scrollWidth), height: h });
+  }
+
+  window.addEventListener("message", function (event) {
+    if (event.source !== window.parent) return;
+    var m = event.data;
+    if (!m || m.jsonrpc !== "2.0") return;
+    if (m.id !== undefined && pending[m.id]) {
+      var done = pending[m.id];
+      delete pending[m.id];
+      done(m.result || null);
+      return;
+    }
+    if (m.method === "ui/notifications/tool-result") render(m.params && m.params.structuredContent);
+    else if (m.method === "ui/notifications/host-context-changed") applyHost(m.params);
+  });
+
+  request("ui/initialize", {
+    appInfo: { name: "Dina", version: "1" },
+    appCapabilities: { availableDisplayModes: ["inline"] },
+    protocolVersion: "2025-06-18",
+  }).then(function (result) {
+    applyHost(result && result.hostContext);
+    notify("ui/notifications/initialized");
+  });
+
+  function fromOpenAI() {
+    var o = window.openai;
+    if (!o) return;
+    if (o.theme) applyHost({ theme: o.theme });
+    render(o.toolOutput);
+  }
+  window.addEventListener("openai:set_globals", fromOpenAI);
+  fromOpenAI();
+
+  if (typeof ResizeObserver === "function") new ResizeObserver(reportSize).observe(document.body);
+})();
+</script>
+</body>
+</html>
