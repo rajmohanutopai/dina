@@ -663,7 +663,7 @@ def dina_service_publication_status(rkey: str, session: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
-@mcp.tool()
+@mcp.tool(meta=dot_widgets.CARD_TOOL_META)
 def dina_tender_draft(
     session: str,
     lines: list[dict],

@@ -27,6 +27,13 @@ def test_the_status_tool_names_the_card_and_passes_core_s_card_through(fake_clie
     assert mcp_server.dina_tender_status.meta["openai/outputTemplate"] == dot_widgets.CARD_URI
 
 
+def test_the_draft_tool_names_the_card_too():
+    # The draft's answer carries a card (who Dina would ask); a tool that
+    # returns a card must name the page, or ChatGPT reports the widget
+    # unavailable (seen live in a dot, 2026-10-25).
+    assert mcp_server.dina_tender_draft.meta["ui"]["resourceUri"] == dot_widgets.CARD_URI
+
+
 def test_award_names_the_supplier_a_card_button_named(fake_client):
     fake_client.tender_award.return_value = {"awarded_to": "Fogline Bakehouse"}
     mcp_server.dina_tender_award.fn(session="s1", draft_id="tdr_1", supplier_did="did:plc:fog")
