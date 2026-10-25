@@ -131,6 +131,36 @@ export function knownSuppliers(runtime: CommerceRuntime, limit: number): TenderD
 }
 
 /**
+ * The café's own suppliers, each with a name: the owner's label, else the
+ * name its listing gives itself on the network. A network find already has
+ * one; a supplier from the trade history has none, and an unnamed quote is
+ * one the owner cannot choose between (found live 2026-10-25: a second
+ * tender to the same two bakeries reached ChatGPT with no names). A lookup
+ * that fails leaves the supplier unnamed; a contact's name still wins when
+ * the draft is read.
+ */
+async function namedSuppliers(
+  runtime: CommerceRuntime,
+  suppliers: TenderDraftSupplier[],
+): Promise<TenderDraftSupplier[]> {
+  const labels = new Map(
+    runtime.ownerSuppliers.list().map((s) => [s.supplierDid, s.label] as const),
+  );
+  const directory = getSupplierDirectory();
+  return Promise.all(
+    suppliers.map(async (s) => {
+      if (s.name !== undefined && s.name !== '') return s;
+      let name = labels.get(s.supplier_did) ?? '';
+      if (name === '' && directory?.listingName !== undefined) {
+        name =
+          (await directory.listingName(s.supplier_did, s.service_rkey).catch(() => null)) ?? '';
+      }
+      return name === '' ? s : { ...s, name: name.slice(0, 120) };
+    }),
+  );
+}
+
+/**
  * Businesses on the network that sell what the lines ask for, in the café's
  * delivery area: never one already offered, blocked, or the café itself.
  * Ticked only when its PeerLens trust is good (`trustIsGood`), and only while
@@ -258,7 +288,7 @@ export async function createTenderDraft(args: {
   }
   const buyer = runtime.settings.readBuyer();
   const region = args.region ?? (buyer.ok ? (buyer.settings.locations[0] ?? null) : null);
-  const known = knownSuppliers(runtime, DEFAULT_TENDER_FANOUT);
+  const known = await namedSuppliers(runtime, knownSuppliers(runtime, DEFAULT_TENDER_FANOUT));
   const suppliers = [...known, ...(await networkSuppliers(runtime, args.lines, region, known))];
   if (suppliers.length === 0) return { ok: false, refusal: 'no_known_suppliers' };
   const draft: TenderDraft = {

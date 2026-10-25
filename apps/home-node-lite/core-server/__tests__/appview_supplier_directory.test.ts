@@ -95,4 +95,19 @@ describe('the AppView supplier directory', () => {
       },
     ]);
   });
+
+  it('reads a listing’s own name by its AT-URI', async () => {
+    const asked: string[] = [];
+    const appView: SupplierDirectoryAppView = {
+      searchCatalog: async () => [],
+      resolveServiceByUri: async (uri) => {
+        asked.push(uri);
+        return { name: 'Fogline Bakehouse' };
+      },
+      getProfile: async () => null,
+    };
+    const directory = createAppViewSupplierDirectory(appView);
+    expect(await directory.listingName?.(KUMAR, 'self')).toBe('Fogline Bakehouse');
+    expect(asked).toEqual([`at://${KUMAR}/com.dinakernel.service.profile/self`]);
+  });
 });

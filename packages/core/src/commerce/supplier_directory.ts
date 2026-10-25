@@ -40,6 +40,12 @@ export interface SupplierSearch {
 
 export interface SupplierDirectory {
   findSuppliers(search: SupplierSearch): Promise<SupplierFinding[]>;
+  /**
+   * The name a supplier's listing gives itself, or null. A draft names the
+   * café's own suppliers this way when no contact or label names them, so
+   * the quotes an agent reads always say whose they are.
+   */
+  listingName?(supplierDid: string, serviceRkey: string): Promise<string | null>;
 }
 
 /**

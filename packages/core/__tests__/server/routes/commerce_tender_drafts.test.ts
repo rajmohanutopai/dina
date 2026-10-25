@@ -354,6 +354,22 @@ describe('drafting a tender', () => {
     expect(supplierNames(res.body)).toEqual([{ name: "Rosa's Bakery" }]);
   });
 
+  it('names a trade-history supplier by its listing when no contact or label does', async () => {
+    await pastTender();
+    resetContactDirectory();
+    const asked: string[] = [];
+    installSupplierDirectory({
+      findSuppliers: async () => [],
+      listingName: async (did, rkey) => {
+        asked.push(`${did}/${rkey}`);
+        return did === SUPPLIER_A ? 'Fogline Bakehouse' : null;
+      },
+    });
+    const res = await draft();
+    expect(asked.sort()).toEqual([`${SUPPLIER_A}/self`, `${SUPPLIER_B}/shop`].sort());
+    expect(supplierNames(res.body)).toEqual([{ name: 'Fogline Bakehouse' }, { name: null }]);
+  });
+
   it('checks the lines', async () => {
     await pastTender();
     expect((await draft({ lines: [] })).status).toBe(400);

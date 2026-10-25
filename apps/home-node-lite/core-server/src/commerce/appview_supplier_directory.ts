@@ -32,6 +32,12 @@ export function createAppViewSupplierDirectory(
   appView: SupplierDirectoryAppView,
 ): SupplierDirectory {
   return {
+    async listingName(supplierDid, serviceRkey) {
+      const listing = await appView.resolveServiceByUri(
+        `at://${supplierDid}/com.dinakernel.service.profile/${serviceRkey}`,
+      );
+      return listing?.name ?? null;
+    },
     async findSuppliers({ text, region, limit }) {
       const candidates = await appView.searchCatalog({
         q: text,
