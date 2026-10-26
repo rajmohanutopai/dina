@@ -224,6 +224,20 @@ ${HOSTED_FRONT_DOOR_HOST} {
 EOF
     fi
 
+    # Commander, the war game (yudharkaweb repo, commander/), running on the
+    # host as systemd unit commander.service. Gated on COMMANDER_HOST. No
+    # buffering: the battle reaches the page as a live event stream.
+    if [ -n "${COMMANDER_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${COMMANDER_HOST} {
+	reverse_proxy ${COMMANDER_UPSTREAM:-host.docker.internal:4420} {
+		flush_interval -1
+	}
+}
+EOF
+    fi
+
     # UCP profile host (docs/UCP_IMPLEMENTATION_PLAN.md §3.5): the host's own
     # name and every label under it, on one wildcard certificate by DNS-01
     # (caddy/Dockerfile). No `log` directive: Caddy then keeps no access log
