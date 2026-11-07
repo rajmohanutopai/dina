@@ -1,4 +1,4 @@
-# Sub-flow: from anywhere to Today, then to the Goals screen.
+# Sub-flow: from anywhere to the My Goals screen.
 appId: com.dinakernel.mobile
 ---
 - retry:
@@ -7,28 +7,18 @@ appId: com.dinakernel.mobile
       - runFlow:
           when:
             notVisible:
-              id: 'root-layout-menu-row-/plan'
+              id: 'root-layout-menu-row-/goals'
           commands:
             - tapOn:
                 id: 'root-layout-menu'
             - waitForAnimationToEnd
       - extendedWaitUntil:
           visible:
-            id: 'root-layout-menu-row-/plan'
+            id: 'root-layout-menu-row-/goals'
           timeout: 5000
 - tapOn:
-    id: 'root-layout-menu-row-/plan'
-- extendedWaitUntil:
-    visible:
-      id: 'plan-screen'
-    timeout: 20000
-- scrollUntilVisible:
-    element:
-      id: 'plan-goals'
-    centerElement: true
-- tapOn:
-    id: 'plan-goals'
+    id: 'root-layout-menu-row-/goals'
 - extendedWaitUntil:
     visible:
       id: 'goals-screen'
-    timeout: 10000
+    timeout: 20000

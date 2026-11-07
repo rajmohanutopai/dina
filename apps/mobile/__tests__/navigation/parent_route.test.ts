@@ -149,7 +149,7 @@ describe('parentRouteFor', () => {
     // the map sent the owner to Chat (Trade, Tender, Ask for quotes …). Read
     // the layout so the next screen cannot miss it. Only the hamburger items
     // return to Chat on purpose.
-    const HOME_ON_PURPOSE = new Set(['settings', 'reminders', 'plan', 'help']);
+    const HOME_ON_PURPOSE = new Set(['settings', 'reminders', 'goals', 'help']);
     const layout = fs.readFileSync(path.join(__dirname, '..', '..', 'app', '_layout.tsx'), 'utf8');
     const screens = [...layout.matchAll(/<Tabs\.Screen\s+name="([^"]+)"([\s\S]*?)\/>/g)]
       .filter((m) => (m[2] ?? '').includes('renderHeaderBackButton'))

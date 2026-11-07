@@ -106,8 +106,8 @@ const SECTION_PARENTS: Record<string, string> = {
   // record on every push.
   settings: '/',
   reminders: '/',
-  plan: '/',
-  goals: '/plan',
+  plan: '/goals',
+  goals: '/',
   goal: '/goals',
   help: '/',
 };

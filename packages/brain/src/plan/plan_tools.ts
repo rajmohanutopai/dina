@@ -435,7 +435,7 @@ export function createDraftGoalPlanTool(opts: PlanToolOptions = {}): AgentTool {
   return {
     name: 'draft_goal_plan',
     description:
-      "Draft a plan for one of the user's goals that has stages (building a house, a move, a launch): phases in order, each with a target date, and tasks for the first two phases only. Use it when the user asks for a plan for a goal, or agrees when you offer one. Create the goal first with set_goal if it doesn't exist. The draft is saved for the user to accept on the goal's page in Today → Goals; tell them that in one line, and list the phase titles.",
+      "Draft a plan for one of the user's goals that has stages (building a house, a move, a launch): phases in order, each with a target date, and tasks for the first two phases only. Use it when the user asks for a plan for a goal, or agrees when you offer one. Create the goal first with set_goal if it doesn't exist. The draft is saved for the user to accept on the goal's page in the My Goals menu; tell them that in one line, and list the phase titles.",
     parameters: {
       type: 'object',
       properties: {
@@ -489,7 +489,7 @@ export function createDraftGoalPlanTool(opts: PlanToolOptions = {}): AgentTool {
         };
       if (s.listPhases(goal.id).length > 0) {
         return {
-          error: 'this goal already has a plan; changes go through its page in Today → Goals',
+          error: 'this goal already has a plan; changes go through its page in the My Goals menu',
         };
       }
       const phases = Array.isArray(args.phases)
@@ -511,7 +511,7 @@ export function createDraftGoalPlanTool(opts: PlanToolOptions = {}): AgentTool {
         goal: goal.title,
         phases: draft.phases.map((p) => p.title),
         where:
-          "The draft waits on the goal's page (Today → Goals). Nothing starts until the user accepts it.",
+          "The draft waits on the goal's page (the My Goals menu). Nothing starts until the user accepts it.",
       };
     },
   };

@@ -131,7 +131,7 @@ type NavMenuItem =
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
   { feature: 'vault', href: '/vault' },
-  { href: '/plan', label: 'Today', ionicon: 'checkbox-outline' },
+  { href: '/goals', label: 'My Goals', ionicon: 'flag-outline' },
   { feature: 'reminders', href: '/reminders' },
   { href: '/orders', label: 'My Orders', ionicon: 'receipt-outline' },
   { href: '/catalog', label: 'My Catalog', ionicon: 'pricetags-outline' },
@@ -1077,7 +1077,7 @@ export default function RootLayout() {
                   name="plan"
                   options={{
                     title: 'Today',
-                    // DAILY_PLAN.md §9 — reached from the menu and from a
+                    // DAILY_PLAN.md §9 — reached from My Goals and from a
                     // check-in notification.
                     href: null,
                     headerLeft: renderHeaderBackButton,
@@ -1086,7 +1086,7 @@ export default function RootLayout() {
                 <Tabs.Screen
                   name="goals"
                   options={{
-                    title: 'Goals',
+                    title: 'My Goals',
                     href: null,
                     headerLeft: renderHeaderBackButton,
                   }}

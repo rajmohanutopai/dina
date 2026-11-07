@@ -224,11 +224,11 @@ Carrying adds one to `carried`, and the planner sees it.
 
 ## 9. Screens
 
-- **Today** (`app/plan.tsx`, menu entry "Today"): permission cards, the plan
+- **Today** (`app/plan.tsx`, reached from My Goals and from check-ins): permission cards, the plan
   with checkboxes and reasons, "Plan my day" or "Re-plan", the other open
   tasks folded under the plan, an add-task field, and review mode in the
   evening. Tapping a task with a link opens the link.
-- **Goals** (`app/goals.tsx`): add, edit and archive goals, check-in times
+- **My Goals** (`app/goals.tsx`, menu entry "My Goals"): a link to today's plan; add, edit and archive goals, check-in times
   and hours available, the weekly day, a switch for all check-ins, and the
   agents that add tasks, each with Allow or Block.
 

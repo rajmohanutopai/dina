@@ -3,6 +3,7 @@
  * times and hours, and which agents may add tasks.
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
@@ -148,6 +149,16 @@ export default function GoalsScreen(): React.ReactElement {
       contentContainerStyle={styles.content}
       testID="goals-screen"
     >
+      <Pressable
+        style={styles.todayLink}
+        testID="goals-today"
+        accessibilityRole="button"
+        onPress={() => router.push('/plan' as never)}
+      >
+        <Text style={styles.body}>Today&apos;s plan</Text>
+        <Ionicons name="chevron-forward" size={18} color={colors.textSecondary} />
+      </Pressable>
+
       <Text style={styles.eyebrow}>GOALS</Text>
       <Text style={styles.sub}>
         The plan makes room for these, and the weekly note says when one gets no time. Open a goal
@@ -363,6 +374,14 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
   content: { padding: spacing.md, paddingBottom: spacing.xxl, gap: spacing.sm },
   section: { gap: spacing.xs },
+  todayLink: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
   card: {
     backgroundColor: colors.bgSecondary,
     borderRadius: radius.md,

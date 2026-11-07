@@ -15,7 +15,13 @@ appId: com.dinakernel.mobile
     id: 'root-layout-menu'
 - waitForAnimationToEnd
 - tapOn:
-    id: 'root-layout-menu-row-/plan'
+    id: 'root-layout-menu-row-/goals'
+- extendedWaitUntil:
+    visible:
+      id: 'goals-today'
+    timeout: 20000
+- tapOn:
+    id: 'goals-today'
 - extendedWaitUntil:
     visible:
       id: 'plan-screen'

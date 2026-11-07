@@ -392,7 +392,7 @@ export default function TodayScreen(): React.ReactElement {
         accessibilityRole="button"
         onPress={() => router.push('/goals' as never)}
       >
-        <Text style={styles.linkText}>Goals, check-ins and agents</Text>
+        <Text style={styles.linkText}>My Goals, check-ins and agents</Text>
       </Pressable>
     </ScrollView>
   );
