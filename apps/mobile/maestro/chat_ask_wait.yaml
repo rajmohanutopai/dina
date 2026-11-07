@@ -1,0 +1,20 @@
+# Sub-flow: send ${MESSAGE} in Ask mode, then wait until Dina has answered.
+appId: com.dinakernel.mobile
+---
+- runFlow:
+    file: chat_ask_send.yaml
+    env:
+      MESSAGE: ${MESSAGE}
+- extendedWaitUntil:
+    visible:
+      id: 'chat-msg-ask-pending'
+    timeout: 8000
+    optional: true
+- extendedWaitUntil:
+    notVisible:
+      id: 'chat-msg-ask-pending'
+    timeout: 180000
+- extendedWaitUntil:
+    notVisible: '.*Dina is thinking.*'
+    timeout: 180000
+- waitForAnimationToEnd

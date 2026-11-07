@@ -1,15 +1,9 @@
 # Goals and the daily plan
 
-**Status:** Part 1 (the daily plan, §1–§13) BUILT 2026-11-02. Part 2 (goal
-plans, §14–§22) BUILT 2026-11-02 and run on the simulator by hand and with a
-real model, Claude Haiku 5.5 (§22). Branch
-`feat/daily-plan`; not committed.
-Core, CLI, Brain and phone parts are written and tested (§13). Run on the
-iPhone 17 simulator the same day: Today, Goals, and a paired test agent
-whose batch, sent while the app slept, arrived 6½ minutes later and showed
-the Allow card. Planning by the model and `add_task` in chat are not yet
-run live: the simulator's chat fails on every message, because the default
-Gemini models return 404 for the dev key (§12).
+**Status:** Part 1 (the daily plan, §1–§13) and Part 2 (goal plans, §14–§22)
+BUILT 2026-11-02. Part 3 (keeping the plan every day, §23–§29) BUILT
+2026-11-07. All three run on the iPhone 17 simulator, by hand and with a real
+model, Claude Haiku 5.5 (§13, §22, §28). Branch `feat/daily-plan`.
 **Scope:** the phone Home Node (`apps/mobile`), with Core routes the server
 Home Node gets for free. Two paired agents feed it: the owner's office Claude
 and their personal Claude.
@@ -155,7 +149,8 @@ agents are paired again. Nor does `plan_batches`, which only guards replays.
 - **Permission.** Core looks up `plan_feeds` for `(caller DID, persona)`:
   - `allowed`: items go in as `open`.
   - `blocked`: the batch is dropped. The reply says `accepted: 0`, so the
-    agent can't tell blocked from allowed by probing.
+    reply says nothing was added. An agent can tell blocked from allowed by the
+    count; it learns nothing more.
   - none or `pending`: items go in as `held`, the feed becomes `pending`,
     and the Today screen shows "Office Claude wants to add 6 tasks to Work.
     Allow / Block". Allow turns them `open`; Block deletes them.
@@ -194,8 +189,11 @@ tasks go in even past the hours, since leaving them out would hide a real
 problem.
 
 Duplicates: the model is told to plan only one of two tasks that describe
-the same piece of work. The fixed order has no such check, and both stay on
-the list.
+the same piece of work. The fixed order plans one of any tasks with the same
+title. Both stay on the list.
+
+When a model is set but fails, the fixed order applies and the day's note says
+so (§28).
 
 ## 8. Check-ins
 
@@ -214,9 +212,10 @@ whenever the plan or a task changes and on every foreground.
 A goal counts as quiet after 7 days with no finished task tied to it. A task
 is tied to a goal when the planner names that goal for it.
 
-A check-in with nothing to say is not scheduled: no midday check without a
-plan, no evening review when everything is done. All use the `solicited`
-channel. One that would land inside quiet hours is not scheduled. The
+§25 adds the check-ins sent while the app stays closed.
+
+A check-in with nothing to say is not scheduled: no evening review when
+everything is done. All use the `solicited` channel. One that would land inside quiet hours is not scheduled. The
 owner can turn all of them off on the Goals screen.
 
 **Evening review.** After the evening time, each unfinished planned task
@@ -235,7 +234,7 @@ Carrying adds one to `carried`, and the planner sees it.
 
 ## 10. Chat
 
-Three Brain tools, registered only on the owner's own chat turns (never for
+Three Brain tools to start with (§19 and §26 add the rest), registered only on the owner's own chat turns (never for
 an agent's ask) and only where the plan store lives in the same process (the
 phone):
 
@@ -273,10 +272,11 @@ status` to learn what's done.
   (and two more such imports), with a guard test
   (`apps/mobile/__tests__/services/no_local_dynamic_import.test.ts`). The
   Gemini 404 for the 3.x defaults on the dev key is still true.
-- **The on-device name detector sometimes hides weekday and month names**
-  ("Friday", "October") on the simulator, as if they were people, and the
-  model then can't read the date. Outside this feature
-  (`docs/PII_ARCHITECTURE_V2.md` §7); reported, not fixed.
+- **The on-device name detector sometimes hides ordinary words** ("stretch")
+  as if they were people. Day and month names no longer go this way (§28), and
+  the model is told a token can stand for any word, so it copies the token and
+  the real word comes back in the task. The model can't reason about the
+  hidden word's meaning, though.
 
 ## 13. What was built
 
@@ -291,9 +291,8 @@ status` to learn what's done.
 Simulator flows: `apps/mobile/maestro/daily_plan.yaml` (Today and Goals)
 and `apps/mobile/maestro/daily_plan_chat.yaml` (needs a working model).
 
-Still to do: a live run of model planning and chat `add_task` once a model
-answers; the `/remember` loop's `add_task`; owner routes and screens on the
-server Home Node.
+Still to do: the `/remember` loop's `add_task`; owner routes and screens on
+the server Home Node.
 
 ---
 
@@ -363,24 +362,31 @@ All of these are plain code in Core (`plan/goal_rules.ts`), with no model.
   task in its `blocked_by` is done or dropped, and its phase (if any) is
   active. Only ready tasks reach the planner and Today's other-tasks list.
   The rest show on the goal's page under their phase.
-- **Chase.** A waiting task whose `waiting_until` falls before the end of
-  the day goes to the planner as a chase: "Chase Mike: due Tue". Ticking it
-  ends the task; the goal's page can instead move the date or clear the wait.
+- **Chase.** A waiting task whose promised day has passed, whose phase is active
+  and whose earlier tasks are finished goes to the planner as a chase: "Chase Mike: due Tue". Mike has all of Tuesday. Ticking it ends
+  the task; the goal's page can instead clear the wait. A wait said in chat
+  with no date comes back after 7 days, so it can't be lost.
 - **Phases.** Accepting a plan makes the first phase active. **Phase done**
   marks it done and makes the next upcoming phase active. **Start now** makes
   an upcoming phase active early, for work that overlaps. A phase never ends
   on its own: a phase with every task ticked may still need tasks nobody has
   written yet.
-- **Late.** A phase that is not done and whose `target_at` has passed is
-  late by the days since, rounded up, so moving it that many days clears
-  it. The goal's page shows the latest one and
+- **Late.** A phase that is not done and whose target day has passed is late by
+  the calendar days since. It has all of its target day, and moving it that many
+  days clears it. Dates move by calendar days, across clock changes. The goal's page shows the latest one and
   offers to move it, every later phase that isn't done, and the goal's
   target, by that many days. The owner's tap is the only thing that moves a
   date.
-- **Money.** Paid is the sum of `paid` rows. Open quotes are `quote` rows
-  not settled; recording a payment against a task settles its quotes. Left
-  is budget minus paid minus open quotes, shown as "if every open quote is
-  paid".
+- **Money.** Paid is the sum of `paid` rows. A payment can go toward a quote:
+  picked on the goal's page, or in chat the quote its words name, or the only
+  one on its task. When open quotes exist and none of those settles it, chat
+  asks, and records nothing until it hears "this one" or "none". A
+  quote is settled once what's paid toward it reaches its amount, so a deposit
+  leaves the rest open. Open quotes are what's unpaid on quotes not settled.
+  Left is budget minus paid minus open quotes, shown as "if every open quote
+  is paid".
+- **Dates.** A bare `YYYY-MM-DD`, from chat, a model or an agent, means the end
+  of that day on the owner's clock, the same as on the goal's page.
 
 ## 18. Model work
 
@@ -479,10 +485,179 @@ That run found and fixed:
   tool descriptions now say goals change on the Goals page and to check.
 
 Not yet:
-- **Suggest tasks** with a real model (the same call shape as the drafter,
-  which now works).
 - **Papers.** Linking permits and contracts in the vault to a phase (§15)
   is not built. The vault still holds them, and Ask finds them.
-- **Editing a live plan's phases** (rename, reorder, delete) and a task's
-  `blocked_by` on the page. Phases can be added and their tasks ticked,
-  waited on or added; anything else waits for a later round.
+
+---
+
+# Part 3: Keeping the plan every day
+
+## 23. What the owner asked for
+
+Part 2 tracks a long project well. Five gaps were left for daily use: nothing
+repeats; check-ins stop when ignored; chat can't finish everyday tasks; a live
+plan can't be changed; and day planning, delivery and real agents were
+unproven. Sections 24 to 28 close them.
+
+## 24. Things that repeat
+
+A **routine** (`plan_routines`, migration v89) has a title, an optional goal,
+a rough effort, and one rule:
+
+| Rule | Example | Falls on |
+|---|---|---|
+| `days` | "Every weekday", "Mon, Wed, Fri" | Those weekdays |
+| `per_week` | "3 times a week" | Any days, spread out |
+| `monthly` | "On the 31st" | That day; a shorter month's last day |
+
+Each **turn** is an ordinary task with `routine_id` and `routine_day`, so the
+plan, check-ins and chat need no special path. A unique index on those two
+columns means a day's turn can only be made once.
+
+Rules (`packages/core/src/plan/routines.ts`, plain code, no model):
+
+- `ensureRoutineTasks` runs when the phone opens, on Today, and from chat. It
+  makes today's turn and lapses any older open turn to `dropped`. **Turns never
+  pile up.** Days the app stayed closed make no turns at all.
+- Weeks run Monday to Sunday. `per_week` waits about 7 ÷ n days after a finished
+  turn, and offers a turn every day once the days left only just fit what's
+  still to do. A skipped turn doesn't count, so it offers again tomorrow.
+- A turn that can't be skipped without missing the target is due that day, so
+  it stays on the plan past the hours. Any other turn has no due date, and the
+  model may leave it out of a full day.
+- A turn can't be carried: its next turn comes by itself. "Tomorrow" on a turn
+  skips it, and the evening review shows Skip today.
+- Stopping a routine drops its open turn and keeps the finished ones. Archiving
+  a goal stops its routines making turns until it's restored.
+
+The goal's page and the Goals screen list routines with "2 of 3 this week",
+today's turn to tick, Stop, and a form to add one. Both refresh on return from
+the background and once a minute, and a past turn can't be ticked.
+
+**Archived goals.** Their tasks now stay off Today, off chat's list and out of
+the morning count until the goal is restored. Before this they stayed on Today.
+
+## 25. Check-ins while the app stays closed
+
+The phone runs nothing in the background, so every check-in is written ahead
+and rewritten each time the app opens, when a screen changes the plan, and
+when chat or an agent does (`setPlanChangedListener`).
+
+- **Mornings** go out on the next plan time and then 1, 2, 4, 7 and 12 days
+  after it, with what's known today, including turns due that day. The last
+  says "Dina will stop asking until you open the app." A check-in that fades
+  and then stops respects Silence First: ignoring Dina is an answer too.
+- **Midday with no plan today:** "No plan yet today", when the owner opened the
+  app but not Today. A planned day keeps its midday and evening check-ins.
+- **A day already planned** gets no "Plan your day".
+- **Weekly notes:** the next two.
+
+**Quiet hours** can be set on the Goals screen and survive a restart. Saving a
+check-in time inside them says it won't be sent.
+
+**Permission.** The first-launch request is provisional so it doesn't interrupt
+onboarding, and iOS then delivers to Notification Centre with no banner. A card
+on Today says so and offers Turn on alerts, which shows the full iOS prompt. If
+notifications were refused, it opens iPhone Settings.
+
+## 26. Chat
+
+| Tool | Says | Does |
+|---|---|---|
+| `update_task` | "I renewed the car insurance", "the dentist can wait", "forget the gym bag", "I didn't finish that" | Done, put off, drop, reopen, on any task |
+| `plan_day` | "Plan my day" | The same planner as the Today screen, through `setDayPlanRunner` |
+| `finish_day` | "That's it for today" | Carries what's left, and marks the day reviewed |
+| `set_routine` | "Stretch three times a week", "stop the runs" | Sets up or stops a routine |
+
+Words match with filler removed and word forms folded ("posted" finds "Post").
+More than half of what the words say beyond the action must be in the task, so
+"I called the plumber" can't finish "Call the bank". Today's tasks win a tie.
+Copies of one job count as one, and today's copy stands for them. When several
+different tasks match or none does, the result lists the titles and changes
+nothing, so the model can call again or ask. A wait on a task close to one already
+listed asks too, and `new_task: true` says the owner means a new one. `add_task` leaves an open task with
+the same title alone. Tasks of an archived goal are out of reach.
+
+Lists of tasks go to the chat model with a note that their text is data, since
+an agent's titles can come from other people's mail.
+
+## 27. Changing a live plan
+
+On the goal's page, every phase and task has Edit.
+
+- **Phase:** rename, change its date, move up or down, delete, or "Not done
+  yet". Deleting asks once. Its tasks and money stay on the goal under no phase,
+  and the next upcoming phase starts when it was the only one active.
+- **Task:** rename, move to a phase not yet done, drop, or choose what it comes
+  after. A circle of tasks is refused, and so is a task from another goal.
+- **Phase done with tasks open** asks once. They move to the next phase not
+  done, or off the phases when there is none, so none is lost. A finished task
+  reopened after its phase is done moves the same way.
+- **Money:** every line can be seen and removed. Removing a payment works out
+  again what its quote still owes.
+- **Goal:** its name and notes can be changed.
+
+Tasks can be added to upcoming phases too.
+
+**After the plan is made.** Today, check-ins, chat and the end of the day all
+read the plan through `planOnDay`. A finished task stays, for the count. An open
+task stays only while it can go on the day, so one whose goal is archived, that
+now waits on someone, that moved to a later phase, or that was put off leaves at
+once. A task put off stays off today until tomorrow. Re-planning keeps today's
+finished tasks and starts the evening review again. An empty result is not a
+plan. The planner can tie a loose task to a goal, but can't move a task off its
+goal or phase.
+
+**What goes back in.** Overdue, due-today, pressing and late-wait tasks the model
+left out are added to its plan, ahead of whatever else would pass the limit of
+12. Copies of a planned job stay out.
+
+## 28. The test day, 2026-11-07
+
+iPhone 17 simulator, Claude Haiku 5.5, Anthropic key.
+
+| Run | Flow | Result |
+|---|---|---|
+| Routine, phases and tasks edited by hand | `maestro/goal_live_edit.yaml` | Passed |
+| A day from chat: routine, tasks, plan, one done, one put off, day ended | `maestro/goal_day_chat.yaml` | Passed |
+| A check-in fires with the app in the background | `maestro/checkin_fires.yaml` | Banner "1 of 9 done / Next: Renew car insurance", on the minute |
+| Suggest tasks; a chat "done" on an agent's task | `maestro/goal_suggest.yaml` | 8 tasks in order; `dina plan status` shows `done` |
+| A real agent's batch: real to-dos from `docs/TODO.md` | `dina plan push` | Held, Allow, then open on Today |
+
+The runs found and fixed:
+
+- **Model day planning never worked.** Haiku answered in prose, the Anthropic
+  adapter doesn't enforce the schema either, and every plan silently fell back
+  to the fixed order. The prompt now states the JSON shape, the reader takes
+  JSON with prose around it, and a failure says so in the day's note.
+- **Provisional permission:** check-ins never showed a banner (§25).
+- **The model got UTC times and no weekday.** It now gets the owner's clock:
+  `Tue 2026-11-03 09:05`.
+- **The name detector hid "stretch"**, and the model told the owner the routine
+  had no name. The token note now says a token can stand for any word. Day and
+  month names no longer count as names (`April`, `May`, `June` and `August` only
+  beside a number), in `packages/brain/src/pii/strangers.ts`.
+- The keyboard covered the rest of the task editor after saving.
+- `add_task` added the same task again.
+
+## 29. Data, and limits of Part 3
+
+Migration v89 adds `plan_routines` and `plan_tasks.routine_id`, `routine_day`.
+Migration v90 adds:
+
+- `plan_costs.quote_id`: the quote a payment pays toward. A quote's `settled`
+  means what's been paid toward it has reached its amount. Payments from before
+  v90 are linked to their task's first settled quote.
+- `plan_tasks.opened_at`: when a task first reached the owner's list, for "new
+  since you planned".
+
+Migration v91 adds `plan_tasks.title_by_owner`. Once the owner renames an agent's
+task, the agent's later batches change everything about it but the title. An
+agent's task already there at the upgrade keeps its title too, since nothing
+records who wrote it.
+
+Settings gain `quietStart` and `quietEnd`.
+
+**Not run: the owner's own mail.** Reading Gmail for this test was refused by
+this session's permission rules. The agent path is proven with real to-dos from
+the repo, not with mail or Teams. `docs/DAILY_PLAN_AGENT.md` holds the prompts.

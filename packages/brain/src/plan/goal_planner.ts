@@ -10,9 +10,12 @@ import {
   cleanGoalDraft,
   MAX_DRAFT_PHASES,
   MAX_DRAFT_TASKS_PER_PHASE,
+  planDayKey,
   type GoalDraft,
   type GoalDraftTask,
 } from '@dina/core';
+
+import { parseModelJson } from './day_planner';
 
 import type { PlannerAsk } from './day_planner';
 
@@ -80,27 +83,9 @@ const TASKS_SCHEMA: Record<string, unknown> = {
   required: ['tasks'],
 };
 
+/** A date on the owner's clock, the clock the plan's dates are kept on. */
 function iso(ms: number | null): string | null {
-  return ms === null ? null : new Date(ms).toISOString().slice(0, 10);
-}
-
-/** The JSON object in a model answer, fenced or not, with prose around it or not. */
-function parseJson(raw: string): unknown {
-  const t = raw.trim();
-  const fenced = /```(?:json)?\s*([\s\S]*?)\s*```/.exec(t);
-  const body = fenced !== null ? fenced[1] : t;
-  try {
-    return JSON.parse(body);
-  } catch {
-    const start = body.indexOf('{');
-    const end = body.lastIndexOf('}');
-    if (start < 0 || end <= start) return null;
-    try {
-      return JSON.parse(body.slice(start, end + 1));
-    } catch {
-      return null;
-    }
-  }
+  return ms === null ? null : planDayKey(ms);
 }
 
 /** Room for a whole plan; a cut-off answer can't be read. */
@@ -132,7 +117,7 @@ export async function draftGoalPlan(
       responseSchema: DRAFT_SCHEMA,
       maxTokens: GOAL_PLAN_MAX_TOKENS,
     });
-    return cleanGoalDraft(parseJson(raw), now, goal.targetAt, 'model');
+    return cleanGoalDraft(parseModelJson(raw), now, goal.targetAt, 'model');
   } catch {
     return null;
   }
@@ -161,13 +146,14 @@ export async function suggestPhaseTasks(
           notes: input.phase.notes,
           date: iso(input.phase.targetAt),
         },
-        done: input.done.slice(0, 40),
+        // The newest, when a long project has done more than fits.
+        done: input.done.slice(-40),
         open: input.open.slice(0, 40),
       }),
       responseSchema: TASKS_SCHEMA,
       maxTokens: GOAL_PLAN_MAX_TOKENS,
     });
-    const parsed = parseJson(raw);
+    const parsed = parseModelJson(raw);
     const tasks =
       typeof parsed === 'object' && parsed !== null
         ? (parsed as Record<string, unknown>).tasks
@@ -188,7 +174,10 @@ export async function suggestPhaseTasks(
       newIndex.set(i, kept.length);
       kept.push({
         ...t,
-        after: t.after.flatMap((n) => (newIndex.has(n) ? [newIndex.get(n)!] : [])),
+        after: t.after.flatMap((n) => {
+          const k = newIndex.get(n);
+          return k === undefined ? [] : [k];
+        }),
       });
     });
     return kept;

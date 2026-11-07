@@ -1,0 +1,76 @@
+# A check-in reaches the phone (docs/DAILY_PLAN.md §25): set the midday time
+# to ${AT}, a couple of minutes ahead, leave the app, and look in Notification
+# Centre. Needs today's plan with a task open. Run with -e AT=HH:MM. Set the
+# time back to 13:00 afterwards.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+# Ask for real alerts on Today, when iOS only allows quiet ones.
+- tapOn:
+    id: 'root-layout-menu'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'root-layout-menu-row-/plan'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- runFlow:
+    when:
+      visible:
+        id: 'plan-alerts-allow'
+    commands:
+      - tapOn:
+          id: 'plan-alerts-allow'
+      - waitForAnimationToEnd
+      - tapOn: 'Allow'
+      - waitForAnimationToEnd
+- assertNotVisible:
+    id: 'plan-alerts'
+- launchApp:
+    stopApp: false
+- waitForAnimationToEnd
+- tapOn:
+    id: 'tab-chat'
+- waitForAnimationToEnd
+- runFlow: _open_goals.yaml
+- scrollUntilVisible:
+    element:
+      id: 'plan-time-midday'
+    centerElement: true
+# A tap in the middle leaves the cursor there, with nothing erased behind it.
+- tapOn:
+    id: 'plan-time-midday'
+    point: '95%,50%'
+- eraseText
+- inputText: '${AT}'
+- hideKeyboard
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'plan-settings-save'
+    centerElement: true
+- tapOn:
+    id: 'plan-settings-save'
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible: 'Saved.'
+    timeout: 30000
+- pressKey: Home
+# The banner, then Notification Centre: the midday text is "N of M done".
+- extendedWaitUntil:
+    visible: '.* of .* done.*'
+    timeout: ${WAIT_MS}
+    optional: true
+- takeScreenshot: checkin_01_banner
+- swipe:
+    start: '50%, 1%'
+    end: '50%, 70%'
+    duration: 600
+- waitForAnimationToEnd
+- takeScreenshot: checkin_02_centre

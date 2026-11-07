@@ -9,6 +9,7 @@ import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
   Linking,
   Pressable,
   ScrollView,
@@ -18,6 +19,7 @@ import {
   View,
 } from 'react-native';
 
+import { getAlertAccess, requestAlerts, type AlertAccess } from '../src/notifications/local';
 import {
   addTask,
   addToToday,
@@ -25,6 +27,7 @@ import {
   decideAgentFeed,
   dropTask,
   finishReview,
+  loadPlanSettings,
   loadToday,
   planToday,
   setTaskDone,
@@ -35,6 +38,8 @@ import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 
 import type { PlanTask } from '@dina/core';
 
+/** While Today is open, look again this often, so a new day or the evening review shows. */
+const REFRESH_MS = 60_000;
 /** Wait this long after opening before planning on its own, so an agent's
  * batch held at MsgBox has arrived (docs/DAILY_PLAN.md §7). */
 const AUTO_PLAN_DELAY_MS = 4000;
@@ -76,11 +81,14 @@ export default function TodayScreen(): React.ReactElement {
   const [draft, setDraft] = useState('');
   const [showOthers, setShowOthers] = useState(false);
   const [error, setError] = useState('');
+  const [alerts, setAlerts] = useState<AlertAccess>('alerts');
   const autoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const reload = useCallback(async () => {
     try {
       setView(await loadToday());
+      const { checkins } = await loadPlanSettings();
+      setAlerts(checkins ? await getAlertAccess() : 'alerts');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -102,14 +110,26 @@ export default function TodayScreen(): React.ReactElement {
   useFocusEffect(
     useCallback(() => {
       void reload();
-      autoTimer.current = setTimeout(() => {
+      const refresh = (): void => {
         void shouldAutoPlan().then((yes) => {
           if (yes) void build();
           else void reload();
         });
-      }, AUTO_PLAN_DELAY_MS);
+      };
+      autoTimer.current = setTimeout(refresh, AUTO_PLAN_DELAY_MS);
+      const every = setInterval(refresh, REFRESH_MS);
+      // Back from the background on a new day: show that day, after the same
+      // wait for an agent's batch.
+      const sub = AppState.addEventListener('change', (state) => {
+        if (state !== 'active') return;
+        void reload();
+        if (autoTimer.current !== null) clearTimeout(autoTimer.current);
+        autoTimer.current = setTimeout(refresh, AUTO_PLAN_DELAY_MS);
+      });
       return () => {
         if (autoTimer.current !== null) clearTimeout(autoTimer.current);
+        clearInterval(every);
+        sub.remove();
       };
     }, [reload, build]),
   );
@@ -140,14 +160,11 @@ export default function TodayScreen(): React.ReactElement {
     month: 'long',
   });
   const done = view.planned.filter((p) => p.task.status === 'done').length;
-  // Tasks that came in after today's plan was made (an agent's morning batch,
-  // a chat to-do, an agent's tasks just allowed): say so, so they aren't
-  // missed under the fold. A task carried to tomorrow has its day set and
-  // is left out.
+  // Tasks that reached the list after today's plan was made (an agent's morning
+  // batch, a chat to-do, an agent's tasks just allowed): say so, so they aren't
+  // missed under the fold. An agent sending a known task again isn't news.
   const plannedAt = view.plan?.plannedAt ?? 0;
-  const newSincePlan = view.others.filter(
-    (t) => t.plannedFor === '' && t.updatedAt > plannedAt,
-  ).length;
+  const newSincePlan = view.others.filter((t) => t.openedAt > plannedAt).length;
 
   return (
     <ScrollView
@@ -164,6 +181,31 @@ export default function TodayScreen(): React.ReactElement {
           </Text>
         ) : null}
       </View>
+
+      {alerts !== 'alerts' ? (
+        <View style={styles.card} testID="plan-alerts">
+          <Text style={styles.body}>
+            {alerts === 'off'
+              ? 'Notifications are off for Dina, so check-ins can’t reach you.'
+              : alerts === 'quiet'
+                ? 'Check-ins only reach your Notification Centre, so you may not see them.'
+                : 'Let Dina alert you, so check-ins reach you.'}
+          </Text>
+          <Pressable
+            style={styles.primarySmallFit}
+            testID="plan-alerts-allow"
+            accessibilityRole="button"
+            onPress={() => {
+              if (alerts === 'off') void Linking.openSettings();
+              else void act(() => requestAlerts().then(setAlerts))();
+            }}
+          >
+            <Text style={styles.primaryText}>
+              {alerts === 'off' ? 'Open Settings' : 'Turn on alerts'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {view.pendingFeeds.map(({ feed, held }, i) => (
         <View
@@ -398,6 +440,7 @@ function TaskRow(props: {
           {props.goalTitle !== undefined ? (
             <Text style={styles.metaText}>{props.goalTitle}</Text>
           ) : null}
+          {task.routineId !== '' ? <Text style={styles.metaText}>Repeats</Text> : null}
           {task.carried > 0 ? <Text style={styles.metaText}>Carried {task.carried}×</Text> : null}
           {link !== null ? (
             <Pressable
@@ -417,15 +460,19 @@ function TaskRow(props: {
               testID={`plan-carry-${task.id}`}
               onPress={props.onCarry}
             >
-              <Text style={styles.secondaryText}>Tomorrow</Text>
+              <Text style={styles.secondaryText}>
+                {task.routineId !== '' ? 'Skip today' : 'Tomorrow'}
+              </Text>
             </Pressable>
-            <Pressable
-              style={styles.secondarySmall}
-              testID={`plan-drop-${task.id}`}
-              onPress={props.onDrop}
-            >
-              <Text style={styles.secondaryText}>Drop</Text>
-            </Pressable>
+            {task.routineId === '' ? (
+              <Pressable
+                style={styles.secondarySmall}
+                testID={`plan-drop-${task.id}`}
+                onPress={props.onDrop}
+              >
+                <Text style={styles.secondaryText}>Drop</Text>
+              </Pressable>
+            ) : null}
           </View>
         ) : null}
         {props.onAddToToday !== undefined ? (
@@ -497,6 +544,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   primarySmall: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.sm,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+  },
+  primarySmallFit: {
+    alignSelf: 'flex-start',
     backgroundColor: colors.accent,
     borderRadius: radius.sm,
     paddingVertical: spacing.xs,

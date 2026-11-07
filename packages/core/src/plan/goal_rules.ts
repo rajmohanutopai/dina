@@ -4,6 +4,8 @@
  * and where the money stands.
  */
 
+import { parsePlanDate, planDayStart } from './day';
+
 import type { GoalDraft, GoalDraftPhase, PlanCost, PlanPhase, PlanTask } from './store';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -33,21 +35,28 @@ export function isTaskReady(
   return true;
 }
 
-/** A waiting task whose date falls before `dayEnd` needs chasing. */
-export function needsChase(task: PlanTask, dayEnd: number): boolean {
+/**
+ * A waiting task needs chasing once its promised day has passed: `dayStart` is
+ * the start of the day being planned. Mike has all of Tuesday to send what he
+ * promised for Tuesday.
+ */
+export function needsChase(task: PlanTask, dayStart: number): boolean {
   return (
     task.status === 'open' &&
     task.waitingOn !== '' &&
     task.waitingUntil !== null &&
-    task.waitingUntil < dayEnd
+    task.waitingUntil < dayStart
   );
 }
 
-/** Days a phase is past its target, rounded up (so moving it that many days
- * clears it), or 0. */
+/**
+ * Calendar days a phase is past its target day, or 0. A phase has all of its
+ * target day, so moving it by this many days always clears it.
+ */
 export function daysLate(phase: PlanPhase, now: number): number {
-  if (phase.status === 'done' || phase.targetAt === null || phase.targetAt >= now) return 0;
-  return Math.ceil((now - phase.targetAt) / DAY_MS);
+  if (phase.status === 'done' || phase.targetAt === null) return 0;
+  const days = Math.round((planDayStart(now) - planDayStart(phase.targetAt)) / DAY_MS);
+  return Math.max(0, days);
 }
 
 export interface LatePhase {
@@ -81,9 +90,16 @@ export interface MoneySummary {
 
 export function moneySummary(budgetCents: number | null, costs: readonly PlanCost[]): MoneySummary {
   const paid = costs.filter((c) => c.kind === 'paid').reduce((s, c) => s + c.amountCents, 0);
+  // A part-paid quote still holds back what's unpaid on it.
+  const paidOn = new Map<string, number>();
+  for (const c of costs) {
+    if (c.kind === 'paid' && c.quoteId !== '') {
+      paidOn.set(c.quoteId, (paidOn.get(c.quoteId) ?? 0) + c.amountCents);
+    }
+  }
   const quoted = costs
     .filter((c) => c.kind === 'quote' && !c.settled)
-    .reduce((s, c) => s + c.amountCents, 0);
+    .reduce((s, c) => s + Math.max(0, c.amountCents - (paidOn.get(c.id) ?? 0)), 0);
   return {
     budgetCents,
     paidCents: paid,
@@ -109,15 +125,6 @@ export function formatGoalMoney(cents: number, currency = 'USD'): string {
 
 function clip(v: unknown, max: number): string {
   return typeof v === 'string' ? v.replace(/\s+/g, ' ').trim().slice(0, max) : '';
-}
-
-function toMs(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) return v;
-  if (typeof v === 'string' && v.trim() !== '') {
-    const ms = Date.parse(v);
-    return Number.isFinite(ms) ? ms : null;
-  }
-  return null;
 }
 
 /**
@@ -150,7 +157,7 @@ export function cleanGoalDraft(
     const o = p as Record<string, unknown>;
     const title = clip(o.title ?? o.name, 120);
     if (title === '') continue;
-    let target = toMs(o.target_at ?? o.targetAt ?? o.target ?? o.target_date ?? o.date);
+    let target = parsePlanDate(o.target_at ?? o.targetAt ?? o.target ?? o.target_date ?? o.date);
     if (target !== null) {
       if (target < lastTarget) target = null;
       else if (goalTargetAt !== null && target > goalTargetAt) target = goalTargetAt;

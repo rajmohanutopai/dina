@@ -1,0 +1,64 @@
+# Suggest tasks with a real model (docs/DAILY_PLAN.md §18): a goal, one empty
+# phase, and the phase's tasks suggested. Real-LLM, on-demand lane. A task
+# finished in chat (update_task), including one an agent sent, is checked by
+# the caller with `dina plan status`.
+appId: com.dinakernel.mobile
+# Run with -e GOAL='<a new name>'.
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'I finished the task to make reminders respect Do Not Disturb.'
+- takeScreenshot: suggest_01_done
+- runFlow: _open_goals.yaml
+- scrollUntilVisible:
+    element:
+      id: 'goal-add-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-add-input'
+- inputText: '${GOAL}'
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    text: '${GOAL}'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-screen'
+    timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-input'
+- inputText: 'The basics'
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-suggest-0'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-suggest-0'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-task-input-0'
+    timeout: 5000
+- extendedWaitUntil:
+    notVisible:
+      id: 'goal-phase-suggest-0'
+    timeout: 120000
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-edit-0'
+    direction: UP
+    centerElement: true
+- takeScreenshot: suggest_02_tasks

@@ -4,6 +4,8 @@
  * the owner allows that agent to add tasks to that persona.
  */
 
+import { parsePlanDate } from './day';
+
 import type { AgentItem, PlanStore } from './store';
 
 export const PLAN_MAX_BATCH_ITEMS = 200;
@@ -44,8 +46,8 @@ function str(v: unknown, field: string, max: number, required = false): string {
 
 function time(v: unknown, field: string): number | null {
   if (v === undefined || v === null || v === '') return null;
-  const ms = typeof v === 'number' ? v : typeof v === 'string' ? Date.parse(v) : NaN;
-  if (!Number.isFinite(ms)) throw new PlanIntakeError(`${field} is not a time`);
+  const ms = parsePlanDate(v);
+  if (ms === null) throw new PlanIntakeError(`${field} is not a time`);
   return ms;
 }
 
@@ -112,9 +114,9 @@ export function parseBatch(body: unknown, now: number): ParsedBatch {
 }
 
 /**
- * Take one batch from `agentDid`. A blocked feed's batch is dropped and the
- * reply looks like a batch that added nothing new, so an agent cannot tell
- * blocked from allowed by probing.
+ * Take one batch from `agentDid`, all of it or none: a failure part way leaves
+ * the batch id free, so sending it again delivers every item. A blocked feed's
+ * batch is dropped, and the reply says nothing was added.
  */
 export function receiveBatch(
   store: PlanStore,
@@ -123,25 +125,30 @@ export function receiveBatch(
   batch: ParsedBatch,
   now: number,
 ): IntakeResult {
-  store.pruneBatches(now - PLAN_BATCH_ID_KEEP_MS);
-  if (!store.claimBatch(agentDid, batch.batchId, now)) {
-    return { accepted: 0, held: 0, duplicate_batch: true };
-  }
-  const feed =
-    store.getFeed(agentDid, batch.persona) ??
-    (batch.items.length > 0
-      ? store.notePendingFeed(agentDid, batch.persona, agentName, now)
-      : null);
-  if (feed === null) return { accepted: 0, held: 0, duplicate_batch: false };
-  if (feed.state === 'blocked') return { accepted: 0, held: 0, duplicate_batch: false };
-  const status = feed.state === 'allowed' ? 'open' : 'held';
-  let changed = 0;
-  for (const it of batch.items) {
-    if (store.upsertAgentItem(agentDid, batch.persona, it, status, now) !== 'stale') changed += 1;
-  }
-  return status === 'open'
-    ? { accepted: changed, held: 0, duplicate_batch: false }
-    : { accepted: 0, held: changed, duplicate_batch: false };
+  let result: IntakeResult = { accepted: 0, held: 0, duplicate_batch: false };
+  store.inTransaction(() => {
+    store.pruneBatches(now - PLAN_BATCH_ID_KEEP_MS);
+    if (!store.claimBatch(agentDid, batch.batchId, now)) {
+      result = { accepted: 0, held: 0, duplicate_batch: true };
+      return;
+    }
+    const feed =
+      store.getFeed(agentDid, batch.persona) ??
+      (batch.items.length > 0
+        ? store.notePendingFeed(agentDid, batch.persona, agentName, now)
+        : null);
+    if (feed === null || feed.state === 'blocked') return;
+    const status = feed.state === 'allowed' ? 'open' : 'held';
+    let changed = 0;
+    for (const it of batch.items) {
+      if (store.upsertAgentItem(agentDid, batch.persona, it, status, now) !== 'stale') changed += 1;
+    }
+    result =
+      status === 'open'
+        ? { accepted: changed, held: 0, duplicate_batch: false }
+        : { accepted: 0, held: changed, duplicate_batch: false };
+  });
+  return result;
 }
 
 /** The owner's answer to a feed waiting on them. */

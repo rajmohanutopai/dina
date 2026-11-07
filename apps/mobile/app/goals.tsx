@@ -3,20 +3,29 @@
  * times and hours, and which agents may add tasks.
  */
 
-import { useFocusEffect, useRouter } from 'expo-router';
-import React, { useCallback, useState } from 'react';
+import { useRouter } from 'expo-router';
+import React, { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
+import { RoutinesCard } from '../src/components/plan/routines_card';
+import { useRefreshWhileOpen } from '../src/hooks/useRefreshWhileOpen';
 import {
   addGoal,
+  addRoutine,
+  checkinsInQuietHours,
   decideAgentFeed,
   goalSummary,
   listAgentFeeds,
   listGoals,
   loadPlanSettings,
+  loadRoutines,
+  mergeFormFields,
   savePlanSettings,
   setGoalActive,
+  setTaskDone,
+  stopRoutine,
   type PlanSettings,
+  type RoutineView,
 } from '../src/services/daily_plan';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
@@ -33,8 +42,17 @@ export default function GoalsScreen(): React.ReactElement {
   const router = useRouter();
   const [goals, setGoals] = useState<PlanGoal[]>([]);
   const [feeds, setFeeds] = useState<PlanFeed[]>([]);
+  const [routines, setRoutines] = useState<RoutineView[]>([]);
   const [settings, setSettings] = useState<PlanSettings | null>(null);
-  const [times, setTimes] = useState({ planTime: '', middayTime: '', eveningTime: '', hours: '' });
+  const [times, setTimes] = useState({
+    planTime: '',
+    middayTime: '',
+    eveningTime: '',
+    quietStart: '',
+    quietEnd: '',
+    hours: '',
+  });
+  const savedTimes = useRef<typeof times | null>(null);
   const [draft, setDraft] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
@@ -42,28 +60,32 @@ export default function GoalsScreen(): React.ReactElement {
   const reload = useCallback(async () => {
     setGoals(listGoals());
     setFeeds(listAgentFeeds());
+    setRoutines(loadRoutines(''));
     const s = await loadPlanSettings();
     setSettings(s);
-    setTimes({
+    const fields = {
       planTime: s.planTime,
       middayTime: s.middayTime,
       eveningTime: s.eveningTime,
+      quietStart: s.quietStart,
+      quietEnd: s.quietEnd,
       hours: String(s.capacityHours),
-    });
+    };
+    // A tap elsewhere on the screen mustn't wipe a time being typed.
+    const was = savedTimes.current;
+    savedTimes.current = fields;
+    setTimes((t) => (was === null ? fields : mergeFormFields(t, was, fields)));
   }, []);
 
-  useFocusEffect(
-    useCallback(() => {
-      void reload();
-    }, [reload]),
-  );
+  const refresh = useCallback(() => void reload(), [reload]);
+  useRefreshWhileOpen(refresh);
 
   const saveTimes = async (): Promise<void> => {
     setError('');
     setMessage('');
-    const bad = (['planTime', 'middayTime', 'eveningTime'] as const).filter(
-      (k) => !HHMM.test(times[k]),
-    );
+    const bad = (
+      ['planTime', 'middayTime', 'eveningTime', 'quietStart', 'quietEnd'] as const
+    ).filter((k) => !HHMM.test(times[k]));
     const hours = Number(times.hours);
     if (bad.length > 0) {
       setError('Write times as HH:MM on a 24-hour clock, for example 08:00 or 18:30.');
@@ -73,14 +95,32 @@ export default function GoalsScreen(): React.ReactElement {
       setError('Hours for tasks must be between 1 and 16.');
       return;
     }
-    await savePlanSettings({
-      planTime: times.planTime,
-      middayTime: times.middayTime,
-      eveningTime: times.eveningTime,
-      capacityHours: hours,
-    });
-    setMessage('Saved.');
+    try {
+      const saved = await savePlanSettings({
+        planTime: times.planTime,
+        middayTime: times.middayTime,
+        eveningTime: times.eveningTime,
+        quietStart: times.quietStart,
+        quietEnd: times.quietEnd,
+        capacityHours: hours,
+      });
+      const silent = checkinsInQuietHours(saved);
+      setMessage(
+        silent.length > 0
+          ? `Saved. ${silent.join(', ')} falls inside quiet hours, so Dina won't send it.`
+          : 'Saved.',
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
     await reload();
+  };
+
+  const act = (fn: () => Promise<unknown>): void => {
+    setError('');
+    void fn()
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .then(reload);
   };
 
   const submitGoal = (): void => {
@@ -140,10 +180,7 @@ export default function GoalsScreen(): React.ReactElement {
               ) : null}
             </Pressable>
             <Pressable
-              onPress={() => {
-                setGoalActive(g.id, false);
-                void reload();
-              }}
+              onPress={() => act(() => setGoalActive(g.id, false))}
               testID={`goal-archive-${g.id}`}
               accessibilityRole="button"
             >
@@ -179,10 +216,7 @@ export default function GoalsScreen(): React.ReactElement {
             <View key={g.id} style={styles.goalRow}>
               <Text style={[styles.sub, styles.flex]}>{g.title}</Text>
               <Pressable
-                onPress={() => {
-                  setGoalActive(g.id, true);
-                  void reload();
-                }}
+                onPress={() => act(() => setGoalActive(g.id, true))}
                 testID={`goal-restore-${g.id}`}
                 accessibilityRole="button"
               >
@@ -192,6 +226,19 @@ export default function GoalsScreen(): React.ReactElement {
           ))}
         </View>
       ) : null}
+
+      <Text style={styles.eyebrow}>THINGS THAT REPEAT</Text>
+      <Text style={styles.sub}>
+        Each turn lands on your plan by itself. One you miss lapses, so they never pile up. To tie
+        one to a goal, add it on that goal&apos;s page.
+      </Text>
+      <RoutinesCard
+        routines={routines}
+        goalId=""
+        onAdd={(input) => act(() => addRoutine(input))}
+        onStop={(id) => act(() => stopRoutine(id))}
+        onTick={(id, done) => act(() => setTaskDone(id, done))}
+      />
 
       <Text style={styles.eyebrow}>CHECK-INS</Text>
       <View style={styles.card}>
@@ -205,13 +252,16 @@ export default function GoalsScreen(): React.ReactElement {
           />
         </View>
         <Text style={styles.sub}>
-          Dina sends these only, at your times, and never during quiet hours.
+          Dina sends these only, at your times, and never during quiet hours. If you stop opening
+          the app, the morning check-in thins out over two weeks and then stops.
         </Text>
         {(
           [
             ['planTime', 'Morning plan', 'plan-time-morning'],
             ['middayTime', 'Midday check', 'plan-time-midday'],
             ['eveningTime', 'Evening review', 'plan-time-evening'],
+            ['quietStart', 'Quiet hours start', 'plan-quiet-start'],
+            ['quietEnd', 'Quiet hours end', 'plan-quiet-end'],
           ] as const
         ).map(([key, label, id]) => (
           <View key={key} style={styles.switchRow}>
@@ -295,7 +345,11 @@ export default function GoalsScreen(): React.ReactElement {
         ))
       )}
 
-      {message !== '' ? <Text style={styles.sub}>{message}</Text> : null}
+      {message !== '' ? (
+        <Text style={styles.sub} testID="goals-message">
+          {message}
+        </Text>
+      ) : null}
       {error !== '' ? (
         <Text style={styles.error} testID="goals-error">
           {error}

@@ -82,6 +82,27 @@ export async function requestPermissionsAsync(_opts?: unknown): Promise<{
   return { granted: permissionResult.granted, canAskAgain: permissionResult.canAskAgain };
 }
 
+export const IosAuthorizationStatus = { PROVISIONAL: 3, AUTHORIZED: 2 };
+
+let iosStatus: number | undefined;
+
+/** Test helper: the iOS status getPermissionsAsync reports. */
+export function __setIosStatus(status: number | undefined): void {
+  iosStatus = status;
+}
+
+export async function getPermissionsAsync(): Promise<{
+  granted: boolean;
+  canAskAgain: boolean;
+  ios?: { status: number };
+}> {
+  return {
+    granted: permissionResult.granted,
+    canAskAgain: permissionResult.canAskAgain,
+    ...(iosStatus !== undefined ? { ios: { status: iosStatus } } : {}),
+  };
+}
+
 export async function scheduleNotificationAsync(req: {
   identifier?: string;
   content: { title: string; body: string; data?: Record<string, unknown> };
@@ -177,6 +198,8 @@ export default {
   SchedulableTriggerInputTypes,
   setNotificationChannelAsync,
   requestPermissionsAsync,
+  getPermissionsAsync,
+  IosAuthorizationStatus,
   scheduleNotificationAsync,
   cancelScheduledNotificationAsync,
   cancelAllScheduledNotificationsAsync,

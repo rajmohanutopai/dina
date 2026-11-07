@@ -4,10 +4,11 @@
  * and the money line. Opened from Goals with `?id=`.
  */
 
-import { useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
-import React, { useCallback, useEffect, useState } from 'react';
+import { useLocalSearchParams, useNavigation } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Keyboard,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,24 +17,38 @@ import {
   View,
 } from 'react-native';
 
-import { formatGoalMoney, type PlanCostKind, type PlanTask } from '@dina/core';
+import { formatGoalMoney, shiftCalendarDays, type PlanCostKind, type PlanTask } from '@dina/core';
 
+import { RoutinesCard } from '../src/components/plan/routines_card';
+import { useRefreshWhileOpen } from '../src/hooks/useRefreshWhileOpen';
 import {
   acceptGoalDraft,
   addGoalPhase,
   addGoalTask,
+  addRoutine,
+  deleteGoalPhase,
   discardGoalDraft,
   draftPlanForGoal,
+  dropTask,
   finishGoalPhase,
   loadGoal,
+  mergeFormFields,
+  moveGoalPhase,
   moveLateDates,
+  moveTaskToPhase,
   parseAmount,
   recordGoalCost,
+  removeGoalCost,
+  renameTask,
+  reopenGoalPhase,
   setTaskDone,
+  setTaskOrder,
   setTaskWait,
   startGoalPhase,
+  stopRoutine,
   suggestTasksForPhase,
   updateGoalDetails,
+  updatePhaseDetails,
   type GoalView,
 } from '../src/services/daily_plan';
 import { colors, radius, spacing, textStyles } from '../src/theme';
@@ -81,17 +96,35 @@ export default function GoalScreen(): React.ReactElement {
   const navigation = useNavigation();
   const [view, setView] = useState<GoalView | null>(null);
   const [missing, setMissing] = useState(false);
-  const [details, setDetails] = useState({ target: '', budget: '' });
+  const [details, setDetails] = useState({ title: '', notes: '', target: '', budget: '' });
+  // What the form last loaded: ticking a task mustn't wipe what's being typed,
+  // and moving a date must reach a date field nobody touched.
+  const savedDetails = useRef<{ id: string; fields: typeof details } | null>(null);
+  const [allCosts, setAllCosts] = useState(false);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [phaseDraft, setPhaseDraft] = useState({ title: '', target: '' });
   const [taskDrafts, setTaskDrafts] = useState<Record<string, string>>({});
   const [waitFor, setWaitFor] = useState<{ taskId: string; who: string } | null>(null);
-  const [cost, setCost] = useState<{ label: string; amount: string; kind: PlanCostKind }>({
+  const [taskEdit, setTaskEdit] = useState<{ id: string; title: string } | null>(null);
+  const [phaseEdit, setPhaseEdit] = useState<{
+    id: string;
+    title: string;
+    target: string;
+    confirmDelete: boolean;
+  } | null>(null);
+  const [finishing, setFinishing] = useState('');
+  const [cost, setCost] = useState<{
+    label: string;
+    amount: string;
+    kind: PlanCostKind;
+    quoteId: string;
+  }>({
     label: '',
     amount: '',
     kind: 'quote',
+    quoteId: '',
   });
 
   const reload = useCallback(() => {
@@ -104,27 +137,31 @@ export default function GoalScreen(): React.ReactElement {
       setMissing(v === null);
       setView(v);
       if (v !== null) {
-        setDetails({
+        const fields = {
+          title: v.goal.title,
+          notes: v.goal.notes,
           target: ymd(v.goal.targetAt),
           budget: v.goal.budgetCents === null ? '' : String(v.goal.budgetCents / 100),
-        });
+        };
+        const was = savedDetails.current;
+        savedDetails.current = { id: v.goal.id, fields };
+        setDetails((d) =>
+          was === null || was.id !== v.goal.id ? fields : mergeFormFields(d, was.fields, fields),
+        );
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }, [id]);
 
-  useFocusEffect(
-    useCallback(() => {
-      reload();
-    }, [reload]),
-  );
+  useRefreshWhileOpen(reload);
 
   useEffect(() => {
     if (view !== null) navigation.setOptions({ title: view.goal.title });
   }, [navigation, view]);
 
   const act = async (label: string, fn: () => Promise<unknown> | unknown): Promise<void> => {
+    Keyboard.dismiss();
     setError('');
     setMessage('');
     setBusy(label);
@@ -151,6 +188,11 @@ export default function GoalScreen(): React.ReactElement {
   const ready = new Set(view.ready);
   const allTasks = [...phases.flatMap((p) => p.tasks), ...loose];
   const waits = allTasks.filter((t) => t.status === 'open' && t.waitingOn !== '');
+  const openQuotes = view.costs.filter((c) => c.kind === 'quote' && !c.settled);
+  const paidToward = (quoteId: string): number =>
+    view.costs
+      .filter((c) => c.kind === 'paid' && c.quoteId === quoteId)
+      .reduce((sum, c) => sum + c.amountCents, 0);
 
   const saveDetails = (): void => {
     const target = parseYmd(details.target);
@@ -164,7 +206,12 @@ export default function GoalScreen(): React.ReactElement {
       return;
     }
     void act('details', () => {
-      updateGoalDetails(goal.id, { targetAt: target, budgetCents: budget });
+      updateGoalDetails(goal.id, {
+        title: details.title,
+        notes: details.notes,
+        targetAt: target,
+        budgetCents: budget,
+      });
       setMessage('Saved.');
     });
   };
@@ -186,6 +233,18 @@ export default function GoalScreen(): React.ReactElement {
     const title = phaseDraft.title;
     setPhaseDraft({ title: '', target: '' });
     void act('phase', () => addGoalPhase(goal.id, title, target));
+  };
+
+  const savePhaseEdit = (): void => {
+    if (phaseEdit === null) return;
+    const target = parseYmd(phaseEdit.target);
+    if (target === undefined) {
+      setError('Write the date as YYYY-MM-DD, or leave it empty.');
+      return;
+    }
+    const { id: phaseId, title } = phaseEdit;
+    setPhaseEdit(null);
+    void act('phase', () => updatePhaseDetails(phaseId, { title, targetAt: target }));
   };
 
   const renderTask = (t: PlanTask): React.ReactElement => {
@@ -215,6 +274,14 @@ export default function GoalScreen(): React.ReactElement {
               <Text style={styles.sub}>After an earlier task</Text>
             ) : null}
           </View>
+          <Pressable
+            testID={`goal-task-edit-${t.id}`}
+            accessibilityRole="button"
+            accessibilityLabel={`Edit ${t.title}`}
+            onPress={() => setTaskEdit(taskEdit?.id === t.id ? null : { id: t.id, title: t.title })}
+          >
+            <Text style={styles.linkText}>Edit</Text>
+          </Pressable>
           {!done ? (
             <Pressable
               testID={`goal-task-wait-${t.id}`}
@@ -263,6 +330,101 @@ export default function GoalScreen(): React.ReactElement {
             </View>
           </View>
         ) : null}
+        {taskEdit?.id === t.id ? (
+          <View style={styles.waitEditor} testID={`goal-task-editor-${t.id}`}>
+            <TextInput
+              value={taskEdit.title}
+              onChangeText={(title) => setTaskEdit({ id: t.id, title })}
+              style={styles.input}
+              testID="goal-task-title"
+              returnKeyType="done"
+              onSubmitEditing={() => {
+                const title = taskEdit.title;
+                void act('rename', () => renameTask(t.id, title));
+              }}
+            />
+            <View style={styles.chips}>
+              <Pressable
+                style={styles.chip}
+                testID="goal-task-title-save"
+                accessibilityRole="button"
+                onPress={() => {
+                  const title = taskEdit.title;
+                  void act('rename', () => renameTask(t.id, title));
+                }}
+              >
+                <Text style={styles.chipText}>Save name</Text>
+              </Pressable>
+              <Pressable
+                style={styles.chip}
+                testID="goal-task-drop"
+                accessibilityRole="button"
+                onPress={() => {
+                  setTaskEdit(null);
+                  void act('drop', () => dropTask(t.id));
+                }}
+              >
+                <Text style={styles.chipText}>Drop task</Text>
+              </Pressable>
+            </View>
+            {phases.some(({ phase: p }) => p.status !== 'done' && p.id !== t.phaseId) ? (
+              <>
+                <Text style={styles.sub}>Move to phase</Text>
+                <View style={styles.chips}>
+                  {phases.map(({ phase: p }, i) =>
+                    p.status === 'done' ? null : (
+                      <Pressable
+                        key={p.id}
+                        style={[styles.chip, t.phaseId === p.id && styles.chipOn]}
+                        testID={`goal-task-phase-${i}`}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: t.phaseId === p.id }}
+                        onPress={() => void act('move', () => moveTaskToPhase(t.id, p.id))}
+                      >
+                        <Text style={[styles.chipText, t.phaseId === p.id && styles.chipTextOn]}>
+                          {i + 1}. {p.title}
+                        </Text>
+                      </Pressable>
+                    ),
+                  )}
+                </View>
+              </>
+            ) : null}
+            {allTasks.some((o) => o.id !== t.id && o.status === 'open') ? (
+              <>
+                <Text style={styles.sub}>Do this after</Text>
+                <View style={styles.chips}>
+                  {allTasks
+                    .filter(
+                      (o) => o.id !== t.id && (o.status === 'open' || t.blockedBy.includes(o.id)),
+                    )
+                    .map((o, i) => {
+                      const on = t.blockedBy.includes(o.id);
+                      return (
+                        <Pressable
+                          key={o.id}
+                          style={[styles.chip, on && styles.chipOn]}
+                          testID={`goal-task-after-${i}`}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: on }}
+                          onPress={() =>
+                            void act('order', () =>
+                              setTaskOrder(
+                                t.id,
+                                on ? t.blockedBy.filter((x) => x !== o.id) : [...t.blockedBy, o.id],
+                              ),
+                            )
+                          }
+                        >
+                          <Text style={[styles.chipText, on && styles.chipTextOn]}>{o.title}</Text>
+                        </Pressable>
+                      );
+                    })}
+                </View>
+              </>
+            ) : null}
+          </View>
+        ) : null}
       </View>
     );
   };
@@ -279,6 +441,27 @@ export default function GoalScreen(): React.ReactElement {
       <Text style={styles.title}>{goal.title}</Text>
 
       <View style={styles.card}>
+        <TextInput
+          value={details.title}
+          onChangeText={(title) => setDetails((d) => ({ ...d, title }))}
+          placeholder="The goal"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          testID="goal-title"
+          maxLength={200}
+          accessibilityLabel="Goal name"
+        />
+        <TextInput
+          value={details.notes}
+          onChangeText={(notes) => setDetails((d) => ({ ...d, notes }))}
+          placeholder="Notes for the plan: why, how often"
+          placeholderTextColor={colors.textMuted}
+          style={styles.input}
+          testID="goal-notes"
+          maxLength={500}
+          multiline
+          accessibilityLabel="Goal notes"
+        />
         <View style={styles.fieldRow}>
           <Text style={[styles.body, styles.flex]}>Reach it by</Text>
           <TextInput
@@ -324,7 +507,7 @@ export default function GoalScreen(): React.ReactElement {
           <Text style={styles.lateBody}>
             Moving the dates shifts {plural(late.moves.length, 'phase', 'phases')}
             {goal.targetAt !== null
-              ? ` and moves your date to ${shortDate(goal.targetAt + late.days * 86_400_000)}`
+              ? ` and moves your date to ${shortDate(shiftCalendarDays(goal.targetAt, late.days))}`
               : ''}
             .
           </Text>
@@ -334,6 +517,8 @@ export default function GoalScreen(): React.ReactElement {
             accessibilityRole="button"
             onPress={() =>
               void act('move', async () => {
+                // An open phase editor holds the old date; saving it would undo this.
+                setPhaseEdit(null);
                 const days = await moveLateDates(goal.id);
                 setMessage(`Moved by ${plural(days, 'day', 'days')}.`);
               })
@@ -438,16 +623,39 @@ export default function GoalScreen(): React.ReactElement {
                   {tasks.length > 0 ? ` · ${doneN} of ${tasks.length} done` : ''}
                 </Text>
               </View>
+              <Pressable
+                testID={`goal-phase-edit-${i}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Edit ${phase.title}`}
+                onPress={() =>
+                  setPhaseEdit(
+                    phaseEdit?.id === phase.id
+                      ? null
+                      : {
+                          id: phase.id,
+                          title: phase.title,
+                          target: ymd(phase.targetAt),
+                          confirmDelete: false,
+                        },
+                  )
+                }
+              >
+                <Text style={styles.linkText}>Edit</Text>
+              </Pressable>
               {phase.status === 'active' ? (
                 <Pressable
                   testID={`goal-phase-done-${i}`}
                   accessibilityRole="button"
-                  onPress={() =>
+                  onPress={() => {
+                    if (open > 0) {
+                      setFinishing(phase.id);
+                      return;
+                    }
                     void act('phase', async () => {
                       const next = await finishGoalPhase(phase.id);
                       if (next !== null) setMessage(`${next.title} has started.`);
-                    })
-                  }
+                    });
+                  }}
                 >
                   <Text style={styles.linkText}>Phase done</Text>
                 </Pressable>
@@ -461,10 +669,134 @@ export default function GoalScreen(): React.ReactElement {
                 </Pressable>
               ) : null}
             </View>
+            {finishing === phase.id ? (
+              <View style={styles.waitEditor} testID={`goal-phase-finish-${i}`}>
+                <Text style={styles.sub}>
+                  {plural(open, 'task is', 'tasks are')} still open.{' '}
+                  {phases.slice(i + 1).some((p) => p.phase.status !== 'done') ||
+                  phases.slice(0, i).some((p) => p.phase.status !== 'done')
+                    ? 'They move to the next phase.'
+                    : 'They stay on the goal, under no phase.'}
+                </Text>
+                <View style={styles.chips}>
+                  <Pressable
+                    style={styles.chip}
+                    testID={`goal-phase-finish-yes-${i}`}
+                    accessibilityRole="button"
+                    onPress={() => {
+                      setFinishing('');
+                      void act('phase', async () => {
+                        const next = await finishGoalPhase(phase.id);
+                        if (next !== null) setMessage(`${next.title} has started.`);
+                      });
+                    }}
+                  >
+                    <Text style={styles.chipText}>Finish the phase</Text>
+                  </Pressable>
+                  <Pressable onPress={() => setFinishing('')} accessibilityRole="button">
+                    <Text style={styles.linkText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              </View>
+            ) : null}
+            {phaseEdit?.id === phase.id ? (
+              <View style={styles.phaseEditor} testID={`goal-phase-editor-${i}`}>
+                <TextInput
+                  value={phaseEdit.title}
+                  onChangeText={(title) => setPhaseEdit({ ...phaseEdit, title })}
+                  style={styles.input}
+                  testID="goal-phase-title"
+                  returnKeyType="done"
+                  onSubmitEditing={savePhaseEdit}
+                />
+                <TextInput
+                  value={phaseEdit.target}
+                  onChangeText={(target) => setPhaseEdit({ ...phaseEdit, target })}
+                  placeholder="End by YYYY-MM-DD (optional)"
+                  placeholderTextColor={colors.textMuted}
+                  style={styles.input}
+                  testID="goal-phase-date"
+                  keyboardType="numbers-and-punctuation"
+                  maxLength={10}
+                  returnKeyType="done"
+                  onSubmitEditing={savePhaseEdit}
+                />
+                <View style={styles.chips}>
+                  <Pressable
+                    style={styles.chip}
+                    testID="goal-phase-save"
+                    accessibilityRole="button"
+                    onPress={savePhaseEdit}
+                  >
+                    <Text style={styles.chipText}>Save</Text>
+                  </Pressable>
+                  {i > 0 ? (
+                    <Pressable
+                      style={styles.chip}
+                      testID="goal-phase-up"
+                      accessibilityRole="button"
+                      onPress={() => void act('phase', () => moveGoalPhase(phase.id, 'up'))}
+                    >
+                      <Text style={styles.chipText}>Move up</Text>
+                    </Pressable>
+                  ) : null}
+                  {i < phases.length - 1 ? (
+                    <Pressable
+                      style={styles.chip}
+                      testID="goal-phase-down"
+                      accessibilityRole="button"
+                      onPress={() => void act('phase', () => moveGoalPhase(phase.id, 'down'))}
+                    >
+                      <Text style={styles.chipText}>Move down</Text>
+                    </Pressable>
+                  ) : null}
+                  {phase.status === 'done' ? (
+                    <Pressable
+                      style={styles.chip}
+                      testID="goal-phase-reopen"
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setPhaseEdit(null);
+                        void act('phase', () => reopenGoalPhase(phase.id));
+                      }}
+                    >
+                      <Text style={styles.chipText}>Not done yet</Text>
+                    </Pressable>
+                  ) : null}
+                  {phaseEdit.confirmDelete ? (
+                    <Pressable
+                      style={styles.chip}
+                      testID="goal-phase-delete-yes"
+                      accessibilityRole="button"
+                      onPress={() => {
+                        setPhaseEdit(null);
+                        void act('phase', () => deleteGoalPhase(phase.id));
+                      }}
+                    >
+                      <Text style={styles.deleteText}>Yes, delete the phase</Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      style={styles.chip}
+                      testID="goal-phase-delete"
+                      accessibilityRole="button"
+                      onPress={() => setPhaseEdit({ ...phaseEdit, confirmDelete: true })}
+                    >
+                      <Text style={styles.chipText}>Delete</Text>
+                    </Pressable>
+                  )}
+                </View>
+                {phaseEdit.confirmDelete ? (
+                  <Text style={styles.sub}>
+                    Its tasks and money stay on the goal, under no phase.
+                  </Text>
+                ) : null}
+              </View>
+            ) : null}
             {phase.status !== 'done' ? tasks.map(renderTask) : null}
-            {phase.status === 'active' ? (
+            {phase.status !== 'done' ? (
               <>
-                {open === 0 ? (
+                {phase.status === 'active' && open === 0 ? (
                   <Pressable
                     testID={`goal-phase-suggest-${i}`}
                     accessibilityRole="button"
@@ -557,6 +889,15 @@ export default function GoalScreen(): React.ReactElement {
         </View>
       ) : null}
 
+      <Text style={styles.eyebrow}>THINGS THAT REPEAT</Text>
+      <RoutinesCard
+        routines={view.routines}
+        goalId={goal.id}
+        onAdd={(input) => void act('routine', () => addRoutine(input))}
+        onStop={(rid) => void act('routine', () => stopRoutine(rid))}
+        onTick={(tid, on) => void act('routine', () => setTaskDone(tid, on))}
+      />
+
       {waits.length > 0 ? (
         <View style={styles.card} testID="goal-waits">
           <Text style={styles.eyebrow}>WAITING ON</Text>
@@ -596,15 +937,39 @@ export default function GoalScreen(): React.ReactElement {
         {money.leftCents !== null && money.openQuoteCents > 0 ? (
           <Text style={styles.sub}>Left counts every open quote as paid.</Text>
         ) : null}
-        {view.costs
-          .slice(-5)
+        {(allCosts ? view.costs : view.costs.slice(-5))
+          .slice()
           .reverse()
           .map((c) => (
-            <Text key={c.id} style={styles.sub}>
-              {c.kind === 'paid' ? 'Paid' : c.settled ? 'Quote, paid' : 'Quote'} · {c.label} ·{' '}
-              {formatGoalMoney(c.amountCents, goal.currency)}
-            </Text>
+            <View key={c.id} style={styles.fieldRow}>
+              <Text style={[styles.sub, styles.flex]}>
+                {c.kind === 'paid' ? 'Paid' : c.settled ? 'Quote, paid' : 'Quote'} · {c.label} ·{' '}
+                {formatGoalMoney(c.amountCents, goal.currency)}
+                {c.kind === 'quote' && !c.settled && paidToward(c.id) > 0
+                  ? ` · ${formatGoalMoney(paidToward(c.id), goal.currency)} paid so far`
+                  : ''}
+              </Text>
+              <Pressable
+                testID={`goal-cost-remove-${c.id}`}
+                accessibilityRole="button"
+                accessibilityLabel={`Remove ${c.label}`}
+                onPress={() => void act('cost', () => removeGoalCost(c.id))}
+              >
+                <Text style={styles.linkText}>Remove</Text>
+              </Pressable>
+            </View>
           ))}
+        {view.costs.length > 5 ? (
+          <Pressable
+            testID="goal-costs-all"
+            accessibilityRole="button"
+            onPress={() => setAllCosts((v) => !v)}
+          >
+            <Text style={styles.linkText}>
+              {allCosts ? 'Show the last 5' : `Show all ${view.costs.length}`}
+            </Text>
+          </Pressable>
+        ) : null}
         <View style={styles.addRow}>
           <TextInput
             value={cost.label}
@@ -633,7 +998,7 @@ export default function GoalScreen(): React.ReactElement {
               testID={`goal-cost-kind-${k}`}
               accessibilityRole="button"
               accessibilityState={{ selected: cost.kind === k }}
-              onPress={() => setCost((c) => ({ ...c, kind: k }))}
+              onPress={() => setCost((c) => ({ ...c, kind: k, quoteId: '' }))}
             >
               <Text style={[styles.chipText, cost.kind === k && styles.chipTextOn]}>
                 {k === 'quote' ? 'Quote' : 'Paid'}
@@ -646,14 +1011,45 @@ export default function GoalScreen(): React.ReactElement {
             accessibilityRole="button"
             onPress={() =>
               void act('cost', () => {
-                recordGoalCost(goal.id, cost.label, cost.amount, cost.kind);
-                setCost({ label: '', amount: '', kind: cost.kind });
+                recordGoalCost(
+                  goal.id,
+                  cost.label,
+                  cost.amount,
+                  cost.kind,
+                  '',
+                  Date.now(),
+                  cost.quoteId,
+                );
+                setCost({ label: '', amount: '', kind: cost.kind, quoteId: '' });
               })
             }
           >
             <Text style={styles.primaryText}>Record</Text>
           </Pressable>
         </View>
+        {cost.kind === 'paid' && openQuotes.length > 0 ? (
+          <>
+            <Text style={styles.sub}>Paying toward a quote?</Text>
+            <View style={styles.chips}>
+              {openQuotes.map((q, i) => (
+                <Pressable
+                  key={q.id}
+                  style={[styles.chip, cost.quoteId === q.id && styles.chipOn]}
+                  testID={`goal-cost-quote-${i}`}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: cost.quoteId === q.id }}
+                  onPress={() =>
+                    setCost((c) => ({ ...c, quoteId: c.quoteId === q.id ? '' : q.id }))
+                  }
+                >
+                  <Text style={[styles.chipText, cost.quoteId === q.id && styles.chipTextOn]}>
+                    {q.label} · {formatGoalMoney(q.amountCents, goal.currency)}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+          </>
+        ) : null}
         <Text style={styles.sub}>Dina keeps track of the money. She never pays anyone.</Text>
       </View>
 
@@ -714,6 +1110,8 @@ const styles = StyleSheet.create({
   boxOn: { backgroundColor: colors.success, borderColor: colors.success },
   boxTick: { color: colors.white, fontSize: 13, fontWeight: '700' },
   waitEditor: { gap: spacing.xs, paddingLeft: 30 },
+  phaseEditor: { gap: spacing.xs },
+  deleteText: { ...textStyles.bodySmall, color: colors.error },
   chips: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, flexWrap: 'wrap' },
   chip: {
     borderRadius: radius.sm,

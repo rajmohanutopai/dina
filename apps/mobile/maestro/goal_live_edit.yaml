@@ -1,0 +1,224 @@
+# Things that repeat and a live plan's changes (docs/DAILY_PLAN.md §24, §27),
+# by hand with no model: a routine on a goal with its turn ticked; phases
+# renamed, moved, deleted and reopened; a task renamed and put after another;
+# an open phase finished with its task moving on.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- runFlow: _open_goals.yaml
+- repeat:
+    while:
+      visible:
+        id: 'goal-archive-.*'
+    times: 30
+    commands:
+      - tapOn:
+          id: 'goal-archive-.*'
+          index: 0
+      - waitForAnimationToEnd
+
+# A goal.
+- tapOn:
+    id: 'goal-add-input'
+- inputText: 'Get fit'
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    text: 'Get fit'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-screen'
+    timeout: 10000
+
+# Phases.
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-input'
+- inputText: 'Base'
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-input'
+- inputText: 'Build'
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-input'
+- inputText: 'Taper'
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-0'
+    direction: UP
+    centerElement: true
+- assertVisible: '1. Base'
+
+# Tasks in the first phase.
+- tapOn:
+    id: 'goal-task-input-0'
+- inputText: 'Buy shoes'
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-task-input-0'
+- inputText: 'Plan the route'
+- pressKey: Enter
+- waitForAnimationToEnd
+- assertVisible: 'Plan the route'
+
+# Rename a task, then put it after another.
+- tapOn:
+    id: 'goal-task-edit-.*'
+    index: 1
+- extendedWaitUntil:
+    visible:
+      id: 'goal-task-title'
+    timeout: 5000
+- tapOn:
+    id: 'goal-task-title'
+- eraseText
+- inputText: 'Map the route'
+# Return saves it, and the keyboard goes.
+- pressKey: Enter
+- waitForAnimationToEnd
+- assertVisible: 'Map the route'
+- scrollUntilVisible:
+    element:
+      id: 'goal-task-after-0'
+    centerElement: true
+- tapOn:
+    id: 'goal-task-after-0'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: 'After an earlier task'
+    direction: UP
+- takeScreenshot: goal_edit_01_task
+
+# Rename the phase, and move the last phase up.
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-edit-0'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-edit-0'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-phase-title'
+    timeout: 5000
+- tapOn:
+    id: 'goal-phase-title'
+- eraseText
+- inputText: 'Base miles'
+- pressKey: Enter
+- waitForAnimationToEnd
+- assertVisible: '1. Base miles'
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-edit-2'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-edit-2'
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-up'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-up'
+- waitForAnimationToEnd
+- assertVisible: '2. Taper'
+- takeScreenshot: goal_edit_02_moved
+
+# Delete Taper, whose editor is still open; the first tap asks.
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-delete'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-delete'
+- waitForAnimationToEnd
+- assertVisible: '.*stay on the goal, under no phase.*'
+- tapOn:
+    id: 'goal-phase-delete-yes'
+- waitForAnimationToEnd
+- assertNotVisible: '2. Taper'
+- assertVisible: '2. Build'
+
+# Finish the first phase with a task open: asks, then the task moves on.
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-done-0'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-done-0'
+- waitForAnimationToEnd
+- assertVisible: '.*2 tasks are still open.*next phase.*'
+- takeScreenshot: goal_edit_03_finish
+- tapOn:
+    id: 'goal-phase-finish-yes-0'
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      text: 'Buy shoes'
+    centerElement: true
+
+# Undo it.
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-edit-0'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-edit-0'
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-reopen'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-reopen'
+- waitForAnimationToEnd
+- assertVisible: '.*Now.*'
+
+# A routine on this goal.
+- scrollUntilVisible:
+    element:
+      id: 'routine-title'
+    centerElement: true
+- tapOn:
+    id: 'routine-title'
+- inputText: 'Run'
+- pressKey: Enter
+- waitForAnimationToEnd
+- scrollUntilVisible:
+    element:
+      id: 'routine-row-0'
+    centerElement: true
+- assertVisible: '3 times a week · 0 of 3 this week'
+- tapOn:
+    id: 'routine-tick-0'
+- waitForAnimationToEnd
+- assertVisible: '3 times a week · 1 of 3 this week'
+- takeScreenshot: goal_edit_04_routine
+- tapOn:
+    id: 'routine-tick-0'
+- waitForAnimationToEnd
+- assertVisible: '3 times a week · 0 of 3 this week'

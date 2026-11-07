@@ -141,8 +141,9 @@ describe('a goal plan', () => {
     expect(started?.id).toBe(p2.id);
     ({ tasks, ready } = readyMaps(id));
     expect(ready(store.getTask(late.id)!)).toBe(true);
-    // The unfinished task of a done phase no longer comes up.
-    expect(ready(store.getTask(tasks[1].id)!)).toBe(false);
+    // The unfinished task of a done phase moves on with the plan.
+    expect(store.getTask(tasks[1].id)?.phaseId).toBe(p2.id);
+    expect(ready(store.getTask(tasks[1].id)!)).toBe(true);
   });
 
   it('a wait takes a task off the day until it needs chasing', () => {
@@ -165,9 +166,9 @@ describe('a goal plan', () => {
     const id = house();
     const [p1, p2, p3] = store.acceptGoalDraft(id, T0)!;
     expect(latePhase(store.listPhases(id), T0 + 10 * DAY)).toBeNull();
-    // Part of a day counts as a day, so moving by it clears the phase.
-    const partly = latePhase(store.listPhases(id), T0 + 60 * DAY + 1000)!;
-    expect(partly.days).toBe(1);
+    // A phase has all of its target day; the next day it's one day late.
+    expect(latePhase(store.listPhases(id), T0 + 60 * DAY + 1000)).toBeNull();
+    expect(latePhase(store.listPhases(id), T0 + 61 * DAY)!.days).toBe(1);
     const now = T0 + 72 * DAY;
     const late = latePhase(store.listPhases(id), now)!;
     expect(late.phase.id).toBe(p1.id);
@@ -188,7 +189,7 @@ describe('a goal plan', () => {
     expect(store.getGoal(id)!.targetAt).toBe(T0 + 342 * DAY);
   });
 
-  it('the money line: a payment settles its task’s quote', () => {
+  it('the money line: a payment goes toward its task’s quote', () => {
     const id = house();
     store.acceptGoalDraft(id, T0);
     const task = store.listTasks({ goalId: id })[0];
@@ -218,8 +219,9 @@ describe('a goal plan', () => {
       T0,
     );
     m = moneySummary(450_000_00, store.listCosts(id));
-    expect(m.openQuoteCents).toBe(0);
-    expect(m.leftCents).toBe(420_000_00);
+    // Paid less than quoted: the $400 still owed stays open.
+    expect(m.openQuoteCents).toBe(400_00);
+    expect(m.leftCents).toBe(419_600_00);
     expect(formatGoalMoney(18_400_00)).toBe('$18,400');
     expect(formatGoalMoney(1050)).toBe('$10.50');
   });

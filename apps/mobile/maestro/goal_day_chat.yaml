@@ -1,0 +1,74 @@
+# A day run from chat (docs/DAILY_PLAN.md §26), with a real model: a routine
+# set, the day planned by the model, a task finished, one put off, and the day
+# ended. Real-LLM, on-demand lane. Run ai_dev_model.yaml first. Run
+# goal_live_edit.yaml or archive goals first so old goals don't crowd the plan.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'root-layout-menu-row-clear-chat'
+          commands:
+            - tapOn:
+                id: 'root-layout-menu'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'root-layout-menu-row-clear-chat'
+- tapOn:
+    id: 'root-layout-menu-row-clear-chat'
+- waitForAnimationToEnd
+
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'I want to stretch three times a week.'
+- takeScreenshot: goal_day_01_routine
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'Add write the thank-you letter to my list, and call the locksmith too.'
+- takeScreenshot: goal_day_02_tasks
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'Plan my day.'
+- takeScreenshot: goal_day_03_plan
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'I wrote the thank-you letter.'
+- assertVisible: '.*([Dd]one|[Mm]arked|[Tt]icked|finished|letter).*'
+- takeScreenshot: goal_day_04_done
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'The locksmith call can wait until tomorrow.'
+- assertVisible: '.*[Tt]omorrow.*'
+- takeScreenshot: goal_day_05_put_off
+- runFlow:
+    file: chat_ask_wait.yaml
+    env:
+      MESSAGE: 'That is it for today, I am finished.'
+- takeScreenshot: goal_day_06_finish
+
+# What Today shows now.
+- tapOn:
+    id: 'root-layout-menu'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'root-layout-menu-row-/plan'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: goal_day_07_today

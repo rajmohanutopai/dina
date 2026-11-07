@@ -91,6 +91,47 @@ const NOT_NAMES: ReadonlySet<string> = new Set([
   'dina',
 ]);
 
+/** A detector sometimes takes these for people, and a date then can't be read. */
+const DATE_WORDS: ReadonlySet<string> = new Set([
+  'monday',
+  'tuesday',
+  'wednesday',
+  'thursday',
+  'friday',
+  'saturday',
+  'sunday',
+  'january',
+  'february',
+  'march',
+  'july',
+  'september',
+  'october',
+  'november',
+  'december',
+  'today',
+  'tomorrow',
+  'tonight',
+  'yesterday',
+]);
+/** People are called these too, so they count as dates only beside a number. */
+const NAME_LIKE_MONTHS: ReadonlySet<string> = new Set(['april', 'may', 'june', 'august']);
+
+/** True when a candidate is a day or date word, and so no one's name. */
+function isDateWord(text: string, value: string): boolean {
+  const words = value.toLowerCase().split(/\s+/);
+  if (words.every((w) => DATE_WORDS.has(w))) return true;
+  if (words.length !== 1 || !NAME_LIKE_MONTHS.has(words[0])) return false;
+  // Every place it appears must be a date: "May 3 is when May arrives" names May.
+  let seen = false;
+  for (let at = text.indexOf(value); at >= 0; at = text.indexOf(value, at + value.length)) {
+    seen = true;
+    const before = text.slice(Math.max(0, at - 6), at);
+    const after = text.slice(at + value.length, at + value.length + 6);
+    if (!/\d(st|nd|rd|th)?\s+(of\s+)?$/i.test(before) && !/^\s+\d/.test(after)) return false;
+  }
+  return seen;
+}
+
 export interface StrangerNamesOptions {
   detector: NameDetector;
   nowMs?: () => number;
@@ -105,6 +146,7 @@ export function keepCandidate(text: string, c: DetectedName): boolean {
   if (value.length < 2 || !(c.score >= STRANGER_HIDE_SCORE)) return false;
   if (value.includes('[') || value.includes(']')) return false;
   if (NOT_NAMES.has(value.toLowerCase())) return false;
+  if (isDateWord(text, value)) return false;
   if (isRelationshipPhrase(value)) return false;
   return text.includes(value);
 }

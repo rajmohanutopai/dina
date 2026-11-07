@@ -31,7 +31,10 @@ const EMPTY_MATCHER = new NameMatcher([]);
 /** The line the router adds to the system prompt when anything was replaced (§3). */
 export const PII_TOKEN_NOTE =
   'Text in square brackets such as [PERSON_1] or [EMAIL_1] stands for a private value. ' +
-  'Copy these tokens exactly as written, brackets included, wherever you need the value.';
+  'Copy these tokens exactly as written, brackets included, wherever you need the value, ' +
+  'in tool arguments as well as your reply; they are restored afterwards. A token can stand ' +
+  'for any word, since a name detector sometimes hides an ordinary one, so read it from the ' +
+  'sentence around it. Never tell the user a value is missing, and never ask what a token means.';
 
 export class PiiSession {
   private readonly byValue = new Map<string, PiiSessionEntry>();

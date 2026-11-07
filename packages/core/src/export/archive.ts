@@ -266,6 +266,7 @@ const IDENTITY_TABLES = [
   // DAILY_PLAN.md §16: a goal's phases and money travel with its tasks.
   'plan_phases',
   'plan_costs',
+  'plan_routines',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */

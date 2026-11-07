@@ -255,3 +255,22 @@ describe('dual review round 1', () => {
     expect(cache.size).toBe(0);
   });
 });
+
+describe('keepCandidate and dates', () => {
+  const c = (value: string): { value: string; score: number } => ({ value, score: 0.9 });
+
+  it.each([
+    ['Pay it by Friday', 'Friday', false],
+    ['Done by October', 'October', false],
+    ['Move in on 5 May', 'May', false],
+    ['Move in on May 5', 'May', false],
+    ['Run a marathon in April 2027', 'April', false],
+    ['May called and said she is sick', 'May', true],
+    ['May 3 is when May arrives', 'May', true],
+    ['Between May 3 and 5 May', 'May', false],
+    ['I saw April at the shop', 'April', true],
+    ['Ask Priya', 'Priya', true],
+  ])('%s: %s kept is %s', (text, value, kept) => {
+    expect(keepCandidate(text, c(value))).toBe(kept);
+  });
+});

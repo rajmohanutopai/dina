@@ -11,6 +11,8 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { onAgentDeviceRevoked } from '../devices/registry';
 
+import { shiftCalendarDays } from './day';
+
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export type PlanTaskStatus = 'held' | 'open' | 'done' | 'dropped';
@@ -46,6 +48,47 @@ export interface PlanTask {
   /** Who the owner is waiting on, as they wrote it, or ''. */
   waitingOn: string;
   waitingUntil: number | null;
+  /** The routine this is one turn of, or ''. */
+  routineId: string;
+  /** The day (`YYYY-MM-DD`) of that turn, or ''. */
+  routineDay: string;
+  /** When it first reached the owner's list: added, or an agent's task allowed. */
+  openedAt: number;
+  /** The owner renamed it, so an agent's later copy keeps their wording. */
+  titleByOwner: boolean;
+}
+
+export type PlanRoutineKind = 'days' | 'per_week' | 'monthly';
+
+/** Something that repeats (DAILY_PLAN.md §24): each turn becomes a task on its day. */
+export interface PlanRoutine {
+  id: string;
+  /** The goal it serves, or ''. */
+  goalId: string;
+  title: string;
+  persona: string;
+  effortMin: number | null;
+  kind: PlanRoutineKind;
+  /** `days`: weekdays, 0 = Sunday … 6 = Saturday. */
+  weekdays: number[];
+  /** `per_week`: how many times a week, 1–7. */
+  timesPerWeek: number;
+  /** `monthly`: day of the month, 1–31; shorter months use their last day. */
+  dayOfMonth: number;
+  active: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface RoutineInput {
+  goalId?: string;
+  title: string;
+  persona?: string;
+  effortMin?: number | null;
+  kind: PlanRoutineKind;
+  weekdays?: number[];
+  timesPerWeek?: number;
+  dayOfMonth?: number;
 }
 
 export interface PlanGoal {
@@ -89,6 +132,9 @@ export interface PlanCost {
   label: string;
   kind: PlanCostKind;
   amountCents: number;
+  /** A payment: the quote it pays toward, or ''. */
+  quoteId: string;
+  /** A quote: paid in full. */
   settled: boolean;
   at: number;
   createdAt: number;
@@ -164,6 +210,8 @@ export interface OwnerTaskInput {
   plannedFor?: string;
   phaseId?: string;
   blockedBy?: string[];
+  routineId?: string;
+  routineDay?: string;
 }
 
 export interface TaskPatch {
@@ -187,7 +235,7 @@ export type UpsertResult = 'inserted' | 'updated' | 'stale';
 const TASK_COLUMNS =
   'id, persona, title, summary, source, source_ref, link, due_at, effort_min, project, goal_id, ' +
   'origin, status, planned_for, carried, observed_at, created_at, updated_at, done_at, ' +
-  'phase_id, blocked_by, waiting_on, waiting_until';
+  'phase_id, blocked_by, waiting_on, waiting_until, routine_id, routine_day, opened_at, title_by_owner';
 
 export function newPlanId(prefix: string): string {
   return `${prefix}-${bytesToHex(randomBytes(8))}`;
@@ -244,6 +292,37 @@ function taskFromRow(r: DBRow): PlanTask {
     blockedBy: idList(r.blocked_by),
     waitingOn: String(r.waiting_on ?? ''),
     waitingUntil: num(r.waiting_until),
+    routineId: String(r.routine_id ?? ''),
+    routineDay: String(r.routine_day ?? ''),
+    openedAt: Number(r.opened_at ?? 0) || Number(r.created_at),
+    titleByOwner: Number(r.title_by_owner ?? 0) === 1,
+  };
+}
+
+function numberList(json: unknown): number[] {
+  if (typeof json !== 'string' || json === '') return [];
+  try {
+    const v: unknown = JSON.parse(json);
+    return Array.isArray(v) ? v.filter((x): x is number => typeof x === 'number') : [];
+  } catch {
+    return [];
+  }
+}
+
+function routineFromRow(r: DBRow): PlanRoutine {
+  return {
+    id: String(r.id),
+    goalId: String(r.goal_id ?? ''),
+    title: String(r.title),
+    persona: String(r.persona ?? 'general'),
+    effortMin: num(r.effort_min),
+    kind: String(r.kind) as PlanRoutineKind,
+    weekdays: numberList(r.weekdays),
+    timesPerWeek: Number(r.times_per_week ?? 0),
+    dayOfMonth: Number(r.day_of_month ?? 0),
+    active: Number(r.active) === 1,
+    createdAt: Number(r.created_at),
+    updatedAt: Number(r.updated_at),
   };
 }
 
@@ -288,6 +367,7 @@ function costFromRow(r: DBRow): PlanCost {
     label: String(r.label ?? ''),
     kind: String(r.kind) as PlanCostKind,
     amountCents: Number(r.amount_cents),
+    quoteId: String(r.quote_id ?? ''),
     settled: Number(r.settled) === 1,
     at: Number(r.at),
     createdAt: Number(r.created_at),
@@ -400,6 +480,10 @@ export class PlanStore {
       blockedBy: input.blockedBy ?? [],
       waitingOn: '',
       waitingUntil: null,
+      routineId: input.routineId ?? '',
+      routineDay: input.routineDay ?? '',
+      openedAt: now,
+      titleByOwner: false,
     };
     this.insert(task);
     return task;
@@ -428,6 +512,9 @@ export class PlanStore {
               item.sourceRef,
             ])
             .map(taskFromRow)[0] ?? null);
+    // The owner's yes or no is per persona: an item can't reach a task held
+    // under another persona by repeating its source_ref.
+    if (existing !== null && existing.persona !== persona) return 'stale';
     if (existing === null) {
       if (item.closed) return 'stale';
       this.insert({
@@ -454,6 +541,10 @@ export class PlanStore {
         blockedBy: [],
         waitingOn: '',
         waitingUntil: null,
+        routineId: '',
+        routineDay: '',
+        openedAt: status === 'open' ? now : 0,
+        titleByOwner: false,
       });
       return 'inserted';
     }
@@ -468,7 +559,7 @@ export class PlanStore {
       `UPDATE plan_tasks SET title = ?, summary = ?, source = ?, link = ?, due_at = ?, effort_min = ?,
          project = ?, status = ?, done_at = ?, observed_at = ?, updated_at = ? WHERE id = ?`,
       [
-        item.title,
+        existing.titleByOwner ? existing.title : item.title,
         item.summary,
         item.source,
         item.link,
@@ -508,11 +599,20 @@ export class PlanStore {
     if (patch.status !== undefined && patch.status !== task.status) {
       next.status = patch.status;
       next.doneAt = patch.status === 'done' ? now : null;
+      // Reopened in a finished phase it would be hidden and off every day: it
+      // moves on, as a task still open when the phase finished does.
+      if (patch.status === 'open' && patch.phaseId === undefined && task.phaseId !== '') {
+        const phase = this.getPhase(task.phaseId);
+        if (phase !== null && phase.status === 'done') {
+          next.phaseId = this.phaseAfter(phase)?.id ?? '';
+        }
+      }
     }
+    if (patch.title !== undefined && patch.title !== task.title) next.titleByOwner = true;
     this.db.run(
       `UPDATE plan_tasks SET title = ?, summary = ?, due_at = ?, effort_min = ?, project = ?, goal_id = ?,
          status = ?, planned_for = ?, carried = ?, done_at = ?, updated_at = ?, phase_id = ?,
-         blocked_by = ?, waiting_on = ?, waiting_until = ? WHERE id = ?`,
+         blocked_by = ?, waiting_on = ?, waiting_until = ?, title_by_owner = ? WHERE id = ?`,
       [
         next.title,
         next.summary,
@@ -529,6 +629,7 @@ export class PlanStore {
         JSON.stringify(next.blockedBy),
         next.waitingOn,
         next.waitingUntil,
+        next.titleByOwner ? 1 : 0,
         id,
       ],
     );
@@ -538,8 +639,8 @@ export class PlanStore {
   /** Held tasks from one feed become open. Returns how many. */
   releaseHeld(origin: string, persona: string, now: number): number {
     return this.db.run(
-      `UPDATE plan_tasks SET status = 'open', updated_at = ? WHERE origin = ? AND persona = ? AND status = 'held'`,
-      [now, origin, persona],
+      `UPDATE plan_tasks SET status = 'open', updated_at = ?, opened_at = ? WHERE origin = ? AND persona = ? AND status = 'held'`,
+      [now, now, origin, persona],
     );
   }
 
@@ -553,7 +654,7 @@ export class PlanStore {
 
   private insert(t: PlanTask): void {
     this.db.execute(
-      `INSERT INTO plan_tasks (${TASK_COLUMNS}) VALUES (${new Array(23).fill('?').join(', ')})`,
+      `INSERT INTO plan_tasks (${TASK_COLUMNS}) VALUES (${new Array(27).fill('?').join(', ')})`,
       [
         t.id,
         t.persona,
@@ -578,8 +679,116 @@ export class PlanStore {
         JSON.stringify(t.blockedBy),
         t.waitingOn,
         t.waitingUntil,
+        t.routineId,
+        t.routineDay,
+        t.openedAt,
+        t.titleByOwner ? 1 : 0,
       ],
     );
+  }
+
+  /**
+   * Set what a task waits for. Refused (false) when a named task isn't an
+   * open or finished task of the same goal, or when the tasks would end up
+   * waiting on each other.
+   */
+  setTaskBlockedBy(id: string, blockedBy: string[], now: number): boolean {
+    const task = this.getTask(id);
+    if (task === null || task.goalId === '') return false;
+    const wanted = [...new Set(blockedBy)];
+    if (wanted.includes(id)) return false;
+    const siblings = new Map(this.listTasks({ goalId: task.goalId }).map((t) => [t.id, t]));
+    for (const b of wanted) if (!siblings.has(b)) return false;
+    const seen = new Set<string>();
+    const stack = [...wanted];
+    while (stack.length > 0) {
+      const at = stack.pop() as string;
+      if (at === id) return false;
+      if (seen.has(at)) continue;
+      seen.add(at);
+      stack.push(...(siblings.get(at)?.blockedBy ?? []));
+    }
+    return this.updateTask(id, { blockedBy: wanted }, now) !== null;
+  }
+
+  // ---------------- routines ----------------
+
+  listRoutines(activeOnly = false): PlanRoutine[] {
+    return this.db
+      .query(
+        `SELECT * FROM plan_routines ${activeOnly ? 'WHERE active = 1' : ''} ORDER BY created_at ASC`,
+      )
+      .map(routineFromRow);
+  }
+
+  getRoutine(id: string): PlanRoutine | null {
+    const rows = this.db.query('SELECT * FROM plan_routines WHERE id = ?', [id]);
+    return rows.length > 0 ? routineFromRow(rows[0]) : null;
+  }
+
+  addRoutine(input: RoutineInput, now: number): PlanRoutine {
+    const routine: PlanRoutine = {
+      id: newPlanId('routine'),
+      goalId: input.goalId ?? '',
+      title: input.title,
+      persona: input.persona ?? 'general',
+      effortMin: input.effortMin ?? null,
+      kind: input.kind,
+      weekdays: input.weekdays ?? [],
+      timesPerWeek: input.timesPerWeek ?? 0,
+      dayOfMonth: input.dayOfMonth ?? 0,
+      active: true,
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.db.execute(
+      `INSERT INTO plan_routines (id, goal_id, title, persona, effort_min, kind, weekdays, times_per_week,
+         day_of_month, active, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
+      [
+        routine.id,
+        routine.goalId,
+        routine.title,
+        routine.persona,
+        routine.effortMin,
+        routine.kind,
+        JSON.stringify(routine.weekdays),
+        routine.timesPerWeek,
+        routine.dayOfMonth,
+        now,
+        now,
+      ],
+    );
+    return routine;
+  }
+
+  /** Stop a routine. Its open turn goes too; finished turns stay. */
+  stopRoutine(id: string, now: number): boolean {
+    let stopped = false;
+    this.db.transaction(() => {
+      stopped =
+        this.db.run('UPDATE plan_routines SET active = 0, updated_at = ? WHERE id = ?', [now, id]) >
+        0;
+      this.db.run(
+        `UPDATE plan_tasks SET status = 'dropped', updated_at = ? WHERE routine_id = ? AND status = 'open'`,
+        [now, id],
+      );
+    });
+    return stopped;
+  }
+
+  /** Every turn of a routine, oldest first. */
+  listRoutineTasks(routineId: string): PlanTask[] {
+    return this.db
+      .query(
+        `SELECT ${TASK_COLUMNS} FROM plan_tasks WHERE routine_id = ? ORDER BY routine_day ASC`,
+        [routineId],
+      )
+      .map(taskFromRow);
+  }
+
+  /** Run several writes as one: all of them or none. */
+  inTransaction(fn: () => void): void {
+    this.db.transaction(fn);
   }
 
   // ---------------- batches ----------------
@@ -852,7 +1061,9 @@ export class PlanStore {
 
   /**
    * Mark a phase done; the next upcoming phase of the goal starts when no
-   * other phase is still active. Returns the phase that started, if any.
+   * other phase is still active. Tasks still open in it move to the next
+   * phase not done, or off the phases when there is none, so none is lost.
+   * Returns the phase that started, if any.
    */
   finishPhase(id: string, now: number): PlanPhase | null {
     const phase = this.getPhase(id);
@@ -864,15 +1075,89 @@ export class PlanStore {
         [now, now, id],
       );
       const rest = this.listPhases(phase.goalId);
-      if (!rest.some((p) => p.status === 'active')) {
-        const next = rest.find((p) => p.status === 'upcoming');
-        if (next !== undefined) {
-          this.startPhase(next.id, now);
-          started = { ...next, status: 'active', startedAt: now, updatedAt: now };
-        }
-      }
+      const heir = this.phaseAfter(phase);
+      this.db.run(
+        `UPDATE plan_tasks SET phase_id = ?, updated_at = ? WHERE phase_id = ? AND status = 'open'`,
+        [heir?.id ?? '', now, id],
+      );
+      started = this.startNextIfNoneActive(rest, phase.position, now);
     });
     return started;
+  }
+
+  /** Undo "Phase done". The phase is active again, alongside any other. */
+  reopenPhase(id: string, now: number): boolean {
+    return (
+      this.db.run(
+        `UPDATE plan_phases SET status = 'active', done_at = NULL, updated_at = ? WHERE id = ? AND status = 'done'`,
+        [now, id],
+      ) > 0
+    );
+  }
+
+  /** Swap a phase with its neighbour. False at either end of the list. */
+  movePhase(id: string, direction: 'up' | 'down', now: number): boolean {
+    const phase = this.getPhase(id);
+    if (phase === null) return false;
+    const phases = this.listPhases(phase.goalId);
+    const at = phases.findIndex((p) => p.id === id);
+    const other = phases[direction === 'up' ? at - 1 : at + 1];
+    if (other === undefined) return false;
+    this.db.transaction(() => {
+      // Renumber from the list's order, so equal positions can't stop a swap.
+      const order = phases.map((p) => p.id);
+      order[at] = other.id;
+      order[phases.indexOf(other)] = id;
+      order.forEach((pid, i) => {
+        this.db.run('UPDATE plan_phases SET position = ?, updated_at = ? WHERE id = ?', [
+          i,
+          now,
+          pid,
+        ]);
+      });
+    });
+    return true;
+  }
+
+  /**
+   * Delete a phase. Its tasks and money stay on the goal, under no phase. The
+   * next upcoming phase starts when this was the only active one.
+   */
+  deletePhase(id: string, now: number): boolean {
+    const phase = this.getPhase(id);
+    if (phase === null) return false;
+    this.db.transaction(() => {
+      this.db.run('DELETE FROM plan_phases WHERE id = ?', [id]);
+      this.db.run(`UPDATE plan_tasks SET phase_id = '', updated_at = ? WHERE phase_id = ?`, [
+        now,
+        id,
+      ]);
+      this.db.run(`UPDATE plan_costs SET phase_id = '' WHERE phase_id = ?`, [id]);
+      this.startNextIfNoneActive(this.listPhases(phase.goalId), phase.position, now);
+    });
+    return true;
+  }
+
+  /** The next phase of its goal not done, or else an earlier one not done. */
+  private phaseAfter(phase: PlanPhase): PlanPhase | undefined {
+    const rest = this.listPhases(phase.goalId).filter(
+      (p) => p.id !== phase.id && p.status !== 'done',
+    );
+    return rest.find((p) => p.position > phase.position) ?? rest[0];
+  }
+
+  private startNextIfNoneActive(
+    phases: PlanPhase[],
+    fromPosition: number,
+    now: number,
+  ): PlanPhase | null {
+    if (phases.some((p) => p.status === 'active')) return null;
+    const next =
+      phases.find((p) => p.status === 'upcoming' && p.position > fromPosition) ??
+      phases.find((p) => p.status === 'upcoming');
+    if (next === undefined) return null;
+    this.startPhase(next.id, now);
+    return { ...next, status: 'active', startedAt: now, updatedAt: now };
   }
 
   /** Move the target dates of these phases (and optionally the goal) by `days`. */
@@ -883,20 +1168,24 @@ export class PlanStore {
     moveGoal: boolean,
     now: number,
   ): void {
-    const ms = Math.round(days) * 24 * 60 * 60 * 1000;
+    const whole = Math.round(days);
     this.db.transaction(() => {
       for (const id of phaseIds) {
-        this.db.run(
-          `UPDATE plan_phases SET target_at = target_at + ?, updated_at = ? WHERE id = ? AND goal_id = ?
-             AND target_at IS NOT NULL`,
-          [ms, now, id, goalId],
-        );
+        const phase = this.getPhase(id);
+        if (phase === null || phase.goalId !== goalId || phase.targetAt === null) continue;
+        this.db.run('UPDATE plan_phases SET target_at = ?, updated_at = ? WHERE id = ?', [
+          shiftCalendarDays(phase.targetAt, whole),
+          now,
+          id,
+        ]);
       }
-      if (moveGoal) {
-        this.db.run(
-          'UPDATE plan_goals SET target_at = target_at + ?, updated_at = ? WHERE id = ? AND target_at IS NOT NULL',
-          [ms, now, goalId],
-        );
+      const goal = moveGoal ? this.getGoal(goalId) : null;
+      if (goal !== null && goal.targetAt !== null) {
+        this.db.run('UPDATE plan_goals SET target_at = ?, updated_at = ? WHERE id = ?', [
+          shiftCalendarDays(goal.targetAt, whole),
+          now,
+          goalId,
+        ]);
       }
     });
   }
@@ -940,8 +1229,10 @@ export class PlanStore {
   }
 
   /**
-   * Record a quote or a payment. A payment against a task settles that
-   * task's open quotes.
+   * Record a quote or a payment. A payment goes toward the quote named. With
+   * none named it goes toward its task's oldest open quote, and `quoteId: ''`
+   * says it pays no quote at all. A quote is settled once what's been
+   * paid toward it reaches its amount: a deposit leaves the rest open.
    */
   addCost(
     input: {
@@ -952,25 +1243,35 @@ export class PlanStore {
       kind: PlanCostKind;
       amountCents: number;
       at?: number;
+      quoteId?: string;
     },
     now: number,
   ): PlanCost {
+    const taskId = input.taskId ?? '';
+    let quoteId = input.kind === 'paid' ? (input.quoteId ?? '') : '';
+    if (input.kind === 'paid' && input.quoteId === undefined && taskId !== '') {
+      quoteId =
+        this.listCosts(input.goalId).find(
+          (c) => c.kind === 'quote' && !c.settled && c.taskId === taskId,
+        )?.id ?? '';
+    }
     const cost: PlanCost = {
       id: newPlanId('cost'),
       goalId: input.goalId,
       phaseId: input.phaseId ?? '',
-      taskId: input.taskId ?? '',
+      taskId,
       label: input.label,
       kind: input.kind,
       amountCents: Math.round(input.amountCents),
+      quoteId,
       settled: false,
       at: input.at ?? now,
       createdAt: now,
     };
     this.db.transaction(() => {
       this.db.execute(
-        `INSERT INTO plan_costs (id, goal_id, phase_id, task_id, label, kind, amount_cents, settled, at, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+        `INSERT INTO plan_costs (id, goal_id, phase_id, task_id, label, kind, amount_cents, settled, at, created_at, quote_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
         [
           cost.id,
           cost.goalId,
@@ -981,20 +1282,44 @@ export class PlanStore {
           cost.amountCents,
           cost.at,
           now,
+          cost.quoteId,
         ],
       );
-      if (cost.kind === 'paid' && cost.taskId !== '') {
-        this.db.run(
-          `UPDATE plan_costs SET settled = 1 WHERE goal_id = ? AND task_id = ? AND kind = 'quote'`,
-          [cost.goalId, cost.taskId],
-        );
-      }
+      if (quoteId !== '') this.resettleQuote(quoteId);
     });
     return cost;
   }
 
+  /** Remove a quote or payment, and work out again what a payment paid toward. */
   deleteCost(id: string): boolean {
-    return this.db.run('DELETE FROM plan_costs WHERE id = ?', [id]) > 0;
+    const cost = this.getCost(id);
+    if (cost === null) return false;
+    this.db.transaction(() => {
+      this.db.run('DELETE FROM plan_costs WHERE id = ?', [id]);
+      if (cost.kind === 'quote') {
+        this.db.run(`UPDATE plan_costs SET quote_id = '' WHERE quote_id = ?`, [id]);
+      } else if (cost.quoteId !== '') {
+        this.resettleQuote(cost.quoteId);
+      }
+    });
+    return true;
+  }
+
+  private resettleQuote(quoteId: string): void {
+    const quote = this.getCost(quoteId);
+    if (quote === null) return;
+    const paid = this.db
+      .query(`SELECT amount_cents FROM plan_costs WHERE quote_id = ? AND kind = 'paid'`, [quoteId])
+      .reduce((sum, r) => sum + Number(r.amount_cents), 0);
+    this.db.run('UPDATE plan_costs SET settled = ? WHERE id = ?', [
+      paid >= quote.amountCents ? 1 : 0,
+      quoteId,
+    ]);
+  }
+
+  getCost(id: string): PlanCost | null {
+    const rows = this.db.query('SELECT * FROM plan_costs WHERE id = ?', [id]);
+    return rows.length > 0 ? costFromRow(rows[0]) : null;
   }
 
   // ---------------- days ----------------
@@ -1018,18 +1343,21 @@ export class PlanStore {
       this.db.execute(
         `INSERT INTO plan_days (day, entries_json, note, planned_at) VALUES (?, ?, ?, ?)
          ON CONFLICT(day) DO UPDATE SET entries_json = excluded.entries_json, note = excluded.note,
-           planned_at = excluded.planned_at`,
+           planned_at = excluded.planned_at, reviewed_at = NULL`,
         [day, JSON.stringify(entries), note, now],
       );
       this.db.run(
         `UPDATE plan_tasks SET planned_for = '' WHERE planned_for = ? AND status = 'open'`,
         [day],
       );
+      // The planner can tie a loose task to a goal. It can't move one off the
+      // goal and phase it's on, or pull back a task put off to a later day.
       for (const e of entries) {
         this.db.run(
-          `UPDATE plan_tasks SET planned_for = ?, goal_id = CASE WHEN ? != '' THEN ? ELSE goal_id END,
-             updated_at = ? WHERE id = ? AND status = 'open'`,
-          [day, e.goalId ?? '', e.goalId ?? '', now, e.taskId],
+          `UPDATE plan_tasks SET planned_for = ?,
+             goal_id = CASE WHEN goal_id = '' AND phase_id = '' THEN ? ELSE goal_id END,
+             updated_at = ? WHERE id = ? AND status = 'open' AND planned_for <= ?`,
+          [day, e.goalId ?? '', now, e.taskId, day],
         );
       }
     });
@@ -1042,6 +1370,19 @@ export class PlanStore {
 }
 
 let store: PlanStore | null = null;
+let planChanged: (() => void) | null = null;
+
+/**
+ * Who to tell when something outside the owner's screens changes the plan
+ * (chat, an agent's batch), so the check-ins scheduled ahead stay true.
+ */
+export function setPlanChangedListener(fn: (() => void) | null): void {
+  planChanged = fn;
+}
+
+export function notifyPlanChanged(): void {
+  planChanged?.();
+}
 
 export function setPlanStore(s: PlanStore | null): void {
   store = s;

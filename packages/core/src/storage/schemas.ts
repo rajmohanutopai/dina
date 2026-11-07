@@ -4556,6 +4556,61 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       CREATE INDEX IF NOT EXISTS idx_plan_costs_goal ON plan_costs(goal_id);
     `,
   },
+  {
+    // DAILY_PLAN.md §24: things that repeat. Each turn is a plan_tasks row, and
+    // the unique index means a day's turn can only be made once.
+    version: 89,
+    name: 'plan_routines',
+    sql: `
+      CREATE TABLE IF NOT EXISTS plan_routines (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL DEFAULT '',
+        title TEXT NOT NULL,
+        persona TEXT NOT NULL DEFAULT 'general',
+        effort_min INTEGER,
+        kind TEXT NOT NULL CHECK (kind IN ('days', 'per_week', 'monthly')),
+        weekdays TEXT NOT NULL DEFAULT '[]',
+        times_per_week INTEGER NOT NULL DEFAULT 0,
+        day_of_month INTEGER NOT NULL DEFAULT 0,
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      ALTER TABLE plan_tasks ADD COLUMN routine_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE plan_tasks ADD COLUMN routine_day TEXT NOT NULL DEFAULT '';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_tasks_routine_turn
+        ON plan_tasks(routine_id, routine_day) WHERE routine_id != '';
+    `,
+  },
+  {
+    // DAILY_PLAN.md §17: a payment names the quote it pays toward, so a deposit
+    // leaves the rest open. §9: when a task first reached the list, so "new since
+    // you planned" doesn't count a task an agent merely sent again.
+    version: 90,
+    name: 'plan_cost_quote_task_opened',
+    sql: `
+      ALTER TABLE plan_costs ADD COLUMN quote_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE plan_tasks ADD COLUMN opened_at INTEGER NOT NULL DEFAULT 0;
+      UPDATE plan_costs SET quote_id = COALESCE((
+          SELECT q.id FROM plan_costs q
+          WHERE q.kind = 'quote' AND q.settled = 1 AND q.goal_id = plan_costs.goal_id
+            AND q.task_id = plan_costs.task_id
+          ORDER BY q.at ASC, q.created_at ASC LIMIT 1
+        ), '')
+        WHERE kind = 'paid' AND task_id != '';
+    `,
+  },
+  {
+    // DAILY_PLAN.md §27: the owner's rename of an agent's task outlasts its next batch.
+    version: 91,
+    name: 'plan_task_title_by_owner',
+    sql: `
+      ALTER TABLE plan_tasks ADD COLUMN title_by_owner INTEGER NOT NULL DEFAULT 0;
+      -- Nothing records who wrote a title before now. An agent's task that's
+      -- already here keeps its title, in case the owner wrote it.
+      UPDATE plan_tasks SET title_by_owner = 1 WHERE origin != 'owner';
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

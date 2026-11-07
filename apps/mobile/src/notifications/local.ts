@@ -46,6 +46,8 @@ export type NotificationChannel = 'fiduciary' | 'solicited' | 'engagement';
 
 const KV_NAMESPACE = 'notifications';
 const PERMISSION_KEY = 'permission_status';
+/** Ids of the daily plan's check-ins (`daily_plan.ts`). */
+export const PLAN_CHECKIN_ID_PREFIX = 'notif-plan-';
 
 export interface ScheduleInput {
   title: string;
@@ -161,11 +163,7 @@ export async function forceRequestPushPermission(): Promise<PermissionStatus> {
     },
   });
   const status: PermissionStatus =
-    result.granted === true
-      ? 'granted'
-      : result.canAskAgain === false
-        ? 'denied'
-        : 'undetermined';
+    result.granted === true ? 'granted' : result.canAskAgain === false ? 'denied' : 'undetermined';
   await kvSet(PERMISSION_KEY, status, KV_NAMESPACE);
   return status;
 }
@@ -175,6 +173,43 @@ export async function getPersistedPermissionStatus(): Promise<PermissionStatus> 
   const v = await kvGet(PERMISSION_KEY, KV_NAMESPACE);
   if (v === 'granted' || v === 'denied' || v === 'undetermined') return v;
   return 'undetermined';
+}
+
+/**
+ * What the owner sees of a notification:
+ *   alerts — a banner, as check-ins need;
+ *   quiet  — iOS provisional: Notification Centre only, no banner;
+ *   ask    — not decided yet;
+ *   off    — refused; only iPhone Settings can change it.
+ */
+export type AlertAccess = 'alerts' | 'quiet' | 'ask' | 'off';
+
+function alertAccessOf(p: Notifications.NotificationPermissionsStatus): AlertAccess {
+  if (p.ios?.status === Notifications.IosAuthorizationStatus.PROVISIONAL) return 'quiet';
+  if (p.granted) return 'alerts';
+  return p.canAskAgain ? 'ask' : 'off';
+}
+
+export async function getAlertAccess(): Promise<AlertAccess> {
+  return alertAccessOf(await Notifications.getPermissionsAsync());
+}
+
+/**
+ * Ask for banners. The first-launch request is provisional so it doesn't
+ * interrupt onboarding; a check-in the owner never notices does nothing, so
+ * the Today screen offers this on their tap.
+ */
+export async function requestAlerts(): Promise<AlertAccess> {
+  const result = await Notifications.requestPermissionsAsync({
+    ios: {
+      allowAlert: true,
+      allowSound: true,
+      allowBadge: true,
+      provideAppNotificationSettings: true,
+    },
+  });
+  await kvSet(PERMISSION_KEY, result.granted ? 'granted' : 'undetermined', KV_NAMESPACE);
+  return alertAccessOf(result);
 }
 
 // ---------------------------------------------------------------------------
@@ -268,6 +303,9 @@ export async function rescheduleAllReminders(now: number = Date.now()): Promise<
   for (const e of entries) {
     if (e.key === `${KV_NAMESPACE}:${PERMISSION_KEY}`) continue;
     const mirror = parseMirror(e.value);
+    // The daily plan rewrites its own check-ins with today's text at unlock;
+    // sending this older copy too could bring back one it just cancelled.
+    if (mirror !== null && mirror.id.startsWith(PLAN_CHECKIN_ID_PREFIX)) continue;
     if (mirror === null) {
       // Malformed entry — drop so it doesn't poison subsequent boots.
       await kvDelete(stripNamespace(e.key), KV_NAMESPACE);

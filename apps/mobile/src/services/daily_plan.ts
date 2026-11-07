@@ -15,14 +15,22 @@ import {
   type DayPlan,
   type PlannerAsk,
 } from '@dina/brain';
-import { shouldDeliverNotification } from '@dina/brain/notifications';
+import { setDND, shouldDeliverNotification } from '@dina/brain/notifications';
 import {
+  dayCandidates,
+  dayPlanMade,
   decideFeed,
+  ensureRoutineTasks,
+  finishDay,
   getPlanStore,
-  isTaskReady,
   latePhase,
+  notifyPlanChanged,
   moneySummary,
-  needsChase,
+  putOffTask,
+  routineProgress,
+  routineRuleError,
+  routineRuleLabel,
+  routineTurnsAhead,
   type LatePhase,
   type MoneySummary,
   type PlanCost,
@@ -30,18 +38,25 @@ import {
   type PlanPhase,
   planDayEnd,
   planDayKey,
-  planDayKeyAfter,
   planDayStart,
+  planOnDay,
+  shiftCalendarDays,
   type PlanDay,
   type PlanFeed,
   type PlanGoal,
+  type PlanRoutine,
   type PlanStore,
   type PlanTask,
+  type RoutineInput,
 } from '@dina/core';
 import { kvGet, kvSet } from '@dina/core/kv';
 
 import { peekAgenticRouter } from '../ai/agentic_swap';
-import { cancelNotification, scheduleNotification } from '../notifications/local';
+import {
+  PLAN_CHECKIN_ID_PREFIX,
+  cancelNotification,
+  scheduleNotification,
+} from '../notifications/local';
 
 const KV_NAMESPACE = 'plan';
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -58,6 +73,9 @@ export interface PlanSettings {
   capacityHours: number;
   /** Check-ins on or off. */
   checkins: boolean;
+  /** Quiet hours, `HH:MM`, local: no check-in lands inside them. */
+  quietStart: string;
+  quietEnd: string;
 }
 
 export const DEFAULT_PLAN_SETTINGS: PlanSettings = Object.freeze({
@@ -67,6 +85,8 @@ export const DEFAULT_PLAN_SETTINGS: PlanSettings = Object.freeze({
   weeklyDay: 0,
   capacityHours: 6,
   checkins: true,
+  quietStart: '22:00',
+  quietEnd: '07:00',
 });
 
 const HHMM = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -93,6 +113,8 @@ export function validSettings(raw: unknown): PlanSettings {
     weeklyDay: weekly,
     capacityHours: hours,
     checkins: s.checkins !== false,
+    quietStart: time(s.quietStart, DEFAULT_PLAN_SETTINGS.quietStart),
+    quietEnd: time(s.quietEnd, DEFAULT_PLAN_SETTINGS.quietEnd),
   };
 }
 
@@ -108,8 +130,27 @@ export async function loadPlanSettings(): Promise<PlanSettings> {
 export async function savePlanSettings(next: Partial<PlanSettings>): Promise<PlanSettings> {
   const merged = validSettings({ ...(await loadPlanSettings()), ...next });
   await kvSet(SETTINGS_KEY, JSON.stringify(merged), KV_NAMESPACE);
+  setDND({ quietHoursStart: merged.quietStart, quietHoursEnd: merged.quietEnd });
   await rescheduleCheckins();
   return merged;
+}
+
+/** Put the owner's saved quiet hours in force. Quiet hours live in memory, so boot needs this. */
+export async function applySavedQuietHours(): Promise<void> {
+  const s = await loadPlanSettings();
+  setDND({ quietHoursStart: s.quietStart, quietHoursEnd: s.quietEnd });
+}
+
+/** The check-in times that fall inside quiet hours, so they will not be sent. */
+export function checkinsInQuietHours(settings: PlanSettings, now: number = Date.now()): string[] {
+  const times: [string, string][] = [
+    ['Morning plan', settings.planTime],
+    ['Midday check', settings.middayTime],
+    ['Evening review', settings.eveningTime],
+  ];
+  return times
+    .filter(([, hhmm]) => !shouldDeliverNotification(2, new Date(atTime(now, hhmm))))
+    .map(([label]) => label);
 }
 
 function requireStore(): PlanStore {
@@ -125,30 +166,29 @@ export function atTime(dayMs: number, hhmm: string): number {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, m).getTime();
 }
 
-// ---------------------------------------------------------------------------
-// Which tasks can go on a day (DAILY_PLAN.md §17)
-// ---------------------------------------------------------------------------
-
-export interface DayCandidate {
-  task: PlanTask;
-  /** Set when the task is a late wait to chase. */
-  chase?: { on: string; until: number };
+/** The local day `days` after the one holding `ms`, at `HH:MM`. */
+function atTimeOn(ms: number, days: number, hhmm: string): number {
+  const d = new Date(ms);
+  return atTime(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days, 12).getTime(), hhmm);
 }
 
-/** Open tasks that can go on the day holding `now`: ready ones, and late waits. */
-export function dayCandidates(store: PlanStore, now: number): DayCandidate[] {
-  const all = store.listTasks({ statuses: ['open', 'done', 'dropped'] });
-  const byId = new Map(all.map((t) => [t.id, t]));
-  const phases = new Map<string, PlanPhase>();
-  for (const g of store.listGoals()) for (const p of store.listPhases(g.id)) phases.set(p.id, p);
-  const dayEnd = planDayEnd(now);
-  return all.flatMap((task): DayCandidate[] => {
-    if (task.status !== 'open') return [];
-    if (needsChase(task, dayEnd)) {
-      return [{ task, chase: { on: task.waitingOn, until: task.waitingUntil ?? now } }];
-    }
-    return isTaskReady(task, byId, phases) ? [{ task }] : [];
-  });
+export { dayCandidates, type DayCandidate } from '@dina/core';
+
+/**
+ * A form's fields after the saved values change under it (a date moved, a
+ * screen reloaded): a field the owner hasn't touched takes the new value, and
+ * one being edited keeps what they've typed.
+ */
+export function mergeFormFields<T extends Record<string, string>>(
+  current: T,
+  saved: T,
+  next: T,
+): T {
+  const out = { ...next };
+  for (const k of Object.keys(next) as (keyof T)[]) {
+    if (current[k] !== saved[k]) out[k] = current[k];
+  }
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -173,15 +213,12 @@ export interface TodayView {
 
 export async function loadToday(now: number = Date.now()): Promise<TodayView> {
   const store = requireStore();
+  ensureRoutineTasks(store, now);
   const settings = await loadPlanSettings();
   const day = planDayKey(now);
-  const plan = store.getDay(day);
-  const tasks = store.listTasks({ statuses: ['open', 'done', 'held'] });
-  const byId = new Map(tasks.map((t) => [t.id, t]));
-  const planned = (plan?.entries ?? []).flatMap((e) => {
-    const t = byId.get(e.taskId);
-    return t === undefined || t.status === 'held' ? [] : [{ task: t, reason: e.reason }];
-  });
+  const plan = dayPlanMade(store, day);
+  const tasks = store.listTasks({ statuses: ['held'] });
+  const planned = planOnDay(store, now);
   const plannedIds = new Set(planned.map((p) => p.task.id));
   const candidates = dayCandidates(store, now);
   const chases: Record<string, string> = {};
@@ -221,9 +258,10 @@ export async function loadToday(now: number = Date.now()): Promise<TodayView> {
 export async function shouldAutoPlan(now: number = Date.now()): Promise<boolean> {
   const store = getPlanStore();
   if (store === null) return false;
+  ensureRoutineTasks(store, now);
   const settings = await loadPlanSettings();
   if (now < atTime(now, settings.planTime)) return false;
-  if (store.getDay(planDayKey(now)) !== null) return false;
+  if (dayPlanMade(store, planDayKey(now)) !== null) return false;
   return dayCandidates(store, now).length > 0;
 }
 
@@ -244,13 +282,32 @@ function routerAsk(): PlannerAsk | null {
   };
 }
 
-export async function planToday(
+let planning: Promise<DayPlan> | null = null;
+
+/**
+ * Build and save today's plan. One at a time: a timer, a tap and chat can all
+ * ask at once, and each would pay for a model call and overwrite the others.
+ */
+export function planToday(
   now: number = Date.now(),
   ask: PlannerAsk | null = routerAsk(),
 ): Promise<DayPlan> {
+  if (planning !== null) return planning;
+  planning = makeDayPlan(now, ask).finally(() => {
+    planning = null;
+  });
+  return planning;
+}
+
+async function makeDayPlan(now: number, ask: PlannerAsk | null): Promise<DayPlan> {
   const store = requireStore();
+  ensureRoutineTasks(store, now);
   const settings = await loadPlanSettings();
   const candidates = dayCandidates(store, now);
+  const routineRule = (t: PlanTask): { rule: string; pressing: boolean } | null => {
+    const r = t.routineId === '' ? null : store.getRoutine(t.routineId);
+    return r === null ? null : { rule: routineRuleLabel(r), pressing: t.dueAt !== null };
+  };
   const plan = await buildDayPlan(
     {
       day: planDayKey(now),
@@ -261,6 +318,7 @@ export async function planToday(
       goals: store.listGoals(true).map((g) => ({ id: g.id, title: g.title, notes: g.notes })),
       tasks: candidates.map(({ task: t, chase }) => ({
         ...(chase !== undefined ? { chase } : {}),
+        ...(routineRule(t) !== null ? { routine: routineRule(t) ?? undefined } : {}),
         id: t.id,
         title: t.title,
         summary: t.summary,
@@ -275,7 +333,21 @@ export async function planToday(
     },
     ask,
   );
-  store.putDay(planDayKey(now), plan.entries, plan.note, now);
+  // What's already done today stays on the plan, so the count stays true.
+  const day = planDayKey(now);
+  const earlier = store.getDay(day);
+  const done = planOnDay(store, now)
+    .filter((p) => p.task.status === 'done')
+    .map((p) => ({
+      taskId: p.task.id,
+      reason: p.reason,
+      ...(p.task.goalId !== '' ? { goalId: p.task.goalId } : {}),
+    }));
+  // The owner can tick a task while the model thinks: it's on the plan once.
+  const doneIds = new Set(done.map((e) => e.taskId));
+  const entries = [...done, ...plan.entries.filter((e) => !doneIds.has(e.taskId))];
+  // An empty day isn't a plan: auto-planning and the check-ins stay on.
+  if (entries.length > 0 || earlier !== null) store.putDay(day, entries, plan.note, now);
   await rescheduleCheckins(now);
   return plan;
 }
@@ -285,7 +357,13 @@ export async function setTaskDone(
   done: boolean,
   now: number = Date.now(),
 ): Promise<void> {
-  requireStore().updateTask(id, { status: done ? 'done' : 'open' }, now);
+  const store = requireStore();
+  const task = store.getTask(id);
+  // A screen left open overnight can still offer yesterday's turn.
+  if (task !== null && task.routineId !== '' && task.routineDay !== planDayKey(now)) {
+    throw new Error('That turn has passed. Today’s is on your plan if one is due.');
+  }
+  store.updateTask(id, { status: done ? 'done' : 'open' }, now);
   await rescheduleCheckins(now);
 }
 
@@ -294,12 +372,9 @@ export async function dropTask(id: string, now: number = Date.now()): Promise<vo
   await rescheduleCheckins(now);
 }
 
-/** Move an unfinished task to tomorrow; the planner sees how often. */
+/** Move an unfinished task to tomorrow; a routine's turn is skipped instead. */
 export async function carryTask(id: string, now: number = Date.now()): Promise<void> {
-  const store = requireStore();
-  const task = store.getTask(id);
-  if (task === null) return;
-  store.updateTask(id, { plannedFor: planDayKeyAfter(now, 1), carried: task.carried + 1 }, now);
+  putOffTask(requireStore(), id, now);
   await rescheduleCheckins(now);
 }
 
@@ -324,21 +399,9 @@ export async function addTask(title: string, now: number = Date.now()): Promise<
 
 /** Finish the evening review: every planned task still open is carried. */
 export async function finishReview(now: number = Date.now()): Promise<number> {
-  const store = requireStore();
-  const day = planDayKey(now);
-  const plan = store.getDay(day);
-  if (plan === null) return 0;
-  let carried = 0;
-  for (const e of plan.entries) {
-    const t = store.getTask(e.taskId);
-    if (t !== null && t.status === 'open' && t.plannedFor === day) {
-      store.updateTask(t.id, { plannedFor: planDayKeyAfter(now, 1), carried: t.carried + 1 }, now);
-      carried += 1;
-    }
-  }
-  store.markReviewed(day, now);
+  const end = finishDay(requireStore(), now);
   await rescheduleCheckins(now);
-  return carried;
+  return end === null ? 0 : end.carried.length + end.skipped.length;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,11 +429,18 @@ export function listGoals(): PlanGoal[] {
 export function addGoal(title: string, notes = '', now: number = Date.now()): PlanGoal {
   const t = title.trim();
   if (t === '') throw new Error('Write the goal first.');
-  return requireStore().addGoal(t.slice(0, 200), notes.trim().slice(0, 500), now);
+  const goal = requireStore().addGoal(t.slice(0, 200), notes.trim().slice(0, 500), now);
+  notifyPlanChanged();
+  return goal;
 }
 
-export function setGoalActive(id: string, active: boolean, now: number = Date.now()): void {
+export async function setGoalActive(
+  id: string,
+  active: boolean,
+  now: number = Date.now(),
+): Promise<void> {
   requireStore().updateGoal(id, { active }, now);
+  await rescheduleCheckins(now);
 }
 
 // ---------------------------------------------------------------------------
@@ -387,14 +457,68 @@ export interface GoalView {
   late: LatePhase | null;
   money: MoneySummary;
   costs: PlanCost[];
+  routines: RoutineView[];
+}
+
+export interface RoutineView {
+  routine: PlanRoutine;
+  /** "3 times a week". */
+  rule: string;
+  /** "2 of 3 this week". */
+  progress: string;
+  /** Today's turn, when there is one. */
+  today: PlanTask | null;
+}
+
+/** Routines with how they stand, for one goal or ('' ) those on no goal. */
+export function loadRoutines(goalId: string, now: number = Date.now()): RoutineView[] {
+  const store = getPlanStore();
+  if (store === null) return [];
+  ensureRoutineTasks(store, now);
+  const day = planDayKey(now);
+  return store
+    .listRoutines(true)
+    .filter((r) => r.goalId === goalId)
+    .map((routine) => ({
+      routine,
+      rule: routineRuleLabel(routine),
+      progress: routineProgress(store, routine, now).line,
+      today:
+        store
+          .listRoutineTasks(routine.id)
+          .find((t) => t.routineDay === day && t.status !== 'dropped') ?? null,
+    }));
+}
+
+export async function addRoutine(
+  input: RoutineInput,
+  now: number = Date.now(),
+): Promise<PlanRoutine> {
+  const title = input.title.trim();
+  if (title === '') throw new Error('Write what repeats first.');
+  const error = routineRuleError(input);
+  if (error !== null) throw new Error(error);
+  const store = requireStore();
+  const routine = store.addRoutine({ ...input, title: title.slice(0, 200) }, now);
+  ensureRoutineTasks(store, now);
+  await rescheduleCheckins(now);
+  return routine;
+}
+
+export async function stopRoutine(id: string, now: number = Date.now()): Promise<void> {
+  requireStore().stopRoutine(id, now);
+  await rescheduleCheckins(now);
 }
 
 export function loadGoal(id: string, now: number = Date.now()): GoalView | null {
   const store = requireStore();
   const goal = store.getGoal(id);
   if (goal === null) return null;
+  const routines = loadRoutines(id, now);
   const phases = store.listPhases(id);
-  const tasks = store.listTasks({ goalId: id, statuses: ['open', 'done'] });
+  const tasks = store
+    .listTasks({ goalId: id, statuses: ['open', 'done'] })
+    .filter((t) => t.routineId === '');
   const ready = new Set(
     dayCandidates(store, now)
       .filter((c) => c.chase === undefined)
@@ -409,6 +533,7 @@ export function loadGoal(id: string, now: number = Date.now()): GoalView | null 
     late: latePhase(phases, now),
     money: moneySummary(goal.budgetCents, costs),
     costs,
+    routines,
   };
 }
 
@@ -461,10 +586,22 @@ export function discardGoalDraft(id: string, now: number = Date.now()): void {
 
 export function updateGoalDetails(
   id: string,
-  patch: { title?: string; targetAt?: number | null; budgetCents?: number | null },
+  patch: { title?: string; notes?: string; targetAt?: number | null; budgetCents?: number | null },
   now: number = Date.now(),
 ): void {
-  requireStore().updateGoal(id, patch, now);
+  const title = patch.title?.trim();
+  if (title === '') throw new Error('Write the goal first.');
+  requireStore().updateGoal(
+    id,
+    {
+      ...patch,
+      ...(title !== undefined ? { title: title.slice(0, 200) } : {}),
+      ...(patch.notes !== undefined ? { notes: patch.notes.trim().slice(0, 500) } : {}),
+    },
+    now,
+  );
+  // The weekly note names the goal and counts from its dates.
+  notifyPlanChanged();
 }
 
 export function addGoalPhase(
@@ -475,7 +612,9 @@ export function addGoalPhase(
 ): PlanPhase {
   const t = title.trim();
   if (t === '') throw new Error('Write the phase first.');
-  return requireStore().addPhase(goalId, t.slice(0, 120), '', targetAt, now);
+  const phase = requireStore().addPhase(goalId, t.slice(0, 120), '', targetAt, now);
+  notifyPlanChanged();
+  return phase;
 }
 
 export async function finishGoalPhase(
@@ -505,6 +644,81 @@ export async function addGoalTask(
   return task;
 }
 
+// Changing a live plan (§27).
+
+export async function updatePhaseDetails(
+  phaseId: string,
+  patch: { title?: string; targetAt?: number | null },
+  now: number = Date.now(),
+): Promise<void> {
+  const title = patch.title?.trim();
+  if (title === '') throw new Error('Write the phase first.');
+  requireStore().updatePhase(
+    phaseId,
+    {
+      ...(title !== undefined ? { title: title.slice(0, 120) } : {}),
+      ...(patch.targetAt !== undefined ? { targetAt: patch.targetAt } : {}),
+    },
+    now,
+  );
+  await rescheduleCheckins(now);
+}
+
+export async function moveGoalPhase(
+  phaseId: string,
+  direction: 'up' | 'down',
+  now: number = Date.now(),
+): Promise<void> {
+  requireStore().movePhase(phaseId, direction, now);
+  await rescheduleCheckins(now);
+}
+
+export async function deleteGoalPhase(phaseId: string, now: number = Date.now()): Promise<void> {
+  requireStore().deletePhase(phaseId, now);
+  await rescheduleCheckins(now);
+}
+
+export async function reopenGoalPhase(phaseId: string, now: number = Date.now()): Promise<void> {
+  requireStore().reopenPhase(phaseId, now);
+  await rescheduleCheckins(now);
+}
+
+export async function renameTask(
+  taskId: string,
+  title: string,
+  now: number = Date.now(),
+): Promise<void> {
+  const t = title.trim();
+  if (t === '') throw new Error('Write the task first.');
+  requireStore().updateTask(taskId, { title: t.slice(0, 200) }, now);
+  await rescheduleCheckins(now);
+}
+
+export async function moveTaskToPhase(
+  taskId: string,
+  phaseId: string,
+  now: number = Date.now(),
+): Promise<void> {
+  requireStore().updateTask(taskId, { phaseId }, now);
+  await rescheduleCheckins(now);
+}
+
+/** Set which tasks must finish before this one. Refuses a circle. */
+export async function setTaskOrder(
+  taskId: string,
+  blockedBy: string[],
+  now: number = Date.now(),
+): Promise<void> {
+  if (!requireStore().setTaskBlockedBy(taskId, blockedBy, now)) {
+    throw new Error('Those tasks would end up waiting on each other. Pick a different one.');
+  }
+  await rescheduleCheckins(now);
+}
+
+export function removeGoalCost(id: string): void {
+  requireStore().deleteCost(id);
+}
+
 /** Ask the model for a phase's next tasks and add them. Returns how many. */
 export async function suggestTasksForPhase(
   phaseId: string,
@@ -520,12 +734,16 @@ export async function suggestTasksForPhase(
     {
       goal,
       phase,
-      done: tasks.filter((t) => t.status === 'done').map((t) => t.title),
+      // A routine's turns would crowd out the project's own finished work.
+      done: tasks.filter((t) => t.status === 'done' && t.routineId === '').map((t) => t.title),
       open: tasks.filter((t) => t.status === 'open' && t.phaseId === phase.id).map((t) => t.title),
     },
     now,
     ask,
   );
+  // The owner can finish or delete the phase while the model answers.
+  const still = store.getPhase(phaseId);
+  if (still === null || still.status === 'done') return 0;
   const ids: string[] = [];
   for (const s of suggested) {
     const blockedBy = s.after.flatMap((n) => (n < ids.length ? [ids[n]] : []));
@@ -559,7 +777,7 @@ export async function setTaskWait(
     taskId,
     {
       waitingOn: name,
-      waitingUntil: name === '' ? null : planDayEnd(now + Math.max(0, days) * DAY_MS) - 1,
+      waitingUntil: name === '' ? null : planDayEnd(shiftCalendarDays(now, Math.max(0, days))) - 1,
     },
     now,
   );
@@ -581,13 +799,24 @@ export function recordGoalCost(
   kind: PlanCostKind,
   taskId = '',
   now: number = Date.now(),
+  quoteId = '',
 ): PlanCost {
   const cents = parseAmount(amountText);
   if (cents === null) throw new Error('Write the amount as a number, for example 18,400.');
-  const l = label.trim();
+  const store = requireStore();
+  const quote = quoteId === '' ? null : store.getCost(quoteId);
+  const l = label.trim() || (quote?.label ?? '');
   if (l === '') throw new Error('Say what the money is for.');
-  return requireStore().addCost(
-    { goalId, label: l.slice(0, 120), kind, amountCents: cents, taskId },
+  return store.addCost(
+    {
+      goalId,
+      label: l.slice(0, 120),
+      kind,
+      amountCents: cents,
+      taskId: taskId || quote?.taskId || '',
+      phaseId: quote?.phaseId ?? '',
+      ...(kind === 'paid' && quoteId !== '' ? { quoteId } : {}),
+    },
     now,
   );
 }
@@ -623,56 +852,128 @@ export interface Checkin {
   deepLink: string;
 }
 
-const CHECKIN_KINDS: CheckinKind[] = ['morning', 'midday', 'evening', 'weekly'];
 /** A goal with no finished task for this long gets a line in the weekly note. */
 export const QUIET_GOAL_DAYS = 7;
+/**
+ * Morning check-ins sent while the app stays closed, as days after the next
+ * one (§25). They thin out, then stop, until the owner opens the app.
+ */
+export const MORNING_FADE_DAYS = [0, 1, 2, 4, 7, 12];
+/** Weekly notes sent while the app stays closed. */
+export const WEEKLY_AHEAD = 2;
 
-export function checkinId(kind: CheckinKind): string {
-  return `notif-plan-${kind}`;
+/** The id of the `turn`th check-in of a kind scheduled ahead. */
+export function checkinId(kind: CheckinKind, turn = 0): string {
+  return turn === 0
+    ? `${PLAN_CHECKIN_ID_PREFIX}${kind}`
+    : `${PLAN_CHECKIN_ID_PREFIX}${kind}-${turn}`;
+}
+
+function allCheckinIds(): string[] {
+  return [
+    ...MORNING_FADE_DAYS.map((_, i) => checkinId('morning', i)),
+    checkinId('midday'),
+    checkinId('evening'),
+    ...Array.from({ length: WEEKLY_AHEAD }, (_, i) => checkinId('weekly', i)),
+  ];
 }
 
 function plural(n: number, one: string, many: string): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
+/** What will be open on the day holding `at`, as far as is known now. */
+function openOn(store: PlanStore, at: number): { count: number; due: number } {
+  const tasks = dayCandidates(store, at).map((c) => c.task);
+  const dayEnd = planDayEnd(at);
+  const ahead = routineTurnsAhead(store, at);
+  return {
+    count: tasks.length + ahead.count,
+    due: tasks.filter((t) => t.dueAt !== null && t.dueAt < dayEnd).length + ahead.pressing,
+  };
+}
+
+function weeklyNote(store: PlanStore, at: number): { body: string } | null {
+  const quiet = quietGoals(store, at);
+  const late = store
+    .listGoals(true)
+    .map((goal) => ({ goal, late: latePhase(store.listPhases(goal.id), at) }))
+    .filter((x): x is { goal: PlanGoal; late: LatePhase } => x.late !== null)
+    .sort((a, b) => b.late.days - a.late.days);
+  if (late.length > 0) {
+    const first = late[0];
+    const lateIds = new Set(late.map((x) => x.goal.id));
+    const more = late.length - 1 + quiet.filter((q) => !lateIds.has(q.goal.id)).length;
+    return {
+      body:
+        `${first.late.phase.title} (${first.goal.title}) is ${plural(first.late.days, 'day', 'days')} late` +
+        (more > 0 ? `, and ${plural(more, 'other goal needs', 'other goals need')} a look.` : '.'),
+    };
+  }
+  if (quiet.length > 0) {
+    const first = quiet[0];
+    return {
+      body:
+        `No time on "${first.goal.title}" for ${first.days} days` +
+        (quiet.length > 1
+          ? `, and ${plural(quiet.length - 1, 'other goal', 'other goals')}.`
+          : '.'),
+    };
+  }
+  return null;
+}
+
 /**
- * The check-ins worth sending from now on, with the text they'd carry. One
- * of each kind at most: the next one due. A check-in with nothing to say is
- * left out.
+ * The check-ins worth sending from now on, with the text they'd carry. The
+ * phone runs nothing in the background, so each is written now. A later
+ * morning's text counts what's known today, and every open of the app
+ * rewrites them. One with nothing to say is left out.
  */
 export function computeCheckins(store: PlanStore, settings: PlanSettings, now: number): Checkin[] {
   if (!settings.checkins) return [];
   const out: Checkin[] = [];
   const today = planDayKey(now);
+  const plan = dayPlanMade(store, today);
 
-  // Morning: the next plan time, today's if still ahead, else tomorrow's.
-  const morningToday = atTime(now, settings.planTime);
-  const morningAt = morningToday > now ? morningToday : atTime(now + DAY_MS, settings.planTime);
-  const morningDayEnd = planDayEnd(morningAt);
-  const open = dayCandidates(store, morningAt).map((c) => c.task);
-  const dueThatDay = open.filter((t) => t.dueAt !== null && t.dueAt < morningDayEnd).length;
-  if (open.length > 0) {
+  // Mornings: the next plan time, then thinning out while the app stays closed.
+  const base = atTime(now, settings.planTime) > now ? 0 : 1;
+  MORNING_FADE_DAYS.forEach((offset, turn) => {
+    const at = atTimeOn(now, base + offset, settings.planTime);
+    if (planDayKey(at) === today && plan !== null) return;
+    const { count, due } = openOn(store, at);
+    if (count === 0) return;
+    const last = turn === MORNING_FADE_DAYS.length - 1;
     out.push({
-      id: checkinId('morning'),
+      id: checkinId('morning', turn),
       kind: 'morning',
-      at: morningAt,
+      at,
       title: 'Plan your day',
       body:
-        `${plural(open.length, 'open task', 'open tasks')}` +
-        (dueThatDay > 0 ? `, ${dueThatDay} due by the end of the day.` : '.'),
+        `${plural(count, 'open task', 'open tasks')}` +
+        (due > 0 ? `, ${due} due by the end of the day.` : '.') +
+        (last ? ' Dina will stop asking until you open the app.' : ''),
       deepLink: 'dina://plan',
     });
-  }
+  });
 
-  const plan = store.getDay(today);
-  if (plan !== null && plan.entries.length > 0) {
-    const tasks = plan.entries
-      .map((e) => store.getTask(e.taskId))
-      .filter((t): t is PlanTask => t !== null && t.status !== 'held' && t.status !== 'dropped');
+  const middayAt = atTime(now, settings.middayTime);
+  if (plan === null) {
+    const { count } = openOn(store, middayAt);
+    if (middayAt > now && count > 0) {
+      out.push({
+        id: checkinId('midday'),
+        kind: 'midday',
+        at: middayAt,
+        title: 'No plan yet today',
+        body: `${plural(count, 'open task', 'open tasks')}. Open Dina to plan the rest of the day.`,
+        deepLink: 'dina://plan',
+      });
+    }
+  } else {
+    const tasks = planOnDay(store, now).map((p) => p.task);
     const done = tasks.filter((t) => t.status === 'done').length;
     const left = tasks.filter((t) => t.status === 'open');
-    const middayAt = atTime(now, settings.middayTime);
-    if (middayAt > now && left.length > 0) {
+    if (middayAt > now && left.length > 0 && plan.reviewedAt === null) {
       out.push({
         id: checkinId('midday'),
         kind: 'midday',
@@ -695,41 +996,19 @@ export function computeCheckins(store: PlanStore, settings: PlanSettings, now: n
     }
   }
 
-  // Weekly: the next weekly day at the evening time.
+  // Weekly: the next weekly days at the evening time.
   const daysAhead = (settings.weeklyDay - new Date(now).getDay() + 7) % 7;
-  let weeklyAt = atTime(now + daysAhead * DAY_MS, settings.eveningTime);
-  if (weeklyAt <= now) weeklyAt = atTime(now + 7 * DAY_MS, settings.eveningTime);
-  const quiet = quietGoals(store, weeklyAt);
-  const late = store
-    .listGoals(true)
-    .map((goal) => ({ goal, late: latePhase(store.listPhases(goal.id), weeklyAt) }))
-    .filter((x): x is { goal: PlanGoal; late: LatePhase } => x.late !== null)
-    .sort((a, b) => b.late.days - a.late.days);
-  if (late.length > 0) {
-    const first = late[0];
-    const more = late.length - 1 + quiet.length;
+  const first = atTimeOn(now, daysAhead, settings.eveningTime) > now ? daysAhead : daysAhead + 7;
+  for (let turn = 0; turn < WEEKLY_AHEAD; turn += 1) {
+    const at = atTimeOn(now, first + turn * 7, settings.eveningTime);
+    const note = weeklyNote(store, at);
+    if (note === null) continue;
     out.push({
-      id: checkinId('weekly'),
+      id: checkinId('weekly', turn),
       kind: 'weekly',
-      at: weeklyAt,
+      at,
       title: 'Your goals this week',
-      body:
-        `${first.late.phase.title} (${first.goal.title}) is ${plural(first.late.days, 'day', 'days')} late` +
-        (more > 0 ? `, and ${plural(more, 'other goal needs', 'other goals need')} a look.` : '.'),
-      deepLink: 'dina://goals',
-    });
-  } else if (quiet.length > 0) {
-    const first = quiet[0];
-    out.push({
-      id: checkinId('weekly'),
-      kind: 'weekly',
-      at: weeklyAt,
-      title: 'Your goals this week',
-      body:
-        `No time on "${first.goal.title}" for ${first.days} days` +
-        (quiet.length > 1
-          ? `, and ${plural(quiet.length - 1, 'other goal', 'other goals')}.`
-          : '.'),
+      body: note.body,
       deepLink: 'dina://goals',
     });
   }
@@ -755,18 +1034,31 @@ export function quietGoals(store: PlanStore, at: number): { goal: PlanGoal; days
  * Replace the scheduled check-ins with the ones worth sending now. Quiet
  * hours win: a check-in that would land inside them is not scheduled.
  */
-export async function rescheduleCheckins(now: number = Date.now()): Promise<number> {
+let rescheduleQueue: Promise<unknown> = Promise.resolve();
+
+/**
+ * Replace the scheduled check-ins with the ones worth sending now, one run at a
+ * time: two runs side by side could bring back a check-in the later one cancelled.
+ */
+export function rescheduleCheckins(now: number = Date.now()): Promise<number> {
+  const run = rescheduleQueue.catch(() => undefined).then(() => rescheduleCheckinsNow(now));
+  rescheduleQueue = run;
+  return run;
+}
+
+async function rescheduleCheckinsNow(now: number): Promise<number> {
   const store = getPlanStore();
   if (store === null) return 0;
+  ensureRoutineTasks(store, now);
   const settings = await loadPlanSettings();
   const wanted = computeCheckins(store, settings, now).filter((c) =>
     shouldDeliverNotification(2, new Date(c.at)),
   );
   const keep = new Set(wanted.map((c) => c.id));
-  for (const kind of CHECKIN_KINDS) {
-    if (!keep.has(checkinId(kind))) {
+  for (const id of allCheckinIds()) {
+    if (!keep.has(id)) {
       try {
-        await cancelNotification(checkinId(kind));
+        await cancelNotification(id);
       } catch {
         // Nothing scheduled under that id.
       }
@@ -787,4 +1079,10 @@ export async function rescheduleCheckins(now: number = Date.now()): Promise<numb
     }
   }
   return wanted.length;
+}
+
+/** Today's plan as chat asks for it (`plan_day`). */
+export async function planTodayForChat(): Promise<{ count: number; note: string }> {
+  const plan = await planToday();
+  return { count: plan.entries.length, note: plan.note };
 }

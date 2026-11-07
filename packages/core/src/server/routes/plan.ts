@@ -14,7 +14,7 @@
 
 import { getDeviceByDID } from '../../devices/registry';
 import { PlanIntakeError, parseBatch, receiveBatch } from '../../plan/intake';
-import { getPlanStore, type PlanStore } from '../../plan/store';
+import { getPlanStore, notifyPlanChanged, type PlanStore } from '../../plan/store';
 
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
@@ -57,6 +57,7 @@ export function makePlanHandlers(deps: Partial<PlanRouteDeps> = {}): {
       try {
         const batch = parseBatch(req.body, now);
         const result = receiveBatch(store, did, d.agentName(did), batch, now);
+        notifyPlanChanged();
         return { status: 200, body: { ...result } };
       } catch (err) {
         if (err instanceof PlanIntakeError) return jsonError(400, err.message);
