@@ -130,6 +130,16 @@ export class TradeLedgerService {
     if (order.buyer_did !== args.counterpartyDid) {
       return { ok: false, refusal: 'the order belongs to a different buyer' };
     }
+    // Only an order this node accepted can be delivered against: a note on a
+    // rejected or unanswered order would put goods on the buyer's books that
+    // this business never agreed to send.
+    if (
+      !this.deps
+        .listAcceptedOrderIds(args.counterpartyDid, 'supplier')
+        .includes(args.purchaseOrderId)
+    ) {
+      return { ok: false, refusal: `order ${args.purchaseOrderId} is not accepted` };
+    }
     const draft = {
       protocol_version: order.protocol_version,
       delivery_note_id: mintId('dn'),

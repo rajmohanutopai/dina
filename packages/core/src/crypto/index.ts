@@ -18,7 +18,13 @@ export {
   deriveUcpSigningKey,
 } from './slip0010';
 export type { DerivedKey } from './slip0010';
-export { derivePersonaDEK, deriveBackupKey, deriveDEKHash } from './hkdf';
+export {
+  derivePersonaDEK,
+  deriveBackupKey,
+  deriveBackupSignSeed,
+  deriveDEKHash,
+  BACKUP_SALT,
+} from './hkdf';
 export { deriveKEK, ARGON2ID_PARAMS, setKDFOverride, getKDFOverride } from './argon2id';
 export type { KDFBackend, Argon2idDerivationParams } from './argon2id';
 export { wrapSeed, unwrapSeed, changePassphrase } from './aesgcm';

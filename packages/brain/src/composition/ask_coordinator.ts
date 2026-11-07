@@ -42,6 +42,7 @@ import {
   type ApprovalSourceStatus,
 } from '../ask/ask_approval_gateway';
 import { AskApprovalResumer } from '../ask/ask_approval_resumer';
+import { canKeepAskRecords, CoreAskAdapter } from '../ask/core_ask_adapter';
 import {
   createAskHandler,
   createAskStatusHandler,
@@ -126,7 +127,11 @@ export interface CreateAskCoordinatorOptions {
    * the SAME prompt so the LLM transcript stays coherent.
    */
   systemPrompt: string;
-  /** Persistence adapter — defaults to in-memory for tests. */
+  /**
+   * Persistence adapter. Defaults to Core's ask records when the Core client
+   * can keep them (an ask waiting on approval then survives a restart), else
+   * in memory (tests).
+   */
   adapter?: AskPersistenceAdapter;
   /** Pass-through to `createAskHandler` — fast-path window. */
   fastPathMs?: number;
@@ -203,7 +208,11 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
     defaultTtlMs?: number;
     onEvent: (event: AskEvent) => void;
   } = {
-    adapter: opts.adapter ?? new InMemoryAskAdapter(),
+    adapter:
+      opts.adapter ??
+      (canKeepAskRecords(opts.coreClient)
+        ? new CoreAskAdapter(opts.coreClient, (entry) => console.log('[ask_records]', entry))
+        : new InMemoryAskAdapter()),
     onEvent: (event: AskEvent) => {
       void resumer?.handle(event);
       for (const fn of subscribers) {
@@ -218,6 +227,10 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
   if (opts.defaultTtlMs !== undefined) registryOpts.defaultTtlMs = opts.defaultTtlMs;
 
   const registry = new AskRegistry(registryOpts);
+  // Pick up asks a previous run left: an in_flight one past its deadline
+  // expires; one waiting on approval stays, and the gateway's reconcile
+  // resumes it once the owner says yes.
+  void registry.restoreOnStartup().catch(() => undefined);
 
   resumer = new AskApprovalResumer({
     registry,

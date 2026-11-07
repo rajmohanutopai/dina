@@ -55,6 +55,8 @@ export interface RecoverDraft {
   expectedDid: string;
   passphrase: string;
   startupMode: StartupMode;
+  /** Restore the backup the handle step found (docs/USER_BACKUP.md §4.5). */
+  restoreBackup?: boolean;
 }
 
 /** Final slot carried through existing AT Protocol identity onboarding. */

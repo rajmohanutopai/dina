@@ -1,0 +1,112 @@
+# Dev setup: make a provider active and set every tier to one model. The key
+# comes from EXPO_PUBLIC_DINA_DEV_<PROVIDER>_API_KEY in apps/mobile/.env, so
+# no key is typed here. Defaults: PROVIDER=claude, MODEL=claude-haiku-5-5.
+#   -e PROVIDER=openrouter -e MODEL=anthropic/claude-haiku-5.5
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'root-layout-menu-row-settings'
+          commands:
+            - tapOn:
+                id: 'root-layout-menu'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'root-layout-menu-row-settings'
+- tapOn:
+    id: 'root-layout-menu-row-settings'
+- scrollUntilVisible:
+    element:
+      id: 'settings-row-manage-providers'
+    centerElement: true
+- tapOn:
+    id: 'settings-row-manage-providers'
+- runFlow:
+    when:
+      visible:
+        id: 'ai-providers-use-${PROVIDER || "claude"}'
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'ai-providers-use-${PROVIDER || "claude"}'
+          centerElement: true
+      - tapOn:
+          id: 'ai-providers-use-${PROVIDER || "claude"}'
+      - waitForAnimationToEnd
+# The active provider moves to the top.
+- scrollUntilVisible:
+    element:
+      id: 'ai-providers-models-${PROVIDER || "claude"}'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'ai-providers-models-${PROVIDER || "claude"}'
+- waitForAnimationToEnd
+- runFlow:
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'model-picker-custom-primary'
+          centerElement: true
+      - retry:
+          maxRetries: 3
+          commands:
+            - tapOn:
+                id: 'model-picker-custom-primary'
+            - waitForAnimationToEnd
+            - assertVisible:
+                id: 'model-picker-custom-input-primary'
+      - tapOn:
+          id: 'model-picker-custom-input-primary'
+      - eraseText: 60
+      - inputText: '${MODEL || "claude-haiku-5-5"}'
+      - scrollUntilVisible:
+          element:
+            id: 'model-picker-custom-lite'
+          centerElement: true
+      - retry:
+          maxRetries: 3
+          commands:
+            - tapOn:
+                id: 'model-picker-custom-lite'
+            - waitForAnimationToEnd
+            - assertVisible:
+                id: 'model-picker-custom-input-lite'
+      - tapOn:
+          id: 'model-picker-custom-input-lite'
+      - eraseText: 60
+      - inputText: '${MODEL || "claude-haiku-5-5"}'
+      # Not every provider shows a heavy tier.
+      - runFlow:
+          when:
+            visible:
+              id: 'model-picker-custom-heavy'
+          commands:
+            - tapOn:
+                id: 'model-picker-custom-heavy'
+            - tapOn:
+                id: 'model-picker-custom-input-heavy'
+            - eraseText: 60
+            - inputText: '${MODEL || "claude-haiku-5-5"}'
+- waitForAnimationToEnd
+- takeScreenshot: ai_haiku_picker
+- retry:
+    maxRetries: 2
+    commands:
+      - tapOn:
+          id: 'model-picker-save'
+      - waitForAnimationToEnd
+      - assertNotVisible:
+          id: 'model-picker-save'
+- waitForAnimationToEnd
+- takeScreenshot: ai_haiku_saved

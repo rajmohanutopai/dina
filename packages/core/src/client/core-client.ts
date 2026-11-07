@@ -1314,6 +1314,20 @@ export interface CoreClient {
   /** Wipe the durable log (identity reset). */
   notificationReset(): Promise<void>;
 
+  // ─── Live ask records (FIXES F11) ──────────────────────────────────────────
+  // Brain's ask registry writes through these so an ask waiting on approval
+  // survives a restart. Core keeps only the listed fields: never the paused
+  // loop state or the answer.
+
+  /** Insert or replace a live ask record. Throws when Core did not keep it. */
+  askRecordPut(record: StoredAskRecord): Promise<void>;
+
+  /** Every live ask record, oldest first. */
+  askRecordList(): Promise<StoredAskRecord[]>;
+
+  /** Remove a record (the ask ended). Returns whether one was removed. */
+  askRecordDelete(id: string): Promise<boolean>;
+
   // ─── Persona registry (read-only) ──────────────────────────────────────────
 
   /**
@@ -1679,6 +1693,7 @@ import {
   WorkflowTransitionError,
 } from '../workflow/service';
 
+import type { StoredAskRecord } from '../ask/ask_record_repository';
 import type { StoredChatMessage } from '../chat/repository';
 import type { Contact } from '../contacts/directory';
 import type { QuarantinedMessage } from '../d2d/quarantine';
@@ -2145,6 +2160,7 @@ export type { Reminder, RecurringFrequency };
 
 /** The durable notification-log row shape, crossing the Core boundary (R4-03). */
 export type { StoredNotificationItem };
+export type { StoredAskRecord };
 
 /**
  * Create-reminder request shape — mirrors the `createReminder` service

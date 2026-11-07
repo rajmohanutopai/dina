@@ -31,6 +31,7 @@ import {
   type AskRouteHandler,
   type AskRouteOptions,
 } from './routes/ask';
+import { registerAskRecordRoutes } from './routes/ask_records';
 import { registerBrainCallerRoutes } from './routes/brain_callers';
 import { registerChatThreadRoutes } from './routes/chat_threads';
 import { registerCodingGateRoutes, type CodingGateFn } from './routes/coding_gate';
@@ -57,6 +58,7 @@ import { registerPluginInvokeRoutes } from './routes/plugin_invoke';
 import { registerPluginUpdateRoutes } from './routes/plugin_updates';
 import { registerPolicyRoutes } from './routes/policy';
 import { registerReasoningRoutes, type ReasoningRouteOptions } from './routes/reasoning';
+import { registerPlanRoutes } from './routes/plan';
 import { registerReminderRoutes } from './routes/reminders';
 import { registerRemoteApprovalRoutes } from './routes/remote_approval';
 import { registerRunRoutes } from './routes/run';
@@ -222,6 +224,13 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // Brain dual-writes through these routes into identity.sqlite; mobile Brain
   // shares the process and writes the repository directly, never hitting these.
   registerNotificationRoutes(router);
+
+  // Live ask records (FIXES F11) — an ask waiting on approval survives a
+  // restart. Brain writes through on both hosts.
+  registerAskRecordRoutes(router);
+
+  // Daily plan (docs/DAILY_PLAN.md §6) — the owner's agents send tasks.
+  registerPlanRoutes(router);
 
   // Device pairing — `/v1/pair/initiate` (admin) + `/v1/pair/complete`
   // (public, code-authenticated). Port of `dina-admin device pair`

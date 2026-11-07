@@ -203,6 +203,19 @@ ${GRANTS_HOST} {
 EOF
     fi
 
+    # Backup store (docs/USER_BACKUP.md §4.3). Gated on BACKUP_HOST.
+    if [ -n "${BACKUP_HOST:-}" ]; then
+        cat >> "$SCRIPT_DIR/Caddyfile" << EOF
+
+${BACKUP_HOST} {
+	request_body {
+		max_size 64MiB
+	}
+	reverse_proxy backup-store:8310
+}
+EOF
+    fi
+
     # Dot bridge (docs/OPENAI_DOTS_INTEGRATION.md §4). Gated on DOT_BRIDGE_HOST.
     if [ -n "${DOT_BRIDGE_HOST:-}" ]; then
         cat >> "$SCRIPT_DIR/Caddyfile" << EOF
@@ -409,6 +422,11 @@ sync_files() {
         --exclude='node_modules' --exclude='dist' --exclude='*.sqlite*' \
         "$PROJECT_ROOT/apps/grants-service/" \
         "$REMOTE:$REMOTE_DIR/grants-src/apps/grants-service/"
+    # The backup store builds from the same subset (root manifests + protocol).
+    rsync -az --delete \
+        --exclude='node_modules' --exclude='dist' --exclude='*.sqlite*' \
+        "$PROJECT_ROOT/apps/backup-service/" \
+        "$REMOTE:$REMOTE_DIR/grants-src/apps/backup-service/"
 
     # Dot bridge build context: the Python CLI package only.
     rsync -az --delete \
@@ -513,6 +531,8 @@ sync_dot_bridge_env() {
         esac
         profiles="dot-bridge"
     fi
+    # This block owns COMPOSE_PROFILES, so the backup store's switch lives here too.
+    if [ -n "${BACKUP_HOST:-}" ]; then profiles="${profiles:+$profiles,}backup-store"; fi
     info "Syncing dot bridge env block..."
     local block
     block=$(printf '%s\n' \
@@ -675,6 +695,7 @@ health_check() {
 
     local hosts=("$MSGBOX_HOST/healthz" "$APPVIEW_HOST/health" "$PDS_HOST/xrpc/_health")
     if [ -n "${GRANTS_HOST:-}" ]; then hosts+=("$GRANTS_HOST/healthz"); fi
+    if [ -n "${BACKUP_HOST:-}" ]; then hosts+=("$BACKUP_HOST/healthz"); fi
     for svc in "${hosts[@]}"; do
         if curl -sf "https://$svc" >/dev/null 2>&1; then
             info "  ✓ https://$svc"

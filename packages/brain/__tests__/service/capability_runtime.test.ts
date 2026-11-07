@@ -719,6 +719,37 @@ describe('buildCapabilityRuntime — record_to_vault write tool', () => {
     expect(writes[0].fact.summary).toContain('haircut');
   });
 
+  it('records a confirmed booking even when the model never calls the tool (TODO P1)', async () => {
+    const writes: { persona: string }[] = [];
+    const provider = vaultScriptedProvider([
+      { content: JSON.stringify({ status: 'confirmed', time: '16:00', date: '2026-06-16' }) },
+    ]).provider;
+    const runtime = buildCapabilityRuntime({
+      getLLM: () => provider,
+      nowMsFn: () => NOW,
+      vaultWriter: async (persona) => {
+        writes.push({ persona });
+      },
+    });
+    const result = (await runtime.run(BOOK_ARGS)) as { status: string };
+    expect(result.status).toBe('confirmed');
+    expect(writes).toEqual([{ persona: 'salon' }]);
+  });
+
+  it('fails the query rather than confirm a booking it could not record', async () => {
+    const provider = vaultScriptedProvider([
+      { content: JSON.stringify({ status: 'confirmed', time: '16:00', date: '2026-06-16' }) },
+    ]).provider;
+    const runtime = buildCapabilityRuntime({
+      getLLM: () => provider,
+      nowMsFn: () => NOW,
+      vaultWriter: async () => {
+        throw new Error('vault locked');
+      },
+    });
+    await expect(runtime.run(BOOK_ARGS)).rejects.toThrow('vault locked');
+  });
+
   it('persists a DETERMINISTIC fact — attacker notes + model text never reach the vault (injection containment)', async () => {
     const writes: { persona: string; fact: { summary: string; body: string } }[] = [];
     // The model "obeys" an injected instruction: it triggers record_to_vault

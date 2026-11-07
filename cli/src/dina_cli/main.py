@@ -3226,6 +3226,103 @@ def web(ctx: click.Context) -> None:
     webbrowser.open(url)
 
 
+# ── plan (docs/DAILY_PLAN.md) ────────────────────────────────────────────
+
+
+@cli.group()
+def plan() -> None:
+    """Send the owner's tasks to their Dina's daily plan, and read back what's done."""
+
+
+def _read_plan_items(source: str) -> Any:
+    raw = sys.stdin.read() if source == "-" else Path(source).read_text(encoding="utf-8")
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise click.UsageError(f"items are not JSON: {exc}") from exc
+
+
+@plan.command("push")
+@click.option(
+    "--file", "source", default="-", show_default=True,
+    help="JSON file of items, or - for stdin. A list of items, or {\"items\": [...]}.",
+)
+@click.option("--persona", default="", help="Persona the tasks belong to, e.g. work. Default: general.")
+@click.option("--batch-id", default="", help="Stable id for this batch. Default: a new one.")
+@click.option("--wait", default=8.0, show_default=True, type=float,
+              help="Seconds to wait for the Home Node before leaving the batch with MsgBox.")
+@click.pass_context
+def plan_push(ctx: click.Context, source: str, persona: str, batch_id: str, wait: float) -> None:
+    """Send today's tasks in one batch.
+
+    Each item: title (required), summary, source (outlook, teams, jira, …),
+    source_ref (the mail or message id, so a repeat updates instead of
+    adding), link (https), due_at, effort_min, project, state (open or
+    closed), observed_at.
+
+    When the owner's phone is asleep the batch waits at MsgBox for up to
+    20 hours and this prints "queued". The phone takes it when it opens.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    data = _read_plan_items(source)
+    if isinstance(data, list):
+        batch: dict[str, Any] = {"items": data}
+    elif isinstance(data, dict) and isinstance(data.get("items"), list):
+        batch = dict(data)
+    else:
+        raise click.UsageError('expected a list of items or {"items": [...]}')
+    if persona:
+        batch["persona"] = persona
+    batch.setdefault("persona", "general")
+    if batch_id:
+        batch["batch_id"] = batch_id
+    batch.setdefault(
+        "batch_id", f"{datetime.now(timezone.utc).strftime('%Y-%m-%d')}-{uuid.uuid4().hex[:12]}"
+    )
+    try:
+        result = client.plan_push(batch, wait=wait)
+        if result.get("queued"):
+            output = {
+                "status": "queued",
+                "message": "The Home Node is asleep. The batch waits at MsgBox for up to 20 hours.",
+                "batch_id": batch["batch_id"],
+            }
+        elif result.get("duplicate_batch"):
+            output = {"status": "duplicate", "batch_id": batch["batch_id"]}
+        else:
+            output = {
+                "status": "delivered",
+                "accepted": result.get("accepted", 0),
+                "held": result.get("held", 0),
+                "batch_id": batch["batch_id"],
+            }
+            if output["held"]:
+                output["message"] = "Waiting for the owner to allow this agent to add tasks."
+        print_result_with_trace(output, json_mode, client.req_id)
+    except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
+@plan.command("status")
+@click.option("--since", default=0, type=int, help="Only tasks changed since this time (epoch ms).")
+@click.pass_context
+def plan_status(ctx: click.Context, since: int) -> None:
+    """List the tasks this agent sent and what the owner did with them.
+
+    Needs the Home Node awake; a phone in the background doesn't answer.
+    """
+    client = _make_client(ctx)
+    json_mode = ctx.obj["json"]
+    try:
+        result = client.plan_status(since)
+        print_result_with_trace(result, json_mode, client.req_id)
+    except DinaClientError as exc:
+        print_error_with_trace(str(exc), json_mode, client.req_id)
+        ctx.exit(1)
+
+
 # ── session ──────────────────────────────────────────────────────────────
 
 

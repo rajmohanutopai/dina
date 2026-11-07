@@ -1,0 +1,44 @@
+# Daily plan from chat (docs/DAILY_PLAN.md §10): a to-do said in chat lands
+# on Today. Real-LLM — on-demand lane.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+# Move the dev build's floating tools button off the Ask chip.
+- swipe:
+    start: '10%, 84%'
+    end: '90%, 45%'
+    duration: 800
+- tapOn:
+    id: 'index-mode-chip-ask'
+- tapOn:
+    id: 'chat-input'
+- inputText: 'I need to renew the car insurance by Friday'
+- tapOn:
+    id: 'send-button'
+- extendedWaitUntil:
+    visible:
+      text: '.*([Ll]ist|[Pp]lan|[Aa]dded).*'
+    timeout: 90000
+- takeScreenshot: daily_plan_chat_01_reply
+- tapOn:
+    id: 'root-layout-menu'
+- waitForAnimationToEnd
+- tapOn:
+    text: 'Today'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'plan-others-toggle'
+    centerElement: true
+- tapOn:
+    id: 'plan-others-toggle'
+- assertVisible:
+    text: '.*car insurance.*'
+- takeScreenshot: daily_plan_chat_02_today

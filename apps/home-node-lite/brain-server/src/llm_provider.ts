@@ -66,6 +66,7 @@ export function buildBrainServerLLMRuntime(
         providerName: 'openai',
         llm: new AISDKAdapter({
           model: openai(model),
+          modelFor: (id) => openai(id),
           name: 'openai',
           ...(config.reasoningEffort !== undefined
             ? { openaiReasoningEffort: config.reasoningEffort }
@@ -83,7 +84,11 @@ export function buildBrainServerLLMRuntime(
       const model = config.model ?? getProviderTiers('openrouter').primary;
       return {
         providerName: 'openrouter',
-        llm: new AISDKAdapter({ model: openrouter.chat(model), name: 'openrouter' }),
+        llm: new AISDKAdapter({
+          model: openrouter.chat(model),
+          modelFor: (id) => openrouter.chat(id),
+          name: 'openrouter',
+        }),
         ...(config.decisions === 'jev'
           ? {
               decisions: createOpenRouterJevBackend({

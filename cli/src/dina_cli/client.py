@@ -231,13 +231,23 @@ class DinaClient:
         # call would get the cached first response back, never executing.
         # Symptom: agent-daemon "claims" forever, real ops never land.
         # Let MsgBoxTransport.request generate a fresh UUID per call.
+        deferred_wait = kwargs.get("deferred_wait")
         try:
-            tr = self._transport.request(
-                method,
-                full_path,
-                headers,
-                body=body_str,
-            )
+            if deferred_wait is not None and hasattr(self._transport, "request_deferred"):
+                tr = self._transport.request_deferred(
+                    method,
+                    full_path,
+                    headers,
+                    body=body_str,
+                    wait=float(deferred_wait),
+                )
+            else:
+                tr = self._transport.request(
+                    method,
+                    full_path,
+                    headers,
+                    body=body_str,
+                )
         except TransportError as exc:
             raise DinaClientError(f"Cannot reach Dina: {exc}") from exc
 
@@ -523,6 +533,31 @@ class DinaClient:
                 "source_id": source_id,
                 "metadata": metadata,
             },
+        )
+        return resp.json()
+
+    # -- daily plan (docs/DAILY_PLAN.md) -----------------------------------
+
+    def plan_push(self, batch: dict, wait: float = 8.0) -> dict:
+        """Send one batch of tasks. When the Home Node is asleep (a phone in
+        the background) the batch waits at MsgBox and this returns
+        ``{"queued": true}``; the phone takes it when it next opens."""
+        resp = self._request(
+            self._core,
+            "POST",
+            "/v1/plan/inbox",
+            json=batch,
+            deferred_wait=wait,
+        )
+        return resp.json()
+
+    def plan_status(self, since_ms: int = 0) -> dict:
+        """This agent's own tasks and what the owner did with them."""
+        resp = self._request(
+            self._core,
+            "GET",
+            "/v1/plan/status",
+            params={"since": str(since_ms)},
         )
         return resp.json()
 

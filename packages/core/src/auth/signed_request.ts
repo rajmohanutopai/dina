@@ -15,7 +15,7 @@
 import { extractPublicKey } from '../identity/did';
 
 import { verifyRequest, verifySignedText } from './canonical';
-import { isTimestampValid } from './timestamp';
+import { TIMESTAMP_WINDOW_SECONDS, isTimestampValid, parseRFC3339 } from './timestamp';
 
 /**
  * Spends a nonce: true the first time, false for a replay. It is handed the
@@ -70,6 +70,12 @@ export function checkRequestSignature(
      * audience (`didRequestSigningInput`).
      */
     signedText?: (parts: SignedTextParts) => string;
+    /**
+     * Accept a timestamp up to this many seconds in the past instead of the
+     * usual ±5 minutes. The future side stays at 5 minutes. Only for the
+     * few routes in `LONG_WINDOW_ROUTES`, whose own handlers refuse replays.
+     */
+    maxAgeSeconds?: number;
   },
 ): SignatureCheck {
   const { did, timestamp, nonce, signature } = req;
@@ -82,7 +88,10 @@ export function checkRequestSignature(
   }
   let timely: boolean;
   try {
-    timely = isTimestampValid(timestamp);
+    timely =
+      options.maxAgeSeconds === undefined
+        ? isTimestampValid(timestamp)
+        : isWithinAge(timestamp, options.maxAgeSeconds);
   } catch {
     timely = false;
   }
@@ -127,4 +136,26 @@ export function checkRequestSignature(
     return { ok: false, did, rejectedAt: 'nonce', reason: 'Nonce already used (replay detected)' };
   }
   return { ok: true, did };
+}
+
+/** Up to `maxAgeSeconds` old, and no more than the usual window ahead. */
+function isWithinAge(timestamp: string, maxAgeSeconds: number, now: number = Date.now()): boolean {
+  const ts = parseRFC3339(timestamp).getTime();
+  const age = now - ts;
+  return age <= maxAgeSeconds * 1000 && -age <= TIMESTAMP_WINDOW_SECONDS * 1000;
+}
+
+/**
+ * docs/DAILY_PLAN.md §4 — routes that accept an older signed timestamp,
+ * because an agent leaves the request at MsgBox for a phone that is asleep.
+ * Each handler refuses a second copy by its own id (the plan inbox keeps
+ * batch ids for 3 days), since the 5-minute nonce cache cannot.
+ */
+export const LONG_WINDOW_ROUTES: readonly { method: string; path: string; maxAgeSeconds: number }[] = [
+  { method: 'POST', path: '/v1/plan/inbox', maxAgeSeconds: 20 * 60 * 60 },
+];
+
+export function maxAgeForRoute(method: string, path: string): number | undefined {
+  return LONG_WINDOW_ROUTES.find((r) => r.method === method.toUpperCase() && r.path === path)
+    ?.maxAgeSeconds;
 }

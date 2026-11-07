@@ -61,6 +61,7 @@ const SECTION_PARENTS: Record<string, string> = {
   'recovery-phrase': '/settings',
   'confirm-recovery-phrase': '/settings',
   'change-passphrase': '/settings',
+  backup: '/settings',
   // Trade family. Settings opens Trade, Orders, Catalog, Business identity and
   // Staff, so they return there; screens opened from Trade return to Trade.
   // A screen with a second opener (Trade → Orders, Orders → Ask for quotes,
@@ -105,6 +106,9 @@ const SECTION_PARENTS: Record<string, string> = {
   // record on every push.
   settings: '/',
   reminders: '/',
+  plan: '/',
+  goals: '/plan',
+  goal: '/goals',
   help: '/',
 };
 

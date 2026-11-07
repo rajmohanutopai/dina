@@ -24,6 +24,8 @@ import {
 
 import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
+import { isCommerceCapability } from '../commerce/capability_names';
+import { getCommerceRuntime } from '../commerce/runtime';
 import { getInviteService } from '../commerce/invite_compose';
 import { handleConsentMessage } from '../commitment/evidence_handler';
 import { handleOptionMessage } from '../commitment/option_handler';
@@ -45,7 +47,7 @@ import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../serv
 import { getServiceGrantRepository } from '../service/service_grant_repository';
 import { requesterWindow, setProviderWindow } from '../service/windows';
 import { answerWithStandingReply } from '../standing/standing_replies';
-import { isReplayedMessage, recordMessageId } from '../transport/adversarial';
+import { isReplayedMessage, isStaleMessage, recordMessageId } from '../transport/adversarial';
 import { oneLine } from '../util/one_line';
 import { WorkflowConflictError } from '../workflow/repository';
 import { getWorkflowService } from '../workflow/service';
@@ -222,6 +224,20 @@ export function receiveD2D(
   // Uses sender DID + message ID as the cache key to prevent cross-sender
   // ID collisions. Must come AFTER signature verification to prevent
   // unauthenticated messages from polluting the cache.
+  // A message older than the replay window is refused too: the seen-key
+  // store forgets keys after it, so an old message cannot be told apart
+  // from a replay (it also caps what a restart could let through).
+  if (isStaleMessage(message.created_time)) {
+    appendAudit(message.from, 'd2d_recv_stale', message.to, `id=${message.id}`);
+    return {
+      action: 'dropped',
+      messageId: message.id,
+      messageType: message.type,
+      senderDID: message.from,
+      signatureValid: true,
+      reason: 'Message older than the replay window',
+    };
+  }
   const replayKey = `${message.from}|${message.id}`;
   if (isReplayedMessage(replayKey)) {
     appendAudit(message.from, 'd2d_recv_replay', message.to, `id=${message.id}`);
@@ -234,7 +250,7 @@ export function receiveD2D(
       reason: 'Replayed message (already processed)',
     };
   }
-  recordMessageId(replayKey);
+  recordMessageId(replayKey, message.created_time);
 
   // 4. V1 type enforcement — silently drop non-V1 message types.
   // Matches Go's ProcessInbound which rejects non-V1 types (benign drop —
@@ -1120,7 +1136,9 @@ function applyServiceIngressDecision(
           durableLive = false; // conflict / fault → do not authorize on doubt
         }
       }
-      if (!durableLive) {
+      const lateQuote =
+        !durableLive && isLateQuoteForRetainedRequest(message.from, body.query_id, body.capability);
+      if (!durableLive && !lateQuote) {
         appendAudit(
           message.from,
           'd2d_recv_service_denied',
@@ -1140,7 +1158,7 @@ function applyServiceIngressDecision(
         message.from,
         'd2d_recv_service_accepted_durable',
         message.to,
-        `type=${messageType} id=${message.id} capability=${body.capability} via=durable_task`,
+        `type=${messageType} id=${message.id} capability=${body.capability} via=${lateQuote ? 'retained_request' : 'durable_task'}`,
       );
     }
 
@@ -1305,6 +1323,37 @@ function applyServiceIngressDecision(
  * response no longer finds a live task. The durable fallback never relaxes
  * the gate — an unknown/expired/terminal query still yields `no_window`.
  */
+/**
+ * A quote that missed the query's window (`ttl_seconds`, at most 300) but
+ * answers a quote request this node retained, from the supplier it was sent
+ * to, while that request is still valid (24 h). A supplier whose owner takes
+ * ten minutes to price an order used to be dropped as `no_window`, and the
+ * buyer never saw the quote.
+ *
+ * Safe to admit: the buyer bridge accepts only a signed quote that matches
+ * the retained request's digest, and takes a repeat as a duplicate. Nothing
+ * but a quote request opens this path.
+ */
+const REQUEST_QUOTE_LANE: ReadonlySet<string> = new Set(['request_quote']);
+
+function isLateQuoteForRetainedRequest(
+  peerDID: string,
+  queryID: string,
+  capability: string,
+): boolean {
+  if (!isCommerceCapability(REQUEST_QUOTE_LANE, capability)) return false;
+  const runtime = getCommerceRuntime();
+  if (runtime === null) return false;
+  try {
+    const request = runtime.buyerQuoteRequests.get(queryID);
+    if (request === null || request.supplier_did !== peerDID) return false;
+    const expiresAt = Date.parse(request.expires_at);
+    return Number.isFinite(expiresAt) && expiresAt > Date.now();
+  } catch {
+    return false; // unreadable store: do not admit on doubt
+  }
+}
+
 function durableRequesterWindow(): RequesterWindowView {
   return {
     peek(peerDID: string, queryID: string, capability: string): boolean {
@@ -1315,6 +1364,7 @@ function durableRequesterWindow(): RequesterWindowView {
       // Durable fallback: an outstanding, non-expired service_query task
       // for this exact triple. Returns false on no workflow service
       // (tests / minimal stacks) or any storage error — fail-closed.
+      if (isLateQuoteForRetainedRequest(peerDID, queryID, capability)) return true;
       const service = getWorkflowService();
       if (service === null) return false;
       const nowSec = Math.floor(Date.now() / 1000);

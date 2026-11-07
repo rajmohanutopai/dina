@@ -533,9 +533,19 @@ const AUTHZ_RULES: {
   { prefix: '/v1/reminder', allowed: new Set(['admin', 'brain', 'device']) },
   { prefix: '/v1/reminders', allowed: new Set(['admin', 'brain', 'device']) },
 
+  // Daily plan (docs/DAILY_PLAN.md §6) — the owner's agents send tasks and
+  // read back their own tasks' state. The origin is the signed caller DID.
+  { prefix: '/v1/plan/inbox', allowed: new Set(['admin', 'device', 'agent']), method: 'POST', exact: true },
+  { prefix: '/v1/plan/status', allowed: new Set(['admin', 'device', 'agent']), method: 'GET', exact: true },
+
   // Notification log (R4-03) — the durable inbox backing. Brain dual-writes
   // through it across the split boundary; same caller set as reminders.
   { prefix: '/v1/notifications', allowed: new Set(['admin', 'brain', 'device']) },
+
+  // Live ask records (FIXES F11) — Brain keeps an ask waiting on approval
+  // here so it survives a restart. Brain only: a device has no business
+  // reading other callers' questions.
+  { prefix: '/v1/ask-records', allowed: new Set(['admin', 'brain']) },
 
   // Notify — Brain
   { prefix: '/v1/notify', allowed: new Set(['brain']) },

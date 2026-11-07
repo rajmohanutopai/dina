@@ -18,6 +18,7 @@
 
 import { appendAudit } from '../audit/service';
 
+import { purgeReplayCache } from './adversarial';
 import { claimDue, markSent, recordFailure, resetStaleSending, sweepTerminal } from './outbox';
 
 import type { D2DOutboxRow } from './outbox_repository';
@@ -148,7 +149,11 @@ export function startOutboxDrainer(opts: StartOutboxDrainerOptions = {}): Draine
     try {
       await drainOutbox();
       ticks++;
-      if (ticks % sweepEveryTicks === 0) sweepTerminal();
+      if (ticks % sweepEveryTicks === 0) {
+        sweepTerminal();
+        // The inbound replay store expires on the same slow clock.
+        purgeReplayCache();
+      }
     } catch (err) {
       opts.onError?.(err);
     } finally {

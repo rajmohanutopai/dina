@@ -60,6 +60,30 @@ export function deriveBackupKey(masterSeed: Uint8Array, userSalt: Uint8Array): U
 }
 
 /**
+ * The fixed salt for the backup branch (USER_BACKUP.md §4.1). Fixed, so the
+ * backup keys need only the seed: the device's vault salt lives on the phone
+ * that was lost.
+ */
+export const BACKUP_SALT: Uint8Array = sha256(new TextEncoder().encode('dina:backup:salt:v1'));
+
+/**
+ * Derive the seed of the backup signing key (USER_BACKUP.md §4.1): the same
+ * branch as `deriveBackupKey`, another info string. Its Ed25519 key signs each
+ * sealed copy and every call to the backup store.
+ */
+export function deriveBackupSignSeed(masterSeed: Uint8Array, userSalt: Uint8Array): Uint8Array {
+  if (!masterSeed || masterSeed.length < 16) {
+    throw new Error('hkdf: master seed too short');
+  }
+  if (!userSalt || userSalt.length < 16) {
+    throw new Error('hkdf: user salt too short');
+  }
+
+  const info = new TextEncoder().encode('dina:backup:sign:v1');
+  return hkdf(sha256, masterSeed, userSalt, info, 32);
+}
+
+/**
  * Compute the SHA-256 hash of a DEK for validation storage.
  * The hash is stored in persona state; the DEK itself is never stored.
  */

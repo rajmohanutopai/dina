@@ -242,7 +242,16 @@ function applyOne(
 
   switch (read.kind) {
     case 'delivery_note':
-      return { ...verifyInboundDeliveryNote({ ...shared, note: read.document, readOrder }), kind: read.kind };
+      return {
+        ...verifyInboundDeliveryNote({
+          ...shared,
+          note: read.document,
+          readOrder,
+          isOrderRejected: (purchaseOrderId) =>
+            readers.isOrderRejected(args.senderDid, purchaseOrderId),
+        }),
+        kind: read.kind,
+      };
     case 'payment_ack':
       return { ...verifyInboundPaymentAck({ ...shared, ack: read.document }), kind: read.kind };
     case 'delivery_receipt':

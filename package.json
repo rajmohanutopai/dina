@@ -8,6 +8,7 @@
     "packages/*",
     "apps/home-node-lite/*",
     "apps/grants-service",
+    "apps/backup-service",
     "apps/mobile",
     "appview"
   ],

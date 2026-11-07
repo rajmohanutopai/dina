@@ -84,7 +84,7 @@ describe('LLMRouter', () => {
       expect(stub.lastOptions()?.model).toBe('gemini-3.1-flash-lite');
     });
 
-    it('picks the primary tier for reason', async () => {
+    it("names no model for reason, so the adapter runs the owner's pick", async () => {
       const stub = makeStubProvider();
       const router = new LLMRouter({
         providers: { gemini: stub.provider },
@@ -99,7 +99,7 @@ describe('LLMRouter', () => {
         taskType: 'reason',
         messages: [{ role: 'user', content: 'explain' }],
       });
-      expect(stub.lastOptions()?.model).toBe('gemini-3.5-flash');
+      expect(stub.lastOptions()?.model).toBeUndefined();
     });
 
     it('honours an explicit modelOverride', async () => {

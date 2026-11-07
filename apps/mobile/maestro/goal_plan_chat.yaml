@@ -1,0 +1,213 @@
+# Goal plans from chat (docs/DAILY_PLAN.md §19), with a real model:
+#   1. a to-do said in chat lands on Today (add_task);
+#   2. "build a house…" makes the goal and a drafted plan (set_goal,
+#      draft_goal_plan), which waits on the goal's page for Accept;
+#   3. after Accept, a wait and a quote said in chat land on the page
+#      (update_goal_task), and "how is the house going?" answers (show_goal).
+# Real-LLM — on-demand lane. Dates are written as numbers: on the simulator the
+# on-device name detector sometimes hides weekday and month names ("Friday",
+# "October") as if they were people, and the model then can't read the date. Archives every active goal first so the model's
+# goal names can't collide with old test goals.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+
+# Clear old goals: Today → Goals → Archive each.
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'root-layout-menu-row-/plan'
+          commands:
+            - tapOn:
+                id: 'root-layout-menu'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'root-layout-menu-row-/plan'
+- tapOn:
+    id: 'root-layout-menu-row-/plan'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'plan-goals'
+    centerElement: true
+- tapOn:
+    id: 'plan-goals'
+- extendedWaitUntil:
+    visible:
+      id: 'goals-screen'
+    timeout: 10000
+- repeat:
+    while:
+      visible:
+        id: 'goal-archive-.*'
+    times: 30
+    commands:
+      - tapOn:
+          id: 'goal-archive-.*'
+          index: 0
+      - waitForAnimationToEnd
+
+# Chat, starting from an empty conversation.
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'root-layout-menu-row-clear-chat'
+          commands:
+            - tapOn:
+                id: 'root-layout-menu'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'root-layout-menu-row-clear-chat'
+- tapOn:
+    id: 'root-layout-menu-row-clear-chat'
+- waitForAnimationToEnd
+- runFlow:
+    file: chat_ask_send.yaml
+    env:
+      MESSAGE: 'I need to renew the car insurance by 2026-11-06'
+- extendedWaitUntil:
+    visible:
+      text: '.*([Oo]n your list|[Aa]dded|to your list|to-do list).*'
+    timeout: 120000
+- takeScreenshot: goal_chat_01_task
+- runFlow:
+    file: chat_ask_send.yaml
+    env:
+      MESSAGE: 'I want to build a house. Move-in date 2027-10-01, budget $450,000. Please set it as a goal and draft a plan for it.'
+- extendedWaitUntil:
+    visible:
+      text: '.*([Aa]ccept|Goals|goal.s page).*'
+    timeout: 180000
+- takeScreenshot: goal_chat_02_draft
+
+# Accept the draft on the goal's page.
+- tapOn:
+    id: 'root-layout-menu'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'root-layout-menu-row-/plan'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'plan-goals'
+    centerElement: true
+- tapOn:
+    id: 'plan-goals'
+- scrollUntilVisible:
+    element:
+      text: '.*Draft plan waiting'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'goal-open-0'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-draft'
+    timeout: 10000
+- takeScreenshot: goal_chat_03_draft_page
+- scrollUntilVisible:
+    element:
+      id: 'goal-draft-accept'
+    centerElement: true
+- tapOn:
+    id: 'goal-draft-accept'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-phase-0'
+    timeout: 10000
+- takeScreenshot: goal_chat_04_accepted
+
+# Progress from chat.
+- tapOn:
+    id: 'tab-chat'
+- waitForAnimationToEnd
+- runFlow:
+    file: chat_ask_send.yaml
+    env:
+      MESSAGE: 'For the house, Mike will send me the builder quote by 2026-11-10.'
+- extendedWaitUntil:
+    visible:
+      text: '.*[Ww]aiting on Mike.*'
+    timeout: 180000
+- takeScreenshot: goal_chat_05_wait
+- runFlow:
+    file: chat_ask_send.yaml
+    env:
+      MESSAGE: 'Mike sent the builder quote for the house. It is 18400 dollars.'
+- extendedWaitUntil:
+    visible:
+      text: '.*\$18,400.*'
+    timeout: 180000
+- takeScreenshot: goal_chat_06_quote
+- runFlow:
+    file: chat_ask_send.yaml
+    env:
+      MESSAGE: 'How is the house going?'
+- extendedWaitUntil:
+    visible:
+      text: '.*([Pp]hase|[Bb]udget).*'
+    timeout: 180000
+- takeScreenshot: goal_chat_07_status
+
+# The page's own drafter, on a second goal.
+- tapOn:
+    id: 'root-layout-menu'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'root-layout-menu-row-/plan'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'plan-goals'
+    centerElement: true
+- tapOn:
+    id: 'plan-goals'
+- scrollUntilVisible:
+    element:
+      id: 'goal-add-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-add-input'
+- inputText: 'Run a half marathon in April'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    text: 'Run a half marathon in April'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-draft-make'
+    timeout: 10000
+- tapOn:
+    id: 'goal-draft-make'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-draft'
+    timeout: 180000
+- takeScreenshot: goal_chat_08_page_draft

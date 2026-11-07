@@ -196,6 +196,7 @@ import {
   resolveBootstrapScope,
   resolveHandoffFromEnv,
 } from './pair/bootstrap_capability';
+import { BackupSupervisor } from './backup/backup_supervisor';
 import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
 import { ReasoningCommitSupervisor } from './reasoning/reasoning_commit_supervisor';
 import { createServer } from './server';
@@ -717,6 +718,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let a2aCardKeySchedule: { stop(): void; kick(): void } | null = null;
   let ucpPublication: PublisherSchedule | null = null;
   let reviewPublishSupervisor: ReviewPublishSupervisor | null = null;
+  let backupSupervisor: BackupSupervisor | null = null;
 
   // Step 4 (db_open): SQLite persistence via `@dina/storage-node`. We
   // only do this when the master seed is materialized (convenience or
@@ -1175,6 +1177,20 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           setOwnerReviewIdentity(reviewOwnerDid);
         }
       }
+      // USER_BACKUP §4.4 — a sealed copy to the backup store, daily when
+      // anything changed and on a clean stop. Off unless the store is named.
+      const backupStoreUrl = (process.env.DINA_BACKUP_STORE_URL ?? '').trim();
+      if (backupStoreUrl !== '') {
+        backupSupervisor = new BackupSupervisor({
+          storeUrl: backupStoreUrl,
+          masterSeed: identity.seed,
+          did:
+            pdsIdentity?.did ??
+            deriveDIDKey(deriveIdentity({ masterSeed: identity.seed }).root.publicKey),
+          handle: pdsIdentity?.handle ?? '',
+          logger,
+        });
+      }
       // HOSTED_DINA §6.1 — finding suppliers on the network, for the owner's
       // search and for agent tender drafts.
       installSupplierDirectory(
@@ -1474,6 +1490,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         setWorkflowRepository(null);
       }
       await reviewPublishSupervisor?.stop();
+      // Before the database closes: the stop takes its last copy from it.
+      await backupSupervisor?.stop();
       commerceSweepers?.stop();
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
@@ -1569,6 +1587,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     }
     reasoningCommitSupervisor?.start();
     reviewPublishSupervisor?.start();
+    backupSupervisor?.start();
   } catch (err) {
     await reasoningCommitSupervisor?.stop();
     await reviewPublishSupervisor?.stop();

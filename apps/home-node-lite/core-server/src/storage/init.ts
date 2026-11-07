@@ -57,6 +57,8 @@ import {
   SQLiteRunRepository,
   SQLiteServiceConfigRepository,
   SQLiteD2DOutboxRepository,
+  SQLiteReplayRepository,
+  setReplayRepository,
   SQLiteAgentGrantRepository,
   SQLiteAgentGatingPolicyRepository,
   getAgentGrantRepository,
@@ -115,6 +117,10 @@ import {
   setPersonaDescription,
   setServiceConfigRepository,
   setNotificationLogRepository,
+  setAskRecordRepository,
+  setPlanStore,
+  PlanStore,
+  SQLiteAskRecordRepository,
   SqliteNotificationLogRepository,
   type ArchivePersonaSource,
   type PersonaTier,
@@ -324,6 +330,8 @@ export async function initializeStorage(
   // Core owns it; Brain reaches it over the `/v1/notifications` routes so its
   // inbox dual-write survives restart here too.
   setNotificationLogRepository(new SqliteNotificationLogRepository(identityDB));
+  setAskRecordRepository(new SQLiteAskRecordRepository(identityDB));
+  setPlanStore(new PlanStore(identityDB));
   const auditRepository = new SQLiteAuditRepository(identityDB);
   setAuditRepository(auditRepository);
   hydrateAuditState(auditRepository);
@@ -712,6 +720,7 @@ export async function initializeStorage(
   // (where the signing identity + sendD2D live); here we just install the
   // SQL repo and reclaim crash-orphaned 'sending' rows.
   setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
+  setReplayRepository(new SQLiteReplayRepository(identityDB));
   recoverOutboxOnBoot();
 
   // (agent persona grant repo — issues.txt §2 — is now wired ABOVE, before

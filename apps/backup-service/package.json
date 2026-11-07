@@ -1,0 +1,34 @@
+{
+  "name": "@dina/backup-service",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Dina backup store (docs/USER_BACKUP.md §4.3). Keeps sealed copies it cannot open, filed under a backup id that is not a DID; every call signed by the key that id names.",
+  "main": "src/index.ts",
+  "scripts": {
+    "build": "tsc",
+    "start": "tsx src/bin.ts",
+    "test": "jest",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@dina/protocol": "*",
+    "@fastify/rate-limit": "^10.3.0",
+    "@noble/ed25519": "^3.1",
+    "@noble/hashes": "^2.2",
+    "better-sqlite3": "^12.4.1",
+    "fastify": "^5.8.5",
+    "pino": "^10.3.1"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "types": "src/index.ts"
+}

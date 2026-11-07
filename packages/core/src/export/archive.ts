@@ -39,9 +39,11 @@ import {
   preflightCommerceArchive,
 } from '../commerce/archive_preflight';
 import {
+  COMMERCE_EPOCH_STOPPED_KEY,
   COMMERCE_RESTORE_PENDING_KEY,
   markCommerceRestorePending,
 } from '../commerce/restore_marker';
+import { TENDER_ARCHIVE_TABLES, tenderTablesForRestore } from '../commerce/tender_archive_rows';
 import { UCP_ARCHIVE_TABLES, ucpRowsForArchive } from '../commerce/ucp/archive_rows';
 import { ARGON2ID_PARAMS, DINA_FILE_MAGIC, DINA_FILE_VERSION } from '../constants';
 import { forgetConversation } from '../conversation/forget';
@@ -105,6 +107,10 @@ function archiveJsonReviver(_key: string, value: unknown): unknown {
  *   - `workflow_tasks` / `workflow_events` — volatile in-flight work.
  *   - `staging_inbox` — transient ingest queue.
  *   - `d2d_outbox` — transient outbound queue (issues.txt §1).
+ *   - `d2d_replay_seen` — machine-local replay memory; expires within a day.
+ *   - `ask_records` — Brain's live asks; an import cannot resume them.
+ *   - `plan_feeds` — which agent may add tasks; agents are re-paired after a move.
+ *   - `plan_batches` — the plan inbox's replay memory.
  *   - `agent_persona_grants` — active grants must NOT be exported (§2/§3).
  *   - `service_grants` — active provider-issued service authority; same posture
  *      as agent grants (re-issue offers after migration, don't restore live
@@ -193,6 +199,11 @@ const IDENTITY_TABLES = [
   // configuration, portable in the same sense as `service_configs`.
   'commerce_settings',
   'commerce_catalog_pointers',
+  // USER_BACKUP §4.2: tenders, their counters, notices and drafts, the
+  // owner's supplier list, and the supplier side's counter answers. They come
+  // back closed (`commerce/tender_archive_rows.ts`): a restore resumes no
+  // negotiation the owner did not see.
+  ...TENDER_ARCHIVE_TABLES,
   // SHELF_SPACE_NEGOTIATION: the term engine's whole state is the owner's —
   // the store's private floors and holdings (policy), every signed document
   // and the answers given (a restored node must answer a resend as it did
@@ -246,6 +257,15 @@ const IDENTITY_TABLES = [
   'commitment_limit_cards',
   'commitment_earned_room',
   'commitment_limit_generations',
+  // DAILY_PLAN.md §5: the owner's tasks, goals and day plans. Not
+  // `plan_feeds` (an agent's permission, like `agent_persona_grants`; the
+  // agents are re-paired after a move) and not `plan_batches` (replay memory).
+  'plan_tasks',
+  'plan_goals',
+  'plan_days',
+  // DAILY_PLAN.md §16: a goal's phases and money travel with its tasks.
+  'plan_phases',
+  'plan_costs',
 ] as const;
 
 /** kv_store is exported, but sensitive keys are filtered out (below). */
@@ -294,6 +314,9 @@ const EPHEMERAL_KV_PATTERNS: RegExp[] = [
   // taken while a fence was owed demand a second fence, on a different node,
   // for an event that already happened here.
   new RegExp(`^${COMMERCE_RESTORE_PENDING_KEY}$`),
+  // A signing stop, the same way: it is this node's state, and a restore
+  // fences the epoch afresh.
+  new RegExp(`^${COMMERCE_EPOCH_STOPPED_KEY}$`),
   // UCP plan §3.5 — the profile publisher's record (`commerce/ucp/publisher.ts`)
   // names THIS installation: its instance id, epoch and owner controls. Carried
   // into a restore it would make the new device the same installation as the
@@ -305,6 +328,10 @@ const EPHEMERAL_KV_PATTERNS: RegExp[] = [
   // An archive taken before a rotation would carry an older key back; left
   // out, a restored node reads the generation in use from its DID document.
   /^a2a:card_key_ring$/,
+  // USER_BACKUP §4.4 — when this device last backed up, and what it wrote.
+  // Device state; and were it exported, every backup would change it, so
+  // every day would look changed.
+  /^backup:/,
 ];
 
 function isEphemeralKvKey(key: unknown): boolean {
@@ -628,7 +655,24 @@ export async function importArchive(
   passphrase: string,
   opts: ImportArchiveOptions = {},
 ): Promise<void> {
-  const payload = await readManifest(archive, passphrase);
+  await importArchivePayload(await readManifest(archive, passphrase), opts);
+}
+
+/**
+ * Restore a payload already opened: `importArchive` after the passphrase, and
+ * the sealed backup copy after its key and signature (`backup/sealed.ts`).
+ * Every check after decryption runs here, so both doors restore alike.
+ */
+export async function importArchivePayload(
+  payload: ArchivePayloadV1,
+  opts: ImportArchiveOptions = {},
+): Promise<void> {
+  if (!payload.header || payload.header.format !== ARCHIVE_FORMAT) {
+    throw new Error('archive: invalid manifest format');
+  }
+  if (payload.header.version !== ARCHIVE_VERSION) {
+    throw new Error(`archive: unsupported version ${payload.header.version}`);
+  }
   validateChecksums(payload);
 
   if (!payloadHasData(payload)) {
@@ -676,6 +720,7 @@ export async function importArchive(
   // parents are restored before children deterministically.
   const idAdapter = ds.identityAdapter();
   if (idAdapter !== null) {
+    const tenderRows = tenderTablesForRestore(payload.identity.tables, Date.now());
     idAdapter.transaction(() => {
       for (const table of [...IDENTITY_TABLES, KV_TABLE]) {
         // Force = true overwrite (the UI's "Overwrite"): clear the target
@@ -709,7 +754,9 @@ export async function importArchive(
           }
           clearTable(idAdapter, table);
         }
-        const rows = payload.identity.tables[table];
+        const rows = (TENDER_ARCHIVE_TABLES as readonly string[]).includes(table)
+          ? tenderRows[table as (typeof TENDER_ARCHIVE_TABLES)[number]]
+          : payload.identity.tables[table];
         if (rows !== undefined) {
           // Round-9 #18: plugin authority never travels. Export bakes installs
           // PAUSED with the device binding stripped, but the archive is
@@ -964,10 +1011,7 @@ export async function readManifest(
   passphrase: string,
 ): Promise<ArchivePayloadV1> {
   const { manifestBytes } = await decryptArchive(archive, passphrase);
-  const payload = JSON.parse(
-    new TextDecoder().decode(manifestBytes),
-    archiveJsonReviver,
-  ) as ArchivePayloadV1;
+  const payload = decodeArchivePayload(manifestBytes);
   if (!payload.header || payload.header.format !== ARCHIVE_FORMAT) {
     throw new Error('archive: invalid manifest format');
   }
@@ -1000,6 +1044,16 @@ export async function verifyArchive(archive: Uint8Array, passphrase: string): Pr
 // Encoding (shared with the original wire format)
 // ---------------------------------------------------------------
 
+/** A payload as the archive's JSON bytes, BLOBs kept (`archiveJsonReplacer`). */
+export function encodeArchivePayload(payload: ArchivePayloadV1): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify(payload, archiveJsonReplacer));
+}
+
+/** The inverse of `encodeArchivePayload`. Checks nothing; the import does. */
+export function decodeArchivePayload(bytes: Uint8Array): ArchivePayloadV1 {
+  return JSON.parse(new TextDecoder().decode(bytes), archiveJsonReviver) as ArchivePayloadV1;
+}
+
 /**
  * Seal a payload as an archive: the inverse of `readManifest`. `createArchive`
  * builds the payload from the installed data source and seals it this way; a
@@ -1010,7 +1064,7 @@ export async function encodeArchive(
   payload: ArchivePayloadV1,
   passphrase: string,
 ): Promise<Uint8Array> {
-  const manifestBytes = new TextEncoder().encode(JSON.stringify(payload, archiveJsonReplacer));
+  const manifestBytes = encodeArchivePayload(payload);
   const wrapped = await wrapSeed(passphrase, manifestBytes);
 
   const saltLen = wrapped.salt.length;

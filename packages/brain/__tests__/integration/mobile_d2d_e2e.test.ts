@@ -67,6 +67,9 @@ describe('mobile Scenario 3 — D2D node A → node B', () => {
       to: bobDID,
       type: MSG_TYPE_SOCIAL_UPDATE,
       body: JSON.stringify({ text: 'I am arriving in 15 minutes' }),
+      // The factory's fixed clock is years old; the receiver refuses anything
+      // older than the replay window.
+      created_time: Date.now(),
     });
     const sealedPayload = sealMessage(message, aliceSeed, bobPub);
 

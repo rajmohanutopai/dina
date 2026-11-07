@@ -114,6 +114,7 @@ import type {
   Reminder,
   ReminderCreateInput,
   StoredNotificationItem,
+  StoredAskRecord,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -328,6 +329,7 @@ export class MockCoreClient implements CoreClient {
   /** In-memory durable-notification log (R4-03) backing the notification*
    *  CoreClient methods. */
   notifications: StoredNotificationItem[] = [];
+  askRecords = new Map<string, StoredAskRecord>();
 
   /**
    * Per-persona override for `personaStatus`. When a tested code path
@@ -1412,6 +1414,22 @@ export class MockCoreClient implements CoreClient {
       if (idx >= 0) this.notifications[idx] = { ...item };
       else this.notifications.push({ ...item });
     });
+  }
+
+  async askRecordPut(record: StoredAskRecord): Promise<void> {
+    return this.dispatch('askRecordPut', [record], () => {
+      this.askRecords.set(record.id, { ...record });
+    });
+  }
+
+  async askRecordList(): Promise<StoredAskRecord[]> {
+    return this.dispatch('askRecordList', [], () =>
+      [...this.askRecords.values()].sort((a, b) => a.createdAtMs - b.createdAtMs),
+    );
+  }
+
+  async askRecordDelete(id: string): Promise<boolean> {
+    return this.dispatch('askRecordDelete', [id], () => this.askRecords.delete(id));
   }
 
   async notificationList(limit?: number): Promise<StoredNotificationItem[]> {

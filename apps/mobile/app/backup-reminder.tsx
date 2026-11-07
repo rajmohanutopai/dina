@@ -40,8 +40,10 @@ export default function BackupReminderScreen(): React.ReactElement {
           only on this phone — if it&apos;s lost or replaced, they&apos;re gone.
         </Text>
         <Text style={styles.body}>
-          Your recovery phrase is the one way to restore everything on a new device. It takes about
-          two minutes, and you only do it once.
+          Once you&apos;ve written down your recovery phrase, Dina keeps an encrypted copy that only
+          those words open — we can&apos;t read it. On a new phone, the words bring everything back.
+          It takes about two minutes, and you only do it once. You can turn the copy off in
+          Settings → Backup.
         </Text>
       </View>
 

@@ -22,7 +22,7 @@ import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
 import { resolveCallerType, type CallerIdentity } from './caller_type';
 import { NonceCache } from './nonce';
 import { PerDIDRateLimiter, type RateLimitConfig } from './ratelimit';
-import { checkRequestSignature } from './signed_request';
+import { checkRequestSignature, maxAgeForRoute } from './signed_request';
 
 export interface AuthRequest {
   method: string;
@@ -109,6 +109,11 @@ export function configureRateLimiter(config: RateLimitConfig): void {
   rateLimiter = new PerDIDRateLimiter(config);
 }
 
+function longWindow(method: string, path: string): { maxAgeSeconds?: number } {
+  const maxAgeSeconds = maxAgeForRoute(method, path);
+  return maxAgeSeconds === undefined ? {} : { maxAgeSeconds };
+}
+
 /** Steps 1–6 of the pipeline passed: the request is authentic and its caller known. */
 interface VerifiedIdentity {
   verified: true;
@@ -138,7 +143,11 @@ function verifySignedIdentity(req: AuthRequest): VerifiedIdentity | AuthResult {
       ...(req.headers['X-Nonce'] === undefined ? {} : { nonce: req.headers['X-Nonce'] }),
       ...(req.headers['X-Signature'] === undefined ? {} : { signature: req.headers['X-Signature'] }),
     },
-    { nonces: nonceCache, resolvePublicKey: publicKeyResolver },
+    {
+      nonces: nonceCache,
+      resolvePublicKey: publicKeyResolver,
+      ...longWindow(req.method, req.path),
+    },
   );
   if (!check.ok) {
     return {

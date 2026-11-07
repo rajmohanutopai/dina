@@ -489,3 +489,17 @@ export function rehydrateTenderLineLabels(linesJson: string): string[] | null {
     return raw.trim().replace(/\s+/g, ' ');
   });
 }
+
+/**
+ * A stored signing stop (`restore_marker.ts`): the epoch and the reason, both
+ * strings. Anything else fails, and the epoch service then fails closed.
+ */
+export function rehydrateEpochStop(json: string): Rehydrated<{ epoch: string; reason: string }> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const v = (parsed.value ?? {}) as { epoch?: unknown; reason?: unknown };
+  if (typeof v.epoch !== 'string' || typeof v.reason !== 'string') {
+    return { ok: false, error: 'stored epoch stop has no epoch or reason' };
+  }
+  return { ok: true, value: { epoch: v.epoch, reason: v.reason } };
+}

@@ -1710,6 +1710,102 @@ describe('commerce restore fence marker (§16.2)', () => {
     }
   });
 
+  it('tenders travel and come back closed: no notice owed, no draft pending (USER_BACKUP §4.2)', async () => {
+    const src = freshBundle([]);
+    let archive: Uint8Array;
+    const later = Date.now() + 86_400_000;
+    try {
+      seedIdentity(src.id);
+      const tender = (id: string) =>
+        src.id.execute(
+          `INSERT INTO commerce_tenders (tender_id, lines_json, projection_json, expires_at, created_at)
+           VALUES (?, '[]', '{}', ?, 1)`,
+          [id, later],
+        );
+      tender('tnd_open');
+      tender('tnd_bare'); // no negotiation row: the sweeper would close it and send notices
+      tender('tnd_done');
+      const negotiation = (id: string, state: string, approval: string) =>
+        src.id.execute(
+          `INSERT INTO commerce_tender_negotiation (tender_id, currency, target_total_minor,
+             budget_ceiling_minor, max_rounds, deadline_at, state, awarded_supplier_did,
+             approval_id, updated_at)
+           VALUES (?, 'USD', '70000', '90000', 3, ?, ?, ?, ?, 1)`,
+          [id, later, state, state === 'awarded' ? 'did:plc:fog' : '', approval],
+        );
+      negotiation('tnd_open', 'ready', 'appr-1');
+      negotiation('tnd_done', 'awarded', '');
+      src.id.execute(
+        `INSERT INTO commerce_tender_members (tender_id, supplier_did, request_id, request_digest, quote_id)
+         VALUES ('tnd_open', 'did:plc:fog', 'req-1', 'd1', 'q-9')`,
+      );
+      src.id.execute(
+        `INSERT INTO commerce_tender_notices (tender_id, supplier_did, outcome, request_id, quote_id,
+           service_rkey, state, attempts, updated_at)
+         VALUES ('tnd_done', 'did:plc:crumb', 'not_awarded', 'req-2', 'q-8', 'self', 'pending', 0, 1)`,
+      );
+      src.id.execute(
+        `INSERT INTO commerce_tender_drafts (draft_id, agent_did, lines_json, suppliers_json, state,
+           created_at, expires_at)
+         VALUES ('drf-1', 'did:key:dot', '[]', '[]', 'pending', 1, ?)`,
+        [later],
+      );
+      src.id.execute(
+        `INSERT INTO commerce_owner_suppliers (supplier_did, service_rkey, label, added_at)
+         VALUES ('did:plc:fog', 'self', 'Fogline Bakehouse', 1)`,
+      );
+      setArchiveDataSource(dataSourceFor(src));
+      archive = await createArchive(PASS);
+    } finally {
+      closeBundle(src);
+      setArchiveDataSource(null);
+    }
+    const dest = freshBundle([]);
+    try {
+      setArchiveDataSource(dataSourceFor(dest));
+      const before = Date.now();
+      await importArchive(archive, PASS);
+      const tenders = dest.id.query(
+        'SELECT tender_id, expires_at FROM commerce_tenders ORDER BY tender_id',
+      );
+      expect(tenders.map((r) => r.tender_id)).toEqual(['tnd_bare', 'tnd_done', 'tnd_open']);
+      for (const r of tenders) expect(Number(r.expires_at)).toBeLessThanOrEqual(Date.now());
+      for (const r of tenders) expect(Number(r.expires_at)).toBeGreaterThanOrEqual(before);
+      expect(
+        dest.id.query(
+          'SELECT tender_id, state, approval_id, awarded_supplier_did FROM commerce_tender_negotiation ORDER BY tender_id',
+        ),
+      ).toEqual([
+        { tender_id: 'tnd_bare', state: 'closed', approval_id: '', awarded_supplier_did: '' },
+        { tender_id: 'tnd_done', state: 'awarded', approval_id: '', awarded_supplier_did: 'did:plc:fog' },
+        { tender_id: 'tnd_open', state: 'closed', approval_id: '', awarded_supplier_did: '' },
+      ]);
+      // Nothing the normal close would send: no tender left for the sweeper to close.
+      expect(
+        dest.id.query(
+          `SELECT t.tender_id FROM commerce_tenders t
+             LEFT JOIN commerce_tender_negotiation n ON n.tender_id = t.tender_id
+            WHERE n.state IS NULL OR n.state IN ('negotiating', 'ready')`,
+        ),
+      ).toEqual([]);
+      expect(dest.id.query('SELECT state FROM commerce_tender_notices')).toEqual([
+        { state: 'abandoned' },
+      ]);
+      expect(dest.id.query('SELECT state FROM commerce_tender_drafts')).toEqual([
+        { state: 'dismissed' },
+      ]);
+      expect(dest.id.query('SELECT quote_id FROM commerce_tender_members')).toEqual([
+        { quote_id: 'q-9' },
+      ]);
+      expect(dest.id.query('SELECT label FROM commerce_owner_suppliers')).toEqual([
+        { label: 'Fogline Bakehouse' },
+      ]);
+    } finally {
+      closeBundle(dest);
+      setArchiveDataSource(null);
+    }
+  });
+
   describe('UCP checkout sessions and orders (UCP plan §3.14, U3.5)', () => {
     const SHOP = 'https://tea.example';
     function session(

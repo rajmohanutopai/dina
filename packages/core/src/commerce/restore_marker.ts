@@ -30,6 +30,9 @@
  * against resurrected capacity — it simply does not trade.
  */
 
+import { rehydrateEpochStop } from './rehydrate';
+
+import type { EpochStopStore } from './epoch_service';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /**
@@ -83,4 +86,44 @@ export function isCommerceRestorePending(adapter: DatabaseAdapter): boolean {
  */
 export function clearCommerceRestorePending(adapter: DatabaseAdapter): void {
   adapter.execute('DELETE FROM kv_store WHERE key = ?', [COMMERCE_RESTORE_PENDING_KEY]);
+}
+
+/**
+ * kv_store key for a signing stop (§16.2). Like the restore marker, it
+ * describes THIS node and is not exported in an archive.
+ */
+export const COMMERCE_EPOCH_STOPPED_KEY = 'commerce:epoch_stopped';
+
+/**
+ * The epoch service's stop store, kept in kv_store. `load` throws when the
+ * row cannot be read or parsed, so `establish()` fails closed rather than
+ * reading "no stop" from a broken database.
+ */
+export function kvEpochStopStore(adapter: DatabaseAdapter): EpochStopStore {
+  return {
+    load() {
+      const rows = adapter.query<{ value: string }>('SELECT value FROM kv_store WHERE key = ?', [
+        COMMERCE_EPOCH_STOPPED_KEY,
+      ]);
+      const row = rows[0];
+      if (row === undefined) return null;
+      const read = rehydrateEpochStop(String(row.value));
+      if (!read.ok) throw new Error(`commerce epoch: unreadable stop record — ${read.error}`);
+      return read.value;
+    },
+    save(stop) {
+      adapter.execute('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+        COMMERCE_EPOCH_STOPPED_KEY,
+        JSON.stringify({
+          epoch: stop.epoch,
+          reason: stop.reason,
+          stopped_at: new Date(stop.atMs).toISOString(),
+        }),
+        stop.atMs,
+      ]);
+    },
+    clear() {
+      adapter.execute('DELETE FROM kv_store WHERE key = ?', [COMMERCE_EPOCH_STOPPED_KEY]);
+    },
+  };
 }

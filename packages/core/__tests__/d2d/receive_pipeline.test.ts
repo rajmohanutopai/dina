@@ -62,7 +62,7 @@ describe('D2D Receive Pipeline', () => {
       // every inbound got Date.now() at receive-time and a back-to-
       // back replay-on-reconnect rendered out of order.
       addContact('did:plc:sender');
-      const sentAt = 1_700_000_123_456;
+      const sentAt = Date.now() - 5_000;
       const payload = buildSealed({ created_time: sentAt });
       const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted');
       expect(result.action).toBe('staged');
@@ -256,6 +256,14 @@ describe('D2D Receive Pipeline', () => {
       const result2 = receiveD2D(payload2, recipientPub, recipientPriv, [senderPub], 'trusted');
       expect(result2.action).toBe('dropped');
       expect(result2.reason).toContain('Replayed');
+    });
+
+    it('drops a message older than the replay window, before the replay check', () => {
+      addContact('did:plc:sender');
+      const payload = buildSealed({ id: 'msg-old', created_time: Date.now() - 25 * 3_600_000 });
+      const result = receiveD2D(payload, recipientPub, recipientPriv, [senderPub], 'trusted');
+      expect(result.action).toBe('dropped');
+      expect(result.reason).toContain('older than the replay window');
     });
 
     it('accepts different message IDs from same sender', () => {

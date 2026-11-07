@@ -32,6 +32,7 @@ import { openAllPersonasForInAppUser } from '@dina/home-node';
 import { seedDefaultPersonas } from '../onboarding/default_personas';
 import { loadPersistedDid } from '../services/identity_record';
 import { setAsideUnreadableVaultFiles } from '../services/install_marker';
+import { installBackupIdentity } from '../services/cloud_backup';
 import { stopUcp } from '../services/net_socket_wiring';
 import { emitRuntimeWarning } from '../services/runtime_warnings';
 import { ensureVaultSalt } from '../services/vault_salt_store';
@@ -238,6 +239,10 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   });
   state.openedPersonas = opened;
 
+  // USER_BACKUP §4.4: the backup keys, in memory while unlocked; the daily
+  // copy runs on foreground once the vaults are open.
+  installBackupIdentity(masterSeed);
+
   // 6. Complete. Consume any pending force-prompt signal — a
   //    successful manual unlock is the user re-asserting access, so
   //    later re-seal/re-unlock cycles within the same launch can
@@ -399,6 +404,7 @@ export async function sealVault(opts: { forcePrompt?: boolean } = {}): Promise<v
   setAccessiblePersonas([]);
   await stopUcp();
   installUcpIdentity(null);
+  installBackupIdentity(null);
   // Close all open personas in the in-memory registry so the next unlock()
   // starts from the correct initial state. openBootPersonas() checks
   // !isOpen before re-opening — without this reset it finds them already

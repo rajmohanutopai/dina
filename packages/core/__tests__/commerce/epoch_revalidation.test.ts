@@ -16,13 +16,25 @@
  * pre-restore capacity counters that the fence had already voided.
  */
 
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
 import {
+  COMMERCE_EPOCH_STOPPED_KEY,
   CommerceEpochService,
   CommerceTransaction,
+  kvEpochStopStore,
   InMemoryCommerceQuoteLedgerRepository,
   InMemoryCommerceReceiptRepository,
   QuoteFamilyStore,
 } from '../../src/commerce';
+
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 import type { CommerceEpochRecord } from '@dina/commerce-protocol';
 
@@ -315,5 +327,91 @@ describe('revalidateIfDue — the bounded interval', () => {
     // answer: recovering is an operator act (a restore), not a retry.
     expect(reads).toBe(afterStop);
     expect(await service.revalidateIfDue()).toBeNull();
+  });
+});
+
+describe('a stop survives a restart (TODO #6)', () => {
+  // A plain restart used to run `establish()`, adopt the higher live record
+  // and go back to signing as the superseded generation.
+  function kvHarness() {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-epoch-stop-'));
+    const db = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: randomBytes(32).toString('hex'),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
+    applyMigrations(db, IDENTITY_MIGRATIONS);
+    return {
+      db,
+      cleanup: () => {
+        db.close();
+        fs.rmSync(dir, { recursive: true, force: true });
+      },
+    };
+  }
+
+  async function supersede(repo: FakeRepo, clock: { now: number }): Promise<void> {
+    const restorer = makeService(repo, clock);
+    await restorer.establish();
+    await restorer.establishAfterRestore();
+  }
+
+  it('the restarted node refuses to establish, and says why', async () => {
+    const { db, cleanup } = kvHarness();
+    try {
+      const repo = new FakeRepo();
+      const clock = { now: T0 };
+      const before = makeService(repo, clock, { stopStore: kvEpochStopStore(db) });
+      await before.establish();
+      await supersede(repo, clock);
+      expect((await before.revalidate()).kind).toBe('stopped');
+
+      const after = makeService(repo, clock, { stopStore: kvEpochStopStore(db) });
+      await expect(after.establish()).rejects.toThrow(/signing stopped at epoch 1.*superseded/);
+      expect(() => after.currentEpoch()).toThrow(/signing stopped at epoch 1/);
+      expect(after.established).toBe(false);
+    } finally {
+      cleanup();
+    }
+  });
+
+  it("an operator's restore clears the stop", async () => {
+    const { db, cleanup } = kvHarness();
+    try {
+      const repo = new FakeRepo();
+      const clock = { now: T0 };
+      const before = makeService(repo, clock, { stopStore: kvEpochStopStore(db) });
+      await before.establish();
+      await supersede(repo, clock);
+      await before.revalidate();
+
+      const restored = makeService(repo, clock, { stopStore: kvEpochStopStore(db) });
+      const record = await restored.establishAfterRestore();
+      expect(record.epoch).toBe('3');
+      expect(restored.currentEpoch()).toBe('3');
+
+      const next = makeService(repo, clock, { stopStore: kvEpochStopStore(db) });
+      await expect(next.establish()).resolves.toMatchObject({ epoch: '3' });
+    } finally {
+      cleanup();
+    }
+  });
+
+  it('fails closed when the stop record cannot be read', async () => {
+    const { db, cleanup } = kvHarness();
+    try {
+      db.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+        COMMERCE_EPOCH_STOPPED_KEY,
+        'not json',
+        T0,
+      ]);
+      const repo = new FakeRepo();
+      const service = makeService(repo, { now: T0 }, { stopStore: kvEpochStopStore(db) });
+      await expect(service.establish()).rejects.toThrow();
+      expect(service.established).toBe(false);
+    } finally {
+      cleanup();
+    }
   });
 });

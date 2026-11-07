@@ -4393,6 +4393,169 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       );
     `,
   },
+  {
+    // SEC-HIGH-08 — seen D2D message keys (`sender|id`), kept across
+    // restarts. A key stays until its message is too old to accept, then
+    // the receive path's age check covers it. Not exported in an archive.
+    version: 84,
+    name: 'd2d_replay_seen',
+    sql: `
+      CREATE TABLE IF NOT EXISTS d2d_replay_seen (
+        replay_key TEXT PRIMARY KEY,
+        expires_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_d2d_replay_seen_expires
+        ON d2d_replay_seen(expires_at);
+    `,
+  },
+  {
+    // An invite's teardown removes the contact only when its activation
+    // created it. Rows written before default to 1, the old behaviour.
+    version: 85,
+    name: 'commerce_invites_created_contact',
+    sql: `
+      ALTER TABLE commerce_invites ADD COLUMN created_contact INTEGER NOT NULL DEFAULT 1;
+    `,
+  },
+  {
+    // FIXES F11 — Brain's live ask records, so an ask waiting on approval
+    // survives a restart. Never the paused loop state or the answer: both
+    // hold persona content, and this is the identity database.
+    version: 86,
+    name: 'ask_records',
+    sql: `
+      CREATE TABLE IF NOT EXISTS ask_records (
+        id TEXT PRIMARY KEY,
+        question TEXT NOT NULL,
+        requester_did TEXT NOT NULL,
+        session_id TEXT NOT NULL DEFAULT '',
+        ask_authority TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL CHECK (status IN ('in_flight', 'pending_approval')),
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        deadline_at INTEGER NOT NULL,
+        forced_sources_json TEXT NOT NULL DEFAULT '',
+        conversation TEXT NOT NULL DEFAULT '',
+        approval_id TEXT NOT NULL DEFAULT ''
+      );
+    `,
+  },
+  {
+    // docs/DAILY_PLAN.md §5 — tasks the owner's agents send and the owner
+    // adds, goals, each day's plan, which agent may add tasks to which
+    // persona, and the batch ids that guard the inbox route against replays.
+    version: 87,
+    name: 'daily_plan',
+    sql: `
+      CREATE TABLE IF NOT EXISTS plan_tasks (
+        id TEXT PRIMARY KEY,
+        persona TEXT NOT NULL DEFAULT 'general',
+        title TEXT NOT NULL,
+        summary TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT '',
+        source_ref TEXT NOT NULL DEFAULT '',
+        link TEXT NOT NULL DEFAULT '',
+        due_at INTEGER,
+        effort_min INTEGER,
+        project TEXT NOT NULL DEFAULT '',
+        goal_id TEXT NOT NULL DEFAULT '',
+        origin TEXT NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('held', 'open', 'done', 'dropped')),
+        planned_for TEXT NOT NULL DEFAULT '',
+        carried INTEGER NOT NULL DEFAULT 0,
+        observed_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        done_at INTEGER
+      );
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_plan_tasks_source
+        ON plan_tasks(origin, source_ref) WHERE source_ref != '';
+      CREATE INDEX IF NOT EXISTS idx_plan_tasks_status ON plan_tasks(status);
+
+      CREATE TABLE IF NOT EXISTS plan_goals (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        active INTEGER NOT NULL DEFAULT 1,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_days (
+        day TEXT PRIMARY KEY,
+        entries_json TEXT NOT NULL DEFAULT '[]',
+        note TEXT NOT NULL DEFAULT '',
+        planned_at INTEGER NOT NULL,
+        reviewed_at INTEGER
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_feeds (
+        agent_did TEXT NOT NULL,
+        persona TEXT NOT NULL,
+        agent_name TEXT NOT NULL DEFAULT '',
+        state TEXT NOT NULL CHECK (state IN ('pending', 'allowed', 'blocked')),
+        first_seen INTEGER NOT NULL,
+        decided_at INTEGER,
+        PRIMARY KEY (agent_did, persona)
+      );
+
+      CREATE TABLE IF NOT EXISTS plan_batches (
+        agent_did TEXT NOT NULL,
+        batch_id TEXT NOT NULL,
+        received_at INTEGER NOT NULL,
+        PRIMARY KEY (agent_did, batch_id)
+      );
+    `,
+  },
+  {
+    // docs/DAILY_PLAN.md §16 — goal plans: a goal's date, budget and drafted
+    // plan; its phases; the order and waits on its tasks; and its money.
+    // A new migration because v87 is already applied on dev phones.
+    version: 88,
+    name: 'goal_plans',
+    sql: `
+      ALTER TABLE plan_goals ADD COLUMN target_at INTEGER;
+      ALTER TABLE plan_goals ADD COLUMN budget_cents INTEGER;
+      ALTER TABLE plan_goals ADD COLUMN currency TEXT NOT NULL DEFAULT 'USD';
+      ALTER TABLE plan_goals ADD COLUMN draft_json TEXT NOT NULL DEFAULT '';
+      ALTER TABLE plan_goals ADD COLUMN draft_at INTEGER;
+
+      ALTER TABLE plan_tasks ADD COLUMN phase_id TEXT NOT NULL DEFAULT '';
+      ALTER TABLE plan_tasks ADD COLUMN blocked_by TEXT NOT NULL DEFAULT '[]';
+      ALTER TABLE plan_tasks ADD COLUMN waiting_on TEXT NOT NULL DEFAULT '';
+      ALTER TABLE plan_tasks ADD COLUMN waiting_until INTEGER;
+      CREATE INDEX IF NOT EXISTS idx_plan_tasks_goal ON plan_tasks(goal_id) WHERE goal_id != '';
+
+      CREATE TABLE IF NOT EXISTS plan_phases (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL,
+        title TEXT NOT NULL,
+        notes TEXT NOT NULL DEFAULT '',
+        position INTEGER NOT NULL,
+        target_at INTEGER,
+        status TEXT NOT NULL CHECK (status IN ('upcoming', 'active', 'done')),
+        started_at INTEGER,
+        done_at INTEGER,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plan_phases_goal ON plan_phases(goal_id, position);
+
+      CREATE TABLE IF NOT EXISTS plan_costs (
+        id TEXT PRIMARY KEY,
+        goal_id TEXT NOT NULL,
+        phase_id TEXT NOT NULL DEFAULT '',
+        task_id TEXT NOT NULL DEFAULT '',
+        label TEXT NOT NULL DEFAULT '',
+        kind TEXT NOT NULL CHECK (kind IN ('quote', 'paid')),
+        amount_cents INTEGER NOT NULL,
+        settled INTEGER NOT NULL DEFAULT 0,
+        at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL
+      );
+      CREATE INDEX IF NOT EXISTS idx_plan_costs_goal ON plan_costs(goal_id);
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

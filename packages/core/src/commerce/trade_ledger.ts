@@ -388,6 +388,13 @@ export function verifyInboundDeliveryNote(args: {
   note: unknown;
   repository: TradeDocumentRepository;
   readOrder: RetainedOrderReader;
+  /**
+   * True when the supplier rejected the order. A note on a rejected order is
+   * refused. An unanswered one is kept: the acceptance may still be on its
+   * way, and refusing would lose the note (the supplier only issues one after
+   * accepting).
+   */
+  isOrderRejected?: (purchaseOrderId: string) => boolean;
   evidenceJson: string;
   nowMs: number;
 }): TradeIngest {
@@ -415,6 +422,9 @@ export function verifyInboundDeliveryNote(args: {
   }
   if (note.order_digest !== order.order_digest) {
     return { outcome: 'refused', detail: 'deliveryNote: order_digest does not match the retained order' };
+  }
+  if (args.isOrderRejected?.(note.purchase_order_id) === true) {
+    return { outcome: 'refused', detail: 'deliveryNote: the supplier rejected this order' };
   }
   const versionError = verifyConversationVersion(
     order.protocol_version,

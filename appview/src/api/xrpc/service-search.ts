@@ -194,8 +194,13 @@ export async function serviceSearch(
   )`
     : sql<number>`0`
 
+  // A listing with no location scores 0 on distance. Spelled out as a CASE:
+  // Postgres GREATEST/LEAST skip NULLs, so a NULL distance would otherwise
+  // score a perfect 1.0.
+  const noLocationExpr = sql`(${services.lat} IS NULL OR ${services.lng} IS NULL)`
   const distanceScoreExpr = hasLocation
-    ? sql<number>`GREATEST(0, LEAST(1.0, 1.0 - ${distanceExpr} / ${radiusKm}))`
+    ? sql<number>`CASE WHEN ${noLocationExpr} THEN 0.0
+        ELSE GREATEST(0, LEAST(1.0, 1.0 - ${distanceExpr} / ${radiusKm})) END`
     : sql<number>`0.0`
 
   // ILIKE treats `%` and `_` (and `\` as the default escape) specially.
@@ -246,8 +251,12 @@ export async function serviceSearch(
     )
   }
   if (hasLocation) {
-    conditions.push(sql`${services.lat} IS NOT NULL AND ${services.lng} IS NOT NULL`)
-    conditions.push(sql`${distanceExpr} <= ${radiusKm}`)
+    // Within the radius, or with no location at all. A listing that names no
+    // place (an online service, or one that never set it) is not ruled out
+    // by a search that names one; it ranks below the nearby ones on distance.
+    // Leaving it out made "bangalore salon" find nothing while "salon" found
+    // the salon.
+    conditions.push(sql`(${noLocationExpr} OR ${distanceExpr} <= ${radiusKm})`)
   }
   // Live listings (§14): withhold listings of inactive accounts, of nodes
   // that withdrew, and those a complete presence set does not name; leave
@@ -296,7 +305,7 @@ export async function serviceSearch(
       // already-computed value (consumers don't redo haversine
       // themselves). `null` when no caller location was supplied.
       distanceKm: hasLocation
-        ? sql<number>`${distanceExpr}`.as('distance_km_calc')
+        ? sql<number | null>`CASE WHEN ${noLocationExpr} THEN NULL ELSE ${distanceExpr} END`.as('distance_km_calc')
         : sql<number | null>`NULL::double precision`.as('distance_km_calc'),
     })
     .from(services)

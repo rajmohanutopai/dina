@@ -81,8 +81,10 @@ import {
   savePdsUrl,
   saveAppViewURL,
 } from '../services/infra_preferences';
+import { findBackupForPhrase, restoreFoundBackup } from '../services/cloud_backup';
 import { saveLinkedAtprotoIdentity } from '../services/linked_identity_record';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
+import { emitRuntimeWarning } from '../services/runtime_warnings';
 import { persistStartupChoice } from '../services/startup_preferences';
 import { markVerificationPending } from '../services/verification_status';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
@@ -509,8 +511,14 @@ export async function recoverIdentity(opts: {
    * unwrap the seed without prompting. Defaults to `'manual'`.
    */
   startupMode?: StartupMode;
+  /**
+   * Restore the newest backup the 24 words open, once the vault is open
+   * (docs/USER_BACKUP.md §4.5). A failed restore does not fail recovery:
+   * the identity is back, and the result says no copy was restored.
+   */
+  restoreBackup?: boolean;
   onProgress?: (p: ProvisionProgress) => void;
-}): Promise<ProvisionResult> {
+}): Promise<ProvisionResult & { restoredItems?: number }> {
   if (!opts.expectedDid.startsWith('did:plc:')) {
     throw new Error(
       'recoverIdentity: expectedDid must be a did:plc — recovery requires a verified PLC binding',
@@ -561,12 +569,33 @@ export async function recoverIdentity(opts: {
     throw new Error(`Unlock failed after recovery: ${unlockResult.error ?? 'unknown'}`);
   }
 
+  let restoredItems: number | undefined;
+  if (opts.restoreBackup === true) {
+    const hit = await findBackupForPhrase(opts.mnemonic);
+    if (hit !== null) {
+      try {
+        await restoreFoundBackup(hit.found, hit.identity);
+        restoredItems = hit.found.meta.item_count;
+      } catch (err) {
+        emitRuntimeWarning(
+          'backup.restore_failed',
+          `Your identity is back, but the backup didn't restore: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+  }
+
   await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
 
   progress(opts.onProgress, 'done');
 
   const didKey = `did:key:${publicKeyToMultibase(signing.publicKey)}`;
-  return { did: opts.expectedDid, didKey, handle };
+  return {
+    did: opts.expectedDid,
+    didKey,
+    handle,
+    ...(restoredItems !== undefined ? { restoredItems } : {}),
+  };
 }
 
 /**

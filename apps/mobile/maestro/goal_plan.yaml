@@ -1,0 +1,243 @@
+# Goal plans (docs/DAILY_PLAN.md §15–§20), by hand with no model: a house
+# with a date and budget, two phases (the first already late), tasks, a
+# wait, a quote and a payment, the late phase moved, and the first task on
+# Today under the goal's name.
+appId: com.dinakernel.mobile
+# Rerun with -e GOAL='Build the house 2' for a fresh goal.
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'root-layout-menu-row-/plan'
+          commands:
+            - tapOn:
+                id: 'root-layout-menu'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'root-layout-menu-row-/plan'
+- tapOn:
+    text: 'Today'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- scrollUntilVisible:
+    element:
+      id: 'plan-goals'
+    centerElement: true
+- tapOn:
+    id: 'plan-goals'
+- extendedWaitUntil:
+    visible:
+      id: 'goals-screen'
+    timeout: 10000
+
+# The goal.
+- runFlow:
+    when:
+      notVisible:
+        text: '${GOAL || "Build the house"}'
+    commands:
+      - scrollUntilVisible:
+          element:
+            id: 'goal-add-input'
+          centerElement: true
+      - tapOn:
+          id: 'goal-add-input'
+      - inputText: '${GOAL || "Build the house"}'
+      - waitForAnimationToEnd
+      - pressKey: Enter
+- scrollUntilVisible:
+    element:
+      text: '${GOAL || "Build the house"}'
+    centerElement: true
+- tapOn:
+    text: '${GOAL || "Build the house"}'
+- extendedWaitUntil:
+    visible:
+      id: 'goal-screen'
+    timeout: 10000
+- assertVisible:
+    text: 'No plan yet.'
+- tapOn:
+    id: 'goal-target'
+- eraseText: 20
+- inputText: '2027-10-01'
+- tapOn:
+    id: 'goal-budget'
+- eraseText: 20
+- inputText: '450000'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-details-save'
+- takeScreenshot: goal_plan_01_empty
+
+# Two phases; the first one's date has passed.
+- scrollUntilVisible:
+    element:
+      id: 'goal-phase-input'
+    centerElement: true
+- tapOn:
+    id: 'goal-phase-target'
+- inputText: '2026-10-20'
+- tapOn:
+    id: 'goal-phase-input'
+- inputText: 'Land and permits'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-phase-target'
+- inputText: '2027-02-01'
+- tapOn:
+    id: 'goal-phase-input'
+- inputText: 'Foundation'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- extendedWaitUntil:
+    visible:
+      id: 'goal-late'
+    timeout: 10000
+- assertVisible:
+    text: 'Land and permits is .* days late'
+
+# Tasks in the first phase.
+- scrollUntilVisible:
+    element:
+      id: 'goal-task-input-0'
+    centerElement: true
+- tapOn:
+    id: 'goal-task-input-0'
+- inputText: 'Get three quotes for the survey'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-task-input-0'
+- inputText: 'Plumbing quote from Mike'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- assertVisible:
+    text: 'Plumbing quote from Mike'
+
+# Wait on Mike for a week.
+- tapOn:
+    id: 'goal-task-wait-.*'
+    index: 1
+- tapOn:
+    id: 'goal-wait-who'
+- inputText: 'Mike'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-wait-7'
+- extendedWaitUntil:
+    visible:
+      text: 'Waiting on Mike.*'
+    timeout: 10000
+- takeScreenshot: goal_plan_02_phases
+
+# Money: a quote and a payment.
+- scrollUntilVisible:
+    element:
+      id: 'goal-cost-save'
+    centerElement: true
+- tapOn:
+    id: 'goal-cost-label'
+- inputText: 'Survey quote'
+- tapOn:
+    id: 'goal-cost-amount'
+- inputText: '18400'
+- waitForAnimationToEnd
+- pressKey: Enter
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-cost-save'
+- tapOn:
+    id: 'goal-cost-label'
+- inputText: 'Architect deposit'
+- tapOn:
+    id: 'goal-cost-amount'
+- inputText: '12000'
+- waitForAnimationToEnd
+- pressKey: Enter
+- tapOn:
+    id: 'goal-cost-kind-paid'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'goal-cost-save'
+- extendedWaitUntil:
+    visible:
+      text: '\$419,600'
+    timeout: 10000
+- takeScreenshot: goal_plan_03_money
+
+# Move the late dates.
+- scrollUntilVisible:
+    element:
+      id: 'goal-late-move'
+    direction: UP
+    centerElement: true
+- tapOn:
+    id: 'goal-late-move'
+- extendedWaitUntil:
+    notVisible:
+      id: 'goal-late'
+    timeout: 10000
+- takeScreenshot: goal_plan_04_moved
+
+# Today shows the ready task under the goal's name. (Waits leaving Today is
+# covered in __tests__/services/daily_plan.test.ts; old runs leave tasks here.)
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- waitForAnimationToEnd
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'root-layout-menu-row-/plan'
+          commands:
+            - tapOn:
+                id: 'root-layout-menu'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'root-layout-menu-row-/plan'
+- tapOn:
+    text: 'Today'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- runFlow:
+    when:
+      visible:
+        id: 'plan-others-toggle'
+    commands:
+      - tapOn:
+          id: 'plan-others-toggle'
+- scrollUntilVisible:
+    element:
+      text: 'Get three quotes for the survey'
+    centerElement: true
+- assertVisible:
+    text: '${GOAL || "Build the house"}'
+- takeScreenshot: goal_plan_05_today

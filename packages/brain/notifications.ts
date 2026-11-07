@@ -24,3 +24,4 @@ export type {
   WatchDeliveryInput,
   WatchDeliveryOutcome,
 } from './src/notifications/watch_delivery';
+export { getDND, resetDND, setDND, shouldDeliverNotification } from './src/notifications/dnd';

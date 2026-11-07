@@ -32,6 +32,10 @@ const ALLOWED_DEEP_LINK_ROOTS: ReadonlySet<string> = new Set([
   'chat',
   'peerlens',
   'reminders',
+  // DAILY_PLAN.md §8 — the check-ins open Today and Goals. An agent's request
+  // to add tasks shows there, but nothing is allowed until the owner taps.
+  'plan',
+  'goals',
   'notifications',
   'approvals', // shows the pending-approvals list; navigating there auto-approves nothing
   'runs',

@@ -71,7 +71,11 @@ function makeNode(did: string): Node {
     signOfferDigest: (bytes) => ed25519.sign(bytes, inviterPriv),
     resolveSigningKey: async (target) => (target === INVITER ? inviterPub : null),
     verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-    writeContact: (c) => contacts.add(c),
+    writeContact: (c) => {
+      const created = !contacts.has(c);
+      contacts.add(c);
+      return created;
+    },
     removeContact: (c) => contacts.delete(c),
     writeGrants: (args) => grants.push(args),
     revokeGrants: () => undefined,

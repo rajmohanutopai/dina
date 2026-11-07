@@ -1,6 +1,12 @@
 # Backup for a person's own Dina
 
-**Status:** DESIGN, 2026-10-21. Nothing here is built.
+**Status:** PARTLY BUILT, 2026-10-29. Built and tested: the keys (§4.1),
+the sealed copy (§4.2), the tender tables in the archive, the store
+(`apps/backup-service`, §4.3), the store client and the counter rule
+(`packages/core/src/backup/`), the server Home Node's daily job (§4.4,
+`DINA_BACKUP_STORE_URL`) and the deploy switch (`BACKUP_HOST`). Not built:
+the phone (offer, Settings → Backup, recovery that finds a copy), the hosted
+cells' setting, and a deploy of the store.
 **Scope:** the data in one person's Dina, on a phone or a server Home Node,
 and on a hosted Dina (`docs/HOSTED_DINA.md`).
 **Out of scope:** our shared servers (`docs/DISASTER_RECOVERY_PLAN.md`), and
@@ -102,9 +108,10 @@ The master seed and every secret on the denylist stay out, as today.
 
 **A backup store at `backup.dinakernel.com`.** A small new service:
 
-- `PUT /v1/backups/{backup_id}` and `GET /v1/backups/{backup_id}` (latest,
-  or by counter), `GET /v1/backups/{backup_id}/list`,
-  `DELETE /v1/backups/{backup_id}`;
+- `PUT /v1/backups/{backup_id}/{counter}`, `GET /v1/backups/{backup_id}/{counter}`
+  (or `latest`), `GET /v1/backups/{backup_id}/list`,
+  `DELETE /v1/backups/{backup_id}`. A `PUT` for a counter at or below the
+  highest held is refused (409), so no device can overwrite a newer copy;
 - every call signed with the backup signing key, using the same canonical
   string as Core's signed requests (`@dina/protocol`:
   `{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}`),
@@ -113,7 +120,8 @@ The master seed and every secret on the denylist stay out, as today.
   that the signature is good, that the timestamp is within five minutes, and
   that the nonce is new. So only the holder of the words can read, write or
   delete the copies, and the store never resolves a DID;
-- keeps the last 7 daily and 4 weekly copies per `backup_id`;
+- keeps the newest copy of each of the last 7 days and 4 weeks that have
+  one, and always the newest copy, per `backup_id`;
 - a size limit and a rate limit per `backup_id`;
 - stores sealed bytes plus the `backup_id`, the size and the time. No DID,
   no names, no contents;
@@ -166,7 +174,7 @@ copies go, and "Delete all backups".
 | `packages/core/src/export/archive.ts` | Seal and open under a raw key as well as a passphrase; the signed DID, handle, counter and time inside; the tender tables added, with open tenders and drafts restored as lapsed. |
 | `packages/core/src/crypto/hkdf.ts` | Call `deriveBackupKey` with the fixed salt; derive the backup signing key; frozen test vectors. |
 | New `packages/core/src/backup/` | Schedule, counter, store client (signed requests), restore listing. |
-| New `apps/backup-service` | The store: four routes and the backup-key check of §4.3, around `managed_store.ts` (which replaces an object of the same name today, so it gains a refuse-if-present write for immutable copies); retention, limits, SQLite or object storage. |
+| New `apps/backup-service` | The store: four routes and the backup-key check of §4.3, retention, limits, SQLite. It keeps `managed_store.ts`'s rules (digest computed on arrival, checked on every read, a changed copy refused) in its own SQLite store, since that library holds copies in memory only. |
 | Mobile | The offer, Settings → Backup, and recovery that looks for a copy before asking for the handle. |
 | Home Node Lite | The nightly job. |
 | `deploy/managed/infra` | `BACKUP_HOST`, gated like the other optional services. |

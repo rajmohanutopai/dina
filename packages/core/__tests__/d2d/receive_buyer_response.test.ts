@@ -257,3 +257,51 @@ describe('a supplier answer arriving over D2D', () => {
     expect(buyerOrders.get(SUPPLIER, PO)?.state).toBe('outcome_unknown');
   });
 });
+
+describe('a quote that misses the query window (TODO: late quotes)', () => {
+  function withRetainedRequest(request: { supplier_did: string; expires_at: string } | null) {
+    installCommerceRuntime({
+      buyerOrders,
+      watermarks,
+      buyerQuoteRequests: { get: (id: string) => (id === PO ? request : null), put: () => true },
+    } as unknown as CommerceRuntime);
+  }
+  const later = () => new Date(Date.now() + 3_600_000).toISOString();
+  const deliver = () =>
+    receiveD2D(
+      sealedAnswer('com.dinakernel.commerce.request_quote', { quote: {} }),
+      buyerPub,
+      buyerPriv,
+      [supplierPub],
+      'unknown',
+      { authenticatedFromDID: SUPPLIER, authenticatedToDID: BUYER },
+    );
+
+  it('is admitted when it answers a retained, still-valid request sent to that supplier', () => {
+    withRetainedRequest({ supplier_did: SUPPLIER, expires_at: later() });
+    expect(deliver().action).toBe('bypassed');
+    const accepted = queryAudit({}).find((e) => e.action === 'd2d_recv_service_accepted_durable');
+    expect(accepted?.detail).toContain('via=retained_request');
+  });
+
+  it('is dropped when the request went to another supplier, or has expired', () => {
+    withRetainedRequest({ supplier_did: 'did:plc:someone-else', expires_at: later() });
+    expect(deliver().action).not.toBe('bypassed');
+    clearReplayCache();
+    withRetainedRequest({ supplier_did: SUPPLIER, expires_at: new Date(Date.now() - 1000).toISOString() });
+    expect(deliver().action).not.toBe('bypassed');
+  });
+
+  it('opens nothing for another capability', () => {
+    withRetainedRequest({ supplier_did: SUPPLIER, expires_at: later() });
+    const result = receiveD2D(
+      sealedAnswer('com.dinakernel.commerce.submit_order', acceptance()),
+      buyerPub,
+      buyerPriv,
+      [supplierPub],
+      'unknown',
+      { authenticatedFromDID: SUPPLIER, authenticatedToDID: BUYER },
+    );
+    expect(result.action).not.toBe('bypassed');
+  });
+});

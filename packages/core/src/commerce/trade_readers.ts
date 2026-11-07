@@ -36,6 +36,11 @@ export interface TradeRelationshipReaders {
    * existence checks only, never for folding.
    */
   listAcceptedOrderIds: (counterpartyDid: string, role?: 'buyer' | 'supplier') => string[];
+  /**
+   * True when this node holds the supplier's REJECTED acknowledgement for
+   * the order and no accepted one: the order is settled as not happening.
+   */
+  isOrderRejected: (counterpartyDid: string, purchaseOrderId: string) => boolean;
   /** The retained ACCEPTED acknowledgement's clock (§4.5 from_acceptance). */
   readAcceptance: (
     counterpartyDid: string,
@@ -109,7 +114,20 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
     }
     return null;
   };
-  return { readOrder, readBoundQuote, listAcceptedOrderIds, readAcceptance };
+  const isOrderRejected = (counterpartyDid: string, purchaseOrderId: string): boolean => {
+    let rejected = false;
+    for (const buyerKey of [runtime.nodeDid(), counterpartyDid]) {
+      for (const receipt of runtime.receipts.listByOrder(buyerKey, purchaseOrderId)) {
+        if (receipt.domain !== 'acknowledgement') continue;
+        const ack = rehydrateAcknowledgement(receipt.recordJson, hash);
+        if (!ack.ok || ack.value.purchase_order_id !== purchaseOrderId) continue;
+        if (ack.value.kind === 'accepted') return false;
+        if (ack.value.kind === 'rejected') rejected = true;
+      }
+    }
+    return rejected;
+  };
+  return { readOrder, readBoundQuote, listAcceptedOrderIds, readAcceptance, isOrderRejected };
 }
 
 /**

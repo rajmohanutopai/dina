@@ -7,6 +7,15 @@
  * Source: core/test/transport_adversarial_test.go
  */
 
+import { randomBytes } from 'node:crypto';
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
+
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   validateInboundPayload,
   isPayloadOversized,
@@ -14,7 +23,9 @@ import {
   recordMessageId,
   purgeReplayCache,
   clearReplayCache,
+  isStaleMessage,
 } from '../../src/transport/adversarial';
+import { SQLiteReplayRepository, setReplayRepository } from '../../src/transport/replay_repository';
 
 describe('Transport Adversarial', () => {
   beforeEach(() => {
@@ -83,37 +94,82 @@ describe('Transport Adversarial', () => {
     });
   });
 
-  describe('purgeReplayCache', () => {
-    it('removes entries older than TTL', () => {
-      // Record a message with an old timestamp
-      recordMessageId('old-msg');
-      // Manually backdate the entry (cheat for testing)
-      const cache = (purgeReplayCache as any).__proto__; // no access, use different approach
-      // Instead: record and then purge with 0 TTL (everything is older than 0 seconds)
+  describe('replay window', () => {
+    const T0 = Date.UTC(2026, 9, 27, 12, 0, 0);
+    beforeEach(() => {
+      jest.useFakeTimers();
+      jest.setSystemTime(T0);
       clearReplayCache();
-      recordMessageId('msg-1');
-      // With TTL=0, everything recorded before "now" should be purged
-      // But since we just recorded, it's at `now`, so diff=0 which is NOT > 0
-      // Use a 1-second buffer approach: nothing to purge since just recorded
-      expect(purgeReplayCache(0)).toBe(0); // just recorded = age 0, not > 0
+    });
+    afterEach(() => {
+      jest.useRealTimers();
     });
 
-    it('returns count of purged entries', () => {
-      // Since we can't easily backdate, verify the return type
-      expect(typeof purgeReplayCache()).toBe('number');
+    it('accepts a message from now, in milliseconds or seconds', () => {
+      expect(isStaleMessage(T0)).toBe(false);
+      expect(isStaleMessage(Math.floor(T0 / 1000))).toBe(false);
     });
 
-    it('does not purge recent entries', () => {
-      recordMessageId('recent-msg');
-      const purged = purgeReplayCache(86400); // 24h TTL
-      expect(purged).toBe(0);
-      expect(isReplayedMessage('recent-msg')).toBe(true);
+    it('refuses a message older than a day, and one with no number', () => {
+      expect(isStaleMessage(T0 - 86_401_000)).toBe(true);
+      expect(isStaleMessage(Math.floor(T0 / 1000) - 86_401)).toBe(true);
+      expect(isStaleMessage(undefined)).toBe(true);
+      expect(isStaleMessage(Number.NaN)).toBe(true);
     });
 
-    it('defaults TTL to 24 hours', () => {
-      recordMessageId('msg-default');
-      const purged = purgeReplayCache(); // default 86400
-      expect(purged).toBe(0); // just recorded, not stale
+    it('keeps a seen key while its message could still be accepted', () => {
+      recordMessageId('peer|m1', T0);
+      jest.setSystemTime(T0 + 86_000_000);
+      expect(purgeReplayCache()).toBe(0);
+      expect(isReplayedMessage('peer|m1')).toBe(true);
+    });
+
+    it('purges a key once its message is too old to accept', () => {
+      recordMessageId('peer|m1', T0);
+      jest.setSystemTime(T0 + 86_400_000 + 301_000);
+      expect(isStaleMessage(T0)).toBe(true);
+      expect(purgeReplayCache()).toBe(1);
+      expect(isReplayedMessage('peer|m1')).toBe(false);
+    });
+
+    it('holds a key longer for a sender whose clock runs ahead', () => {
+      const ahead = T0 + 6 * 3_600_000;
+      recordMessageId('peer|m2', ahead);
+      // Past the plain hold, but the message itself is still in the window.
+      jest.setSystemTime(T0 + 86_400_000 + 3_600_000);
+      expect(isStaleMessage(ahead)).toBe(false);
+      expect(isReplayedMessage('peer|m2')).toBe(true);
+    });
+  });
+
+  describe('seen keys survive a restart (SQLite store)', () => {
+    afterEach(() => {
+      setReplayRepository(null);
+    });
+
+    it('a key recorded before the restart is still a replay after it', () => {
+      const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-replay-'));
+      const dbPath = path.join(dir, 'identity.sqlite');
+      const passphraseHex = randomBytes(32).toString('hex');
+      const open = (): NodeSQLiteAdapter => {
+        const db = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+        applyMigrations(db, IDENTITY_MIGRATIONS);
+        return db;
+      };
+      try {
+        let db = open();
+        setReplayRepository(new SQLiteReplayRepository(db));
+        recordMessageId('did:plc:peer|d2d-1', Date.now());
+        db.close();
+
+        db = open();
+        setReplayRepository(new SQLiteReplayRepository(db));
+        expect(isReplayedMessage('did:plc:peer|d2d-1')).toBe(true);
+        expect(isReplayedMessage('did:plc:peer|d2d-2')).toBe(false);
+        db.close();
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+      }
     });
   });
 });

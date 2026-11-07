@@ -84,6 +84,11 @@ function tradeOf(req: SendRequest): { kind: string; document: unknown } {
 }
 
 export interface SendResult {
+  /**
+   * True when the message left this node (delivered, or buffered at the
+   * relay) or sits in the durable outbox for retry. False when it was
+   * refused, or lost: not delivered and not queued.
+   */
   sent: boolean;
   messageId: string;
   delivered: boolean;
@@ -339,7 +344,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
         `type=${req.messageType} id=${messageId} error=${delivery.error ?? 'delivery_failed'}`,
       );
       return {
-        sent: true,
+        sent: false,
         messageId,
         delivered: false,
         buffered: false,
@@ -359,7 +364,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
       // Outbox full / write error: do NOT lie about queued status. The
       // caller needs to know the message was lost (review #2).
       return {
-        sent: true,
+        sent: false,
         messageId,
         delivered: false,
         buffered: false,
@@ -387,7 +392,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
         `type=${req.messageType} id=${messageId} error=${errMsg}`,
       );
       return {
-        sent: true,
+        sent: false,
         messageId,
         delivered: false,
         buffered: false,
@@ -405,7 +410,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
 
     if (!queueResult.queued) {
       return {
-        sent: true,
+        sent: false,
         messageId,
         delivered: false,
         buffered: false,
@@ -440,6 +445,7 @@ function tryEnqueue(
     // re-seals at retry time (issues.txt §1). The idempotency key
     // collapses a double-enqueue of the same logical message to one row.
     enqueueD2D({
+      id: messageId,
       targetDID: req.recipientDID,
       messageType: req.messageType,
       bodyJson: req.body,

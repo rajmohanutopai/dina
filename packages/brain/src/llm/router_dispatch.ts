@@ -326,8 +326,13 @@ export class LLMRouter {
     // `none`/`scripted` have no real model tiers — the scripted provider ignores
     // the model, so there is nothing to pick.
     if (providerName === 'none' || providerName === 'scripted') return undefined;
+    // Only a lightweight task names a model: the provider's lite tier. Every
+    // other task runs the model the adapter was built with, which is the
+    // owner's pick; naming the catalog primary here would override it once
+    // the adapter honours a per-call model.
+    if (!isLightweightTask(taskType)) return undefined;
     const tiers = getProviderTiers(providerName);
-    return isLightweightTask(taskType) ? tiers.lite : tiers.primary;
+    return tiers.lite !== tiers.primary ? tiers.lite : undefined;
   }
 
   // -------------------------------------------------------------------------

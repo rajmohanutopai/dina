@@ -106,6 +106,18 @@ export type EpochRevalidation =
   | { kind: 'unreachable'; epoch: string; reason: string; staleForMs: number }
   | { kind: 'not_established' };
 
+/**
+ * Where a stop is written down, so a restart cannot undo it. Held only in
+ * memory, a plain restart ran `establish()`, adopted the higher live record
+ * and went back to signing as the superseded generation.
+ */
+export interface EpochStopStore {
+  /** The stop this node is under, or null. Throws when unreadable. */
+  load(): { epoch: string; reason: string } | null;
+  save(stop: { epoch: string; reason: string; atMs: number }): void;
+  clear(): void;
+}
+
 export interface EpochServiceDeps {
   transaction: CommerceTransaction;
   /** Quote state as aggregates; the raw ledger is not reachable here. */
@@ -121,6 +133,8 @@ export interface EpochServiceDeps {
   revalidationIntervalMs?: number;
   /** Override how long signing survives without a successful re-read. */
   maxStalenessMs?: number;
+  /** Keeps a stop across restarts. Without it a stop lasts until restart. */
+  stopStore?: EpochStopStore;
 }
 
 export class CommerceEpochService {
@@ -209,6 +223,12 @@ export class CommerceEpochService {
 
     const stop = (reason: string): EpochRevalidation => {
       this.state = { kind: 'stopped', epoch: state.epoch, reason };
+      try {
+        this.deps.stopStore?.save({ epoch: state.epoch, reason, atMs: this.deps.now() });
+      } catch {
+        // Signing is stopped in memory either way. A failed write only means
+        // the next boot re-reads the live record and stops again on it.
+      }
       return { kind: 'stopped', epoch: state.epoch, reason };
     };
 
@@ -268,6 +288,17 @@ export class CommerceEpochService {
    * authoritative).
    */
   async establish(): Promise<CommerceEpochRecord> {
+    // A stop from an earlier run stands. Adopting the live record here is
+    // exactly how a superseded node used to resume signing after a restart;
+    // the way out is the operator's restore (`establishAfterRestore`).
+    const held = this.deps.stopStore?.load() ?? null;
+    if (held !== null) {
+      this.state = { kind: 'stopped', epoch: held.epoch, reason: held.reason };
+      throw new Error(
+        `commerce epoch: signing stopped at epoch ${held.epoch} — ${held.reason}; it needs an operator's restore (§16.2)`,
+      );
+    }
+
     // Bounded like establishAfterRestore: a publisher that keeps losing
     // the CAS while fetchLive() keeps returning null (a misbehaving or
     // partially available repo) must surface the fail-closed error, not
@@ -361,6 +392,8 @@ export class CommerceEpochService {
         });
       });
       this.adopt(next);
+      // The restore is what resolves a stop; it no longer applies.
+      this.deps.stopStore?.clear();
       return next;
     }
     throw new Error(

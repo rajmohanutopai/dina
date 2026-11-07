@@ -374,7 +374,7 @@ function deliverToSancho(index: number): void {
     type: 'service.response',
     from: SUPPLIER_DID,
     to: BUYER_DID,
-    created_time: T0,
+    created_time: Date.now(), // the envelope must sit inside the replay window
     body: JSON.stringify(frame.body),
   };
   asSancho(() =>

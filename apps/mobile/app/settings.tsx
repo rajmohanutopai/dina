@@ -495,6 +495,18 @@ export default function SettingsScreen() {
           <Text style={styles.rowLabel}>View recovery phrase</Text>
           <Text style={styles.rowValue}>{'›'}</Text>
         </TouchableOpacity>
+        {/* "Backup" — the encrypted copy the 24 words bring back
+            (docs/USER_BACKUP.md §4.6). */}
+        <TouchableOpacity
+          style={styles.row}
+          onPress={() => router.push('/backup')}
+          accessibilityRole="button"
+          accessibilityLabel="Backup"
+          testID="settings-row-backup"
+        >
+          <Text style={styles.rowLabel}>Backup</Text>
+          <Text style={styles.rowValue}>{'›'}</Text>
+        </TouchableOpacity>
         {/* "Change passphrase" — re-wraps the master seed under a new
             passphrase. Data + recovery phrase are untouched (the
             passphrase only wraps the seed). */}

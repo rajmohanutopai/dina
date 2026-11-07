@@ -248,6 +248,9 @@ def _derive_cli_x25519_keys(identity: CLIIdentity) -> tuple[bytes, bytes]:
 # Ordered longest-first to prevent substring false matches
 # (e.g., "/v1/task" must NOT match "ask" before "task").
 _EXPIRY_DEFAULTS = [
+    # docs/DAILY_PLAN.md §4: a plan batch waits at MsgBox for a sleeping
+    # phone. Core accepts its signature for 20 h on this route only.
+    ("/v1/plan/inbox", 20 * 60 * 60),
     ("remember", 300),   # writes: 5 minutes
     ("task", 300),       # writes: 5 minutes (must be before "ask")
     ("status", 30),      # interactive reads: short
@@ -356,9 +359,27 @@ class MsgBoxTransport:
         with self._lock:
             return self._do_request(method, path, headers, body, request_id)
 
+    def request_deferred(
+        self, method: str, path: str, headers: dict[str, str],
+        body: str | None = None, wait: float = 8.0,
+    ) -> TransportResponse:
+        """Send, wait up to ``wait`` seconds, and on silence leave the request
+        with MsgBox for the Home Node to take when it wakes.
+
+        No cancel is sent, so MsgBox keeps the envelope until its
+        ``expires_at``. Returns the Home Node's answer when it came in time,
+        else a 202 ``{"queued": true}``. Only for routes that refuse a second
+        copy on their own (docs/DAILY_PLAN.md §4).
+        """
+        with self._lock:
+            return self._do_request(
+                method, path, headers, body, None, wait=wait, keep_on_timeout=True,
+            )
+
     def _do_request(
         self, method: str, path: str, headers: dict[str, str],
         body: str | None = None, request_id: str | None = None,
+        wait: float | None = None, keep_on_timeout: bool = False,
     ) -> TransportResponse:
         rid = request_id or uuid.uuid4().hex
         t_start = time.monotonic()
@@ -470,7 +491,7 @@ class MsgBoxTransport:
             # learnt that the hard way: passing only `ws.socket.settimeout()`
             # made `ws.recv()` block indefinitely so a missed response chip
             # showed up as a frozen CLI rather than a clean timeout.
-            deadline = time.time() + self._timeout
+            deadline = time.time() + (self._timeout if wait is None else wait)
             frames_seen = 0
             unmatched_ids: list[str] = []
             recv_err: Exception | None = None
@@ -542,6 +563,15 @@ class MsgBoxTransport:
                    unmatched=",".join(unmatched_ids[:5]),
                    recv_err=type(recv_err).__name__ if recv_err else "",
                    total_ms=total_ms)
+            if keep_on_timeout:
+                # Leave the envelope at MsgBox: the Home Node takes it when it
+                # reconnects, within the envelope's expires_at.
+                _trace(rid, "queued", total_ms=total_ms)
+                return TransportResponse(
+                    status=202,
+                    headers={"content-type": "application/json"},
+                    body=json.dumps({"queued": True, "request_id": rid}),
+                )
             self._send_cancel(ws, rid, did)
             raise TransportError(
                 f"Home Node did not respond after {total_ms}ms "

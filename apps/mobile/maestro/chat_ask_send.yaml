@@ -1,0 +1,22 @@
+# Sub-flow: send ${MESSAGE} in Ask mode on the Chat tab.
+appId: com.dinakernel.mobile
+---
+- retry:
+    maxRetries: 3
+    commands:
+      - runFlow:
+          when:
+            notVisible:
+              id: 'chat-input'
+          commands:
+            - tapOn:
+                id: 'index-mode-chip-ask'
+            - waitForAnimationToEnd
+      - assertVisible:
+          id: 'chat-input'
+- tapOn:
+    id: 'chat-input'
+- inputText: '${MESSAGE}'
+- waitForAnimationToEnd
+- tapOn:
+    id: 'send-button'

@@ -51,6 +51,18 @@ export interface AISDKAdapterOptions {
    * Ignored when the underlying model is not OpenAI.
    */
   openaiReasoningEffort?: 'none' | 'low' | 'minimal' | 'medium' | 'high' | 'xhigh';
+  /**
+   * Builds a handle for another model id from the same provider and key.
+   * The router names a model per call (`ChatOptions.model`: the lite tier
+   * for classify and guard calls); without this the adapter can only run
+   * the model it was built with, and every tier ran the primary.
+   */
+  modelFor?: (modelId: string) => LanguageModel;
+}
+
+/** A model handle's id: the string itself, or the v3 instance's `modelId`. */
+function modelIdOf(model: LanguageModel): string {
+  return typeof model === 'string' ? model : ((model as { modelId?: string }).modelId ?? '');
 }
 
 export class AISDKAdapter implements LLMProvider {
@@ -59,17 +71,43 @@ export class AISDKAdapter implements LLMProvider {
   readonly supportsToolCalling = true;
   readonly supportsEmbedding = false;
 
-  private readonly model: LanguageModel;
+  private readonly defaultModel: LanguageModel;
   private readonly openaiReasoningEffort: AISDKAdapterOptions['openaiReasoningEffort'];
+  private readonly modelFor: AISDKAdapterOptions['modelFor'];
+  private readonly models = new Map<string, LanguageModel>();
 
   constructor(options: AISDKAdapterOptions) {
-    this.model = options.model;
+    this.defaultModel = options.model;
     this.name = options.name;
     this.openaiReasoningEffort = options.openaiReasoningEffort;
+    this.modelFor = options.modelFor;
+  }
+
+  /**
+   * The model for this call: the one named in `ChatOptions.model` when it
+   * differs from the default and the adapter can build it, else the default.
+   * `pinnedEffort` says whether the constructor's effort override applies;
+   * it was chosen for the default model only.
+   */
+  private modelForCall(requested: string | undefined): {
+    model: LanguageModel;
+    pinnedEffort: boolean;
+  } {
+    const defaultId = modelIdOf(this.defaultModel);
+    if (requested === undefined || requested === '' || requested === defaultId || !this.modelFor) {
+      return { model: this.defaultModel, pinnedEffort: true };
+    }
+    let model = this.models.get(requested);
+    if (model === undefined) {
+      model = this.modelFor(requested);
+      this.models.set(requested, model);
+    }
+    return { model, pinnedEffort: false };
   }
 
   async chat(messages: ChatMessage[], options: ChatOptions = {}): Promise<ChatResponse> {
     const { system, messages: aiMessages } = toAISDKMessages(messages, options.systemPrompt);
+    const { model, pinnedEffort } = this.modelForCall(options.model);
 
     // Reasoning-effort resolution:
     //
@@ -93,10 +131,10 @@ export class AISDKAdapter implements LLMProvider {
     // is the instance returned by `openai('gpt-5.5')`. Both expose
     // the model id, just at different paths — pull it via a narrow
     // helper so the effort lookup works in either shape.
-    const modelId =
-      typeof this.model === 'string' ? this.model : this.model.modelId;
+    const modelId = modelIdOf(model);
     const effort =
-      this.openaiReasoningEffort ?? lowestSupportedOpenAIEffort(modelId);
+      (pinnedEffort ? this.openaiReasoningEffort : undefined) ??
+      lowestSupportedOpenAIEffort(modelId);
     // For non-OpenAI OR-routed models (Gemini, Qwen, Anthropic via
     // OR, etc.) the adapter does NOT force `effort: 'none'`. An
     // earlier version did to drop the upstream's default reasoning
@@ -130,7 +168,7 @@ export class AISDKAdapter implements LLMProvider {
         : {};
 
     const result = await generateText({
-      model: this.model,
+      model,
       system,
       messages: aiMessages,
       tools: options.tools !== undefined ? toAISDKTools(options.tools) : undefined,
@@ -187,10 +225,7 @@ export class AISDKAdapter implements LLMProvider {
     // unambiguous proof of which model OpenRouter actually billed —
     // `this.name` alone is just the provider ('openrouter'). Parity with
     // the GeminiGenaiAdapter's [LLM-USAGE] line.
-    const resolvedModelId =
-      typeof this.model === 'string'
-        ? this.model
-        : ((this.model as { modelId?: string }).modelId ?? this.name);
+    const resolvedModelId = modelIdOf(model) || this.name;
     const cachedTokens =
       (result.usage as { cachedInputTokens?: number }).cachedInputTokens ?? 0;
     console.log(

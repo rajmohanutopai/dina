@@ -526,8 +526,8 @@ documents MCP Apps for chats; dots are said to use the same plugins).
 | SNI passthrough router | small | written, unit-tested, not run on a host |
 | Per-cell OS users and socket groups (`isolate`) | medium | written, not run (Linux, root) |
 | Front door routing to cells; "locked" replies | small | built |
-| Tender tables in the archive (`USER_BACKUP.md` §5) | small | not built |
-| Backup store (`USER_BACKUP.md`) | medium | not built |
+| Tender tables in the archive (`USER_BACKUP.md` §5) | small | built (2026-10-29) |
+| Backup store (`USER_BACKUP.md`) | medium | built, not deployed (2026-10-29); a cell backs up once `DINA_BACKUP_STORE_URL` is in the hosting config's `core_env` |
 
 ## 9. Risks
 

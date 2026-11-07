@@ -25,6 +25,7 @@
 // client IS the phone's transport. Same @scure/base decode D2D uses.
 import { base64 } from '@scure/base';
 
+import { storedAskRecordToWire, wireToStoredAskRecord } from '../ask/ask_record_repository';
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 import { readPiiNamesResult, type PiiNamesResult } from '../pii/names';
@@ -154,6 +155,7 @@ import type {
   Reminder,
   ReminderCreateInput,
   StoredNotificationItem,
+  StoredAskRecord,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -1829,6 +1831,34 @@ export class InProcessTransport implements CoreClient {
       }),
     );
     if (res.status !== 200) throw new Error(`notificationAppend failed: ${res.status}`);
+  }
+
+  // ─── Live ask records (FIXES F11) ──────────────────────────────────────────
+  // Same wire shape as HTTP, through Core's own routes.
+
+  async askRecordPut(record: StoredAskRecord): Promise<void> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ask-records', body: storedAskRecordToWire(record) }),
+    );
+    if (res.status !== 200) throw new Error(`askRecordPut failed: ${res.status}`);
+  }
+
+  async askRecordList(): Promise<StoredAskRecord[]> {
+    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/ask-records' }));
+    if (res.status !== 200) return [];
+    const raw = (res.body ?? {}) as { records?: unknown[] };
+    if (!Array.isArray(raw.records)) return [];
+    return raw.records
+      .map((r) => wireToStoredAskRecord(r))
+      .filter((r): r is StoredAskRecord => r !== null);
+  }
+
+  async askRecordDelete(id: string): Promise<boolean> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ask-records/delete', body: { id } }),
+    );
+    if (res.status !== 200) throw new Error(`askRecordDelete failed: ${res.status}`);
+    return Boolean((res.body as { removed?: boolean } | undefined)?.removed);
   }
 
   async notificationList(limit?: number): Promise<StoredNotificationItem[]> {

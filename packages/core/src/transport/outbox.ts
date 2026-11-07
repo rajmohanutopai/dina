@@ -91,6 +91,12 @@ function shortBodyHash(body: string): string {
 }
 
 export interface EnqueueD2DInput {
+  /**
+   * The D2D message id from the first send. It becomes the row id, and every
+   * retry re-sends under it, so the recipient's replay cache drops a copy
+   * that already arrived. Minted when omitted.
+   */
+  id?: string;
   targetDID: string;
   messageType: string;
   /** Semantic message body (JSON string), NOT sealed wire bytes. */
@@ -112,7 +118,7 @@ export interface EnqueueD2DInput {
  */
 export function enqueueD2D(input: EnqueueD2DInput): D2DOutboxRow {
   const now = input.now ?? Date.now();
-  const id = `d2d-out-${bytesToHex(randomBytes(8))}`;
+  const id = input.id ?? `d2d-out-${bytesToHex(randomBytes(8))}`;
   const ttl = input.ttlMs ?? DEFAULT_TTL_MS;
   return activeRepo().insert({
     id,

@@ -27,6 +27,12 @@ export interface InviteRow {
   confirmationJson: string;
   ackJson: string;
   activationProvenAt: number | null;
+  /**
+   * Whether this exchange's activation created the contact. Teardown removes
+   * the contact only then: a counterparty who was a contact before the invite
+   * stays one. Absent on a row that has not activated.
+   */
+  createdContact?: boolean;
   expiresAt: number;
   createdAt: number;
   updatedAt: number;
@@ -47,8 +53,8 @@ export class SQLiteInviteRepository implements InviteRepository {
       `INSERT OR REPLACE INTO commerce_invites
          (nonce, role, state, direction, counterparty_did, offer_json,
           redemption_json, confirmation_json, ack_json, activation_proven_at,
-          expires_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          created_contact, expires_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         row.nonce,
         row.role,
@@ -60,6 +66,7 @@ export class SQLiteInviteRepository implements InviteRepository {
         row.confirmationJson,
         row.ackJson,
         row.activationProvenAt,
+        row.createdContact === false ? 0 : 1,
         row.expiresAt,
         row.createdAt,
         row.updatedAt,
@@ -95,6 +102,7 @@ function fromRow(row: Record<string, unknown>): InviteRow {
     confirmationJson: String(row.confirmation_json ?? ''),
     ackJson: String(row.ack_json ?? ''),
     activationProvenAt: row.activation_proven_at === null ? null : Number(row.activation_proven_at),
+    createdContact: Number(row.created_contact ?? 1) !== 0,
     expiresAt: Number(row.expires_at),
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),

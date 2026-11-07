@@ -13,6 +13,7 @@
  * the thrown refusal keeps the exchange retryable.
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import { addContactIfNotExists, deleteContact } from '../contacts/directory';
@@ -24,6 +25,14 @@ import { getWorkflowService } from '../workflow/service';
 import { InviteService } from './invite_service';
 import { getCommerceRuntime } from './runtime';
 
+/**
+ * The grant-id prefix for one invite exchange. Teardown revokes by it, so
+ * grants the exchange did not write survive. A hash, so the nonce (the
+ * single-use code) is not readable from a grant id.
+ */
+export function inviteGrantPrefix(inviteNonce: string): string {
+  return `invg_${bytesToHex(sha256(new TextEncoder().encode(inviteNonce))).slice(0, 16)}_`;
+}
 
 export interface InviteAppDeps {
   /** Signs the offer's embedded signature with THIS node's signing key. */
@@ -75,12 +84,12 @@ export function composeInviteService(app: InviteAppDeps): InviteService {
       // gate (deliberately) refuses an 'unknown'-trust contact, so an
       // activation at the default level produced a relationship no
       // khata document could ever travel (found live, 2026-08-18).
-      addContactIfNotExists(did, did, 'verified');
+      return addContactIfNotExists(did, did, 'verified').created;
     },
     removeContact: (did) => {
       deleteContact(did);
     },
-    writeGrants: ({ granteeDid, serviceRkeys, capabilities }) => {
+    writeGrants: ({ granteeDid, serviceRkeys, capabilities, inviteNonce }) => {
       const grants = getServiceGrantRepository();
       if (grants === null) {
         throw new Error('invite activation: the service-grant repository is not wired');
@@ -89,7 +98,7 @@ export function composeInviteService(app: InviteAppDeps): InviteService {
       for (const serviceRkey of serviceRkeys) {
         for (const capability of capabilities) {
           grants.create({
-            grantId: `invg_${bytesToHex(randomBytes(12))}`,
+            grantId: `${inviteGrantPrefix(inviteNonce)}${bytesToHex(randomBytes(8))}`,
             granteeDid,
             serviceRkey,
             capability,
@@ -99,12 +108,15 @@ export function composeInviteService(app: InviteAppDeps): InviteService {
         }
       }
     },
-    revokeGrants: (granteeDid) => {
+    revokeGrants: ({ granteeDid, inviteNonce }) => {
       const grants = getServiceGrantRepository();
       if (grants === null) return; // nothing was ever written
       const nowSec = Math.floor(requireRuntime().now() / 1000);
+      // Only this exchange's grants: one the owner gave by hand, or another
+      // invite's, is not this teardown's to take back.
+      const prefix = inviteGrantPrefix(inviteNonce);
       for (const grant of grants.listByGrantee(granteeDid)) {
-        grants.revoke(grant.grantId, nowSec);
+        if (grant.grantId.startsWith(prefix)) grants.revoke(grant.grantId, nowSec);
       }
     },
     // §8 cold invites — publishing a catalog is the consent to receive

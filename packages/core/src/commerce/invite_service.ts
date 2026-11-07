@@ -91,15 +91,22 @@ export interface InviteServiceDeps {
   /** Resolves a DID's signing key for offer verification. Null = unresolvable. */
   resolveSigningKey: (did: string) => Promise<Uint8Array | null>;
   verify: (message: Uint8Array, signature: Uint8Array, publicKey: Uint8Array) => boolean;
-  /** Durable activation writes — the contact entry and (supplier side) grants. */
-  writeContact: (did: string) => void;
+  /**
+   * Durable activation writes — the contact entry and (supplier side) grants.
+   * `writeContact` answers whether it created the contact; teardown removes
+   * only a contact this exchange created.
+   */
+  writeContact: (did: string) => boolean;
   removeContact: (did: string) => void;
+  /** Grants this exchange writes are tagged with its nonce. */
   writeGrants: (args: {
     granteeDid: string;
     serviceRkeys: readonly string[];
     capabilities: readonly string[];
+    inviteNonce: string;
   }) => void;
-  revokeGrants: (granteeDid: string) => void;
+  /** Revokes only the grants tagged with this exchange's nonce. */
+  revokeGrants: (args: { granteeDid: string; inviteNonce: string }) => void;
   /** Dispatch a `commerce.invite` message. False = nothing left this node. */
   send: (toDid: string, body: Record<string, unknown>) => Promise<boolean>;
   /**
@@ -300,16 +307,23 @@ export class InviteService {
     if (row.state === 'redeemed') {
       // ACTIVATION: the durable writes, then the pong. The contact is
       // written on both directions; grants only when THIS side supplies.
-      this.deps.writeContact(row.counterpartyDid);
+      const createdContact = this.deps.writeContact(row.counterpartyDid);
       if (supplierRole(row.direction) === 'inviter') {
         const offer = rehydrateStoredInviteOffer(row.offerJson);
         this.deps.writeGrants({
           granteeDid: row.counterpartyDid,
           serviceRkeys: offer.service_rkeys,
           capabilities: offer.capabilities,
+          inviteNonce: row.nonce,
         });
       }
-      this.deps.invites.put({ ...row, state: 'active', ackJson: JSON.stringify(ack), updatedAt: now });
+      this.deps.invites.put({
+        ...row,
+        state: 'active',
+        ackJson: JSON.stringify(ack),
+        createdContact,
+        updatedAt: now,
+      });
       const receipt = pong(JSON.stringify(ack));
       await this.deps.send(args.senderDid, { kind: 'ack_receipt', document: receipt });
       return { ok: true, value: { receipt, resent: false } };
@@ -489,12 +503,13 @@ export class InviteService {
     if (row.state === 'redeemed') {
       // ACTIVATION FIRST (§8): the durable writes commit BEFORE the ack
       // leaves, because the ack's meaning is "I have committed".
-      this.deps.writeContact(row.counterpartyDid);
+      const createdContact = this.deps.writeContact(row.counterpartyDid);
       if (supplierRole(row.direction) === 'redeemer') {
         this.deps.writeGrants({
           granteeDid: row.counterpartyDid,
           serviceRkeys: redemption.service_rkeys,
           capabilities: rehydrateStoredInviteOffer(row.offerJson).capabilities,
+          inviteNonce: row.nonce,
         });
       }
       const ackDraft = {
@@ -513,6 +528,7 @@ export class InviteService {
         state: 'active',
         confirmationJson: JSON.stringify(confirmation),
         ackJson: JSON.stringify(ack),
+        createdContact,
         updatedAt: now,
       });
       await this.deps.send(args.senderDid, { kind: 'activation_ack', document: ack });
@@ -712,8 +728,10 @@ export class InviteService {
 
   private tearDown(row: InviteRow): void {
     if (row.state === 'active') {
-      this.deps.removeContact(row.counterpartyDid);
-      this.deps.revokeGrants(row.counterpartyDid);
+      // Undo only what this exchange wrote: a contact or a grant that was
+      // there before the invite stays.
+      if (row.createdContact !== false) this.deps.removeContact(row.counterpartyDid);
+      this.deps.revokeGrants({ granteeDid: row.counterpartyDid, inviteNonce: row.nonce });
     }
     this.deps.invites.put({ ...row, state: 'revoked', updatedAt: this.deps.now() });
   }

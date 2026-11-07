@@ -15,7 +15,14 @@
  * response.
  */
 
-import { mnemonicToEntropy, deriveRotationKey, secp256k1ToDidKeyMultibase } from '@dina/core';
+import {
+  deriveBackupIdentity,
+  deriveRotationKey,
+  kvBackupStore,
+  mnemonicToEntropy,
+  sealBackup,
+  secp256k1ToDidKeyMultibase,
+} from '@dina/core';
 
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { generateNewMnemonic } from '../../src/hooks/useOnboarding';
@@ -580,6 +587,54 @@ describe('recoverIdentity', () => {
     expect(stub).not.toHaveBeenCalled();
     expect(isUnlocked()).toBe(true);
     expect(await loadPersistedDid()).toBe(created.did);
+  });
+
+  it('restores the backup the 24 words open, once the vault is open (USER_BACKUP §4.5)', async () => {
+    const mnemonic = generateNewMnemonic();
+    const id = deriveBackupIdentity(mnemonicToEntropy(mnemonic.join(' ')));
+    const sealed = sealBackup(
+      {
+        header: {
+          format: 'dina-archive-v1',
+          version: 1,
+          created_at: 1,
+          app_version: 'test',
+          schema_versions: {},
+          persona_count: 0,
+          checksums: {},
+        },
+        identity: { tables: {} },
+        personas: [],
+      },
+      id,
+      { did: STUB_DID, handle: 'raj.pds.test', counter: 3, createdAt: 1 },
+    );
+    const asked: string[] = [];
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = (async (url: string) => {
+      asked.push(String(url));
+      return {
+        status: 200,
+        arrayBuffer: async () => sealed.slice().buffer,
+        text: async () => '',
+      };
+    }) as unknown as typeof fetch;
+    try {
+      const recovered = await recoverIdentity({
+        mnemonic,
+        passphrase: TEST_PASSPHRASE,
+        expectedDid: STUB_DID,
+        handle: 'raj.pds.test',
+        restoreBackup: true,
+      });
+      expect(recovered.restoredItems).toBe(0);
+      expect(asked).toEqual([`https://test-backup.dinakernel.com/v1/backups/${id.backupId}/latest`]);
+      // Backing up carries on from this phone.
+      expect(await kvBackupStore.get('enabled')).toBe('1');
+      expect(isUnlocked()).toBe(true);
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 
   it('rejects a did:key as expectedDid (must be a verified did:plc)', async () => {

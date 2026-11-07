@@ -140,11 +140,15 @@ export function makeOutboxRedeliver(
         recipientPublicKey,
         endpoint,
         suppressEnqueue: true,
+        // The row id is the message id of the first send: a retry keeps it,
+        // so a peer that already has the message drops the copy.
+        messageId: row.id,
         ...(opts.providerServiceResolver !== undefined
           ? { providerServiceResolver: opts.providerServiceResolver }
           : {}),
       });
-      return result.delivered
+      // Buffered at MsgBox counts: the relay holds it for the peer.
+      return result.delivered || result.buffered
         ? { delivered: true }
         : { delivered: false, error: result.error ?? result.deniedAt ?? 'delivery_failed' };
     } catch (err) {

@@ -31,6 +31,7 @@ import { shutdownAllPersistence } from '../storage/init';
 import { clearDisplayNameOverride } from './display_name_override';
 import { clearPersistedDid } from './identity_record';
 import { clearIdentitySeeds } from './identity_store';
+import { installBackupIdentity } from './cloud_backup';
 import { clearOrphanKeychainState, writeInstallMarker } from './install_marker';
 import { stopUcp } from './net_socket_wiring';
 import { clearAutoPassphrase } from './startup_preferences';
@@ -51,6 +52,7 @@ export async function signOutLocal(): Promise<void> {
   // UCP stops first: no upload, search or guard claim under an identity being removed.
   await stopUcp();
   installUcpIdentity(null);
+  installBackupIdentity(null);
   // A wiped node forgets its key ring with its record; a restore adopts the host's.
   setUcpSigningGeneration(null);
   await clearWrappedSeed();
@@ -90,6 +92,7 @@ export async function eraseEverythingLocal(): Promise<void> {
   // UCP stops before its database closes (its search store and guard claims read it).
   await stopUcp();
   installUcpIdentity(null);
+  installBackupIdentity(null);
   // A wiped node forgets its key ring with its record; a restore adopts the host's.
   setUcpSigningGeneration(null);
   try {

@@ -371,7 +371,7 @@ function deliverToSancho(index = 0): ReturnType<typeof receiveD2D> {
     type: 'service.response',
     from: SUPPLIER_DID,
     to: BUYER_DID,
-    created_time: T0,
+    created_time: Date.now(), // the envelope must sit inside the replay window
     body: JSON.stringify(frame.body),
   };
   return asSancho(() =>
@@ -678,7 +678,7 @@ describe('the re-poll closes the loop (§12.7)', () => {
         type: 'service.response',
         from: SUPPLIER_DID,
         to: BUYER_DID,
-        created_time: T0,
+        created_time: Date.now(), // the envelope must sit inside the replay window
         body: JSON.stringify(frame.body),
       };
       // Delivered WITH the evidence reader, so the buyer judges the answer
@@ -728,7 +728,7 @@ describe('what a stranger cannot do', () => {
         type: 'service.response',
         from: IMPOSTOR,
         to: BUYER_DID,
-        created_time: T0,
+        created_time: Date.now(), // the envelope must sit inside the replay window
         body: JSON.stringify(frame.body),
       };
       const result = receiveD2D(

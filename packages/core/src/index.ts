@@ -1266,6 +1266,26 @@ export * from './notify/priority';
 export type { GuardianTier, NotificationPriority } from './notify/priority';
 export * from './transport/outbox';
 export * from './transport/outbox_repository';
+export * from './ask/ask_record_repository';
+
+// DAILY_PLAN.md: tasks from the owner's agents, goals and each day's plan.
+export * from './plan/store';
+export * from './plan/intake';
+export * from './plan/day';
+export * from './plan/goal_rules';
+
+// USER_BACKUP.md: the sealed copy, its keys, the store client and the runner.
+export * from './backup/keys';
+export * from './backup/sealed';
+export * from './backup/store_client';
+export * from './backup/backup_runner';
+export {
+  InMemoryReplayRepository,
+  SQLiteReplayRepository,
+  setReplayRepository,
+  getReplayRepository,
+} from './transport/replay_repository';
+export type { ReplayRepository } from './transport/replay_repository';
 export type {
   D2DOutboxRepository,
   D2DOutboxRow,

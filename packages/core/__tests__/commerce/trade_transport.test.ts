@@ -33,6 +33,7 @@ import { clearReplayCache } from '../../src/transport/adversarial';
 import {
   BUYER_DID,
   SUPPLIER_DID,
+  makeAcknowledgement,
   makeOrder,
   makeQuoteRequest,
   makeSignedQuote,
@@ -46,6 +47,11 @@ const T0 = 1_800_000_000_000;
 const REQUEST = makeQuoteRequest();
 const QUOTE = makeSignedQuote(REQUEST);
 const ORDER = makeOrder(QUOTE, REQUEST.delivery.projection);
+const ACCEPTED = makeAcknowledgement({
+  purchase_order_id: ORDER.purchase_order_id,
+  order_digest: ORDER.order_digest,
+  accepted_quote_digest: QUOTE.quote_digest,
+});
 
 const supplierPriv = TEST_ED25519_SEED;
 const supplierPub = getPublicKey(supplierPriv);
@@ -76,16 +82,28 @@ function installNode(
 ): InMemoryTradeDocumentRepository {
   const tradeDocs = new InMemoryTradeDocumentRepository();
   const receipts = new InMemoryCommerceReceiptRepository();
-  if (withOrder) receipts.put({
-    recordDigest: ORDER.order_digest,
-    domain: 'order',
-    buyerDid: ORDER.buyer_did,
-    quoteId: ORDER.quote_id,
-    purchaseOrderId: ORDER.purchase_order_id,
-    recordJson: JSON.stringify(ORDER),
-    evidenceJson: '{}',
-    createdAt: T0,
-  });
+  if (withOrder) {
+    receipts.put({
+      recordDigest: ORDER.order_digest,
+      domain: 'order',
+      buyerDid: ORDER.buyer_did,
+      quoteId: ORDER.quote_id,
+      purchaseOrderId: ORDER.purchase_order_id,
+      recordJson: JSON.stringify(ORDER),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+    receipts.put({
+      recordDigest: ACCEPTED.acknowledgement_digest,
+      domain: 'acknowledgement',
+      buyerDid: ACCEPTED.buyer_did,
+      quoteId: '',
+      purchaseOrderId: ACCEPTED.purchase_order_id,
+      recordJson: JSON.stringify(ACCEPTED),
+      evidenceJson: '{}',
+      createdAt: T0,
+    });
+  }
   installCommerceRuntime(nodeRuntime(nodeDid, receipts, tradeDocs, money, new InMemoryTradeSpoolRepository()));
   return tradeDocs;
 }
@@ -168,7 +186,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
       type: 'commerce.trade',
       from: SUPPLIER_DID,
       to: BUYER_DID,
-      created_time: T0,
+      created_time: Date.now(), // the envelope must sit inside the replay window
       body: bodyJson,
       ...overrides,
     };
@@ -511,7 +529,7 @@ describe('the reverse direction: a buyer payment note lands at the supplier', ()
       type: 'commerce.trade',
       from: BUYER_DID,
       to: SUPPLIER_DID,
-      created_time: T0,
+      created_time: Date.now(), // the envelope must sit inside the replay window
       body: captured,
     };
     const sealed = sealMessage(msg, buyerPriv, supplierPub);

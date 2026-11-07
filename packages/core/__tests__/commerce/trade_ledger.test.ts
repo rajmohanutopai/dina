@@ -194,6 +194,15 @@ describe.each(backends)('trade ledger ($name)', ({ make }) => {
       expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(1);
     });
 
+    it('refuses a note on an order the supplier rejected, keeps one on an unanswered order', () => {
+      const rejected = ingestNote(sealedNote(), { isOrderRejected: () => true });
+      expect(rejected).toMatchObject({ outcome: 'refused' });
+      expect(rejected.detail).toContain('rejected');
+      expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(0);
+      // The acceptance may still be in flight: keep the note.
+      expect(ingestNote(sealedNote(), { isOrderRejected: () => false }).outcome).toBe('applied');
+    });
+
     it('binds: unknown order, wrong sender, wrong buyer, stale order digest, §9.13', () => {
       expect(ingestNote(sealedNote({ purchase_order_id: 'po-9' }), {}).outcome).toBe('refused');
       expect(ingestNote(sealedNote(), { senderDid: BUYER }).outcome).toBe('not_ours');

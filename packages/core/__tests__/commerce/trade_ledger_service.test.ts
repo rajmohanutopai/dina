@@ -117,6 +117,28 @@ describe('authoring runs the receiver rules on itself', () => {
     expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(0);
   });
 
+  it('refuses to issue a note on an order this node has not accepted', () => {
+    const repo = new InMemoryTradeDocumentRepository();
+    const service = new TradeLedgerService({
+      documents: repo,
+      nodeDid: () => SUPPLIER,
+      now: () => T0,
+      readOrder: (_counterparty, id) => (id === 'po-1' ? ORDER : null),
+      readAcceptance: () => null,
+      readBoundQuote: (_counterparty, id) => (id === 'po-1' ? QUOTE : null),
+      listAcceptedOrderIds: () => [],
+    });
+    const outcome = service.issueDeliveryNote({
+      counterpartyDid: BUYER,
+      purchaseOrderId: 'po-1',
+      supplierOrderId: 'so-1',
+      lines: [{ line_id: 'line-1', delivered_quantity: { value: '1', unit_code: 'each' } }],
+    });
+    expect(outcome.ok).toBe(false);
+    expect(!outcome.ok && outcome.refusal).toContain('not accepted');
+    expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(0);
+  });
+
   it('two notes 6 then 5 refuse at the SECOND issue — own retained set counts', () => {
     const { service } = makeSide(SUPPLIER);
     const first = service.issueDeliveryNote({

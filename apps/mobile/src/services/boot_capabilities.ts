@@ -77,7 +77,6 @@ import {
   listPersonas,
   reconcileDefaultAgentGatingPolicies,
   migrateStandardPersonaGrants,
-
   revokeGrantsOnPersonaDelete,
   setOutboxRedeliverFn,
   setPluginDeviceVerifier,
@@ -155,7 +154,10 @@ function restartAbandonedInstallSweeper(): void {
   abandonedInstallSweeper = startAbandonedInstallSweeper({
     revokeDevice: revokePluginDeviceForTeardown,
     onError: (err) =>
-      console.warn('[boot] abandoned plugin-install sweep failed', err instanceof Error ? err.message : String(err)),
+      console.warn(
+        '[boot] abandoned plugin-install sweep failed',
+        err instanceof Error ? err.message : String(err),
+      ),
   });
 }
 
@@ -403,9 +405,14 @@ export async function buildBootInputs(
   installNameLexicon(
     new NameLexicon({
       fetch: async (known) => {
-        // Loaded when called: useNodeBootstrap imports this module.
-        const { getBootedNode } = await import('../hooks/useNodeBootstrap');
-        const node = getBootedNode();
+        // Required when called, not imported: useNodeBootstrap imports this
+        // module. A dynamic `import()` here made Metro fetch a separate chunk
+        // by URL, which fails in a `--no-dev` bundle ("Unable to determine
+        // the production URL…"), so every model call was refused.
+        type Bootstrap = typeof import('../hooks/useNodeBootstrap');
+        // eslint-disable-next-line @typescript-eslint/no-require-imports
+        const bootstrap = require('../hooks/useNodeBootstrap') as Bootstrap;
+        const node = bootstrap.getBootedNode();
         if (node === null) throw new Error('node not booted');
         return node.coreClient.piiNames(known);
       },
@@ -992,7 +999,9 @@ async function tryBuildAgenticAsk(opts: {
         0,
         Date.now() + 1,
         limit,
-        opts?.releaseSession !== undefined ? { sessionId: opts.releaseSession, audience: 'brain' } : undefined,
+        opts?.releaseSession !== undefined
+          ? { sessionId: opts.releaseSession, audience: 'brain' }
+          : undefined,
       );
       return items.map((i) => ({
         id: i.id,
@@ -1196,7 +1205,8 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
     },
     async invokePluginTool(input: import('@dina/core').InvokePluginToolInput) {
       const n = node();
-      if (n === null) return { ok: false as const, code: 'registry_unavailable', message: 'DinaNode not booted' };
+      if (n === null)
+        return { ok: false as const, code: 'registry_unavailable', message: 'DinaNode not booted' };
       return n.brainCoreClient.invokePluginTool(input);
     },
     async listServiceOffers(params?: { providerDid?: string; capability?: string }) {
@@ -1210,7 +1220,8 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
     },
     async openGroupPlan(input: import('@dina/core').OpenGroupPlanClientInput) {
       const n = node();
-      if (n === null) return { ok: false as const, refusal: 'not_wired', detail: 'DinaNode not booted' };
+      if (n === null)
+        return { ok: false as const, refusal: 'not_wired', detail: 'DinaNode not booted' };
       return n.brainCoreClient.openGroupPlan(input);
     },
     async getGroupPlan(planId: string) {
@@ -1254,7 +1265,12 @@ type Bootstrap = typeof import('../hooks/useNodeBootstrap');
  */
 function lazyUcpClient(): Pick<
   import('@dina/core').CoreClient,
-  'searchUcp' | 'getUcpSearch' | 'raiseUcpSearchReview' | 'fetchUcpProducts' | 'ucpCart' | 'ucpCheckout'
+  | 'searchUcp'
+  | 'getUcpSearch'
+  | 'raiseUcpSearchReview'
+  | 'fetchUcpProducts'
+  | 'ucpCart'
+  | 'ucpCheckout'
 > {
   function core() {
     // Required here, not imported: the bootstrap hook imports this module.
@@ -1266,7 +1282,8 @@ function lazyUcpClient(): Pick<
   return {
     searchUcp: async (input) => (await core()?.searchUcp(input)) ?? notRunning,
     getUcpSearch: async (id, session) => (await core()?.getUcpSearch(id, session)) ?? null,
-    raiseUcpSearchReview: async (input) => (await core()?.raiseUcpSearchReview(input)) ?? notRunning,
+    raiseUcpSearchReview: async (input) =>
+      (await core()?.raiseUcpSearchReview(input)) ?? notRunning,
     fetchUcpProducts: async (input) => (await core()?.fetchUcpProducts(input)) ?? notRunning,
     ucpCart: async (input) => (await core()?.ucpCart(input)) ?? notRunning,
     ucpCheckout: async (input) => (await core()?.ucpCheckout(input)) ?? notRunning,

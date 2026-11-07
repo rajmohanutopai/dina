@@ -4,19 +4,48 @@
  * Validates inbound D2D messages before processing:
  * - Size limit: 1 MiB default (configurable)
  * - Empty payloads rejected
- * - Message ID replay detection with 24-hour TTL cache
+ * - Message ID replay detection: seen keys persist (replay_repository.ts),
+ *   and messages older than the 24-hour window are refused
  *
  * Source: core/test/transport_adversarial_test.go
  */
 
+import {
+  getReplayRepository,
+  InMemoryReplayRepository,
+  type ReplayRepository,
+} from './replay_repository';
+
 /** Default maximum payload size: 1 MiB. */
 const DEFAULT_MAX_BYTES = 1024 * 1024;
 
-/** Default replay cache TTL: 24 hours in seconds. */
+/**
+ * Replay window: 24 hours in seconds. A message older than this is refused
+ * outright, so the seen-key store only has to remember a day.
+ */
 const DEFAULT_REPLAY_TTL = 86400;
 
-/** Replay cache: message ID → timestamp (seconds) when recorded. */
-const replayCache = new Map<string, number>();
+/** Slack for a sender whose clock runs a little ahead of ours. */
+const REPLAY_HOLD_SLACK = 300;
+
+/** Used until boot wires the SQLite store (tests, early boot). */
+const memoryReplay = new InMemoryReplayRepository();
+
+function activeReplay(): ReplayRepository {
+  return getReplayRepository() ?? memoryReplay;
+}
+
+function nowSeconds(): number {
+  return Math.floor(Date.now() / 1000);
+}
+
+/**
+ * `created_time` in Unix seconds. TS senders stamp milliseconds, the legacy
+ * Go stack seconds; anything below 1e11 is read as seconds.
+ */
+function createdSeconds(createdTime: number): number {
+  return createdTime < 1e11 ? Math.floor(createdTime) : Math.floor(createdTime / 1000);
+}
 
 /**
  * Validate a D2D payload before processing (size, format).
@@ -53,41 +82,47 @@ export function isPayloadOversized(payload: Uint8Array, maxBytes?: number): bool
 
 /**
  * Check if a message ID has been seen before (replay detection).
- * Returns true if the ID is in the cache (replayed).
+ * Returns true if the ID is held (replayed).
  */
 export function isReplayedMessage(messageId: string): boolean {
-  return replayCache.has(messageId);
+  return activeReplay().has(messageId, nowSeconds());
 }
 
 /**
- * Record a message ID in the replay cache.
+ * True when a message's `created_time` is older than the replay window, or
+ * not a number. The seen-key store forgets keys after the window, so such a
+ * message can no longer be told apart from a replay and is refused.
  */
-export function recordMessageId(messageId: string): void {
-  replayCache.set(messageId, Math.floor(Date.now() / 1000));
+export function isStaleMessage(createdTime: unknown, ttlSeconds?: number): boolean {
+  if (typeof createdTime !== 'number' || !Number.isFinite(createdTime)) return true;
+  const ttl = ttlSeconds ?? DEFAULT_REPLAY_TTL;
+  return createdSeconds(createdTime) < nowSeconds() - ttl;
 }
 
 /**
- * Purge replay cache entries older than TTL.
+ * Record a message ID as seen. With the message's `created_time`, the key is
+ * held until that message would fail `isStaleMessage` anyway, so a sender
+ * whose clock runs ahead cannot outlast the hold.
+ */
+export function recordMessageId(messageId: string, createdTime?: number): void {
+  const now = nowSeconds();
+  const created =
+    typeof createdTime === 'number' && Number.isFinite(createdTime)
+      ? createdSeconds(createdTime)
+      : now;
+  activeReplay().record(messageId, Math.max(now, created) + DEFAULT_REPLAY_TTL + REPLAY_HOLD_SLACK);
+}
+
+/**
+ * Purge seen keys whose hold has ended.
  *
- * @param ttlSeconds - TTL in seconds (default: 24 hours)
  * @returns count of purged entries
  */
-export function purgeReplayCache(ttlSeconds?: number): number {
-  const ttl = ttlSeconds ?? DEFAULT_REPLAY_TTL;
-  const now = Math.floor(Date.now() / 1000);
-  let purged = 0;
-
-  for (const [id, recordedAt] of replayCache.entries()) {
-    if (now - recordedAt > ttl) {
-      replayCache.delete(id);
-      purged++;
-    }
-  }
-
-  return purged;
+export function purgeReplayCache(): number {
+  return activeReplay().purgeExpired(nowSeconds());
 }
 
 /** Clear replay cache (for testing). */
 export function clearReplayCache(): void {
-  replayCache.clear();
+  activeReplay().clear();
 }

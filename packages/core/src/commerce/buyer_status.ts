@@ -497,6 +497,14 @@ function duplicateOrFork(
  * and lands in `verifyInboundStatus`, so this reports only whether the
  * question left the node. Reporting an outcome would be inventing one.
  */
+/**
+ * What the buyer puts on the wire for a status question. The supplier's
+ * listing declares the full NSID (`supplier_listing.ts`) and listing keys
+ * refuse bare names, so a bare `order_status` was refused before it reached
+ * the supplier. Same rule as `REQUEST_QUOTE_WIRE_CAPABILITY`.
+ */
+export const ORDER_STATUS_WIRE_CAPABILITY = 'com.dinakernel.commerce.order_status';
+
 export interface StatusAskResult {
   sent: boolean;
 }
@@ -528,7 +536,7 @@ export function makeServiceQueryStatusAsk(deps: {
         // lane: the response bridge reads `query_id` back as the order, so two
         // questions about one order must not look like two conversations.
         query_id: purchaseOrderId,
-        capability: 'order_status',
+        capability: ORDER_STATUS_WIRE_CAPABILITY,
         // §9.11 — stating where the chain ends is what makes the answer
         // CHECKABLE. Without it the supplier sends everything it has, which
         // is correct but wasteful; with a wrong value it sends too little and

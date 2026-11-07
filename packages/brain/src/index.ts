@@ -161,6 +161,10 @@ export type {
 } from './pipeline/identity_extraction';
 export * from './briefing/assembly';
 export * from './briefing/providers';
+// DAILY_PLAN.md: the day planner and its chat tools.
+export * from './plan/day_planner';
+export * from './plan/goal_planner';
+export * from './plan/plan_tools';
 export { AppViewClient, AppViewError } from './appview_client/http';
 export type {
   AppViewClientOptions,

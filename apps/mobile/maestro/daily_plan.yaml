@@ -1,0 +1,88 @@
+# Daily plan (docs/DAILY_PLAN.md): open Today from the menu, add tasks,
+# plan the day, tick one off, then add a goal and see the check-in settings.
+# No model needed: with or without one, the plan holds the tasks added here.
+appId: com.dinakernel.mobile
+---
+- launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-menu'
+    timeout: 60000
+- runFlow:
+    when:
+      notVisible:
+        id: 'root-layout-menu-row-/plan'
+    commands:
+      - tapOn:
+          id: 'root-layout-menu'
+      - waitForAnimationToEnd
+- tapOn:
+    text: 'Today'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-screen'
+    timeout: 20000
+- takeScreenshot: daily_plan_01_empty
+
+# Add two tasks by hand.
+- tapOn:
+    id: 'plan-add-input'
+- eraseText: 80
+- inputText: 'Reply to Priya about the Q4 budget'
+- tapOn:
+    id: 'plan-add-submit'
+- tapOn:
+    id: 'plan-add-input'
+- inputText: 'Book the dentist'
+- tapOn:
+    id: 'plan-add-submit'
+- hideKeyboard
+- extendedWaitUntil:
+    visible:
+      text: '2 open tasks.*'
+    timeout: 10000
+- takeScreenshot: daily_plan_02_two_tasks
+
+# Plan the day.
+- tapOn:
+    id: 'plan-build'
+- extendedWaitUntil:
+    visible:
+      id: 'plan-progress'
+    timeout: 60000
+- assertVisible:
+    text: '0 of 2 done'
+- takeScreenshot: daily_plan_03_planned
+
+# Tick the first one off.
+- tapOn:
+    id: 'plan-done-.*'
+    index: 0
+- extendedWaitUntil:
+    visible:
+      text: '1 of 2 done'
+    timeout: 10000
+- takeScreenshot: daily_plan_04_one_done
+
+# Goals and check-ins.
+- scrollUntilVisible:
+    element:
+      id: 'plan-goals'
+    centerElement: true
+- tapOn:
+    id: 'plan-goals'
+- extendedWaitUntil:
+    visible:
+      id: 'goals-screen'
+    timeout: 10000
+- tapOn:
+    id: 'goal-add-input'
+- inputText: 'Run three times a week'
+- tapOn:
+    id: 'goal-add-submit'
+- hideKeyboard
+- assertVisible:
+    text: 'Run three times a week'
+- assertVisible:
+    id: 'plan-checkins'
+- takeScreenshot: daily_plan_05_goals

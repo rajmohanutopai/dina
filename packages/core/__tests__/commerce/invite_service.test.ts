@@ -43,7 +43,12 @@ interface Node {
   service: InviteService;
   repo: InMemoryInviteRepository;
   contacts: Set<string>;
-  grants: { granteeDid: string; serviceRkeys: readonly string[]; capabilities: readonly string[] }[];
+  grants: {
+    granteeDid: string;
+    serviceRkeys: readonly string[];
+    capabilities: readonly string[];
+    inviteNonce: string;
+  }[];
   revokedGrantees: string[];
   coldCards: { nonce: string; inviterDid: string }[];
 }
@@ -73,10 +78,14 @@ function harness(): {
       signOfferDigest: (bytes) => ed25519.sign(bytes, inviterPriv),
       resolveSigningKey: async (target) => (target === INVITER ? inviterPub : null),
       verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-      writeContact: (c) => contacts.add(c),
+      writeContact: (c) => {
+        const created = !contacts.has(c);
+        contacts.add(c);
+        return created;
+      },
       removeContact: (c) => contacts.delete(c),
       writeGrants: (args) => grants.push(args),
-      revokeGrants: (granteeDid) => revokedGrantees.push(granteeDid),
+      revokeGrants: ({ granteeDid }) => revokedGrantees.push(granteeDid),
       hasPublishedCatalog: () => true,
       acceptColdInvites: () => true,
       notifyColdOffer: (args) => {
@@ -166,7 +175,7 @@ describe('the four messages, end to end', () => {
     expect(h.redeemer.contacts.has(INVITER)).toBe(true);
     expect(h.inviter.grants).toHaveLength(0);
     expect(h.redeemer.grants).toEqual([
-      { granteeDid: INVITER, serviceRkeys: ['veg-stall'], capabilities: CAPS },
+      { granteeDid: INVITER, serviceRkeys: ['veg-stall'], capabilities: CAPS, inviteNonce: minted.value.offer.nonce },
     ]);
   });
 
@@ -182,7 +191,7 @@ describe('the four messages, end to end', () => {
     await h.pump();
     expect(h.redeemer.grants).toHaveLength(0);
     expect(h.inviter.grants).toEqual([
-      { granteeDid: REDEEMER, serviceRkeys: RKEYS, capabilities: CAPS },
+      { granteeDid: REDEEMER, serviceRkeys: RKEYS, capabilities: CAPS, inviteNonce: minted.value.offer.nonce },
     ]);
   });
 
@@ -408,6 +417,35 @@ describe('two-sided revocation', () => {
     expect(h.redeemer.revokedGrantees).toContain(INVITER);
   });
 
+  it('teardown leaves a contact that existed before the invite, and names its own grants', async () => {
+    const h = harness();
+    h.redeemer.contacts.add(INVITER); // already a contact before any invite
+    const minted = h.inviter.service.mintOffer({
+      direction: 'you_supply_me',
+      serviceRkeys: RKEYS,
+      capabilities: CAPS,
+    });
+    if (!minted.ok) throw new Error(minted.refusal);
+    await h.redeemer.service.redeemCode({ code: minted.value.code, serviceRkeys: ['s'] });
+    while (h.wire.length > 0) {
+      const msg = h.wire.shift();
+      if (msg === undefined || msg.body.kind === 'activation_ack') continue;
+      const node = msg.to === INVITER ? h.inviter : h.redeemer;
+      const args = { senderDid: msg.from, body: (msg.body as { document: unknown }).document };
+      if (msg.body.kind === 'redemption') await node.service.applyInboundRedemption(args);
+      else if (msg.body.kind === 'confirmation') await node.service.applyInboundConfirmation(args);
+    }
+    const nonce = minted.value.offer.nonce;
+    expect(h.redeemer.repo.get(nonce)?.createdContact).toBe(false);
+    expect(h.redeemer.grants.every((g) => g.inviteNonce === nonce)).toBe(true);
+
+    h.clock.now = T0 + DEFAULT_INVITE_TTL_MS + 1;
+    await h.inviter.service.sweep();
+    await h.pump();
+    expect(h.redeemer.repo.get(nonce)?.state).toBe('revoked');
+    expect(h.redeemer.contacts.has(INVITER)).toBe(true);
+  });
+
   it('a redeemer with NO proof past the window tears down and tells the inviter', async () => {
     const h = harness();
     const minted = h.inviter.service.mintOffer({
@@ -550,7 +588,7 @@ describe('cold invites (§8 second half)', () => {
       signOfferDigest: (bytes) => ed25519.sign(bytes, inviterPriv),
       resolveSigningKey: async (target) => (target === INVITER ? inviterPub : null),
       verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-      writeContact: () => undefined,
+      writeContact: () => true,
       removeContact: () => undefined,
       writeGrants: () => undefined,
       revokeGrants: () => undefined,
@@ -652,7 +690,7 @@ describe('the offer signature is the ONLY origin proof (§8)', () => {
       signOfferDigest: (bytes) => ed25519.sign(bytes, inviterPriv),
       resolveSigningKey: async () => otherPub,
       verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-      writeContact: () => undefined,
+      writeContact: () => true,
       removeContact: () => undefined,
       writeGrants: () => undefined,
       revokeGrants: () => undefined,
@@ -735,7 +773,7 @@ describe('cold-invite guardrails the first pass left unpinned', () => {
       signOfferDigest: (bytes) => ed25519.sign(bytes, inviterPriv),
       resolveSigningKey: async (target) => (target === INVITER ? inviterPub : null),
       verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-      writeContact: () => undefined,
+      writeContact: () => true,
       removeContact: () => undefined,
       writeGrants: () => undefined,
       revokeGrants: () => undefined,
@@ -769,7 +807,7 @@ describe('cold-invite guardrails the first pass left unpinned', () => {
       // without sixteen keypairs.
       resolveSigningKey: async () => inviterPub,
       verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-      writeContact: () => undefined,
+      writeContact: () => true,
       removeContact: () => undefined,
       writeGrants: () => undefined,
       revokeGrants: () => undefined,
@@ -787,7 +825,7 @@ describe('cold-invite guardrails the first pass left unpinned', () => {
         signOfferDigest: (bytes) => ed25519.sign(bytes, inviterPriv),
         resolveSigningKey: async () => inviterPub,
         verify: (message, signature, publicKey) => ed25519.verify(signature, message, publicKey),
-        writeContact: () => undefined,
+        writeContact: () => true,
         removeContact: () => undefined,
         writeGrants: () => undefined,
         revokeGrants: () => undefined,

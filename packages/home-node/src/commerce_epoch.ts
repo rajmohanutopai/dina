@@ -39,6 +39,7 @@ import {
   CommerceEpochService,
   clearCommerceRestorePending,
   isCommerceRestorePending,
+  kvEpochStopStore,
   setCommerceEpochService,
   CommerceTransaction,
   type CommerceReceiptRepository,
@@ -221,6 +222,7 @@ export function wireCommerceEpoch(options: WireCommerceEpochOptions): WiredComme
       ? { revalidationIntervalMs: options.revalidationIntervalMs }
       : {}),
     ...(options.maxStalenessMs !== undefined ? { maxStalenessMs: options.maxStalenessMs } : {}),
+    stopStore: kvEpochStopStore(options.adapter),
   });
 
   return {

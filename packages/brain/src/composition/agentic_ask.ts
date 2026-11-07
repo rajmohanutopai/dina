@@ -85,6 +85,7 @@ import { createExportTool } from '../reasoning/export_tool';
 import { createForgetTool } from '../reasoning/forget_tool';
 import { createSpendAllowanceTool } from '../reasoning/spend_allowance_tool';
 import { createStandingReplyTool } from '../reasoning/standing_reply_tool';
+import { createPlanTools } from '../plan/plan_tools';
 import { createRememberChatTool } from '../reasoning/remember_chat_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { createSendMessageTool } from '../reasoning/send_message_tool';
@@ -458,6 +459,9 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     // REAL_LIFE_FIXES §2.5: the owner's chat can save the owner's own words.
     if (ownerChatThread !== undefined && ownerChatThread !== '') {
       reg.register(createRememberChatTool({ thread: ownerChatThread }));
+      // DAILY_PLAN.md §10: the owner's to-dos and goals, where the plan
+      // store lives in this process (the phone).
+      for (const tool of createPlanTools()) reg.register(tool);
       // REAL_LIFE_FIXES §7: message a contact on the owner's word.
       const talkCore = input.coreClient as Partial<Pick<CoreClient, 'talkSend'>>;
       if (typeof talkCore.talkSend === 'function') {

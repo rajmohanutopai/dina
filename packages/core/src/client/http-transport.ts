@@ -26,6 +26,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.31.
  */
 
+import { storedAskRecordToWire, wireToStoredAskRecord } from '../ask/ask_record_repository';
 import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wire';
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 import { readPiiNamesResult, type PiiNamesResult } from '../pii/names';
@@ -154,6 +155,7 @@ import type {
   Reminder,
   ReminderCreateInput,
   StoredNotificationItem,
+  StoredAskRecord,
   PersonaListEntry,
   ActionPolicyEntry,
   ActionPolicyResult,
@@ -1764,6 +1766,43 @@ export class HttpCoreTransport implements CoreClient {
       storedNotificationToWire(item),
       'notificationAppend',
     );
+  }
+
+  // ─── Live ask records (FIXES F11) ──────────────────────────────────────────
+
+  async askRecordPut(record: StoredAskRecord): Promise<void> {
+    await this.call<unknown>(
+      'POST',
+      '/v1/ask-records',
+      undefined,
+      storedAskRecordToWire(record),
+      'askRecordPut',
+    );
+  }
+
+  async askRecordList(): Promise<StoredAskRecord[]> {
+    const raw = await this.call<{ records?: unknown[] }>(
+      'GET',
+      '/v1/ask-records',
+      undefined,
+      undefined,
+      'askRecordList',
+    );
+    if (!Array.isArray(raw.records)) return [];
+    return raw.records
+      .map((r) => wireToStoredAskRecord(r))
+      .filter((r): r is StoredAskRecord => r !== null);
+  }
+
+  async askRecordDelete(id: string): Promise<boolean> {
+    const raw = await this.call<{ removed?: boolean }>(
+      'POST',
+      '/v1/ask-records/delete',
+      undefined,
+      { id },
+      'askRecordDelete',
+    );
+    return raw.removed === true;
   }
 
   async notificationList(limit?: number): Promise<StoredNotificationItem[]> {

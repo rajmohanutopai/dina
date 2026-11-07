@@ -43,6 +43,8 @@ import {
   resetServiceConfigState,
   setServiceConfigRepository,
   SQLiteD2DOutboxRepository,
+  SQLiteReplayRepository,
+  setReplayRepository,
   setD2DOutboxRepository,
   recoverOutboxOnBoot,
   SQLiteAgentGrantRepository,
@@ -66,6 +68,10 @@ import {
   wirePersonaScopeCleanups,
   SqliteNotificationLogRepository,
   setNotificationLogRepository,
+  setAskRecordRepository,
+  setPlanStore,
+  PlanStore,
+  SQLiteAskRecordRepository,
   // Round-A NEW-2/A-08 — the interactive-run + watch singletons the boot
   // installs; teardown must null them like every other identity-scoped global.
   setRunRepository,
@@ -365,6 +371,8 @@ export async function initializePersistence(
   // guided-demo notification is purged on teardown, never persisting past the
   // demo.
   setNotificationLogRepository(new SqliteNotificationLogRepository(identityDB));
+  setAskRecordRepository(new SQLiteAskRecordRepository(identityDB));
+  setPlanStore(new PlanStore(identityDB));
   const auditRepository = new SQLiteAuditRepository(identityDB);
   setAuditRepository(auditRepository);
   hydrateAuditState(auditRepository);
@@ -534,6 +542,7 @@ export async function initializePersistence(
   // 'pending'. The periodic drainer + the re-delivery function are wired
   // in boot_capabilities once the signing identity is available.
   setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
+  setReplayRepository(new SQLiteReplayRepository(identityDB));
   recoverOutboxOnBoot();
 
   // issues.txt §2 — durable agent persona grants. Without this the
@@ -815,6 +824,9 @@ export async function shutdownAllPersistence(): Promise<void> {
     // unwire the repo so a post-teardown append can't land in the closed DB.
     clearNotificationsMemory();
     setNotificationLogRepository(null);
+    // Live ask records — same rule: unwire so nothing lands in the closed DB.
+    setAskRecordRepository(null);
+    setPlanStore(null);
     // Interactive-run plane + watch singletons (round-A NEW-2/A-08) — the same
     // closed-DB / cross-identity class as the resets around this block. Boot
     // installed every one of these bound to THIS identity's adapter (and the

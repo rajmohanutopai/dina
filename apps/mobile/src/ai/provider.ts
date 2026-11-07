@@ -477,6 +477,7 @@ export async function createLLMProvider(
       const openai = createOpenAI({ apiKey });
       return new AISDKAdapter({
         model: openai(model),
+        modelFor: (id) => openai(parseOpenAIModelId(id).model),
         name: 'openai',
         ...(effortOverride !== undefined ? { openaiReasoningEffort: effortOverride } : {}),
       });
@@ -486,14 +487,22 @@ export async function createLLMProvider(
     }
     case 'claude': {
       const anthropic = createAnthropic({ apiKey });
-      return new AISDKAdapter({ model: anthropic(pseudo), name: 'claude' });
+      return new AISDKAdapter({
+        model: anthropic(pseudo),
+        modelFor: (id) => anthropic(id),
+        name: 'claude',
+      });
     }
     case 'openrouter': {
       // See the `createModel` openrouter branch for why `.chat(...)`
       // matters — OpenRouter doesn't serve `/v1/responses`, and the
       // default `openai(...)` form would route there.
       const openrouter = createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL });
-      return new AISDKAdapter({ model: openrouter.chat(pseudo), name: 'openrouter' });
+      return new AISDKAdapter({
+        model: openrouter.chat(pseudo),
+        modelFor: (id) => openrouter.chat(id),
+        name: 'openrouter',
+      });
     }
   }
 }

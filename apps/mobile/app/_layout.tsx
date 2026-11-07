@@ -73,6 +73,7 @@ import { useCreditsClaim } from '../src/hooks/useCreditsClaim';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
 import { useRelayWake } from '../src/hooks/useRelayWake';
+import { useDailyPlanCheckins } from '../src/hooks/useDailyPlanCheckins';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import { closeMenu, getMenuOpen, openMenu, subscribeMenuOpen } from '../src/navigation/menu_state';
@@ -130,6 +131,7 @@ type NavMenuItem =
 
 const NAV_MENU_ITEMS: NavMenuItem[] = [
   { feature: 'vault', href: '/vault' },
+  { href: '/plan', label: 'Today', ionicon: 'checkbox-outline' },
   { feature: 'reminders', href: '/reminders' },
   { href: '/orders', label: 'My Orders', ionicon: 'receipt-outline' },
   { href: '/catalog', label: 'My Catalog', ionicon: 'pricetags-outline' },
@@ -527,6 +529,9 @@ export default function RootLayout() {
   // the watcher off before the persona is open, since `fireMissedReminders`
   // touches reminder state.
   useReminderFireWatcher({ threadId: 'main', enabled: unlocked });
+  // DAILY_PLAN.md §8 — check-ins carry the text known when scheduled, so
+  // they're rescheduled on every foreground.
+  useDailyPlanCheckins(unlocked);
 
   const router = useRouter();
   const pathname = usePathname();
@@ -1069,6 +1074,33 @@ export default function RootLayout() {
                   }}
                 />
                 <Tabs.Screen
+                  name="plan"
+                  options={{
+                    title: 'Today',
+                    // DAILY_PLAN.md §9 — reached from the menu and from a
+                    // check-in notification.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="goals"
+                  options={{
+                    title: 'Goals',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="goal"
+                  options={{
+                    title: 'Goal',
+                    // DAILY_PLAN.md §20 — one goal's plan, opened from Goals.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
                   name="reminders"
                   options={{
                     title: 'Reminders',
@@ -1347,6 +1379,16 @@ export default function RootLayout() {
                     title: 'Recovery phrase',
                     // Drill-down from Settings → Security. Highest-stakes
                     // reveal in the app — never a tab target.
+                    href: null,
+
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="backup"
+                  options={{
+                    title: 'Backup',
+                    // Drill-down from Settings → Security. Never a tab target.
                     href: null,
 
                     headerLeft: renderHeaderBackButton,

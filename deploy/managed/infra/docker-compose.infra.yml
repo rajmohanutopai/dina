@@ -255,6 +255,28 @@ services:
       timeout: 5s
       retries: 5
 
+  # ── Backup store (docs/USER_BACKUP.md §4.3) ──
+  # Keeps people's sealed copies, which it cannot open. Starts only under the
+  # `backup-store` profile, which deploy_shared_infra.sh turns on when
+  # BACKUP_HOST is set. Builds from the same synced subset as grants.
+  backup-store:
+    profiles: ["backup-store"]
+    build:
+      context: ../../..
+      dockerfile: apps/backup-service/Dockerfile
+    restart: always
+    environment:
+      BACKUP_PORT: "8310"
+      BACKUP_DB_PATH: /data/backups.sqlite
+      BACKUP_MAX_COPY_BYTES: ${BACKUP_MAX_COPY_BYTES:-67108864}
+    volumes:
+      - backup-store-data:/data
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8310/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   # ── Dot bridge (docs/OPENAI_DOTS_INTEGRATION.md §4) ──
   # ChatGPT's door to one Home Node. Starts only under the `dot-bridge`
   # profile, which deploy_shared_infra.sh turns on when DOT_BRIDGE_HOST is set.
@@ -290,4 +312,5 @@ volumes:
   msgbox-data:
   postgres-data:
   grants-data:
+  backup-store-data:
   dot-bridge-data:

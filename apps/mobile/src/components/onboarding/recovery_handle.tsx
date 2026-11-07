@@ -16,13 +16,20 @@
  *   3. On `ok`: pass the resolved did:plc to the next step.
  *   4. On any other kind: surface a kind-specific error message and
  *      let the user fix the input.
+ *
+ * Backup (docs/USER_BACKUP.md §4.5): on arrival the screen asks the backup
+ * store for a copy the 24 words open. When there is one, it fills in the
+ * handle from inside it, shows its date and item count, and offers to
+ * restore it once the identity is back (on unless the owner says no). The
+ * rotation-key check above still runs on the handle.
  */
 
-import React, { useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, StyleSheet, Switch, Text, TextInput, View } from 'react-native';
 
 import { resolveAndVerifyDidPlc, type ResolveDidResult } from '../../hooks/useOnboarding';
 import { locateStep, type Step } from '../../onboarding/state';
+import { findBackupForPhrase } from '../../services/cloud_backup';
 import { colors, radius, spacing, textStyles } from '../../theme';
 
 import { OnboardingShell } from './shell';
@@ -30,14 +37,34 @@ import { OnboardingShell } from './shell';
 export interface RecoveryHandleProps {
   mnemonic: string[];
   initialHandle?: string;
-  onContinue: (handle: string, did: string) => void;
+  onContinue: (handle: string, did: string, restoreBackup: boolean) => void;
   onBack: () => void;
+}
+
+interface FoundCopy {
+  createdAt: number;
+  itemCount: number;
 }
 
 export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
   const [handle, setHandle] = useState(props.initialHandle ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [found, setFound] = useState<FoundCopy | null>(null);
+  const [restore, setRestore] = useState(true);
+
+  useEffect(() => {
+    let live = true;
+    void findBackupForPhrase(props.mnemonic).then((hit) => {
+      if (!live || hit === null) return;
+      const { meta } = hit.found;
+      setFound({ createdAt: meta.created_at, itemCount: meta.item_count });
+      if (meta.handle !== '') setHandle((typed) => (typed.trim() === '' ? meta.handle : typed));
+    });
+    return () => {
+      live = false;
+    };
+  }, [props.mnemonic]);
 
   const onSubmit = async (): Promise<void> => {
     setError(null);
@@ -45,7 +72,7 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
     try {
       const result: ResolveDidResult = await resolveAndVerifyDidPlc(handle, props.mnemonic);
       if (result.kind === 'ok') {
-        props.onContinue(handle.trim().toLowerCase(), result.did);
+        props.onContinue(handle.trim().toLowerCase(), result.did, found !== null && restore);
         return;
       }
       setError(result.message);
@@ -88,6 +115,30 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
         editable={!busy}
         testID="recovery-handle-input"
       />
+
+      {found !== null ? (
+        <View style={styles.found} testID="recovery-backup-found">
+          <Text style={styles.foundText}>
+            Found a backup from{' '}
+            {new Date(found.createdAt).toLocaleDateString(undefined, {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })}{' '}
+            with {found.itemCount} {found.itemCount === 1 ? 'item' : 'items'}.
+          </Text>
+          <View style={styles.foundRow}>
+            <Text style={[styles.foundText, styles.flex]}>Restore it</Text>
+            <Switch
+              testID="recovery-backup-restore"
+              value={restore}
+              onValueChange={setRestore}
+              disabled={busy}
+              accessibilityLabel="Restore the backup"
+            />
+          </View>
+        </View>
+      ) : null}
 
       {busy ? (
         <View style={styles.busyRow}>
@@ -147,4 +198,14 @@ const styles = StyleSheet.create({
     ...textStyles.caption,
     marginTop: spacing.lg,
   },
+  found: {
+    backgroundColor: colors.bgSecondary,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    gap: spacing.sm,
+    marginTop: spacing.md,
+  },
+  foundRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  foundText: { ...textStyles.bodySmall, color: colors.textPrimary },
+  flex: { flex: 1 },
 });

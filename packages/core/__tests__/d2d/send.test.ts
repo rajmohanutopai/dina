@@ -233,6 +233,13 @@ describe('D2D Send Pipeline', () => {
       expect(rows[0].state).toBe('pending');
     });
 
+    it('keys the queued row on the message id, so retries re-send under it', async () => {
+      const repo = new InMemoryD2DOutboxRepository();
+      setD2DOutboxRepository(repo);
+      const result = await sendD2D(baseReq);
+      expect(repo.listAll()[0].id).toBe(result.messageId);
+    });
+
     it('NEVER reports queued:true when the durable write fails', async () => {
       // A repo whose insert throws models a full disk / SQL error.
       const failing: D2DOutboxRepository = new InMemoryD2DOutboxRepository();
@@ -242,6 +249,8 @@ describe('D2D Send Pipeline', () => {
       setD2DOutboxRepository(failing);
       const result = await sendD2D(baseReq);
       expect(result.queued).toBe(false);
+      // Not delivered and not queued: the message is lost, so not `sent`.
+      expect(result.sent).toBe(false);
       expect(result.error).toContain('queue_failed');
       // And the failure-to-queue is audited so the loss is visible.
       const queuedAudits = queryAudit({ action: 'd2d_send_queued' });

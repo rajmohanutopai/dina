@@ -11,8 +11,10 @@
  *   validate(result schema) → [native-schema synthesis retry] → result
  *
  * Safety properties:
- *   - READ-ONLY: the only tool is `vault_search`; Tier 1 execution can
- *     never mutate the vault or call out anywhere.
+ *   - Read-only by default: `vault_search` is the only tool, and nothing
+ *     calls out anywhere. The one write is a provider-approved mutating
+ *     capability (a booking): its confirmed result is recorded, as a fact
+ *     built in code, to the listing's pinned vault (see `commitVaultWriteIfSuccess`).
  *   - Persona-bounded: `vault_search` cannot escape
  *     `getAccessiblePersonas()` — locked personas return nothing.
  *   - Schema-bounded output: the runtime validates against the
@@ -492,16 +494,22 @@ export function buildCapabilityRuntime(options: CapabilityRuntimeOptions): Capab
       //   5. a deterministic fact builder exists for the capability — without it
       //      there is nothing to write (the model is never trusted to author the
       //      content), so the tool is not exposed (fail-closed).
-      const writeIntent: VaultWriteIntent = { requested: false };
+      //
+      // When all hold, a successful result is recorded whether or not the model
+      // called the tool: a confirmed booking must be saved or the query must
+      // fail. Leaving it to the model meant a `confirmed` reply with no call
+      // wrote nothing, and the slot could be booked twice. The tool stays so
+      // an instruction that says "record it" still has something to call.
       const writePersona = args.allowedPersonas !== undefined ? runScope()[0] : undefined;
-      if (
+      const writable =
         args.mutationAllowed === true &&
         args.operatorApproved === true &&
         options.vaultWriter !== undefined &&
         args.vaultFactBuilder !== undefined &&
         typeof writePersona === 'string' &&
-        writePersona !== ''
-      ) {
+        writePersona !== '';
+      const writeIntent: VaultWriteIntent = { requested: writable };
+      if (writable) {
         tools.register(createVaultWriteTool({ intent: writeIntent, log }));
       }
 

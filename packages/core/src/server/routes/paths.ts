@@ -103,6 +103,11 @@ export const NOTIFICATIONS_PURGE = '/v1/notifications/purge';
 // Full wipe (identity reset) — POST.
 export const NOTIFICATIONS_RESET = '/v1/notifications/reset';
 
+// Live ask records (FIXES F11) — POST upserts, GET lists.
+export const ASK_RECORDS_ROOT = '/v1/ask-records';
+// Remove one — POST `{id}`.
+export const ASK_RECORDS_DELETE = '/v1/ask-records/delete';
+
 // ---------------------------------------------------------------
 // PII
 // ---------------------------------------------------------------

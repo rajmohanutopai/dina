@@ -303,11 +303,17 @@ export async function findSuppliers(
  */
 export async function ownerDidHere(): Promise<string | null> {
   // Loaded lazily: the booted node is the phone's; the browser has none.
-  const { getBootedNode } = await import('../hooks/useNodeBootstrap');
-  const booted = getBootedNode()?.did ?? null;
+  // `require`, not `import()`: Metro can't fetch a split chunk in a
+  // `--no-dev` bundle (see __tests__/services/no_local_dynamic_import.test.ts).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const bootstrap =
+    require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
+  const booted = bootstrap.getBootedNode()?.did ?? null;
   if (booted !== null && booted !== '') return booted;
   try {
-    const { getOwnerSetupClient } = await import('./owner_setup_client');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const setup = require('./owner_setup_client') as typeof import('./owner_setup_client');
+    const { getOwnerSetupClient } = setup;
     const home = (await getOwnerSetupClient()?.status())?.home_did ?? null;
     return home !== null && home !== '' ? home : null;
   } catch {

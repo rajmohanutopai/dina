@@ -146,10 +146,13 @@ export async function shareReadableExport(json: string): Promise<'shared' | 'fai
     } catch {
       return 'failed';
     } finally {
-      if (fileUri !== null && deleteFileFn !== null) await deleteFileFn(fileUri).catch(() => undefined);
+      if (fileUri !== null && deleteFileFn !== null)
+        await deleteFileFn(fileUri).catch(() => undefined);
     }
   }
-  const { shareOrCopy } = await import('../services/share_text');
+  // `require`, not `import()` (see __tests__/services/no_local_dynamic_import.test.ts).
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const { shareOrCopy } =
+    require('../services/share_text') as typeof import('../services/share_text');
   return (await shareOrCopy(json)) === 'failed' ? 'failed' : 'shared';
 }
-
