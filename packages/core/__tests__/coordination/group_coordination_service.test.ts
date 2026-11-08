@@ -18,6 +18,12 @@ import * as path from 'node:path';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { appendAudit, queryAudit, resetAuditState } from '../../src/audit/service';
+import {
+  installOwnerQuestions,
+  makeOwnerQuestionDecisionHandler,
+  reconcileOwnerQuestionsAtBoot,
+} from '../../src/commitment/owner_questions';
+import { StrategyQuestionStore } from '../../src/commitment/strategy_questions';
 import { StrategyStore } from '../../src/commitment/strategy_store';
 import { StrategyTurnStore } from '../../src/commitment/strategy_turns';
 import {
@@ -50,6 +56,7 @@ import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
 
 import type { NegotiationBrief } from '../../src/commitment/strategy_submit';
+import type { WorkflowTask } from '../../src/workflow/domain';
 import type { TrustLevel } from '../../src/contacts/directory';
 import type { ServiceOffer, ServiceOfferRepository } from '../../src/contacts/service_offers_repository';
 import type { ServiceQueryBody } from '../../src/d2d/service_bodies';
@@ -1074,5 +1081,209 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
     budget = 0;
     await folded();
     expect(briefs).toEqual([]);
+  });
+
+  describe('Brain asks the owner (§15 step 14)', () => {
+    let questions: StrategyQuestionStore;
+    const handler = makeOwnerQuestionDecisionHandler({
+      workflow: () => h.workflow,
+      nowMs: () => h.clock.now,
+    });
+    beforeEach(() => {
+      installOwnerQuestions(db);
+      questions = new StrategyQuestionStore(db);
+    });
+    afterEach(() => installOwnerQuestions(null));
+
+    const askMove = (planId: string, turn: number, question: string, answersSeen = 0) =>
+      applyGroupSlotMove(
+        {
+          input: {
+            kind: 'group.organizer',
+            ref: { negotiationId: planId, turn },
+            ...(answersSeen > 0
+              ? { ownerAnswers: Array.from({ length: answersSeen }, () => ({ question: 'q', answer: 'yes' })) }
+              : {}),
+          },
+          result: { move: { kind: 'ask_owner', question } },
+        },
+        h.deps,
+      );
+    const pickSeen = (planId: string, turn: number, value: string, answersSeen: number) =>
+      applyGroupSlotMove(
+        {
+          input: {
+            kind: 'group.organizer',
+            ref: { negotiationId: planId, turn },
+            ownerAnswers: Array.from({ length: answersSeen }, () => ({ question: 'q', answer: 'yes' })),
+          },
+          result: { move: { kind: 'propose', versions: [{ terms: [{ name: 'slot', value }] }] } },
+        },
+        h.deps,
+      );
+    /** The owner answers the card the way the inbox does; the handler is told. */
+    function answer(cardId: string, decision: 'approved' | 'denied'): void {
+      const task = decision === 'approved' ? h.workflow.approve(cardId) : h.workflow.cancel(cardId, 'no');
+      handler({ task, decision });
+    }
+    const openCard = (planId: string, turn: number) => questions.openFor('group.organizer', planId, turn)?.cardId ?? '';
+    const turnState = (planId: string, turn: number) =>
+      new StrategyTurnStore(db).get('group.organizer', planId, turn)?.state;
+
+    it('GQ-01: a question goes on a card; the round waits; a yes goes back to Brain, whose pick then stands', async () => {
+      const plan = await folded();
+      expect(await askMove(plan.planId, 1, 'Saturday 26th clashes with the school fete. Take it anyway?')).toBe(
+        'asked_owner',
+      );
+      const card = h.workflow.store().getById(openCard(plan.planId, 1));
+      expect(card?.status).toBe('pending_approval');
+      expect(card?.description).toBe(
+        'Brain asks, on a group booking: Saturday 26th clashes with the school fete. Take it anyway?',
+      );
+      // The card names no plan and no guest.
+      expect(card?.payload).not.toMatch(new RegExp([plan.planId, GARCIA, MILLER, JOHNSON].join('|')));
+      // Nothing is chosen while the card is open, and reading does not ask Brain again.
+      const waiting = ok(await readGroupPlan(plan.planId, h.deps));
+      expect(waiting.state).toBe('folded');
+      expect(briefs).toHaveLength(1);
+      expect(turnState(plan.planId, 1)).toBe('pending');
+      // A replay of the move that asked, while the card is open, changes nothing.
+      expect(await askMove(plan.planId, 1, 'again?')).toBe('owner_picks');
+      expect(questions.countFor('group.organizer', plan.planId)).toBe(1);
+      expect(turnState(plan.planId, 1)).toBe('pending');
+
+      answer(card?.id ?? '', 'approved');
+      expect(h.workflow.store().getById(card?.id ?? '')?.status).toBe('completed');
+      expect(briefs).toHaveLength(2);
+      expect(briefs[1]?.ref).toEqual({ negotiationId: plan.planId, turn: 1 });
+      expect(briefs[1]?.ownerAnswers).toEqual([
+        { question: 'Saturday 26th clashes with the school fete. Take it anyway?', answer: 'yes' },
+      ]);
+      expect(briefs[1]?.table).toEqual(briefs[0]?.table);
+      // A pick from the brief before the answer is stale: the turn stays for the new one.
+      expect(await pick(plan.planId, 1, '0')).toBe('owner_picks');
+      expect(turnState(plan.planId, 1)).toBe('pending');
+      expect(await pickSeen(plan.planId, 1, '1', 1)).toBe('chosen');
+      expect(ok(await readGroupPlan(plan.planId, h.deps)).chosen).toEqual(SAT_26);
+    });
+
+    it('GQ-02: a no goes back to Brain too; a lapse leaves the pick to the owner', async () => {
+      const plan = await folded();
+      await askMove(plan.planId, 1, 'May I pick the earlier one?');
+      answer(openCard(plan.planId, 1), 'denied');
+      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'May I pick the earlier one?', answer: 'no' }]);
+      // Brain asks a second question; the owner lets it lapse.
+      expect(await askMove(plan.planId, 1, 'Then the later one?', 1)).toBe('asked_owner');
+      const second = h.workflow.store().getById(openCard(plan.planId, 1));
+      expect(second?.expires_at).toBe(Math.floor((h.clock.now + 24 * 3600_000) / 1000));
+      h.clock.now += 25 * 3600_000;
+      h.workflow.expireTasks(Math.floor(h.clock.now / 1000), h.clock.now);
+      handler({ task: { ...(second as WorkflowTask) }, decision: 'lapsed' });
+      expect(turnState(plan.planId, 1)).toBe('fallen_back');
+      expect(briefs).toHaveLength(2);
+      expect(ok(await chooseSlot(plan.planId, SAT_19, h.deps)).chosen).toEqual(SAT_19);
+    });
+
+    it('GQ-03: two questions a deal at most; a third lets the owner pick', async () => {
+      const plan = await folded();
+      await askMove(plan.planId, 1, 'One?');
+      answer(openCard(plan.planId, 1), 'approved');
+      await askMove(plan.planId, 1, 'Two?', 1);
+      answer(openCard(plan.planId, 1), 'approved');
+      expect(await askMove(plan.planId, 1, 'Three?', 2)).toBe('owner_picks');
+      expect(turnState(plan.planId, 1)).toBe('fallen_back');
+      expect(questions.countFor('group.organizer', plan.planId)).toBe(2);
+    });
+
+    it('GQ-04: the owner picks while the card is open: the question is withdrawn, and its notice records nothing', async () => {
+      const plan = await folded();
+      await askMove(plan.planId, 1, 'Wait for Garcia’s reply on the 19th?');
+      const cardId = openCard(plan.planId, 1);
+      ok(await chooseSlot(plan.planId, SAT_19, h.deps));
+      const card = h.workflow.store().getById(cardId);
+      expect(card?.status).toBe('cancelled');
+      // The cancel's notice reaches the handler as a no; the question was settled first.
+      handler({ task: card as WorkflowTask, decision: 'denied' });
+      expect(questions.byCard(cardId)?.answer).toBe('lapsed');
+      expect(briefs).toHaveLength(1);
+      // Brain chosen no more: a question still open is withdrawn on the next read.
+      const other = await folded();
+      await askMove(other.planId, 1, 'Anything?');
+      settings = { strategy: 'fixed', valuesOn: true };
+      await readGroupPlan(other.planId, h.deps);
+      expect(questions.openIn('group.organizer', other.planId)).toEqual([]);
+    });
+
+    it('GQ-05: a yes whose handler a crash cut short is settled at boot; the plan’s next read hands it to Brain', async () => {
+      const plan = await folded();
+      await askMove(plan.planId, 1, 'Go ahead?');
+      const cardId = openCard(plan.planId, 1);
+      h.workflow.approve(cardId); // the handler never ran
+      expect(reconcileOwnerQuestionsAtBoot(h.clock.now)).toBe(1);
+      expect(questions.byCard(cardId)?.answer).toBe('yes');
+      expect(h.workflow.store().getById(cardId)?.status).toBe('completed');
+      // Boot asks Brain nothing (its broker may not be up): the answer is not used up.
+      expect(briefs).toHaveLength(1);
+      expect(turnState(plan.planId, 1)).toBe('pending');
+      await readGroupPlan(plan.planId, h.deps);
+      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'Go ahead?', answer: 'yes' }]);
+      // Again at boot: nothing more.
+      expect(reconcileOwnerQuestionsAtBoot(h.clock.now)).toBe(0);
+      expect(briefs).toHaveLength(2);
+    });
+
+    it('GQ-07: the card never shows the plan’s id, even when Brain writes it into the question', async () => {
+      const plan = await folded();
+      await askMove(plan.planId, 1, `Is ${plan.planId} the family lunch?`);
+      const card = h.workflow.store().getById(openCard(plan.planId, 1));
+      expect(card?.description).toBe('Brain asks, on a group booking: Is this deal the family lunch?');
+      expect(card?.payload).not.toContain(plan.planId);
+    });
+
+    it('GQ-08: a question that arrives after the owner deleted the plan raises no card', async () => {
+      const plan = await folded();
+      expect(await deleteGroupPlan(plan.planId, h.deps)).toEqual({ ok: true, removed: true });
+      expect(await askMove(plan.planId, 1, 'Still there?')).toBe('owner_picks');
+      expect(questions.countFor('group.organizer', plan.planId)).toBe(0);
+      expect(turnState(plan.planId, 1)).toBe('fallen_back');
+    });
+
+    it('GQ-09: a delete that stops with a guest still to tell withdraws Brain’s question', async () => {
+      setNodeDID('did:plc:mikeorganiser0000000000');
+      const plan = await openDefault(h);
+      for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
+      ok(await readGroupPlan(plan.planId, h.deps));
+      const confirming = ok(await chooseSlot(plan.planId, SAT_26, h.deps));
+      for (const did of [GARCIA, MILLER, JOHNSON])
+        reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
+      expect(ok(await readGroupPlan(plan.planId, h.deps)).state).toBe('settled');
+      // Miller cannot be told the booking is off, so the widened plan keeps that to do.
+      h.failSendsTo.add(MILLER);
+      const wider = ok(await widenPlan(plan.planId, [SAT_19], h.deps));
+      // Miller cannot be reached for the wider round either: the owner goes on without them.
+      for (const did of [GARCIA, JOHNSON]) reply(h, wider, did, { status: 'accepted', accepted_slots: [SAT_19] });
+      ok(await makeGuestOptional(plan.planId, MILLER, h.deps));
+      const refolded = ok(await readGroupPlan(plan.planId, h.deps));
+      expect(refolded.state).toBe('folded');
+      expect(await askMove(plan.planId, refolded.round, 'The 19th then?')).toBe('asked_owner');
+      const cardId = openCard(plan.planId, refolded.round);
+      expect(await deleteGroupPlan(plan.planId, h.deps)).toMatchObject({ ok: false, refusal: 'cancellations_pending' });
+      expect(h.workflow.store().getById(cardId)?.status).toBe('cancelled');
+      expect(questions.byCard(cardId)?.answer).toBe('lapsed');
+    });
+
+    it('GQ-06: an answer whose hand-back a crash cut short goes back to Brain on the next read', async () => {
+      const plan = await folded();
+      await askMove(plan.planId, 1, 'Go ahead?');
+      const cardId = openCard(plan.planId, 1);
+      // The answer is kept, then the process stops before Brain is asked again.
+      questions.answer(cardId, 'yes', h.clock.now);
+      expect(briefs).toHaveLength(1);
+      await readGroupPlan(plan.planId, h.deps);
+      expect(briefs).toHaveLength(2);
+      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'Go ahead?', answer: 'yes' }]);
+      await readGroupPlan(plan.planId, h.deps);
+      expect(briefs).toHaveLength(2);
+    });
   });
 });

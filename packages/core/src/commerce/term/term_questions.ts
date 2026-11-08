@@ -11,7 +11,9 @@
  */
 
 import {
+  LEAST_QUESTION_WAIT_MS,
   MAX_OWNER_QUESTIONS,
+  QUESTION_WAIT_MS,
   cleanQuestion,
   type OwnerAnswer,
 } from '../../commitment/strategy_questions';
@@ -23,14 +25,8 @@ import { playSellerTurnFixed, sellerTurnBrief } from './term_seller';
 
 export const TERM_STRATEGY_QUESTION_CARD = 'term_strategy_question';
 
-/** The longest a question waits for the owner, whatever the deal's own deadline. */
-const QUESTION_WAIT_MS = 24 * 60 * 60 * 1000;
-
 /** Left before the deal's deadline when a question lapses, so the fixed style can still play. */
 export const FIXED_STYLE_ROOM_MS = 30 * 60 * 1000;
-
-/** A question the owner would have less than this to answer is not put. */
-const LEAST_QUESTION_WAIT_MS = 5 * 60 * 1000;
 
 /** Whose turn this is: the brand's own negotiation, or the store's answer. */
 function kindOf(ctx: TermContext, requestId: string): string {

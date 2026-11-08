@@ -423,6 +423,15 @@ interface OptionRequestArgs {
   chooseFee?: (bounds: { day: string; crates: number; slackMs: number }) => bigint | 'asking' | 'wait';
 }
 
+/**
+ * The last moment a shipper can issue an option for a run at `serviceAtMs`:
+ * after it, the shortest hold no longer ends in time for the grace and the
+ * lead time before the run.
+ */
+export function lastIssueMs(serviceAtMs: number): number {
+  return serviceAtMs - DEPENDENT_TIMINGS.optionGraceMs - OPTION_LEAD_MS - MIN_HOLD_MS;
+}
+
 function issueForRequest(args: OptionRequestArgs): OptionBody | DeclineBody | null {
   const { request, store } = args;
   const decline = (reason: DeclineReason): DeclineBody => ({
@@ -501,7 +510,7 @@ function issueForRequest(args: OptionRequestArgs): OptionBody | DeclineBody | nu
     args.chooseFee?.({
       day,
       crates: request.crates,
-      slackMs: latest - args.nowMs - MIN_HOLD_MS,
+      slackMs: lastIssueMs(serviceAtMs) - args.nowMs,
     }) ?? 'asking';
   if (choice === 'wait') return null;
   const chosen = choice === 'asking' ? askingMinor : choice;

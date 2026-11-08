@@ -1884,6 +1884,7 @@ export {
   EARNED_ROOM_NOTICE_TYPE,
   EARNED_ROOM_OFFER_TYPE,
 } from './commitment/earned_room';
+export { ownerQuestionWorkflowHooks, STRATEGY_QUESTION_TYPE } from './commitment/owner_questions';
 export { commitTermStrategyMove } from './commerce/term/term_runtime';
 export { commitStrategyMove } from './commitment/strategy_commit';
 

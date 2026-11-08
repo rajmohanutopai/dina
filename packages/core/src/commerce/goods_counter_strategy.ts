@@ -109,6 +109,8 @@ export function goodsCounterTarget(args: {
         'You speak for a buyer. A supplier quoted this total; a counter asks it to come down.',
         'Propose the total to counter with, in minor units, one version; Core keeps it within the owner’s limits.',
         'Never set a price for anyone outside the deal.',
+        // §15 step 14: a tender waits seconds; a question would only lose the round.
+        'There is no time to ask your owner: a question plays the owner’s own counter.',
       ],
     });
     if (submitted === null) return own;

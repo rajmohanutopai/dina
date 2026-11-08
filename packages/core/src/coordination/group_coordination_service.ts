@@ -36,6 +36,7 @@ import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { MSG_TYPE_SERVICE_GRANT_REQUEST, type ServiceGrantRequestBody } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
+import { withdrawOwnerQuestions } from '../commitment/owner_questions';
 import { getContact, type TrustLevel } from '../contacts/directory';
 import {
   getServiceOfferRepository,
@@ -87,7 +88,13 @@ import {
   type PlanResult,
 } from './group_plan';
 import { getGroupPlanRepository, type GroupPlanRepository } from './group_plan_repository';
-import { askBrainForSlot, settleSlotTurn, slotFromMove } from './group_slot_strategy';
+import {
+  GROUP_ORGANIZER,
+  askBrainForSlot,
+  askOwnerAboutSlot,
+  settleSlotTurn,
+  slotFromMove,
+} from './group_slot_strategy';
 
 export { GROUP_COORDINATION_CAPABILITY } from './disclosure_policy';
 
@@ -838,7 +845,10 @@ export async function chooseSlot(
     const chosen = choose(plan, slot, deps.nowMs());
     if (!chosen.ok) return chosen;
     cancelLiveSpokes(plan, deps, 'superseded by the confirm round');
-    return { ok: true, plan: await fanOut(chosen.plan, deps) };
+    const out = await fanOut(chosen.plan, deps);
+    // §15 step 14: a question Brain asked about the pick is moot now.
+    askBrainForSlot(out, deps.nowMs());
+    return { ok: true, plan: out };
   });
 }
 
@@ -858,15 +868,36 @@ export async function commitGroupSlotMove(input: { input: unknown; result: unkno
 export async function applyGroupSlotMove(
   input: { input: unknown; result: unknown },
   over: Partial<GroupCoordinationDeps> = {},
-): Promise<'chosen' | 'owner_picks'> {
+): Promise<'chosen' | 'asked_owner' | 'owner_picks'> {
   const ref = (input.input as { ref?: { negotiationId?: unknown; turn?: unknown } } | null)?.ref;
   const planId = ref?.negotiationId;
   const turn = ref?.turn;
   if (typeof planId !== 'string' || typeof turn !== 'number') return 'owner_picks';
   const resolved = resolveDeps(over);
   const nowMs = resolved.ok ? resolved.deps.nowMs() : Date.now();
+  // §15 step 14: a yes-or-no question for the owner; the round waits on its
+  // card. Put under the plan's lock against the plan as it stands, so an
+  // owner's pick or delete cannot slip between the check and the card.
+  const move = (input.result as { move?: { kind?: unknown; question?: unknown } } | null)?.move;
+  if (move?.kind === 'ask_owner' && typeof move.question === 'string') {
+    const question = move.question;
+    const asked = resolved.ok
+      ? await withPlan(planId, async () =>
+          askOwnerAboutSlot(await loadSettled(planId, resolved.deps), {
+            planId,
+            turn,
+            question,
+            input: input.input,
+            nowMs,
+          }),
+        )
+      : 'owner_picks';
+    appendAudit('group_plan', 'group_plan_brain_asked', planId, `outcome=${asked}`);
+    return asked === 'asked' ? 'asked_owner' : 'owner_picks';
+  }
   const read = await readGroupPlan(planId, over);
-  const slot = slotFromMove(read.ok ? read.plan : null, { planId, turn, result: input.result, nowMs });
+  const plan = read.ok ? read.plan : null;
+  const slot = slotFromMove(plan, { planId, turn, result: input.result, input: input.input, nowMs });
   if (slot === null) return 'owner_picks';
   // `chooseSlot` checks the slot again under the plan's lock: a fold that
   // moved meanwhile refuses it, and the owner picks.
@@ -893,7 +924,9 @@ export async function widenPlan(
     cancelLiveSpokes(plan, deps, 'superseded by a wider round');
     // A plan widened after it settled no longer books anyone: tell them.
     const unbooked = await syncPlanBookings(widened.plan, deps);
-    return { ok: true, plan: await fanOut(unbooked.plan, deps) };
+    const out = await fanOut(unbooked.plan, deps);
+    askBrainForSlot(out, deps.nowMs()); // withdraws a question about the old round
+    return { ok: true, plan: out };
   });
 }
 
@@ -934,6 +967,7 @@ export async function abandonPlan(
     cancelLiveSpokes(plan, deps, 'plan abandoned');
     const unbooked = await syncPlanBookings(result.plan, deps);
     deps.plans.put(unbooked.plan);
+    askBrainForSlot(unbooked.plan, deps.nowMs()); // withdraws any question Brain asked
     return { ...result, plan: unbooked.plan };
   });
 }
@@ -970,6 +1004,8 @@ async function deleteUnderLock(planId: string, deps: GroupCoordinationDeps): Pro
   );
   if (unbooked.pending) {
     deps.plans.put(unbooked.plan);
+    // §15 step 14: no question about a plan its owner is deleting.
+    withdrawOwnerQuestions(GROUP_ORGANIZER, planId, deps.nowMs());
     // The owner is deleting it: no guest is asked about it any more.
     cancelLiveSpokes(plan, deps, 'plan being deleted');
     return {
@@ -979,6 +1015,7 @@ async function deleteUnderLock(planId: string, deps: GroupCoordinationDeps): Pro
     };
   }
   cancelLiveSpokes(plan, deps, 'plan deleted');
+  withdrawOwnerQuestions(GROUP_ORGANIZER, planId, deps.nowMs());
   // What a guest disclosed lives in two places: the plan row, and the
   // completed spoke task that carried the reply. Deleting the plan scrubs
   // both (§7): every spoke of every round loses its stored result.

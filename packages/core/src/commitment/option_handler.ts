@@ -27,6 +27,7 @@ import {
   answerOptionTakeUp,
   askShippers,
   ExitAskStore,
+  lastIssueMs,
   OPTION_MESSAGE,
   optionLinkWork,
   OrderFallbackStore,
@@ -43,7 +44,18 @@ import {
   type OptionLink,
   type OptionRequestBody,
 } from './options';
+import {
+  answersSeenIn,
+  askOwnerOnCard,
+  getOwnerQuestions,
+  installQuestionPort,
+  moveAgainstAnswers,
+  ownerAnswersIn,
+  uninstallQuestionPort,
+  withdrawOwnerQuestions,
+} from './owner_questions';
 import { projectModel } from './strategy';
+import { QUESTION_WAIT_MS } from './strategy_questions';
 import { getStrategyStore } from './strategy_store';
 import { StrategyTurnStore } from './strategy_turns';
 
@@ -68,6 +80,13 @@ export const SHIPPER_FEE_WAIT_MS = 50 * 60 * 1000;
 /** A resend may come a little after its hour: room for that before the hold stops fitting. */
 const RESEND_MARGIN_MS = 15 * 60 * 1000;
 
+/**
+ * §15 step 14: what must be left of the hold when the owner answers Brain's
+ * question, so Brain's next fee, or failing it the asking fee on the resend
+ * after its wait, still goes out in time.
+ */
+const ANSWER_ROOM_MS = SHIPPER_FEE_WAIT_MS + RESEND_EVERY_MS + RESEND_MARGIN_MS;
+
 let feeClock: () => number = Date.now;
 
 /** The door to the owner's reasoning backend for a shipper's fee; null: the asking fee goes. */
@@ -86,6 +105,27 @@ export function installOptionStores(db: DatabaseAdapter | null): void {
   fallbackStore = db === null ? null : new OrderFallbackStore(db);
   feeTurns = db === null ? null : new StrategyTurnStore(db);
   exitAsks = db === null ? null : new ExitAskStore(db);
+  // §15 step 14: Brain's question to the owner about a fee. A lapse lets the
+  // asking fee go; any answer has the shipper answer the seller again now.
+  if (db === null) uninstallQuestionPort(SHIPPER_KIND);
+  else
+    installQuestionPort({
+      kind: SHIPPER_KIND,
+      subject: 'a delivery run',
+      answered: (q, answer) => {
+        if (answer === 'lapsed') feeTurns?.close(SHIPPER_KIND, q.negotiationId, 0, 'fallen_back');
+      },
+      after: async (q, _answer, nowMs) => {
+        const turn = feeTurns?.get(SHIPPER_KIND, q.negotiationId, 0);
+        const sellerDid = String(turn?.result.seller_did ?? '');
+        const request = turn?.result.request as OptionRequestBody | undefined;
+        if (request === undefined || sellerDid === '') return;
+        const answer = await answerRequest(sellerDid, request, nowMs, true);
+        if (answer === null || answer === 'refused') return;
+        appendAudit(sellerDid, 'option_answered', request.request_id, `answer=${answer.kind} by=owner_answer`);
+        await send(sellerDid, answer).catch(() => undefined);
+      },
+    });
   // A fallback notice may go to the buyer of an order this node recorded a
   // fallback for, contact or not; nothing else in the family is waived.
   setFallbackRecipientCheck(
@@ -573,10 +613,69 @@ async function brainFee(
     const fee = turn.result.fee;
     if (typeof fee === 'string' && /^(0|[1-9][0-9]{0,17})$/.test(fee)) return () => BigInt(fee);
   }
-  if (settings.strategy !== 'brain') return undefined;
+  if (settings.strategy !== 'brain') {
+    // §15 step 14: the owner left Brain while it asked them something. The
+    // question is withdrawn (a lapse, which closes the turn) before the
+    // asking fee goes, so nothing binds while it is open.
+    if (turn?.state === 'pending') withdrawOwnerQuestions(SHIPPER_KIND, turnId, nowMs);
+    return undefined;
+  }
   return ({ day, crates, slackMs }) => {
+    // Hand the fee to Brain: the job's id, or null when no budget or no door.
+    const submit = (): string | null => {
+      if (feeSubmitter === null) return null;
+      const model = brainModel();
+      if (!strategies.canSpend({ kind: SHIPPER_KIND, negotiationId: turnId, nowMs, thresholdVersion: model.version }).ok)
+        return null;
+      return (
+        feeSubmitter({
+          kind: SHIPPER_KIND,
+          ref: { negotiationId: turnId, turn: 0 },
+          side: 'seller',
+          parts: [{ name: 'fee', kind: 'money', payer: 'buyer', payee: 'seller' }],
+          table: { service_day: day, crates },
+          history: [],
+          model: { ...projectModel(model, { valuesOn: settings.valuesOn, firstOfferOut: false }) },
+          roundsLeft: 0,
+          rules: [
+            'You speak for a shipper. A known seller asks for a run on this day for these crates.',
+            'Propose your fee in minor units, one version; Core keeps it within the owner’s limits.',
+            'Never set a price for anyone outside the deal.',
+            'You may ask your owner one yes-or-no question; when the run is too near for an answer, Core answers the seller instead.',
+          ],
+          ...ownerAnswersIn(SHIPPER_KIND, turnId),
+        })?.taskId ?? null
+      );
+    };
     if (turn !== null) {
       if (turn.state !== 'pending') return 'asking';
+      const questions = getOwnerQuestions();
+      // §15 step 14: Brain asked the owner. Nothing goes while the card is
+      // open; it lapses in time for the asking fee.
+      if (questions?.openFor(SHIPPER_KIND, turnId, 0) != null) {
+        if (slackMs > 0) return 'wait';
+        turns.close(SHIPPER_KIND, turnId, 0, 'fallen_back');
+        return 'asking';
+      }
+      // The owner answered: the turn goes back to Brain with every answer,
+      // while the hold leaves room for its fee or the asking fee after it.
+      const answers = questions?.answered(SHIPPER_KIND, turnId).length ?? 0;
+      const seen = typeof turn.result.answers_seen === 'number' ? turn.result.answers_seen : 0;
+      if (answers > seen) {
+        const taskId = mayAsk && slackMs >= ANSWER_ROOM_MS ? submit() : null;
+        if (
+          taskId === null ||
+          !turns.restart(SHIPPER_KIND, turnId, 0, {
+            taskId,
+            result: { ...turn.result, answers_seen: answers },
+            nowMs,
+          })
+        ) {
+          turns.close(SHIPPER_KIND, turnId, 0, 'fallen_back');
+          return 'asking';
+        }
+        return 'wait';
+      }
       if (nowMs - turn.createdAt < SHIPPER_FEE_WAIT_MS && slackMs > 0) return 'wait';
       turns.close(SHIPPER_KIND, turnId, 0, 'fallen_back');
       return 'asking';
@@ -584,31 +683,14 @@ async function brainFee(
     // Too near the run to wait for Brain: the asking fee goes at once. With no
     // answer, the asking fee goes on the seller's next resend, an hour on, so
     // the hold must still fit then.
-    if (!mayAsk || feeSubmitter === null || slackMs < RESEND_EVERY_MS + RESEND_MARGIN_MS) return 'asking';
-    const model = brainModel();
-    if (!strategies.canSpend({ kind: SHIPPER_KIND, negotiationId: turnId, nowMs, thresholdVersion: model.version }).ok)
-      return 'asking';
-    const submitted = feeSubmitter({
-      kind: SHIPPER_KIND,
-      ref: { negotiationId: turnId, turn: 0 },
-      side: 'seller',
-      parts: [{ name: 'fee', kind: 'money', payer: 'buyer', payee: 'seller' }],
-      table: { service_day: day, crates },
-      history: [],
-      model: { ...projectModel(model, { valuesOn: settings.valuesOn, firstOfferOut: false }) },
-      roundsLeft: 0,
-      rules: [
-        'You speak for a shipper. A known seller asks for a run on this day for these crates.',
-        'Propose your fee in minor units, one version; Core keeps it within the owner’s limits.',
-        'Never set a price for anyone outside the deal.',
-      ],
-    });
-    if (submitted === null) return 'asking';
+    if (!mayAsk || slackMs < RESEND_EVERY_MS + RESEND_MARGIN_MS) return 'asking';
+    const taskId = submit();
+    if (taskId === null) return 'asking';
     turns.put({
       kind: SHIPPER_KIND,
       negotiationId: turnId,
       turn: 0,
-      taskId: submitted.taskId,
+      taskId,
       result: { seller_did: sellerDid, request },
       createdAt: nowMs,
     });
@@ -630,6 +712,11 @@ export async function commitShipperFeeMove(input: { input: unknown; result: unkn
 }> {
   const turns = feeTurns;
   if (turns === null) throw new Error('shipper stores unavailable');
+  // Every wait comes first: from the turn's check to the card, nothing else
+  // runs, so a seller's resend cannot close the turn in between.
+  const strategies = await getStrategyStore();
+  const models = await getValueModelStore();
+  const nowMs = feeClock();
   const ref = (input.input as { ref?: { negotiationId?: unknown; turn?: unknown } }).ref;
   const turnId = ref?.negotiationId;
   if (typeof turnId !== 'string' || ref?.turn !== 0) throw new Error('shipper fee move: no ref');
@@ -639,14 +726,38 @@ export async function commitShipperFeeMove(input: { input: unknown; result: unkn
   const request = turn.result.request as OptionRequestBody | undefined;
   if (request === undefined || sellerDid === '' || shipperTurnId(sellerDid, request.request_id) !== turnId)
     throw new Error('shipper fee move: turn does not name its request');
-  const move = (input.result as { move?: { kind?: unknown; versions?: unknown } } | null)?.move;
+  // §15 step 14: a turn waiting on the owner takes no move (a replayed
+  // commit of the move that asked), and a move from a brief before the
+  // owner's latest answer is stale: the turn was asked again with it.
+  const standing = moveAgainstAnswers(SHIPPER_KIND, turnId, 0, answersSeenIn(input.input));
+  if (standing !== 'current')
+    return { state: 'committed', receipt: { outcome: standing === 'waiting' ? 'waiting_owner' : 'stale_move' } };
+  const move = (input.result as { move?: { kind?: unknown; versions?: unknown; question?: unknown } } | null)
+    ?.move;
   const versions = Array.isArray(move?.versions) ? (move.versions as { terms?: unknown }[]) : [];
   const fee = (Array.isArray(versions[0]?.terms) ? (versions[0].terms as { name?: unknown; value?: unknown }[]) : []).find(
     (t) => t.name === 'fee' && typeof t.value === 'string' && /^(0|[1-9][0-9]{0,17})$/.test(t.value),
   )?.value as string | undefined;
-  const strategies = await getStrategyStore();
-  const models = await getValueModelStore();
-  const nowMs = feeClock();
+  // A yes-or-no question for the owner, put only while the hold leaves room
+  // for the answer and the fee after it; nothing is sent while it is open.
+  if (
+    move?.kind === 'ask_owner' &&
+    typeof move.question === 'string' &&
+    strategies?.settings(SHIPPER_KIND).strategy === 'brain' &&
+    askOwnerOnCard({
+      kind: SHIPPER_KIND,
+      negotiationId: turnId,
+      turn: 0,
+      question: move.question,
+      decideByMs: Math.min(nowMs + QUESTION_WAIT_MS, lastIssueMs(Date.parse(request.service_at)) - ANSWER_ROOM_MS),
+      nowMs,
+      // Brain holds these from its brief; the card never shows them.
+      hide: [turnId, sellerDid, request.request_id],
+    })
+  ) {
+    appendAudit(sellerDid, 'option_waiting', request.request_id, 'on=owner');
+    return { state: 'committed', receipt: { outcome: 'asked_owner' } };
+  }
   let outcome = 'fixed_style';
   if (
     move?.kind === 'propose' &&

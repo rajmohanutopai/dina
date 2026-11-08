@@ -90,6 +90,25 @@ export class StrategyTurnStore {
     );
   }
 
+  /**
+   * Hand a pending turn to the strategy again (the owner answered its
+   * question): the new job, its wait counted from now. False when it is closed.
+   */
+  restart(
+    kind: string,
+    negotiationId: string,
+    turn: number,
+    args: { taskId: string; result: Record<string, unknown>; nowMs: number },
+  ): boolean {
+    return (
+      this.db.run(
+        `UPDATE commitment_strategy_turns SET task_id = ?, result_json = ?, created_at = ?
+          WHERE kind = ? AND negotiation_id = ? AND turn = ? AND state = 'pending'`,
+        [args.taskId, JSON.stringify(args.result), args.nowMs, kind, negotiationId, turn],
+      ) > 0
+    );
+  }
+
   /** Turns of a kind still pending that were asked before `beforeMs`. */
   stale(kind: string, beforeMs: number): StrategyTurn[] {
     return this.db

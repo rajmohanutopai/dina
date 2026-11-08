@@ -93,6 +93,8 @@ export type InboxEntryKind =
   | 'term_strategy_fallback'
   /** COMMITMENT_KERNEL §15 step 11 — Brain asks the owner a yes-or-no question mid-deal. */
   | 'term_strategy_question'
+  /** §15 step 14 — the same question on a group booking or a shipper's run. */
+  | 'strategy_question'
   | 'commitment_model_change'
   /** COMMITMENT_KERNEL §15 step 7 — clearing a version on a shipper's run, and notices about runs. */
   | 'option_clear'
@@ -1459,6 +1461,8 @@ const TERM_CARD_TYPES = [
   'term_strategy_fallback',
   // §15 step 11 — Brain's yes-or-no question; yes and no both go back to Brain.
   'term_strategy_question',
+  // §15 step 14 — the same question on a group booking or a shipper's run.
+  'strategy_question',
   // COMMITMENT_KERNEL §15 step 5 — not a term card, but Core-minted and the
   // owner's alone in the same way: a change to their deal values Dina suggests.
   'commitment_model_change',
@@ -1648,6 +1652,15 @@ function termCardEntry(
       return {
         ...base,
         capability: 'shelf space',
+        serviceName: 'Brain asks you',
+        requesterDID: '',
+        paramsPreview: `${str(parsed.question)} Approve for yes, deny for no.`,
+      };
+    case 'strategy_question':
+      // §15 step 14 — the same, on a group booking or a shipper's run.
+      return {
+        ...base,
+        capability: parsed.kind === 'group.organizer' ? 'group booking' : 'delivery run',
         serviceName: 'Brain asks you',
         requesterDID: '',
         paramsPreview: `${str(parsed.question)} Approve for yes, deny for no.`,

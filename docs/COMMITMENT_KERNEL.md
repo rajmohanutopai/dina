@@ -1366,11 +1366,41 @@ values off and finds no withheld number.
     do not validate) changes nothing until it can. Brain never sees these
     cards' figures; the goods seller has no deal card after a quote, so
     only a broken promise narrows its room. Brain takes no part.
-14. **Brain asks where there is time.** The step 11 question card, with
-    the same two-question limit, for the organiser of a group booking
-    (always: the round waits on guests) and for the shipper (only when
-    the hold leaves room for an answer before the seller's next resend).
-    Never for goods counters, which wait seconds.
+14. **Brain asks where there is time (built 2026-10-19).** The step 11
+    question card, with the same two-question limit per deal, for the
+    organiser of a group booking (always: the round waits on guests) and
+    for the shipper (only when the hold leaves room for an answer before
+    the seller's next resend). Never for goods counters, which wait
+    seconds; their brief says so, and a question plays the owner's own
+    counter.
+    - **The card** (`strategy_question`, Core-minted, no person needed)
+      carries the question as Brain wrote it, cleaned to one line, and
+      the kind; never the plan, the seller or the request (where Brain
+      writes one of those ids into its question, Core puts "this deal" in
+      its place). The question and its card are written together.
+    - **A yes or a no** is kept and goes back to Brain on the same turn
+      with every answer so far; a move from a brief before the latest
+      answer is stale and changes nothing, and a turn with a question
+      open takes no move.
+    - **A lapse** closes the turn in the same write: the owner picks the
+      slot, or the shipper answers the seller at once at the asking fee.
+    - **Group booking:** the card stays open a day. A question about a
+      round the plan has left (the owner picked, widened, abandoned or
+      deleted it, even a delete that stops with a guest still to tell, or
+      turned Brain off) is withdrawn: settled as a lapse, then its card
+      cancelled. Brain's question is checked and put under the plan's own
+      lock, against the plan as it stands.
+    - **Shipper:** the card lapses early enough to leave, after the
+      answer, Brain's wait and one more resend before the hold stops
+      fitting (`lastIssueMs` less 50 minutes, an hour and 15 minutes);
+      with less room the question is not put and the asking fee goes.
+      While the card is open the seller's resends get nothing. The owner
+      turning shipping off Brain withdraws the question before the asking
+      fee goes.
+    - **After a crash:** an answer whose card a crash left decided is
+      settled at boot, which asks Brain nothing (the reasoning broker may
+      not be up yet). An answer kept but not yet handed back goes to Brain
+      on the plan's next read, or the seller's next resend.
 
 Each step ships on its own, with its tests and a dual review.
 
