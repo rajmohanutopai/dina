@@ -23,8 +23,11 @@ appId: com.dinakernel.mobile
       id: 'chat-card-quarantine'
     timeout: 90000
 # Accept → adds the sender + releases the held message. Runtime id ⇒ regex.
+# Rows still arriving move the card; tap once the chat has settled.
+- waitForAnimationToEnd
 - tapOn:
     id: 'quarantine-accept-.*'
+    retryTapIfNoChange: true
 # The card flips to its accepted state — proof the message was released, not
 # dropped.
 - extendedWaitUntil:

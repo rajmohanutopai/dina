@@ -153,7 +153,9 @@ agents are paired again. Nor does `plan_batches`, which only guards replays.
     count; it learns nothing more.
   - none or `pending`: items go in as `held`, the feed becomes `pending`,
     and the Today screen shows "Office Claude wants to add 6 tasks to Work.
-    Allow / Block". Allow turns them `open`; Block deletes them.
+    Allow / Block". Allow turns them `open`; Block deletes them. A held item its
+    agent closes is deleted, so it leaves no row for chat to reopen. If the agent
+    sends it again, it waits for the owner like a new one.
 - The reply: `{accepted, held, duplicate_batch}`.
 
 `GET /v1/plan/status?since=`, callers `agent` and `device`: the caller's own
@@ -162,8 +164,10 @@ tasks with their status and `done_at`, and nothing from any other origin.
 The `dot` scope (ChatGPT) reaches neither route, since its allowlist doesn't
 name them.
 
-Unpairing an agent removes its feeds and the tasks it sent that the owner
-never allowed (`onAgentDeviceRevoked`). Tasks the owner already took on stay.
+Revoking a device of any role removes its feeds and the tasks it sent that the
+owner never allowed (`onDeviceRevoked`), and each boot does it again for a device
+that stays revoked. The same key paired again starts with no permission. Tasks the
+owner already took on stay.
 
 A link must start with `https://`, since the Today screen opens it on a tap.
 
@@ -364,7 +368,7 @@ All of these are plain code in Core (`plan/goal_rules.ts`), with no model.
   The rest show on the goal's page under their phase.
 - **Chase.** A waiting task whose promised day has passed, whose phase is active
   and whose earlier tasks are finished goes to the planner as a chase: "Chase Mike: due Tue". Mike has all of Tuesday. Ticking it ends
-  the task; the goal's page can instead clear the wait. A wait said in chat
+  the task and the wait, so reopening it brings back no chase; the goal's page can instead clear the wait. A wait said in chat
   with no date comes back after 7 days, so it can't be lost.
 - **Phases.** Accepting a plan makes the first phase active. **Phase done**
   marks it done and makes the next upcoming phase active. **Start now** makes
@@ -412,7 +416,10 @@ it to a tool. No second model call.
 - `set_goal` gains `target_date`, `budget` and `currency`.
 - `draft_goal_plan`: a goal and its phases with tasks. Saved as the goal's
   draft; the owner accepts it on the goal's page. A goal that already has
-  phases is refused: changes to a live plan go through the page.
+  phases is refused: changes to a live plan go through the page. The store holds
+  this rule for every path. A draft from the model that comes back after a phase
+  was added, or after the owner discarded or replaced a draft, is not saved, and
+  adding a phase by hand clears a draft waiting on the goal.
 - `update_goal_task`: find a task in a goal by its words and mark it done,
   set or clear a wait, or record a quote or payment ("Mike sent the quote,
   $18,400"). A cost with no matching task goes on the goal.
@@ -604,7 +611,9 @@ read the plan through `planOnDay`. A finished task stays, for the count. An open
 task stays only while it can go on the day, so one whose goal is archived, that
 now waits on someone, that moved to a later phase, or that was put off leaves at
 once. A task put off stays off today until tomorrow. Re-planning keeps today's
-finished tasks and starts the evening review again. An empty result is not a
+finished tasks and what the owner added by hand, and starts the evening review
+again. A plan still with the model when the owner ends the day is thrown away: the
+review stands. An empty result is not a
 plan. The planner can tie a loose task to a goal, but can't move a task off its
 goal or phase.
 

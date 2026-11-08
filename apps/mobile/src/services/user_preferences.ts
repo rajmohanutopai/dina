@@ -628,6 +628,17 @@ function detectDeviceLocale(): { bcp47: string | null; region: string | null } {
 // ─── Test helpers ─────────────────────────────────────────────────────────
 
 /**
+ * Forget the in-memory profile, and tell subscribers. The keystore row stays:
+ * the next hydrate reads whatever it holds then. For a change of identity in
+ * one JS process (identity_scope).
+ */
+export function clearUserPreferencesCache(): void {
+  snapshot = null;
+  hydrated = false;
+  notify();
+}
+
+/**
  * Reset state for tests — wipes the keystore row AND clears the
  * in-memory snapshot + un-hydrates + drops all subscribers. Tests that
  * mount the hook in different orderings need a clean slate; without

@@ -14,26 +14,11 @@ appId: com.dinakernel.mobile
       text: '${PERSONA}'
     timeout: 25000
 - tapOn:
-    id: 'approvals-deny-appr-.*-${PERSONA}'
-- extendedWaitUntil:
-    visible:
-      text: 'Deny "Vault access"?'
-    timeout: 10000
-- runFlow:
-    when:
-      visible:
-        text: 'DENY'
-    commands:
-      - tapOn:
-          text: 'DENY'
-- runFlow:
-    when:
-      visible:
-        text: 'Deny "Vault access"?'
-    commands:
-      - tapOn:
-          text: 'Deny'
-          index: 1
+    id: 'approvals-deny-.*'
+# The native confirm's Deny.
+- waitForAnimationToEnd
+- tapOn:
+    point: '68%,57%'
 - extendedWaitUntil:
     notVisible:
       text: '${PERSONA}'

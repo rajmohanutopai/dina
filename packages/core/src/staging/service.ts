@@ -32,8 +32,19 @@ import {
 } from '../workflow/domain';
 import { WorkflowConflictError, getWorkflowService } from '../workflow/service';
 
-import { getStagingRepository, type StagingRepository } from './repository';
-import { type StagingStatus, shouldRetry, isLeaseExpired, isItemExpired } from './state_machine';
+import { getStagingRepository, type StagingRepository, type StagingSweepResult } from './repository';
+import {
+  CHAT_AUTO_SOURCE,
+  OWNER_MEMORY_SOURCES,
+  type StagingStatus,
+  shouldRetry,
+  isLeaseExpired,
+  isItemExpired,
+  retainedPastTtl,
+  stagingRetryDelaySeconds,
+} from './state_machine';
+
+export { CHAT_AUTO_SOURCE, OWNER_MEMORY_SOURCES };
 
 export interface StagingItem {
   id: string;
@@ -61,6 +72,12 @@ export interface StagingItem {
   error?: string;
   /** Approval request ID when item is pending_approval (matching Go). */
   approval_id?: string;
+  /**
+   * Names the claim that holds a `classifying` row. Every claim mints a new one,
+   * so a worker whose lease lapsed cannot resolve, fail or extend the next
+   * worker's claim (REQ-S1).
+   */
+  claim_token?: string;
   /**
    * Data scope the item was ingested in (guided-demo isolation). Stamped at
    * `ingest` from the runtime scope. The drain only CLAIMS items in the current
@@ -111,6 +128,30 @@ export interface StagingResolveMultiResult {
 /** Staging `error` marker for an item parked because its persona does not exist. */
 export const UNKNOWN_PERSONA_ERROR = 'unknown_persona';
 
+/** A worker reported on a claim it no longer holds. Its report changes nothing. */
+export class StaleStagingClaimError extends Error {
+  constructor(id: string) {
+    super(`staging: item "${id}" is held by a newer claim`);
+    this.name = 'StaleStagingClaimError';
+  }
+}
+
+/**
+ * A caller that names its claim must still hold it. Every production claimant
+ * passes the token it was given; a caller with no token is a direct in-process
+ * use with no lease of its own to lose.
+ */
+function assertHoldsClaim(item: StagingItem, claimToken: string | undefined): void {
+  if (claimToken !== undefined && item.claim_token !== claimToken) {
+    throw new StaleStagingClaimError(item.id);
+  }
+}
+
+/** The raw body, cleared once a classified copy holds the content. */
+function dataWithoutBody(item: StagingItem): Record<string, unknown> {
+  return item.data.body !== undefined ? { ...item.data, body: '' } : item.data;
+}
+
 /**
  * Park an item whose every target names a persona this node does not have.
  * It waits as `pending_unlock` under the requested name (drained if that
@@ -127,10 +168,14 @@ function parkForUnknownPersona(
   item.status = 'pending_unlock';
   item.error = UNKNOWN_PERSONA_ERROR;
   if (classifiedItem) item.classified_item = classifiedItem;
+  // The classified copy now holds the content. With none, the raw body is the
+  // only copy of what was said, so it stays.
+  if (item.classified_item) item.data = dataWithoutBody(item);
   if (repo) {
     repo.updateStatus(item.id, item.status, {
       persona: item.persona,
       error: item.error,
+      data: item.data,
       ...(item.classified_item ? { classified_item: item.classified_item } : {}),
     });
   }
@@ -366,16 +411,6 @@ function stagingApprovalId(stagingId: string, persona: string): string {
  */
 export const OWNER_DIRECT_SOURCES = new Set(['user_remember']);
 
-/**
- * The owner's own words from a chat turn, proven by a span proof, that were
- * not a plain request to remember (REAL_LIFE_FIXES §2.5). First-party, but
- * NOT owner-direct: a sensitive or locked target waits for the owner's card.
- */
-export const CHAT_AUTO_SOURCE = 'chat_auto';
-
-/** Sources whose items are the owner's own memories (dedup, §2.4). */
-export const OWNER_MEMORY_SOURCES = new Set(['user_remember', CHAT_AUTO_SOURCE]);
-
 function previewForApproval(item: StagingItem, classifiedItem?: Record<string, unknown>): string {
   const candidates = [
     classifiedItem?.summary,
@@ -475,7 +510,9 @@ function createPersonaAccessApproval(
       kind: WorkflowTaskKind.Approval,
       description: `Remember access for ${persona}`,
       payload: JSON.stringify(payload),
-      expiresAtSec: item.expires_at,
+      // An owner memory outlives its TTL (`retainedPastTtl`), so its card does
+      // too: the owner's answer is the only way it moves on.
+      ...(OWNER_MEMORY_SOURCES.has(item.source) ? {} : { expiresAtSec: item.expires_at }),
       priority: WorkflowTaskPriority.UserBlocking,
       origin: 'system',
       idempotencyKey: approvalId,
@@ -616,6 +653,7 @@ export function claim(limit = 10, leaseDurationSeconds?: number): StagingItem[] 
 
     item.status = 'classifying';
     item.lease_until = now + leaseDuration;
+    item.claim_token = bytesToHex(randomBytes(8));
     claimed.push(item);
   }
 
@@ -650,6 +688,7 @@ export function claimById(id: string, leaseDurationSeconds?: number): StagingIte
   }
   item.status = 'classifying';
   item.lease_until = now + leaseDuration;
+  item.claim_token = bytesToHex(randomBytes(8));
   cacheItem(item);
   return item;
 }
@@ -664,12 +703,14 @@ export function claimById(id: string, leaseDurationSeconds?: number): StagingIte
  *
  * @param personaOpen — whether the target persona vault is currently open
  * @param classifiedItem — optional enriched VaultItem for later drain
+ * @param claimToken — the token from the claim; a stale one is refused
  */
 export function resolve(
   id: string,
   persona: string,
   claimedPersonaOpen: boolean,
   classifiedItem?: Record<string, unknown>,
+  claimToken?: string,
 ): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
@@ -678,6 +719,7 @@ export function resolve(
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
+  assertHoldsClaim(item, claimToken);
 
   if (isUnknownPersona(persona)) {
     parkForUnknownPersona(item, persona, classifiedItem);
@@ -748,6 +790,7 @@ export function resolveMultiDetailed(
   id: string,
   claimedTargets: { persona: string; personaOpen: boolean }[],
   classifiedItem?: Record<string, unknown>,
+  claimToken?: string,
 ): StagingResolveMultiResult {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
@@ -756,6 +799,7 @@ export function resolveMultiDetailed(
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot resolve item in status "${item.status}"`);
   }
+  assertHoldsClaim(item, claimToken);
   if (claimedTargets.length === 0) {
     throw new Error('staging: resolveMulti requires at least one target persona');
   }
@@ -878,9 +922,16 @@ export function resolveMultiDetailed(
   // ORPHANED — the owner sees an approvable card guarding a staging row that was
   // never written. Wrap the persistence so a throw cancels every approval this
   // call created before it propagates, leaving no dangling cards.
+  //
+  // REQ-09: a target whose store failed gets the same row with no card. The
+  // sweeper retries it through `drainForPersona` until its vault takes it. The
+  // primary row carries the retry itself when nothing else holds it.
+  const failedPersonas = failures.map((failure) => failure.persona);
+  const primaryFailed = failedPersonas.includes(primary.persona);
+  const primaryRetries = primaryFailed && storedPersonas.length === 0;
   try {
-    for (const lockedPersona of lockedTargets) {
-      if (lockedPersona === primary.persona) continue; // primary handled below
+    for (const lockedPersona of [...lockedTargets, ...failedPersonas]) {
+      if (lockedPersona === primary.persona && (!primaryFailed || primaryRetries)) continue; // primary handled below
       const copyId = `${id}-${lockedPersona}`;
       const copy: StagingItem = {
         ...item,
@@ -889,6 +940,7 @@ export function resolveMultiDetailed(
         persona: lockedPersona,
         status: 'pending_unlock',
         classified_item: classifiedItem,
+        data: classifiedItem ? dataWithoutBody(item) : item.data,
       };
       copy.approval_id = approvalIds.get(lockedPersona);
       if (repo && !repo.ingest(copy)) {
@@ -918,13 +970,14 @@ export function resolveMultiDetailed(
     throw err;
   }
 
-  // Primary persona tracks on the original item
-  item.persona = primary.persona;
+  // Primary persona tracks on the original item. A `stored` row names a vault
+  // that took it: when the routed primary failed, that is the first that stored.
   const primaryOpen = primary.personaOpen;
+  item.persona = primaryFailed && !primaryRetries ? (storedPersonas[0] ?? primary.persona) : primary.persona;
   if (!primaryOpen) {
     item.approval_id = approvalIds.get(primary.persona);
   }
-  item.status = primaryOpen ? 'stored' : 'pending_unlock';
+  item.status = primaryOpen && !primaryRetries ? 'stored' : 'pending_unlock';
 
   // Clear raw body
   if (item.data.body !== undefined) {
@@ -945,7 +998,7 @@ export function resolveMultiDetailed(
     count: targets.length,
     storedPersonas,
     pendingPersonas: lockedTargets,
-    failedPersonas: failures.map((failure) => failure.persona),
+    failedPersonas,
     unknownPersonas,
     duplicatePersonas,
   };
@@ -970,7 +1023,7 @@ export function resolveMulti(
  * Optionally stores an error message for debugging/audit
  * (matching Go's error column in staging inbox).
  */
-export function fail(id: string, errorMessage?: string): void {
+export function fail(id: string, errorMessage?: string, claimToken?: string): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
@@ -978,15 +1031,19 @@ export function fail(id: string, errorMessage?: string): void {
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot fail item in status "${item.status}"`);
   }
+  assertHoldsClaim(item, claimToken);
 
   item.status = 'failed';
   item.retry_count += 1;
+  // A failed row's lease is its retry time: the sweep requeues it when this passes.
+  item.lease_until = nowSeconds() + stagingRetryDelaySeconds(item.retry_count);
   if (errorMessage) {
     item.error = errorMessage;
   }
   if (repo) {
     repo.updateStatus(id, item.status, {
       retry_count: item.retry_count,
+      lease_until: item.lease_until,
       ...(item.error ? { error: item.error } : {}),
     });
   }
@@ -1045,7 +1102,7 @@ export function resumeAfterApprovalGranted(id: string): void {
  * never result in a lease that's already expired. Matches Go's
  * ExtendLease which computes from max(lease_until, current_time).
  */
-export function extendLease(id: string, extensionSeconds: number): void {
+export function extendLease(id: string, extensionSeconds: number, claimToken?: string): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
@@ -1053,6 +1110,7 @@ export function extendLease(id: string, extensionSeconds: number): void {
   if (item.status !== 'classifying') {
     throw new Error(`staging: cannot extend lease on item in status "${item.status}"`);
   }
+  assertHoldsClaim(item, claimToken);
 
   const now = nowSeconds();
   const base = Math.max(item.lease_until, now);
@@ -1066,12 +1124,7 @@ export function extendLease(id: string, extensionSeconds: number): void {
  *
  * Returns counts of each action taken.
  */
-export function sweep(now?: number): {
-  expired: number;
-  leaseReverted: number;
-  requeued: number;
-  deadLettered: number;
-} {
+export function sweep(now?: number): StagingSweepResult {
   const currentTime = now ?? nowSeconds();
   const repo = getStagingRepository();
   if (repo) {
@@ -1080,33 +1133,51 @@ export function sweep(now?: number): {
     return result;
   }
 
-  const result = { expired: 0, leaseReverted: 0, requeued: 0, deadLettered: 0 };
+  const result: StagingSweepResult = {
+    expired: 0,
+    leaseReverted: 0,
+    requeued: 0,
+    deadLettered: 0,
+    retained: 0,
+  };
 
   for (const item of inbox.values()) {
-    // 1. Delete expired items (7d TTL)
+    // 1. Delete expired items (7d TTL). An owner memory not yet in the vault stays.
     if (isItemExpired(item.expires_at, currentTime)) {
-      removeCachedItem(item);
-      result.expired++;
-      continue;
+      if (!retainedPastTtl(item)) {
+        removeCachedItem(item);
+        result.expired++;
+        continue;
+      }
+      result.retained++;
     }
 
-    // 2. Revert expired leases (classifying → received)
+    // 2. Revert expired leases (classifying → received), spending a retry.
     if (item.status === 'classifying' && isLeaseExpired(item.lease_until, currentTime)) {
-      item.status = 'received';
       item.lease_until = 0;
-      result.leaseReverted++;
-      continue;
-    }
-
-    // 3. Requeue failed items (retry ≤ 3) or dead-letter (retry > 3)
-    if (item.status === 'failed') {
+      item.claim_token = undefined;
+      item.retry_count += 1;
       if (shouldRetry(item.retry_count)) {
         item.status = 'received';
-        item.lease_until = 0; // Reset lease so item is immediately eligible for re-claim
-        result.requeued++;
+        result.leaseReverted++;
       } else {
+        item.status = 'failed';
+        item.error = 'lease lapsed too many times';
+        result.deadLettered++;
+      }
+      continue;
+    }
+
+    // 3. Requeue failed items whose wait is over, or dead-letter (retry > 3)
+    if (item.status === 'failed') {
+      if (!shouldRetry(item.retry_count)) {
         // Dead-letter: leave as failed, don't requeue
         result.deadLettered++;
+      } else if (item.lease_until <= currentTime) {
+        item.status = 'received';
+        item.lease_until = 0; // Reset lease so item is immediately eligible for re-claim
+        item.claim_token = undefined;
+        result.requeued++;
       }
     }
   }
@@ -1121,7 +1192,11 @@ export function sweep(now?: number): {
  * Returns count of drained items.
  */
 export function drainForPersona(persona: string): number {
-  let drained = 0;
+  return drainRowsForPersona(persona).length;
+}
+
+function drainRowsForPersona(persona: string): StagingItem[] {
+  const drained: StagingItem[] = [];
   const repo = getStagingRepository();
   const items = repo ? repo.listByStatus('pending_unlock') : Array.from(inbox.values());
   for (const item of items) {
@@ -1148,14 +1223,34 @@ export function drainForPersona(persona: string): number {
         continue;
       }
       item.status = 'stored';
-      if (repo) repo.updateStatus(item.id, item.status);
+      item.error = undefined;
+      if (repo) repo.updateStatus(item.id, item.status, { error: undefined });
       cacheItem(item);
       // OnDrain callback: post-publication event extraction
       fireOnDrain(item, persona);
-      drained++;
+      drained.push(item);
     }
   }
   return drained;
+}
+
+/**
+ * `drainForPersona`, plus the reminders each drained memory planned. Brain
+ * plans them and leaves them in the row for a target that was not stored then
+ * (`drain.ts`), so this is the only place they can run.
+ */
+export async function drainForPersonaWithEffects(
+  persona: string,
+): Promise<{ drained: number; remindersCreated: number; postErrors: string[] }> {
+  const rows = drainRowsForPersona(persona);
+  let remindersCreated = 0;
+  const postErrors: string[] = [];
+  for (const item of rows) {
+    const effects = await createPlannedReminders(item);
+    remindersCreated += effects.remindersCreated;
+    postErrors.push(...effects.postErrors);
+  }
+  return { drained: rows.length, remindersCreated, postErrors };
 }
 
 /**
@@ -1229,45 +1324,59 @@ export async function drainForApprovalWithEffects(
   const postErrors: string[] = [];
 
   for (const item of itemsByApprovalId(approvalId)) {
-    if (item.status !== 'stored' || item.classified_item === undefined) continue;
-    const plans = rememberReminderPlans(item.classified_item).filter(
-      (plan) => plan.persona === item.persona,
-    );
-    const sourceItemId =
-      typeof item.classified_item.staging_id === 'string' &&
-      item.classified_item.staging_id.trim() !== ''
-        ? item.classified_item.staging_id
-        : item.id;
-    for (const plan of plans) {
-      try {
-        const existingIds = new Set(
-          listRemindersByPersona(item.persona)
-            .filter(
-              (reminder) =>
-                reminder.source_item_id === sourceItemId &&
-                reminder.kind === 'manual' &&
-                reminder.due_at === plan.dueAtMs &&
-                reminder.message === plan.message,
-            )
-            .map((reminder) => reminder.id),
-        );
-        const reminder = await createReminderDurable({
-          message: plan.message,
-          due_at: plan.dueAtMs,
-          persona: item.persona,
-          kind: 'manual',
-          source_item_id: sourceItemId,
-          source: 'remember_runtime',
-          timezone: plan.timezone,
-        });
-        if (!existingIds.has(reminder.id)) remindersCreated++;
-      } catch (err) {
-        postErrors.push(err instanceof Error ? err.message : String(err));
-      }
-    }
+    const effects = await createPlannedReminders(item);
+    remindersCreated += effects.remindersCreated;
+    postErrors.push(...effects.postErrors);
   }
 
   return { ...result, remindersCreated, postErrors };
+}
+
+/** Durably create the reminders a stored row planned for its own persona. */
+async function createPlannedReminders(
+  item: StagingItem,
+): Promise<{ remindersCreated: number; postErrors: string[] }> {
+  let remindersCreated = 0;
+  const postErrors: string[] = [];
+  if (item.status !== 'stored' || item.classified_item === undefined) {
+    return { remindersCreated, postErrors };
+  }
+  const plans = rememberReminderPlans(item.classified_item).filter(
+    (plan) => plan.persona === item.persona,
+  );
+  const sourceItemId =
+    typeof item.classified_item.staging_id === 'string' &&
+    item.classified_item.staging_id.trim() !== ''
+      ? item.classified_item.staging_id
+      : item.id;
+  for (const plan of plans) {
+    try {
+      const existingIds = new Set(
+        listRemindersByPersona(item.persona)
+          .filter(
+            (reminder) =>
+              reminder.source_item_id === sourceItemId &&
+              reminder.kind === 'manual' &&
+              reminder.due_at === plan.dueAtMs &&
+              reminder.message === plan.message,
+          )
+          .map((reminder) => reminder.id),
+      );
+      const reminder = await createReminderDurable({
+        message: plan.message,
+        due_at: plan.dueAtMs,
+        persona: item.persona,
+        kind: 'manual',
+        source_item_id: sourceItemId,
+        source: 'remember_runtime',
+        timezone: plan.timezone,
+      });
+      if (!existingIds.has(reminder.id)) remindersCreated++;
+    } catch (err) {
+      postErrors.push(err instanceof Error ? err.message : String(err));
+    }
+  }
+  return { remindersCreated, postErrors };
 }
 
 interface StoredRememberReminderPlan {

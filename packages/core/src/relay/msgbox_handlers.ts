@@ -86,8 +86,30 @@ function inFlightKey(fromDid: string, requestId: string): string {
 // D2D Inbound Handler
 // ---------------------------------------------------------------
 
+/**
+ * What `resolveSender` found. `unresolved` means it could not tell (the
+ * directory is down, or gave a bad answer): the message cannot be verified yet,
+ * which is different from a bad signature. `refresh`, present when the keys
+ * came from a cache, asks the directory again after a signature fails, since
+ * the sender may have rotated its key.
+ */
+export interface ResolvedSender {
+  keys: Uint8Array[];
+  trust: string;
+  unresolved?: boolean;
+  refresh?: () => Promise<ResolvedSender>;
+}
+
 export interface D2DInboundResult {
   success: boolean;
+  /**
+   * The message was not taken in and may yet be (TT-01, TT-03): its sender could
+   * not be checked, or a store failed. The caller must not ack it. Parse and
+   * validation faults are never retried; they would fail the same way.
+   */
+  retryLater?: boolean;
+  /** Set when the caller asked to hold the replay key; see `holdBypassReplayKey`. */
+  commitReplay?: () => void;
   messageType?: string;
   senderDID?: string;
   pipelineAction?: string;
@@ -135,7 +157,8 @@ export interface D2DInboundResult {
  */
 export async function handleInboundD2D(
   env: MsgBoxEnvelope,
-  resolveSender: (did: string) => Promise<{ keys: Uint8Array[]; trust: string }>,
+  resolveSender: (did: string) => Promise<ResolvedSender>,
+  options: { holdBypassReplayKey?: boolean } = {},
 ): Promise<D2DInboundResult> {
   // Metadata-only diagnostic: identity fields are deliberately omitted because
   // contact DIDs reveal the owner's social graph in device logs.
@@ -155,42 +178,70 @@ export async function handleInboundD2D(
     }
   })();
   if (!privateKey) {
-    return { success: false, error: 'Identity not configured' };
+    return { success: false, retryLater: true, error: 'Identity not configured' };
   }
 
+  // 1. Parse D2DPayload from envelope ciphertext. A frame that fails here will
+  // never parse: it is refused and acked, unlike a failure further on.
+  let d2dPayload: D2DPayload;
   try {
     if (!env.ciphertext) {
       return { success: false, error: 'No ciphertext in D2D envelope' };
     }
-
-    // 1. Parse D2DPayload from envelope ciphertext
-    const d2dPayload: D2DPayload = JSON.parse(env.ciphertext);
-    if (!d2dPayload.c || !d2dPayload.s) {
+    d2dPayload = JSON.parse(env.ciphertext);
+    if (!d2dPayload?.c || !d2dPayload?.s) {
       return { success: false, error: 'Invalid D2D payload — missing c or s field' };
     }
+  } catch (err) {
+    return { success: false, error: err instanceof Error ? err.message : 'D2D parse failed' };
+  }
 
+  try {
     // 2. Resolve sender
     const sender = await resolveSender(env.from_did);
+    // Fail closed: nothing is accepted unverified, and nothing valid is lost
+    // because the directory is down. The relay keeps it for a later try.
+    if (sender.unresolved === true) {
+      return { success: false, retryLater: true, senderDID: env.from_did, error: 'sender unresolved' };
+    }
     const myPub = getPublicKey(privateKey);
 
     // 3. Route through receive pipeline. Bind the sealed inner `from` to the
     //    transport-authenticated `env.from_did` (the DID we resolved
     //    sender.keys/sender.trust against) so a peer can't sign with its own
     //    key while spoofing a trusted peer's DID in the message body.
-    const result: ReceivePipelineResult = receiveD2D(
+    const pipelineOptions = {
+      authenticatedFromDID: env.from_did,
+      // The relay-authenticated DELIVERY recipient. The pipeline binds a
+      // service.query's `service_uri` authority + inner recipient to THIS,
+      // never to the sender-signed inner `message.to`.
+      authenticatedToDID: env.to_did,
+      ...(options.holdBypassReplayKey === true ? { holdBypassReplayKey: true } : {}),
+    };
+    let result: ReceivePipelineResult = receiveD2D(
       d2dPayload,
       myPub,
       privateKey,
       sender.keys,
       sender.trust,
-      {
-        authenticatedFromDID: env.from_did,
-        // The relay-authenticated DELIVERY recipient. The pipeline binds a
-        // service.query's `service_uri` authority + inner recipient to THIS,
-        // never to the sender-signed inner `message.to`.
-        authenticatedToDID: env.to_did,
-      },
+      pipelineOptions,
     );
+
+    // A signature that fails against a cached key may be a rotated key, not a
+    // forgery: ask the directory once before calling it bad (`messageId` is set
+    // only when the unseal worked and the signature was what failed).
+    if (
+      result.action === 'dropped' &&
+      !result.signatureValid &&
+      result.messageId !== undefined &&
+      sender.refresh !== undefined
+    ) {
+      const fresh = await sender.refresh();
+      if (fresh.unresolved === true) {
+        return { success: false, retryLater: true, senderDID: env.from_did, error: 'sender unresolved' };
+      }
+      result = receiveD2D(d2dPayload, myPub, privateKey, fresh.keys, fresh.trust, pipelineOptions);
+    }
 
     appendAudit(
       env.from_did,
@@ -200,6 +251,7 @@ export async function handleInboundD2D(
     );
 
     return {
+      ...(result.commitReplay !== undefined ? { commitReplay: result.commitReplay } : {}),
       success:
         result.action === 'staged' || result.action === 'ephemeral' || result.action === 'bypassed',
       messageType: result.messageType,
@@ -222,7 +274,13 @@ export async function handleInboundD2D(
         err instanceof Error ? err.message : String(err)
       }`,
     );
-    return { success: false, error: err instanceof Error ? err.message : 'D2D processing failed' };
+    // The message parsed, so what failed is a store or the resolver. Not acked:
+    // no replay key is held, and the relay's copy can still land.
+    return {
+      success: false,
+      retryLater: true,
+      error: err instanceof Error ? err.message : 'D2D processing failed',
+    };
   }
 }
 

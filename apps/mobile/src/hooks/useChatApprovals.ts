@@ -109,7 +109,10 @@ export async function approveCard(
       }
     }
     const req = getApprovalManager().getRequest(id);
-    return req ? toCardData(req) : null;
+    if (req) return toCardData(req);
+    // The manager's memory ends with the process. The gateway decided, so the
+    // card must not offer the buttons again.
+    return r.ok ? decidedCard(id, 'approved') : null;
   }
   try {
     getApprovalManager().approveRequest(id, scope, approverDID);
@@ -127,9 +130,10 @@ export async function approveCard(
 export async function denyCard(id: string): Promise<ApprovalCardData | null> {
   const gateway = getAskApprovalGateway();
   if (gateway !== null) {
-    await gateway.deny(id);
+    const r = await gateway.deny(id);
     const req = getApprovalManager().getRequest(id);
-    return req ? toCardData(req) : null;
+    if (req) return toCardData(req);
+    return r.ok ? decidedCard(id, 'denied') : null;
   }
   try {
     getApprovalManager().denyRequest(id);
@@ -189,6 +193,21 @@ export function endSession(): number {
 export function resetApprovalCards(): void {
   didLabels.clear();
   resetApprovalManager();
+}
+
+/** A decision the gateway made on a request this process no longer holds. */
+function decidedCard(id: string, status: 'approved' | 'denied'): ApprovalCardData {
+  return {
+    id,
+    action: '',
+    requesterDID: '',
+    requesterLabel: '',
+    persona: '',
+    reason: '',
+    preview: '',
+    status,
+    createdAt: 0,
+  };
 }
 
 /** Convert ApprovalRequest to UI card data. */

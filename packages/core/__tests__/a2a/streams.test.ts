@@ -89,6 +89,7 @@ describe('SubscribeToTask', () => {
       JSON.stringify({ eta_minutes: 2 }),
       '{}',
       iw.world.clock,
+      iw.world.repo.getById(taskId)?.claim_id ?? undefined,
     );
     expect(iw.opOf(id).state).toBe('open');
     expect(errorOf(subscribe(id))).toEqual({ code: -32004, reason: 'task_terminal' });

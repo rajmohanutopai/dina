@@ -92,6 +92,11 @@ const KERNEL_MONEY_FREE: readonly string[] = [
  * cannot simply be moved to its own package today.
  */
 const REMAINING_COUPLINGS: Readonly<Record<string, string>> = {
+  // A backup is checked before it's restored, and the ledger's rows are in it.
+  // Cost: each row check moves to the pack that owns the row, and the pack hands
+  // them to the preflight.
+  'commerce/archive_preflight.ts':
+    'checks ledger rows in a backup through the ledger\'s own rehydrators',
   // The barrel re-exports the money modules along with everything else.
   // Cost: the move rewrites it, nothing more — a re-export is not a caller.
   'commerce/index.ts':

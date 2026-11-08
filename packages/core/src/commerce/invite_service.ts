@@ -722,18 +722,43 @@ export class InviteService {
     if (row.counterpartyDid !== args.senderDid) {
       return refuse('revocation sender is not this exchange counterparty');
     }
-    this.tearDown(row);
+    this.tearDown(row.nonce);
     return { ok: true, value: null };
   }
 
-  private tearDown(row: InviteRow): void {
+  /**
+   * Revoke an exchange from its state NOW: callers cross awaits, and an ack
+   * may have activated it meanwhile, so a row read earlier would leave live
+   * grants behind a revoked row. False when it was revoked already.
+   */
+  private tearDown(nonce: string): boolean {
+    const row = this.deps.invites.get(nonce);
+    if (row === null || row.state === 'revoked') return false;
     if (row.state === 'active') {
       // Undo only what this exchange wrote: a contact or a grant that was
       // there before the invite stays.
-      if (row.createdContact !== false) this.deps.removeContact(row.counterpartyDid);
+      if (row.createdContact !== false) this.releaseContact(row);
       this.deps.revokeGrants({ granteeDid: row.counterpartyDid, inviteNonce: row.nonce });
     }
     this.deps.invites.put({ ...row, state: 'revoked', updatedAt: this.deps.now() });
+    return true;
+  }
+
+  /**
+   * The contact this exchange made goes, unless another live exchange with the
+   * same party relies on it: then that one inherits the duty to remove it.
+   */
+  private releaseContact(row: InviteRow): void {
+    const heir = this.deps.invites
+      .list()
+      .find(
+        (other) =>
+          other.nonce !== row.nonce &&
+          other.state === 'active' &&
+          other.counterpartyDid === row.counterpartyDid,
+      );
+    if (heir === undefined) this.deps.removeContact(row.counterpartyDid);
+    else this.deps.invites.put({ ...heir, createdContact: true });
   }
 
   private async sendRevocation(row: InviteRow, reason: 'expired' | 'no_activation_proof'): Promise<void> {
@@ -766,16 +791,17 @@ export class InviteService {
     const now = this.deps.now();
     let revoked = 0;
     let ackResent = 0;
-    for (const row of this.deps.invites.list()) {
-      if (row.state === 'revoked') continue;
+    for (const listed of this.deps.invites.list()) {
+      // Each pass awaits a send, so a row listed at the start may have moved.
+      const row = this.deps.invites.get(listed.nonce);
+      if (row === null || row.state === 'revoked') continue;
 
       if (row.role === 'inviter') {
         // Unfinished past the TTL: compensating revocation, told to the
         // counterparty when one exists.
         if (row.state !== 'active' && now >= row.expiresAt) {
           await this.sendRevocation(row, 'expired');
-          this.tearDown(row);
-          revoked += 1;
+          if (this.tearDown(row.nonce)) revoked += 1;
         }
         continue;
       }
@@ -791,8 +817,7 @@ export class InviteService {
       if (row.state === 'redeemed' && now >= row.expiresAt) {
         // Never confirmed and the offer is dead: local teardown (nothing
         // was written; no counterparty state exists to notify away).
-        this.tearDown(row);
-        revoked += 1;
+        if (this.tearDown(row.nonce)) revoked += 1;
         continue;
       }
       if (row.state === 'active' && row.activationProvenAt === null) {
@@ -801,8 +826,7 @@ export class InviteService {
           // No proof after the window: tear down AND tell the inviter, so
           // neither direction retains one-sided state.
           await this.sendRevocation(row, 'no_activation_proof');
-          this.tearDown(row);
-          revoked += 1;
+          if (this.tearDown(row.nonce)) revoked += 1;
         } else {
           // Re-send the ack: an alive, active inviter answers with the
           // idempotent AckReceipt, which IS the proof.

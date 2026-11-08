@@ -7,13 +7,18 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 - tapOn:
     id: 'root-layout-menu'
 - tapOn:
     id: 'root-layout-menu-row-settings'
-- extendedWaitUntil:
-    visible:
+- scrollUntilVisible:
+    element:
       id: 'settings-row-subscriptions'
+    centerElement: true
     timeout: 15000
 - tapOn:
     id: 'settings-row-subscriptions'

@@ -149,6 +149,49 @@ export async function hydrateServiceConfig(): Promise<void> {
       // Corrupt row — skip this listing; a subsequent setServiceConfig overwrites.
     }
   }
+  // A crash, or a lost write, may have left a listing live on an install now gone.
+  pauseListingsWithDeadBindings();
+}
+
+/**
+ * PLUGIN-2: a listing bound to an install that is gone, held or changed would
+ * advertise itself and answer `install_unavailable` to every buyer. Pause it, so
+ * the publishers, the query gate and the presence writer all drop it through the
+ * status they already read. The row and its settings stay, for the owner to
+ * re-bind and turn back on. Runs on teardown and at boot. The save is not awaited:
+ * teardown has already happened by then, and a lost write comes back here next boot.
+ *
+ * With no plugin registry wired it changes nothing: that says nothing about the install.
+ */
+export function pauseListingsWithDeadBindings(): void {
+  if (getPluginInstallRepository() === null) return;
+  for (const { rkey, config } of listServiceConfigs()) {
+    if (effectiveListingStatus(config) !== 'active') continue;
+    const dead = Object.values(config.capabilities ?? {}).some(
+      (cap) => pluginBindingProblem(cap) !== null,
+    );
+    if (dead) setServiceConfig({ ...config, status: 'paused' }, rkey);
+  }
+}
+
+/**
+ * Remove the record of each listing deleted before its unpublish landed (SERVICE-1).
+ * For a host with no retry of its own: a failure stays owed, for the next boot.
+ */
+export async function drainListingUnpublishes(
+  unpublish: (rkey: string) => Promise<unknown>,
+): Promise<void> {
+  const repo = getServiceConfigRepository();
+  if (repo === null) return;
+  for (const rkey of await repo.listPendingUnpublish()) {
+    if (configs.has(rkey)) continue;
+    try {
+      await unpublish(rkey);
+      await repo.clearPendingUnpublish(rkey);
+    } catch {
+      /* still owed */
+    }
+  }
 }
 
 /**

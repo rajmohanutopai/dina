@@ -31,13 +31,18 @@
  */
 
 import { setAccessiblePersonas } from '@dina/brain';
-import { listPersonas, openPersona as openPersonaInRegistry } from '@dina/core';
+import {
+  closePersona,
+  listPersonas,
+  openPersona as openPersonaInRegistry,
+} from '@dina/core';
 
 export interface OpenAllPersonasOptions {
   /**
-   * Per-persona vault-DB opener — fires AFTER the in-memory registry
-   * marks the persona open but BEFORE `setAccessiblePersonas` exposes
-   * it to /ask. Lets the caller open SQLCipher handles (lite Core),
+   * Per-persona vault-DB opener — fires BEFORE the in-memory registry
+   * marks the persona open and before `setAccessiblePersonas` exposes
+   * it to /ask, so a persona is marked open only with a vault behind
+   * it. Lets the caller open SQLCipher handles (lite Core),
    * the op-sqlite native DB (mobile), or skip the step entirely
    * (lite Brain, which never touches SQLite).
    *
@@ -52,8 +57,9 @@ export interface OpenAllPersonasOptions {
   /**
    * Optional per-persona error sink for the `openVaultDB` step. When
    * supplied, an error from `openVaultDB(persona)` is forwarded to
-   * `onVaultOpenError(persona, err)` instead of propagating, and the
-   * loop continues with the remaining personas. Mobile uses this so
+   * `onVaultOpenError(persona, err)` instead of propagating, the persona
+   * stays closed and unpublished, and the loop continues with the
+   * remaining personas. Mobile uses this so
    * a single bad SQLite file doesn't brick the rest of the vault
    * surface.
    *
@@ -69,10 +75,8 @@ export interface OpenAllPersonasOptions {
  * `accessiblePersonas` state.
  *
  * Returns the names of personas that ended up open — the caller can
- * use this for logging or state tracking. Always reads the registry
- * fresh at the end (never trusts the loop-internal counter) so a
- * persona that was already open before the call still appears in the
- * returned list.
+ * use this for logging or state tracking. A persona whose vault failed
+ * to open is not among them, even if the registry had it open already.
  *
  * Idempotent: if every persona is already open, the function still
  * runs to refresh the accessible-personas publication (covers the
@@ -83,42 +87,33 @@ export interface OpenAllPersonasOptions {
 export async function openAllPersonasForInAppUser(
   options: OpenAllPersonasOptions = {},
 ): Promise<string[]> {
-  // 1. Walk the registry and approve-open any persona still closed.
-  //    The `approved=true` second arg bypasses the tier-guard —
-  //    approval is implicit because the in-app user already
-  //    authenticated against the device passphrase (mobile) or owns
+  // 1. Open each persona's vault DB handle when wired (mobile: op-sqlite via
+  //    `openPersonaDB`; lite Core: `openPersonaVault` against its
+  //    `NodeDBProvider`; lite Brain: none, no SQLite). Done first, so the
+  //    registry never says open for a vault that is not.
+  //
+  // 2. Then approve-open it in the registry. The `approved=true` second arg
+  //    bypasses the tier-guard — approval is implicit because the in-app user
+  //    already authenticated against the device passphrase (mobile) or owns
   //    the Core process (lite).
+  const opened: string[] = [];
   for (const persona of listPersonas()) {
-    if (!persona.isOpen) {
-      openPersonaInRegistry(persona.name, true);
-    }
-  }
-
-  // 2. Snapshot the open set AFTER the loop so we account for
-  //    personas that were already open coming in.
-  const opened = listPersonas()
-    .filter((p) => p.isOpen)
-    .map((p) => p.name);
-
-  // 3. Open per-persona vault DB handles when wired. Mobile uses
-  //    op-sqlite via `openPersonaDB`; lite Core uses
-  //    `openPersonaVault` against its `NodeDBProvider`. Lite Brain
-  //    skips this step entirely (no SQLite).
-  if (options.openVaultDB !== undefined) {
-    for (const persona of opened) {
+    if (options.openVaultDB !== undefined) {
       try {
-        await options.openVaultDB(persona);
+        await options.openVaultDB(persona.name);
       } catch (err) {
-        if (options.onVaultOpenError !== undefined) {
-          options.onVaultOpenError(persona, err);
-        } else {
-          throw err;
-        }
+        if (options.onVaultOpenError === undefined) throw err;
+        options.onVaultOpenError(persona.name, err);
+        // May be open from an earlier unlock; its vault is not.
+        if (persona.isOpen) closePersona(persona.name);
+        continue;
       }
     }
+    if (!persona.isOpen) openPersonaInRegistry(persona.name, true);
+    opened.push(persona.name);
   }
 
-  // 4. Publish to Brain's accessible-personas state so /ask
+  // 3. Publish to Brain's accessible-personas state so /ask
   //    fans-out across every vault. Done AFTER the DB opens so a
   //    half-opened persona never appears in vault_search results.
   setAccessiblePersonas(opened);

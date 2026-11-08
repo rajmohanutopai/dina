@@ -342,6 +342,8 @@ export async function runStagingDrainTick(
   for (const raw of items) {
     const item = raw !== null && typeof raw === 'object' ? (raw as Record<string, unknown>) : {};
     const itemId = String(item.id ?? 'unknown');
+    // Names this claim: Core refuses our reports once a newer claim holds the row.
+    const claimToken = typeof item.claim_token === 'string' ? item.claim_token : undefined;
 
     // The staging inbox shape nests payload fields (summary, body, type,
     // source, sender, timestamp) inside `item.data` — see
@@ -365,7 +367,11 @@ export async function runStagingDrainTick(
     // inject deterministic fakes — `StagingDrainScheduler` forwards
     // its own pair through.
     let leaseHeartbeat: unknown = setIntervalFn(() => {
-      core.stagingExtendLease(itemId, LEASE_HEARTBEAT_EXTENSION_SECONDS).catch(() => {
+      const extend =
+        claimToken !== undefined
+          ? core.stagingExtendLease(itemId, LEASE_HEARTBEAT_EXTENSION_SECONDS, claimToken)
+          : core.stagingExtendLease(itemId, LEASE_HEARTBEAT_EXTENSION_SECONDS);
+      extend.catch(() => {
         /* best-effort — Python swallows extend-lease failures too */
       });
     }, LEASE_HEARTBEAT_INTERVAL_MS);
@@ -726,6 +732,7 @@ export async function runStagingDrainTick(
         persona: personas,
         personaAccess,
         data: enriched,
+        ...(claimToken !== undefined ? { claimToken } : {}),
       });
 
       // Multi-vault resolution can be partial: an open target may store while a
@@ -1125,7 +1132,8 @@ export async function runStagingDrainTick(
       const reason = err instanceof Error ? err.message : String(err);
       log({ event: 'staging.drain.item_failed', item_id: itemId, error: reason });
       try {
-        await core.stagingFail(itemId, reason);
+        if (claimToken !== undefined) await core.stagingFail(itemId, reason, claimToken);
+        else await core.stagingFail(itemId, reason);
       } catch (failErr) {
         log({
           event: 'staging.drain.fail_call_errored',

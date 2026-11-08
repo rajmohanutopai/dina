@@ -26,7 +26,7 @@ import { expectJudgePass, judgingEnabled } from '../fixtures/judge';
 import { ChatThread } from '../fixtures/pages/chat_thread';
 
 import { attachHygiene } from './relay_hygiene';
-import { NODES, dispatch, nodeDid, relaySkipReason } from './relay_nodes';
+import { NODES, dispatch, nodeDid, openAsOwner, relaySkipReason } from './relay_nodes';
 
 // Unique per run: the relay nodes are long-lived and reused, and the SSE stream
 // replays the WHOLE persisted `main` thread to every fresh subscriber — so a
@@ -52,7 +52,7 @@ test('MRS-04 — a peer message renders as a d2d-message; (live) an enriched rem
   const page = await ctx.newPage();
   const hygiene = attachHygiene(page); // MRS-14 browser-half
   try {
-    await page.goto(sancho.web, { waitUntil: 'domcontentloaded' });
+    await openAsOwner(page, sancho);
     const thread = new ChatThread(page);
     await page.waitForTimeout(2500); // SSE subscribe
     const d2dBefore = await thread.d2dCount(); // baseline (prior-run bubbles)

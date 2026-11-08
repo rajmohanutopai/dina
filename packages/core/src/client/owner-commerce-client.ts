@@ -638,6 +638,8 @@ export class OwnerCommerceClient {
     purchaseOrderId: string;
     supplierOrderId: string;
     lines: unknown[];
+    /** The same key on a retry returns the first note instead of a second. */
+    idempotencyKey?: string;
   }): Promise<TradeDocumentAnswer> {
     return this.post(
       '/v1/commerce/trade/delivery-note',
@@ -646,6 +648,7 @@ export class OwnerCommerceClient {
         purchase_order_id: args.purchaseOrderId,
         supplier_order_id: args.supplierOrderId,
         lines: args.lines,
+        ...(args.idempotencyKey !== undefined ? { idempotency_key: args.idempotencyKey } : {}),
       },
       'issueDeliveryNote',
     );
@@ -654,10 +657,16 @@ export class OwnerCommerceClient {
   async issueDeliveryReceipt(args: {
     deliveryNoteDigest: string;
     lines: unknown[];
+    /** The same key on a retry returns the first receipt instead of a second. */
+    idempotencyKey?: string;
   }): Promise<TradeDocumentAnswer> {
     return this.post(
       '/v1/commerce/trade/delivery-receipt',
-      { delivery_note_digest: args.deliveryNoteDigest, lines: args.lines },
+      {
+        delivery_note_digest: args.deliveryNoteDigest,
+        lines: args.lines,
+        ...(args.idempotencyKey !== undefined ? { idempotency_key: args.idempotencyKey } : {}),
+      },
       'issueDeliveryReceipt',
     );
   }
@@ -666,10 +675,17 @@ export class OwnerCommerceClient {
     supplierDid: string;
     amount: { currency: string; minor_units: string };
     method: string;
+    /** The same key on a retry returns the first note instead of a second. */
+    idempotencyKey?: string;
   }): Promise<TradeDocumentAnswer> {
     return this.post(
       '/v1/commerce/trade/payment-note',
-      { supplier_did: args.supplierDid, amount: args.amount, method: args.method },
+      {
+        supplier_did: args.supplierDid,
+        amount: args.amount,
+        method: args.method,
+        ...(args.idempotencyKey !== undefined ? { idempotency_key: args.idempotencyKey } : {}),
+      },
       'issuePaymentNote',
     );
   }

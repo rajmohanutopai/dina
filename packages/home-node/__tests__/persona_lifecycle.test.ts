@@ -121,11 +121,8 @@ describe('openAllPersonasForInAppUser', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]?.persona).toBe('work');
     expect(succeeded.sort()).toEqual(['general', 'health']);
-    // Publication still fires with the full open set — even the
-    // persona whose DB failed to open. Vault tools will silently
-    // return [] for it; that's the right behaviour for "DB
-    // unreachable" (vs. "persona locked").
-    expect(opened.sort()).toEqual(['general', 'health', 'work']);
+    // TT-17: the persona whose DB failed to open is not published.
+    expect(opened.sort()).toEqual(['general', 'health']);
   });
 
   it('rethrows openVaultDB errors when no onVaultOpenError is supplied', async () => {
@@ -143,5 +140,60 @@ describe('openAllPersonasForInAppUser', () => {
     // Publication did NOT fire — accessible-personas stays empty so
     // /ask doesn't try to read a vault we couldn't open.
     expect(getAccessiblePersonas()).toEqual([]);
+  });
+});
+
+describe('TT-17: a vault that fails to open', () => {
+  beforeEach(() => {
+    resetPersonaState();
+    setAccessiblePersonas([]);
+  });
+
+  const failHealth = (persona: string): void => {
+    if (persona === 'health') throw new Error('file is not a database');
+  };
+
+  it('stays closed and unpublished, and the rest open', async () => {
+    createPersona('general', 'default', 'general');
+    createPersona('health', 'sensitive', 'health');
+    const errors: string[] = [];
+    const opened = await openAllPersonasForInAppUser({
+      openVaultDB: failHealth,
+      onVaultOpenError: (p) => errors.push(p),
+    });
+    expect(opened).toEqual(['general']);
+    expect(getAccessiblePersonas()).toEqual(['general']);
+    expect(getPersona('health')?.isOpen).toBe(false);
+    expect(getPersona('general')?.isOpen).toBe(true);
+    expect(errors).toEqual(['health']);
+  });
+
+  it('closes a persona left open by an earlier unlock', async () => {
+    createPersona('health', 'sensitive', 'health');
+    await openAllPersonasForInAppUser();
+    expect(getPersona('health')?.isOpen).toBe(true);
+    await openAllPersonasForInAppUser({
+      openVaultDB: failHealth,
+      onVaultOpenError: () => undefined,
+    });
+    expect(getPersona('health')?.isOpen).toBe(false);
+    expect(getAccessiblePersonas()).toEqual([]);
+  });
+
+  it('opens the vault before the registry says open', async () => {
+    createPersona('health', 'sensitive', 'health');
+    let openWhenCalled: boolean | undefined;
+    await openAllPersonasForInAppUser({
+      openVaultDB: () => {
+        openWhenCalled = getPersona('health')?.isOpen;
+      },
+    });
+    expect(openWhenCalled).toBe(false);
+    expect(getPersona('health')?.isOpen).toBe(true);
+  });
+
+  it('with no error sink, a failure still aborts', async () => {
+    createPersona('health', 'sensitive', 'health');
+    await expect(openAllPersonasForInAppUser({ openVaultDB: failHealth })).rejects.toThrow('not a database');
   });
 });

@@ -62,7 +62,11 @@ function readMetadata(m: ChatMessage): AskApprovalMetadata | null {
 export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardProps): React.JSX.Element | null {
   const meta = readMetadata(message);
   const [pending, setPending] = useState(false);
-  const [resolved, setResolved] = useState<'approved' | 'denied' | null>(null);
+  const [tapped, setResolved] = useState<'approved' | 'denied' | null>(null);
+  // The row records what became of the ask, and survives a remount or a restart.
+  const askStatus = message.metadata?.askStatus;
+  const ended = askStatus === 'complete' || askStatus === 'failed' || askStatus === 'expired';
+  const resolved = tapped ?? (askStatus === 'in_flight' ? 'approved' : null);
 
   const onApprove = useCallback(async () => {
     if (meta === null || pending || resolved !== null) return;
@@ -103,7 +107,7 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
         Dina wants to read{meta.persona ? ` ${personaLabel}` : ''} to answer your question.
       </Text>
       {why !== '' && <Text style={styles.why}>{why}</Text>}
-      {resolved === null && (
+      {resolved === null && !ended && (
         <View style={styles.row}>
           <TouchableOpacity
             testID={`approval-deny-${meta.approvalId}`}
@@ -127,8 +131,16 @@ export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardP
           </TouchableOpacity>
         </View>
       )}
-      {resolved === 'approved' && <Text style={styles.statusApproved}>Approved. Fetching answer…</Text>}
+      {resolved === 'approved' && !ended && (
+        <Text style={styles.statusApproved}>Approved. Fetching answer…</Text>
+      )}
       {resolved === 'denied' && <Text style={styles.statusDenied}>Denied.</Text>}
+      {askStatus === 'complete' && resolved !== 'denied' && (
+        <Text style={styles.statusApproved}>Approved.</Text>
+      )}
+      {(askStatus === 'failed' || askStatus === 'expired') && resolved !== 'denied' && (
+        <Text style={styles.statusDenied}>This request has ended.</Text>
+      )}
       <MessageTimestamp timestamp={message.timestamp} />
     </View>
   );

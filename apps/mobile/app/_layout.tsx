@@ -78,7 +78,7 @@ import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import { closeMenu, getMenuOpen, openMenu, subscribeMenuOpen } from '../src/navigation/menu_state';
 import { parentRouteFor } from '../src/navigation/parent_route';
-import { handleColdStartDeepLink, handleNotificationTap } from '../src/notifications/deep_link';
+import { handleColdStartDeepLink, routeNotificationResponse } from '../src/notifications/deep_link';
 import {
   ensureChannels,
   rescheduleAllReminders,
@@ -289,6 +289,10 @@ function NavMenuSheet({
       item.href === undefined ||
       !(currentPath === item.href || currentPath.startsWith(`${item.href}/`)),
   );
+  // On the web a closed menu leaves at once. React Native Web fades a Modal out
+  // and removes it when the fade ends; while Dina starts, that end can be lost,
+  // and the invisible backdrop then takes every tap on the screen.
+  if (Platform.OS === 'web' && !visible) return null;
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <Pressable
@@ -667,14 +671,13 @@ export default function RootLayout() {
       routerPush: (path: string) => router.push(path as never),
       markRead: (id: string) => markNotificationRead(id),
     };
+    const clearLast = (): Promise<void> => Notifications.clearLastNotificationResponseAsync();
     const sub = Notifications.addNotificationResponseReceivedListener((response) => {
-      handleNotificationTap(response.notification.request.content.data ?? {}, deps);
+      void routeNotificationResponse(response, deps, clearLast);
     });
-    void Notifications.getLastNotificationResponseAsync().then((resp) => {
-      if (resp !== null && resp !== undefined) {
-        handleNotificationTap(resp.notification.request.content.data ?? {}, deps);
-      }
-    });
+    void Notifications.getLastNotificationResponseAsync().then((resp) =>
+      routeNotificationResponse(resp, deps, clearLast),
+    );
     return () => {
       sub.remove();
     };

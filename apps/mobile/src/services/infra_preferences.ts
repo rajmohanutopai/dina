@@ -89,6 +89,12 @@ export async function savePdsPassword(value: string): Promise<void> {
 export async function savePdsEmail(value: string): Promise<void> {
   return set(SERVICE_PDS_EMAIL, value.trim());
 }
+/** Sign out: the account's credentials go. The server URLs stay, as settings. */
+export async function clearPdsCredentials(): Promise<void> {
+  for (const service of [SERVICE_PDS_HANDLE, SERVICE_PDS_PASSWORD, SERVICE_PDS_EMAIL]) {
+    await Keychain.resetGenericPassword({ service });
+  }
+}
 export async function saveAppViewURL(value: string): Promise<void> {
   return set(SERVICE_APPVIEW_URL, value.trim());
 }

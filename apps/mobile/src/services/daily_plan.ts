@@ -284,6 +284,9 @@ function routerAsk(): PlannerAsk | null {
 
 let planning: Promise<DayPlan> | null = null;
 
+/** The reason on a task the owner put on today; a re-plan keeps these. */
+const ADDED_BY_YOU = 'Added by you';
+
 /**
  * Build and save today's plan. One at a time: a timer, a tap and chat can all
  * ask at once, and each would pay for a model call and overwrite the others.
@@ -302,6 +305,8 @@ export function planToday(
 async function makeDayPlan(now: number, ask: PlannerAsk | null): Promise<DayPlan> {
   const store = requireStore();
   ensureRoutineTasks(store, now);
+  const day = planDayKey(now);
+  const reviewedAtStart = store.getDay(day)?.reviewedAt ?? null;
   const settings = await loadPlanSettings();
   const candidates = dayCandidates(store, now);
   const routineRule = (t: PlanTask): { rule: string; pressing: boolean } | null => {
@@ -333,11 +338,15 @@ async function makeDayPlan(now: number, ask: PlannerAsk | null): Promise<DayPlan
     },
     ask,
   );
-  // What's already done today stays on the plan, so the count stays true.
-  const day = planDayKey(now);
   const earlier = store.getDay(day);
+  // The owner ended the day while the model thought: their review stands.
+  if (earlier !== null && earlier.reviewedAt !== reviewedAtStart) {
+    return { ...plan, entries: earlier.entries, note: earlier.note };
+  }
+  // What's already done today stays on the plan, so the count stays true, and
+  // what the owner put there by hand stays there.
   const done = planOnDay(store, now)
-    .filter((p) => p.task.status === 'done')
+    .filter((p) => p.task.status === 'done' || p.reason === ADDED_BY_YOU)
     .map((p) => ({
       taskId: p.task.id,
       reason: p.reason,
@@ -385,7 +394,7 @@ export async function addToToday(id: string, now: number = Date.now()): Promise<
   const plan = store.getDay(day);
   const entries = plan?.entries ?? [];
   if (entries.some((e) => e.taskId === id)) return;
-  store.putDay(day, [...entries, { taskId: id, reason: 'Added by you' }], plan?.note ?? '', now);
+  store.putDay(day, [...entries, { taskId: id, reason: ADDED_BY_YOU }], plan?.note ?? '', now);
   await rescheduleCheckins(now);
 }
 
@@ -570,8 +579,10 @@ export async function draftPlanForGoal(
   if (goal === null) return false;
   const draft = await draftGoalPlan(goal, now, ask);
   if (draft === null) return false;
-  store.setGoalDraft(id, draft, now);
-  return true;
+  // While the model thought, the owner may have discarded the draft, or a draft
+  // from chat may have landed. Theirs stands. The store refuses a goal with phases.
+  if (store.getGoal(id)?.draftAt !== goal.draftAt) return false;
+  return store.setGoalDraft(id, draft, now);
 }
 
 export async function acceptGoalDraft(id: string, now: number = Date.now()): Promise<boolean> {

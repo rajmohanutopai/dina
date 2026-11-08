@@ -10,6 +10,10 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 
 # ── MRS-01: Remember a fact → it routes to a vault ──────────────────────
 - tapOn:

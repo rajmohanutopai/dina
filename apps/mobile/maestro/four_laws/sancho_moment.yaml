@@ -11,6 +11,10 @@ appId: com.dinakernel.mobile
 ---
 - stopApp
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 - tapOn:
     id: 'tab-chat'
 - extendedWaitUntil:
@@ -29,5 +33,5 @@ appId: com.dinakernel.mobile
 # it must NOT offer Dina herself as the companion.
 - extendedWaitUntil:
     visible:
-      text: '.*([Rr]eaching out to|real conversation|someone you trust).*'
+      text: '.*([Rr]eaching out to|real conversation|someone you trust|friend or family).*'
     timeout: 30000

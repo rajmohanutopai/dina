@@ -150,6 +150,10 @@ export async function getLastNotificationResponseAsync(): Promise<
   return lastResponse;
 }
 
+export async function clearLastNotificationResponseAsync(): Promise<void> {
+  lastResponse = null;
+}
+
 // ---------------------------------------------------------------------------
 // Test helpers — exported with `__` prefix to mark them as mock-only.
 // ---------------------------------------------------------------------------
@@ -206,6 +210,7 @@ export default {
   getAllScheduledNotificationsAsync,
   addNotificationResponseReceivedListener,
   getLastNotificationResponseAsync,
+  clearLastNotificationResponseAsync,
   __setPermissionResult,
   __setLastNotificationResponse,
   __fireNotificationResponse,

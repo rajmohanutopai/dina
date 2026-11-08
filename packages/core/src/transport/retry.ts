@@ -2,10 +2,11 @@
  * D2D outbox drainer — durable background retry (issues.txt §1).
  *
  * On boot: `recoverOutboxOnBoot()` reclaims rows a crash left in
- * `sending` (lease expired) back to `pending`.
+ * `sending` (lease expired) back to `pending`. Each drain does the same, since
+ * a restart inside the lease finds nothing to reclaim yet.
  *
- * While alive: a periodic worker (`startOutboxDrainer`) claims due
- * messages, hands each to the boot-wired re-delivery function, and
+ * While alive: a periodic worker (`startOutboxDrainer`) dead-letters expired
+ * rows, then claims due messages, hands each to the boot-wired re-delivery function, and
  * records the outcome — `markSent` on success, exponential-backoff
  * `recordFailure` otherwise, dead-letter at max attempts / TTL.
  *
@@ -17,9 +18,18 @@
  */
 
 import { appendAudit } from '../audit/service';
+import { sweepExpired as sweepExpiredQuarantine } from '../d2d/quarantine';
 
 import { purgeReplayCache } from './adversarial';
-import { claimDue, markSent, recordFailure, resetStaleSending, sweepTerminal } from './outbox';
+import {
+  claimDue,
+  deadLetterExpired,
+  markSent,
+  recordFailure,
+  resetStaleSending,
+  setOutboxAuditActor,
+  sweepTerminal,
+} from './outbox';
 
 import type { D2DOutboxRow } from './outbox_repository';
 
@@ -39,13 +49,17 @@ let auditActorDID = 'system';
 /** Wire the re-delivery function (boot). */
 export function setOutboxRedeliverFn(fn: OutboxRedeliverFn | null, selfDID?: string): void {
   redeliverFn = fn;
-  if (selfDID) auditActorDID = selfDID;
+  if (selfDID) {
+    auditActorDID = selfDID;
+    setOutboxAuditActor(selfDID);
+  }
 }
 
 /** Reset injected state (tests). */
 export function resetRetryState(): void {
   redeliverFn = null;
   auditActorDID = 'system';
+  setOutboxAuditActor('system');
 }
 
 /** How long a claimed row stays leased before it's reclaimable. */
@@ -69,7 +83,15 @@ export interface DrainResult {
 export async function drainOutbox(now?: number): Promise<DrainResult> {
   const t = now ?? Date.now();
   const result: DrainResult = { attempted: 0, delivered: 0, failed: 0, dead: 0 };
+  // Runs even with no re-delivery wired: an expired row has nowhere to go (TT-07).
+  result.dead += deadLetterExpired(t);
   if (redeliverFn === null) return result;
+
+  // A row whose lease lapsed has no drainer: a crash, or a throw that left the
+  // rest of a batch behind (TT-06). Only one drain runs at a time, so no live
+  // send is holding it. Sending it again is safe: the id stays the same, and the
+  // recipient's replay store drops a copy that already arrived.
+  resetStaleSending(t);
 
   const claimed = claimDue(t, LEASE_MS, DRAIN_BATCH);
   for (const row of claimed) {
@@ -151,8 +173,9 @@ export function startOutboxDrainer(opts: StartOutboxDrainerOptions = {}): Draine
       ticks++;
       if (ticks % sweepEveryTicks === 0) {
         sweepTerminal();
-        // The inbound replay store expires on the same slow clock.
+        // The inbound replay store and the quarantine expire on the same slow clock.
         purgeReplayCache();
+        sweepExpiredQuarantine();
       }
     } catch (err) {
       opts.onError?.(err);

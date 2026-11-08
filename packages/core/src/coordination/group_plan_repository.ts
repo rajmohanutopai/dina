@@ -22,6 +22,7 @@ import {
   type SpokeRecord,
 } from './group_plan';
 
+import type { PlanBookings } from './group_booking';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface GroupPlanRepository {
@@ -32,6 +33,8 @@ export interface GroupPlanRepository {
   listOpen(): GroupPlan[];
   /** Every plan the organizer has not stopped — open or settled — newest first, bounded. */
   listRecent(limit: number): GroupPlan[];
+  /** Every plan, in any state, for which `planOwesFollowUp` holds. */
+  listFollowUps(): GroupPlan[];
   /** Deleting a plan deletes what guests disclosed for it. */
   remove(planId: string): boolean;
 }
@@ -177,6 +180,17 @@ export function rehydrateGroupPlan(json: string): GroupPlan | null {
   return p as unknown as GroupPlan;
 }
 
+/**
+ * Whether a plan still owes something no read may ever come back for: a booking
+ * word the sender has not taken, a delete held for one, or an optional guest
+ * still inside the window of a settled plan.
+ */
+export function planOwesFollowUp(plan: GroupPlan & { bookings?: PlanBookings }): boolean {
+  if (plan.deleteWhenTold === true) return true;
+  if (Object.values(plan.bookings ?? {}).some((word) => !word.sent)) return true;
+  return plan.state === 'settled' && plan.guests.some((g) => g.outcome === 'waiting');
+}
+
 function rowToPlan(row: DBRow): GroupPlan | null {
   return rehydrateGroupPlan(String(row.plan_json ?? ''));
 }
@@ -222,6 +236,22 @@ export class SQLiteGroupPlanRepository implements GroupPlanRepository {
     return rows.map(rowToPlan).filter((p): p is GroupPlan => p !== null);
   }
 
+  listFollowUps(): GroupPlan[] {
+    // A coarse filter so a tick doesn't parse every old plan. `plan_json` comes
+    // from JSON.stringify, so these keys have this exact form, and owner text
+    // can't match them (its quotes are escaped).
+    const rows = this.db.query(
+      `SELECT plan_json FROM group_plans
+        WHERE plan_json LIKE '%"sent":false%'
+           OR plan_json LIKE '%"deleteWhenTold":true%'
+           OR (state = 'settled' AND plan_json LIKE '%"outcome":"waiting"%')`,
+    );
+    return rows
+      .map(rowToPlan)
+      .filter((p): p is GroupPlan => p !== null)
+      .filter(planOwesFollowUp);
+  }
+
   remove(planId: string): boolean {
     const before = this.db.query('SELECT 1 FROM group_plans WHERE plan_id = ?', [planId]);
     if (before.length === 0) return false;
@@ -254,6 +284,12 @@ export class InMemoryGroupPlanRepository implements GroupPlanRepository {
       .filter((p): p is GroupPlan => p !== null && p.state !== 'abandoned')
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, Math.max(1, Math.floor(limit)));
+  }
+  listFollowUps(): GroupPlan[] {
+    return [...this.rows.values()]
+      .map(rehydrateGroupPlan)
+      .filter((p): p is GroupPlan => p !== null)
+      .filter(planOwesFollowUp);
   }
   remove(planId: string): boolean {
     return this.rows.delete(planId);

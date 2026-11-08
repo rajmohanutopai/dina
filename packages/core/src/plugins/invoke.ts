@@ -615,15 +615,20 @@ function tallyExclusions(projection: ContextProjection): Record<string, number> 
 
 /**
  * §8 first-N, from the owner's own decision log: how many invocations of this
- * capability the owner has approved. The decision repository is the one place
- * both hosts record approvals, so the counter cannot drift from the cards.
+ * capability the owner has approved since the last update (an update restarts
+ * the count; `applyUpdate` writes the marker). The decision repository is the
+ * one place both hosts record approvals, so the counter cannot drift from the cards.
  */
 export function approvedInvocationCount(installId: string, capabilityId: string): number {
   const decisions = getPluginDecisionRepository();
   if (decisions === null) return 0;
-  return decisions
-    .listByInstall(installId, 500)
-    .filter((d) => d.capability === capabilityId && d.decision === 'invocation_approved').length;
+  let count = 0;
+  // Newest first.
+  for (const d of decisions.listByInstall(installId, 500)) {
+    if (d.decision === 'update_applied') break;
+    if (d.capability === capabilityId && d.decision === 'invocation_approved') count += 1;
+  }
+  return count;
 }
 
 /** Is this task a plugin invocation the owner is deciding on? */

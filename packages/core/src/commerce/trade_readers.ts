@@ -9,6 +9,12 @@
  * the reader, not its callers, is where that fact lives. Every record is
  * re-validated through the rehydration module on the way out — the
  * verified-on-read discipline of the stores it walks.
+ *
+ * A purchase order id is the buyer's choice, so it names one order only
+ * together with both parties. Every read checks that the record is between
+ * THIS node and the counterparty. `role` names this node's side: pass it
+ * whenever the caller knows it, because a dual-role pair can hold one id on
+ * each side. With no role the buyer side is tried first.
  */
 
 import { sha256 } from '@noble/hashes/sha2.js';
@@ -25,9 +31,19 @@ import type { PurchaseOrderProposal, SignedQuote } from '@dina/commerce-protocol
 
 const hash: Sha256Fn = (data) => sha256(data);
 
+type TradeRole = 'buyer' | 'supplier';
+
 export interface TradeRelationshipReaders {
-  readOrder: (counterpartyDid: string, purchaseOrderId: string) => PurchaseOrderProposal | null;
-  readBoundQuote: (counterpartyDid: string, purchaseOrderId: string) => SignedQuote | null;
+  readOrder: (
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    role?: TradeRole,
+  ) => PurchaseOrderProposal | null;
+  readBoundQuote: (
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    role?: TradeRole,
+  ) => SignedQuote | null;
   /**
    * Orders of this relationship holding an accepted acknowledgement.
    * `role` names THIS node's side; §4.4 defines the fold per orientation,
@@ -45,19 +61,37 @@ export interface TradeRelationshipReaders {
   readAcceptance: (
     counterpartyDid: string,
     purchaseOrderId: string,
+    role?: TradeRole,
   ) => { acceptedAt: string } | null;
 }
 
 export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelationshipReaders {
+  /** The (buyer, supplier) pairs an order of this relationship can have. */
+  const sides = (counterpartyDid: string, role?: TradeRole): { buyer: string; supplier: string }[] => {
+    const self = runtime.nodeDid();
+    const asBuyer = { buyer: self, supplier: counterpartyDid };
+    const asSupplier = { buyer: counterpartyDid, supplier: self };
+    if (role === 'buyer') return [asBuyer];
+    if (role === 'supplier') return [asSupplier];
+    return [asBuyer, asSupplier];
+  };
   const readOrder = (
     counterpartyDid: string,
     purchaseOrderId: string,
+    role?: TradeRole,
   ): PurchaseOrderProposal | null => {
-    for (const buyerKey of [runtime.nodeDid(), counterpartyDid]) {
-      for (const receipt of runtime.receipts.listByOrder(buyerKey, purchaseOrderId)) {
+    for (const { buyer, supplier } of sides(counterpartyDid, role)) {
+      for (const receipt of runtime.receipts.listByOrder(buyer, purchaseOrderId)) {
         if (receipt.domain !== 'order') continue;
         const order = rehydratePurchaseOrder(receipt.recordJson, hash);
-        if (order.ok && order.value.purchase_order_id === purchaseOrderId) return order.value;
+        if (
+          order.ok &&
+          order.value.purchase_order_id === purchaseOrderId &&
+          order.value.buyer_did === buyer &&
+          order.value.supplier_did === supplier
+        ) {
+          return order.value;
+        }
       }
     }
     return null;
@@ -65,8 +99,9 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
   const readBoundQuote = (
     counterpartyDid: string,
     purchaseOrderId: string,
+    role?: TradeRole,
   ): SignedQuote | null => {
-    const order = readOrder(counterpartyDid, purchaseOrderId);
+    const order = readOrder(counterpartyDid, purchaseOrderId, role);
     if (order === null) return null;
     for (const receipt of runtime.receipts.listByQuote(order.quote_id)) {
       if (receipt.domain !== 'quote') continue;
@@ -101,13 +136,15 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
   const readAcceptance = (
     counterpartyDid: string,
     purchaseOrderId: string,
+    role?: TradeRole,
   ): { acceptedAt: string } | null => {
-    for (const buyerKey of [runtime.nodeDid(), counterpartyDid]) {
-      for (const receipt of runtime.receipts.listByOrder(buyerKey, purchaseOrderId)) {
+    for (const { buyer, supplier } of sides(counterpartyDid, role)) {
+      for (const receipt of runtime.receipts.listByOrder(buyer, purchaseOrderId)) {
         if (receipt.domain !== 'acknowledgement') continue;
         const ack = rehydrateAcknowledgement(receipt.recordJson, hash);
         if (!ack.ok || ack.value.kind !== 'accepted') continue;
         if (ack.value.purchase_order_id !== purchaseOrderId) continue;
+        if (ack.value.buyer_did !== buyer || ack.value.supplier_did !== supplier) continue;
         if (typeof ack.value.accepted_at !== 'string' || ack.value.accepted_at === '') continue;
         return { acceptedAt: ack.value.accepted_at };
       }
@@ -115,12 +152,16 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
     return null;
   };
   const isOrderRejected = (counterpartyDid: string, purchaseOrderId: string): boolean => {
+    // A buyer tracks the supplier's answer on its own order record; its
+    // receipts retain accepted acknowledgements only.
+    if (runtime.buyerOrders.get(counterpartyDid, purchaseOrderId)?.state === 'rejected') return true;
     let rejected = false;
-    for (const buyerKey of [runtime.nodeDid(), counterpartyDid]) {
-      for (const receipt of runtime.receipts.listByOrder(buyerKey, purchaseOrderId)) {
+    for (const { buyer, supplier } of sides(counterpartyDid)) {
+      for (const receipt of runtime.receipts.listByOrder(buyer, purchaseOrderId)) {
         if (receipt.domain !== 'acknowledgement') continue;
         const ack = rehydrateAcknowledgement(receipt.recordJson, hash);
         if (!ack.ok || ack.value.purchase_order_id !== purchaseOrderId) continue;
+        if (ack.value.buyer_did !== buyer || ack.value.supplier_did !== supplier) continue;
         if (ack.value.kind === 'accepted') return false;
         if (ack.value.kind === 'rejected') rejected = true;
       }

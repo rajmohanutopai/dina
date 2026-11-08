@@ -145,7 +145,7 @@ export default function AdminScreen(): React.ReactElement {
   const onSignOut = useCallback(() => {
     Alert.alert(
       'Sign out from this device?',
-      'Removes this device’s keys and disconnects it from your Dina. Encrypted data on this device stays on disk but is unreadable without the keys. Re-onboard with your recovery phrase to come back; your data on this device will be recoverable.\n\nYour Dina identity on the network is unaffected.',
+      'Removes this device’s keys and disconnects it from your Dina. Encrypted data on this device stays on disk but is unreadable without the keys. Re-onboard with your recovery phrase to come back; your data on this device will be recoverable.\n\nYour AI provider keys and credits stay on this phone. Use Erase everything to remove them.\n\nYour Dina identity on the network is unaffected.',
       [
         { text: 'Cancel', style: 'cancel' },
         {

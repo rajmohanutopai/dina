@@ -144,6 +144,7 @@ import {
   registerService,
   tier0TxRunner,
   SQLiteWorkflowRepository,
+  StagingSweeper,
   TaskExpirySweeper,
   setCodingPermitAuthority,
   setNodeDID, setNodeSigningPublicKey,
@@ -707,6 +708,7 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let localReasoningBroker: CoreReasoningBroker | undefined;
   let reasoningCommitSupervisor: ReasoningCommitSupervisor | null = null;
   let localTaskExpiry: TaskExpirySweeper | undefined;
+  let stagingSweeper: StagingSweeper | undefined;
   let commerceSweepers: CommerceSweepers | undefined;
   // The reference supplier runner (item 5) reaches this node's own routes in
   // process; the router is built after the sweepers start, so the runner
@@ -883,6 +885,16 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           ),
       });
       localTaskExpiry.start();
+      // REQ-01, REQ-04: requeues crashed + failed staging rows and drains parked
+      // ones. Brain only claims what is `received`, so only Core can do this.
+      stagingSweeper = new StagingSweeper({
+        onError: (err) =>
+          logger.warn(
+            { err: err instanceof Error ? err.message : String(err) },
+            'staging sweep failed',
+          ),
+      });
+      stagingSweeper.start();
 
       // Layer 2: wire the service-profile publisher pipeline. Only
       // runs when PDS provisioning succeeded (`pdsIdentity` set). The
@@ -1493,6 +1505,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // Before the database closes: the stop takes its last copy from it.
       await backupSupervisor?.stop();
       commerceSweepers?.stop();
+      stagingSweeper?.stop();
+      await stagingSweeper?.flush();
       if (wiredPublisher !== undefined) {
         wiredPublisher.dispose();
       }

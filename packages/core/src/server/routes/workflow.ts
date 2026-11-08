@@ -27,6 +27,8 @@ import { getA2AStore } from '../../a2a/runtime';
 import {
   activateAgentPersonaGrant,
   isAgentPersonaAccessApproval,
+  isRevokedAgentDevice,
+  parseAgentPersonaAccessPayload,
   reserveAgentPersonaGrant,
 } from '../../agent/access';
 import {
@@ -1181,6 +1183,13 @@ async function approveTask(
     before !== null &&
     before.status === WorkflowTaskState.PendingApproval
   ) {
+    // TT-02: the requester was revoked since it raised this card. Close the card
+    // so nothing can mint authority a re-paired key would find.
+    const cardPayload = parseAgentPersonaAccessPayload(before.payload);
+    if (cardPayload !== null && isRevokedAgentDevice(cardPayload.agent_did)) {
+      service.cancel(id, 'requester device revoked');
+      throw new WorkflowValidationError('the device that asked for this access was revoked', 'grant');
+    }
     // Round-16 #1 + PLG-28 #1: RESERVE the durable grant before the transition,
     // ACTIVATE it after. Reserving first (a) proves the grant repo works — a
     // missing/failing repo returns null here while the task is still
@@ -1249,7 +1258,16 @@ async function approveTask(
       );
     }
     writeSessionGrant();
-    return approved;
+    // REQ-03 / TT-10: the grant is the outcome, so the card ends here. Left
+    // `queued`, its idempotency key stayed alive until it lapsed: the agent's
+    // next ask got this card back, with nothing for the owner to tap, and then
+    // read the lapse as a denial. A settle that fails costs only that wait; the
+    // grant the owner gave stands.
+    try {
+      return settleApprovedCard(service, id, JSON.stringify({ granted: true }), 'access granted');
+    } catch {
+      return approved;
+    }
   }
 
   // REAL_LIFE_FIXES_2 §15: approving an allowance card makes it live.
@@ -1506,9 +1524,9 @@ function cancelTask(
 /**
  * Claim-token extraction (§9.1). PLUGIN callers MUST present the
  * claim_id minted at claim — the CAS discipline is what makes a stale
- * execution's report evidence instead of a result. Other callers may
- * present one (then it is honored) but are not required to — legacy
- * agents predate tokens.
+ * execution's report evidence instead of a result. An agent on any other
+ * task gets no 400 here, but the repository keeps its report as evidence
+ * while the task has a live claim and it names none (REQ-13).
  *
  * Returns the claimId (string | undefined) or a 400 CoreResponse when a
  * plugin caller omitted it.

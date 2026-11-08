@@ -989,6 +989,22 @@ describe('the review round in chat and the planner', () => {
     expect(routineProgress(store, r, T).done).toBe(0);
   });
 
+  it('saying done twice is not an error: the second call says it is already done', async () => {
+    const t = store.addOwnerTask({ title: 'Write the letter' }, T);
+    await call('update_task', { task: 'Write the letter', action: 'done' });
+    expect(await call('update_task', { task: 'I wrote the letter', action: 'done' })).toMatchObject({
+      task: 'Write the letter',
+      changed: 'already done',
+    });
+    expect(store.getTask(t.id)?.status).toBe('done');
+    const d = store.addOwnerTask({ title: 'Buy a gym bag' }, T);
+    await call('update_task', { task: 'Buy a gym bag', action: 'drop' });
+    expect(await call('update_task', { task: 'Buy a gym bag', action: 'drop' })).toMatchObject({
+      changed: 'already dropped',
+    });
+    expect(store.getTask(d.id)?.status).toBe('dropped');
+  });
+
   it('drafting on a goal it cannot find lists the goals before suggesting a new one', async () => {
     store.addGoal('Build the house', '', T);
     const r = await call('draft_goal_plan', {

@@ -12,6 +12,7 @@ import { setWSDeliverFn } from '../transport/delivery';
 import {
   handleInboundD2D,
   handleInboundRPC,
+  type ResolvedSender,
   rpcReady,
   handleRPCCancel,
   setRPCRouter,
@@ -42,7 +43,7 @@ export interface MsgBoxBootConfig {
   /** CoreRouter — where incoming RPC envelopes are dispatched. */
   coreRouter: CoreRouter;
   /** Resolve sender info for D2D receive pipeline */
-  resolveSender: (did: string) => Promise<{ keys: Uint8Array[]; trust: string }>;
+  resolveSender: (did: string) => Promise<ResolvedSender>;
   /**
    * Called when the receive pipeline bypasses the contact gate for a
    * `service.query` / `service.response`. Brain's D2D dispatcher receives
@@ -114,13 +115,19 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
   // Staged, quarantined and refused D2D are acked once the receive pipeline
   // has run: the vault or quarantine copy is the durable one, and the UI
   // fan-out runs on its own. Service traffic (`bypassed`) is NOT stored by
-  // the pipeline — the dispatcher is where it is taken in — so its ack waits
-  // for the dispatcher. A node built with no dispatcher drops service
-  // traffic on purpose and acks it: keeping it would not help, because the
-  // pipeline has already recorded the message id against replay, so the
-  // relay's next copy would be refused as a replay and acked anyway.
+  // the pipeline — the dispatcher is where it is taken in — so its ack and its
+  // replay key both wait for the dispatcher: a crash there leaves the relay's
+  // copy able to run again. A node built with no dispatcher drops service
+  // traffic on purpose and acks it.
+  //
+  // A message that could not be verified or stored stays at the relay (`false`)
+  // for a later try: nothing is accepted unchecked, and nothing is lost to a
+  // directory outage or a busy database (TT-01, TT-03).
   onD2DMessage(async (env) => {
-    const result = await handleInboundD2D(env, config.resolveSender);
+    const result = await handleInboundD2D(env, config.resolveSender, {
+      holdBypassReplayKey: true,
+    });
+    if (result.retryLater === true) return false;
     if (
       result.success &&
       result.pipelineAction === 'bypassed' &&
@@ -130,6 +137,7 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
     ) {
       if (config.onBypassedD2D === undefined) {
         console.warn(`[d2d] service ${result.messageType} dropped: no service dispatcher on this node`);
+        result.commitReplay?.();
         return undefined;
       }
       try {
@@ -140,6 +148,12 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
         });
       } catch {
         // Dispatcher errors are caller-owned; it has had the message.
+      }
+      // A throw here reaches the socket layer, which would ack with no key held.
+      try {
+        result.commitReplay?.();
+      } catch {
+        return false;
       }
       return undefined;
     }

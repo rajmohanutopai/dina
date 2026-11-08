@@ -39,6 +39,8 @@ const stack = buildStack({ bundleDir: 'dist-e2e', logLevel: 'info', provisionPds
 export default defineConfig({
   testDir: path.resolve(__dirname, '__e2e__', 'functional'),
   testMatch: '**/*.spec.ts', // .ts only — ignore any stale compiled *.spec.js
+  // Owner-presence specs need Core in security mode; the PR tier runs them so.
+  testIgnore: ['**/owner_*.spec.ts'],
   // Fail fast if the autopilot bundle is missing (points at build:bundle:e2e).
   globalSetup: path.resolve(__dirname, '__e2e__', 'setup.ts'),
   // MRS-14: scan both servers' captured logs for leaks after the run.

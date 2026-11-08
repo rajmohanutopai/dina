@@ -10,6 +10,7 @@ import {
   type AskEvent,
   type AskRecord,
 } from '../../src/ask/ask_registry';
+import { ASK_PENDING_APPROVAL_MAX_MS } from '../../src/ask/ask_registry';
 
 function fixedClock(start = 1_700_000_000_000) {
   let now = start;
@@ -284,7 +285,7 @@ describe('AskRegistry (task 5.19)', () => {
       expect(ev.fromStatus).toBe('in_flight');
     });
 
-    it('sweepExpired also expires pending_approval past deadline', async () => {
+    it('sweepExpired leaves pending_approval to its card, past deadline, until the longest wait', async () => {
       const clock = fixedClock();
       const reg = new AskRegistry({
         adapter: new InMemoryAskAdapter(),
@@ -294,6 +295,8 @@ describe('AskRegistry (task 5.19)', () => {
       await reg.enqueue(sampleEnqueue);
       await reg.markPendingApproval('ask-1', 'a');
       clock.advance(1001);
+      expect(await reg.sweepExpired()).toBe(0);
+      clock.advance(ASK_PENDING_APPROVAL_MAX_MS);
       expect(await reg.sweepExpired()).toBe(1);
       expect((await reg.get('ask-1'))?.status).toBe('expired');
     });
@@ -381,18 +384,18 @@ describe('AskRegistry (task 5.19)', () => {
       });
       const summary = await reg.restoreOnStartup();
       expect(summary.loaded).toBe(4);
-      expect(summary.expiredOnRestore).toBe(1);
-      expect(summary.stillInFlight).toBe(1);
+      expect(summary.expiredOnRestore).toBe(2); // its run died with the last process
+      expect(summary.stillInFlight).toBe(0);
       expect(summary.stillPendingApproval).toBe(1);
       expect(summary.terminal).toBe(1);
 
       expect((await reg.get('stale'))?.status).toBe('expired');
-      expect((await reg.get('fresh'))?.status).toBe('in_flight');
+      expect((await reg.get('fresh'))?.status).toBe('expired');
       expect((await reg.get('approved-wait'))?.status).toBe('pending_approval');
       expect((await reg.get('done'))?.status).toBe('complete');
 
-      const restoredEv = events.find((e) => e.kind === 'restored_expired');
-      expect(restoredEv).toMatchObject({ kind: 'restored_expired', id: 'stale' });
+      const restored = events.filter((e) => e.kind === 'restored_expired');
+      expect(restored.map((e) => (e as { id: string }).id).sort()).toEqual(['fresh', 'stale']);
     });
 
     it('empty adapter → zero counts', async () => {
@@ -414,8 +417,8 @@ describe('AskRegistry (task 5.19)', () => {
 
       const second = new AskRegistry({ adapter });
       const summary = await second.restoreOnStartup();
-      expect(summary.stillInFlight).toBe(1);
-      expect((await second.get('ask-1'))?.status).toBe('in_flight');
+      expect(summary.expiredOnRestore).toBe(1);
+      expect((await second.get('ask-1'))?.status).toBe('expired');
     });
   });
 
@@ -565,7 +568,7 @@ describe('AskRegistry (task 5.19)', () => {
       });
       await registry.enqueue({ id: 'ask-1', question: 'q', requesterDid: 'did:key:t' });
       await registry.markPendingApproval('ask-1', 'appr-1', JSON.stringify({ version: 1 }));
-      now += 5_000; // past TTL
+      now += ASK_PENDING_APPROVAL_MAX_MS; // past the longest wait
       await registry.sweepExpired();
       const expired = await registry.get('ask-1');
       expect(expired?.status).toBe('expired');

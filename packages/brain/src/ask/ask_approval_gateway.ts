@@ -338,7 +338,17 @@ export class AskApprovalGateway {
       }
 
       try {
-        if (sourceStatus === 'approved') {
+        if (sourceStatus === 'approved' && ask.resumedApprovalId === approvalId) {
+          // The last resume ran on this approval and bailed on it again. It
+          // reads approved and grants nothing, and no owner action can change
+          // that, so another run would only spend model calls (REQ-03).
+          const errorJson = JSON.stringify({
+            reason: 'approval_not_effective',
+            detail: 'The approval did not let the ask proceed; ask again for a new one',
+          });
+          await this.askRegistry.markFailed(ask.id, errorJson);
+          summary.denied += 1;
+        } else if (sourceStatus === 'approved') {
           await this.askRegistry.resumeAfterApproval(ask.id);
           summary.resumed += 1;
         } else if (sourceStatus === 'denied') {

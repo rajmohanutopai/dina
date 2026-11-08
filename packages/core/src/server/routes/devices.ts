@@ -39,7 +39,10 @@ export function registerDevicesRoutes(router: CoreRouter): void {
       // the client cleanup is complete until the tombstone and cascades stick.
       return {
         status: 503,
-        body: { error: 'device revocation could not be persisted; retry after Core restarts' },
+        body: {
+          error:
+            'device revocation is unfinished: access is cut, and Core keeps retrying the durable write; call again to check',
+        },
       };
     }
     return { status: 204 };

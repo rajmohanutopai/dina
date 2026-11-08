@@ -31,6 +31,7 @@ import {
   MsgTypeSocialUpdate,
   MsgTypeTrustVouchRequest,
   MsgTypeTrustVouchResponse,
+  StagingSweeper,
   TaskExpirySweeper,
   WatchPollSweeper,
   WatchService,
@@ -47,6 +48,7 @@ import {
   getSessionRegistry,
   getServiceConfig,
   listServiceConfigs,
+  drainListingUnpublishes,
   hydrateServiceConfig,
   isMsgBoxAuthenticated,
   onMsgBoxAuthenticated,
@@ -82,6 +84,7 @@ import {
   setReviewPublishRepository,
   setServiceConfig,
   setServiceConfigRepository,
+  getServiceConfigRepository,
   setServiceQuerySender,
   setServiceRespondSender,
   setWatchService,
@@ -544,6 +547,8 @@ export interface DinaNode extends HomeNodeLifecycle {
     /** GAP-RT-01: drains Core's `staging_inbox` on a cadence. `null`
      *  only when explicitly disabled via `options.stagingDrain === false`. */
     stagingDrain: StagingDrainScheduler | null;
+    /** REQ-01: requeues crashed + failed staging rows, drains parked ones. */
+    stagingSweeper: StagingSweeper;
     /** Present only when `localDelegationRunner` was supplied. */
     localRunner: LocalDelegationRunner | null;
     /** Built-in Brain worker cadence, present only when its binding is active. */
@@ -573,6 +578,9 @@ const INTERNAL_REASONING_BACKEND_ID = 'dina.internal-brain';
 export const CONTACT_SERVICE_PREFLIGHT_ACK =
   'Reaching out to set that up — check back in a moment.';
 
+/** The node whose start() last installed the process globals (`ownsGlobals`). */
+let globalsOwner: object | null = null;
+
 export async function createNode(options: CreateNodeOptions): Promise<DinaNode> {
   validate(options);
   // Brain's half of this node speaks to Core as Brain (`brainCoreClient`).
@@ -593,12 +601,23 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   // the dispose() path can detach cleanly when the node tears down.
   let workflowApprovalBridgeDispose: (() => void) | null = null;
 
+  // Which node last installed the process globals. Only that node clears them:
+  // an older node disposing late must not empty a live node's (PH-05).
+  const globalsToken = {};
+  const ownsGlobals = (): boolean => globalsOwner === globalsToken;
+  const whileOwner =
+    (reset: () => void): (() => void) =>
+    () => {
+      if (ownsGlobals()) reset();
+    };
+
   // Core-globals installation is DEFERRED to start() so an unstarted
   // node doesn't mutate process state. Issue #8. The closure captures
   // everything it needs; start() invokes it; dispose() runs the
   // teardown. Multi-node tests still opt out via `coreGlobals: false`.
   const installCoreGlobals = (): void => {
     if (!coreGlobals) return;
+    globalsOwner = globalsToken;
     setWorkflowRepository(options.workflowRepository);
 
     // Mirror kind=approval workflow tasks into the unified Notifications
@@ -1141,6 +1160,19 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         clearInterval: options.clearInterval,
       })
     : null;
+  // REQ-01, REQ-04: returns crashed claims and due retries to the queue, and
+  // drains parked memories. The drain above only claims what is `received`.
+  // Runs with no model too: storing a classified memory needs none, and a phone
+  // with no provider yet is when a drain is turned off.
+  const stagingSweeper = new StagingSweeper({
+    onError: (err) =>
+      log({
+        event: 'bootstrap.staging_sweep_error',
+        error: err instanceof Error ? err.message : String(err),
+      }),
+    setInterval: options.setInterval,
+    clearInterval: options.clearInterval,
+  });
 
   // 5c. LocalDelegationRunner — opt-in in-process executor for demos /
   //     single-process tests. Production uses external dina-agent.
@@ -1176,13 +1208,13 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
   const installChatGlobals = (): void => {
     if (!globalWiring) return;
     const disposeWire = wireServiceOrchestrator({ orchestrator });
-    globalDisposers.push(() => disposeWire());
+    globalDisposers.push(whileOwner(() => disposeWire()));
     // Contact Services seam 5: expose the orchestrator's direct-to-DID dispatch
     // to the Talk egress (`chat_d2d.sendServiceQuery`), so a scheduling intent
     // in a peer thread fires a `service.query` to THAT contact over the same
     // correlating workflow-task path the main-chat `query_service` tool uses.
     setServiceQueryDispatcher(orchestrator);
-    globalDisposers.push(() => setServiceQueryDispatcher(null));
+    globalDisposers.push(whileOwner(() => setServiceQueryDispatcher(null)));
     // Contact Services seam 2: route a scheduling intent in a Talk thread to
     // THAT contact. We resolve the contact's prior `service.offer` (grant +
     // listing) from `contact_service_offers`; with one in hand, fire a
@@ -1241,7 +1273,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       });
       return { ack: '', dispatched: true };
     });
-    globalDisposers.push(resetContactServiceHandler);
+    globalDisposers.push(whileOwner(resetContactServiceHandler));
 
     // Contact Services `ask_to_enable` prompt: Core decided "ask the owner" for
     // a friend's grant-request; surface a ONE-TIME "Allow <contact> to use your
@@ -1306,16 +1338,16 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     globalDisposers.push(wireGroupCoordinationOfferReplay());
     // Cross-identity hygiene: drop any stashed intent on teardown so a stale
     // preflight can never auto-fire under a different identity after a switch.
-    globalDisposers.push(() => resetPendingPreflights());
+    globalDisposers.push(whileOwner(() => resetPendingPreflights()));
     setServiceApproveCommandHandler(makeServiceApproveHandler(options.coreClient));
-    globalDisposers.push(resetServiceApproveCommandHandler);
+    globalDisposers.push(whileOwner(resetServiceApproveCommandHandler));
     setServiceDenyCommandHandler(makeServiceDenyHandler(options.coreClient));
-    globalDisposers.push(resetServiceDenyCommandHandler);
+    globalDisposers.push(whileOwner(resetServiceDenyCommandHandler));
     // On web the in-process Core store is empty (Core runs server-side), so
     // the resolver swaps in an HTTP client to the brain's workflow-task proxy
     // (F4). On native it returns the in-process client unchanged.
     setInboxCoreClient(resolveInboxCoreClient(options.coreClient));
-    globalDisposers.push(resetInboxCoreClient);
+    globalDisposers.push(whileOwner(resetInboxCoreClient));
     // On web the in-process Core store is empty, so the resolver swaps in an
     // HTTP client to the brain's `/api/v1/service/config` proxy (so the
     // My-Services publish form actually reaches Core). On native it returns the
@@ -1357,12 +1389,12 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         if (provider === null) return;
         reportKeyHealthIncident(provider, kind, message);
       };
-      const { handler, dispose } = createCoordinatorAskHandler(bridgeOpts);
+      const { handler, reconcile: reconcileAskRows, dispose } = createCoordinatorAskHandler(bridgeOpts);
       setAskCommandHandler(handler);
-      globalDisposers.push(resetAskCommandHandler);
+      globalDisposers.push(whileOwner(resetAskCommandHandler));
       // A2A §4.2 (a): the owner's words are recorded in Core at turn start.
       setOwnerTurnRecorder((input) => options.coreClient.recordOwnerTurn(input));
-      globalDisposers.push(() => setOwnerTurnRecorder(null));
+      globalDisposers.push(whileOwner(() => setOwnerTurnRecorder(null)));
       // Bridge subscribed to the coordinator's event stream — release
       // that subscription on dispose so re-bootstrapping doesn't leak.
       globalDisposers.push(dispose);
@@ -1377,6 +1409,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
       const reconcileHandle = _siReconcile(() => {
         void cfg.coordinator.gateway.reconcile().catch(() => {});
+        // The chat rows outlive the handler that posted them (PH-06).
+        void reconcileAskRows();
+        void cfg.coordinator.registry.sweepExpired().catch(() => {
+          /* the next tick sweeps again */
+        });
       }, 3_000);
       globalDisposers.push(() => _ciReconcile(reconcileHandle));
     } else if (options.agenticAsk !== undefined) {
@@ -1387,7 +1424,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           ...options.agenticAsk.options,
         }),
       );
-      globalDisposers.push(resetAskCommandHandler);
+      globalDisposers.push(whileOwner(resetAskCommandHandler));
     }
 
     // /remember orchestrator wiring — Core transport + drain hook —
@@ -1471,6 +1508,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       bridgeRetry,
       watchPoll,
       stagingDrain,
+      stagingSweeper,
       localRunner,
       reasoningBackend,
     },
@@ -1690,6 +1728,12 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           }
         }
         if (bootChanged) void presenceWriter?.nudge();
+        // Listings deleted before their unpublish landed: no row names them.
+        // Not load-bearing for start(), and a failure stays owed for next boot.
+        const owedPublisher = publisher;
+        void drainListingUnpublishes((rkey) => owedPublisher.unpublish(rkey)).catch(() => {
+          log({ event: 'node.service_profile_unpublish_drain_failed' });
+        });
         const unsubscribe = onServiceConfigChanged((rkey, next) => {
           const p = publisher;
           if (p === null) return;
@@ -1704,6 +1748,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
               // The owner changed a listing: the presence set follows at once.
               const s = synced as { published?: boolean; result?: { unchanged?: true } } | undefined;
               if (s === undefined || s.published !== true || s.result?.unchanged !== true) void presenceWriter?.nudge();
+              if (next === null) {
+                void getServiceConfigRepository()?.clearPendingUnpublish(rkey).catch(() => {
+                  /* still recorded; the next boot removes it again */
+                });
+              }
               log({
                 event: 'node.service_profile_synced',
                 is_public: next?.isDiscoverable ?? false,
@@ -1789,6 +1838,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       setWatchService(watchService);
       watchPoll.start();
       if (stagingDrain !== null) stagingDrain.start();
+      stagingSweeper.start();
       if (localRunner !== null) localRunner.start();
       if (reasoningBackend !== null && reasoningBackendPrincipalDid !== null) {
         markReasoningBackendPresent(INTERNAL_REASONING_BACKEND_ID, reasoningBackendPrincipalDid);
@@ -1822,6 +1872,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // to drain before callers can assume shutdown completed.
       if (localRunner !== null) localRunner.stop();
       if (stagingDrain !== null) stagingDrain.stop();
+      stagingSweeper.stop();
       watchPoll.stop();
       bridgeRetry.stop();
       leaseExpiry.stop();
@@ -1838,9 +1889,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         // so no watch poll/send is still running after teardown.
         watchPoll.flush(),
         stagingDrain !== null ? stagingDrain.flush() : Promise.resolve(),
+        stagingSweeper.flush(),
         localRunner !== null ? localRunner.flush() : Promise.resolve(),
       ]);
-      if (options.msgboxURL !== undefined) {
+      if (options.msgboxURL !== undefined && (!coreGlobals || ownsGlobals())) {
         try {
           await disconnectMsgBox();
         } catch {
@@ -1932,7 +1984,8 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       // workflowService BEFORE this node's dispose() finishes. Without
       // the check, dispose() would clobber Boot 2's singleton with null,
       // leaving its WorkflowEventConsumer permanently failing with 503.
-      if (coreGlobals) {
+      if (coreGlobals && ownsGlobals()) {
+        globalsOwner = null;
         if (reasoningBroker !== null && getReasoningBroker() === reasoningBroker) {
           setReasoningBroker(null);
         }

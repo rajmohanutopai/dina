@@ -27,7 +27,15 @@ import { kvList, resetKVStore } from '../../src/kv/store';
 import { InMemoryTopicRepository, setTopicRepository, getTopicRepository } from '../../src/memory/repository';
 import { SQLitePeopleRepository, setPeopleRepository, getPeopleRepository } from '../../src/people/repository';
 import { closePersona, createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
-import { createReminder, listByPersona, resetReminderState } from '../../src/reminders/service';
+import { SQLiteReminderRepository, setReminderRepository } from '../../src/reminders/repository';
+import {
+  createReminder,
+  createReminderDurable,
+  fireMissedReminders,
+  hydrateRemindersFromRepo,
+  listByPersona,
+  resetReminderState,
+} from '../../src/reminders/service';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { getItem, storeItem } from '../../src/vault/crud';
@@ -106,6 +114,25 @@ it('plans items, reminders and chat about the person, and lists closed personas'
   expect(out.plan.reminders).toHaveLength(1);
   expect(out.plan.chatMessages.map((m) => m.id)).toEqual(['m1']);
   expect(out.plan.closedPersonas).toEqual(['health']);
+});
+
+it('REQ-02: a forgotten reminder is gone from SQL and does not return after a restart', async () => {
+  setReminderRepository(new SQLiteReminderRepository(db));
+  try {
+    const a = storeItem('general', { type: 'note', summary: 'Mira lent me her tent', body: 'Mira lent me her tent' });
+    person('Mira', a);
+    const r = await createReminderDurable({ message: 'Give Mira her tent back', due_at: Date.now() - 1000, persona: 'general' });
+    const proposed = await proposeForget({ proof: turn('forget Mira'), request: { person: 'Mira' } });
+    if (proposed.status !== 'confirm_pending') throw new Error('no card');
+    expect(await approveForget(getWorkflowService()!.approve(proposed.task_id))).toBe('done');
+
+    expect(db.query('SELECT id FROM reminders WHERE id = ?', [r.id])).toEqual([]);
+    resetReminderState();
+    await hydrateRemindersFromRepo();
+    expect(fireMissedReminders(Date.now())).toEqual([]);
+  } finally {
+    setReminderRepository(null);
+  }
 });
 
 it('refuses a turn with no forget instruction, and always raises a card otherwise', async () => {

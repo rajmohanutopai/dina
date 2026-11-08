@@ -26,10 +26,10 @@
  * **Persistence layer** (task 5.20): pluggable
  * `AskPersistenceAdapter` with the same 5-method contract as
  * `WorkflowPersistenceAdapter` (task 4.82). In-memory adapter ships;
- * SQLCipher variant lands with `@dina/storage-node`. Identical
- * crash-recovery semantics: on `restoreOnStartup()`, in_flight tasks
- * past their deadline flip to `expired`; pending_approval tasks
- * outlive restart (the operator decision wasn't crash-dependent).
+ * SQLCipher variant lands with `@dina/storage-node`. On
+ * `restoreOnStartup()`, every in_flight task flips to `expired` (its
+ * run died with the process); pending_approval tasks outlive restart
+ * (the operator decision wasn't crash-dependent).
  *
  * **Why a separate module from `workflow_persistence.ts`**: asks have
  * a richer state machine (4 terminal + 1 intermediate approval
@@ -61,8 +61,17 @@ export interface AskRecord {
   status: AskStatus;
   readonly createdAtMs: number;
   updatedAtMs: number;
-  /** ms since epoch; set at enqueue time; NOT mutated across transitions. */
-  readonly deadlineMs: number;
+  /**
+   * ms since epoch; set at enqueue time, and again when an approval resumes the
+   * ask: its run starts then, however long the owner took.
+   */
+  deadlineMs: number;
+  /**
+   * The approval the last resume ran on. An ask that bails on that same approval
+   * made no progress, and resuming again would only spin (REQ-03). In memory
+   * only: a restart allows one more try.
+   */
+  resumedApprovalId?: string;
   /**
    * Explicit composer lane (Services → ['provider_services'], Reviews →
    * ['peerlens']) carried from the original submission so an approval-resume
@@ -154,8 +163,22 @@ export class InMemoryAskAdapter implements AskPersistenceAdapter {
 
 export const DEFAULT_ASK_TTL_MS = 60_000; // 60s — covers the 3s fast path + 57s poll window.
 
+/**
+ * How long a `pending_approval` ask may wait with no word from its card. The
+ * card decides, not the ask's deadline (a card lasts 15 min, the deadline 60 s),
+ * and reconcile ends the ask when the card ends. This catches a card that can
+ * never be read again.
+ */
+export const ASK_PENDING_APPROVAL_MAX_MS = 24 * 60 * 60 * 1000;
+
 export interface AskRegistryOptions {
   adapter: AskPersistenceAdapter;
+  /**
+   * Extra time past its deadline before the sweep ends a live `in_flight` ask.
+   * The deadline bounds the client's poll window; a slow model run can pass it
+   * and still deliver. A dead run is caught at boot by `restoreOnStartup`.
+   */
+  inFlightGraceMs?: number;
   /** Default TTL for `enqueue` when caller doesn't supply `ttlMs`. */
   defaultTtlMs?: number;
   /** Injectable clock (ms). Default `Date.now`. */
@@ -185,6 +208,7 @@ export interface AskRestoreSummary {
 export class AskRegistry {
   private readonly adapter: AskPersistenceAdapter;
   private readonly defaultTtlMs: number;
+  private readonly inFlightGraceMs: number;
   private readonly nowMsFn: () => number;
   private readonly onEvent?: (event: AskEvent) => void;
 
@@ -196,6 +220,7 @@ export class AskRegistry {
     }
     this.adapter = opts.adapter;
     this.defaultTtlMs = ttl;
+    this.inFlightGraceMs = opts.inFlightGraceMs ?? 0;
     this.nowMsFn = opts.nowMsFn ?? Date.now;
     this.onEvent = opts.onEvent;
   }
@@ -342,6 +367,8 @@ export class AskRegistry {
     }
     record.status = 'in_flight';
     record.updatedAtMs = this.nowMsFn();
+    record.deadlineMs = record.updatedAtMs + this.defaultTtlMs;
+    if (record.approvalId !== undefined) record.resumedApprovalId = record.approvalId;
     delete record.approvalId;
     await this.adapter.update(record);
     this.onEvent?.({ kind: 'approval_resumed', id });
@@ -349,37 +376,43 @@ export class AskRegistry {
   }
 
   /**
-   * Sweep `in_flight` + `pending_approval` asks past their deadline
-   * to `expired`. Returns count swept. Idempotent.
+   * Sweep asks that outlived their time to `expired`: `in_flight` past deadline
+   * plus grace, `pending_approval` past the longest wait (its card decides before
+   * then). Returns count swept. Idempotent. Re-reads each row before writing, so
+   * an answer that landed since the listing is never overwritten.
    */
   async sweepExpired(): Promise<number> {
     const now = this.nowMsFn();
     const rows = await this.adapter.loadAll();
     let swept = 0;
-    for (const row of rows) {
-      if (
-        (row.status === 'in_flight' || row.status === 'pending_approval') &&
-        row.deadlineMs <= now
-      ) {
-        const fromStatus = row.status;
-        row.status = 'expired';
-        row.updatedAtMs = now;
-        delete row.pausedStateJson; // terminal — drop the suspend payload
-        await this.adapter.update(row);
-        this.onEvent?.({ kind: 'expired', id: row.id, atMs: now, fromStatus });
-        swept++;
-      }
+    for (const listed of rows) {
+      if (!this.isPastTime(listed, now)) continue;
+      const row = await this.adapter.get(listed.id);
+      if (row === null || !this.isPastTime(row, now)) continue;
+      const fromStatus = row.status;
+      row.status = 'expired';
+      row.updatedAtMs = now;
+      delete row.pausedStateJson; // terminal — drop the suspend payload
+      await this.adapter.update(row);
+      this.onEvent?.({ kind: 'expired', id: row.id, atMs: now, fromStatus });
+      swept++;
     }
     return swept;
   }
 
+  private isPastTime(row: AskRecord, now: number): boolean {
+    if (row.status === 'in_flight') return row.deadlineMs + this.inFlightGraceMs <= now;
+    if (row.status === 'pending_approval') {
+      return row.updatedAtMs + ASK_PENDING_APPROVAL_MAX_MS <= now;
+    }
+    return false;
+  }
+
   /**
-   * Crash-recovery entry. Loads every persisted ask; any `in_flight`
-   * past its deadline transitions to `expired` (TTL elapsed during
-   * downtime). `in_flight` still within budget stays as-is —
-   * production should wire a fresh-arrival resume path. `pending_approval`
-   * is preserved: the operator's decision wasn't invalidated by the
-   * crash.
+   * Crash-recovery entry. Loads every persisted ask. Every `in_flight` one
+   * expires, inside its deadline or not: the run that held it died with the
+   * last process, and nothing would ever finish it. `pending_approval` is
+   * preserved: the operator's decision wasn't invalidated by the crash.
    */
   async restoreOnStartup(): Promise<AskRestoreSummary> {
     const rows = await this.adapter.loadAll();
@@ -393,16 +426,12 @@ export class AskRegistry {
     };
     for (const row of rows) {
       if (row.status === 'in_flight') {
-        if (row.deadlineMs <= now) {
-          row.status = 'expired';
-          row.updatedAtMs = now;
-          delete row.pausedStateJson;
-          await this.adapter.update(row);
-          this.onEvent?.({ kind: 'restored_expired', id: row.id });
-          summary.expiredOnRestore += 1;
-        } else {
-          summary.stillInFlight += 1;
-        }
+        row.status = 'expired';
+        row.updatedAtMs = now;
+        delete row.pausedStateJson;
+        await this.adapter.update(row);
+        this.onEvent?.({ kind: 'restored_expired', id: row.id });
+        summary.expiredOnRestore += 1;
       } else if (row.status === 'pending_approval') {
         summary.stillPendingApproval += 1;
       } else {
@@ -471,5 +500,6 @@ function cloneAsk(r: AskRecord): AskRecord {
   if (r.errorJson !== undefined) clone.errorJson = r.errorJson;
   if (r.approvalId !== undefined) clone.approvalId = r.approvalId;
   if (r.pausedStateJson !== undefined) clone.pausedStateJson = r.pausedStateJson;
+  if (r.resumedApprovalId !== undefined) clone.resumedApprovalId = r.resumedApprovalId;
   return clone;
 }

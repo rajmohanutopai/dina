@@ -12,6 +12,8 @@
  *   - Routes to `data.deepLink` iff non-empty (via `deps.routerPush`).
  *   - Returns `{ marked, navigated }` so tests can assert without
  *     spinning up the router.
+ *
+ * `routeNotificationResponse` wraps it for both paths, so one tap routes once.
  */
 
 export interface NotificationTapDeps {
@@ -149,4 +151,44 @@ export function handleNotificationTap(
     }
   }
   return { marked, navigated };
+}
+
+/** The parts of an expo-notifications response this module reads. */
+export interface NotificationResponseLike {
+  notification: {
+    date?: number;
+    request: { identifier?: string; content: { data?: Record<string, unknown> | null } };
+  };
+}
+
+let handledResponse: string | null = null;
+
+/** Test seam: forget which response was handled. */
+export function resetHandledNotificationResponse(): void {
+  handledResponse = null;
+}
+
+/**
+ * Route one tap, once. The OS keeps the last response until it is cleared, and
+ * the layout reads it at every unlock, so without this each unlock would push
+ * the old screen again. Clearing covers a cold start; the remembered tap covers
+ * a clear that fails, and a tap the live listener already routed.
+ */
+export async function routeNotificationResponse(
+  response: NotificationResponseLike | null | undefined,
+  deps: NotificationTapDeps,
+  clearLast: () => Promise<void>,
+): Promise<void> {
+  if (response === null || response === undefined) return;
+  const { date, request } = response.notification;
+  const tap = `${request.identifier ?? ''}:${String(date ?? '')}`;
+  if (tap !== handledResponse) {
+    handledResponse = tap;
+    handleNotificationTap(request.content.data ?? {}, deps);
+  }
+  try {
+    await clearLast();
+  } catch {
+    // Remembered above; a later unlock in this process will not route it again.
+  }
 }

@@ -34,9 +34,17 @@ import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import { createCoreRouter } from '../../src/server/core_server';
-import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
+import {
+  getWorkflowRepository,
+  InMemoryWorkflowRepository,
+  setWorkflowRepository,
+} from '../../src/workflow/repository';
 
-import { WorkflowService, setWorkflowService, getWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  setWorkflowService,
+  getWorkflowService,
+} from '../../src/workflow/service';
 import type { CoreRequest, CoreResponse } from '../../src/server/router';
 
 import type { WorkflowTask } from '../../src/workflow/domain';
@@ -54,8 +62,6 @@ import {
   setServiceGrantRepository,
   type ServiceGrant,
 } from '../../src/service/service_grant_repository';
-
-
 
 interface Actor {
   did: string;
@@ -357,7 +363,13 @@ describe('CoreRouter integration', () => {
         signedReq(
           'POST',
           '/v1/workflow/tasks',
-          { id: 'del-lease', kind: 'delegation', description: '', payload: '{}', initial_state: 'queued' },
+          {
+            id: 'del-lease',
+            kind: 'delegation',
+            description: '',
+            payload: '{}',
+            initial_state: 'queued',
+          },
           brain,
         ),
       );
@@ -516,13 +528,45 @@ describe('CoreRouter integration', () => {
       expect(resp.status).toBe(409);
     });
 
+    it('on its first claim, a completion with no claim_id is accepted (REQ-13)', async () => {
+      await seedAndClaim('del-first-claim');
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks/del-first-claim/complete',
+          { result: '{"ok":true}', agent_did: agent.did },
+          agent,
+        ),
+      );
+      expect(resp.status).toBe(200);
+    });
+
+    it('once re-claimed, a completion with no claim_id is kept as evidence (REQ-13)', async () => {
+      await seedAndClaim('del-no-token');
+      getWorkflowRepository()!.expireLeasedTasks(Date.now() + 60 * 60_000);
+      const again = await router.handle(
+        signedReq('POST', '/v1/workflow/tasks/claim', { lease_ms: 30_000 }, agent),
+      );
+      expect((again.body as WorkflowTask).id).toBe('del-no-token');
+      const resp = await router.handle(
+        signedReq(
+          'POST',
+          '/v1/workflow/tasks/del-no-token/complete',
+          { result: '{"ok":true}', agent_did: agent.did },
+          agent,
+        ),
+      );
+      expect(resp.status).toBe(409);
+      expect(JSON.stringify(resp.body)).toContain('claim_id');
+    });
+
     it('complete accepts result-only body (Python dina-agent parity)', async () => {
       // The Python `dina-agent` MCP `dina_task_complete(task_id, result)`
       // posts only `{ result }` — no `result_summary`. Go-Core derives
       // the summary from `result`; the TS port must too. Without this
       // every paired-OpenClaw completion 400s and the response bridge
       // never fires.
-      await seedAndClaim('del-result-only');
+      const { claim_id: claimId } = await seedAndClaim('del-result-only');
       const resp = await router.handle(
         signedReq(
           'POST',
@@ -531,6 +575,7 @@ describe('CoreRouter integration', () => {
             result:
               '{"eta_minutes":12,"stop_name":"Castro Station","map_url":"https://maps.example/x"}',
             agent_did: agent.did,
+            claim_id: claimId, // REQ-13: a live claim must be named
           },
           agent,
         ),
@@ -548,7 +593,7 @@ describe('CoreRouter integration', () => {
     });
 
     it('claim → heartbeat → progress → complete end-to-end', async () => {
-      await seedAndClaim('del-e2e');
+      const { claim_id: claimId } = await seedAndClaim('del-e2e');
 
       expect(
         (await router.handle(signedReq('POST', '/v1/workflow/tasks/del-e2e/heartbeat', {}, agent)))
@@ -565,7 +610,7 @@ describe('CoreRouter integration', () => {
         signedReq(
           'POST',
           '/v1/workflow/tasks/del-e2e/complete',
-          { result: '{"ok":true}', result_summary: 'ok', agent_did: agent.did },
+          { result: '{"ok":true}', result_summary: 'ok', agent_did: agent.did, claim_id: claimId },
           agent,
         ),
       );
@@ -581,12 +626,12 @@ describe('CoreRouter integration', () => {
     });
 
     it('heartbeat after completion returns 409 (task no longer running)', async () => {
-      await seedAndClaim('del-hb-after-done');
+      const { claim_id: claimId } = await seedAndClaim('del-hb-after-done');
       await router.handle(
         signedReq(
           'POST',
           '/v1/workflow/tasks/del-hb-after-done/complete',
-          { result: '{}', result_summary: 'done', agent_did: agent.did },
+          { result: '{}', result_summary: 'done', agent_did: agent.did, claim_id: claimId },
           agent,
         ),
       );
@@ -874,7 +919,9 @@ describe('CoreRouter integration', () => {
       );
       expect(res.status).toBe(200);
       expect(sent).toHaveLength(1);
-      expect(sent[0].body.service_uri).toBe('at://did:plc:bus/com.dinakernel.service.profile/store-2');
+      expect(sent[0].body.service_uri).toBe(
+        'at://did:plc:bus/com.dinakernel.service.profile/store-2',
+      );
     });
 
     it('POST /v1/service/query omits service_uri from the D2D body when absent (#1)', async () => {
@@ -1072,7 +1119,12 @@ describe('CoreRouter integration', () => {
             id: 'forged-card',
             kind: 'approval',
             description: '',
-            payload: JSON.stringify({ from_did: 'did:plc:victim', query_id: 'q-forged', capability: 'eta_query', ttl_seconds: 60 }),
+            payload: JSON.stringify({
+              from_did: 'did:plc:victim',
+              query_id: 'q-forged',
+              capability: 'eta_query',
+              ttl_seconds: 60,
+            }),
             initial_state: 'pending_approval',
           },
           brain,
@@ -1136,7 +1188,9 @@ describe('CoreRouter integration', () => {
           isDiscoverable: false,
           discoverability: 'known_only',
           status: 'active',
-          capabilities: { eta_query: { mcpServer: 'stub_eta', mcpTool: 'eta', responsePolicy: 'auto' } },
+          capabilities: {
+            eta_query: { mcpServer: 'stub_eta', mcpTool: 'eta', responsePolicy: 'auto' },
+          },
           capabilitySchemas: {
             eta_query: {
               params: { type: 'object' },

@@ -87,6 +87,10 @@ let cachedDegradations: BootDegradation[] = [];
 // remount can await it rather than racing ahead and booting a second
 // node into the half-disposed globals (issue #11).
 let pendingTeardown: Promise<void> | null = null;
+// The boot still running, if any. A dropped boot cannot stop mid-way (it can sit
+// in the relay handshake for 30 s) and disposes its own node when it ends. The
+// next boot waits for that, so two nodes never write process globals at once.
+let inFlightBoot: Promise<void> | null = null;
 
 export function getBootedNode(): DinaNode | null {
   return singleton;
@@ -157,7 +161,11 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
     let disposed = false;
     let ownedNode: DinaNode | null = null;
 
-    async function boot(): Promise<void> {
+    async function boot(previous: Promise<void> | null): Promise<void> {
+      if (previous !== null) {
+        setState((s) => ({ ...s, status: 'booting', error: null }));
+        await previous;
+      }
       // If a previous owner is still tearing down, wait for it before
       // composing a fresh node so the second boot doesn't see globals
       // that are mid-reset (issue #11).
@@ -188,6 +196,7 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
       setState((s) => ({ ...s, status: 'booting', error: null }));
       try {
         const inputs = await buildBootInputs(overridesRef.current ?? {});
+        if (disposed) return;
         const { node, degradations } = await bootAppNode(inputs);
         if (disposed) {
           await node.dispose();
@@ -214,7 +223,14 @@ export function useNodeBootstrap(options: NodeBootstrapOptions = {}): NodeBootst
       }
     }
 
-    void boot();
+    // boot() catches everything it can throw; a throw in the dropped-boot path
+    // must still not block the next one.
+    const run: Promise<void> = boot(inFlightBoot)
+      .catch(() => undefined)
+      .finally(() => {
+        if (inFlightBoot === run) inFlightBoot = null;
+      });
+    inFlightBoot = run;
 
     return () => {
       disposed = true;

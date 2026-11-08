@@ -376,6 +376,8 @@ describe('service reasoning execution', () => {
     });
     const workflowService = new WorkflowService({
       repository: workflows,
+      // Inside the query's 120 s TTL: past it the bridge gives up.
+      nowMsFn: () => 20_000,
       responseBridgeSender: async (ctx) => {
         sent.push(ctx);
       },

@@ -28,7 +28,7 @@ describe('Quarantine Management', () => {
   describe('quarantineMessage', () => {
     it('adds message with generated ID', () => {
       const msg = quarantineMessage('did:plc:stranger', 'social.update', '{"text":"hi"}');
-      expect(msg.id).toMatch(/^q-\d+$/);
+      expect(msg.id).toMatch(/^q-[0-9a-f]{32}$/);
       expect(msg.senderDID).toBe('did:plc:stranger');
       expect(msg.messageType).toBe('social.update');
     });

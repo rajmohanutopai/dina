@@ -912,6 +912,15 @@ export function createUpdateTaskTool(opts: PlanToolOptions = {}): AgentTool {
       }
       const statuses: PlanTask['status'][] = action === 'reopen' ? ['done', 'dropped'] : ['open'];
       const { task, tied } = findTask(s, args.task, statuses, planDayKey(t));
+      if (task === null && tied.length === 0 && (action === 'done' || action === 'drop')) {
+        // A repeat of what already happened isn't a failure. Told "no task
+        // matches", a model tells the owner their task wasn't marked.
+        const status = action === 'done' ? 'done' : 'dropped';
+        const earlier = findTask(s, args.task, [status], planDayKey(t)).task;
+        if (earlier !== null) {
+          return { task: earlier.title, changed: `already ${status}`, note: TASK_TEXT_NOTE };
+        }
+      }
       if (task === null) {
         // The titles, so the model can call again with the right one.
         return tied.length > 0

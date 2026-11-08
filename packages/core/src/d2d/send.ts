@@ -17,6 +17,7 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { appendAudit } from '../audit/service';
+import { isCommerceWireCapability } from '../commerce/capability_names';
 import {
   evaluateServiceEgressBypass,
   type ProviderServiceResolver,
@@ -57,6 +58,40 @@ export interface SendRequest {
   suppressEnqueue?: boolean;
   /** Stable logical id used by a durable facade for idempotent retries. */
   messageId?: string;
+  /**
+   * When this message was first sent (Unix ms), on a re-delivery. A
+   * `service.query` or `service.response` keeps it, so its TTL runs from the
+   * first send and the recipient can tell how old it is (TT-08).
+   */
+  createdTime?: number;
+}
+
+/**
+ * Seconds a windowed service message has left, or null for any other message
+ * or a body with no TTL. Only a re-delivery has less than its full TTL. The
+ * commerce lane is not bound by its transport TTL (`isCommerceWireCapability`);
+ * its queued rows keep the 24 h default.
+ */
+function serviceTtlLeftSeconds(req: SendRequest): number | null {
+  if (req.messageType !== MsgTypeServiceQuery && req.messageType !== MsgTypeServiceResponse) {
+    return null;
+  }
+  const ttl = serviceTtlSeconds(req.body);
+  if (ttl === null) return null;
+  return req.createdTime === undefined ? ttl : ttl - (Date.now() - req.createdTime) / 1000;
+}
+
+function serviceTtlSeconds(bodyJson: string): number | null {
+  try {
+    const body = JSON.parse(bodyJson) as { ttl_seconds?: unknown; capability?: unknown };
+    if (typeof body.capability === 'string' && isCommerceWireCapability(body.capability)) {
+      return null;
+    }
+    const ttl = body.ttl_seconds;
+    return typeof ttl === 'number' && Number.isFinite(ttl) && ttl > 0 ? ttl : null;
+  } catch {
+    return null;
+  }
 }
 
 /** A `commerce.trade` body's kind and document ('' / null otherwise) — what the contact gate's waiver binds to. */
@@ -123,6 +158,28 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
     };
   }
 
+  // A re-delivery past its TTL goes nowhere: the asker has given up (TT-08). The
+  // drainer's own expiry covers rows queued since; this covers older rows, whose
+  // expiry was the 24 h default.
+  const ttlLeft = serviceTtlLeftSeconds(req);
+  if (ttlLeft !== null && ttlLeft <= 0) {
+    appendAudit(
+      req.senderDID,
+      'd2d_send_denied',
+      req.recipientDID,
+      `type=${req.messageType} id=${messageId} denied_at=ttl_expired`,
+    );
+    return {
+      sent: false,
+      messageId,
+      delivered: false,
+      buffered: false,
+      queued: false,
+      deniedAt: 'ttl_expired',
+      error: 'past ttl_seconds',
+    };
+  }
+
   // 1a. Public-service bypass (service.query / service.response).
   //
   // `bypass` is null for non-service traffic. For service traffic:
@@ -161,7 +218,10 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
   ) {
     const body = bypass.body as { query_id: string; capability: string };
     const reserved = providerWindow().reserve(req.recipientDID, body.query_id, body.capability);
-    if (!reserved) {
+    // TT-12: the window lives in memory, so a restart loses it. A drainer re-send
+    // goes ahead without one: the row exists only because this response passed
+    // the reservation on its first send, and its TTL is the row's own deadline.
+    if (!reserved && req.suppressEnqueue !== true) {
       appendAudit(
         req.senderDID,
         'd2d_send_denied',
@@ -178,11 +238,13 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
         error: 'no provider window to reserve',
       };
     }
-    providerReservation = {
-      peerDID: req.recipientDID,
-      queryID: body.query_id,
-      capability: body.capability,
-    };
+    if (reserved) {
+      providerReservation = {
+        peerDID: req.recipientDID,
+        queryID: body.query_id,
+        capability: body.capability,
+      };
+    }
   }
 
   // 2. Egress 4-gate check (skipped when the service bypass allowed the send).
@@ -223,7 +285,13 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
     bypass.kind === 'allow'
   ) {
     const body = bypass.body as { query_id: string; capability: string; ttl_seconds: number };
-    setRequesterWindow(req.recipientDID, body.query_id, body.capability, body.ttl_seconds);
+    // A re-send opens the window for what is left of the TTL, never a full one.
+    setRequesterWindow(
+      req.recipientDID,
+      body.query_id,
+      body.capability,
+      ttlLeft === null ? body.ttl_seconds : Math.ceil(ttlLeft),
+    );
   }
 
   // 2. Build message
@@ -232,7 +300,8 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
     type: req.messageType,
     from: req.senderDID,
     to: req.recipientDID,
-    created_time: Date.now(),
+    created_time:
+      ttlLeft !== null && req.createdTime !== undefined ? req.createdTime : Date.now(),
     body: req.body,
   };
 
@@ -444,12 +513,15 @@ function tryEnqueue(
     // bytes: the drainer re-resolves the recipient key + endpoint and
     // re-seals at retry time (issues.txt §1). The idempotency key
     // collapses a double-enqueue of the same logical message to one row.
+    const ttl = serviceTtlLeftSeconds(req);
     enqueueD2D({
       id: messageId,
       targetDID: req.recipientDID,
       messageType: req.messageType,
       bodyJson: req.body,
       idempotencyKey: deriveIdempotencyKey(req.messageType, req.recipientDID, req.body, messageId),
+      // A query or response is worth sending only within its own TTL (TT-08).
+      ...(ttl !== null ? { ttlMs: Math.ceil(ttl * 1000) } : {}),
     });
     return { queued: true };
   } catch (err) {

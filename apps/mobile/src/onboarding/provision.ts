@@ -66,10 +66,11 @@ import {
 } from '@dina/core';
 import { applyDinaPlcUpdate } from '@dina/home-node';
 
-import { unlock } from '../hooks/useUnlock';
+import { closeVault, openPersistenceForIdentity, unlock } from '../hooks/useUnlock';
 import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
 import { setDisplayNameOverride } from '../services/display_name_override';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
+import { settleSignedOutIdentity } from '../services/identity_scope';
 import { saveIdentitySeeds } from '../services/identity_store';
 import { writeInstallMarker } from '../services/install_marker';
 import {
@@ -86,12 +87,15 @@ import { saveLinkedAtprotoIdentity } from '../services/linked_identity_record';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
 import { emitRuntimeWarning } from '../services/runtime_warnings';
 import { persistStartupChoice } from '../services/startup_preferences';
-import { markVerificationPending } from '../services/verification_status';
+import { markVerificationPending, markVerified } from '../services/verification_status';
 import { saveWrappedSeed } from '../services/wrapped_seed_store';
 
 import { seedDefaultPersonas } from './default_personas';
 
 import type { StartupMode } from './state';
+
+/** How long recovery waits for the store before going on without the copy. */
+const RESTORE_FIND_TIMEOUT_MS = 120_000;
 
 export type ProvisionStage =
   | 'deriving_seed'
@@ -320,14 +324,19 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   // vault exists on disk, a real did:plc exists behind it — never a
   // did:key fallback left over from a half-finished onboarding.
 
-  // 6. Keychain seeds + wrapped master seed (deferred from earlier so
-  //    nothing survives a network failure above).
+  // 6. Identity rows first, and the wrapped seed LAST. A wrapped seed is what
+  //    tells the gate a vault exists, so a kill or failed write before it
+  //    leaves onboarding, which can run again (the seed-derived password resumes
+  //    the PDS account), never a locked phone with half an identity behind it.
+  //    The phrase is marked unconfirmed before that same line: absent reads as
+  //    "confirmed", and a kill in the unlock below would never prompt for it.
   progress(opts.onProgress, 'persisting_keys');
+  await settleSignedOutIdentity(pdsDid);
+  await markVerificationPending();
   await saveIdentitySeeds({
     signingSeed: signing.privateKey,
     rotationSeed: rotation.privateKey,
   });
-  await saveWrappedSeed(wrapped);
 
   // 7. Remember the DID for next boot + persist PDS credentials so
   //    boot's tryBuildPdsPublisher can re-authenticate without
@@ -344,6 +353,7 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
     // already, but be idempotent against partial state.
     infra.appViewURL === null ? Promise.resolve() : saveAppViewURL(infra.appViewURL),
   ]);
+  await saveWrappedSeed(wrapped);
 
   // Persist the name the user gave at "what should I call you" as the local
   // display-name override, so the People identity card / contact card can
@@ -374,22 +384,6 @@ export async function provisionIdentity(opts: ProvisionOptions): Promise<Provisi
   // this AFTER unlock() succeeds so a wrong passphrase can't be cached
   // through a failed provisioning attempt.
   await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
-
-  // A brand-new identity's recovery phrase was generated silently (no first-run
-  // wall) — mark it pending so the deferred, value-proportionate backup prompt
-  // (see services/backup_prompt) asks once the vault is worth protecting. NOT
-  // set on recovery (recoverIdentity), where the user already has their phrase.
-  //
-  // Best-effort: this runs AFTER identity/PDS/local state are committed and the
-  // vault is unlocked, so a Keychain hiccup here must NOT fail an onboarding
-  // that already materially succeeded. Worst case the backup prompt simply
-  // never fires (absent status reads as verified) — far better than a phantom
-  // "provisioning failed". (review P2)
-  try {
-    await markVerificationPending();
-  } catch {
-    /* non-fatal — provisioning already succeeded */
-  }
 
   progress(opts.onProgress, 'done');
 
@@ -517,6 +511,11 @@ export async function recoverIdentity(opts: {
    * the identity is back, and the result says no copy was restored.
    */
   restoreBackup?: boolean;
+  /**
+   * The owner agreed the copy may replace what this phone holds. Without it a
+   * restore refuses to overwrite rows newer than the copy.
+   */
+  replaceLocalData?: boolean;
   onProgress?: (p: ProvisionProgress) => void;
 }): Promise<ProvisionResult & { restoredItems?: number }> {
   if (!opts.expectedDid.startsWith('did:plc:')) {
@@ -541,9 +540,13 @@ export async function recoverIdentity(opts: {
 
   progress(opts.onProgress, 'wrapping_seed');
   const wrapped = await wrapSeed(opts.passphrase, masterSeed);
-  await saveWrappedSeed(wrapped);
 
+  // The wrapped seed goes last, same as provisionIdentity: a kill before it
+  // leaves onboarding, and recovery runs again from the phrase.
   progress(opts.onProgress, 'persisting_keys');
+  await settleSignedOutIdentity(opts.expectedDid);
+  // The owner just typed the phrase.
+  await markVerified();
   await saveIdentitySeeds({
     signingSeed: signing.privateKey,
     rotationSeed: rotation.privateKey,
@@ -564,25 +567,19 @@ export async function recoverIdentity(opts: {
   seedDefaultPersonas();
 
   progress(opts.onProgress, 'opening_vault');
+  // The restore runs before unlock, so unlock hydrates every store from the
+  // restored rows and the tabs open on them. No node, no backup timer and no
+  // chat can touch the databases meanwhile.
+  let restoredItems: number | undefined;
+  if (opts.restoreBackup === true) {
+    restoredItems = await restoreBeforeUnlock(opts, masterSeed, wrapped.salt);
+  }
+
+  await saveWrappedSeed(wrapped);
+
   const unlockResult = await unlock(opts.passphrase, wrapped);
   if (unlockResult.step === 'failed') {
     throw new Error(`Unlock failed after recovery: ${unlockResult.error ?? 'unknown'}`);
-  }
-
-  let restoredItems: number | undefined;
-  if (opts.restoreBackup === true) {
-    const hit = await findBackupForPhrase(opts.mnemonic);
-    if (hit !== null) {
-      try {
-        await restoreFoundBackup(hit.found, hit.identity);
-        restoredItems = hit.found.meta.item_count;
-      } catch (err) {
-        emitRuntimeWarning(
-          'backup.restore_failed',
-          `Your identity is back, but the backup didn't restore: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    }
   }
 
   await persistStartupChoice(opts.startupMode ?? 'manual', opts.passphrase);
@@ -596,6 +593,58 @@ export async function recoverIdentity(opts: {
     handle,
     ...(restoredItems !== undefined ? { restoredItems } : {}),
   };
+}
+
+/**
+ * Open the new vault, restore the newest copy into it, close it again. Never
+ * throws: the identity is back whatever happens here. A restore that did not
+ * happen leaves the owner a warning, and the daily backup held
+ * (`backUpIfDue`) so an empty phone cannot become the newest copy.
+ */
+async function restoreBeforeUnlock(
+  opts: { mnemonic: string[]; replaceLocalData?: boolean },
+  masterSeed: Uint8Array,
+  wrapSalt: Uint8Array,
+): Promise<number | undefined> {
+  const warn = (why: string): void => {
+    emitRuntimeWarning(
+      'backup.restore_failed',
+      `Your identity is back, but the backup didn't restore: ${why} You can restore it from Settings, Backup.`,
+    );
+  };
+  const hit = await Promise.race([
+    findBackupForPhrase(opts.mnemonic),
+    new Promise<null>((resolve) => {
+      const t = setTimeout(() => {
+        resolve(null);
+      }, RESTORE_FIND_TIMEOUT_MS);
+      (t as { unref?: () => void }).unref?.();
+    }),
+  ]);
+  if (hit === null) {
+    // The handle step saw this copy a moment ago, so the store went away.
+    warn("the backup store didn't answer.");
+    return undefined;
+  }
+  try {
+    await openPersistenceForIdentity(masterSeed, wrapSalt);
+    await restoreFoundBackup(
+      hit.found,
+      hit.identity,
+      opts.replaceLocalData === true ? { replaceLocal: true } : {},
+    );
+    return hit.found.meta.item_count;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    warn(
+      /not a clean install/.test(message)
+        ? 'this phone already holds data, and a restore would replace it.'
+        : `${message}.`,
+    );
+    return undefined;
+  } finally {
+    await closeVault().catch(() => undefined);
+  }
 }
 
 /**

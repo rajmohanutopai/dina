@@ -90,6 +90,25 @@ describe.each<[string, () => GroupPlanRepository]>([
     expect(back?.guests[0].disclosures).toEqual([{ kind: 'dietary', text: 'gluten-free', about: 'household' }]);
   });
 
+  it('lists what a plan still owes, in any state, and nothing else (GROUP-2)', () => {
+    const repo = make();
+    const word = { state: 'cancelled', slot: { start: 'Sat 26' }, seq: 2 };
+    const stopped = abandon(plan('unsent', T0), T0 + 1);
+    if (!stopped.ok) throw new Error(stopped.refusal);
+    repo.put({ ...stopped.plan, bookings: { 'did:plc:garcia': { ...word, sent: false } } } as GroupPlan);
+    repo.put({ ...stopped.plan, planId: 'told', bookings: { 'did:plc:garcia': { ...word, sent: true } } } as GroupPlan);
+    repo.put({ ...stopped.plan, planId: 'deleting', deleteWhenTold: true });
+    repo.put({ ...plan('settled-waiting'), state: 'settled' });
+    // Owner text that reads like the keys matches nothing.
+    repo.put({ ...plan('open'), intent: 'say "sent":false and "outcome":"waiting"' });
+    expect(
+      repo
+        .listFollowUps()
+        .map((p) => p.planId)
+        .sort(),
+    ).toEqual(['deleting', 'settled-waiting', 'unsent']);
+  });
+
   it('lists only open plans, newest first; settled and abandoned drop out', () => {
     const repo = make();
     repo.put(plan('older', T0));

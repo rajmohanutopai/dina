@@ -102,6 +102,8 @@ export interface TenderRepository {
   /** Every tender, newest first — the §7 inbox walks the open ones. */
   listTenders(): TenderRecord[];
   putMember(member: TenderMember): void;
+  /** A request that proved it never left: its member goes with it. */
+  removeMember(requestId: string): void;
   listMembers(tenderId: string): TenderMember[];
   memberByRequestId(requestId: string): TenderMember | null;
   setMemberQuote(requestId: string, quoteId: string): void;
@@ -166,6 +168,10 @@ export class SQLiteTenderRepository implements TenderRepository {
         member.serviceRkey,
       ],
     );
+  }
+
+  removeMember(requestId: string): void {
+    this.db.run(`DELETE FROM commerce_tender_members WHERE request_id = ?`, [requestId]);
   }
 
   listMembers(tenderId: string): TenderMember[] {
@@ -266,6 +272,10 @@ export class InMemoryTenderRepository implements TenderRepository {
     this.members.set(member.requestId, { ...member });
   }
 
+  removeMember(requestId: string): void {
+    this.members.delete(requestId);
+  }
+
   listMembers(tenderId: string): TenderMember[] {
     return [...this.members.values()]
       .filter((m) => m.tenderId === tenderId)
@@ -315,7 +325,17 @@ export function noteTenderQuoteSettled(requestId: string, quoteId: string): void
 // Fan-out
 // ---------------------------------------------------------------------------
 
+/** A new tender's id, for a caller that must record it before anything is sent. */
+export function mintTenderId(): string {
+  return `tnd_${bytesToHex(randomBytes(12))}`;
+}
+
 export interface CreateTenderInput {
+  /**
+   * The id the caller reserved. A tender already begun under it resumes: a
+   * supplier with a member was asked already and is not asked again.
+   */
+  tenderId?: string;
   suppliers: { supplierDid: string; serviceRkey: string }[];
   /** Suppliers the owner's surface set aside (never asked), and why. */
   notAsked?: {
@@ -368,11 +388,25 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
     return { ok: false, refusal: 'not_asked_reason_unknown' };
   }
 
-  const tenderId = `tnd_${bytesToHex(randomBytes(12))}`;
+  const tenderId = input.tenderId ?? mintTenderId();
   const members: { supplierDid: string; requestId: string; sent: boolean; reason?: string }[] = [];
   let expiresAt = input.nowMs;
+  const asked = new Map(runtime.tenders.listMembers(tenderId).map((m) => [m.supplierDid, m]));
 
   for (const supplier of input.suppliers) {
+    const earlier = asked.get(supplier.supplierDid);
+    if (earlier !== undefined) {
+      // Whether that send left before the restart is not known: `sent` says only what we know.
+      const held = runtime.buyerQuoteRequests.get(earlier.requestId);
+      if (held !== null) expiresAt = Math.max(expiresAt, Date.parse(held.expires_at));
+      members.push({
+        supplierDid: supplier.supplierDid,
+        requestId: earlier.requestId,
+        sent: false,
+        reason: 'asked_before_restart',
+      });
+      continue;
+    }
     const requestId = `req_${bytesToHex(randomBytes(12))}`;
     const outcome = await requestQuote({
       supplierDid: supplier.supplierDid,
@@ -385,21 +419,26 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
       ...(input.requiredBy === undefined ? {} : { requiredBy: input.requiredBy }),
       ...(input.sharePincodeWithShippers === true ? { sharePincodeWithShippers: true } : {}),
       nowMs: input.nowMs,
+      // The member exists before the send: a quote can land while the send is
+      // still out, and it correlates only through this row.
+      onRetained: (retained) => {
+        runtime.tenders.putMember({
+          tenderId,
+          supplierDid: supplier.supplierDid,
+          requestId: retained.request_id,
+          requestDigest: retained.request_digest,
+          quoteId: '',
+          serviceRkey: supplier.serviceRkey,
+        });
+      },
     });
     if (outcome.kind === 'refused') {
+      runtime.tenders.removeMember(requestId);
       members.push({ supplierDid: supplier.supplierDid, requestId, sent: false, reason: outcome.reason });
       continue;
     }
     const request = outcome.request;
     expiresAt = Math.max(expiresAt, Date.parse(request.expires_at));
-    runtime.tenders.putMember({
-      tenderId,
-      supplierDid: supplier.supplierDid,
-      requestId: request.request_id,
-      requestDigest: request.request_digest,
-      quoteId: '',
-      serviceRkey: supplier.serviceRkey,
-    });
     members.push({
       supplierDid: supplier.supplierDid,
       requestId: request.request_id,
@@ -412,16 +451,19 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
     return { ok: false, refusal: 'nothing_retained' };
   }
 
-  runtime.tenders.putTender({
-    tenderId,
-    linesJson: JSON.stringify(input.lines),
-    projectionJson: JSON.stringify(input.projection),
-    requestedTermsJson: JSON.stringify(
-      input.currency === undefined ? {} : { currency: input.currency },
-    ),
-    expiresAt,
-    createdAt: input.nowMs,
-  });
+  // A resumed tender that already has its row keeps it, and its window.
+  if (runtime.tenders.getTender(tenderId) === null) {
+    runtime.tenders.putTender({
+      tenderId,
+      linesJson: JSON.stringify(input.lines),
+      projectionJson: JSON.stringify(input.projection),
+      requestedTermsJson: JSON.stringify(
+        input.currency === undefined ? {} : { currency: input.currency },
+      ),
+      expiresAt,
+      createdAt: input.nowMs,
+    });
+  }
   for (const n of notAsked) {
     runtime.tenders.putNotAsked({
       tenderId,
@@ -465,9 +507,17 @@ export interface TenderComparisonDeps {
   /** BuyerSettings' rate; absent means the default. */
   workingCapitalRateBps?: number;
   /** The khata statement's own readers — the last-paid badge walks them. */
-  readOrder: (counterpartyDid: string, purchaseOrderId: string) => PurchaseOrderProposal | null;
-  readBoundQuote: (counterpartyDid: string, purchaseOrderId: string) => SignedQuote | null;
-  listAcceptedOrderIds: (counterpartyDid: string) => string[];
+  readOrder: (
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    role?: 'buyer' | 'supplier',
+  ) => PurchaseOrderProposal | null;
+  readBoundQuote: (
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    role?: 'buyer' | 'supplier',
+  ) => SignedQuote | null;
+  listAcceptedOrderIds: (counterpartyDid: string, role?: 'buyer' | 'supplier') => string[];
 }
 
 /** §3.2.4's advisory adjustment: integer arithmetic, one half-even rounding. */
@@ -493,9 +543,9 @@ function lastPaidUnitPrice(
   product: ProductRef,
 ): string | null {
   let latest: { atMs: number; minor: string } | null = null;
-  for (const purchaseOrderId of deps.listAcceptedOrderIds(supplierDid)) {
-    const order = deps.readOrder(supplierDid, purchaseOrderId);
-    const quote = deps.readBoundQuote(supplierDid, purchaseOrderId);
+  for (const purchaseOrderId of deps.listAcceptedOrderIds(supplierDid, 'buyer')) {
+    const order = deps.readOrder(supplierDid, purchaseOrderId, 'buyer');
+    const quote = deps.readBoundQuote(supplierDid, purchaseOrderId, 'buyer');
     if (order === null || quote === null) continue;
     const atMs = Date.parse(order.submitted_at);
     for (const line of quote.lines) {

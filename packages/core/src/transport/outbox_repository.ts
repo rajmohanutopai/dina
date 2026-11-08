@@ -88,6 +88,13 @@ export interface D2DOutboxRepository {
    * to `pending`. Run on boot before the drainer starts. Returns count.
    */
   resetStaleSending(now: number): number;
+  /**
+   * Move every live row (`pending`, `failed`, `sending`) past `expiresAt` to
+   * `dead`. Returns the rows moved, so the caller can report each one. Run
+   * before a claim and before an insert: an expired row can't be claimed, and
+   * would otherwise hold its idempotency key for good.
+   */
+  expireOverdue(now: number): D2DOutboxRow[];
   /** All rows in a state (tests + diagnostics). */
   listByState(state: D2DOutboxState): D2DOutboxRow[];
   /** Every row (tests + boot diagnostics). */
@@ -241,6 +248,24 @@ export class SQLiteD2DOutboxRepository implements D2DOutboxRepository {
         WHERE state = 'sending' AND lease_until IS NOT NULL AND lease_until <= ?`,
       [now, now],
     );
+  }
+
+  expireOverdue(now: number): D2DOutboxRow[] {
+    let expired: D2DOutboxRow[] = [];
+    this.db.transaction(() => {
+      expired = this.db
+        .query(
+          `SELECT ${ALL_COLUMNS} FROM d2d_outbox
+            WHERE state IN ('pending', 'sending', 'failed')
+              AND expires_at IS NOT NULL AND expires_at <= ?`,
+          [now],
+        )
+        .map(rowToOutbox);
+      for (const row of expired) {
+        this.markDead(row.id, `expired: ${row.lastError ?? 'never delivered'}`, now);
+      }
+    });
+    return expired;
   }
 
   listByState(state: D2DOutboxState): D2DOutboxRow[] {
@@ -401,6 +426,21 @@ export class InMemoryD2DOutboxRepository implements D2DOutboxRepository {
       }
     }
     return count;
+  }
+
+  expireOverdue(now: number): D2DOutboxRow[] {
+    const expired: D2DOutboxRow[] = [];
+    for (const r of this.rows.values()) {
+      if (
+        (r.state === 'pending' || r.state === 'sending' || r.state === 'failed') &&
+        r.expiresAt !== null &&
+        r.expiresAt <= now
+      ) {
+        expired.push({ ...r });
+        this.markDead(r.id, `expired: ${r.lastError ?? 'never delivered'}`, now);
+      }
+    }
+    return expired;
   }
 
   listByState(state: D2DOutboxState): D2DOutboxRow[] {

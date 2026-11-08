@@ -59,6 +59,8 @@ import {
   SQLiteD2DOutboxRepository,
   SQLiteReplayRepository,
   setReplayRepository,
+  SQLiteSignedNonceRepository,
+  setSignedNonceRepository,
   SQLiteAgentGrantRepository,
   SQLiteAgentGatingPolicyRepository,
   getAgentGrantRepository,
@@ -167,6 +169,9 @@ import {
   setServiceGrantRepository,
   setDeviceRepository,
   setKVRepository,
+  SQLiteQuarantineRepository,
+  setQuarantineRepository,
+  hydrateQuarantineFromRepository,
   setPeopleRepository,
   setPersonaRepository,
   setReminderRepository,
@@ -721,6 +726,11 @@ export async function initializeStorage(
   // SQL repo and reclaim crash-orphaned 'sending' rows.
   setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
   setReplayRepository(new SQLiteReplayRepository(identityDB));
+  setSignedNonceRepository(new SQLiteSignedNonceRepository(identityDB));
+  // A stranger's message is acked to the relay once it sits in quarantine, so
+  // the quarantine must survive a restart. The hydrate also sweeps past-TTL rows.
+  setQuarantineRepository(new SQLiteQuarantineRepository(identityDB));
+  hydrateQuarantineFromRepository();
   recoverOutboxOnBoot();
 
   // (agent persona grant repo — issues.txt §2 — is now wired ABOVE, before

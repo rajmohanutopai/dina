@@ -205,13 +205,8 @@ export async function verifyStaffPinGated(
 ): Promise<boolean> {
   const attempts = repository.getAttempts(deviceDid);
   if (attempts.lockedUntil > nowMs) return false;
-  const ok = await verifyStaffPin(repository, deviceDid, pin);
-  if (ok) {
-    if (attempts.failedCount > 0 || attempts.lockedUntil > 0) {
-      repository.putAttempts(deviceDid, { failedCount: 0, lockedUntil: 0 });
-    }
-    return true;
-  }
+  // The guess counts BEFORE the KDF, in one stretch with the read above, so
+  // guesses sent together add up and a crash mid-guess still counts.
   const failedCount = attempts.failedCount + 1;
   repository.putAttempts(
     deviceDid,
@@ -219,7 +214,9 @@ export async function verifyStaffPinGated(
       ? { failedCount: 0, lockedUntil: nowMs + STAFF_PIN_LOCKOUT_MS }
       : { failedCount, lockedUntil: 0 },
   );
-  return false;
+  const ok = await verifyStaffPin(repository, deviceDid, pin);
+  if (ok) repository.putAttempts(deviceDid, { failedCount: 0, lockedUntil: 0 });
+  return ok;
 }
 
 export async function verifyStaffPin(

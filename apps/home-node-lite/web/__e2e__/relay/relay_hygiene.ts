@@ -53,10 +53,15 @@ export function attachHygiene(page: Page, ownDids: readonly string[] = []): Rela
     assertClean(): void {
       // Enable the foreign-DID check when the caller supplied the participant
       // allowlist (see file header); omit → check stays off.
+      // The page's own boot line names its own DID; that one isn't foreign.
+      const console = consoleAll.join('\n');
+      const pageDids = [...console.matchAll(/\[dina:boot\].*?did: (did:plc:[a-z0-9]+)/g)].map(
+        (m) => m[1] as string,
+      );
       const leaks = scanForLeaks(
-        consoleAll.join('\n'),
+        console,
         'browser-console',
-        ownDids.length > 0 ? { ownDids: new Set(ownDids) } : {},
+        ownDids.length > 0 ? { ownDids: new Set([...ownDids, ...pageDids]) } : {},
       );
       expect(
         leaks,

@@ -114,7 +114,7 @@ describe('authoring runs the receiver rules on itself', () => {
     });
     expect(over.ok).toBe(false);
     expect(!over.ok && over.refusal).toContain('cumulative');
-    expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(0);
+    expect(repo.listByOrder(BUYER, 'po-1', 'delivery_note')).toHaveLength(0);
   });
 
   it('refuses to issue a note on an order this node has not accepted', () => {
@@ -136,7 +136,7 @@ describe('authoring runs the receiver rules on itself', () => {
     });
     expect(outcome.ok).toBe(false);
     expect(!outcome.ok && outcome.refusal).toContain('not accepted');
-    expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(0);
+    expect(repo.listByOrder(BUYER, 'po-1', 'delivery_note')).toHaveLength(0);
   });
 
   it('two notes 6 then 5 refuse at the SECOND issue — own retained set counts', () => {

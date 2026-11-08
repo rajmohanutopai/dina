@@ -118,6 +118,17 @@ export interface EpochStopStore {
   clear(): void;
 }
 
+/**
+ * The epoch this node last signed at, so a boot can tell a record it knows
+ * from one a restore elsewhere published while it was down. It describes THIS
+ * node and never travels in an archive.
+ */
+export interface EpochHeldStore {
+  /** Null on a node that has not written one yet. Throws when unreadable. */
+  load(): { epoch: string; digest: string } | null;
+  save(held: { epoch: string; digest: string }): void;
+}
+
 export interface EpochServiceDeps {
   transaction: CommerceTransaction;
   /** Quote state as aggregates; the raw ledger is not reachable here. */
@@ -135,6 +146,8 @@ export interface EpochServiceDeps {
   maxStalenessMs?: number;
   /** Keeps a stop across restarts. Without it a stop lasts until restart. */
   stopStore?: EpochStopStore;
+  /** Lets a boot see that it was superseded. Without it a boot adopts what it finds. */
+  heldStore?: EpochHeldStore;
 }
 
 export class CommerceEpochService {
@@ -221,52 +234,68 @@ export class CommerceEpochService {
       };
     }
 
-    const stop = (reason: string): EpochRevalidation => {
-      this.state = { kind: 'stopped', epoch: state.epoch, reason };
-      try {
-        this.deps.stopStore?.save({ epoch: state.epoch, reason, atMs: this.deps.now() });
-      } catch {
-        // Signing is stopped in memory either way. A failed write only means
-        // the next boot re-reads the live record and stops again on it.
-      }
+    const reason = this.stopReason(live, state.epoch, state.digest);
+    if (reason !== null) {
+      this.stopAt(state.epoch, reason);
       return { kind: 'stopped', epoch: state.epoch, reason };
-    };
+    }
 
+    this.state = { ...state, validatedAtMs: this.deps.now() };
+    return { kind: 'current', epoch: state.epoch };
+  }
+
+  /** Stop signing, and write it down. */
+  private stopAt(epoch: string, reason: string): void {
+    this.state = { kind: 'stopped', epoch, reason };
+    try {
+      this.deps.stopStore?.save({ epoch, reason, atMs: this.deps.now() });
+    } catch {
+      // Signing is stopped in memory either way. A failed write only means
+      // the next boot re-reads the live record and stops again on it.
+    }
+  }
+
+  /**
+   * Why a node that holds this epoch must not sign beside this live record, or
+   * null when the record is the one it holds. One verdict for the re-read and
+   * for a boot.
+   */
+  private stopReason(
+    live: CommerceEpochRecord | null,
+    epoch: string,
+    digest: string,
+  ): string | null {
     if (live === null) {
       // Not "no epoch yet" — this node PUBLISHED or adopted one, so an empty
       // repo means the record was deleted. Reading that as "fine" would let a
       // deleted fence authorise signing for ever, which is the rollback the
       // fence exists to catch.
-      return stop('the live epoch record is gone from the repo');
+      return 'the live epoch record is gone from the repo';
     }
     const invalid = validateCommerceEpochRecord(live, hash);
-    if (invalid !== null) return stop(`the live epoch record is invalid — ${invalid}`);
+    if (invalid !== null) return `the live epoch record is invalid — ${invalid}`;
     if (live.business_did !== this.deps.businessDid) {
-      return stop('the live epoch record belongs to a different business DID');
+      return 'the live epoch record belongs to a different business DID';
     }
 
     // Both sides are canonical positive-integer strings — `live` because the
-    // validator above says so, `state.epoch` because it came from a validated
+    // validator above says so, `epoch` because it came from a validated
     // record or from a published one this class validated before publishing.
     // Compared as BigInt because "10" sorts below "9" in every text collation.
     const liveEpoch = BigInt(live.epoch);
-    const mine = BigInt(state.epoch);
+    const mine = BigInt(epoch);
     if (liveEpoch > mine) {
-      return stop(
-        `the live epoch is ${live.epoch}; this node is a superseded pre-restore generation`,
-      );
+      return `the live epoch is ${live.epoch}; this node is a superseded pre-restore generation`;
     }
     if (liveEpoch < mine) {
-      return stop(`the live epoch fell back to ${live.epoch}; the fence itself was rolled back`);
+      return `the live epoch fell back to ${live.epoch}; the fence itself was rolled back`;
     }
-    if (live.epoch_digest !== state.digest) {
+    if (live.epoch_digest !== digest) {
       // Same number, different record: somebody rewrote the fence in place.
       // The digest covers `activated_at`, so this cannot happen by accident.
-      return stop(`the live epoch record was replaced in place at epoch ${live.epoch}`);
+      return `the live epoch record was replaced in place at epoch ${live.epoch}`;
     }
-
-    this.state = { ...state, validatedAtMs: this.deps.now() };
-    return { kind: 'current', epoch: state.epoch };
+    return null;
   }
 
   /**
@@ -283,9 +312,13 @@ export class CommerceEpochService {
 
   /**
    * Normal boot (no restore): adopt the live record, publishing the
-   * genesis when none exists. A local mirror lower than the live
-   * record simply adopts the live value (the live record is
-   * authoritative).
+   * genesis when none exists.
+   *
+   * A node that has signed before answers to the epoch it last held, by the
+   * re-read's own verdict. A laptop off overnight never ran that re-read, so
+   * without this it woke, took the epoch a restore elsewhere had published,
+   * and signed beside the node that restored. Only a node with nothing written
+   * down adopts freely: a first boot, or the first boot after an upgrade.
    */
   async establish(): Promise<CommerceEpochRecord> {
     // A stop from an earlier run stands. Adopting the live record here is
@@ -304,9 +337,19 @@ export class CommerceEpochService {
     // partially available repo) must surface the fail-closed error, not
     // spin unboundedly against the repo on the path §16.2 makes
     // mandatory before any commerce signing.
+    const heldEpoch = this.deps.heldStore?.load() ?? null;
     const attempts = this.deps.maxPublishAttempts ?? 5;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const live = await this.deps.fetchLive();
+      if (heldEpoch !== null) {
+        const reason = this.stopReason(live, heldEpoch.epoch, heldEpoch.digest);
+        if (reason !== null) {
+          this.stopAt(heldEpoch.epoch, reason);
+          throw new Error(
+            `commerce epoch: signing stopped at epoch ${heldEpoch.epoch} — ${reason}; it needs an operator's restore (§16.2)`,
+          );
+        }
+      }
       if (live) {
         const invalid = validateCommerceEpochRecord(live, hash);
         if (invalid) throw new Error(`commerce epoch: live record invalid — ${invalid}`);
@@ -415,6 +458,9 @@ export class CommerceEpochService {
       digest: record.epoch_digest,
       validatedAtMs: this.deps.now(),
     };
+    // A failed write fails this boot closed: left at the old value, it would
+    // read as superseded next time, and a restore's marker is still set.
+    this.deps.heldStore?.save({ epoch: record.epoch, digest: record.epoch_digest });
   }
 
   /** Fail closed on an epoch record belonging to another business DID. */

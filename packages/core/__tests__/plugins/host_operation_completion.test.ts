@@ -307,7 +307,7 @@ describe('completing a claim with a typed proposal', () => {
     } as never);
     const claimed = ctx.repository.claimDelegationTask(RUNNER_DID, Date.now(), 60_000, undefined);
     expect(claimed?.id).toBe(task.id);
-    service.complete(task.id, proposal(), 'even a proposal-shaped result', RUNNER_DID);
+    service.complete(task.id, proposal(), 'even a proposal-shaped result', RUNNER_DID, claimed?.claim_id);
     await settle();
     expect(called).toBe(0);
   });

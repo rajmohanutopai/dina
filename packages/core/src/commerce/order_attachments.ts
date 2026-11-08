@@ -1031,9 +1031,11 @@ export function makeOrderAttachmentDecisionHandler(deps: {
     if (paymentAlreadyRecorded(money.stores, payload.supplier_did, payload.provider_ref)) {
       return settle({ ok: true, body: { already_recorded: true } });
     }
-    const orderDigest = runtime.receipts
-      .listByOrder(runtime.nodeDid(), payload.purchase_order_id)
-      .find((r) => r.domain === 'order')?.recordDigest;
+    const orderDigest = tradeRelationshipReaders(runtime).readOrder(
+      payload.supplier_did,
+      payload.purchase_order_id,
+      'buyer',
+    )?.order_digest;
     if (orderDigest !== undefined) {
       const newest = newestPaymentEvidence(money.stores, {
         order_digest: orderDigest,

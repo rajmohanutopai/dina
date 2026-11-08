@@ -21,8 +21,10 @@ import { isScopeAuthorized, requiredScopeFor, resolveAgentScope, type AgentScope
 import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
 import { resolveCallerType, type CallerIdentity } from './caller_type';
 import { NonceCache } from './nonce';
+import { getSignedNonceRepository } from './nonce_repository';
 import { PerDIDRateLimiter, type RateLimitConfig } from './ratelimit';
-import { checkRequestSignature, maxAgeForRoute } from './signed_request';
+import { checkRequestSignature, maxAgeForRoute, type ReplayGuard } from './signed_request';
+import { TIMESTAMP_WINDOW_SECONDS, parseRFC3339 } from './timestamp';
 
 export interface AuthRequest {
   method: string;
@@ -109,6 +111,29 @@ export function configureRateLimiter(config: RateLimitConfig): void {
   rateLimiter = new PerDIDRateLimiter(config);
 }
 
+/**
+ * Spend a request's nonce: in memory first, then durably for a caller Core
+ * knows, held until the timestamp could no longer pass, so a restart or a
+ * flood of other nonces cannot free it (TT-04). A store that cannot answer
+ * refuses the request. A long-window route's own handler refuses a copy that
+ * arrives after this hold ends.
+ */
+const replayGuard: ReplayGuard = {
+  check(nonce, timestamp, did) {
+    if (!nonceCache.check(nonce)) return false;
+    const durable = getSignedNonceRepository();
+    if (durable === null || resolveCallerType(did).callerType === 'unknown') return true;
+    try {
+      const now = Date.now();
+      const heldUntil =
+        Math.max(now, parseRFC3339(timestamp).getTime()) + TIMESTAMP_WINDOW_SECONDS * 1000;
+      return durable.spend(did, nonce, heldUntil, now);
+    } catch {
+      return false;
+    }
+  },
+};
+
 function longWindow(method: string, path: string): { maxAgeSeconds?: number } {
   const maxAgeSeconds = maxAgeForRoute(method, path);
   return maxAgeSeconds === undefined ? {} : { maxAgeSeconds };
@@ -144,7 +169,7 @@ function verifySignedIdentity(req: AuthRequest): VerifiedIdentity | AuthResult {
       ...(req.headers['X-Signature'] === undefined ? {} : { signature: req.headers['X-Signature'] }),
     },
     {
-      nonces: nonceCache,
+      nonces: replayGuard,
       resolvePublicKey: publicKeyResolver,
       ...longWindow(req.method, req.path),
     },

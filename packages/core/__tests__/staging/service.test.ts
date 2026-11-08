@@ -45,6 +45,11 @@ import {
   setWorkflowService,
 } from '../../src/workflow/service';
 
+/** A failed row waits until `lease_until` before the sweep requeues it. */
+function pastRetry(id: string): number {
+  return getItem(id)!.lease_until;
+}
+
 describe('Staging Service', () => {
   beforeEach(() => {
     resetStagingState();
@@ -423,7 +428,7 @@ describe('Staging Service', () => {
       const { id } = ingest({ source: 'gmail', source_id: 'a' });
       claim(10);
       fail(id); // retry_count = 1
-      const result = sweep();
+      const result = sweep(pastRetry(id));
       expect(result.requeued).toBe(1);
       expect(getItem(id)!.status).toBe('received');
     });
@@ -434,7 +439,7 @@ describe('Staging Service', () => {
       // Item has a non-zero lease_until after claim
       expect(getItem(id)!.lease_until).toBeGreaterThan(0);
       fail(id);
-      sweep();
+      sweep(pastRetry(id));
       // After requeue, lease_until should be 0
       expect(getItem(id)!.lease_until).toBe(0);
       expect(getItem(id)!.status).toBe('received');
@@ -446,7 +451,7 @@ describe('Staging Service', () => {
       for (let i = 0; i < 4; i++) {
         claim(10);
         fail(id);
-        if (i < 3) sweep(); // requeue first 3 times
+        if (i < 3) sweep(pastRetry(id)); // requeue first 3 times
       }
       const result = sweep();
       expect(result.deadLettered).toBe(1);
@@ -825,7 +830,7 @@ describe('Staging Service', () => {
       expect(getItem(id)!.error).toBe('First error');
 
       // Requeue via sweep, claim again, fail again
-      sweep();
+      sweep(pastRetry(id));
       claim(10);
       fail(id, 'Second error');
       expect(getItem(id)!.error).toBe('Second error');

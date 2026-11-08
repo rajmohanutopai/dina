@@ -48,7 +48,12 @@ import {
   addSystemMessage,
   findMessageByAskId,
   findMessageByTaskId,
+  getThread,
+  listThreads,
+  readLifecycle,
   updateAskLifecycle,
+  updateMessageMetadataById,
+  type ChatMessage,
   type CommerceComparisonLifecycle,
   type GroupPlanLifecycle,
   type QuoteRequestDraftLifecycle,
@@ -138,8 +143,17 @@ interface PendingTracking {
  * subscription on shutdown). Callers that don't need cleanup can
  * destructure just the handler.
  */
+/** Ask states that end a card: its buttons have nothing left to decide. */
+const ASK_ENDED: ReadonlySet<string> = new Set(['complete', 'failed', 'expired']);
+
 export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOptions): {
   handler: AskCommandHandler;
+  /**
+   * Read every open ask row in chat from the durable registry and show its true
+   * state. The row outlives this handler's memory of it (a lock, a kill), so the
+   * host calls this on a timer. Never throws.
+   */
+  reconcile: () => Promise<void>;
   dispose: () => void;
 } {
   if (!opts || !opts.coordinator) {
@@ -261,10 +275,110 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     if (!tracking) return; // not ours
     pending.delete(event.id);
 
-    void deliverDeferred(event.id, tracking).catch(() => {
-      /* swallow — chat-thread writes are best-effort */
-    });
+    void deliverDeferred(event.id, tracking)
+      .then(() => markApprovalRow(event.id, tracking.threadId))
+      .catch(() => {
+        /* swallow — chat-thread writes are best-effort */
+      });
   });
+
+  /** The approval card row of an ask, if this thread has one. */
+  function findApprovalRow(threadId: string, askId: string): ChatMessage | null {
+    for (const m of getThread(threadId)) {
+      if (m.type !== 'approval') continue;
+      if (m.metadata?.kind === 'ask_approval' && m.metadata.askId === askId) return m;
+    }
+    return null;
+  }
+
+  /** Record the ask's state on its card, so the card survives a remount. */
+  async function markApprovalRow(askId: string, threadId: string): Promise<void> {
+    const row = findApprovalRow(threadId, askId);
+    if (row === null) return;
+    const status = (await coordinator.registry.get(askId))?.status ?? 'expired';
+    if (row.metadata?.askStatus !== status) {
+      updateMessageMetadataById(threadId, row.id, { askStatus: status });
+    }
+  }
+
+  let reconciling = false;
+  let disposed = false;
+
+  const reconcile = async (): Promise<void> => {
+    if (disposed || reconciling) return;
+    reconciling = true;
+    try {
+      for (const threadId of listThreads()) {
+        for (const row of getThread(threadId)) {
+          if (disposed) return;
+          await reconcileRow(threadId, row).catch(() => undefined);
+        }
+      }
+    } finally {
+      reconciling = false;
+    }
+  };
+
+  async function reconcileRow(threadId: string, row: ChatMessage): Promise<void> {
+    const lifecycle = readLifecycle(row);
+    const isOpenPlaceholder =
+      lifecycle !== null && lifecycle.kind === 'ask_pending' && lifecycle.status === 'pending';
+    const isOpenCard =
+      row.type === 'approval' &&
+      row.metadata?.kind === 'ask_approval' &&
+      typeof row.metadata.askId === 'string' &&
+      !ASK_ENDED.has(String(row.metadata.askStatus));
+    if (!isOpenPlaceholder && !isOpenCard) return;
+    const askId = isOpenPlaceholder ? lifecycle.askId : String(row.metadata?.askId);
+    if (pending.has(askId)) {
+      if (isOpenCard) await markApprovalRow(askId, threadId);
+      return;
+    }
+
+    const record = await coordinator.registry.get(askId);
+    if (record === null) {
+      // Nothing can finish this row. It says so, and the owner can ask again.
+      if (isOpenPlaceholder) {
+        const text = "I lost track of that question. Please ask again.";
+        updateAskLifecycle(threadId, askId, { status: 'expired', error: text }, text);
+      } else {
+        updateMessageMetadataById(threadId, row.id, { askStatus: 'expired' });
+      }
+      return;
+    }
+    if (disposed) return;
+
+    const tracking: PendingTracking = {
+      approvalId: isOpenCard ? String(row.metadata?.approvalId ?? '') : undefined,
+      persona: isOpenCard ? (row.metadata?.persona as string | undefined) : undefined,
+      threadId,
+      query: questionBefore(threadId, row),
+    };
+    if (record.status !== 'complete' && record.status !== 'failed' && record.status !== 'expired') {
+      // Still open: this handler owns it now, and its event will land.
+      pending.set(askId, tracking);
+      if (isOpenCard) await markApprovalRow(askId, threadId);
+      return;
+    }
+    // Ended with nobody watching. A card with a reply below it was answered
+    // before cards carried a status: don't say it twice.
+    if (!isOpenCard || !hasReplyAfter(threadId, row)) await deliverDeferred(askId, tracking);
+    if (isOpenCard) await markApprovalRow(askId, threadId);
+  }
+
+  function questionBefore(threadId: string, row: ChatMessage): string {
+    const thread = getThread(threadId);
+    for (let i = thread.findIndex((m) => m.id === row.id) - 1; i >= 0; i--) {
+      if (thread[i]?.type === 'user') return thread[i]?.content ?? '';
+    }
+    return '';
+  }
+
+  function hasReplyAfter(threadId: string, row: ChatMessage): boolean {
+    const thread = getThread(threadId);
+    const at = thread.findIndex((m) => m.id === row.id);
+    return thread.slice(at + 1).some((m) => m.type !== 'user');
+  }
 
   async function deliverDeferred(askId: string, tracking: PendingTracking): Promise<void> {
     const record = await coordinator.registry.get(askId);
@@ -531,11 +645,12 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
   };
 
   const dispose = (): void => {
+    disposed = true;
     unsubscribe();
     resetAskApprovalGateway();
   };
 
-  return { handler, dispose };
+  return { handler, reconcile, dispose };
 }
 
 function extractAnswerText(value: unknown): string {

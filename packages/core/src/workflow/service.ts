@@ -150,6 +150,28 @@ export type ResponseBridgeSender = (ctx: ServiceQueryBridgeContext) => Promise<v
 const BRIDGE_PENDING_PREFIX = 'bridge_pending:';
 
 /**
+ * Written in the same transaction as a service task's terminal state: "the
+ * requester is owed a response, and nothing has built it yet" (REQ-12). The real
+ * record replaces it a moment later. Only a crash, or a failed write, leaves it
+ * for the sweeper, which builds the response from the stored task through the
+ * same transformer and egress gate. It holds no response of its own, so nothing
+ * can leave ungated.
+ */
+const BRIDGE_UNBUILT_STASH = `${BRIDGE_PENDING_PREFIX}unbuilt`;
+
+/**
+ * How long past the requester's TTL a stash may keep trying. The TTL is measured
+ * from the task's creation, which comes after the requester's send, so by then
+ * nobody is waiting on the answer (REQ-06).
+ */
+const BRIDGE_GIVE_UP_MARGIN_MS = 5 * 60 * 1000;
+
+/** The send can never work, so a retry only spends time: no key, or the egress gate's no. */
+function isPermanentSendFailure(err: unknown): boolean {
+  return (err as { permanent?: unknown } | null)?.permanent === true;
+}
+
+/**
  * Hard timeout for a single bridge-send attempt. Without this a
  * transport promise that never settles would pin the task in
  * `bridgeInFlight` indefinitely, blocking every subsequent retry
@@ -717,7 +739,17 @@ export class WorkflowService {
     if (task === null) {
       throw new WorkflowValidationError(`task "${id}" not found`, 'id');
     }
-    this.guardTransition(task.status as WorkflowTaskState, WorkflowTaskState.Completed);
+    try {
+      this.guardTransition(task.status as WorkflowTaskState, WorkflowTaskState.Completed);
+    } catch (err) {
+      // A run that names its claim and finds the task moved on, say to
+      // outcome_unknown after its lease lapsed, may hold the only record of what
+      // it did. The repository keeps it as a late_report and changes nothing.
+      if (claimId !== undefined) {
+        this.repo.completeWithDetails(id, agentDID, resultSummary, resultJSON, '{}', this.nowMsFn(), claimId);
+      }
+      throw err;
+    }
     const eventId = this.repo.completeWithDetails(
       id,
       agentDID,
@@ -726,6 +758,7 @@ export class WorkflowService {
       JSON.stringify({ state: 'completed' }),
       this.nowMsFn(),
       claimId,
+      carriesHostOperationMarker(resultJSON) ? undefined : this.owedBridgeStash(task),
     );
     if (eventId === 0) {
       // With a claimId the miss is the §9.1 CAS: a stale claim's report
@@ -733,7 +766,9 @@ export class WorkflowService {
       throw new WorkflowTransitionError(
         claimId !== undefined
           ? `task "${id}" completion lost the claim CAS — stale claim, report retained as evidence`
-          : `task "${id}" was terminal before completion landed`,
+          : task.status === WorkflowTaskState.Running && (task.claim_id ?? '') !== ''
+            ? `task "${id}" is held by a claim: send claim_id. Report retained as evidence`
+            : `task "${id}" was terminal before completion landed`,
         task.status as WorkflowTaskState,
         WorkflowTaskState.Completed,
       );
@@ -810,10 +845,32 @@ export class WorkflowService {
     if (this.responseBridgeSender === null) return;
     if (task.kind !== WorkflowTaskKind.Delegation) return;
     const ctx = this.outgoingContextFor(task, resultJSON);
-    if (ctx === null) return;
-    const gated = this.applyEgressGate(ctx);
-    if (gated === null) return;
+    const gated = ctx === null ? null : this.applyEgressGate(ctx);
+    if (gated === null) {
+      // Nothing will leave here, so nothing is owed.
+      if (task.internal_stash === BRIDGE_UNBUILT_STASH) this.clearUnbuiltStash(task.id);
+      return;
+    }
     this.dispatchBridge(task, gated);
+  }
+
+  /** The stash to commit with a terminal state, when that state owes a response. */
+  private owedBridgeStash(task: WorkflowTask): string | undefined {
+    if (this.responseBridgeSender === null || task.kind !== WorkflowTaskKind.Delegation) {
+      return undefined;
+    }
+    const isServiceExecution =
+      parseServiceQueryExecutionPayload(task.payload) !== null ||
+      parsePluginEnvelope(task.payload)?.service_ingress !== undefined;
+    return isServiceExecution ? BRIDGE_UNBUILT_STASH : undefined;
+  }
+
+  private clearUnbuiltStash(taskId: string): void {
+    try {
+      this.repo.setInternalStash(taskId, null, this.nowMsFn());
+    } catch {
+      /* the sweeper meets it again, finds nothing owed, and clears it */
+    }
   }
 
   /**
@@ -1001,9 +1058,11 @@ export class WorkflowService {
         // so a transient SQLite write error doesn't produce a
         // duplicate send on the next tick (review #3).
         await this.clearBridgeRecord(task.id, stashWritten);
-      } catch {
+      } catch (err) {
         // Timeout OR transport failure — leave stash/fallback in
-        // place. The sweeper will retry on a later tick.
+        // place. The sweeper will retry on a later tick, unless the
+        // send can never work.
+        if (isPermanentSendFailure(err)) await this.clearBridgeRecord(task.id, stashWritten);
       } finally {
         this.bridgeInFlight.delete(task.id);
         if (detachedContainer.promise !== null) {
@@ -1097,7 +1156,14 @@ export class WorkflowService {
     // In-memory fallback first — always succeeds.
     this.bridgeInMemoryFallback.delete(taskId);
     if (!stashWritten) {
-      this.bridgeDeliveredAwaitingClear.delete(taskId);
+      // The real record never landed, but the marker from the commit may have.
+      // It would send this response again.
+      try {
+        this.repo.setInternalStash(taskId, null, this.nowMsFn());
+        this.bridgeDeliveredAwaitingClear.delete(taskId);
+      } catch {
+        this.bridgeDeliveredAwaitingClear.add(taskId);
+      }
       return;
     }
     for (let attempt = 0; attempt < STASH_CLEAR_MAX_ATTEMPTS; attempt++) {
@@ -1180,6 +1246,10 @@ export class WorkflowService {
         }
         const stash = task.internal_stash;
         if (typeof stash !== 'string' || !stash.startsWith(BRIDGE_PENDING_PREFIX)) continue;
+        if (stash === BRIDGE_UNBUILT_STASH) {
+          if (!this.bridgeInMemoryFallback.has(task.id)) this.buildOwedResponse(task);
+          continue;
+        }
         const ctx = deserialiseBridgeCtx(stash.slice(BRIDGE_PENDING_PREFIX.length));
         if (ctx === null) {
           // Corrupt stash — clear so we don't retry it forever.
@@ -1190,13 +1260,24 @@ export class WorkflowService {
           }
           continue;
         }
+        if (this.bridgeAnswerIsStale(task, ctx)) {
+          await this.clearBridgeRecord(task.id, true);
+          continue;
+        }
         this.bridgeInFlight.add(task.id);
         try {
           await withTimeout(send(ctx), BRIDGE_SEND_TIMEOUT_MS, 'bridge.send');
           await this.clearBridgeRecord(task.id, true);
           cleared++;
-        } catch {
-          /* send still failing — leave stash for the next tick */
+        } catch (err) {
+          if (isPermanentSendFailure(err)) {
+            await this.clearBridgeRecord(task.id, true);
+          } else {
+            // Leave the stash for a later tick, and move it behind the others:
+            // the list reads oldest `updated_at` first, so a batch of stashes
+            // that can never send would otherwise be all this loop ever tries.
+            this.rotateBridgeStash(task.id, stash);
+          }
         } finally {
           this.bridgeInFlight.delete(task.id);
         }
@@ -1216,8 +1297,9 @@ export class WorkflowService {
           // now that whatever was blocking SQLite is back).
           await this.clearBridgeRecord(taskId, false);
           cleared++;
-        } catch {
-          /* leave in fallback for the next tick */
+        } catch (err) {
+          /* otherwise leave in fallback for the next tick */
+          if (isPermanentSendFailure(err)) await this.clearBridgeRecord(taskId, false);
         } finally {
           this.bridgeInFlight.delete(taskId);
         }
@@ -1238,6 +1320,48 @@ export class WorkflowService {
     return promise;
   }
 
+  /**
+   * Answer a terminal task whose commit left the unbuilt marker: from the task
+   * as Core stored it, through the same transformer and gate as the first time.
+   */
+  private buildOwedResponse(task: WorkflowTask): void {
+    if (task.status === WorkflowTaskState.Completed) {
+      this.bridgeServiceQueryCompletion(task, task.result ?? '');
+    } else if (task.status === WorkflowTaskState.Failed) {
+      this.bridgeServiceQueryCompletion(
+        task,
+        JSON.stringify({ status: 'error', error: task.error ?? '' }),
+      );
+    } else {
+      this.clearUnbuiltStash(task.id);
+    }
+  }
+
+  /** True once nobody can still be waiting for this response. Observed, never silent. */
+  private bridgeAnswerIsStale(task: WorkflowTask, ctx: ServiceQueryBridgeContext): boolean {
+    const deadline = task.created_at + ctx.ttlSeconds * 1000 + BRIDGE_GIVE_UP_MARGIN_MS;
+    if (this.nowMsFn() < deadline) return false;
+    try {
+      this.onIngressResultWithheld?.({
+        taskId: task.id,
+        capability: ctx.capability,
+        fromDid: ctx.fromDID,
+        reason: 'bridge_gave_up_past_ttl',
+      });
+    } catch {
+      /* an observer must not change the outcome it observes */
+    }
+    return true;
+  }
+
+  private rotateBridgeStash(taskId: string, stash: string): void {
+    try {
+      this.repo.setInternalStash(taskId, stash, this.nowMsFn());
+    } catch {
+      /* the order is a courtesy; the stash itself is untouched */
+    }
+  }
+
   /** Mark a task as failed with a reason. */
   fail(id: string, errorMsg: string, agentDID = '', claimId?: string): WorkflowTask {
     const task = this.repo.getById(id);
@@ -1245,10 +1369,19 @@ export class WorkflowService {
       throw new WorkflowValidationError(`task "${id}" not found`, 'id');
     }
     this.guardTransition(task.status as WorkflowTaskState, WorkflowTaskState.Failed);
-    const eventId = this.repo.fail(id, agentDID, errorMsg, this.nowMsFn(), claimId);
+    const eventId = this.repo.fail(
+      id,
+      agentDID,
+      errorMsg,
+      this.nowMsFn(),
+      claimId,
+      this.owedBridgeStash(task),
+    );
     if (eventId === 0) {
       throw new WorkflowTransitionError(
-        `task "${id}" was terminal before failure landed`,
+        task.status === WorkflowTaskState.Running && (task.claim_id ?? '') !== ''
+          ? `task "${id}" is held by a claim: send claim_id. Report retained as evidence`
+          : `task "${id}" was terminal before failure landed`,
         task.status as WorkflowTaskState,
         WorkflowTaskState.Failed,
       );
@@ -1328,6 +1461,11 @@ export class WorkflowService {
     if (task.status === WorkflowTaskState.PendingApproval) {
       this.noticeApprovalDecision(updated ?? task, 'denied');
     }
+    // REQ-18: the provider gave up, so the requester stops waiting out its TTL.
+    this.bridgeServiceQueryCompletion(
+      updated ?? task,
+      JSON.stringify({ status: 'unavailable', error: 'cancelled by the provider' }),
+    );
     return updated ?? task;
   }
 

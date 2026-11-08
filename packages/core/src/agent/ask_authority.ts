@@ -102,6 +102,15 @@ export function closeAskAuthority(id: string): void {
   records.delete(id);
 }
 
+/**
+ * Drop every record of a requester whose device was revoked (TT-16). A
+ * session-less record has no session whose end would stop it, and removing it
+ * means a later re-pair of the same key cannot bring it back.
+ */
+export function revokeAskAuthoritiesForRequester(requesterDid: string): void {
+  for (const [id, r] of records) if (r.requesterDid === requesterDid) records.delete(id);
+}
+
 /** Test reset. */
 export function resetAskAuthorities(): void {
   records.clear();

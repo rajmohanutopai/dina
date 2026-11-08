@@ -53,6 +53,67 @@ const TRANSITIONS: Record<StagingStatus, Set<StagingStatus>> = {
 };
 
 /**
+ * The owner's own words from a chat turn, proven by a span proof, that were
+ * not a plain request to remember (REAL_LIFE_FIXES §2.5). First-party, but
+ * NOT owner-direct: a sensitive or locked target waits for the owner's card.
+ */
+export const CHAT_AUTO_SOURCE = 'chat_auto';
+
+/** Sources whose items are the owner's own memories (dedup, §2.4; TTL, below). */
+export const OWNER_MEMORY_SOURCES: ReadonlySet<string> = new Set(['user_remember', CHAT_AUTO_SOURCE]);
+
+/**
+ * The TTL purge may not delete this row. An owner memory that has not reached
+ * the vault is the only copy of what the owner said, so it stays until it
+ * stores, the owner forgets it, or the owner refuses it on its card. A failed
+ * row with a card and spent retries is the owner's no, unless the drain failed
+ * after the owner's yes (`routes/workflow.ts`).
+ *
+ * The SQL copy is `OWNER_MEMORY_RETAINED_SQL`; keep the two together.
+ */
+export function retainedPastTtl(item: {
+  source: string;
+  status: string;
+  retry_count: number;
+  approval_id?: string;
+  error?: string;
+}): boolean {
+  if (!OWNER_MEMORY_SOURCES.has(item.source) || item.status === 'stored') return false;
+  const refused =
+    item.status === 'failed' &&
+    (item.approval_id ?? '') !== '' &&
+    item.retry_count > DEFAULT_MAX_RETRIES &&
+    !(item.error ?? '').startsWith(DRAIN_FAILED_PREFIX);
+  return !refused;
+}
+
+/** How `routes/workflow.ts` marks a row whose store failed after the owner's yes. */
+export const DRAIN_FAILED_PREFIX = 'drain failed';
+
+export const OWNER_MEMORY_RETAINED_SQL = `(
+  source IN (${[...OWNER_MEMORY_SOURCES].map((s) => `'${s}'`).join(', ')})
+  AND status <> 'stored'
+  AND NOT (
+    status = 'failed'
+    AND COALESCE(approval_id, '') <> ''
+    AND retry_count > ${DEFAULT_MAX_RETRIES}
+    AND COALESCE(error, '') NOT LIKE '${DRAIN_FAILED_PREFIX}%'
+  )
+)`;
+
+/**
+ * Seconds a failed row waits before its next try, by the count that failure
+ * reached. Without this a one-minute sweep spends every retry in four minutes,
+ * and an hour's model outage kills every memory that met it. Past the ceiling
+ * the row is dead-lettered and the value is unused.
+ */
+export function stagingRetryDelaySeconds(retryCount: number): number {
+  if (retryCount <= 1) return 60;
+  if (retryCount === 2) return 15 * 60;
+  return 6 * 60 * 60;
+}
+
+/**
  * Check if a state transition is valid.
  */
 export function isValidTransition(from: StagingStatus, to: StagingStatus): boolean {

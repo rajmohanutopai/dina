@@ -217,12 +217,13 @@ export function useLiveThread(threadId: string = DEFAULT_THREAD): UseLiveThreadR
     // Surface any pending unknown-sender quarantine cards (web: polls Core via
     // the brain proxy; native: no-op — the in-process receive hook injects
     // them live). F4 / MRS-05.
-    syncQuarantineCards(threadId);
+    const stopQuarantineSync = syncQuarantineCards(threadId);
     const unsubscribe = subscribeToThread(threadId, () => {
       setMessages(getThread(threadId));
     });
     return () => {
       unsubscribe();
+      stopQuarantineSync();
       closeChatStream(threadId);
     };
   }, [threadId]);

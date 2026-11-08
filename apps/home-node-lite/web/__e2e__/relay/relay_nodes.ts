@@ -13,6 +13,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
+import { connectAsOwner } from '../fixtures/pages/owner_access';
+
+import type { Page } from '@playwright/test';
+
 export interface RelayNode {
   name: string;
   web: string; // SPA URL
@@ -21,8 +25,18 @@ export interface RelayNode {
 }
 
 export const NODES: Record<'alonso' | 'sancho', RelayNode> = {
-  alonso: { name: 'alonso', web: 'http://127.0.0.1:8301/app/', core: 'http://127.0.0.1:8301', brain: 'http://127.0.0.1:8401' },
-  sancho: { name: 'sancho', web: 'http://127.0.0.1:8302/app/', core: 'http://127.0.0.1:8302', brain: 'http://127.0.0.1:8402' },
+  alonso: {
+    name: 'alonso',
+    web: 'http://127.0.0.1:8301/app/',
+    core: 'http://127.0.0.1:8301',
+    brain: 'http://127.0.0.1:8401',
+  },
+  sancho: {
+    name: 'sancho',
+    web: 'http://127.0.0.1:8302/app/',
+    core: 'http://127.0.0.1:8302',
+    brain: 'http://127.0.0.1:8402',
+  },
 };
 
 /**
@@ -71,8 +85,12 @@ export async function relayReachable(): Promise<boolean> {
   const nodeReachable = async (node: RelayNode): Promise<boolean> => {
     try {
       const [brainOk, coreOk] = await Promise.all([
-        fetch(`${node.brain}/healthz`).then((r) => r.ok).catch(() => false),
-        fetch(`${node.core}/healthz`).then((r) => r.ok).catch(() => false),
+        fetch(`${node.brain}/healthz`)
+          .then((r) => r.ok)
+          .catch(() => false),
+        fetch(`${node.core}/healthz`)
+          .then((r) => r.ok)
+          .catch(() => false),
       ]);
       if (!brainOk || !coreOk) return false;
       // Debug-dispatch must be ENABLED — relay backstage runs through it. Probe
@@ -224,13 +242,31 @@ export async function relaySkipReason(): Promise<string | null> {
 
 /**
  * Resolve `node`'s own `did:plc` by reading `peer`'s contact directory (which
- * lists `node` by the mutual `connect.sh` link). Uses the F4 brain contacts
- * proxy — so it also exercises that fix. `connect.sh` is a relay prerequisite.
+ * lists `node` by the mutual `connect.sh` link). `connect.sh` is a relay
+ * prerequisite.
  */
+/**
+ * Open `node`'s web app as its owner, the way a person does: past first run to
+ * chat, then connect this browser. Brain answers signed callers only, so a
+ * browser that hasn't connected shows no chat activity.
+ */
+export async function openAsOwner(page: Page, node: RelayNode): Promise<void> {
+  await page.goto(node.web, { waitUntil: 'domcontentloaded' });
+  await page.getByTestId('index-mode-chip-remember').waitFor({ state: 'visible', timeout: 90_000 });
+  const nodeDir = path.resolve(__dirname, '../../../../../dina-nodes/nodes', node.name);
+  const key = fs.readFileSync(path.join(nodeDir, 'vault/owner_capability'), 'utf8').trim();
+  // Bed nodes run in security mode; connecting needs the passphrase the bed made.
+  const env = fs.readFileSync(path.join(nodeDir, 'node.env'), 'utf8');
+  const passphrase = /^DINA_UNLOCK_PASSPHRASE=["']?(.*?)["']?$/m.exec(env)?.[1];
+  if (passphrase !== undefined) process.env.DINA_E2E_OWNER_PASSPHRASE = passphrase;
+  await connectAsOwner(page, key);
+}
+
 export async function nodeDid(node: RelayNode, peer: RelayNode): Promise<string> {
-  const r = await fetch(`${peer.brain}/api/v1/contacts`);
-  if (!r.ok) throw new Error(`relay: cannot read ${peer.name} contacts (${r.status})`);
-  const body = (await r.json()) as { contacts?: { displayName: string; did: string }[] };
+  // Through Core as the owner: Brain serves signed callers only.
+  const r = await dispatch(peer, 'GET', '/v1/contacts');
+  if (r.status !== 200) throw new Error(`relay: cannot read ${peer.name} contacts (${r.status})`);
+  const body = r.body as { contacts?: { displayName: string; did: string }[] };
   const match = (body.contacts ?? []).find(
     (c) => c.displayName.toLowerCase() === node.name.toLowerCase(),
   );

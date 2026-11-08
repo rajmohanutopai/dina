@@ -592,6 +592,13 @@ export async function bootServer(
             'ask approval reconcile failed (retrying next tick)',
           );
         });
+        // REQ-05: an ask past its time ends, so a client polling it stops.
+        void ask.coordinator.registry.sweepExpired().catch((err: unknown) => {
+          logger.debug(
+            { error: err instanceof Error ? err.message : String(err) },
+            'ask expiry sweep failed (retrying next tick)',
+          );
+        });
       }, 3_000);
       askReconcile.unref();
       app.addHook('onClose', async () => clearInterval(askReconcile));

@@ -19,7 +19,7 @@
 import { test, expect } from '@playwright/test';
 
 import { attachHygiene } from './relay_hygiene';
-import { NODES, debugHeaders, dispatch, nodeDid, relaySkipReason } from './relay_nodes';
+import { NODES, debugHeaders, dispatch, nodeDid, openAsOwner, relaySkipReason } from './relay_nodes';
 
 interface SeedResult {
   quarantined: { id: string; senderDID: string };
@@ -67,7 +67,7 @@ test.describe('MRS-05 — unknown sender / quarantine', () => {
     const page = await ctx.newPage();
     const hygiene = attachHygiene(page, [STRANGER, sanchoDid]); // MRS-14 browser-half
     try {
-      await page.goto(NODES.sancho.web, { waitUntil: 'domcontentloaded' });
+      await openAsOwner(page, NODES.sancho);
 
       // The quarantine card surfaces (poll-inject on main-chat mount). Body is
       // hidden — the card only shows "unknown sender" + the DID.
@@ -118,7 +118,7 @@ test.describe('MRS-05 — unknown sender / quarantine', () => {
     const page = await ctx.newPage();
     const hygiene = attachHygiene(page, [STRANGER, sanchoDid]); // MRS-14 browser-half
     try {
-      await page.goto(NODES.sancho.web, { waitUntil: 'domcontentloaded' });
+      await openAsOwner(page, NODES.sancho);
 
       const card = page.locator(
         `[data-testid="chat-row"][data-kind="quarantine"][data-entity-id="${qid}"]`,

@@ -102,6 +102,10 @@ export class BackupSupervisor {
           }
         } else if (out.reason === 'unchanged') {
           this.options.logger.info({ event: 'backup.unchanged' });
+        } else if (out.reason === 'held_for_owner') {
+          // Copies exist that this node never wrote or restored. A server has
+          // no screen to ask on, so say it plainly: nothing is being backed up.
+          this.options.logger.warn({ event: 'backup.held_for_owner' });
         }
       } catch (err) {
         this.options.logger.warn({

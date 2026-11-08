@@ -63,8 +63,18 @@ export interface ServiceConfigRepository {
   /** Upsert the JSON-encoded config blob under `rkey`. */
   put(rkey: string, valueJSON: string, updatedAtMs: number): Promise<void>;
 
-  /** Delete the row for `rkey`. No-op if it does not exist. */
+  /**
+   * Delete the row for `rkey`. No-op if it does not exist. Records in one step
+   * that its published record is still to be removed: that intent must outlive a
+   * restart, since no row is left to name it (SERVICE-1).
+   */
   remove(rkey: string): Promise<void>;
+
+  /** Listings deleted whose published record is not yet known to be gone. */
+  listPendingUnpublish(): Promise<string[]>;
+
+  /** The published record is gone. A later `put` of the rkey also clears this. */
+  clearPendingUnpublish(rkey: string): Promise<void>;
 
   /** Read durable publication state for one listing. */
   getPublicationStatus(rkey: string): Promise<ServicePublicationStatus | null>;
@@ -135,22 +145,26 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
     // `updated_at` always advances. Mirrors the AppView createdAt/updatedAt split.
     // `revision` counts every write (A2A design §9): an inbound execution
     // snapshot pins it, and a timestamp is not a revision.
-    this.db.execute(
-      `INSERT INTO service_configs (rkey, config_json, created_at, updated_at, revision)
-       VALUES (?, ?, ?, ?,
-         1 + COALESCE((SELECT revision FROM service_config_revision_floor WHERE rkey = ?), 0))
-       ON CONFLICT(rkey) DO UPDATE SET
-         config_json = excluded.config_json,
-         updated_at = excluded.updated_at,
-         revision = service_configs.revision + 1,
-         publication_state = 'pending',
-         last_published_uri = NULL,
-         last_published_cid = NULL,
-         last_publish_error = NULL,
-         last_publish_attempt_at = NULL,
-         next_publish_retry_at = NULL`,
-      [rkey, valueJSON, updatedAtMs, updatedAtMs, rkey],
-    );
+    this.db.transaction(() => {
+      this.db.execute(
+        `INSERT INTO service_configs (rkey, config_json, created_at, updated_at, revision)
+         VALUES (?, ?, ?, ?,
+           1 + COALESCE((SELECT revision FROM service_config_revision_floor WHERE rkey = ?), 0))
+         ON CONFLICT(rkey) DO UPDATE SET
+           config_json = excluded.config_json,
+           updated_at = excluded.updated_at,
+           revision = service_configs.revision + 1,
+           publication_state = 'pending',
+           last_published_uri = NULL,
+           last_published_cid = NULL,
+           last_publish_error = NULL,
+           last_publish_attempt_at = NULL,
+           next_publish_retry_at = NULL`,
+        [rkey, valueJSON, updatedAtMs, updatedAtMs, rkey],
+      );
+      // The row is back, so the publisher reconciles it: nothing more is owed.
+      this.db.execute('DELETE FROM service_listing_unpublish_pending WHERE rkey = ?', [rkey]);
+    });
   }
 
   async remove(rkey: string): Promise<void> {
@@ -163,8 +177,23 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
          ON CONFLICT(rkey) DO UPDATE SET revision = MAX(service_config_revision_floor.revision, excluded.revision)`,
         [rkey],
       );
+      this.db.execute(
+        `INSERT INTO service_listing_unpublish_pending (rkey, deleted_at) VALUES (?, ?)
+         ON CONFLICT(rkey) DO UPDATE SET deleted_at = excluded.deleted_at`,
+        [rkey, Date.now()],
+      );
       this.db.execute('DELETE FROM service_configs WHERE rkey = ?', [rkey]);
     });
+  }
+
+  async listPendingUnpublish(): Promise<string[]> {
+    return this.db
+      .query<{ rkey: string }>('SELECT rkey FROM service_listing_unpublish_pending ORDER BY rkey')
+      .map((r) => String(r.rkey));
+  }
+
+  async clearPendingUnpublish(rkey: string): Promise<void> {
+    this.db.execute('DELETE FROM service_listing_unpublish_pending WHERE rkey = ?', [rkey]);
   }
 
   async getPublicationStatus(rkey: string): Promise<ServicePublicationStatus | null> {
@@ -227,6 +256,7 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
  * persistence without a real SQLite connection.
  */
 export class InMemoryServiceConfigRepository implements ServiceConfigRepository {
+  private readonly pendingUnpublish = new Set<string>();
   private readonly rows = new Map<
     string,
     {
@@ -264,10 +294,20 @@ export class InMemoryServiceConfigRepository implements ServiceConfigRepository 
         nextRetryAtMs: null,
       },
     });
+    this.pendingUnpublish.delete(rkey);
   }
 
   async remove(rkey: string): Promise<void> {
     this.rows.delete(rkey);
+    this.pendingUnpublish.add(rkey);
+  }
+
+  async listPendingUnpublish(): Promise<string[]> {
+    return [...this.pendingUnpublish].sort();
+  }
+
+  async clearPendingUnpublish(rkey: string): Promise<void> {
+    this.pendingUnpublish.delete(rkey);
   }
 
   async getPublicationStatus(rkey: string): Promise<ServicePublicationStatus | null> {

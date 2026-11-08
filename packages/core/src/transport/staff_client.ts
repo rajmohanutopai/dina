@@ -247,6 +247,8 @@ export class StaffCoreClient {
   async issueDeliveryReceipt(args: {
     deliveryNoteDigest: string;
     lines: { line_id: string; accepted_quantity: { value: string; unit_code: string }; reason_code?: string }[];
+    /** The same key on a retry returns the first receipt instead of a second. */
+    idempotencyKey?: string;
   }): Promise<
     | { kind: 'issued'; document: Record<string, unknown> }
     | { kind: 'pending_approval'; taskId: string }
@@ -254,7 +256,11 @@ export class StaffCoreClient {
     const res = await this.transport.request(
       'POST',
       '/v1/commerce/trade/delivery-receipt',
-      JSON.stringify({ delivery_note_digest: args.deliveryNoteDigest, lines: args.lines }),
+      JSON.stringify({
+        delivery_note_digest: args.deliveryNoteDigest,
+        lines: args.lines,
+        ...(args.idempotencyKey !== undefined ? { idempotency_key: args.idempotencyKey } : {}),
+      }),
       { 'content-type': 'application/json' },
     );
     const parsed = JSON.parse(res.body === '' ? '{}' : res.body) as Record<string, unknown>;

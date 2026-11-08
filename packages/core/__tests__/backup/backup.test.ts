@@ -18,6 +18,8 @@ import {
   backUpIfDue,
   backUpNow,
   findBackup,
+  forgetBackupRuns,
+  isBackupHeldForOwner,
   restoreBackup,
   type BackupKV,
 } from '../../src/backup/backup_runner';
@@ -294,6 +296,119 @@ describe('backing up and restoring through the store', () => {
     src.id.execute(`INSERT INTO kv_store (key, value, updated_at) VALUES ('theme', 'dark', 1)`);
     const payload = await buildArchivePayload(dataSourceFor(src));
     expect(payload.identity.tables.kv_store?.map((r) => r.key)).toEqual(['theme']);
+  });
+
+  describe('a phone that has written nothing yet (BACKUP-1, PH-03)', () => {
+    const DAY = 86_400_000;
+
+    async function storeWithOneCopy(): Promise<FakeStore> {
+      setArchiveDataSource(dataSourceFor(src));
+      const store = new FakeStore();
+      await backUpNow(deps(store, memKV()));
+      return store;
+    }
+
+    it('does not write on schedule over copies it never restored, and says so', async () => {
+      const store = await storeWithOneCopy();
+      const phone = freshBundle();
+      try {
+        setArchiveDataSource(dataSourceFor(phone));
+        const kv = memKV();
+        expect(await backUpIfDue(deps(store, kv), { everyMs: DAY })).toEqual({
+          ran: false,
+          reason: 'held_for_owner',
+        });
+        expect([...store.copies.keys()]).toEqual([1]);
+        expect(await isBackupHeldForOwner(kv)).toBe(true);
+      } finally {
+        closeBundle(phone);
+      }
+    });
+
+    it('writes after a restore, at the next counter, holding the restored rows', async () => {
+      const store = await storeWithOneCopy();
+      const phone = freshBundle();
+      try {
+        setArchiveDataSource(dataSourceFor(phone));
+        const kv = memKV();
+        await backUpIfDue(deps(store, kv), { everyMs: DAY });
+        const id = deriveBackupIdentity(SEED);
+        const found = await findBackup(id, store);
+        if (found === null) throw new Error('copy missing');
+        await restoreBackup(id, found, { kv });
+        expect(await isBackupHeldForOwner(kv)).toBe(false);
+        const out = await backUpIfDue(deps(store, kv), { everyMs: DAY });
+        expect(out).toMatchObject({ ran: true, result: { counter: 2, storeBehind: false } });
+        const latest = await findBackup(id, store);
+        expect(latest?.meta.item_count).toBe(1);
+      } finally {
+        closeBundle(phone);
+      }
+    });
+
+    it('a restore that throws leaves the hold on', async () => {
+      const store = await storeWithOneCopy();
+      const phone = freshBundle();
+      try {
+        seedNote(phone, 'v-local', 'Written here');
+        setArchiveDataSource(dataSourceFor(phone));
+        const kv = memKV();
+        const id = deriveBackupIdentity(SEED);
+        const found = await findBackup(id, store);
+        if (found === null) throw new Error('copy missing');
+        await expect(restoreBackup(id, found, { kv })).rejects.toThrow(/not a clean install/);
+        expect(await backUpIfDue(deps(store, kv), { everyMs: DAY })).toEqual({
+          ran: false,
+          reason: 'held_for_owner',
+        });
+      } finally {
+        closeBundle(phone);
+      }
+    });
+
+    it('"Back up now" is the owner saying start fresh: it writes, and the hold ends', async () => {
+      const store = await storeWithOneCopy();
+      const phone = freshBundle();
+      try {
+        setArchiveDataSource(dataSourceFor(phone));
+        const kv = memKV();
+        await backUpIfDue(deps(store, kv), { everyMs: DAY });
+        await backUpNow(deps(store, kv));
+        expect(await isBackupHeldForOwner(kv)).toBe(false);
+        seedNote(phone, 'v-2', 'Now it holds something');
+        const out = await backUpIfDue(deps(store, kv), { everyMs: 0 });
+        expect(out).toMatchObject({ ran: true, result: { counter: 3 } });
+      } finally {
+        closeBundle(phone);
+      }
+    });
+
+    it('a first copy into an empty store still runs', async () => {
+      setArchiveDataSource(dataSourceFor(src));
+      const out = await backUpIfDue(deps(new FakeStore(), memKV()), { everyMs: DAY });
+      expect(out).toMatchObject({ ran: true, result: { counter: 1 } });
+    });
+
+    it('an offline store fails the run, and writes nothing', async () => {
+      const store = await storeWithOneCopy();
+      store.list = async () => {
+        throw new Error('offline');
+      };
+      await expect(backUpIfDue(deps(store, memKV()), { everyMs: DAY })).rejects.toThrow('offline');
+      expect([...store.copies.keys()]).toEqual([1]);
+    });
+  });
+
+  it('after every copy is deleted, turning backup on writes one at once (BACKUP-2)', async () => {
+    setArchiveDataSource(dataSourceFor(src));
+    const store = new FakeStore();
+    const kv = memKV();
+    await backUpNow(deps(store, kv));
+    store.copies.clear();
+    await forgetBackupRuns(kv);
+    const out = await backUpIfDue(deps(store, kv), { everyMs: 86_400_000 });
+    expect(out).toMatchObject({ ran: true, result: { counter: 1, storeBehind: false } });
+    expect(store.copies.size).toBe(1);
   });
 
   it('an empty store finds nothing', async () => {

@@ -17,11 +17,13 @@
 
 import {
   deriveBackupIdentity,
+  deriveRootSigningKey,
   deriveRotationKey,
   kvBackupStore,
   mnemonicToEntropy,
   sealBackup,
   secp256k1ToDidKeyMultibase,
+  wrapSeed,
 } from '@dina/core';
 
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
@@ -34,11 +36,16 @@ import {
   recoverIdentity,
   deriveHandle,
 } from '../../src/onboarding/provision';
+import { buildBootInputs } from '../../src/services/boot_capabilities';
 import { loadPersistedDid } from '../../src/services/identity_record';
-import { loadIdentitySeeds } from '../../src/services/identity_store';
+import { loadIdentitySeeds, loadOrGenerateSeeds } from '../../src/services/identity_store';
 import { loadInfraPreferences } from '../../src/services/infra_preferences';
 import { loadLinkedAtprotoIdentity } from '../../src/services/linked_identity_record';
-import { loadWrappedSeed } from '../../src/services/wrapped_seed_store';
+import {
+  loadVerificationStatus,
+  markVerificationPending,
+} from '../../src/services/verification_status';
+import { loadWrappedSeed, saveWrappedSeed } from '../../src/services/wrapped_seed_store';
 
 const TEST_PASSPHRASE = 'test-passphrase-1234';
 const TEST_OWNER = 'Raj';
@@ -706,5 +713,158 @@ describe('deriveHandle', () => {
     const h = deriveHandle('Test', 'pds.dinakernel.com');
     expect(h).toContain('.pds.dinakernel.com');
     expect(h).not.toContain('test-pds');
+  });
+});
+
+describe('a kill or failed write during commit (PH-07, PH-08)', () => {
+  const useUnlock = jest.requireActual('../../src/hooks/useUnlock');
+  const keychain = jest.requireActual('react-native-keychain');
+  const { shutdownAllPersistence } = jest.requireActual('../../src/storage/init');
+
+  async function restart(): Promise<void> {
+    await shutdownAllPersistence().catch(() => undefined);
+    resetUnlockState();
+  }
+
+  /** A wrapped seed means the gate reaches `locked`: everything behind it must exist. */
+  async function expectResumableState(mnemonic: string[], did: string): Promise<void> {
+    if ((await loadWrappedSeed()) === null) return; // onboarding again: fine
+    const seed = mnemonicToEntropy(mnemonic.join(' '));
+    const seeds = await loadIdentitySeeds();
+    expect(seeds?.signingSeed).toEqual(deriveRootSigningKey(seed, 0).privateKey);
+    expect(await loadPersistedDid()).toBe(did);
+    expect((await loadInfraPreferences()).pdsPassword).not.toBeNull();
+  }
+
+  /** Fail the nth keychain write, for n = 0, 1, ... until a run needs no failure. */
+  async function forEachWrite(run: () => Promise<void>, check: () => Promise<void>): Promise<void> {
+    const real = keychain.setGenericPassword;
+    for (let n = 0; n < 30; n++) {
+      resetKeychainMock();
+      await restart();
+      let seen = 0;
+      const spy = jest
+        .spyOn(keychain, 'setGenericPassword')
+        .mockImplementation(async (...args: unknown[]) => {
+          if (seen++ === n) throw new Error('keychain write failed');
+          return real(...args);
+        });
+      let threw = false;
+      try {
+        await run();
+      } catch {
+        threw = true;
+      }
+      spy.mockRestore();
+      await restart();
+      await check();
+      if (!threw && seen <= n) return;
+    }
+    throw new Error('never finished');
+  }
+
+  it('recoverIdentity: every failed write leaves onboarding or a whole identity', async () => {
+    const mnemonic = generateNewMnemonic();
+    await forEachWrite(
+      async () => {
+        await recoverIdentity({
+          mnemonic,
+          passphrase: TEST_PASSPHRASE,
+          expectedDid: STUB_DID,
+          handle: 'raj.test',
+        });
+      },
+      () => expectResumableState(mnemonic, STUB_DID),
+    );
+  }, 180_000);
+
+  it('provisionIdentity: every failed write leaves onboarding or a whole identity', async () => {
+    const mnemonic = generateNewMnemonic();
+    const handle = deriveHandle(TEST_OWNER, TEST_PDS_URL);
+    makeFetchStub({
+      mnemonic,
+      did: STUB_DID,
+      handle,
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+    });
+    await forEachWrite(
+      async () => {
+        await provisionIdentity({
+          mnemonic,
+          passphrase: TEST_PASSPHRASE,
+          ownerName: TEST_OWNER,
+          handle,
+          msgboxEndpoint: TEST_MSGBOX,
+          pdsURL: TEST_PDS_URL,
+          plcURL: TEST_PLC_URL,
+        });
+      },
+      async () => {
+        await expectResumableState(mnemonic, STUB_DID);
+        if ((await loadWrappedSeed()) !== null) {
+          expect(await loadVerificationStatus()).toBe('pending');
+        }
+      },
+    );
+  }, 180_000);
+
+  it('a kill during the first unlock: the phrase still counts as unconfirmed', async () => {
+    const mnemonic = generateNewMnemonic();
+    const handle = deriveHandle(TEST_OWNER, TEST_PDS_URL);
+    makeFetchStub({
+      mnemonic,
+      did: STUB_DID,
+      handle,
+      pdsURL: TEST_PDS_URL,
+      plcURL: TEST_PLC_URL,
+    });
+    const spy = jest.spyOn(useUnlock, 'unlock').mockRejectedValue(new Error('killed'));
+    await expect(
+      provisionIdentity({
+        mnemonic,
+        passphrase: TEST_PASSPHRASE,
+        ownerName: TEST_OWNER,
+        handle,
+        msgboxEndpoint: TEST_MSGBOX,
+        pdsURL: TEST_PDS_URL,
+        plcURL: TEST_PLC_URL,
+      }),
+    ).rejects.toThrow('killed');
+    spy.mockRestore();
+    expect(await loadWrappedSeed()).not.toBeNull();
+    expect(await loadVerificationStatus()).toBe('pending');
+  });
+
+  it('recovery counts as confirmed: the owner just typed the phrase', async () => {
+    await markVerificationPending();
+    await recoverIdentity({
+      mnemonic: generateNewMnemonic(),
+      passphrase: TEST_PASSPHRASE,
+      expectedDid: STUB_DID,
+      handle: 'raj.test',
+    });
+    expect(await loadVerificationStatus()).toBe('verified');
+  });
+
+  it('a wrapped seed with no seed rows: unlock repairs them from the master seed', async () => {
+    const mnemonic = generateNewMnemonic();
+    const seed = mnemonicToEntropy(mnemonic.join(' '));
+    const wrapped = await wrapSeed(TEST_PASSPHRASE, seed);
+    await saveWrappedSeed(wrapped);
+    await restart();
+    await useUnlock.unlock(TEST_PASSPHRASE, wrapped);
+    const { seeds, generated } = await loadOrGenerateSeeds();
+    expect(generated).toBe(false);
+    expect(seeds.signingSeed).toEqual(deriveRootSigningKey(seed, 0).privateKey);
+    expect(seeds.rotationSeed).toEqual(deriveRotationKey(seed, 0).privateKey);
+    await restart();
+  });
+
+  it('boot refuses to invent a signing key while a vault exists', async () => {
+    const seed = mnemonicToEntropy(generateNewMnemonic().join(' '));
+    await saveWrappedSeed(await wrapSeed(TEST_PASSPHRASE, seed));
+    await expect(buildBootInputs({})).rejects.toThrow(/signing key/i);
+    expect(await loadIdentitySeeds()).toBeNull();
   });
 });

@@ -54,6 +54,15 @@ export type DIDLookup =
   | { kind: 'not_found' }
   | { kind: 'unavailable' };
 
+/**
+ * The directory answered, and the answer is that this DID has no document we
+ * can use (not found, deactivated, a method we do not support). Waiting will
+ * not change it. Any other failure of `resolve` is an outage or a bad answer.
+ */
+export class DIDUnresolvableError extends Error {
+  readonly unresolvable = true;
+}
+
 interface CacheEntry {
   resolved: ResolvedDID;
   expiresAt: number;
@@ -80,12 +89,15 @@ export class DIDResolver {
    * did:key — local derivation (no network)
    * did:plc — PLC directory lookup (with cache)
    */
-  async resolve(did: string): Promise<ResolvedDID> {
+  async resolve(did: string, options?: { fresh?: boolean }): Promise<ResolvedDID> {
     if (!did) throw new Error('resolver: DID is required');
 
-    // Check cache first
-    const cached = this.getFromCache(did);
-    if (cached) return cached;
+    // Check cache first. `fresh` skips the read, and keeps the old entry until
+    // the directory has answered.
+    if (options?.fresh !== true) {
+      const cached = this.getFromCache(did);
+      if (cached) return cached;
+    }
 
     // Resolve based on DID method
     let resolved: ResolvedDID;
@@ -94,7 +106,7 @@ export class DIDResolver {
     } else if (did.startsWith('did:plc:')) {
       resolved = await this.resolveDidPlc(did);
     } else {
-      throw new Error(`resolver: unsupported DID method in "${did}"`);
+      throw new DIDUnresolvableError(`resolver: unsupported DID method in "${did}"`);
     }
 
     // Cache the result
@@ -192,18 +204,31 @@ export class DIDResolver {
   private async resolveDidPlc(did: string): Promise<ResolvedDID> {
     const url = `${this.plcDirectory}/${did}`;
 
-    const response = await this.fetchFn(url, {
-      headers: { Accept: 'application/json' },
-    });
+    // One deadline over the request and the body: a hung directory is a fault
+    // like any other, never a caller stuck for good.
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), this.lookupTimeoutMs);
+    let document: DIDDocument;
+    try {
+      const response = await this.fetchFn(url, {
+        headers: { Accept: 'application/json' },
+        signal: abort.signal,
+      });
 
-    if (!response.ok) {
-      if (response.status === 404) {
-        throw new Error(`resolver: DID "${did}" not found on PLC directory`);
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new DIDUnresolvableError(`resolver: DID "${did}" not found on PLC directory`);
+        }
+        if (response.status === 410) {
+          throw new DIDUnresolvableError(`resolver: DID "${did}" is deactivated`);
+        }
+        throw new Error(`resolver: PLC directory returned HTTP ${response.status}`);
       }
-      throw new Error(`resolver: PLC directory returned HTTP ${response.status}`);
-    }
 
-    const document = (await response.json()) as DIDDocument;
+      document = (await response.json()) as DIDDocument;
+    } finally {
+      clearTimeout(timer);
+    }
 
     // Validate the document structure
     const errors = validateDIDDocument(document);

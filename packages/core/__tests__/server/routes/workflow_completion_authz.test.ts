@@ -99,7 +99,7 @@ describe('workflow complete/fail — agent ownership gate (P1.1)', () => {
       actionReq(
         't1',
         'complete',
-        { result: 'ok', agent_did: 'did:key:forged' },
+        { result: 'ok', agent_did: 'did:key:forged', claim_id: repo.getById('t1')?.claim_id },
         {
           type: 'agent',
           did: AGENT_A,
@@ -159,7 +159,12 @@ describe('workflow complete/fail — agent ownership gate (P1.1)', () => {
     const router = build();
     seedRunningDelegation('t1', AGENT_A);
     const resp = await router.handle(
-      actionReq('t1', 'fail', { error: 'provider down' }, { type: 'agent', did: AGENT_A }),
+      actionReq(
+        't1',
+        'fail',
+        { error: 'provider down', claim_id: repo.getById('t1')?.claim_id },
+        { type: 'agent', did: AGENT_A },
+      ),
     );
     expect(resp.status).toBe(200);
     expect(repo.getById('t1')?.status).toBe('failed');

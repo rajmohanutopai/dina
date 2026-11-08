@@ -121,6 +121,8 @@ export default function StaffHomeScreen(): React.ReactElement {
           const outcome = await client.issueDeliveryReceipt({
             deliveryNoteDigest: item.subject,
             lines: [],
+            // A second tap after a lost answer is the same full receipt.
+            idempotencyKey: `staff-receipt:${item.subject}`,
           });
           if (outcome.kind === 'pending_approval') {
             showMessage(

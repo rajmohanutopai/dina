@@ -35,7 +35,8 @@ const SERVICE_QUERY_PAYLOAD = JSON.stringify({
 function makeExecTask(): { repo: InMemoryWorkflowRepository; taskId: string } {
   const repo = new InMemoryWorkflowRepository();
   const taskId = 'svc-exec-q-1';
-  const now = 1_700_000_000_000;
+  // Now, not a fixed date: a stash past the requester's TTL is dropped unsent.
+  const now = Date.now();
   repo.create({
     id: taskId,
     kind: WorkflowTaskKind.Delegation,
@@ -356,8 +357,9 @@ describe('WorkflowService — bridge reliability hardening', () => {
 
     service.complete(taskId, JSON.stringify({ ok: true }), 'ok', 'svc:agent');
     await service.flushBridgeInFlight();
-    // No stash on the task (write failed). No delivery yet either.
-    expect(repo.getById(taskId)?.internal_stash).toBeUndefined();
+    // The real record could not be written (REQ-12: the marker committed with
+    // the completion still says a response is owed). No delivery yet either.
+    expect(repo.getById(taskId)?.internal_stash).toBe('bridge_pending:unbuilt');
     expect(delivered).toHaveLength(0);
 
     // Restore the repo and flip to "deliver." The sweeper must walk
@@ -367,6 +369,7 @@ describe('WorkflowService — bridge reliability hardening', () => {
     const cleared = await service.retryPendingBridges();
     expect(cleared).toBe(1);
     expect(delivered).toHaveLength(1);
+    expect(repo.getById(taskId)?.internal_stash).toBeUndefined();
   });
 });
 

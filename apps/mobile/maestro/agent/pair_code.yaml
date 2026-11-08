@@ -3,20 +3,15 @@
 # the orchestrator must consume it without printing it.
 appId: com.dinakernel.mobile
 ---
-- launchApp:
-    stopApp: false
-- tapOn:
-    text: 'Open menu'
+- launchApp
 - extendedWaitUntil:
     visible:
-      text: 'Settings'
-    timeout: 10000
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 - tapOn:
-    text: 'Settings'
-- extendedWaitUntil:
-    visible:
-      id: 'settings-row-agents'
-    timeout: 20000
+    id: 'root-layout-menu'
+- tapOn:
+    id: 'root-layout-menu-row-settings'
 - scrollUntilVisible:
     element:
       id: 'settings-row-agents'
@@ -26,16 +21,12 @@ appId: com.dinakernel.mobile
     visibilityPercentage: 50
 - tapOn:
     id: 'settings-row-agents'
-- extendedWaitUntil:
-    visible:
-      id: 'paired-devices-agent-name'
-    timeout: 20000
 - scrollUntilVisible:
     element:
       id: 'paired-devices-agent-name'
     direction: DOWN
     centerElement: true
-    timeout: 15000
+    timeout: 40000
     visibilityPercentage: 50
 - tapOn:
     id: 'paired-devices-agent-name'
@@ -46,7 +37,6 @@ appId: com.dinakernel.mobile
     element:
       id: 'paired-devices-generate'
     direction: DOWN
-    centerElement: true
     timeout: 10000
     visibilityPercentage: 50
 - tapOn:
@@ -55,11 +45,21 @@ appId: com.dinakernel.mobile
     # focus. Retry only when the hierarchy did not change; iOS therefore
     # still generates exactly one short-lived code.
     retryTapIfNoChange: true
+# Handing out authority asks for the passphrase first. Pass it with
+# -e OWNER_PASSPHRASE=… (the fixture one from onboarding_create.yaml).
+- extendedWaitUntil:
+    visible:
+      text: 'Your passphrase'
+    timeout: 8000
+- tapOn:
+    text: 'Your passphrase'
+- inputText: ${OWNER_PASSPHRASE}
+- tapOn:
+    text: 'Verify'
 - scrollUntilVisible:
     element:
       id: 'paired-devices-setup-code'
     direction: DOWN
-    centerElement: true
     timeout: 10000
     visibilityPercentage: 50
 # React Native's selectable Text has no dedicated copy button. Long-pressing

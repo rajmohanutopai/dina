@@ -45,6 +45,22 @@ jest.mock('../../src/services/identity_record', () => ({
   clearPersistedDid: jest.fn(async () => {
     callLog.push('clearPersistedDid');
   }),
+  loadPersistedDid: jest.fn(async () => 'did:plc:owner'),
+}));
+
+jest.mock('../../src/services/identity_scope', () => ({
+  rememberSignedOutIdentity: jest.fn(async () => {
+    callLog.push('rememberSignedOutIdentity');
+  }),
+  resetIdentityScopedState: jest.fn(() => {
+    callLog.push('resetIdentityScopedState');
+  }),
+}));
+
+jest.mock('../../src/services/infra_preferences', () => ({
+  clearPdsCredentials: jest.fn(async () => {
+    callLog.push('clearPdsCredentials');
+  }),
 }));
 
 jest.mock('../../src/services/display_name_override', () => ({
@@ -74,30 +90,20 @@ jest.mock('expo-notifications', () => ({
   }),
 }));
 
+// closeVault stops UCP, drops the backup and UCP keys, closes personas and
+// shuts persistence down (useUnlock's own tests and identity_isolation run it).
 jest.mock('../../src/hooks/useUnlock', () => ({
+  closeVault: jest.fn(async () => {
+    callLog.push('closeVault');
+  }),
   resetUnlockState: jest.fn(() => {
     callLog.push('resetUnlockState');
   }),
 }));
 
-// UCP (plan §3.11): stopped before anything is cleared or closed.
-jest.mock('../../src/services/net_socket_wiring', () => ({
-  stopUcp: jest.fn(async () => {
-    callLog.push('stopUcp');
-  }),
-}));
-
-jest.mock('../../src/storage/init', () => ({
-  shutdownAllPersistence: jest.fn(async () => {
-    callLog.push('shutdownAllPersistence');
-  }),
-}));
-
 import * as Notifications from 'expo-notifications';
 
-import { deriveUcpIdentity, getUcpIdentity, installUcpIdentity } from '@dina/core';
-
-import { resetUnlockState } from '../../src/hooks/useUnlock';
+import { closeVault, resetUnlockState } from '../../src/hooks/useUnlock';
 import { clearDisplayNameOverride } from '../../src/services/display_name_override';
 import { clearPersistedDid } from '../../src/services/identity_record';
 import { clearIdentitySeeds } from '../../src/services/identity_store';
@@ -105,13 +111,11 @@ import { clearOrphanKeychainState, writeInstallMarker } from '../../src/services
 import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_data_wipe';
 import { clearAutoPassphrase } from '../../src/services/startup_preferences';
 import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
-import { shutdownAllPersistence } from '../../src/storage/init';
 
 describe('signOutLocal', () => {
   beforeEach(() => {
     callLog.length = 0;
     jest.clearAllMocks();
-    installUcpIdentity(deriveUcpIdentity(new Uint8Array(32).fill(5), 0));
   });
 
   it('clears wrapped seed + identity keys + persisted DID + display-name override + auto-passphrase cache + resets unlock state', async () => {
@@ -131,17 +135,26 @@ describe('signOutLocal', () => {
 
   it('runs the clears in deterministic order', async () => {
     await signOutLocal();
+    // Every database closes before any key goes (PH-01).
     expect(callLog).toEqual([
-      'stopUcp',
+      'closeVault',
+      'resetIdentityScopedState',
+      'cancelAllScheduledNotificationsAsync',
+      'rememberSignedOutIdentity',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
       'clearDisplayNameOverride',
+      'clearPdsCredentials',
       'clearAutoPassphrase',
       'resetUnlockState',
     ]);
-    // The UCP signing key is gone from memory too.
-    expect(getUcpIdentity()).toBeNull();
+  });
+
+  it('still clears the keys when closeVault throws', async () => {
+    (closeVault as jest.Mock).mockRejectedValueOnce(new Error('close failed'));
+    await signOutLocal();
+    expect(clearWrappedSeed).toHaveBeenCalledTimes(1);
   });
 
   it('propagates errors so the UI alert can render the message', async () => {
@@ -189,16 +202,18 @@ describe('eraseEverythingLocal', () => {
     // survive an in-process re-onboard or the next boot erases the new seed
     // as an apparent orphan.
     expect(callLog).toEqual([
-      // UCP stops while its database is still open, and again in the sign-out (a no-op then).
-      'stopUcp',
-      'shutdownAllPersistence',
-      'cancelAllScheduledNotificationsAsync',
+      // Closes before the files go, and again in the sign-out (a no-op then).
+      'closeVault',
       'clearOrphanKeychainState',
-      'stopUcp',
+      'closeVault',
+      'resetIdentityScopedState',
+      'cancelAllScheduledNotificationsAsync',
+      'rememberSignedOutIdentity',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
       'clearDisplayNameOverride',
+      'clearPdsCredentials',
       'clearAutoPassphrase',
       'resetUnlockState',
       'writeInstallMarker',
@@ -272,8 +287,8 @@ describe('eraseEverythingLocal', () => {
     expect(__getEntries().sort()).toEqual(['expo-config.json', 'fonts.cache', 'image-cache.png']);
   });
 
-  it('still runs signOutLocal when shutdownAllPersistence throws', async () => {
-    (shutdownAllPersistence as jest.Mock).mockRejectedValueOnce(new Error('op-sqlite hung'));
+  it('still runs signOutLocal when closeVault throws', async () => {
+    (closeVault as jest.Mock).mockRejectedValueOnce(new Error('op-sqlite hung'));
     __setEntries(['identity.sqlite']);
 
     await eraseEverythingLocal();
@@ -333,16 +348,18 @@ describe('eraseEverythingLocal', () => {
 
     expect(__getDeletedEntries()).toEqual([]);
     expect(callLog).toEqual([
-      // UCP stops while its database is still open, and again in the sign-out (a no-op then).
-      'stopUcp',
-      'shutdownAllPersistence',
-      'cancelAllScheduledNotificationsAsync',
+      // Closes before the files go, and again in the sign-out (a no-op then).
+      'closeVault',
       'clearOrphanKeychainState',
-      'stopUcp',
+      'closeVault',
+      'resetIdentityScopedState',
+      'cancelAllScheduledNotificationsAsync',
+      'rememberSignedOutIdentity',
       'clearWrappedSeed',
       'clearIdentitySeeds',
       'clearPersistedDid',
       'clearDisplayNameOverride',
+      'clearPdsCredentials',
       'clearAutoPassphrase',
       'resetUnlockState',
       'writeInstallMarker',

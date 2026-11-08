@@ -148,8 +148,8 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
   it('refuses a round already settled', () => {
     const id = eta();
     const { taskId } = iw.claimChild(id);
-    iw.world.workflow.complete(taskId, JSON.stringify({ eta_minutes: 3 }), 'done', iw.runnerDid);
     const claimId = iw.world.workflow.store().getById(taskId)?.claim_id;
+    iw.world.workflow.complete(taskId, JSON.stringify({ eta_minutes: 3 }), 'done', iw.runnerDid, claimId);
     expect(requestInboundInputWith(iw.rt, { taskId, claimantDid: iw.runnerDid, claimId, request: ASK })).toEqual({
       kind: 'refused',
       reason: 'operation_settled',

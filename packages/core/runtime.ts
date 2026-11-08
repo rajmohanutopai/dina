@@ -29,6 +29,7 @@ export {
   MsgTypeTrustVouchResponse,
 } from './src/d2d/families';
 export { DIDResolver } from './src/d2d/resolver';
+export type { ResolvedDID } from './src/d2d/resolver';
 export { sendD2D } from './src/d2d/send';
 export type { ServiceQueryBody, ServiceResponseBody } from './src/d2d/service_bodies';
 export {
@@ -102,6 +103,7 @@ export {
   getServiceConfig,
   listServiceConfigs,
   hydrateServiceConfig,
+  drainListingUnpublishes,
   onServiceConfigChanged,
   resetServiceConfigState,
   setServiceConfig,
@@ -110,6 +112,7 @@ export {
   InMemoryServiceConfigRepository,
   SQLiteServiceConfigRepository,
   setServiceConfigRepository,
+  getServiceConfigRepository,
 } from './src/service/service_config_repository';
 export type { ServiceConfigRepository } from './src/service/service_config_repository';
 export {
@@ -151,6 +154,7 @@ export {
 } from './src/workflow/service';
 export type { WorkflowHooks } from './src/workflow/service';
 export { TaskExpirySweeper } from './src/workflow/task_expiry_sweeper';
+export { StagingSweeper, DEFAULT_STAGING_SWEEP_INTERVAL_MS } from './src/staging/sweeper';
 
 // Interactive-run subsystem (INTERACTIVE_SERVICES_ARCHITECTURE.md §5..§13) —
 // the Tier-0 stores + services the app boot wires.

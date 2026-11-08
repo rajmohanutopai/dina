@@ -490,6 +490,17 @@ export function rehydrateTenderLineLabels(linesJson: string): string[] | null {
   });
 }
 
+/** The epoch a node last held (`restore_marker.ts`). Anything else fails closed. */
+export function rehydrateEpochHeld(json: string): Rehydrated<{ epoch: string; digest: string }> {
+  const parsed = parse(json);
+  if (!parsed.ok) return parsed;
+  const v = (parsed.value ?? {}) as { epoch?: unknown; digest?: unknown };
+  if (typeof v.epoch !== 'string' || typeof v.digest !== 'string') {
+    return { ok: false, error: 'stored held epoch has no epoch or digest' };
+  }
+  return { ok: true, value: { epoch: v.epoch, digest: v.digest } };
+}
+
 /**
  * A stored signing stop (`restore_marker.ts`): the epoch and the reason, both
  * strings. Anything else fails, and the epoch service then fails closed.

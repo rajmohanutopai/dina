@@ -4,7 +4,7 @@
 # a reminder (the agentic loop calls schedule_reminder); a plain preference
 # does NOT (it calls bind_preference). We test both:
 #   - WITHOUT: "Emma loves dinosaurs"      → stored, NO reminder card
-#   - WITH:    "Emma's birthday is Nov 7"  → reminder card, enriched w/ dinosaur
+#   - WITH:    "Emma's birthday is March 15"  → reminder card, enriched w/ dinosaur
 #
 # Order matters: the negative case runs FIRST (before any reminder exists), so
 # an absent `chat-card-reminder` is unambiguous. Real-LLM — keep on the
@@ -12,6 +12,10 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 # Clear the chat so old reminder cards from prior runs don't pollute the
 # "no reminder card" assertion below. (Menu → New chat clears the thread
 # display only; reminders/vault are untouched.)
@@ -33,7 +37,8 @@ appId: com.dinakernel.mobile
 # decision is already made. No reminder card should be present.
 - extendedWaitUntil:
     visible:
-      text: '.*Stored in .*[Vv]ault.*'
+      # remember_recall stores the same fact first; either reply means it's held.
+      text: '.*(Stored in .*[Vv]ault|already have that stored).*'
     timeout: 40000
 - assertNotVisible:
     id: 'chat-card-reminder'
@@ -43,7 +48,7 @@ appId: com.dinakernel.mobile
     id: 'index-mode-chip-remember'
 - tapOn:
     id: 'chat-input'
-- inputText: "Emma's birthday is on November 7"
+- inputText: "Emma's birthday is on March 15"
 - tapOn:
     id: 'send-button'
 - extendedWaitUntil:

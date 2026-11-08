@@ -130,6 +130,10 @@ export class SQLiteReminderRepository implements ReminderRepository {
       sets.push('due_at = ?');
       params.push(updates.due_at);
     }
+    if (updates.recurring !== undefined) {
+      sets.push('recurring = ?');
+      params.push(updates.recurring);
+    }
     if (sets.length === 0) return;
     // Exact-id + scope: a demo id can never update a user reminder.
     params.push(id, ...scopedParams());
@@ -142,6 +146,9 @@ export class SQLiteReminderRepository implements ReminderRepository {
       ...scopedParams(),
     ]);
     if (existing.length === 0) return false;
+    // The owner's delete and a forget job both land here: the words must go from
+    // the file, not only from the table.
+    this.db.execute('PRAGMA secure_delete=ON');
     this.db.execute(`DELETE FROM reminders WHERE id = ? AND ${scopedWhere()}`, [
       id,
       ...scopedParams(),

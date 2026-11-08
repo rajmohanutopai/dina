@@ -12,6 +12,11 @@
  * after it runs, this node can sign.
  */
 
+import { mkdtempSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import * as path from 'node:path';
+
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 import {
   applyMigrations,
   commerceAvailability,
@@ -20,6 +25,7 @@ import {
   IDENTITY_MIGRATIONS,
   installCommerceRuntime,
   InMemoryDatabaseAdapter,
+  type DatabaseAdapter,
   setCommerceEpochService,
   getCatalogRecordReader,
   getCatalogRecordWriter,
@@ -109,7 +115,7 @@ class FakeRepo {
   };
 }
 
-function installRuntime(adapter: InMemoryDatabaseAdapter): void {
+function installRuntime(adapter: DatabaseAdapter): void {
   installCommerceRuntime(
     createCommerceRuntime({
       adapter,
@@ -126,13 +132,18 @@ function installRuntime(adapter: InMemoryDatabaseAdapter): void {
 }
 
 describe('startMobileCommercePlane', () => {
-  let adapter: InMemoryDatabaseAdapter;
+  let adapter: DatabaseAdapter;
   /** Hand-driven timers, so "a tick was started" is observable. */
   let started: number;
   let cleared: number;
 
   beforeEach(() => {
-    adapter = new InMemoryDatabaseAdapter();
+    // Real SQLite: the in-memory adapter ignores WHERE, so any row in kv_store
+    // would read as a pending restore.
+    adapter = new NodeSQLiteAdapter({
+      path: path.join(mkdtempSync(path.join(tmpdir(), 'plane-')), 'identity.sqlite'),
+      passphraseHex: 'ab'.repeat(32),
+    });
     applyMigrations(adapter, IDENTITY_MIGRATIONS);
     installRuntime(adapter);
     started = 0;

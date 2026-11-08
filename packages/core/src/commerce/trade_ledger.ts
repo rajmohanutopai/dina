@@ -105,13 +105,29 @@ export interface TradeDocumentRow {
   recordJson: string;
   evidenceJson: string;
   createdAt: number;
+  /**
+   * The caller's key for the request that authored this document: a retry
+   * with the same key gets this document back. Never on the wire.
+   */
+  authoringKey?: string;
 }
 
 export interface TradeDocumentRepository {
   /** First-writer-wins on record digest. False when already stored. */
   put(row: TradeDocumentRow): boolean;
   get(recordDigest: string): TradeDocumentRow | null;
-  listByOrder(purchaseOrderId: string, kind: TradeDocumentKind): TradeDocumentRow[];
+  /** The document one authoring request made, for a retry to find. */
+  getByAuthoringKey(kind: TradeDocumentKind, authoringKey: string): TradeDocumentRow | null;
+  /**
+   * One relationship's documents on an order. A purchase order id is the
+   * buyer's choice and unique only per buyer, so the id alone never names one
+   * order: the counterparty is part of the key.
+   */
+  listByOrder(
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    kind: TradeDocumentKind,
+  ): TradeDocumentRow[];
   listByCounterparty(counterpartyDid: string, kind: TradeDocumentKind): TradeDocumentRow[];
   /** Every row of a kind in a direction — the §7 inbox walks these. */
   listByKind(kind: TradeDocumentKind, direction: 'inbound' | 'outbound'): TradeDocumentRow[];
@@ -182,6 +198,9 @@ function rowFromDb(row: DBRow): TradeDocumentRow {
     recordJson: String(row.record_json),
     evidenceJson: String(row.evidence_json),
     createdAt: Number(row.created_at),
+    ...(typeof row.authoring_key === 'string' && row.authoring_key !== ''
+      ? { authoringKey: row.authoring_key }
+      : {}),
   };
 }
 
@@ -193,9 +212,9 @@ export class SQLiteTradeDocumentRepository implements TradeDocumentRepository {
       this.db.run(
         `INSERT INTO commerce_trade_documents
            (record_digest, kind, counterparty_did, purchase_order_id,
-            answers_digest, direction, record_json, evidence_json, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(record_digest) DO NOTHING`,
+            answers_digest, direction, record_json, evidence_json, created_at, authoring_key)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT DO NOTHING`,
         [
           row.recordDigest,
           row.kind,
@@ -206,9 +225,18 @@ export class SQLiteTradeDocumentRepository implements TradeDocumentRepository {
           row.recordJson,
           row.evidenceJson,
           row.createdAt,
+          row.authoringKey ?? '',
         ],
       ) > 0
     );
+  }
+
+  getByAuthoringKey(kind: TradeDocumentKind, authoringKey: string): TradeDocumentRow | null {
+    const rows = this.db.query(
+      `SELECT * FROM commerce_trade_documents WHERE kind = ? AND authoring_key = ?`,
+      [kind, authoringKey],
+    );
+    return rows[0] === undefined ? null : rowFromDb(rows[0]);
   }
 
   get(recordDigest: string): TradeDocumentRow | null {
@@ -219,12 +247,17 @@ export class SQLiteTradeDocumentRepository implements TradeDocumentRepository {
     return rows[0] === undefined ? null : rowFromDb(rows[0]);
   }
 
-  listByOrder(purchaseOrderId: string, kind: TradeDocumentKind): TradeDocumentRow[] {
+  listByOrder(
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    kind: TradeDocumentKind,
+  ): TradeDocumentRow[] {
     return this.db
       .query(
         `SELECT * FROM commerce_trade_documents
-          WHERE purchase_order_id = ? AND kind = ? ORDER BY created_at, record_digest`,
-        [purchaseOrderId, kind],
+          WHERE purchase_order_id = ? AND kind = ? AND counterparty_did = ?
+          ORDER BY created_at, record_digest`,
+        [purchaseOrderId, kind, counterpartyDid],
       )
       .map(rowFromDb);
   }
@@ -275,6 +308,13 @@ export class InMemoryTradeDocumentRepository implements TradeDocumentRepository 
     return row === undefined ? null : { ...row };
   }
 
+  getByAuthoringKey(kind: TradeDocumentKind, authoringKey: string): TradeDocumentRow | null {
+    for (const row of this.rows.values()) {
+      if (row.kind === kind && row.authoringKey === authoringKey) return { ...row };
+    }
+    return null;
+  }
+
   private sorted(filter: (row: TradeDocumentRow) => boolean): TradeDocumentRow[] {
     return [...this.rows.values()]
       .filter(filter)
@@ -282,8 +322,17 @@ export class InMemoryTradeDocumentRepository implements TradeDocumentRepository 
       .map((row) => ({ ...row }));
   }
 
-  listByOrder(purchaseOrderId: string, kind: TradeDocumentKind): TradeDocumentRow[] {
-    return this.sorted((r) => r.purchaseOrderId === purchaseOrderId && r.kind === kind);
+  listByOrder(
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    kind: TradeDocumentKind,
+  ): TradeDocumentRow[] {
+    return this.sorted(
+      (r) =>
+        r.counterpartyDid === counterpartyDid &&
+        r.purchaseOrderId === purchaseOrderId &&
+        r.kind === kind,
+    );
   }
 
   listByCounterparty(counterpartyDid: string, kind: TradeDocumentKind): TradeDocumentRow[] {
@@ -336,16 +385,24 @@ function applied(digest: string): TradeIngest {
  * refuse. Per line: the line must be ON the order, unit-comparable,
  * and Σ delivered across the retained note set plus this note must not
  * exceed the ordered quantity — exact rationals, no rounding anywhere
- * on quantities (the §9.11 pattern).
+ * on quantities (the §9.11 pattern). The note set is THIS order's: the
+ * notes between its two parties, in the direction `side` writes them, so a
+ * second buyer's order or the other leg of a dual-role pair under the same
+ * id counts for nothing here.
  */
 export function checkCumulativeDelivery(args: {
   note: DeliveryNote;
   order: PurchaseOrderProposal;
   repository: TradeDocumentRepository;
+  /** This node's side of the order. */
+  side: 'buyer' | 'supplier';
 }): string | null {
   const orderLines = new Map(args.order.accepted_lines.map((line) => [line.line_id, line]));
+  const counterpartyDid = args.side === 'supplier' ? args.order.buyer_did : args.order.supplier_did;
+  const direction = args.side === 'supplier' ? 'outbound' : 'inbound';
   const held = args.repository
-    .listByOrder(args.note.purchase_order_id, 'delivery_note')
+    .listByOrder(counterpartyDid, args.note.purchase_order_id, 'delivery_note')
+    .filter((row) => row.direction === direction)
     .map((row) => rehydrateTradeDocument(row))
     .flatMap((doc) => (doc.kind === 'delivery_note' ? [doc.document] : []));
   for (const line of args.note.lines) {
@@ -437,6 +494,7 @@ export function verifyInboundDeliveryNote(args: {
     note,
     order,
     repository: args.repository,
+    side: 'buyer',
   });
   if (cumulativeError) return { outcome: 'refused', detail: cumulativeError };
 
@@ -475,6 +533,10 @@ export function verifyInboundDeliveryReceipt(args: {
   const noteRow = args.repository.get(receipt.delivery_note_digest);
   if (noteRow === null || noteRow.kind !== 'delivery_note') {
     return { outcome: 'refused', detail: 'deliveryReceipt: no retained note with that digest' };
+  }
+  // The note is bound to the party it went to: only that party answers it.
+  if (noteRow.direction !== 'outbound' || noteRow.counterpartyDid !== args.senderDid) {
+    return { outcome: 'not_ours', detail: 'deliveryReceipt: the note did not go to this sender' };
   }
   const note = rehydrateTradeDocument(noteRow);
   if (note.kind !== 'delivery_note') {

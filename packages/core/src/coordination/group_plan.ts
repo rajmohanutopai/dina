@@ -124,6 +124,8 @@ export interface GroupPlan {
   fold: FoldResult | null;
   chosen: MeetingSlot | null;
   state: GroupPlanState;
+  /** The owner deleted the plan and a guest is still to be told; the sweep finishes it. */
+  deleteWhenTold?: boolean;
 }
 
 export type GroupPlanRefusal =

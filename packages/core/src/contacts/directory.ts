@@ -47,6 +47,7 @@ import {
 } from '../peerlens/source_trust';
 import { canonicalizeIdentityValue } from '../people/domain';
 import { getPeopleRepository, type PeopleRepository } from '../people/repository';
+import { getServiceGrantRepository } from '../service/service_grant_repository';
 import { getVaultRepository, listVaultPersonas } from '../vault/repository';
 
 import { normalisePreferredForCategories, preferredForKey } from './preferred_for';
@@ -307,6 +308,19 @@ export function removeContact(personId: string): boolean {
   // SQL first — drop the durable policy row before mutating memory + D2D
   // projections, so a failed delete throws here with caches/gates intact
   // (rather than leaving a contact pruned from the gate but live on disk).
+  //
+  // Grants first (TT-05): a grant to a non-contact is live authority for a DID
+  // we have no relationship with. A failure here throws with the contact still
+  // in place to retry, and a crash before the delete leaves a contact with no
+  // grant, which fails closed. Keyed on this person's DIDs only: A2A clients in
+  // the same table hold grants under their own principal.
+  const grantRepo = getServiceGrantRepository();
+  if (grantRepo !== null) {
+    const nowSec = Math.floor(Date.now() / 1000);
+    for (const did of [contact.did, ...listPersonDids(personId)]) {
+      grantRepo.revokeAllForGrantee(did, nowSec);
+    }
+  }
   const sqlRepo = getContactRepository();
   if (sqlRepo) sqlRepo.remove(personId);
 

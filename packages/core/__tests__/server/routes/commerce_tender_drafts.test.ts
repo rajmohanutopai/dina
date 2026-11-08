@@ -905,6 +905,98 @@ describe('opening a draft twice at once (code review round 1)', () => {
   });
 });
 
+describe('a crash while a draft opens (COM-4)', () => {
+  const requests = (): string[] =>
+    sent
+      .filter((m) => m.body.capability === 'com.dinakernel.commerce.request_quote')
+      .map((m) => m.toDid)
+      .sort();
+
+  /** Stand for a process that dies at this write; `finally` clears the set as a restart would. */
+  async function crashOpen(id: string, spy: jest.SpyInstance): Promise<void> {
+    spy.mockImplementationOnce(() => {
+      throw new Error('process died here');
+    });
+    expect((await openDraft(id)).status).toBeGreaterThanOrEqual(500);
+    spy.mockRestore();
+  }
+
+  async function aDraft(): Promise<string> {
+    await pastTender();
+    sent.length = 0;
+    const id = String((await draft()).body.draft_id);
+    await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+    return id;
+  }
+
+  it('dying after the fan-out: the next open returns the first tender and sends nothing new', async () => {
+    const id = await aDraft();
+    const tendersBefore = runtime.tenders.listTenders().length;
+    await crashOpen(id, jest.spyOn(runtime.tenderDrafts, 'move'));
+    const first = runtime.tenderDrafts.get(id);
+    expect(first?.state).toBe('pending');
+    expect(first?.tenderId).not.toBe('');
+    expect(requests()).toEqual([SUPPLIER_A, SUPPLIER_B]);
+
+    const second = await openDraft(id);
+    expect(second.status).toBe(200);
+    expect(second.body.tender_id).toBe(first?.tenderId);
+    expect(runtime.tenderDrafts.get(id)).toMatchObject({ state: 'opened', tenderId: first?.tenderId });
+    expect(runtime.tenders.listTenders()).toHaveLength(tendersBefore + 1);
+    expect(requests()).toEqual([SUPPLIER_A, SUPPLIER_B]);
+  });
+
+  it('dying between two sends: the next open asks only the supplier never reached', async () => {
+    const id = await aDraft();
+    const real = runtime.tenders.putMember.bind(runtime.tenders);
+    const members = jest.spyOn(runtime.tenders, 'putMember');
+    let calls = 0;
+    members.mockImplementation((member) => {
+      calls += 1;
+      if (calls === 2) throw new Error('process died here');
+      real(member);
+    });
+    expect((await openDraft(id)).status).toBeGreaterThanOrEqual(500);
+    members.mockRestore();
+    expect(requests()).toHaveLength(1);
+
+    const second = await openDraft(id);
+    expect(second.status).toBe(200);
+    expect(requests()).toEqual([SUPPLIER_A, SUPPLIER_B]);
+    const tenderId = String(second.body.tender_id);
+    expect(runtime.tenders.listMembers(tenderId).map((m) => m.supplierDid).sort()).toEqual([
+      SUPPLIER_A,
+      SUPPLIER_B,
+    ]);
+    // The tender closes when its first requests do, not from the second try.
+    expect(runtime.tenders.getTender(tenderId)?.expiresAt).toBeGreaterThan(Date.now());
+  });
+
+  it('dying before the tender row: the members are not orphaned, and the policy starts', async () => {
+    const id = await aDraft();
+    await crashOpen(id, jest.spyOn(runtime.tenders, 'putTender'));
+    const tenderId = String(runtime.tenderDrafts.get(id)?.tenderId);
+    expect(runtime.tenders.getTender(tenderId)).toBeNull();
+    const second = await openDraft(id);
+    expect(second.status).toBe(200);
+    expect(second.body.tender_id).toBe(tenderId);
+    expect(runtime.tenders.getTender(tenderId)).not.toBeNull();
+    expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('negotiating');
+    expect(requests()).toEqual([SUPPLIER_A, SUPPLIER_B]);
+  });
+
+  it('dismissing after a crash keeps the tender id on the draft', async () => {
+    const id = await aDraft();
+    await crashOpen(id, jest.spyOn(runtime.tenderDrafts, 'move'));
+    const held = runtime.tenderDrafts.get(id)?.tenderId;
+    const dismissed = await router.handle(
+      owner('POST', '/v1/commerce/trade/tender-drafts/dismiss', { draft_id: id }),
+    );
+    expect(dismissed.status).toBe(200);
+    expect(runtime.tenderDrafts.get(id)).toMatchObject({ state: 'dismissed', tenderId: held });
+  });
+});
+
 // ── HOSTED_DINA §6.1–§6.2: suppliers found on the network, and the owner's verdict ──
 
 const NET_GOOD = 'did:plc:netgoodbakery';

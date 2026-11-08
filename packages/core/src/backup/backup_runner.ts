@@ -14,6 +14,12 @@
  * (§6). A new phone after a loss has nothing to compare with; it shows the
  * copy's date and the owner judges.
  *
+ * The newest copy is what recovery offers, so a device must not push it aside
+ * by accident. A device that has written nothing and restored nothing while the
+ * store holds copies is a recovered phone whose restore did not happen (switched
+ * off, failed, offline, or still downloading). The schedule holds until a
+ * restore finishes or the owner says "Back up now".
+ *
  * What the store sees: the sealed bytes, the counter, the size and the time.
  */
 
@@ -45,6 +51,8 @@ export const BACKUP_LAST_AT_KEY = 'last_at';
 export const BACKUP_LAST_FINGERPRINT_KEY = 'last_fingerprint';
 /** When a due run last found nothing changed. */
 export const BACKUP_LAST_CHECKED_AT_KEY = 'last_checked_at';
+/** Set while the schedule holds for the owner; empty otherwise. */
+export const BACKUP_HELD_KEY = 'held_for_owner';
 
 export interface BackupKV {
   get(key: string): Promise<string | null>;
@@ -107,7 +115,7 @@ export async function backUpNow(deps: BackupRunDeps): Promise<BackupRunResult> {
 }
 
 export type BackupDueResult =
-  | { ran: false; reason: 'not_due' | 'unchanged' }
+  | { ran: false; reason: 'not_due' | 'unchanged' | 'held_for_owner' }
   | { ran: true; result: BackupRunResult };
 
 /**
@@ -124,6 +132,10 @@ export async function backUpIfDue(
   const at = async (key: string): Promise<number> => Number((await deps.kv.get(key)) ?? 0) || 0;
   const since = Math.max(await at(BACKUP_LAST_AT_KEY), await at(BACKUP_LAST_CHECKED_AT_KEY));
   if (now() - since < opts.everyMs) return { ran: false, reason: 'not_due' };
+  if ((await lastWritten(deps.kv)) === 0 && (await deps.client.list()).length > 0) {
+    await deps.kv.set(BACKUP_HELD_KEY, '1');
+    return { ran: false, reason: 'held_for_owner' };
+  }
   const payload = await currentPayload();
   if ((await deps.kv.get(BACKUP_LAST_FINGERPRINT_KEY)) === fingerprint(payload)) {
     await deps.kv.set(BACKUP_LAST_CHECKED_AT_KEY, String(now()));
@@ -155,12 +167,34 @@ async function writeCopy(deps: BackupRunDeps, payload: ArchivePayloadV1): Promis
     await deps.kv.set(BACKUP_LAST_COUNTER_KEY, String(counter));
     await deps.kv.set(BACKUP_LAST_AT_KEY, String(now()));
     await deps.kv.set(BACKUP_LAST_FINGERPRINT_KEY, fingerprint(payload));
+    await deps.kv.set(BACKUP_HELD_KEY, '');
     return {
       counter,
       size: sealed.length,
       itemCount: countVaultItems(payload),
       storeBehind: mine > 0 && top < mine,
     };
+  }
+}
+
+/** True when the schedule found copies this device never restored, and stopped. */
+export async function isBackupHeldForOwner(kv: BackupKV): Promise<boolean> {
+  return (await kv.get(BACKUP_HELD_KEY)) === '1';
+}
+
+/**
+ * Every copy is gone from the store: forget what this device knows about them,
+ * so the next run writes a copy, with no "store is behind" warning.
+ */
+export async function forgetBackupRuns(kv: BackupKV): Promise<void> {
+  for (const key of [
+    BACKUP_LAST_COUNTER_KEY,
+    BACKUP_LAST_AT_KEY,
+    BACKUP_LAST_FINGERPRINT_KEY,
+    BACKUP_LAST_CHECKED_AT_KEY,
+    BACKUP_HELD_KEY,
+  ]) {
+    await kv.set(key, '');
   }
 }
 
@@ -184,17 +218,25 @@ export async function findBackup(
   return { meta: openBackup(bytes, identity).meta, bytes };
 }
 
-/** Restore a copy `findBackup` returned. Same checks as a manual import. */
+/**
+ * Restore a copy `findBackup` returned. Same checks as a manual import. A
+ * finished restore counts as knowing the store up to this copy, which ends the
+ * hold; one that throws leaves it on.
+ */
 export async function restoreBackup(
   identity: BackupIdentity,
   found: FoundBackup,
-  opts: { force?: boolean } = {},
+  opts: { force?: boolean; kv?: BackupKV } = {},
 ): Promise<void> {
   if (restoring) throw new Error('backup: a restore is already in progress');
   restoring = true;
   try {
     const { payload } = openBackup(found.bytes, identity);
-    await importArchivePayload(payload, opts);
+    await importArchivePayload(payload, { force: opts.force === true });
+    const kv = opts.kv ?? kvBackupStore;
+    const known = Math.max(await lastWritten(kv), found.meta.counter);
+    await kv.set(BACKUP_LAST_COUNTER_KEY, String(known));
+    await kv.set(BACKUP_HELD_KEY, '');
   } finally {
     restoring = false;
   }

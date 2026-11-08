@@ -67,8 +67,12 @@ import {
 const hash: Sha256Fn = (data) => sha256(data);
 
 export type TradeAuthorOutcome<T> =
-  | { ok: true; document: T }
+  /** `replayed`: a retry of a request already authored, so `document` is the first one. */
+  | { ok: true; document: T; replayed?: boolean }
   | { ok: false; refusal: string };
+
+/** One key, a different request: a caller's bug, and never a second document. */
+const IDEMPOTENCY_KEY_REUSED = 'idempotency_key_reused';
 
 export interface TradeLedgerServiceDeps {
   documents: TradeDocumentRepository;
@@ -81,15 +85,24 @@ export interface TradeLedgerServiceDeps {
    * counterparty) the order's buyer key is, so the service never guesses
    * sides.
    */
-  readOrder: (counterpartyDid: string, purchaseOrderId: string) => PurchaseOrderProposal | null;
+  readOrder: (
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    role?: 'buyer' | 'supplier',
+  ) => PurchaseOrderProposal | null;
   /** The bound quote revision an order accepted — the fold's price source. */
-  readBoundQuote: (counterpartyDid: string, purchaseOrderId: string) => SignedQuote | null;
+  readBoundQuote: (
+    counterpartyDid: string,
+    purchaseOrderId: string,
+    role?: 'buyer' | 'supplier',
+  ) => SignedQuote | null;
   /** Orders of this relationship holding an accepted acknowledgement, per role. */
   listAcceptedOrderIds: (counterpartyDid: string, role?: 'buyer' | 'supplier') => string[];
   /** The acceptance's clock, for §4.5 `from_acceptance` dues. */
   readAcceptance: (
     counterpartyDid: string,
     purchaseOrderId: string,
+    role?: 'buyer' | 'supplier',
   ) => { acceptedAt: string } | null;
 }
 
@@ -99,6 +112,11 @@ function mintId(prefix: string): string {
 
 function isoNow(nowMs: number): string {
   return new Date(nowMs).toISOString();
+}
+
+/** The same JSON. A retry from one caller sends its fields in one order. */
+function sameJson(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
 }
 
 export class TradeLedgerService {
@@ -121,8 +139,25 @@ export class TradeLedgerService {
     supplierOrderId: string;
     lines: DeliveryNoteLine[];
     expectedBy?: string;
+    /** A retry with the same key returns the first note. */
+    idempotencyKey?: string;
   }): TradeAuthorOutcome<DeliveryNote> {
-    const order = this.deps.readOrder(args.counterpartyDid, args.purchaseOrderId);
+    const heldRow =
+      args.idempotencyKey === undefined
+        ? null
+        : this.deps.documents.getByAuthoringKey('delivery_note', args.idempotencyKey);
+    if (heldRow !== null) {
+      const held = rehydrateTradeDocument(heldRow);
+      return held.kind === 'delivery_note' &&
+        heldRow.counterpartyDid === args.counterpartyDid &&
+        held.document.purchase_order_id === args.purchaseOrderId &&
+        held.document.supplier_order_id === args.supplierOrderId &&
+        held.document.expected_by === args.expectedBy &&
+        sameJson(held.document.lines, args.lines)
+        ? { ok: true, document: held.document, replayed: true }
+        : { ok: false, refusal: IDEMPOTENCY_KEY_REUSED };
+    }
+    const order = this.deps.readOrder(args.counterpartyDid, args.purchaseOrderId, 'supplier');
     if (order === null) return { ok: false, refusal: `no retained order ${args.purchaseOrderId}` };
     if (order.supplier_did !== this.deps.nodeDid()) {
       return { ok: false, refusal: 'this node is not the order supplier' };
@@ -161,6 +196,7 @@ export class TradeLedgerService {
       note,
       order,
       repository: this.deps.documents,
+      side: 'supplier',
     });
     if (cumulativeError) return { ok: false, refusal: cumulativeError };
 
@@ -174,6 +210,7 @@ export class TradeLedgerService {
       recordJson: JSON.stringify(note),
       evidenceJson: '{}',
       createdAt: this.deps.now(),
+      ...(args.idempotencyKey === undefined ? {} : { authoringKey: args.idempotencyKey }),
     });
     return { ok: true, document: note };
   }
@@ -240,14 +277,32 @@ export class TradeLedgerService {
   issueDeliveryReceipt(args: {
     deliveryNoteDigest: string;
     lines: DeliveryReceiptLine[];
+    /** A retry with the same key returns the first receipt. */
+    idempotencyKey?: string;
   }): TradeAuthorOutcome<DeliveryReceipt> {
+    const heldRow =
+      args.idempotencyKey === undefined
+        ? null
+        : this.deps.documents.getByAuthoringKey('delivery_receipt', args.idempotencyKey);
+    if (heldRow !== null) {
+      const held = rehydrateTradeDocument(heldRow);
+      return held.kind === 'delivery_receipt' &&
+        heldRow.answersDigest === args.deliveryNoteDigest &&
+        sameJson(held.document.lines, args.lines)
+        ? { ok: true, document: held.document, replayed: true }
+        : { ok: false, refusal: IDEMPOTENCY_KEY_REUSED };
+    }
     const noteRow = this.deps.documents.get(args.deliveryNoteDigest);
     if (noteRow === null || noteRow.kind !== 'delivery_note' || noteRow.direction !== 'inbound') {
       return { ok: false, refusal: 'no received delivery note with that digest' };
     }
     const note = rehydrateTradeDocument(noteRow);
     if (note.kind !== 'delivery_note') return { ok: false, refusal: 'retained row is not a note' };
-    const order = this.deps.readOrder(noteRow.counterpartyDid, note.document.purchase_order_id);
+    const order = this.deps.readOrder(
+      noteRow.counterpartyDid,
+      note.document.purchase_order_id,
+      'buyer',
+    );
     if (order === null || order.buyer_did !== this.deps.nodeDid()) {
       return { ok: false, refusal: 'this node is not the order buyer' };
     }
@@ -281,6 +336,7 @@ export class TradeLedgerService {
       recordJson: JSON.stringify(receipt),
       evidenceJson: '{}',
       createdAt: this.deps.now(),
+      ...(args.idempotencyKey === undefined ? {} : { authoringKey: args.idempotencyKey }),
     });
     return { ok: true, document: receipt };
   }
@@ -308,7 +364,11 @@ export class TradeLedgerService {
     }
     const note = rehydrateTradeDocument(noteRow);
     if (note.kind !== 'delivery_note') return { ok: false, refusal: 'retained row is not a note' };
-    const quote = this.deps.readBoundQuote(noteRow.counterpartyDid, note.document.purchase_order_id);
+    const quote = this.deps.readBoundQuote(
+      noteRow.counterpartyDid,
+      note.document.purchase_order_id,
+      'buyer',
+    );
     if (quote === null) {
       return { ok: false, refusal: 'no bound quote — the receipt value cannot be established' };
     }
@@ -371,7 +431,11 @@ export class TradeLedgerService {
     }
     const note = rehydrateTradeDocument(noteRow);
     if (note.kind !== 'delivery_note') return { ok: false, refusal: 'retained row is not a note' };
-    const quote = this.deps.readBoundQuote(noteRow.counterpartyDid, note.document.purchase_order_id);
+    const quote = this.deps.readBoundQuote(
+      noteRow.counterpartyDid,
+      note.document.purchase_order_id,
+      noteRow.direction === 'outbound' ? 'supplier' : 'buyer',
+    );
     if (quote === null) {
       return { ok: false, refusal: 'no bound quote — the dispatch value cannot be established' };
     }
@@ -394,8 +458,9 @@ export class TradeLedgerService {
   paymentTerms(args: {
     counterpartyDid: string;
     purchaseOrderId: string;
+    role?: 'buyer' | 'supplier';
   }): { creditDays: number; dueBasis: string; currency: string } | null {
-    const quote = this.deps.readBoundQuote(args.counterpartyDid, args.purchaseOrderId);
+    const quote = this.deps.readBoundQuote(args.counterpartyDid, args.purchaseOrderId, args.role);
     const terms = quote?.payment_terms;
     if (quote === undefined || quote === null || terms?.credit_days === undefined || terms.due_basis === undefined) {
       return null;
@@ -410,7 +475,36 @@ export class TradeLedgerService {
     method: PaymentMethod;
     externalRef?: string;
     orderRefs?: string[];
+    /** A retry with the same key returns the first note. */
+    idempotencyKey?: string;
   }): TradeAuthorOutcome<PaymentNote> {
+    const samePayment = (held: PaymentNote): boolean =>
+      sameJson(held.amount, args.amount) && held.method === args.method;
+    const heldRow =
+      args.idempotencyKey === undefined
+        ? null
+        : this.deps.documents.getByAuthoringKey('payment_note', args.idempotencyKey);
+    if (heldRow !== null) {
+      const held = rehydrateTradeDocument(heldRow);
+      return held.kind === 'payment_note' &&
+        heldRow.counterpartyDid === args.supplierDid &&
+        samePayment(held.document) &&
+        held.document.external_ref === args.externalRef &&
+        sameJson(held.document.order_refs, args.orderRefs)
+        ? { ok: true, document: held.document, replayed: true }
+        : { ok: false, refusal: IDEMPOTENCY_KEY_REUSED };
+    }
+    // A bank or processor reference names one payment to one supplier.
+    if (args.externalRef !== undefined) {
+      for (const row of this.deps.documents.listByCounterparty(args.supplierDid, 'payment_note')) {
+        if (row.direction !== 'outbound') continue;
+        const held = rehydrateTradeDocument(row);
+        if (held.kind !== 'payment_note' || held.document.external_ref !== args.externalRef) continue;
+        return samePayment(held.document)
+          ? { ok: true, document: held.document, replayed: true }
+          : { ok: false, refusal: 'external_ref already records a different payment to this supplier' };
+      }
+    }
     const draft = {
       protocol_version: '1.0',
       payment_note_id: mintId('pn'),
@@ -436,6 +530,7 @@ export class TradeLedgerService {
       recordJson: JSON.stringify(note),
       evidenceJson: '{}',
       createdAt: this.deps.now(),
+      ...(args.idempotencyKey === undefined ? {} : { authoringKey: args.idempotencyKey }),
     });
     return { ok: true, document: note };
   }
@@ -461,14 +556,25 @@ export class TradeLedgerService {
     role: 'buyer' | 'supplier';
   }): TradeFoldResult {
     const orders: FoldOrder[] = [];
+    // A receipt on this orientation's orders: the buyer writes it, so a
+    // supplier holds it inbound and a buyer outbound.
+    const receiptDirection = args.role === 'supplier' ? 'inbound' : 'outbound';
     for (const purchaseOrderId of this.deps.listAcceptedOrderIds(args.counterpartyDid, args.role)) {
-      const order = this.deps.readOrder(args.counterpartyDid, purchaseOrderId);
-      const quote = this.deps.readBoundQuote(args.counterpartyDid, purchaseOrderId);
+      const order = this.deps.readOrder(args.counterpartyDid, purchaseOrderId, args.role);
+      const quote = this.deps.readBoundQuote(args.counterpartyDid, purchaseOrderId, args.role);
       if (order === null || quote === null) continue; // not priceable, sweeps elsewhere
+      // One ledger per currency (§4.4): an order in another currency belongs
+      // to that currency's statement, as it does in `dues`.
+      if (quote.total.currency !== args.currency) continue;
       const quoteLines = new Map(quote.lines.map((line) => [line.line_id, line]));
 
       const receipted: FoldOrder['receipted'] = [];
-      for (const receiptRow of this.deps.documents.listByOrder(purchaseOrderId, 'delivery_receipt')) {
+      for (const receiptRow of this.deps.documents.listByOrder(
+        args.counterpartyDid,
+        purchaseOrderId,
+        'delivery_receipt',
+      )) {
+        if (receiptRow.direction !== receiptDirection) continue;
         const receipt = rehydrateTradeDocument(receiptRow);
         if (receipt.kind !== 'delivery_receipt') continue;
         const noteRow = this.deps.documents.get(receipt.document.delivery_note_digest);
@@ -549,16 +655,17 @@ export class TradeLedgerService {
     dues: (DerivedDue & { purchase_order_id: string })[];
   } {
     const out: (DerivedDue & { purchase_order_id: string })[] = [];
+    const receiptDirection = args.role === 'supplier' ? 'inbound' : 'outbound';
     for (const purchaseOrderId of this.deps.listAcceptedOrderIds(args.counterpartyDid, args.role)) {
-      const order = this.deps.readOrder(args.counterpartyDid, purchaseOrderId);
-      const quote = this.deps.readBoundQuote(args.counterpartyDid, purchaseOrderId);
+      const order = this.deps.readOrder(args.counterpartyDid, purchaseOrderId, args.role);
+      const quote = this.deps.readBoundQuote(args.counterpartyDid, purchaseOrderId, args.role);
       if (order === null || quote === null) continue;
       if (quote.total.currency !== args.currency) continue;
       const terms = quote.payment_terms;
       if (terms?.due_basis === undefined || terms.credit_days === undefined) continue;
 
       if (terms.due_basis === 'from_acceptance') {
-        const acceptance = this.deps.readAcceptance(args.counterpartyDid, purchaseOrderId);
+        const acceptance = this.deps.readAcceptance(args.counterpartyDid, purchaseOrderId, args.role);
         if (acceptance === null) continue;
         const derived = deriveDues({
           currency: args.currency,
@@ -574,7 +681,12 @@ export class TradeLedgerService {
       }
 
       const receipted: { received_at: string; value_minor: string }[] = [];
-      for (const receiptRow of this.deps.documents.listByOrder(purchaseOrderId, 'delivery_receipt')) {
+      for (const receiptRow of this.deps.documents.listByOrder(
+        args.counterpartyDid,
+        purchaseOrderId,
+        'delivery_receipt',
+      )) {
+        if (receiptRow.direction !== receiptDirection) continue;
         const receipt = rehydrateTradeDocument(receiptRow);
         if (receipt.kind !== 'delivery_receipt') continue;
         const priced = this.priceAcceptedLines(quote, receipt.document.lines);

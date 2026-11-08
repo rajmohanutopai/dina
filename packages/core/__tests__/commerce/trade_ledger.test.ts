@@ -191,14 +191,14 @@ describe.each(backends)('trade ledger ($name)', ({ make }) => {
       const note = sealedNote();
       expect(ingestNote(note).outcome).toBe('applied');
       expect(ingestNote(note).outcome).toBe('duplicate');
-      expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(1);
+      expect(repo.listByOrder(SUPPLIER, 'po-1', 'delivery_note')).toHaveLength(1);
     });
 
     it('refuses a note on an order the supplier rejected, keeps one on an unanswered order', () => {
       const rejected = ingestNote(sealedNote(), { isOrderRejected: () => true });
       expect(rejected).toMatchObject({ outcome: 'refused' });
       expect(rejected.detail).toContain('rejected');
-      expect(repo.listByOrder('po-1', 'delivery_note')).toHaveLength(0);
+      expect(repo.listByOrder(SUPPLIER, 'po-1', 'delivery_note')).toHaveLength(0);
       // The acceptance may still be in flight: keep the note.
       expect(ingestNote(sealedNote(), { isOrderRejected: () => false }).outcome).toBe('applied');
     });

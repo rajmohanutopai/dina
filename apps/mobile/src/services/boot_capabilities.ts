@@ -109,7 +109,7 @@ import { AppViewStub, demoServiceProfile } from './appview_stub';
 import { MOBILE_PERSONA_DESCRIPTIONS, type BootServiceInputs } from './boot_service';
 import { mobileHostedEndpoints } from './hosted_endpoints';
 import { loadPersistedDid } from './identity_record';
-import { loadOrGenerateSeeds } from './identity_store';
+import { loadIdentitySeeds, loadOrGenerateSeeds } from './identity_store';
 import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
 import {
   DEFAULT_MSGBOX_URL,
@@ -126,6 +126,7 @@ import {
 } from './net_socket_wiring';
 import { makeMobileRepoProofVerifier } from './repo_proof_wiring';
 import { loadRolePreference } from './role_preference';
+import { loadWrappedSeed } from './wrapped_seed_store';
 
 import type { NodeRole } from './bootstrap';
 import type { ProviderType } from '../ai/provider';
@@ -768,6 +769,13 @@ export async function buildBootInputs(
 async function resolveIdentity(
   didOverride: string | undefined,
 ): Promise<{ did: string; signingKeypair: IdentityKeypair }> {
+  // With a vault on this phone the signing key comes from its master seed, and
+  // unlock repairs a missing row. A random key here would be a new identity
+  // nobody asked for, so boot fails and says so. Only a phone with no vault
+  // (dev and test harnesses) generates.
+  if ((await loadIdentitySeeds()) === null && (await loadWrappedSeed()) !== null) {
+    throw new Error('The signing key for this vault is missing. Lock Dina and unlock it again.');
+  }
   const seedsResult = await loadOrGenerateSeeds();
   const privateKey = seedsResult.seeds.signingSeed;
   const publicKey = getPublicKey(privateKey);
@@ -1163,13 +1171,19 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
  * Lazy handle to the core client (PC-BRAIN-11). Same tradeoff as
  * `lazyOrchestratorHandle` — the client is owned by the DinaNode,
  * which doesn't exist at tool-construction time. The
- * `find_preferred_provider` tool only needs
- * `findContactsByPreference`, so we expose a minimal surface.
+ * ask loop's tools each need a few methods, listed here.
  */
-function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
+export function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]['core'] &
   AskCoordinatorCoreClient &
   Pick<
     import('@dina/core').CoreClient,
+    | 'agentPersonaAccessCheck'
+    | 'agentPersonaAccessRequest'
+    | 'vaultQuery'
+    | 'vaultGet'
+    | 'vaultList'
+    | 'vaultItemsForPerson'
+    | 'memoryToC'
     | 'listPluginToolCapabilities'
     | 'invokePluginTool'
     | 'contactLookup'
@@ -1189,7 +1203,36 @@ function lazyCoreClient(): Parameters<typeof createFindPreferredProviderTool>[0]
       require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
     return getBootedNode();
   }
+  function booted() {
+    const n = node();
+    if (n === null) throw new Error('lazyCoreClient: DinaNode not booted');
+    return n.brainCoreClient;
+  }
   return {
+    // An agent's ask: Core decides every persona and raises the owner's card.
+    // Without these the ask falls to the deny-all guard. Before boot they
+    // throw, which every caller reads as no access.
+    async agentPersonaAccessCheck(...args) {
+      return booted().agentPersonaAccessCheck(...args);
+    },
+    async agentPersonaAccessRequest(...args) {
+      return booted().agentPersonaAccessRequest(...args);
+    },
+    async vaultQuery(...args) {
+      return booted().vaultQuery(...args);
+    },
+    async vaultGet(...args) {
+      return booted().vaultGet(...args);
+    },
+    async vaultList(...args) {
+      return booted().vaultList(...args);
+    },
+    async vaultItemsForPerson(...args) {
+      return booted().vaultItemsForPerson(...args);
+    },
+    async memoryToC(...args) {
+      return booted().memoryToC(...args);
+    },
     async findContactsByPreference(category: string) {
       return node()?.brainCoreClient.findContactsByPreference(category) ?? [];
     },

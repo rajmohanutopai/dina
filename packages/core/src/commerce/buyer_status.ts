@@ -416,7 +416,10 @@ export function verifyInboundStatus(args: {
   if (head === undefined) {
     throw new BuyerChainIntegrityError('status chain reported rows and returned none');
   }
-  if (status.status_digest === head.status_digest) {
+  // Any record already held, not only the head: two asks can overlap, and an
+  // answer can arrive twice. Reading an older one as a successor calls an honest
+  // supplier forked. A different record at a held sequence still fails below.
+  if (held.some((entry) => entry.status_digest === status.status_digest)) {
     return { outcome: 'duplicate', state: head.state };
   }
 
@@ -453,6 +456,7 @@ export function verifyInboundStatus(args: {
     supplierDid: args.supplierDid,
     purchaseOrderId: args.purchaseOrderId,
     status,
+    ...(args.evidence === undefined ? {} : { evidence: args.evidence }),
     acceptedAt: args.nowMs,
   });
   return applied

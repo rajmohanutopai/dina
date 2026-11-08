@@ -464,7 +464,9 @@ export function createGate(opts: GateOptions): Gate {
       // Flushed to disk, file and folder: a crash that kept the seed but lost
       // the mark would leave the cell failed, and it would be removed.
       writeDurably(opts.vaultDir, SETUP_COMPLETE, String(now()));
-      setState('unlocked');
+      // Core may have died after its last answer. The sign-up stands, but there
+      // is no Core to call unlocked: the owner unlocks to start one.
+      setState(core === handle ? 'unlocked' : 'locked');
       return { words, owner_device_code: code };
     } catch (err) {
       const handle = core;
@@ -479,14 +481,21 @@ export function createGate(opts: GateOptions): Gate {
     body: Record<string, unknown>,
     passphrase: string,
   ): Promise<Record<string, unknown>> {
-    if (state === 'unlocked') return { ok: true, already: true };
-    if (state !== 'locked') throw new GateError(409, `cannot_unlock_${state}`);
+    if (state === 'unlocked' && core !== null) return { ok: true, already: true };
+    if (state !== 'locked' && state !== 'unlocked') {
+      throw new GateError(409, `cannot_unlock_${state}`);
+    }
     setState('starting');
+    let handle: CoreHandle;
     try {
-      await startCore(passphrase);
+      handle = await startCore(passphrase);
     } catch (err) {
       setState('locked');
       throw err;
+    }
+    if (core !== handle) {
+      setState('locked');
+      throw new GateError(503, 'core_stopped');
     }
     setState('unlocked');
     if (body.connect_browser === true) {

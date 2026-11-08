@@ -966,13 +966,19 @@ export class SQLitePluginInstallRepository implements PluginInstallRepository {
       );
       // Round-12 #7: an update is a NEW consent surface (new scope/behavior/
       // release hashes), so the first-N card protection must RESTART. The
-      // invocation counter is keyed only by (install_id, capability); without
-      // this reset a materially different HIGH capability that keeps the same
-      // capability id inherits its predecessor's count (>= FIRST_N) and runs
-      // silent immediately, bypassing the first-three cards. Atomic with the
-      // manifest swap; only fires when the update actually landed.
+      // counter is the owner's decision log (`approvedInvocationCount`), keyed
+      // only by (install_id, capability); without a marker a materially
+      // different HIGH capability that keeps the same capability id inherits
+      // its predecessor's count (>= FIRST_N) and runs silent immediately,
+      // bypassing the first-three cards. The count stops at this row. Atomic
+      // with the manifest swap; only written when the update actually landed.
       if (affected > 0) {
         this.db.run('DELETE FROM plugin_capability_stats WHERE install_id = ?', [installId]);
+        this.db.execute(
+          `INSERT INTO plugin_decisions (install_id, capability, decision, reason, created_at)
+           VALUES (?, '', 'update_applied', '', ?)`,
+          [installId, Math.floor(nowMs / 1000)],
+        );
       }
     });
     return affected > 0;

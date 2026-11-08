@@ -2,7 +2,11 @@
  * Push-tap deep-link handler (task 5.68 / 5.70 layer 5).
  */
 
-import { handleNotificationTap } from '../../src/notifications/deep_link';
+import {
+  handleNotificationTap,
+  resetHandledNotificationResponse,
+  routeNotificationResponse,
+} from '../../src/notifications/deep_link';
 
 describe('handleNotificationTap', () => {
   let pushed: string[];
@@ -105,5 +109,54 @@ describe('handleNotificationTap', () => {
       expect(r.navigated).toBe(false);
     }
     expect(pushed).toEqual([]);
+  });
+});
+
+describe('routeNotificationResponse (PH-12)', () => {
+  function response(identifier: string, date: number) {
+    return {
+      notification: {
+        date,
+        request: { identifier, content: { data: { deepLink: 'dina://reminders/1', inboxId: 'x' } } },
+      },
+    };
+  }
+
+  beforeEach(() => resetHandledNotificationResponse());
+
+  it('every later unlock does not replay the tap', async () => {
+    const routerPush = jest.fn();
+    const clear = jest.fn(async () => undefined);
+    const deps = { routerPush, markRead: () => true };
+    const r = response('notif-rem-1', 100);
+    await routeNotificationResponse(r, deps, clear);
+    await routeNotificationResponse(r, deps, clear);
+    expect(routerPush).toHaveBeenCalledTimes(1);
+    expect(clear).toHaveBeenCalled();
+  });
+
+  it('a tap the live listener handled is not routed again at unlock, when clearing fails', async () => {
+    const routerPush = jest.fn();
+    const clear = jest.fn(async () => {
+      throw new Error('not supported here');
+    });
+    const deps = { routerPush, markRead: () => true };
+    await routeNotificationResponse(response('notif-rem-1', 100), deps, clear);
+    await routeNotificationResponse(response('notif-rem-1', 100), deps, clear);
+    expect(routerPush).toHaveBeenCalledTimes(1);
+  });
+
+  it('a new tap on the same reminder still routes', async () => {
+    const routerPush = jest.fn();
+    const deps = { routerPush, markRead: () => true };
+    await routeNotificationResponse(response('notif-rem-1', 100), deps, async () => undefined);
+    await routeNotificationResponse(response('notif-rem-1', 200), deps, async () => undefined);
+    expect(routerPush).toHaveBeenCalledTimes(2);
+  });
+
+  it('no response does nothing', async () => {
+    const routerPush = jest.fn();
+    await routeNotificationResponse(null, { routerPush, markRead: () => true }, async () => undefined);
+    expect(routerPush).not.toHaveBeenCalled();
   });
 });

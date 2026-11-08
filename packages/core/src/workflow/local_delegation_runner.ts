@@ -324,7 +324,13 @@ export class LocalDelegationRunner {
       let leaseLost = false;
       const hbHandle = this.setIntervalFn(() => {
         try {
-          const ok = this.repo.heartbeatTask(claimedId, this.agentDID, this.nowMsFn(), this.leaseMs);
+          const ok = this.repo.heartbeatTask(
+            claimedId,
+            this.agentDID,
+            this.nowMsFn(),
+            this.leaseMs,
+            task?.claim_id,
+          );
           if (!ok && !leaseLost) {
             leaseLost = true;
             this.onError(
@@ -433,7 +439,15 @@ export class LocalDelegationRunner {
     }
 
     try {
-      this.service.complete(task.id, resultJSON, this.deriveResultSummary(result), this.agentDID);
+      // With its claim: a result that arrives after the lease was lost is kept as
+      // evidence and can never land on the next run (REQ-07).
+      this.service.complete(
+        task.id,
+        resultJSON,
+        this.deriveResultSummary(result),
+        this.agentDID,
+        task.claim_id,
+      );
       return true;
     } catch (err) {
       // Completion itself failed (e.g. task already terminal). The
@@ -448,7 +462,7 @@ export class LocalDelegationRunner {
   private safeFail(task: WorkflowTask, err: unknown): void {
     try {
       const msg = err instanceof Error ? err.message : String(err);
-      this.service.fail(task.id, msg, this.agentDID);
+      this.service.fail(task.id, msg, this.agentDID, task.claim_id);
     } catch (e) {
       // fail() throws when the task is already terminal. That's OK —
       // there's nothing else to do.

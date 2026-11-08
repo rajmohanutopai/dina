@@ -590,7 +590,9 @@ export {
   setServiceConfigDurable,
   ListingLimitError,
   clearServiceConfig,
+  clearServiceConfigDurable,
   hydrateServiceConfig,
+  drainListingUnpublishes,
   onServiceConfigChanged,
   isCapabilityConfigured,
   validateServiceConfig,
@@ -1032,6 +1034,8 @@ export type { HealthReport } from './diagnostics/health';
 
 // Staging service additional inbox helpers.
 export { inboxSize, sweep as stagingSweep, sweep } from './staging/service';
+export { StagingSweeper, DEFAULT_STAGING_SWEEP_INTERVAL_MS } from './staging/sweeper';
+export type { StagingSweeperOptions, StagingSweepTick } from './staging/sweeper';
 
 // Staging repository contract + in-memory adapter for tests.
 export {
@@ -1288,6 +1292,12 @@ export {
   getReplayRepository,
 } from './transport/replay_repository';
 export type { ReplayRepository } from './transport/replay_repository';
+export {
+  SQLiteSignedNonceRepository,
+  setSignedNonceRepository,
+  getSignedNonceRepository,
+} from './auth/nonce_repository';
+export type { SignedNonceRepository } from './auth/nonce_repository';
 export type {
   D2DOutboxRepository,
   D2DOutboxRow,

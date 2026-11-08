@@ -19,6 +19,7 @@ import {
   resetServiceApproveCommandHandler,
   resetServiceDenyCommandHandler,
   resetChatDefaults,
+  handleChat,
 } from '../../../brain/src/chat/orchestrator';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
 import { REVIEW_LAPSE_MARGIN_SEC, reviewTaskIdFor } from '../../../core/src/coordination/disclosure_egress';
@@ -32,7 +33,8 @@ import {
   InMemoryReasoningContextRepository,
   setReasoningContextRepository,
 } from '../../../core/src/reasoning/context_repository';
-import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import { getD2DSender } from '../../../core/src/server/routes/d2d_msg';
+import { getWorkflowRepository, InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
 
 import type { PDSSession } from '../../../brain/src/pds/account';
@@ -231,6 +233,33 @@ describe('createNode — handle shape', () => {
     expect(node.runners.events).toBeDefined();
     expect(node.runners.approvals).toBeDefined();
     await node.dispose();
+  });
+});
+
+describe('createNode — staging sweep (REQ-01)', () => {
+  it('a started node returns a lapsed staging claim to the queue on its own timer', async () => {
+    const { ingest, stagingClaim, stagingGetItem, resetStagingState } = jest.requireActual<
+      typeof import('@dina/core')
+    >('@dina/core');
+    resetStagingState();
+    const sched = fakeScheduler();
+    const node = await createNode(
+      baseOptions({ setInterval: sched.setInterval, clearInterval: sched.clearInterval }),
+    );
+    try {
+      await node.start();
+      const { id } = ingest({ source: 'connector', source_id: 'crashed', data: { body: 'x' } });
+      stagingClaim(1, -10); // claimed, then the worker died
+      expect(stagingGetItem(id)?.status).toBe('classifying');
+
+      sched.advance(120_000);
+      await node.runners.stagingSweeper.flush();
+
+      expect(stagingGetItem(id)?.status).toBe('received');
+    } finally {
+      await node.dispose();
+      resetStagingState();
+    }
   });
 });
 
@@ -684,6 +713,45 @@ describe('createNode — provider role', () => {
   });
 });
 
+describe('createNode — a listing deleted before its unpublish landed (SERVICE-1)', () => {
+  it('start() removes the record, and a failure neither stops boot nor clears the debt', async () => {
+    const { InMemoryServiceConfigRepository, setServiceConfigRepository } = require('@dina/core');
+    const repo = new InMemoryServiceConfigRepository();
+    setServiceConfigRepository(repo);
+    await repo.remove('gone');
+    await repo.remove('down');
+    const pds = {
+      putRecord: jest.fn().mockResolvedValue({ uri: 'at://x', cid: 'c' }),
+      getRecord: jest.fn().mockResolvedValue(null),
+      deleteRecordIdempotent: jest.fn(async (_collection: string, rkey: string) => {
+        if (rkey === 'down') throw new Error('offline');
+      }),
+      authenticate: jest.fn().mockResolvedValue(DID),
+      did: DID,
+    };
+    const node = await createNode(
+      baseOptions({
+        role: 'provider',
+        pdsPublisher: pds as never,
+        pdsSessionReachable: true,
+        readConfig: () => null,
+      }),
+    );
+    await expect(node.start()).resolves.toBeUndefined();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(pds.deleteRecordIdempotent.mock.calls.map((c) => c[1]).sort()).toEqual(['down', 'gone']);
+    expect(await repo.listPendingUnpublish()).toEqual(['down']);
+    // A delete on a running node: once it lands, nothing is owed for it.
+    const { clearServiceConfigDurable } = require('../../../../packages/core/src/service/service_config');
+    await clearServiceConfigDurable('live');
+    await new Promise((r) => setTimeout(r, 20));
+    expect(pds.deleteRecordIdempotent.mock.calls.map((c) => c[1])).toContain('live');
+    expect(await repo.listPendingUnpublish()).toEqual(['down']);
+    await node.dispose();
+    setServiceConfigRepository(null);
+  });
+});
+
 describe('createNode — agenticAsk wiring', () => {
   it('installs an agentic /ask handler when agenticAsk is provided + globalWiring=true', async () => {
     const { ToolRegistry } = require('../../../brain/src/reasoning/tool_registry');
@@ -825,6 +893,7 @@ describe('createNode — askCoordinator reconcile loop', () => {
   it('fires gateway.reconcile() every 3 s and stops on dispose', async () => {
     const sched = fakeScheduler();
     const reconcileCalls: number[] = [];
+    const sweepExpiredAsks = jest.fn(async () => 0); // REQ-05: on the same timer
     const stubCoordinator = {
       gateway: {
         reconcile: jest.fn(async () => {
@@ -838,7 +907,7 @@ describe('createNode — askCoordinator reconcile loop', () => {
       subscribe: jest.fn(() => () => {}),
       handleAsk: jest.fn(async () => ({ status: 200, body: {} })),
       handleStatus: jest.fn(async () => ({ status: 200, body: {} })),
-      registry: { get: jest.fn(async () => null) } as never,
+      registry: { get: jest.fn(async () => null), sweepExpired: sweepExpiredAsks } as never,
       resumer: {} as never,
     };
 
@@ -860,6 +929,7 @@ describe('createNode — askCoordinator reconcile loop', () => {
     sched.advance(3_000);
     await Promise.resolve(); // flush microtasks
     expect(stubCoordinator.gateway.reconcile).toHaveBeenCalledTimes(1);
+    expect(sweepExpiredAsks).toHaveBeenCalledTimes(1);
 
     sched.advance(3_000);
     await Promise.resolve();
@@ -871,5 +941,33 @@ describe('createNode — askCoordinator reconcile loop', () => {
     await Promise.resolve();
     // After dispose the interval is cleared — reconcile must NOT fire again.
     expect(stubCoordinator.gateway.reconcile).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('createNode — a stale dispose leaves the live node alone (PH-05)', () => {
+  it('A disposing after B started keeps B\'s senders, repositories and /service handler', async () => {
+    const opts = (did: string) =>
+      baseOptions({
+        did,
+        globalWiring: true,
+        workflowRepository: new InMemoryWorkflowRepository(),
+      });
+    const A = await createNode(opts('did:plc:aaa'));
+    await A.start();
+    const B = await createNode(opts('did:plc:bbb'));
+    await B.start();
+    const before = (await handleChat('/service eta_query test')).response;
+    expect(before).not.toContain("isn't wired up");
+
+    await A.dispose();
+
+    expect(getD2DSender()).not.toBeNull();
+    expect(getWorkflowRepository()).not.toBeNull();
+    expect((await handleChat('/service eta_query test')).response).not.toContain("isn't wired up");
+
+    await B.dispose();
+    expect(getD2DSender()).toBeNull();
+    expect(getWorkflowRepository()).toBeNull();
+    expect((await handleChat('/service eta_query test')).response).toContain("isn't wired up");
   });
 });

@@ -19,6 +19,8 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { appendAudit } from '../audit/service';
+
 import {
   getD2DOutboxRepository,
   InMemoryD2DOutboxRepository,
@@ -41,6 +43,12 @@ const memoryRepo = new InMemoryD2DOutboxRepository();
 /** The repository the facade currently routes through. */
 function activeRepo(): D2DOutboxRepository {
   return getD2DOutboxRepository() ?? memoryRepo;
+}
+
+/** DID used as the audit actor for dead-letter events. */
+let auditActorDID = 'system';
+export function setOutboxAuditActor(did: string): void {
+  auditActorDID = did;
 }
 
 /** True when a durable (SQL) repository backs the outbox. */
@@ -120,6 +128,8 @@ export function enqueueD2D(input: EnqueueD2DInput): D2DOutboxRow {
   const now = input.now ?? Date.now();
   const id = input.id ?? `d2d-out-${bytesToHex(randomBytes(8))}`;
   const ttl = input.ttlMs ?? DEFAULT_TTL_MS;
+  // An expired row must not answer for a new send under its key (TT-07).
+  deadLetterExpired(now);
   return activeRepo().insert({
     id,
     targetDID: input.targetDID,
@@ -163,7 +173,24 @@ export function recordFailure(row: D2DOutboxRow, error: string, now?: number): '
   return 'failed';
 }
 
-/** Reclaim crashed-mid-send (`sending`, lease expired) rows. Run on boot. */
+/**
+ * Move rows past their TTL to `dead` and audit each. Returns how many. Without
+ * this an expired row is never claimed, so it would sit `pending` for ever.
+ */
+export function deadLetterExpired(now?: number): number {
+  const expired = activeRepo().expireOverdue(now ?? Date.now());
+  for (const row of expired) {
+    appendAudit(
+      auditActorDID,
+      'd2d_outbox_dead',
+      row.targetDID,
+      `type=${row.messageType} id=${row.id} attempts=${row.attempts} error=expired`,
+    );
+  }
+  return expired.length;
+}
+
+/** Reclaim crashed-mid-send (`sending`, lease expired) rows. */
 export function resetStaleSending(now?: number): number {
   return activeRepo().resetStaleSending(now ?? Date.now());
 }

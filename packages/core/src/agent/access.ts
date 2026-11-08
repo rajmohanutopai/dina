@@ -37,6 +37,7 @@ import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { appendAudit } from '../audit/service';
+import { getDeviceByDID } from '../devices/registry';
 import { getPersonaTier, resolveInstalledPersonaName } from '../persona/service';
 import { agentCanAccess, grantCoversTier } from '../vault/lifecycle';
 import {
@@ -359,6 +360,15 @@ export function isAgentPersonaAccessApproval(task: WorkflowTask | null): boolean
 }
 
 /**
+ * True when this DID is a paired device the owner has revoked. A card raised
+ * before the revoke must mint nothing: re-pairing the same key would otherwise
+ * find the grant waiting, with no new consent (TT-02).
+ */
+export function isRevokedAgentDevice(agentDID: string): boolean {
+  return getDeviceByDID(agentDID)?.revoked === true;
+}
+
+/**
  * PLG-28 #1 — phase 1 of 2: RESERVE the durable grant for an approved agent
  * persona-access task. The grant is inserted `active: false`, so it is durably
  * persisted (its absence would mean a missing/failing repo → return null → the
@@ -378,6 +388,7 @@ export function reserveAgentPersonaGrant(
   // not just the type — a malformed payload persists nothing.
   const payload = parseAgentPersonaAccessPayload(task.payload);
   if (payload === null) return null;
+  if (isRevokedAgentDevice(payload.agent_did)) return null;
   const grantRepo = getAgentGrantRepository();
   if (grantRepo === null) return null;
 
@@ -430,6 +441,8 @@ export async function activateAgentPersonaGrant(
   grant: AgentPersonaGrant,
   _now?: number,
 ): Promise<boolean> {
+  // Revoked since the reserve: don't open a persona for nobody.
+  if (isRevokedAgentDevice(grant.agentDID)) return false;
   if (personaUnlockHook !== null) {
     try {
       await personaUnlockHook(grant.persona);

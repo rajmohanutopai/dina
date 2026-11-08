@@ -32,13 +32,11 @@ export function GuidedDemoGate({
 }): React.ReactElement {
   const gate = useGuidedDemoGate(enabled);
 
-  if (!enabled) {
-    return <>{children}</>;
-  }
-  if (gate.phase === 'checking') {
-    return <View style={styles.fill} />;
-  }
-  if (gate.phase === 'entry') {
+  // The app stays in one place in the tree from the first paint on. It is on
+  // screen while Dina starts, so moving it when boot ends would rebuild it and
+  // lose whatever screen was opened or text typed in those seconds.
+  const checking = enabled && gate.phase === 'checking';
+  if (enabled && gate.phase === 'entry') {
     return (
       <GuidedDemoEntry
         onStartDemo={() => void gate.startDemo()}
@@ -46,7 +44,7 @@ export function GuidedDemoGate({
       />
     );
   }
-  if (gate.phase === 'recovery') {
+  if (enabled && gate.phase === 'recovery') {
     return (
       <GuidedDemoRecoveryPrompt
         onContinue={() => void gate.continueDemo()}
@@ -54,7 +52,7 @@ export function GuidedDemoGate({
       />
     );
   }
-  if (gate.phase === 'tearing_down') {
+  if (enabled && gate.phase === 'tearing_down') {
     // Non-interactive surface: the runtime is still on the demo scope until
     // teardown finishes, so the app must NOT be reachable (a tap here would
     // write to the soon-deleted demo scope). Replaces the app entirely.
@@ -88,10 +86,14 @@ export function GuidedDemoGate({
           ? 'Publish'
           : undefined;
   return (
-    <GuidedDemoActiveContext.Provider value={gate.demoActive}>
+    <GuidedDemoActiveContext.Provider value={enabled && gate.demoActive}>
       <View style={styles.fill}>
         <View style={styles.fill}>{children}</View>
-        {gate.demoActive ? (
+        {/* Covered, not hidden: a browser doesn't run animations under
+            display:none, so a menu closing then would never finish fading and
+            its backdrop would keep blocking taps. */}
+        {checking ? <View style={styles.cover} testID="guided-demo-checking" /> : null}
+        {enabled && gate.demoActive ? (
           <GuidedDemoBanner
             onExit={() => void gate.exitDemo()}
             onAdvance={() => void gate.advanceDemo()}
@@ -111,4 +113,5 @@ export function GuidedDemoGate({
 
 const styles = StyleSheet.create({
   fill: { flex: 1, backgroundColor: colors.bgPrimary },
+  cover: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, backgroundColor: colors.bgPrimary },
 });

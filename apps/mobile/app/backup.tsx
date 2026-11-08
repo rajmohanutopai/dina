@@ -21,12 +21,14 @@ import {
   backupStatus,
   backUpNowFromSettings,
   deleteAllBackups,
+  restoreNewestBackupFromSettings,
   setBackupEnabled,
   type BackupStatus,
 } from '../src/services/cloud_backup';
+import { reloadApp } from '../src/services/reload_app';
 import { colors, radius, spacing, textStyles } from '../src/theme';
 
-type Busy = 'idle' | 'backing_up' | 'deleting';
+type Busy = 'idle' | 'backing_up' | 'deleting' | 'restoring';
 
 function describeLast(lastAt: number | null): string {
   if (lastAt === null) return 'No copy from this phone yet.';
@@ -43,6 +45,7 @@ export default function BackupScreen(): React.ReactElement {
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [busy, setBusy] = useState<Busy>('idle');
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [confirmFresh, setConfirmFresh] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -61,7 +64,29 @@ export default function BackupScreen(): React.ReactElement {
     await reload();
   };
 
+  const restore = async (): Promise<void> => {
+    setBusy('restoring');
+    setError('');
+    setMessage('');
+    try {
+      await restoreNewestBackupFromSettings();
+      // The stores in memory hold the old rows; a fresh boot reads the new ones.
+      await reloadApp();
+    } catch (err) {
+      setError(`Couldn't restore: ${err instanceof Error ? err.message : String(err)}.`);
+    } finally {
+      setBusy('idle');
+      await reload();
+    }
+  };
+
   const backUp = async (): Promise<void> => {
+    // A held phone's copy becomes the newest one, so it takes a second tap.
+    if (status?.heldForOwner === true && !confirmFresh) {
+      setConfirmFresh(true);
+      return;
+    }
+    setConfirmFresh(false);
     setBusy('backing_up');
     setError('');
     setMessage('');
@@ -130,6 +155,27 @@ export default function BackupScreen(): React.ReactElement {
         <Text style={styles.sub}>Copies go to {status.storeUrl.replace(/^https?:\/\//, '')}.</Text>
       </View>
 
+      {status.heldForOwner ? (
+        <View style={styles.card} testID="backup-held">
+          <Text style={styles.title}>Backup is waiting for you</Text>
+          <Text style={styles.sub}>
+            The store holds a backup this phone never restored. Dina stopped backing up so that
+            backup stays your newest. Restore it, or back up now to start fresh from this phone.
+          </Text>
+          <Pressable
+            style={[styles.primary, busy !== 'idle' && styles.disabled]}
+            disabled={busy !== 'idle'}
+            onPress={() => void restore()}
+            accessibilityRole="button"
+            testID="backup-held-restore"
+          >
+            <Text style={styles.primaryText}>
+              {busy === 'restoring' ? 'Restoring…' : 'Restore newest backup'}
+            </Text>
+          </Pressable>
+        </View>
+      ) : null}
+
       <Pressable
         style={[styles.primary, busy !== 'idle' && styles.disabled]}
         disabled={busy !== 'idle'}
@@ -138,7 +184,11 @@ export default function BackupScreen(): React.ReactElement {
         testID="backup-now"
       >
         <Text style={styles.primaryText}>
-          {busy === 'backing_up' ? 'Backing up…' : 'Back up now'}
+          {busy === 'backing_up'
+            ? 'Backing up…'
+            : confirmFresh
+              ? 'Tap again to start fresh'
+              : 'Back up now'}
         </Text>
       </Pressable>
 

@@ -6,15 +6,20 @@
  * both buffers but only inserted into "current".
  *
  * Safety features (matching Go's _NonceCache):
- *   - Auto-rotation on time threshold (default 300s = 5 minutes)
+ *   - Auto-rotation on time threshold (default 600s = 10 minutes)
  *   - Auto-rotation on size threshold (default 100,000 entries)
  *   - Prevents unbounded memory growth under DoS
  *
  * Source: core/internal/middleware/nonce.go, brain/src/adapter/signing.py
  */
 
-/** Default rotation interval: 5 minutes (matches timestamp window). */
-const DEFAULT_ROTATION_INTERVAL_MS = 300_000;
+/**
+ * Default rotation interval: 10 minutes. A nonce stays held for at least one
+ * interval, and a request's timestamp can pass for up to 10 minutes after we
+ * first see it (5 ahead of our clock, then 5 behind), so a shorter interval
+ * lets a skewed request replay after its nonce has gone (TT-04).
+ */
+const DEFAULT_ROTATION_INTERVAL_MS = 600_000;
 
 /** Default max entries before forced rotation (DoS protection). */
 const DEFAULT_MAX_ENTRIES = 100_000;
@@ -35,7 +40,7 @@ export class NonceCache {
   /**
    * Check if a nonce has been seen. If not, record it. If yes, reject.
    *
-   * Auto-rotates on time threshold (5 minutes) or size threshold (100K entries).
+   * Auto-rotates on time threshold (10 minutes) or size threshold (100K entries).
    *
    * @param nonce - Hex string nonce from X-Nonce header
    * @returns true if nonce is fresh (not seen before), false if replayed
@@ -77,7 +82,7 @@ export class NonceCache {
 
   /**
    * Auto-rotate if either threshold is exceeded:
-   * - Time: rotationIntervalMs since last rotation (default 5 min)
+   * - Time: rotationIntervalMs since last rotation (default 10 min)
    * - Size: current buffer exceeds maxEntries (default 100K)
    */
   private maybeRotate(): void {

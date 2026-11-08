@@ -24,7 +24,9 @@ import {
 import {
   retireSettledTenderReadyCards,
   runNegotiationTick,
+  startTenderNegotiation,
 } from '../../../src/commerce/buyer_negotiation';
+import { applyInboundBuyerResponse } from '../../../src/commerce/buyer_response';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import {
   clearOwnerPresence,
@@ -1248,6 +1250,152 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('pending_approval');
     retireSettledTenderReadyCards();
     expect(workflow.store().getById(`tender-ready-${tenderId}`)?.status).toBe('cancelled');
+  });
+
+  it('a quote that lands while its request is still sending joins the tender (COM-8)', async () => {
+    installCommerceServiceQueryDispatch(async (args) => {
+      sent.push({ toDid: args.toDid, body: args.body as unknown as Record<string, unknown> });
+      const body = args.body as unknown as { capability: string; params: QuoteRequest; query_id: string };
+      if (body.capability === 'com.dinakernel.commerce.request_quote') {
+        const product = body.params.lines[0]?.product;
+        if (product === undefined) throw new Error('request has no line');
+        const unit = args.toDid === SUPPLIER_A ? '500' : '510';
+        const quote = makeSignedQuote(body.params, {
+          quote_id: `q-${args.toDid.slice(-4)}`,
+          valid_until: '2036-01-01T00:00:00.000Z',
+          lines: [
+            {
+              line_id: 'l1',
+              requested_product: product,
+              offered_product: product,
+              quantity: { value: '100', unit_code: 'each' },
+              price_basis: { value: '1', unit_code: 'each' },
+              unit_price: { currency: 'INR', minor_units: unit },
+              line_subtotal: { currency: 'INR', minor_units: String(Number(unit) * 100) },
+              stock_status: 'available',
+            },
+          ],
+          total: { currency: 'INR', minor_units: String(Number(unit) * 100) },
+        });
+        expect(
+          applyInboundBuyerResponse({
+            supplierDid: args.toDid,
+            response: {
+              capability: 'request_quote',
+              query_id: body.query_id,
+              status: 'success',
+              result: { quote },
+            },
+            nowMs: Date.now(),
+          } as never),
+        ).toBe('applied');
+      }
+      return { sent: true };
+    });
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    expect(runtime.tenders.listMembers(tenderId).map((m) => m.quoteId).sort()).toEqual([
+      `q-${SUPPLIER_A.slice(-4)}`,
+      `q-${SUPPLIER_B.slice(-4)}`,
+    ]);
+  });
+
+  it('a request a gate refused before egress leaves no member (COM-8)', async () => {
+    installCommerceServiceQueryDispatch(async (args) => {
+      sent.push({ toDid: args.toDid, body: args.body as unknown as Record<string, unknown> });
+      return args.toDid === SUPPLIER_A ? { sent: true } : { sent: false, deniedAt: 'egress' };
+    });
+    const opened = await openTender();
+    const tenderId = String(opened.body.tender_id);
+    expect(runtime.tenders.listMembers(tenderId).map((m) => m.supplierDid)).toEqual([SUPPLIER_A]);
+  });
+
+  describe('two awards at once (COM-1)', () => {
+    const award = (tenderId: string, supplierDid: string) =>
+      router.handle(
+        call('POST', '/v1/commerce/trade/tender/award', {
+          tender_id: tenderId,
+          supplier_did: supplierDid,
+        }),
+      );
+
+    async function raceAwards(negotiation?: Record<string, unknown>) {
+      const opened = await openTender(negotiation);
+      const tenderId = String(opened.body.tender_id);
+      quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '510' });
+      await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+      const answers = await Promise.all([award(tenderId, SUPPLIER_A), award(tenderId, SUPPLIER_B)]);
+      return { tenderId, answers };
+    }
+
+    function expectOneAward(run: Awaited<ReturnType<typeof raceAwards>>): void {
+      expect(run.answers.map((a) => a.status)).toEqual([200, 409]);
+      expect(run.answers[1]?.body).toMatchObject({
+        error: 'tender_closed',
+        awarded_supplier_did: SUPPLIER_A,
+      });
+      expect(runtime.buyerNegotiation.getTender(run.tenderId)?.awardedSupplierDid).toBe(SUPPLIER_A);
+      // One live approval: the loser held no order, so it has none to send.
+      expect(adapter.query('SELECT supplier_did FROM commerce_order_approvals')).toEqual([
+        { supplier_did: SUPPLIER_A },
+      ]);
+      // The winner never hears it lost.
+      expect(
+        runtime.buyerNegotiation
+          .listNoticesForTender(run.tenderId)
+          .filter((n) => n.outcome === 'not_awarded')
+          .map((n) => n.supplierDid),
+      ).toEqual([SUPPLIER_B]);
+    }
+
+    it('with no policy: one award, one refusal, one live approval', async () => {
+      expectOneAward(await raceAwards());
+    });
+
+    it('with a policy: the same', async () => {
+      expectOneAward(await raceAwards({ target_total: '1', budget_ceiling: '99999999' }));
+    });
+
+    it('the sweeper closing a no-policy tender while an award waits is final', async () => {
+      const opened = await openTender();
+      const tenderId = String(opened.body.tender_id);
+      quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '510' });
+      await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+      const pending = award(tenderId, SUPPLIER_A);
+      runtime.buyerNegotiation.putTender({
+        tenderId,
+        currency: '',
+        targetTotalMinor: '',
+        budgetCeilingMinor: '',
+        maxRounds: 0,
+        deadlineAt: Date.now(),
+        state: 'closed',
+        awardedSupplierDid: '',
+        approvalId: '',
+        updatedAt: Date.now(),
+      });
+      const answer = await pending;
+      expect(answer.status).toBe(409);
+      expect(answer.body).toMatchObject({ error: 'tender_closed' });
+      expect(runtime.buyerNegotiation.getTender(tenderId)?.state).toBe('closed');
+    });
+
+    it('a second start never rewrites a tender that already has a row', async () => {
+      const opened = await openTender({ target_total: '1', budget_ceiling: '99999999' });
+      const tenderId = String(opened.body.tender_id);
+      quotesArrive({ [SUPPLIER_A]: '500', [SUPPLIER_B]: '510' });
+      await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
+      expect((await award(tenderId, SUPPLIER_A)).status).toBe(200);
+      startTenderNegotiation(
+        tenderId,
+        { currency: '', targetTotalMinor: '', budgetCeilingMinor: '' },
+        Date.now(),
+      );
+      expect(runtime.buyerNegotiation.getTender(tenderId)).toMatchObject({
+        state: 'awarded',
+        awardedSupplierDid: SUPPLIER_A,
+      });
+    });
   });
 
   it('a tender opened without a policy closes the same way when its window runs out', async () => {

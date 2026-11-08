@@ -116,8 +116,11 @@ appId: com.dinakernel.mobile
     visible:
       id: 'goal-late'
     timeout: 10000
-- assertVisible:
-    text: 'Land and permits is .* days late'
+- scrollUntilVisible:
+    element:
+      text: 'Land and permits is .* days late'
+    direction: UP
+    centerElement: true
 
 # Tasks in the first phase.
 - scrollUntilVisible:
@@ -239,13 +242,14 @@ appId: com.dinakernel.mobile
     visible:
       id: 'plan-screen'
     timeout: 20000
-- runFlow:
-    when:
-      visible:
-        id: 'plan-others-toggle'
-    commands:
-      - tapOn:
-          id: 'plan-others-toggle'
+# A day already planned keeps other tasks folded below the plan.
+- scrollUntilVisible:
+    element:
+      id: 'plan-others-toggle'
+    optional: true
+- tapOn:
+    id: 'plan-others-toggle'
+    optional: true
 - scrollUntilVisible:
     element:
       text: 'Get three quotes for the survey'

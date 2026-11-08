@@ -59,6 +59,23 @@ export type SendD2D = (
 const sharedResolver = new DIDResolver();
 
 /**
+ * A send that cannot work however often it is tried. The response bridge reads
+ * `permanent` and stops retrying (REQ-06).
+ */
+class PermanentSendError extends Error {
+  readonly permanent = true;
+}
+
+/** Gates that say no for good. The rest (`audit`, a resolver in `service_bypass`) may pass later. */
+const PERMANENT_DENIALS: ReadonlySet<string> = new Set([
+  'contact',
+  'scenario',
+  'sharing',
+  'type_enforcement',
+  'ttl_expired',
+]);
+
+/**
  * Build a `sendD2D` callback ready to plug into Core's setD2DSender
  * registry, mobile's `createNode.sendD2D` input, or the response-
  * bridge sender. Throws on resolution / signing-key-missing / send-
@@ -71,7 +88,7 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
     const resolved = await resolver.resolve(to);
     const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
     if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
-      throw new Error(`sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`);
+      throw new PermanentSendError(`sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`);
     }
     const recipientPublicKey = multibaseToPublicKey(vm.publicKeyMultibase);
     const endpoint = resolved.messagingService?.endpoint ?? opts.defaultMsgboxEndpoint;
@@ -92,11 +109,12 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
     });
 
     if (!result.sent) {
-      throw new Error(
-        `sendD2D: ${type} to ${to} denied at ${result.deniedAt ?? 'unknown'}: ${
-          result.error ?? 'no detail'
-        }`,
-      );
+      const message = `sendD2D: ${type} to ${to} denied at ${result.deniedAt ?? 'unknown'}: ${
+        result.error ?? 'no detail'
+      }`;
+      throw PERMANENT_DENIALS.has(result.deniedAt ?? '')
+        ? new PermanentSendError(message)
+        : new Error(message);
     }
     return result;
   };
@@ -143,6 +161,7 @@ export function makeOutboxRedeliver(
         // The row id is the message id of the first send: a retry keeps it,
         // so a peer that already has the message drops the copy.
         messageId: row.id,
+        createdTime: row.createdAt,
         ...(opts.providerServiceResolver !== undefined
           ? { providerServiceResolver: opts.providerServiceResolver }
           : {}),

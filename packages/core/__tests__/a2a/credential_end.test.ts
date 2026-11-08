@@ -159,7 +159,7 @@ describe('only the client whose credential ended is touched: another client’s 
     const claimed = iw.world.repo.claimDelegationTask(iw.runnerDid, iw.world.clock, 60_000, 'transit');
     if (op === null || claimed === null || claimed.id !== op.internal_id) throw new Error('claim');
     admitInboundClaimWith(iw.rt, claimed, iw.runnerDid);
-    iw.world.workflow.complete(claimed.id, JSON.stringify({ eta_minutes: 7 }), 'done', iw.runnerDid);
+    iw.world.workflow.complete(claimed.id, JSON.stringify({ eta_minutes: 7 }), 'done', iw.runnerDid, claimed.claim_id);
     return { principal, id };
   }
   const configsOf = (principal: string) =>

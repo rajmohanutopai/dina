@@ -36,6 +36,7 @@ import {
   deleteReminder as deleteReminderImpl,
   getReminder as getReminderImpl,
   fireMissedReminders as fireMissedRemindersImpl,
+  ReminderFinishedError,
   type Reminder,
   type RecurringFrequency,
 } from '../../reminders/service';
@@ -293,7 +294,7 @@ async function handleSnooze(
   try {
     deps.snoozeReminder(id, snoozeMs);
   } catch (err) {
-    return jsonError(500, (err as Error).message);
+    return jsonError(err instanceof ReminderFinishedError ? 409 : 500, (err as Error).message);
   }
   const updated = deps.getReminder(id);
   return { status: 200, body: { reminder: updated === null ? null : reminderBody(updated) } };

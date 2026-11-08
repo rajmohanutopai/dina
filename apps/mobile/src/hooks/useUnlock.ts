@@ -20,6 +20,7 @@ import {
   closePersona,
   deriveDIDKey,
   deriveRootSigningKey,
+  deriveRotationKey,
   deriveUcpIdentity,
   getPublicKey,
   installUcpIdentity,
@@ -31,6 +32,7 @@ import { openAllPersonasForInAppUser } from '@dina/home-node';
 
 import { seedDefaultPersonas } from '../onboarding/default_personas';
 import { loadPersistedDid } from '../services/identity_record';
+import { loadIdentitySeeds, saveIdentitySeeds } from '../services/identity_store';
 import { setAsideUnreadableVaultFiles } from '../services/install_marker';
 import { installBackupIdentity } from '../services/cloud_backup';
 import { stopUcp } from '../services/net_socket_wiring';
@@ -41,6 +43,7 @@ import {
   openPersonaDB,
   isPersistenceReady,
   shutdownAllPersistence,
+  isPersistenceOpenFor,
 } from '../storage/init';
 
 export type UnlockStep =
@@ -149,6 +152,18 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   const persistedDid = await loadPersistedDid();
   const did = persistedDid ?? deriveDIDKey(pubKey);
   state.did = did;
+
+  // The seed rows come from this master seed. A kill in an older onboarding
+  // could leave a wrapped seed without them; repair here, the one place that
+  // holds the seed, so boot never runs on a key the phrase does not derive.
+  await repairIdentitySeeds(masterSeed);
+
+  // The databases open here must belong to this seed. Sign out closes them, so
+  // this catches any other way to arrive with another identity's still open.
+  if (isPersistenceReady() && !isPersistenceOpenFor(masterSeed)) {
+    console.warn('[unlock] open databases belong to another seed; closing them');
+    await closeVault();
+  }
   // UCP (docs/UCP_IMPLEMENTATION_PLAN.md §3.1): the request-signing key and
   // the profile label come from the master seed, so they exist only while
   // unlocked, in memory; sealVault clears them.
@@ -166,48 +181,11 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //     masterSeed + userSalt drive the per-persona DEK derivation in
   //     ProductionDBProvider. Only initialize once per process.
   if (!isPersistenceReady()) {
-    // The vault keys' salt is the device's permanent vault salt
-    // (`vault_salt_store`), NOT the passphrase-wrap salt: a passphrase change
-    // or a recovery re-wraps with a new salt, and keys that followed it could
-    // not open the databases at the next start. A device set up before the
-    // vault salt existed pins its current wrap salt here — the salt its
-    // vaults were made with.
-    const vaultSalt = await ensureVaultSalt(wrappedSeed.salt).catch(() => wrappedSeed.salt);
     try {
-      await initializePersistence(masterSeed, vaultSalt);
+      await openPersistenceForIdentity(masterSeed, wrappedSeed.salt);
     } catch (err) {
-      // SQLCipher could not open a database with the key we derived
-      // ("file is not a database"). The seed unwrapped fine, so this is NOT
-      // "a key the user no longer has": it can be a key that changed (the
-      // passphrase bug this replaces deleted every vault here). Nothing is
-      // deleted: the unreadable files are renamed aside, kept for recovery,
-      // the owner is told, and Dina starts on fresh files so the app works.
-      // A real orphan from a previous install never reaches here — the
-      // install-marker check clears it at the gate.
-      const message = err instanceof Error ? err.message : String(err);
-      if (/file is not a database/i.test(message)) {
-        console.warn('[unlock] SQLCipher key mismatch — setting unreadable vault files aside');
-        // Close whatever the failed bring-up opened before moving its files.
-        await shutdownAllPersistence().catch(() => undefined);
-        const setAside = setAsideUnreadableVaultFiles(Date.now());
-        emitRuntimeWarning(
-          'vault.unreadable_set_aside',
-          `Dina could not open ${String(setAside)} saved database file(s) with this device's key. They were kept aside, not deleted, and Dina started fresh. Contact support before reinstalling.`,
-        );
-        try {
-          await initializePersistence(masterSeed, vaultSalt);
-        } catch (retryErr) {
-          console.warn('[unlock] persistence init failed after setting files aside:', retryErr);
-        }
-      } else {
-        // Persistence bring-up is best-effort from the unlock path: a
-        // native-module failure (e.g. op-sqlite not installed in tests)
-        // shouldn't brick unlock. The boot service's in-memory fallback
-        // will fire with `persistence.in_memory` so the banner makes it
-        // visible.
-
-        console.warn('[unlock] persistence init failed:', err);
-      }
+      fail(err instanceof Error ? err.message : String(err));
+      throw err;
     }
   }
 
@@ -224,11 +202,10 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   //    `user-vs-agent-persona-access`).
   //
   //    The `openVaultDB` callback wires the op-sqlite handle for each
-  //    persona AFTER the registry opens it; errors are reported but
+  //    persona BEFORE the registry opens it; errors are reported but
   //    don't bail the whole unlock — a single bad SQLite file
-  //    shouldn't brick the rest of the vault surface (this matches
-  //    the prior behaviour where `openPersonaDB` failures were
-  //    swallowed with a console.warn).
+  //    shouldn't brick the rest of the vault surface. That persona stays
+  //    closed and unpublished.
   state.step = 'opening_vaults';
   notify();
   const opened = await openAllPersonasForInAppUser({
@@ -253,6 +230,63 @@ export async function unlock(passphrase: string, wrappedSeed: WrappedSeed): Prom
   notify();
 
   return { ...state };
+}
+
+/**
+ * Open every database for this seed. Best-effort, as unlock has always been; a
+ * database the key cannot open is renamed aside, never deleted. Recovery also
+ * calls this before unlock, to restore a backup into the new vault.
+ */
+export async function openPersistenceForIdentity(
+  masterSeed: Uint8Array,
+  wrapSalt: Uint8Array,
+): Promise<void> {
+  // The vault keys' salt is the device's permanent vault salt
+  // (`vault_salt_store`), NOT the passphrase-wrap salt: a passphrase change
+  // or a recovery re-wraps with a new salt, and keys that followed it could
+  // not open the databases at the next start. A device set up before the
+  // vault salt existed pins its current wrap salt here — the salt its
+  // vaults were made with.
+  //
+  // A failed read fails the unlock, for a retry. Falling back to the wrap salt
+  // here would key every database wrongly, and they'd all be set aside.
+  const vaultSalt = await ensureVaultSalt(wrapSalt);
+  try {
+    await initializePersistence(masterSeed, vaultSalt);
+  } catch (err) {
+    // SQLCipher could not open a database with the key we derived
+    // ("file is not a database"). The seed unwrapped fine, so this is NOT
+    // "a key the user no longer has": it can be a key that changed (the
+    // passphrase bug this replaces deleted every vault here). Nothing is
+    // deleted: the unreadable files are renamed aside, kept for recovery,
+    // the owner is told, and Dina starts on fresh files so the app works.
+    // A real orphan from a previous install never reaches here — the
+    // install-marker check clears it at the gate.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/file is not a database/i.test(message)) {
+      console.warn('[unlock] SQLCipher key mismatch — setting unreadable vault files aside');
+      // Close whatever the failed bring-up opened before moving its files.
+      await shutdownAllPersistence().catch(() => undefined);
+      const setAside = setAsideUnreadableVaultFiles(Date.now());
+      emitRuntimeWarning(
+        'vault.unreadable_set_aside',
+        `Dina could not open ${String(setAside)} saved database file(s) with this device's key. They were kept aside, not deleted, and Dina started fresh. Contact support before reinstalling.`,
+      );
+      try {
+        await initializePersistence(masterSeed, vaultSalt);
+      } catch (retryErr) {
+        console.warn('[unlock] persistence init failed after setting files aside:', retryErr);
+      }
+    } else {
+      // Persistence bring-up is best-effort from the unlock path: a
+      // native-module failure (e.g. op-sqlite not installed in tests)
+      // shouldn't brick unlock. The boot service's in-memory fallback
+      // will fire with `persistence.in_memory` so the banner makes it
+      // visible.
+
+      console.warn('[unlock] persistence init failed:', err);
+    }
+  }
 }
 
 /**
@@ -392,7 +426,9 @@ export function clearForcePromptOnUnlock(): void {
  * Sealing still happens either way; only the re-prompt differs.
  */
 export async function sealVault(opts: { forcePrompt?: boolean } = {}): Promise<void> {
-  forcePromptOnNextUnlock = opts.forcePrompt ?? true;
+  // Never lowers it: a background auto-lock landing during Sign out must not
+  // cancel the prompt Sign out asked for. A successful unlock clears it.
+  forcePromptOnNextUnlock = forcePromptOnNextUnlock || (opts.forcePrompt ?? true);
   if (state.step !== 'complete') {
     // Already sealed (or mid-unlock); nothing to tear down. Still
     // reset state so a partial-unlock leftover (`failed` / mid-step)
@@ -401,6 +437,17 @@ export async function sealVault(opts: { forcePrompt?: boolean } = {}): Promise<v
     notify();
     return;
   }
+  await closeVault();
+  state = createInitialState();
+  notify();
+}
+
+/**
+ * Close everything the unlocked vault holds open: personas, DEKs, database
+ * handles, and the keys that live only while unlocked. Does not touch the
+ * unlock state or the keychain. Seal and Sign out both end here.
+ */
+export async function closeVault(): Promise<void> {
   setAccessiblePersonas([]);
   await stopUcp();
   installUcpIdentity(null);
@@ -415,8 +462,20 @@ export async function sealVault(opts: { forcePrompt?: boolean } = {}): Promise<v
     if (p.isOpen) closePersona(p.name);
   }
   await shutdownAllPersistence();
-  state = createInitialState();
-  notify();
+}
+
+async function repairIdentitySeeds(masterSeed: Uint8Array): Promise<void> {
+  try {
+    if ((await loadIdentitySeeds()) !== null) return;
+    console.warn('[unlock] identity seed rows missing; deriving them from the master seed');
+    await saveIdentitySeeds({
+      signingSeed: deriveRootSigningKey(masterSeed, 0).privateKey,
+      rotationSeed: deriveRotationKey(masterSeed, 0).privateKey,
+    });
+  } catch {
+    // Boot refuses to run without them, and says so (resolveIdentity).
+    console.warn('[unlock] could not repair the identity seed rows');
+  }
 }
 
 /** Set failed state with error. */

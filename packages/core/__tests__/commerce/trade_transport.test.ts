@@ -122,6 +122,7 @@ function nodeRuntime(
       return line.available ? { ...line, stores: { ...line.stores, tradeDocuments: tradeDocs } } : line;
     },
     receipts,
+    buyerOrders: { get: () => null },
     tradeSpool,
     nodeDid: () => nodeDid,
     now: () => T0,
@@ -228,7 +229,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
 
     const first = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
     expect(first.action).toBe('bypassed');
-    const rows = buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note');
+    const rows = buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.direction).toBe('inbound');
     expect(rows[0]?.counterpartyDid).toBe(SUPPLIER_DID);
@@ -246,7 +247,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const replay = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
     expect(replay.action).toBe('bypassed');
     expect(replay.reason).toContain('duplicate');
-    expect(buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+    expect(buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
   });
 
   it('with no active Commerce Pack the push is SPOOLED, not retained; it lands once the pack is active (§5.B1 Cut 3)', async () => {
@@ -276,7 +277,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const closed = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
     expect(closed.action).toBe('bypassed');
     expect(closed.reason).toContain('spooled');
-    expect(tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
+    expect(tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
     expect(spool.count()).toBe(1);
 
     // The pack comes back: the next ingress replays the mail through the
@@ -290,7 +291,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     });
     expect(replayed.outcome).toBe('unreadable'); // the trigger document itself
     expect(spool.count()).toBe(0);
-    const rows = tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note');
+    const rows = tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.counterpartyDid).toBe(SUPPLIER_DID);
     const evidence = JSON.parse(rows[0]?.evidenceJson ?? '{}') as { envelope: { body: string; from: string } };
@@ -355,7 +356,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     if (!line.available) throw new Error('unreachable');
     // The pack reopens much later.
     drainTradeSpool(getCommerceRuntime() as CommerceRuntime, { ...line.stores, tradeDocuments: tradeDocs });
-    const rows = tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note');
+    const rows = tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.createdAt).toBe(ARRIVED);
   });
@@ -402,7 +403,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const summary = drainTradeSpool(getCommerceRuntime() as CommerceRuntime, { ...line.stores, tradeDocuments: tradeDocs });
     expect(summary).toMatchObject({ replayed: 2, faulted: 1, applied: 1 });
     expect(spool.count()).toBe(0);
-    expect(tradeDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+    expect(tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
   });
 
   it('a full spool refuses the newest document and keeps the oldest', async () => {
@@ -430,7 +431,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'unknown');
     expect(result.action).toBe('dropped');
     expect(result.reason).toContain('neither a known contact nor a trading counterparty');
-    expect(buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
+    expect(buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
   });
 
   it('the supplier of an order this node holds is admitted though never a contact (review item 8)', async () => {
@@ -439,7 +440,7 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const buyerDocs = installNode(BUYER_DID);
     const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'unknown');
     expect(result.action).toBe('bypassed');
-    expect(buyerDocs.listByOrder(ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+    expect(buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
   });
 
   it('an unreadable body and an unbindable document drop with named outcomes', async () => {

@@ -24,10 +24,10 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { MSG_TYPE_COORDINATION_BOOKED } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
-import { getReminderRepository } from '../reminders/repository';
-import { createReminderDurable, deleteReminder, listByPersona } from '../reminders/service';
+import { createReminderDurable, deleteReminderDurable, listByPersona } from '../reminders/service';
 
 import { isMeetingSlot, slotKey, type MeetingSlot } from './group_fold';
+import { MAX_SLOT_CHARS } from './group_plan';
 
 import type { GroupPlan } from './group_plan';
 import type { D2DSender, D2DSendOutcome } from '../server/routes/d2d_msg';
@@ -76,7 +76,7 @@ export function validateBookedBody(value: unknown): BookedBody | null {
   if (b.state !== 'booked' && b.state !== 'cancelled') return null;
   if (typeof b.title !== 'string' || b.title.trim() === '' || b.title.length > MAX_TITLE)
     return null;
-  if (!isMeetingSlot(b.slot) || b.slot.start.length > 64) return null;
+  if (!isMeetingSlot(b.slot) || b.slot.start.length > MAX_SLOT_CHARS) return null;
   if (typeof b.organiser_did !== 'string' || !DID.test(b.organiser_did)) return null;
   if (typeof b.guest_did !== 'string' || !DID.test(b.guest_did)) return null;
   // A pair is two parties.
@@ -366,8 +366,7 @@ export function reconcileBookingReminders(
 
 async function reconcileOnce(store: BookingStore, nowMs: number, persona: string): Promise<void> {
   const removeDurably = async (id: string): Promise<void> => {
-    deleteReminder(id);
-    await getReminderRepository()?.remove(id);
+    await deleteReminderDurable(id);
   };
   for (const listed of store.list()) {
     const row = store.get(listed.organiserDid, listed.recordId);

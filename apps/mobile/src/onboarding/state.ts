@@ -57,6 +57,8 @@ export interface RecoverDraft {
   startupMode: StartupMode;
   /** Restore the backup the handle step found (docs/USER_BACKUP.md §4.5). */
   restoreBackup?: boolean;
+  /** The owner agreed the copy may replace the vault still on this phone. */
+  replaceLocalData?: boolean;
 }
 
 /** Final slot carried through existing AT Protocol identity onboarding. */

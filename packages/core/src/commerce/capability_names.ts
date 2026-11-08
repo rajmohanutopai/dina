@@ -44,6 +44,16 @@ export function commerceCapabilityNames(wire: string, pluginCapabilityId?: strin
   return names;
 }
 
+/**
+ * True for a capability on the commerce lane as its senders name it on the wire.
+ * Its transport TTL is not its deadline: documents carry their own validity (a
+ * quote request stands 24 h), an order's fate is settled by reconcile, and a
+ * supplier's phone may wake long after the query reached its relay.
+ */
+export function isCommerceWireCapability(wire: string): boolean {
+  return wire.startsWith(COMMERCE_NSID_PREFIX);
+}
+
 /** True when either name is in the set. */
 export function isCommerceCapability(
   set: ReadonlySet<string>,

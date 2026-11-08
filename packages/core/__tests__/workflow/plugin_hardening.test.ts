@@ -426,14 +426,14 @@ describe.each([
     // guard must not apply to plugin tasks).
     expect(ctx.repo.completeWithDetails(t.id, 'did:key:zrunner', 's', '{}', '{}', T0 + 5)).toBe(0);
     expect(ctx.repo.getById(t.id)?.status).toBe('running');
-    // A non-plugin task still completes without a token (legacy agents).
+    // REQ-13: a non-plugin task on its first claim has no older run to fear, so
+    // an agent that sends no token keeps working. A re-claim needs it: see
+    // request_lifecycle.test.ts.
     const legacy = baseTask(JSON.stringify({ type: 'free_form_task', text: 'x' }), 'legacy_1');
     legacy.requested_runner = undefined;
     ctx.repo.create(legacy);
     const c = ctx.repo.claimDelegationTask('did:key:zagent', T0, LEASE_MS, '');
-    expect(
-      ctx.repo.completeWithDetails(c!.id, 'did:key:zagent', 's', '{}', '{}', T0 + 5),
-    ).toBeGreaterThan(0);
+    expect(ctx.repo.completeWithDetails(c!.id, 'did:key:zagent', 's', '{}', '{}', T0 + 5)).toBeGreaterThan(0);
   });
 });
 

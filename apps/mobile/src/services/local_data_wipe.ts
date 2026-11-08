@@ -22,43 +22,64 @@
 import { Paths, type Directory, type File } from 'expo-file-system';
 import * as Notifications from 'expo-notifications';
 
-import { installUcpIdentity, setUcpSigningGeneration } from '@dina/core';
+import { setUcpSigningGeneration } from '@dina/core';
 
 import { clearCreditsState } from '../ai/credits';
-import { resetUnlockState } from '../hooks/useUnlock';
-import { shutdownAllPersistence } from '../storage/init';
+import { closeVault, resetUnlockState } from '../hooks/useUnlock';
 
 import { clearDisplayNameOverride } from './display_name_override';
-import { clearPersistedDid } from './identity_record';
+import { clearPersistedDid, loadPersistedDid } from './identity_record';
+import { rememberSignedOutIdentity, resetIdentityScopedState } from './identity_scope';
 import { clearIdentitySeeds } from './identity_store';
-import { installBackupIdentity } from './cloud_backup';
+import { clearPdsCredentials } from './infra_preferences';
 import { clearOrphanKeychainState, writeInstallMarker } from './install_marker';
-import { stopUcp } from './net_socket_wiring';
 import { clearAutoPassphrase } from './startup_preferences';
 import { clearWrappedSeed } from './wrapped_seed_store';
 
 /**
  * Tier 1 — "Sign out from this device".
  *
- * Removes the wrapped master seed, the raw identity keys in the OS
- * keychain, and the persisted DID record. After this returns, the
+ * Closes every open database, then removes the wrapped master seed, the raw
+ * identity keys in the OS keychain, the persisted DID record and the PDS
+ * credentials, and cancels every scheduled banner. After this returns, the
  * next app launch shows the onboarding screen.
  *
- * Encrypted vault databases are NOT touched. Re-onboarding with the
- * recovery phrase re-derives the same DEKs, so the data is
- * recoverable on this same device.
+ * Encrypted vault files stay on disk. Re-onboarding with the recovery phrase
+ * re-derives the same DEKs, so the data is recoverable on this same device.
+ * Owner rows with no secret in them (preferences, role, linked account) stay
+ * until a different identity onboards (identity_scope). AI provider keys and
+ * credits belong to the phone, and stay until "Erase everything".
  */
 export async function signOutLocal(): Promise<void> {
   // UCP stops first: no upload, search or guard claim under an identity being removed.
-  await stopUcp();
-  installUcpIdentity(null);
-  installBackupIdentity(null);
+  // Every handle and DEK closes before the keys go: the next identity must
+  // never run on this one's open databases. A failed close still ends with the
+  // keys gone and the module state reset (shutdownAllPersistence's finally).
+  try {
+    await closeVault();
+  } catch {
+    // Intentional: best-effort close.
+  }
   // A wiped node forgets its key ring with its record; a restore adopts the host's.
   setUcpSigningGeneration(null);
+  resetIdentityScopedState();
+  // Cancel every scheduled banner (reminders, briefings): the old owner's text
+  // must not keep reaching the lock screen. The kv_store mirror reissues them
+  // when this identity comes back. Push registration is left alone: stale
+  // device tokens drop off the server's send queue on their own.
+  try {
+    await Notifications.cancelAllScheduledNotificationsAsync();
+  } catch {
+    // Best-effort: a misconfigured Notifications module must not block the wipe.
+  }
+  const did = await loadPersistedDid();
+  if (did !== null) await rememberSignedOutIdentity(did);
   await clearWrappedSeed();
   await clearIdentitySeeds();
   await clearPersistedDid();
   await clearDisplayNameOverride();
+  // The password comes from the master seed, and recovery derives it again.
+  await clearPdsCredentials();
   // Clear the cached auto-unlock passphrase too — without this, a
   // post-sign-out boot would still find the cached passphrase but no
   // wrapped seed, log a confusing "no wrapped seed" diagnostic, and
@@ -90,16 +111,13 @@ export async function eraseEverythingLocal(): Promise<void> {
   // of failure is "persistence wasn't initialized" (pre-unlock erase
   // is a no-op for the close step).
   // UCP stops before its database closes (its search store and guard claims read it).
-  await stopUcp();
-  installUcpIdentity(null);
-  installBackupIdentity(null);
-  // A wiped node forgets its key ring with its record; a restore adopts the host's.
-  setUcpSigningGeneration(null);
   try {
-    await shutdownAllPersistence();
+    await closeVault();
   } catch {
     // Intentional: best-effort close.
   }
+  // A wiped node forgets its key ring with its record; a restore adopts the host's.
+  setUcpSigningGeneration(null);
 
   // Walk the document directory and delete every `.sqlite` family
   // file (.sqlite, .sqlite-wal, .sqlite-shm). Other files in the
@@ -122,19 +140,6 @@ export async function eraseEverythingLocal(): Promise<void> {
   } catch {
     // Directory listing failed — proceed to identity clear so the
     // app can at least re-onboard, even if old DB files linger.
-  }
-
-  // Cancel every scheduled local notification (reminders, briefings)
-  // so a freshly-erased device doesn't ping the user about reminders
-  // that no longer exist in any vault. Push registration with the OS
-  // is not unregistered explicitly here — the next install / OS
-  // re-grant flow re-registers, and stale device tokens drop off the
-  // server's send queue naturally.
-  try {
-    await Notifications.cancelAllScheduledNotificationsAsync();
-  } catch {
-    // Best-effort — a misconfigured Notifications module shouldn't
-    // block the wipe path.
   }
 
   // Sweep every keychain entry the app owns — startup mode + auto-

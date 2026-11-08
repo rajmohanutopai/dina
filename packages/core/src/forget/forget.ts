@@ -36,7 +36,7 @@ import { getTopicRepository } from '../memory/repository';
 import { getPeopleRepository } from '../people/repository';
 import { setUnlockForgetHook } from '../persona/orchestrator';
 import { isPersonaOpen, listPersonas } from '../persona/service';
-import { deleteReminder, listByPersona } from '../reminders/service';
+import { deleteReminderDurable, listByPersona } from '../reminders/service';
 import { forgetStagingItems, stagingIdsForItems } from '../staging/service';
 import { getVaultRepository } from '../vault/repository';
 import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
@@ -432,7 +432,7 @@ async function runStep(job: ForgetJob, step: Step): Promise<void> {
       return;
     }
     case 'reminders':
-      for (const r of plan.reminders) deleteReminder(r.id);
+      for (const r of plan.reminders) await deleteReminderDurable(r.id);
       return;
     case 'chat_staging': {
       forgetStagingItems(plan.stagingIds);

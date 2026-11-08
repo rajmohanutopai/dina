@@ -3,8 +3,10 @@
  * (docs/GROUP_COORDINATION_ARCHITECTURE.md §4, §5, §11): N ordinary 1:1
  * `availability_coordination` spokes, one shared window, a fold on read.
  *
- * WHAT IT IS NOT. Not a coordinator and not a sweeper. Nothing here runs on a
- * timer, no node waits on the plan, and no message on the wire names it — a
+ * WHAT IT IS NOT. Not a coordinator. No round runs on a timer (the one timer,
+ * `sweepGroupPlanFollowUps`, only delivers what a settled or stopped plan still
+ * owes, which no list would ever read again), no node waits on the plan, and no
+ * message on the wire names it — a
  * spoke's `query_id` is random, and its params are the organizer's own intent
  * and candidates and nothing else (§16 rule 4). Every spoke is the 1:1 lane's
  * own `service.query` (`submitServiceQuery`): a guest with a stored
@@ -523,6 +525,26 @@ async function trySendSpoke(
   }
 }
 
+/** As `trySendSpoke`, for the query once a stored offer is in hand. */
+async function tryQuerySpoke(
+  plan: GroupPlan,
+  guest: GuestRecord,
+  offer: ServiceOffer,
+  deps: GroupCoordinationDeps,
+): Promise<GroupPlan> {
+  try {
+    return await querySpoke(plan, guest, offer, deps);
+  } catch (error) {
+    appendAudit(
+      'group_plan',
+      'group_plan_spoke_fault',
+      plan.planId,
+      `round=${plan.round} reason=${error instanceof Error ? oneLine(error.message, 80) : 'unknown'}`,
+    );
+    return plan;
+  }
+}
+
 /** One round to every guest, persisted spoke by spoke so a crash mid-fan-out keeps what was sent. */
 async function fanOut(plan: GroupPlan, deps: GroupCoordinationDeps): Promise<GroupPlan> {
   deps.plans.put(plan);
@@ -561,12 +583,20 @@ function cancelLiveSpokes(plan: GroupPlan, deps: GroupCoordinationDeps, reason: 
  * Bring the current round up to date: record the replies that landed, query
  * a guest whose offer arrived while the window was open, close the window
  * for whoever is still waiting once it has passed, and fold.
+ *
+ * A settled plan settled on its required guests, so an optional guest may still
+ * be inside the window. Their answer is recorded and their booking follows, but
+ * the plan's state and fold stay as they are.
  */
 async function settleRound(
   plan: GroupPlan,
   deps: GroupCoordinationDeps,
 ): Promise<{ plan: GroupPlan; changed: boolean }> {
-  if (plan.state === 'settled' || plan.state === 'abandoned') return { plan, changed: false };
+  if (plan.state === 'abandoned') return { plan, changed: false };
+  const settled = plan.state === 'settled';
+  if (settled && !plan.guests.some((g) => g.outcome === 'waiting')) {
+    return { plan, changed: false };
+  }
   const closesAt = windowClosesAt(plan);
   if (closesAt === null) return { plan, changed: false };
   // One clock reading for the whole pass: the window closes for every guest
@@ -594,7 +624,7 @@ async function settleRound(
       // between the preflight and the reply); the stored offer is the record.
       const offer = liveOffer(deps.offers, contactDid, Math.floor(now / 1000));
       if (offer !== null) {
-        plan = await querySpoke(plan, guest, offer, deps);
+        plan = await tryQuerySpoke(plan, guest, offer, deps);
         changed = true;
         guest = guestOf(plan, contactDid);
         spoke = currentSpoke(guest, plan.round);
@@ -626,7 +656,7 @@ async function settleRound(
       changed = true;
     }
   }
-  if (changed || plan.fold === null) {
+  if (!settled && (changed || plan.fold === null)) {
     plan = must(foldPlan(plan, now));
     changed = true;
   }
@@ -738,16 +768,36 @@ export async function readGroupPlan(
   });
 }
 
+/** One row of a list: a plan that faults costs its own row, not the whole list. */
+async function readForList(
+  planId: string,
+  over: Partial<GroupCoordinationDeps>,
+): Promise<GroupPlan | null> {
+  try {
+    const result = await readGroupPlan(planId, over);
+    return result.ok ? result.plan : null;
+  } catch (error) {
+    appendAudit(
+      'group_plan',
+      'group_plan_read_fault',
+      planId,
+      `reason=${error instanceof Error ? oneLine(error.message, 80) : 'unknown'}`,
+    );
+    return null;
+  }
+}
+
 /** Every open plan, each folded as of now, newest first. */
 export async function listGroupPlans(
   over: Partial<GroupCoordinationDeps> = {},
 ): Promise<GroupPlan[] | null> {
   const resolved = resolveDeps(over);
   if (!resolved.ok) return null;
+  await sweepGroupPlanFollowUps(over);
   const out: GroupPlan[] = [];
   for (const stored of resolved.deps.plans.listOpen()) {
-    const result = await readGroupPlan(stored.planId, over);
-    if (result.ok) out.push(result.plan);
+    const plan = await readForList(stored.planId, over);
+    if (plan !== null) out.push(plan);
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -764,10 +814,11 @@ export async function listGroupPlanHandles(
 ): Promise<GroupPlan[] | null> {
   const resolved = resolveDeps(over);
   if (!resolved.ok) return null;
+  await sweepGroupPlanFollowUps(over);
   const out: GroupPlan[] = [];
   for (const stored of resolved.deps.plans.listRecent(MAX_PLAN_HANDLES)) {
-    const result = await readGroupPlan(stored.planId, over);
-    if (result.ok) out.push(result.plan);
+    const plan = await readForList(stored.planId, over);
+    if (plan !== null) out.push(plan);
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt);
 }
@@ -898,37 +949,77 @@ export async function deleteGroupPlan(
   const resolved = resolveDeps(over);
   if (!resolved.ok) return resolved;
   const { deps } = resolved;
-  return withPlan(planId, async () => {
-    const plan = deps.plans.get(planId);
-    if (plan === null) return { ok: true, removed: false };
-    // A guest keeps no booking for a plan its organiser deleted. The owner's
-    // word is saved first — the plan stops (abandoned, nothing chosen), so no
-    // later read books anyone again — then every cancellation is handed over.
-    // One that cannot be leaves the stopped plan for the owner to delete again.
-    const unbooked = await syncPlanBookings({ ...plan, state: 'abandoned', chosen: null }, deps);
-    if (unbooked.pending) {
-      deps.plans.put(unbooked.plan);
-      // The owner is deleting it: no guest is asked about it any more.
-      cancelLiveSpokes(plan, deps, 'plan being deleted');
-      return {
-        ok: false,
-        refusal: 'cancellations_pending',
-        detail: 'a booked guest could not be told yet',
-      };
+  return withPlan(planId, () => deleteUnderLock(planId, deps));
+}
+
+type DeleteOutcome =
+  | { ok: true; removed: boolean }
+  | { ok: false; refusal: 'cancellations_pending'; detail: string };
+
+async function deleteUnderLock(planId: string, deps: GroupCoordinationDeps): Promise<DeleteOutcome> {
+  const plan = deps.plans.get(planId);
+  if (plan === null) return { ok: true, removed: false };
+  // A guest keeps no booking for a plan its organiser deleted. The owner's
+  // word is saved first — the plan stops (abandoned, nothing chosen), so no
+  // later read books anyone again — then every cancellation is handed over.
+  // One that cannot be leaves the stopped plan marked: the sweep tells the
+  // guest and finishes the delete.
+  const unbooked = await syncPlanBookings(
+    { ...plan, state: 'abandoned', chosen: null, deleteWhenTold: true },
+    deps,
+  );
+  if (unbooked.pending) {
+    deps.plans.put(unbooked.plan);
+    // The owner is deleting it: no guest is asked about it any more.
+    cancelLiveSpokes(plan, deps, 'plan being deleted');
+    return {
+      ok: false,
+      refusal: 'cancellations_pending',
+      detail: 'a booked guest could not be told yet',
+    };
+  }
+  cancelLiveSpokes(plan, deps, 'plan deleted');
+  // What a guest disclosed lives in two places: the plan row, and the
+  // completed spoke task that carried the reply. Deleting the plan scrubs
+  // both (§7): every spoke of every round loses its stored result.
+  const store = deps.workflow.store();
+  const now = deps.nowMs();
+  for (const guest of plan.guests) {
+    for (const spoke of guest.spokes) {
+      if (spoke.stage === 'queried') store.scrubResult(spoke.taskId, now);
     }
-    cancelLiveSpokes(plan, deps, 'plan deleted');
-    // What a guest disclosed lives in two places: the plan row, and the
-    // completed spoke task that carried the reply. Deleting the plan scrubs
-    // both (§7): every spoke of every round loses its stored result.
-    const store = deps.workflow.store();
-    const now = deps.nowMs();
-    for (const guest of plan.guests) {
-      for (const spoke of guest.spokes) {
-        if (spoke.stage === 'queried') store.scrubResult(spoke.taskId, now);
-      }
+  }
+  return { ok: true, removed: deps.plans.remove(planId) };
+}
+
+/**
+ * Deliver what settled and stopped plans still owe (`planOwesFollowUp`): a word
+ * the sender did not take, an optional guest's answer, a delete held for a
+ * cancellation. No list reads an abandoned plan, and a settled one drops off the
+ * handle list in time, so this runs from both lists and from a timer the hosts
+ * start at boot (`wireGroupCoordinationOfferReplay`). One plan's fault stays its own.
+ */
+export async function sweepGroupPlanFollowUps(
+  over: Partial<GroupCoordinationDeps> = {},
+): Promise<void> {
+  const resolved = resolveDeps(over);
+  if (!resolved.ok) return;
+  const { deps } = resolved;
+  for (const owing of deps.plans.listFollowUps()) {
+    try {
+      await withPlan(owing.planId, async () => {
+        const plan = await loadSettled(owing.planId, deps);
+        if (plan?.deleteWhenTold === true) await deleteUnderLock(owing.planId, deps);
+      });
+    } catch (error) {
+      appendAudit(
+        'group_plan',
+        'group_plan_follow_up_fault',
+        owing.planId,
+        `reason=${error instanceof Error ? oneLine(error.message, 80) : 'unknown'}`,
+      );
     }
-    return { ok: true, removed: deps.plans.remove(planId) };
-  });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -972,14 +1063,42 @@ export async function replayOfferForOpenPlans(
   return sent;
 }
 
-/** Subscribe the replay to inbound offers. Returns the disposer. Hosts call this at boot. */
+const FOLLOW_UP_FIRST_SWEEP_MS = 15_000;
+const FOLLOW_UP_SWEEP_MS = 5 * 60_000;
+
+/**
+ * Subscribe the replay to inbound offers, and start the follow-up sweep. Returns
+ * the disposer. Hosts call this at boot.
+ */
 export function wireGroupCoordinationOfferReplay(
   over: Partial<GroupCoordinationDeps> = {},
 ): () => void {
-  return onServiceOfferReceived((event) => {
+  const unsubscribe = onServiceOfferReceived((event) => {
     if (event.capability !== GROUP_COORDINATION_CAPABILITY) return;
     void replayOfferForOpenPlans(event.providerDID, over).catch(() => {
       /* the listener must never break D2D ingress; the read path is the fallback */
     });
   });
+  let sweeping = false;
+  const sweep = (): void => {
+    if (sweeping) return;
+    sweeping = true;
+    void sweepGroupPlanFollowUps(over)
+      .catch(() => {
+        /* the next tick tries again */
+      })
+      .finally(() => {
+        sweeping = false;
+      });
+  };
+  // Soon after boot, once the senders are up: a cell may not stay up for a full tick.
+  const first = setTimeout(sweep, FOLLOW_UP_FIRST_SWEEP_MS);
+  const every = setInterval(sweep, FOLLOW_UP_SWEEP_MS);
+  (first as { unref?: () => void }).unref?.();
+  (every as { unref?: () => void }).unref?.();
+  return () => {
+    unsubscribe();
+    clearTimeout(first);
+    clearInterval(every);
+  };
 }

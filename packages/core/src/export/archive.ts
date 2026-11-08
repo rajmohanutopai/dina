@@ -38,7 +38,9 @@ import {
   describePreflightRefusal,
   preflightCommerceArchive,
 } from '../commerce/archive_preflight';
+import { LEDGER_ARCHIVE_TABLES, ledgerRowsForRestore } from '../commerce/ledger_archive_rows';
 import {
+  COMMERCE_EPOCH_HELD_KEY,
   COMMERCE_EPOCH_STOPPED_KEY,
   COMMERCE_RESTORE_PENDING_KEY,
   markCommerceRestorePending,
@@ -108,6 +110,7 @@ function archiveJsonReviver(_key: string, value: unknown): unknown {
  *   - `staging_inbox` — transient ingest queue.
  *   - `d2d_outbox` — transient outbound queue (issues.txt §1).
  *   - `d2d_replay_seen` — machine-local replay memory; expires within a day.
+ *   - `signed_request_nonces` — machine-local replay memory; expires in minutes.
  *   - `ask_records` — Brain's live asks; an import cannot resume them.
  *   - `plan_feeds` — which agent may add tasks; agents are re-paired after a move.
  *   - `plan_batches` — the plan inbox's replay memory.
@@ -132,6 +135,8 @@ const IDENTITY_TABLES = [
   'person_surfaces',
   'reminders',
   'service_configs',
+  // A listing deleted but still public: the restored node finishes the removal.
+  'service_listing_unpublish_pending',
   'contact_service_offers',
   'chat_messages',
   // UCP plan §3.16: what Brain read in each chat conversation, and since when
@@ -204,6 +209,9 @@ const IDENTITY_TABLES = [
   // back closed (`commerce/tender_archive_rows.ts`): a restore resumes no
   // negotiation the owner did not see.
   ...TENDER_ARCHIVE_TABLES,
+  // The khata, its neighbours and the live catalogue. The file says what stays
+  // out and why; `ledgerRowsForRestore` gives them their restored form.
+  ...LEDGER_ARCHIVE_TABLES,
   // SHELF_SPACE_NEGOTIATION: the term engine's whole state is the owner's —
   // the store's private floors and holdings (policy), every signed document
   // and the answers given (a restored node must answer a resend as it did
@@ -318,6 +326,8 @@ const EPHEMERAL_KV_PATTERNS: RegExp[] = [
   // A signing stop, the same way: it is this node's state, and a restore
   // fences the epoch afresh.
   new RegExp(`^${COMMERCE_EPOCH_STOPPED_KEY}$`),
+  // The epoch this node last held, for the same reason.
+  new RegExp(`^${COMMERCE_EPOCH_HELD_KEY}$`),
   // UCP plan §3.5 — the profile publisher's record (`commerce/ucp/publisher.ts`)
   // names THIS installation: its instance id, epoch and owner controls. Carried
   // into a restore it would make the new device the same installation as the
@@ -755,9 +765,11 @@ export async function importArchivePayload(
           }
           clearTable(idAdapter, table);
         }
-        const rows = (TENDER_ARCHIVE_TABLES as readonly string[]).includes(table)
+        const archived = (TENDER_ARCHIVE_TABLES as readonly string[]).includes(table)
           ? tenderRows[table as (typeof TENDER_ARCHIVE_TABLES)[number]]
           : payload.identity.tables[table];
+        const rows =
+          archived === undefined ? undefined : ledgerRowsForRestore(table, archived, Date.now());
         if (rows !== undefined) {
           // Round-9 #18: plugin authority never travels. Export bakes installs
           // PAUSED with the device binding stripped, but the archive is

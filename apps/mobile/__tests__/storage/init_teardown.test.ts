@@ -12,6 +12,7 @@
  */
 
 import { addMessage, getThread } from '../../../brain/src/chat/thread';
+import { kvGet, kvSet, setKVRepository } from '../../../core/src/kv/store';
 import {
   setChatMessageRepository,
   getChatMessageRepository,
@@ -47,6 +48,20 @@ import { setVaultRepository, getVaultRepository } from '../../../core/src/vault/
 import { shutdownAllPersistence } from '../../src/storage/init';
 
 describe('shutdownAllPersistence — memory teardown', () => {
+  it('leaves KV readable after teardown, empty, with nothing carried over', async () => {
+    setKVRepository({
+      get: async () => {
+        throw new Error('database is closed');
+      },
+    } as never);
+    await kvSet('stale', 'x').catch(() => undefined);
+    await shutdownAllPersistence();
+    await expect(kvGet('stale')).resolves.toBeNull();
+    await kvSet('late', 'y');
+    await shutdownAllPersistence();
+    await expect(kvGet('late')).resolves.toBeNull();
+  });
+
   it('drops the module-global MemoryService', async () => {
     setMemoryService(
       new MemoryService({

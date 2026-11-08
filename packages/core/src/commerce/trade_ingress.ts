@@ -230,8 +230,6 @@ function applyOne(
     evidenceJson: args.evidenceJson,
     nowMs: args.nowMs,
   };
-  const readOrder = (purchaseOrderId: string): ReturnType<typeof readers.readOrder> =>
-    readers.readOrder(args.senderDid, purchaseOrderId);
   const revshared = {
     senderDid: args.senderDid,
     selfDid: runtime.nodeDid(),
@@ -246,7 +244,9 @@ function applyOne(
         ...verifyInboundDeliveryNote({
           ...shared,
           note: read.document,
-          readOrder,
+          // A delivery note comes from the supplier: this node is the buyer.
+          readOrder: (purchaseOrderId) =>
+            readers.readOrder(args.senderDid, purchaseOrderId, 'buyer'),
           isOrderRejected: (purchaseOrderId) =>
             readers.isOrderRejected(args.senderDid, purchaseOrderId),
         }),
@@ -256,7 +256,13 @@ function applyOne(
       return { ...verifyInboundPaymentAck({ ...shared, ack: read.document }), kind: read.kind };
     case 'delivery_receipt':
       return {
-        ...verifyInboundDeliveryReceipt({ ...shared, receipt: read.document, readOrder }),
+        // A receipt comes from the buyer: this node is the supplier.
+        ...verifyInboundDeliveryReceipt({
+          ...shared,
+          receipt: read.document,
+          readOrder: (purchaseOrderId) =>
+            readers.readOrder(args.senderDid, purchaseOrderId, 'supplier'),
+        }),
         kind: read.kind,
       };
     case 'order_attachment': {
@@ -268,8 +274,10 @@ function applyOne(
         selfDid: runtime.nodeDid(),
         attachment: read.document,
         repository: stores.orderAttachments,
-        readOrder: readers.readOrder,
-        readAcceptance: readers.readAcceptance,
+        readOrder: (counterpartyDid, purchaseOrderId) =>
+          readers.readOrder(counterpartyDid, purchaseOrderId, 'buyer'),
+        readAcceptance: (counterpartyDid, purchaseOrderId) =>
+          readers.readAcceptance(counterpartyDid, purchaseOrderId, 'buyer'),
         evidenceJson: args.evidenceJson,
         nowMs: args.nowMs,
       });

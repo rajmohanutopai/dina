@@ -787,10 +787,14 @@ export async function persistConnectedBrainMemoryProposal(
   try {
     // Core re-checks the real open state inside stagingResolve. A lock race
     // therefore becomes a pending approval, never an unauthorized write.
-    stagingResolve(item.id, persona, true, classified);
+    stagingResolve(item.id, persona, true, classified, claimed.claim_token);
   } catch (error) {
     try {
-      stagingFail(item.id, error instanceof Error ? error.message : 'proposal commit failed');
+      stagingFail(
+        item.id,
+        error instanceof Error ? error.message : 'proposal commit failed',
+        claimed.claim_token,
+      );
     } catch {
       // Preserve the original failure; the exact row remains durable.
     }

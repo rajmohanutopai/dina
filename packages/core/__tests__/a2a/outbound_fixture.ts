@@ -143,6 +143,17 @@ export class LaneWorld {
       ...(withHandler ? { approvalDecisionHandler: hooks.approvalDecisionHandler } : {}),
       ...extra,
     });
+    // A runner reports with the claim it holds, as the routes make it. Tests that
+    // pass their own claim, or none on an unclaimed task, go through unchanged.
+    const claimOf = (id: string, given?: string): string | undefined =>
+      given ?? this.repo.getById(id)?.claim_id ?? undefined;
+    const service = this.workflow;
+    const complete = service.complete.bind(service);
+    const fail = service.fail.bind(service);
+    service.complete = (id, resultJSON, summary, agentDID, claimId, ...rest) =>
+      complete(id, resultJSON, summary, agentDID, claimOf(id, claimId), ...rest);
+    service.fail = (id, reason, agentDID, claimId, ...rest) =>
+      fail(id, reason, agentDID, claimOf(id, claimId), ...rest);
     this.runtime = createA2ARuntime({ store: this.store, workflow: this.workflow, nowMs: () => this.clock });
     setWorkflowService(this.workflow);
   }

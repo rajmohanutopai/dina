@@ -258,8 +258,16 @@ export function startReminderFireLoop(opts: {
     if (running) return; // never overlap a slow Core round-trip
     running = true;
     try {
-      const fired = await opts.core.reminderFireMissed();
-      for (const r of fired) opts.hub.broadcast(r);
+      // REQ-10: told first, marked after. Core's `fired` ends a reminder for
+      // good, so with nobody listening it stays due and a tab opened later gets
+      // it. A lost answer to the mark sends one twice, never not at all.
+      if (opts.hub.subscriberCount() === 0) return;
+      const now = Date.now();
+      const due = await opts.core.reminderListPending(now);
+      for (const r of due) opts.hub.broadcast(r);
+      const fired = await opts.core.reminderFireMissed(now);
+      const told = new Set(due.map((r) => r.id));
+      for (const r of fired) if (!told.has(r.id)) opts.hub.broadcast(r);
     } catch (err) {
       opts.onError?.(err);
     } finally {

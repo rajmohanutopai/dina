@@ -179,6 +179,54 @@ const recentEnvelopes = new Set<string>();
  * behind 512 newer messages would run a still-running handler again.
  */
 const handlingEnvelopes = new Set<string>();
+
+/**
+ * D2D envelopes a handler could not take in yet (`false`): the relay holds the
+ * real copy but only resends on the next connect, and a server can stay
+ * connected for days, past the relay's 24 h hold. So we try the frame again
+ * ourselves, backing off. The pipeline refuses it as stale after a day, which
+ * bounds this; the cap stops strangers' frames filling memory, and one over the
+ * cap waits for the relay's resend.
+ */
+const ENVELOPE_RETRY_BASE_MS = 30_000;
+const ENVELOPE_RETRY_MAX_MS = 10 * 60 * 1000;
+const ENVELOPE_RETRY_LIMIT = 64;
+const envelopeRetries = new Map<
+  string,
+  { attempts: number; timer: ReturnType<typeof setTimeout> | null }
+>();
+
+function clearEnvelopeRetries(): void {
+  for (const retry of envelopeRetries.values()) {
+    if (retry.timer !== null) clearTimeout(retry.timer);
+  }
+  envelopeRetries.clear();
+}
+
+function forgetEnvelopeRetry(key: string): void {
+  const retry = envelopeRetries.get(key);
+  if (retry === undefined) return;
+  if (retry.timer !== null) clearTimeout(retry.timer);
+  envelopeRetries.delete(key);
+}
+
+function scheduleEnvelopeRetry(env: MsgBoxEnvelope, key: string): void {
+  let retry = envelopeRetries.get(key);
+  if (retry === undefined) {
+    if (envelopeRetries.size >= ENVELOPE_RETRY_LIMIT) return;
+    retry = { attempts: 0, timer: null };
+    envelopeRetries.set(key, retry);
+  }
+  if (retry.timer !== null) return;
+  const delay = Math.min(ENVELOPE_RETRY_BASE_MS * 2 ** retry.attempts, ENVELOPE_RETRY_MAX_MS);
+  retry.attempts += 1;
+  const scheduled = retry;
+  scheduled.timer = setTimeout(() => {
+    scheduled.timer = null;
+    receiveEnvelope(env);
+  }, delay);
+  (scheduled.timer as { unref?: () => void }).unref?.();
+}
 /**
  * Keys handled on an acking connection whose durable record could not be
  * written (the store failed). They are NOT acked — an ack with no record is
@@ -536,6 +584,7 @@ export function sendEnvelope(envelope: MsgBoxEnvelope): boolean {
 /** Disconnect and stop reconnection. */
 export async function disconnect(): Promise<void> {
   shouldReconnect = false;
+  clearEnvelopeRetries();
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -1090,6 +1139,7 @@ async function handleEnvelope(
   }
   if (!handled) {
     handlingEnvelopes.delete(key); // not taken in: the next copy is handled afresh
+    if (env.type === 'd2d') scheduleEnvelopeRetry(env, key);
     return;
   }
   await finishHandled(env, key, durable);
@@ -1113,6 +1163,7 @@ async function finishHandled(env: MsgBoxEnvelope, key: string, durable: boolean)
   }
   unrecordedEnvelopes.delete(key);
   handlingEnvelopes.delete(key);
+  forgetEnvelopeRetry(key);
   rememberHandled(key);
   sendAck(env);
   // A node that stays connected for days prunes too, not only on connect.

@@ -135,7 +135,10 @@ function useDecidingNodeChecksPresence(wanted: boolean): boolean | null {
 
 /** An agent-action card's headline; an A2A mirror says which way the call goes. */
 function intentHeadline(
-  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice' | 'ownerRequest'>,
+  e: Pick<
+    InboxEntry,
+    'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice' | 'ownerRequest'
+  >,
 ): string {
   // The owner's own request, carded by Core: no agent is involved.
   if (e.ownerRequest === true) return 'Your request';
@@ -156,7 +159,10 @@ function intentHeadline(
 
 /** An A2A mirror comes via the owner's server node; every other agent card names the agent. */
 function intentRequesterPrefix(
-  e: Pick<InboxEntry, 'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice' | 'ownerRequest'>,
+  e: Pick<
+    InboxEntry,
+    'a2aMirror' | 'ucpSearch' | 'ucpCheckout' | 'ucpOrderNotice' | 'ownerRequest'
+  >,
 ): string {
   if (e.ownerRequest === true) return 'asked by';
   return e.a2aMirror !== undefined ||
@@ -228,6 +234,25 @@ export interface ApprovalInbox {
  * the busy state, and the approve / deny handlers (with confirm dialogs
  * + session-scope semantics moved verbatim from the old screen).
  */
+/**
+ * The confirm line for an agent's access card: who wants which vault, and what
+ * approving does. The card's agent is the owner's own paired device, so the
+ * general wording ("someone not in your contacts") would misdescribe it.
+ */
+export function vaultAccessConfirmLine(entry: {
+  kind: string;
+  accessMode?: 'read' | 'write';
+  capability: string;
+  requesterName?: string;
+  paramsPreview?: string;
+}): string | null {
+  if (entry.kind !== 'vault_read' || entry.accessMode === undefined) return null;
+  const who = entry.requesterName?.trim() ? entry.requesterName.trim() : 'A paired agent';
+  const verb = entry.accessMode === 'read' ? 'read' : 'write to';
+  const line = `${who} wants to ${verb} your ${entry.capability} vault for the next hour.`;
+  return entry.paramsPreview?.trim() ? `${line}\n${entry.paramsPreview}` : line;
+}
+
 export function useApprovalInbox(): ApprovalInbox {
   const [pending, setPending] = useState<InboxEntry[]>([]);
   const [resolved, setResolved] = useState<ResolvedInboxEntry[]>([]);
@@ -395,9 +420,13 @@ export function useApprovalInbox(): ApprovalInbox {
               ? 'an unnamed agent'
               : 'someone not in your contacts'
             : '';
-      const subline = namesCapability
-        ? `${who !== '' ? `${intentRequesterPrefix(entry)} ${who}\n` : ''}${entry.paramsPreview || '(no target)'}`
-        : `${who !== '' ? `${who}\n` : ''}${entry.paramsPreview || '(no params)'}`;
+      const accessLine = vaultAccessConfirmLine(entry);
+      const subline =
+        accessLine !== null
+          ? accessLine
+          : namesCapability
+            ? `${who !== '' ? `${intentRequesterPrefix(entry)} ${who}\n` : ''}${entry.paramsPreview || '(no target)'}`
+            : `${who !== '' ? `${who}\n` : ''}${entry.paramsPreview || '(no params)'}`;
       // `confirmDecision` resolves via Alert.alert on native and the browser
       // confirm on web (RN-Web's Alert.alert is a no-op — without this the
       // web thin-client's Approve/Deny confirm never appears; F4).
@@ -686,10 +715,10 @@ export function ApprovalActionCard({
     item.ownerRequest === true
       ? null
       : isIntent && item.riskLevel === 'MODERATE'
-      ? 'Once per session'
-      : isIntent && item.riskLevel === 'HIGH'
-        ? 'Every invocation'
-        : null;
+        ? 'Once per session'
+        : isIntent && item.riskLevel === 'HIGH'
+          ? 'Every invocation'
+          : null;
   return (
     <View style={styles.card}>
       <View style={styles.cardHeader}>

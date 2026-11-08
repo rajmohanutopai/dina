@@ -6,6 +6,10 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 - tapOn:
     id: 'root-layout-menu'
 - tapOn:
@@ -27,6 +31,10 @@ appId: com.dinakernel.mobile
 # ── Cold restart ──
 - stopApp
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 # Did NOT re-onboard: the chat home (mode chips) renders, not the welcome
 # shell. (welcome would show shell-primary / "Get started".)
 - extendedWaitUntil:

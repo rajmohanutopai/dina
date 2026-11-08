@@ -13,6 +13,10 @@ appId: com.dinakernel.mobile
 - launchApp
 - extendedWaitUntil:
     visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
       id: 'index-mode-chip-remember'
     timeout: 60000
 
@@ -36,10 +40,17 @@ appId: com.dinakernel.mobile
           element:
             id: 'vault-new-vault'
           direction: DOWN
-          centerElement: true
           timeout: 10000
+      # The button ends the list and rests under the tab bar's edge: the id counts
+      # as visible unscrolled and a tap by id lands on the tab bar. Scroll to the
+      # end, then tap where it rests.
+      - swipe:
+          start: '50%,75%'
+          end: '50%,15%'
+          duration: 600
+      - waitForAnimationToEnd
       - tapOn:
-          id: 'vault-new-vault'
+          point: '50%,83%'
       - extendedWaitUntil:
           visible:
             id: 'vault-name-input'
@@ -71,7 +82,6 @@ appId: com.dinakernel.mobile
     element:
       id: 'vault-open-salon'
     direction: DOWN
-    centerElement: true
     timeout: 10000
 - extendedWaitUntil:
     visible:
@@ -102,6 +112,10 @@ appId: com.dinakernel.mobile
 - launchApp
 - extendedWaitUntil:
     visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
+- extendedWaitUntil:
+    visible:
       id: 'index-mode-chip-remember'
     timeout: 60000
 - tapOn:
@@ -112,7 +126,6 @@ appId: com.dinakernel.mobile
     element:
       id: 'vault-open-salon'
     direction: DOWN
-    centerElement: true
     timeout: 10000
 - extendedWaitUntil:
     visible:

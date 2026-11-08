@@ -5,8 +5,10 @@
  * (source_item_id, kind, due_at, persona). This prevents the staging
  * pipeline from creating duplicate reminders when re-processing items.
  *
- * Recurring reminders: daily/weekly/monthly. On completion, the next
- * occurrence is auto-created if recurring is set.
+ * Recurring reminders: daily/weekly/monthly. Firing or completing an
+ * occurrence makes the next one, due after now, and hands it the `recurring`
+ * value. So only the newest occurrence of a chain carries it, and a Done or
+ * a snooze on an older one cannot start a second chain.
  *
  * Source: ARCHITECTURE.md Section 2.61
  */
@@ -148,6 +150,21 @@ function dedupHit(dk: string): Reminder | null {
 }
 
 /**
+ * The owner asked again for a manual reminder they finished: same text, same
+ * time. The UNIQUE key allows one row, so that row reopens; handing back the
+ * finished one would say "created" for something that never fires. A reminder
+ * with a source item stays finished: re-ingesting the item is not a new request.
+ * Returns the fields to write, or null when nothing changes.
+ */
+function reopenIfAskedAgain(hit: Reminder): Partial<Reminder> | null {
+  if (hit.completed !== 1 || hit.source_item_id !== '') return null;
+  hit.completed = 0;
+  hit.status = 'pending';
+  fanOutCreated(hit);
+  return { completed: 0, status: 'pending' };
+}
+
+/**
  * Fan out a freshly-created reminder to subscribers — typically the
  * mobile-side OS-push bridge (`installReminderPushBridge`) which calls
  * `scheduleNotification` so a banner fires when due even with the app
@@ -183,7 +200,11 @@ export function createReminder(input: CreateReminderInput): Reminder {
   const dk = dedupKey(sourceItemId, kind, input.due_at, input.persona, input.message);
 
   const hit = dedupHit(dk);
-  if (hit) return hit;
+  if (hit) {
+    const reopened = reopenIfAskedAgain(hit);
+    if (reopened !== null) persistStatus(hit.id, reopened);
+    return hit;
+  }
 
   const reminder = buildReminder(input, kind, sourceItemId);
   registerInMemory(reminder, dk);
@@ -236,7 +257,11 @@ export async function createReminderDurable(input: CreateReminderInput): Promise
 
   // Already durably created in this process (registered post-persist)?
   const hit = dedupHit(dk);
-  if (hit) return hit;
+  if (hit) {
+    const reopened = reopenIfAskedAgain(hit);
+    if (reopened !== null) await getReminderRepository()?.update(hit.id, reopened);
+    return hit;
+  }
 
   // A concurrent identical create is mid-write — await its outcome rather
   // than racing a second INSERT (which would conflict) or acking early.
@@ -357,20 +382,33 @@ export function nextPending(now?: number): Reminder | null {
  * 2026-05-07: the same MT-15 reminders re-emitted at 6:35 → 6:38 →
  * 6:43 across three cold launches.
  *
+ * `onFire` runs before the flip. If it throws, that reminder stays due and fires
+ * on the next call, and the rest of the batch still goes.
+ *
  * @param onFire — optional callback invoked for each fired reminder
  */
 export function fireMissedReminders(
   now?: number,
   onFire?: (reminder: Reminder) => void,
 ): Reminder[] {
-  const pending = listPending(now);
+  const currentTime = now ?? Date.now();
+  const pending = listPending(currentTime);
   const fired: Reminder[] = [];
 
   for (const r of pending) {
+    if (onFire) {
+      try {
+        onFire(r);
+      } catch {
+        continue; // still due; the next call tries again
+      }
+    }
+    // The next occurrence first: a crash between these two fires this one twice,
+    // and the dedup key stops a second next. The other order ends the chain.
+    continueRecurrence(r, currentTime);
     r.status = 'fired';
-    persistStatus(r.id, { status: 'fired' });
+    persistStatus(r.id, { status: 'fired', recurring: r.recurring });
     fired.push(r);
-    if (onFire) onFire(r);
   }
 
   return fired;
@@ -391,27 +429,43 @@ export function listByPersona(persona: string): Reminder[] {
 export function completeReminder(id: string): Reminder | null {
   const reminder = reminders.get(id);
   if (!reminder) throw new Error(`reminders: "${id}" not found`);
+  if (reminder.completed === 1) return null;
 
+  const next = continueRecurrence(reminder, Date.now());
   reminder.completed = 1;
   reminder.status = 'completed';
-  persistStatus(reminder.id, { status: 'completed', completed: 1 });
+  persistStatus(reminder.id, { status: 'completed', completed: 1, recurring: reminder.recurring });
+  return next;
+}
 
-  // Create next occurrence for recurring reminders
-  if (reminder.recurring) {
-    const nextDueAt = computeNextOccurrence(reminder.due_at, reminder.recurring);
-    return createReminder({
-      message: reminder.message,
-      due_at: nextDueAt,
-      persona: reminder.persona,
-      kind: reminder.kind,
-      source_item_id: reminder.source_item_id,
-      source: reminder.source,
-      recurring: reminder.recurring,
-      timezone: reminder.timezone,
-    });
+/**
+ * Make the next occurrence of a recurring reminder and hand it the `recurring`
+ * value. A no-op for any other reminder, including an occurrence that already
+ * handed it on.
+ */
+function continueRecurrence(reminder: Reminder, now: number): Reminder | null {
+  const frequency = reminder.recurring;
+  if (frequency === '') return null;
+  const next = createReminder({
+    message: reminder.message,
+    due_at: computeNextOccurrence(reminder.due_at, frequency, now),
+    persona: reminder.persona,
+    kind: reminder.kind,
+    source_item_id: reminder.source_item_id,
+    source: reminder.source,
+    recurring: frequency,
+    timezone: reminder.timezone,
+  });
+  reminder.recurring = '';
+  return next;
+}
+
+/** Snooze or similar on a reminder the owner has finished. */
+export class ReminderFinishedError extends Error {
+  constructor(id: string) {
+    super(`reminders: "${id}" is already completed`);
+    this.name = 'ReminderFinishedError';
   }
-
-  return null;
 }
 
 /**
@@ -428,8 +482,19 @@ export function completeReminder(id: string): Reminder | null {
 export function snoozeReminder(id: string, snoozeMs: number, now?: number): void {
   const reminder = reminders.get(id);
   if (!reminder) throw new Error(`reminders: "${id}" not found`);
+  if (reminder.completed === 1) throw new ReminderFinishedError(id);
   const base = Math.max(reminder.due_at, now ?? Date.now());
-  reminder.due_at = base + snoozeMs;
+  // The dedup key names the due time, so it moves with it. The new key must be
+  // free, as the UNIQUE index in SQL requires: a twin at that exact moment
+  // pushes this one a millisecond on.
+  const keyAt = (dueAt: number): string =>
+    dedupKey(reminder.source_item_id, reminder.kind, dueAt, reminder.persona, reminder.message);
+  const oldKey = keyAt(reminder.due_at);
+  if (dedupIndex.get(oldKey) === id) dedupIndex.delete(oldKey);
+  let dueAt = base + snoozeMs;
+  while (dedupIndex.has(keyAt(dueAt))) dueAt += 1;
+  dedupIndex.set(keyAt(dueAt), id);
+  reminder.due_at = dueAt;
   reminder.status = 'snoozed';
   persistStatus(reminder.id, { status: 'snoozed', due_at: reminder.due_at });
 }
@@ -457,8 +522,32 @@ function persistStatus(id: string, updates: Partial<Reminder>): void {
   }
 }
 
-/** Delete a reminder. Returns true if found. */
+/**
+ * Delete a reminder, from memory and from SQL: a row left in SQL hydrated at the
+ * next launch and fired again. Returns true if it was in memory. The SQL delete
+ * runs either way, since a forget may name a row the cache has lost.
+ */
 export function deleteReminder(id: string): boolean {
+  const sqlRepo = getReminderRepository();
+  if (sqlRepo) {
+    try {
+      void sqlRepo.remove(id).catch(() => {
+        /* fail-safe, as persistStatus; a caller who needs to know uses the durable form */
+      });
+    } catch {
+      /* fail-safe — sync-throw variant */
+    }
+  }
+  return forgetInMemory(id);
+}
+
+/** `deleteReminder` for a caller who must know the row is gone: a throw means it may not be. */
+export async function deleteReminderDurable(id: string): Promise<boolean> {
+  await getReminderRepository()?.remove(id);
+  return forgetInMemory(id);
+}
+
+function forgetInMemory(id: string): boolean {
   const reminder = reminders.get(id);
   if (!reminder) return false;
 
@@ -475,18 +564,23 @@ export function deleteReminder(id: string): boolean {
   return true;
 }
 
-/** Compute the next occurrence for a recurring reminder. */
-function computeNextOccurrence(dueAt: number, frequency: RecurringFrequency): number {
-  switch (frequency) {
-    case 'daily':
-      return dueAt + MS_DAY;
-    case 'weekly':
-      return dueAt + 7 * MS_DAY;
-    case 'monthly':
-      return dueAt + 30 * MS_DAY;
-    default:
-      return dueAt;
-  }
+/**
+ * The next occurrence of a recurring reminder: whole periods on from its due
+ * date, on the same clock time, and always after `now`. Days the app was shut
+ * are skipped, not fired one after another.
+ */
+function computeNextOccurrence(dueAt: number, frequency: RecurringFrequency, now: number): number {
+  const period =
+    frequency === 'daily'
+      ? MS_DAY
+      : frequency === 'weekly'
+        ? 7 * MS_DAY
+        : frequency === 'monthly'
+          ? 30 * MS_DAY
+          : 0;
+  if (period === 0) return dueAt;
+  const periods = Math.max(1, Math.floor((now - dueAt) / period) + 1);
+  return dueAt + periods * period;
 }
 
 /** Reset all reminder state (for testing). */

@@ -11,6 +11,8 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
 import { Paths } from 'expo-file-system';
 
 import { registerEngagementProvider, collectNotificationBriefingItems } from '@dina/brain/briefing';
@@ -45,6 +47,8 @@ import {
   SQLiteD2DOutboxRepository,
   SQLiteReplayRepository,
   setReplayRepository,
+  SQLiteSignedNonceRepository,
+  setSignedNonceRepository,
   setD2DOutboxRepository,
   recoverOutboxOnBoot,
   SQLiteAgentGrantRepository,
@@ -108,6 +112,7 @@ import {
 } from '@dina/core';
 import { getD2DSender } from '@dina/core/d2d';
 import { resetDeviceRegistry } from '@dina/core/devices';
+import { resetKVStore } from '@dina/core/kv';
 // Chat thread cache lives in the Brain module (in-memory Map, authoritative
 // for rendering). `resetThreads()` clears it on teardown so a previous
 // identity's conversation can't survive into the next one (privacy: erase +
@@ -174,6 +179,7 @@ import {
 } from '@dina/core/storage';
 
 import { stopMobileCommercePlane } from '../services/commerce_plane';
+import { resetIdentityScopedState } from '../services/identity_scope';
 import { setOwnerDispatcher } from '../services/owner_dispatcher';
 
 // Expo 55 exposes the document-directory constant through `Paths.document` (a
@@ -230,6 +236,28 @@ let identityAdapter: DatabaseAdapter | null = null;
 const openPersonaAdapters = new Map<string, DatabaseAdapter>();
 
 /**
+ * Which seed last opened persistence, as a hash. Survives teardown, so a later
+ * open can tell a new identity from a re-unlock of the same one.
+ */
+let lastSeedTag: string | null = null;
+
+function seedTag(masterSeed: Uint8Array): string {
+  const domain = new TextEncoder().encode('dina:persistence_owner:v1');
+  const bytes = new Uint8Array(domain.length + masterSeed.length);
+  bytes.set(domain);
+  bytes.set(masterSeed, domain.length);
+  return bytesToHex(sha256(bytes));
+}
+
+/**
+ * True when the open databases were opened with this seed. Unlock checks it:
+ * the open databases and their DEKs must belong to the identity unlocking.
+ */
+export function isPersistenceOpenFor(masterSeed: Uint8Array): boolean {
+  return identityAdapter !== null && lastSeedTag === seedTag(masterSeed);
+}
+
+/**
  * Initialize all persistence after identity unlock.
  *
  * 1. Opens the identity database (encrypted with identity DEK)
@@ -241,15 +269,19 @@ export async function initializePersistence(
   masterSeed: Uint8Array,
   userSalt: Uint8Array,
 ): Promise<void> {
+  // A different identity than last time: nothing in memory carries over, even
+  // when the sign-out that should have cleared it never ran.
+  const tag = seedTag(masterSeed);
+  if (lastSeedTag !== null && lastSeedTag !== tag) resetIdentityScopedState();
+  lastSeedTag = tag;
+
   // Defense-in-depth privacy reset: clear in-memory content caches before
   // wiring this identity's stores. Tier-2 "erase" tears down through
-  // shutdownAllPersistence (which resets these), but Tier-1 "sign out" does
-  // NOT — so a sign-out followed by logging in as a DIFFERENT identity (same
-  // JS process, no restart) would otherwise inherit the previous user's
-  // chat / staging / quarantine caches. Resetting here makes every identity
-  // bring-up start clean; on a normal cold boot the caches are already empty,
-  // so these are no-ops. All three are in-memory-only resets (staging uses
-  // preserveRepositoryRows so it never touches a DB).
+  // shutdownAllPersistence (and so does sign out, which closes every database
+  // too); this covers any path that reaches here without it. Resetting here
+  // makes every identity bring-up start clean; on a normal cold boot the caches
+  // are already empty, so these are no-ops. All three are in-memory-only resets
+  // (staging uses preserveRepositoryRows so it never touches a DB).
   resetThreads();
   resetStagingState({ preserveRepositoryRows: true });
   resetQuarantineState();
@@ -543,6 +575,7 @@ export async function initializePersistence(
   // in boot_capabilities once the signing identity is available.
   setD2DOutboxRepository(new SQLiteD2DOutboxRepository(identityDB));
   setReplayRepository(new SQLiteReplayRepository(identityDB));
+  setSignedNonceRepository(new SQLiteSignedNonceRepository(identityDB));
   recoverOutboxOnBoot();
 
   // issues.txt §2 — durable agent persona grants. Without this the
@@ -826,6 +859,9 @@ export async function shutdownAllPersistence(): Promise<void> {
     setNotificationLogRepository(null);
     // Live ask records — same rule: unwire so nothing lands in the closed DB.
     setAskRecordRepository(null);
+    // KV: a reader after this (a timer, a late effect) gets nothing, not a throw
+    // from a closed DB, and nothing it writes outlives this identity.
+    resetKVStore();
     setPlanStore(null);
     // Interactive-run plane + watch singletons (round-A NEW-2/A-08) — the same
     // closed-DB / cross-identity class as the resets around this block. Boot

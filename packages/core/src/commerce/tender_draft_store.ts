@@ -29,6 +29,12 @@ export interface TenderDraftRepository {
   get(draftId: string): TenderDraft | null;
   countPending(agentDid: string, nowMs: number): number;
   listPending(nowMs: number): TenderDraft[];
+  /**
+   * CAS on a pending draft with no tender yet. Written before the first request
+   * leaves, so a crash mid-open finds this tender instead of starting a second.
+   * False when another writer got there first.
+   */
+  reserveTender(draftId: string, tenderId: string): boolean;
   /** CAS from `pending`; false when another writer moved it first. */
   move(draftId: string, to: Exclude<TenderDraftState, 'pending'>, tenderId: string): boolean;
 }
@@ -173,6 +179,16 @@ export class SQLiteTenderDraftRepository implements TenderDraftRepository {
       )
       .map(draftFromRow)
       .filter((d): d is TenderDraft => d !== null);
+  }
+
+  reserveTender(draftId: string, tenderId: string): boolean {
+    return (
+      this.db.run(
+        `UPDATE commerce_tender_drafts SET tender_id = ?
+          WHERE draft_id = ? AND state = 'pending' AND tender_id = ''`,
+        [tenderId, draftId],
+      ) > 0
+    );
   }
 
   move(draftId: string, to: Exclude<TenderDraftState, 'pending'>, tenderId: string): boolean {

@@ -14,11 +14,31 @@
  * Source: ARCHITECTURE.md — op-sqlite persistence layer
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
+import { STAGING_MAX_RETRIES } from '../constants';
 import { isValidDataScope } from '../scope/data_scope';
+
+import { OWNER_MEMORY_RETAINED_SQL, retainedPastTtl } from './state_machine';
 
 import type { StagingItem } from './service';
 import type { DataScope } from '../scope/data_scope';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
+
+/** What one sweep did. `retained` counts owner memories kept past their TTL. */
+export interface StagingSweepResult {
+  expired: number;
+  leaseReverted: number;
+  requeued: number;
+  deadLettered: number;
+  retained: number;
+}
+
+/** The token that names one claim: a stale worker holds an older one (REQ-S1). */
+function newClaimToken(): string {
+  return bytesToHex(randomBytes(8));
+}
 
 export interface StagingRepository {
   /** Returns true if new, false if duplicate (4-part dedup key incl. scope). */
@@ -57,12 +77,7 @@ export interface StagingRepository {
    */
   claimById(id: string, leaseDuration: number, now: number, scope: DataScope): StagingItem | null;
   updateStatus(id: string, status: string, updates?: Partial<StagingItem>): void;
-  sweep(now: number): {
-    expired: number;
-    leaseReverted: number;
-    requeued: number;
-    deadLettered: number;
-  };
+  sweep(now: number): StagingSweepResult;
   listByStatus(status: string): StagingItem[];
   listAll(): StagingItem[];
   size(): number;
@@ -140,6 +155,7 @@ export class SQLiteStagingRepository implements StagingRepository {
 
   claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[] {
     const leaseUntil = now + leaseDuration;
+    const claimToken = newClaimToken();
     const candidates = this.db.query<{ id: string }>(
       `SELECT id FROM staging_inbox
        WHERE status = 'received' AND data_scope = ?
@@ -157,42 +173,43 @@ export class SQLiteStagingRepository implements StagingRepository {
       // re-flipped — the SELECT and UPDATE were previously separate unguarded
       // statements (two connections could both claim the same rows).
       this.db.execute(
-        `UPDATE staging_inbox SET status = 'classifying', lease_until = ?
+        `UPDATE staging_inbox SET status = 'classifying', lease_until = ?, claim_token = ?
          WHERE id IN (${placeholders}) AND status = 'received' AND data_scope = ?`,
-        [leaseUntil, ...ids, scope],
+        [leaseUntil, claimToken, ...ids, scope],
       );
     });
     // Return ONLY the rows THIS call transitioned — filter on the just-stamped
-    // lease (a claim token) + 'classifying', so a concurrent claimer that took some
+    // claim token + 'classifying', so a concurrent claimer that took some
     // candidates can't have them double-returned here.
     const rows = this.db.query(
       `SELECT * FROM staging_inbox
-       WHERE id IN (${placeholders}) AND status = 'classifying' AND lease_until = ?
+       WHERE id IN (${placeholders}) AND status = 'classifying' AND claim_token = ?
        ORDER BY created_at ASC, id ASC`,
-      [...ids, leaseUntil],
+      [...ids, claimToken],
     );
     return mapStagingItems(rows);
   }
 
   claimById(id: string, leaseDuration: number, now: number, scope: DataScope): StagingItem | null {
     const leaseUntil = now + leaseDuration;
+    const claimToken = newClaimToken();
     const changed = this.db.run(
       `UPDATE staging_inbox
-       SET status = 'classifying', lease_until = ?
+       SET status = 'classifying', lease_until = ?, claim_token = ?
        WHERE id = ? AND data_scope = ?
          AND (
            status = 'received'
            OR (status = 'classifying' AND lease_until < ?)
          )`,
-      [leaseUntil, id, scope, now],
+      [leaseUntil, claimToken, id, scope, now],
     );
     if (changed !== 1) return null;
     const row = this.db.query(
       `SELECT * FROM staging_inbox
        WHERE id = ? AND data_scope = ?
-         AND status = 'classifying' AND lease_until = ?
+         AND status = 'classifying' AND claim_token = ?
        LIMIT 1`,
-      [id, scope, leaseUntil],
+      [id, scope, claimToken],
     )[0];
     return row ? rowToStagingItem(row) : null;
   }
@@ -223,6 +240,8 @@ export class SQLiteStagingRepository implements StagingRepository {
     if (updates?.error !== undefined) {
       sets.push('error = ?');
       params.push(updates.error);
+    } else if (updates !== undefined && 'error' in updates) {
+      sets.push('error = NULL');
     }
     if (updates?.approval_id !== undefined) {
       sets.push('approval_id = ?');
@@ -232,47 +251,55 @@ export class SQLiteStagingRepository implements StagingRepository {
     this.db.execute(`UPDATE staging_inbox SET ${sets.join(', ')} WHERE id = ?`, params);
   }
 
-  sweep(now: number): {
-    expired: number;
-    leaseReverted: number;
-    requeued: number;
-    deadLettered: number;
-  } {
-    const result = { expired: 0, leaseReverted: 0, requeued: 0, deadLettered: 0 };
+  sweep(now: number): StagingSweepResult {
+    const result: StagingSweepResult = {
+      expired: 0,
+      leaseReverted: 0,
+      requeued: 0,
+      deadLettered: 0,
+      retained: 0,
+    };
+    const count = (where: string, params: unknown[] = []): number =>
+      Number(
+        this.db.query<{ c: number }>(`SELECT COUNT(*) as c FROM staging_inbox WHERE ${where}`, params)[0]?.c ?? 0,
+      );
 
-    // 1. Delete expired (7d TTL)
-    const expiredRows = this.db.query<{ c: number }>(
-      'SELECT COUNT(*) as c FROM staging_inbox WHERE expires_at < ?',
-      [now],
-    );
-    result.expired = Number(expiredRows[0]?.c ?? 0);
-    this.db.execute('DELETE FROM staging_inbox WHERE expires_at < ?', [now]);
+    // 1. Delete expired (7d TTL). An owner memory not yet in the vault stays.
+    const expired = `expires_at < ? AND NOT ${OWNER_MEMORY_RETAINED_SQL}`;
+    result.expired = count(expired, [now]);
+    result.retained = count(`expires_at < ? AND ${OWNER_MEMORY_RETAINED_SQL}`, [now]);
+    this.db.execute(`DELETE FROM staging_inbox WHERE ${expired}`, [now]);
 
-    // 2. Revert stale leases
-    const staleRows = this.db.query<{ c: number }>(
-      "SELECT COUNT(*) as c FROM staging_inbox WHERE status = 'classifying' AND lease_until < ?",
-      [now],
-    );
-    result.leaseReverted = Number(staleRows[0]?.c ?? 0);
+    // 2. Revert stale leases. Each revert spends a retry, so a row that kills
+    // its worker dies here rather than looping until TTL. Dead-lettered rows
+    // are written first: the count they test is the one the next line raises.
+    const stale = "status = 'classifying' AND lease_until < ?";
+    result.leaseReverted = count(`${stale} AND retry_count < ?`, [now, STAGING_MAX_RETRIES]);
     this.db.execute(
-      "UPDATE staging_inbox SET status = 'received', lease_until = 0 WHERE status = 'classifying' AND lease_until < ?",
+      `UPDATE staging_inbox
+       SET status = 'failed', lease_until = 0, claim_token = NULL, retry_count = retry_count + 1,
+           error = 'lease lapsed too many times'
+       WHERE ${stale} AND retry_count >= ?`,
+      [now, STAGING_MAX_RETRIES],
+    );
+    this.db.execute(
+      `UPDATE staging_inbox
+       SET status = 'received', lease_until = 0, claim_token = NULL, retry_count = retry_count + 1
+       WHERE ${stale}`,
       [now],
     );
 
-    // 3. Requeue failed (retry_count <= 3)
-    const requeueRows = this.db.query<{ c: number }>(
-      "SELECT COUNT(*) as c FROM staging_inbox WHERE status = 'failed' AND retry_count <= 3",
-    );
-    result.requeued = Number(requeueRows[0]?.c ?? 0);
+    // 3. Requeue failed rows whose wait is over (`lease_until` holds the retry
+    // time; see `fail`). Past the ceiling they stay failed.
+    const due = `status = 'failed' AND retry_count <= ${STAGING_MAX_RETRIES} AND lease_until <= ?`;
+    result.requeued = count(due, [now]);
     this.db.execute(
-      "UPDATE staging_inbox SET status = 'received', lease_until = 0 WHERE status = 'failed' AND retry_count <= 3",
+      `UPDATE staging_inbox SET status = 'received', lease_until = 0, claim_token = NULL WHERE ${due}`,
+      [now],
     );
 
-    // 4. Dead-letter exhausted (retry_count > 3 stays failed)
-    const deadRows = this.db.query<{ c: number }>(
-      "SELECT COUNT(*) as c FROM staging_inbox WHERE status = 'failed' AND retry_count > 3",
-    );
-    result.deadLettered = Number(deadRows[0]?.c ?? 0);
+    // 4. Dead-letter exhausted (stays failed)
+    result.deadLettered = count(`status = 'failed' AND retry_count > ${STAGING_MAX_RETRIES}`);
 
     return result;
   }
@@ -333,13 +360,19 @@ export class InMemoryStagingRepository implements StagingRepository {
 
   claim(limit: number, leaseDuration: number, now: number, scope: DataScope): StagingItem[] {
     const leaseUntil = now + leaseDuration;
+    const claimToken = newClaimToken();
     const claimed: StagingItem[] = [];
     const received = Array.from(this.rows.values())
       .filter((item) => item.status === 'received' && item.data_scope === scope)
       .sort((a, b) => a.created_at - b.created_at || a.id.localeCompare(b.id));
     for (const item of received) {
       if (claimed.length >= limit) break;
-      const next = { ...item, status: 'classifying' as const, lease_until: leaseUntil };
+      const next = {
+        ...item,
+        status: 'classifying' as const,
+        lease_until: leaseUntil,
+        claim_token: claimToken,
+      };
       this.rows.set(next.id, next);
       claimed.push(cloneItem(next));
     }
@@ -360,6 +393,7 @@ export class InMemoryStagingRepository implements StagingRepository {
       ...current,
       status: 'classifying',
       lease_until: now + leaseDuration,
+      claim_token: newClaimToken(),
     };
     this.rows.set(id, cloneItem(next));
     return cloneItem(next);
@@ -376,31 +410,54 @@ export class InMemoryStagingRepository implements StagingRepository {
     this.rows.set(id, cloneItem(next));
   }
 
-  sweep(now: number): {
-    expired: number;
-    leaseReverted: number;
-    requeued: number;
-    deadLettered: number;
-  } {
-    const result = { expired: 0, leaseReverted: 0, requeued: 0, deadLettered: 0 };
+  sweep(now: number): StagingSweepResult {
+    const result: StagingSweepResult = {
+      expired: 0,
+      leaseReverted: 0,
+      requeued: 0,
+      deadLettered: 0,
+      retained: 0,
+    };
     for (const [id, item] of Array.from(this.rows.entries())) {
       if (item.expires_at < now) {
-        this.rows.delete(id);
-        this.dedup.delete(dedupKey(item.producer_id, item.source, item.source_id, item.data_scope));
-        result.expired++;
-        continue;
+        if (retainedPastTtl(item)) {
+          result.retained++;
+        } else {
+          this.rows.delete(id);
+          this.dedup.delete(dedupKey(item.producer_id, item.source, item.source_id, item.data_scope));
+          result.expired++;
+          continue;
+        }
       }
       if (item.status === 'classifying' && item.lease_until < now) {
-        this.rows.set(id, { ...item, status: 'received', lease_until: 0 });
-        result.leaseReverted++;
+        if (item.retry_count >= STAGING_MAX_RETRIES) {
+          this.rows.set(id, {
+            ...item,
+            status: 'failed',
+            lease_until: 0,
+            claim_token: undefined,
+            retry_count: item.retry_count + 1,
+            error: 'lease lapsed too many times',
+          });
+          result.deadLettered++;
+        } else {
+          this.rows.set(id, {
+            ...item,
+            status: 'received',
+            lease_until: 0,
+            claim_token: undefined,
+            retry_count: item.retry_count + 1,
+          });
+          result.leaseReverted++;
+        }
         continue;
       }
       if (item.status === 'failed') {
-        if (item.retry_count <= 3) {
-          this.rows.set(id, { ...item, status: 'received', lease_until: 0 });
-          result.requeued++;
-        } else {
+        if (item.retry_count > STAGING_MAX_RETRIES) {
           result.deadLettered++;
+        } else if (item.lease_until <= now) {
+          this.rows.set(id, { ...item, status: 'received', lease_until: 0, claim_token: undefined });
+          result.requeued++;
         }
       }
     }
@@ -511,6 +568,7 @@ function rowToStagingItem(row: DBRow): StagingItem | null {
     classified_item: classifiedItem,
     error: row.error ? String(row.error) : undefined,
     approval_id: row.approval_id ? String(row.approval_id) : undefined,
+    claim_token: row.claim_token ? String(row.claim_token) : undefined,
     data_scope: dataScope as DataScope,
   };
 }

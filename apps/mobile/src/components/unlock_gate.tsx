@@ -47,21 +47,22 @@ import {
 } from '../hooks/useUnlock';
 import {
   clearOrphanKeychainState,
-  installMarkerExists,
+  installMarkerState,
+  vaultFilesMayExist,
   wipeOrphanVaultFiles,
   writeInstallMarker,
 } from '../services/install_marker';
 import { loadBackgroundTimeoutPreference } from '../services/security_preferences';
 import { loadStaffIdentity, onStaffIdentitySaved } from '../services/staff_identity_store';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
-import { loadWrappedSeed } from '../services/wrapped_seed_store';
+import { hasWrappedSeed, loadWrappedSeed } from '../services/wrapped_seed_store';
 import { colors, fonts, radius, spacing, textStyles } from '../theme';
 
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 import { PassphraseField } from './PassphraseField';
 import { StaffShellRedirect } from './staff_shell_redirect';
 
-export type Mode = 'loading' | 'onboarding' | 'staff' | 'locked' | 'unlocking' | 'unlocked';
+export type Mode = 'loading' | 'read_failed' | 'onboarding' | 'staff' | 'locked' | 'unlocking' | 'unlocked';
 
 const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
 
@@ -118,6 +119,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   const unlocked = useIsUnlocked();
   const unlockState = useUnlockState();
   const [mode, setMode] = useState<Mode>('loading');
+  const [readAttempt, setReadAttempt] = useState(0);
   const pathname = usePathname();
   // A phone that joins a business as staff becomes the staff shell at once.
   useEffect(() => onStaffIdentitySaved(() => setMode('staff')), []);
@@ -152,11 +154,16 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         // when it tries to decrypt them. Symptom: persistent chat-home
         // "dev-degraded mode / persistence.in_memory" banner across
         // restarts.
-        if (!installMarkerExists()) {
-          const stale = await loadWrappedSeed();
-          if (stale !== null) {
-            await clearOrphanKeychainState();
-            wipeOrphanVaultFiles();
+        // Only a clean "absent" with no database on the phone is a reinstall. A
+        // failed check, or a marker that never got written beside a live vault,
+        // must not delete the owner's keys and data.
+        if (installMarkerState() === 'absent') {
+          if (!vaultFilesMayExist()) {
+            const stale = await loadWrappedSeed();
+            if (stale !== null) {
+              await clearOrphanKeychainState();
+              wipeOrphanVaultFiles();
+            }
           }
           writeInstallMarker();
         }
@@ -175,6 +182,9 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         }
         if (existing !== null) {
           setMode('locked');
+        } else if (await hasWrappedSeed()) {
+          // A record is there and can't be read. Onboarding would overwrite it.
+          throw new Error('the stored seed record could not be read');
         } else {
           // §6.3 — a staff phone provisions no vault. If this device has
           // joined a business as staff, its home is the staff shell, not
@@ -184,15 +194,15 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
         }
       } catch (err) {
         if (cancelled) return;
-        setMode('onboarding');
+        // "Don't know" is not "no vault": onboarding here would overwrite one.
+        setMode('read_failed');
         console.warn('[unlock] failed to read vault state', err);
-        setError("Couldn't read your saved data. Please restart the app and try again.");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [readAttempt]);
 
   useEffect(() => {
     if (unlocked) {
@@ -316,6 +326,35 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
 
   if (mode === 'unlocked') {
     return <>{children}</>;
+  }
+
+  if (mode === 'read_failed') {
+    return (
+      <View style={styles.root} testID="unlock-read-failed">
+        <Text style={styles.headline}>Dina can&apos;t read your saved data</Text>
+        <Text style={styles.sub}>
+          Nothing has been changed. This can pass once the phone has been unlocked for a moment.
+        </Text>
+        <Pressable
+          style={styles.primary}
+          testID="unlock-read-retry"
+          accessibilityRole="button"
+          onPress={() => {
+            setMode('loading');
+            setReadAttempt((n) => n + 1);
+          }}
+        >
+          <Text style={styles.primaryText}>Try again</Text>
+        </Pressable>
+        <Pressable
+          testID="unlock-read-recover"
+          accessibilityRole="button"
+          onPress={() => setMode('onboarding')}
+        >
+          <Text style={styles.sub}>Use my recovery phrase instead</Text>
+        </Pressable>
+      </View>
+    );
   }
 
   if (mode === 'loading') {

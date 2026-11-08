@@ -15,6 +15,8 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { AGENT_PERSONA_ACCESS_APPROVAL_TYPE } from '../agent/access';
+import { revokeAskAuthoritiesForRequester } from '../agent/ask_authority';
 import { getAgentGrantRepository } from '../agent/grant_repository';
 import { appendAudit } from '../audit/service';
 import {
@@ -24,11 +26,15 @@ import {
 import { clearStaffPresence } from '../commerce/owner_presence';
 import { getCommerceRuntime } from '../commerce/runtime';
 import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
+import { kvDelete, kvList, kvSet } from '../kv/store';
 import { recordDecisionSafe } from '../plugins/decisions';
 import { getPluginGrantRepository } from '../plugins/grants';
 import { terminateInstallInFlight } from '../plugins/install_service';
 import { getPluginInstallRepository } from '../plugins/registry';
 import { revokeReasoningAuthorityForPrincipal } from '../reasoning/authority_revocation';
+import { pauseListingsWithDeadBindings } from '../service/service_config';
+import { WorkflowTaskKind, WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
+import { getWorkflowService } from '../workflow/service';
 
 import { getDeviceRepository } from './repository';
 
@@ -151,6 +157,7 @@ export function registerDevice(
       devices.set(existing.deviceId, revived);
       keyIndex.set(publicKeyMultibase, existing.deviceId);
       didIndex.set(revived.did, existing.deviceId);
+      releaseUnfinishedRevoke(existing.deviceId);
       const sqlRepo = getDeviceRepository();
       if (sqlRepo) {
         void sqlRepo.register(revived).catch(() => {
@@ -371,8 +378,10 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
     try {
       durable = await sqlRepo.revoke(deviceId);
       if (!durable) error = 'row_not_found';
+      if (durable) releaseUnfinishedRevoke(deviceId);
     } catch (err) {
       error = err instanceof Error ? err.message : String(err);
+      await holdUnfinishedRevoke(deviceId);
     }
   }
 
@@ -417,6 +426,17 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
   } catch (err) {
     cascadesOk = false;
     if (error === undefined) error = `agent-grant cascade failed: ${errMsg(err)}`;
+  }
+
+  // Step 3b: Cancel the approval cards this device raised (TT-02). A card left
+  // pending could mint authority for a device the owner already removed, and
+  // re-pairing the key would find it. `reserveAgentPersonaGrant` also refuses,
+  // so with no workflow service wired (teardown) this is not a failed cascade.
+  try {
+    if (device.did !== '') cancelApprovalCardsForDevice(device.did);
+  } catch (err) {
+    cascadesOk = false;
+    if (error === undefined) error = `approval-card cascade failed: ${errMsg(err)}`;
   }
 
   // Step 4: Cascade to plugin authority — if this device is a plugin
@@ -503,6 +523,102 @@ export async function revokeDeviceDurable(deviceId: string): Promise<DeviceRevok
   };
 }
 
+// A revoke whose SQL write failed (TT-15). Access is already cut in memory; on
+// its own a restart would read `revoked=0` and trust the device again. So the
+// node keeps retrying while it runs, and leaves a marker for the next boot. The
+// marker shares the identity DB with the device row, so if both writes fail the
+// revoke is lost on restart, and the route has told the owner it is unfinished.
+const UNFINISHED_REVOKE_NS = 'device_revoke_unfinished';
+const REVOKE_RETRY_MS = 60_000;
+const revokeRetryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+async function holdUnfinishedRevoke(deviceId: string): Promise<void> {
+  try {
+    await kvSet(deviceId, String(Date.now()), UNFINISHED_REVOKE_NS);
+  } catch {
+    /* the in-process retry below still runs */
+  }
+  if (revokeRetryTimers.has(deviceId)) return;
+  const timer = setTimeout(() => {
+    revokeRetryTimers.delete(deviceId);
+    // A re-pair since then is a new decision by the owner; leave it alone.
+    if (devices.get(deviceId)?.revoked === true) {
+      void revokeDeviceDurable(deviceId).catch(() => undefined);
+    }
+  }, REVOKE_RETRY_MS);
+  (timer as { unref?: () => void }).unref?.();
+  revokeRetryTimers.set(deviceId, timer);
+}
+
+function releaseUnfinishedRevoke(deviceId: string): void {
+  const timer = revokeRetryTimers.get(deviceId);
+  if (timer !== undefined) clearTimeout(timer);
+  revokeRetryTimers.delete(deviceId);
+  void kvDelete(deviceId, UNFINISHED_REVOKE_NS).catch(() => undefined);
+}
+
+async function listUnfinishedRevokes(): Promise<Set<string>> {
+  const prefix = `${UNFINISHED_REVOKE_NS}:`;
+  try {
+    const entries = await kvList(UNFINISHED_REVOKE_NS);
+    return new Set(
+      entries.map((e) => (e.key.startsWith(prefix) ? e.key.slice(prefix.length) : e.key)),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+/** Whose approval card this is: the DID it names as the agent or requester. */
+function approvalCardOwner(task: WorkflowTask): { did: string; type: string } {
+  let payload: { agent_did?: unknown; requester_did?: unknown; type?: unknown } = {};
+  try {
+    const parsed: unknown = JSON.parse(task.payload);
+    if (parsed !== null && typeof parsed === 'object') payload = parsed as typeof payload;
+  } catch {
+    /* an unreadable payload names nobody */
+  }
+  const did =
+    typeof payload.agent_did === 'string'
+      ? payload.agent_did
+      : typeof payload.requester_did === 'string'
+        ? payload.requester_did
+        : (task.agent_did ?? '');
+  return { did, type: typeof payload.type === 'string' ? payload.type : '' };
+}
+
+/**
+ * Cancel each open approval card a device raised. A persona-access card the
+ * owner already approved sits `queued`; cancel that too, so a re-paired key
+ * raises a fresh card instead of finding the old task. Idempotent. Throws after
+ * trying every card if any cancel failed, so the caller reports `durable: false`.
+ */
+function cancelApprovalCardsForDevice(deviceDid: string): void {
+  const service = getWorkflowService();
+  if (service === null) return;
+  const store = service.store();
+  const pending = store.listByKindAndState(
+    WorkflowTaskKind.Approval,
+    WorkflowTaskState.PendingApproval,
+    MAX_CARDS_PER_STATE,
+  );
+  const queued = store
+    .listByKindAndState(WorkflowTaskKind.Approval, WorkflowTaskState.Queued, MAX_CARDS_PER_STATE)
+    .filter((t) => approvalCardOwner(t).type === AGENT_PERSONA_ACCESS_APPROVAL_TYPE);
+  let failure: unknown = null;
+  for (const task of [...pending, ...queued]) {
+    if (approvalCardOwner(task).did !== deviceDid) continue;
+    try {
+      service.cancel(task.id, 'requester device revoked');
+    } catch (err) {
+      failure = err;
+    }
+  }
+  if (failure !== null) throw failure;
+}
+
+const MAX_CARDS_PER_STATE = 1000;
+
 /** Compact error-message extractor for cascade failures. */
 function errMsg(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
@@ -573,6 +689,8 @@ function disablePluginAuthorityForDevice(deviceDid: string, nowMs: number): bool
       });
     }
   }
+  // A listing bound to a held install stops being public.
+  if (installs.length > 0) pauseListingsWithDeadBindings();
   return true;
 }
 
@@ -586,6 +704,26 @@ function disablePluginAuthorityForDevice(deviceDid: string, nowMs: number): bool
 const agentDeviceRevokedHooks: ((did: string) => void)[] = [];
 export function onAgentDeviceRevoked(fn: (did: string) => void): void {
   agentDeviceRevokedHooks.push(fn);
+}
+
+/**
+ * Called when a device of any role is revoked, and again at boot for each device
+ * that stays revoked, so a hook must be idempotent. A revived key has its one
+ * row reset (see registerDevice), so the boot pass never reaches a live device.
+ */
+const deviceRevokedHooks: ((did: string) => void)[] = [];
+export function onDeviceRevoked(fn: (did: string) => void): void {
+  deviceRevokedHooks.push(fn);
+}
+
+function runDeviceRevokedHooks(did: string): void {
+  for (const hook of deviceRevokedHooks) {
+    try {
+      hook(did);
+    } catch {
+      /* a hook never blocks revocation */
+    }
+  }
 }
 
 function disableAgentGrantsForDevice(deviceDid: string, nowMs: number): boolean {
@@ -629,11 +767,13 @@ export function reconcileRevokedDeviceAuthority(): number {
   let reconciled = 0;
   for (const device of devices.values()) {
     if (device.revoked && device.did !== '') {
+      runDeviceRevokedHooks(device.did);
       try {
         const pluginOk = disablePluginAuthorityForDevice(device.did, nowMs);
         const ok = disableAgentGrantsForDevice(device.did, nowMs);
         const staffOk = disableStaffAuthorityForDevice(device.did, nowMs);
         const reasoning = revokeReasoningAuthorityForPrincipal(device.did, nowMs);
+        cancelApprovalCardsForDevice(device.did);
         // Round-9 #13: don't count an AGENT device as reconciled if its
         // persona-grant repo was absent — the agent-grant half didn't run, so
         // leave it for the next boot rather than reporting it as cleaned.
@@ -684,6 +824,8 @@ export async function revokePluginDeviceForTeardown(deviceDid: string): Promise<
 
 /** Cut a device's auth access — unregister its DID from caller-type resolution. */
 function cutDeviceAccess(device: PairedDevice): void {
+  if (device.did !== '') runDeviceRevokedHooks(device.did);
+  if (device.did !== '') revokeAskAuthoritiesForRequester(device.did);
   if (device.did !== '' && device.role === 'agent') {
     for (const hook of agentDeviceRevokedHooks) {
       try {
@@ -744,6 +886,8 @@ export function getDeviceByDID(did: string): PairedDevice | null {
 
 /** Reset all device state (for testing). */
 export function resetDeviceRegistry(): void {
+  for (const timer of revokeRetryTimers.values()) clearTimeout(timer);
+  revokeRetryTimers.clear();
   devices.clear();
   keyIndex.clear();
   didIndex.clear();
@@ -766,8 +910,11 @@ export async function hydrateDeviceRegistry(): Promise<number> {
   const sqlRepo = getDeviceRepository();
   if (!sqlRepo) return 0;
   const all = await sqlRepo.list();
+  const unfinished = await listUnfinishedRevokes();
   let added = 0;
   for (const d of all) {
+    // TT-15: the owner's revoke stands even though its SQL write failed.
+    if (unfinished.has(d.deviceId)) d.revoked = true;
     if (!devices.has(d.deviceId)) {
       devices.set(d.deviceId, d);
       if (d.publicKeyMultibase !== '') keyIndex.set(d.publicKeyMultibase, d.deviceId);
@@ -783,6 +930,10 @@ export async function hydrateDeviceRegistry(): Promise<number> {
     if (!d.revoked && d.did !== '') {
       registerDeviceAuth(d.did, d.deviceName);
     }
+  }
+  for (const deviceId of unfinished) {
+    if (devices.has(deviceId)) await revokeDeviceDurable(deviceId);
+    else releaseUnfinishedRevoke(deviceId);
   }
   // Round-7 #3: reconcile any revoked device whose authority cascade may have
   // been interrupted by a crash — re-disable its plugin installs/grants

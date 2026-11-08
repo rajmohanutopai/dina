@@ -44,6 +44,10 @@ import {
   type Sha256Fn,
 } from '@dina/commerce-protocol';
 
+import { rehydrateDeclineDocument } from './decline_documents';
+import { rehydrateOrderAttachment, rehydrateRevshareDocument } from './money_rehydrate';
+import { rehydrateTradeDocument, type TradeDocumentKind } from './trade_ledger';
+
 const hash: Sha256Fn = (data) => sha256(data);
 
 const HEX64 = /^[0-9a-f]{64}$/;
@@ -66,7 +70,9 @@ export type PreflightRefusal =
   | 'dangling_receipt_reference'
   | 'duplicate_key'
   /** A receipt's stored record does not hash to the digest it is filed under. */
-  | 'forged_receipt';
+  | 'forged_receipt'
+  /** A ledger document's stored record does not hash to the digest it is filed under. */
+  | 'forged_document';
 
 export interface PreflightFinding {
   refusal: PreflightRefusal;
@@ -74,6 +80,14 @@ export interface PreflightFinding {
   /** Identifies the offending row without reproducing its contents. */
   key: string;
   detail: string;
+}
+
+/** The columns a ledger row's check reads. */
+interface LedgerArchiveRow {
+  record_digest?: unknown;
+  attachment_digest?: unknown;
+  kind?: unknown;
+  record_json?: unknown;
 }
 
 /** The subset of each table this check reads. Extra columns are ignored. */
@@ -202,11 +216,89 @@ function decisionWasRefusal(acknowledgementJson: unknown): boolean {
   }
 }
 
+/** Each ledger table's own read: throws, or answers why, when a row does not hold up. */
+const LEDGER_ROW_CHECKS: Record<string, (row: LedgerArchiveRow) => string | null> = {
+  commerce_trade_documents: (row) => {
+    // A legacy decline left here by the v42 migration: never read, so harmless.
+    if (row.kind === 'quote_decline') return null;
+    rehydrateTradeDocument({
+      recordDigest: String(row.record_digest),
+      kind: row.kind as TradeDocumentKind,
+      counterpartyDid: '',
+      purchaseOrderId: '',
+      answersDigest: '',
+      direction: 'inbound',
+      recordJson: String(row.record_json),
+      evidenceJson: '{}',
+      createdAt: 0,
+    });
+    return null;
+  },
+  commerce_decline_documents: (row) => {
+    rehydrateDeclineDocument({
+      recordDigest: String(row.record_digest),
+      counterpartyDid: '',
+      requestDigest: '',
+      direction: 'inbound',
+      recordJson: String(row.record_json),
+      evidenceJson: '{}',
+      createdAt: 0,
+    });
+    return null;
+  },
+  commerce_revshare_documents: (row) => {
+    rehydrateRevshareDocument({
+      kind: row.kind as Parameters<typeof rehydrateRevshareDocument>[0]['kind'],
+      recordDigest: String(row.record_digest),
+      recordJson: String(row.record_json),
+    });
+    return null;
+  },
+  commerce_order_attachments: (row) => {
+    const read = rehydrateOrderAttachment(String(row.record_json), hash);
+    if (!read.ok) return read.error;
+    return read.value.attachment_digest === row.attachment_digest
+      ? null
+      : 'the record does not hash to the digest it is filed under';
+  },
+};
+
+function findForgedLedgerRows(
+  tables: CommerceArchiveTables,
+  add: (refusal: PreflightRefusal, table: string, key: string, detail: string) => void,
+): void {
+  for (const [table, check] of Object.entries(LEDGER_ROW_CHECKS)) {
+    const rows = (tables as Record<string, unknown>)[table];
+    if (!Array.isArray(rows)) continue;
+    (rows as LedgerArchiveRow[]).forEach((row, index) => {
+      let problem: string | null;
+      try {
+        problem = check(row);
+      } catch (e) {
+        problem = e instanceof Error ? e.message : 'unreadable';
+      }
+      if (problem !== null) {
+        add(
+          'forged_document',
+          table,
+          typeof row.record_digest === 'string' ? row.record_digest : `#${String(index)}`,
+          problem,
+        );
+      }
+    });
+  }
+}
+
 export function preflightCommerceArchive(tables: CommerceArchiveTables): PreflightVerdict {
   const findings: PreflightFinding[] = [];
   const add = (refusal: PreflightRefusal, table: string, key: string, detail: string): void => {
     findings.push({ refusal, table, key, detail });
   };
+
+  // 0. The ledger's documents prove themselves, as the receipts do. A row that
+  //    does not would throw at every statement that reads it. These tables are
+  //    newer than the six below, so an archive may rightly lack them.
+  findForgedLedgerRows(tables, add);
 
   // 1. ALL SIX OR NONE.
   //
@@ -221,7 +313,7 @@ export function preflightCommerceArchive(tables: CommerceArchiveTables): Preflig
   //    would have satisfied.
   const present = REQUIRED_COMMERCE_TABLES.filter((table) => Array.isArray(tables[table]));
   if (present.length === 0) {
-    return { ok: true, findings: [], predatesCommerce: true };
+    return { ok: findings.length === 0, findings, predatesCommerce: true };
   }
   for (const table of REQUIRED_COMMERCE_TABLES) {
     if (!Array.isArray(tables[table])) {

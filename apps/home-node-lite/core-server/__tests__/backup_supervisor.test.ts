@@ -130,3 +130,22 @@ function resetGlobals(): void {
   resetVaultRepositories();
   resetTopicRepositories();
 }
+
+describe('a held backup on a server', () => {
+  it('says so in the log, since a server has no screen to ask on', async () => {
+    const warn = jest.fn();
+    const sup = new BackupSupervisor({
+      storeUrl: 'https://store.invalid',
+      masterSeed: SEED,
+      did: 'did:plc:test',
+      handle: 'test.example',
+      logger: { warn, info: jest.fn(), error: jest.fn(), debug: jest.fn() } as never,
+    });
+    (sup as unknown as { run: () => Promise<unknown> }).run = async () => ({
+      ran: false,
+      reason: 'held_for_owner',
+    });
+    await sup.tick(0);
+    expect(warn).toHaveBeenCalledWith({ event: 'backup.held_for_owner' });
+  });
+});

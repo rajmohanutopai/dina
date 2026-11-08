@@ -12,6 +12,10 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 - tapOn:
     id: 'tab-people'
 # The card polls for the booted node, so allow a beat after a cold launch.

@@ -30,9 +30,9 @@
  * against resurrected capacity — it simply does not trade.
  */
 
-import { rehydrateEpochStop } from './rehydrate';
+import { rehydrateEpochHeld, rehydrateEpochStop } from './rehydrate';
 
-import type { EpochStopStore } from './epoch_service';
+import type { EpochHeldStore, EpochStopStore } from './epoch_service';
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
 /**
@@ -93,6 +93,38 @@ export function clearCommerceRestorePending(adapter: DatabaseAdapter): void {
  * describes THIS node and is not exported in an archive.
  */
 export const COMMERCE_EPOCH_STOPPED_KEY = 'commerce:epoch_stopped';
+
+/**
+ * kv_store key for the epoch this node last held. It describes THIS node and is
+ * not exported: a restored node fences its own epoch.
+ */
+export const COMMERCE_EPOCH_HELD_KEY = 'commerce:epoch_held';
+
+/** The epoch service's memory of its epoch. `load` throws when unreadable, so a boot fails closed. */
+export function kvEpochHeldStore(
+  adapter: DatabaseAdapter,
+  nowMs: () => number = () => Date.now(),
+): EpochHeldStore {
+  return {
+    load() {
+      const rows = adapter.query<{ value: string }>('SELECT value FROM kv_store WHERE key = ?', [
+        COMMERCE_EPOCH_HELD_KEY,
+      ]);
+      const row = rows[0];
+      if (row === undefined) return null;
+      const read = rehydrateEpochHeld(String(row.value));
+      if (!read.ok) throw new Error(`commerce epoch: unreadable held record — ${read.error}`);
+      return read.value;
+    },
+    save(held) {
+      adapter.execute('INSERT OR REPLACE INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+        COMMERCE_EPOCH_HELD_KEY,
+        JSON.stringify(held),
+        nowMs(),
+      ]);
+    },
+  };
+}
 
 /**
  * The epoch service's stop store, kept in kv_store. `load` throws when the

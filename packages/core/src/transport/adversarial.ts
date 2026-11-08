@@ -100,6 +100,14 @@ export function isStaleMessage(createdTime: unknown, ttlSeconds?: number): boole
 }
 
 /**
+ * True when a message asking for an answer within `ttlSeconds` is already past
+ * that, with `slackSeconds` for the sender's clock. Its asker has given up.
+ */
+export function isPastTtl(createdTime: number, ttlSeconds: number, slackSeconds: number): boolean {
+  return createdSeconds(createdTime) + ttlSeconds + slackSeconds < nowSeconds();
+}
+
+/**
  * Record a message ID as seen. With the message's `created_time`, the key is
  * held until that message would fail `isStaleMessage` anyway, so a sender
  * whose clock runs ahead cannot outlast the hold.

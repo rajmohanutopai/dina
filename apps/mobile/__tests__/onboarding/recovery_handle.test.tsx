@@ -77,3 +77,54 @@ describe('the handle step', () => {
     expect(onContinue).not.toHaveBeenCalled();
   });
 });
+
+describe('RecoveryHandle with a vault already on this phone (PH-04)', () => {
+  const PHRASE_LOCAL = generateMnemonic().split(' ');
+  const cloudBackup = jest.requireActual('../../src/services/cloud_backup');
+  const installMarker = jest.requireActual('../../src/services/install_marker');
+  const onboarding = jest.requireActual('../../src/hooks/useOnboarding');
+
+  function foundCopy(): void {
+    jest.spyOn(cloudBackup, 'findBackupForPhrase').mockResolvedValue({
+      found: { meta: { created_at: 1, item_count: 3, handle: 'a.test' } },
+    } as never);
+    jest
+      .spyOn(onboarding, 'resolveAndVerifyDidPlc')
+      .mockResolvedValue({ kind: 'ok', did: 'did:plc:aaaa' } as never);
+  }
+
+  it('starts with restore off, warns, and asks to replace only when switched on', async () => {
+    foundCopy();
+    jest.spyOn(installMarker, 'localVaultExists').mockResolvedValue(true);
+    const onContinue = jest.fn();
+    const view = render(
+      <RecoveryHandle mnemonic={PHRASE_LOCAL} onContinue={onContinue} onBack={() => undefined} />,
+    );
+    await waitFor(() => expect(view.getByTestId('recovery-backup-replaces')).toBeTruthy());
+    expect(view.getByTestId('recovery-backup-restore').props.value).toBe(false);
+    fireEvent.press(view.getByText('Continue'));
+    await waitFor(() => expect(onContinue).toHaveBeenCalled());
+    expect(onContinue).toHaveBeenLastCalledWith('a.test', 'did:plc:aaaa', false, false);
+
+    fireEvent(view.getByTestId('recovery-backup-restore'), 'valueChange', true);
+    fireEvent.press(view.getByText('Continue'));
+    await waitFor(() =>
+      expect(onContinue).toHaveBeenLastCalledWith('a.test', 'did:plc:aaaa', true, true),
+    );
+  });
+
+  it('a new phone starts with restore on, and nothing to replace', async () => {
+    foundCopy();
+    jest.spyOn(installMarker, 'localVaultExists').mockResolvedValue(false);
+    const onContinue = jest.fn();
+    const view = render(
+      <RecoveryHandle mnemonic={PHRASE_LOCAL} onContinue={onContinue} onBack={() => undefined} />,
+    );
+    await waitFor(() => expect(view.getByTestId('recovery-backup-found')).toBeTruthy());
+    expect(view.queryByTestId('recovery-backup-replaces')).toBeNull();
+    fireEvent.press(view.getByText('Continue'));
+    await waitFor(() =>
+      expect(onContinue).toHaveBeenLastCalledWith('a.test', 'did:plc:aaaa', true, false),
+    );
+  });
+});

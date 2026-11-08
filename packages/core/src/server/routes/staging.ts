@@ -19,6 +19,7 @@ import {
   getItem,
   CHAT_AUTO_SOURCE,
   OWNER_DIRECT_SOURCES,
+  StaleStagingClaimError,
 } from '../../staging/service';
 
 import type { CoreRouter } from '../router';
@@ -87,6 +88,17 @@ function readSpanProof(body: Record<string, unknown>): SpanProof | null {
   if (typeof turnText !== 'string' || turnText === '' || turnText.length > 20_000) return null;
   if (typeof start !== 'number' || typeof end !== 'number') return null;
   return { releaseSession: rs, turnId, turnText, start, end };
+}
+
+function claimTokenOf(body: Record<string, unknown>): string | undefined {
+  return typeof body.claim_token === 'string' && body.claim_token !== ''
+    ? body.claim_token
+    : undefined;
+}
+
+/** A stale claim is a conflict the worker can read; anything else is its bad request. */
+function errorResponse(err: unknown): { status: number; body: { error: string } } {
+  return { status: err instanceof StaleStagingClaimError ? 409 : 400, body: { error: errMsg(err) } };
 }
 
 export function registerStagingRoutes(router: CoreRouter): void {
@@ -271,7 +283,7 @@ export function registerStagingRoutes(router: CoreRouter): void {
           }
           targets.push({ persona, personaOpen: open });
         }
-        const resolved = resolveMultiDetailed(id, targets, data);
+        const resolved = resolveMultiDetailed(id, targets, data, claimTokenOf(body));
         const item = getItem(id);
         return {
           status: 200,
@@ -302,7 +314,7 @@ export function registerStagingRoutes(router: CoreRouter): void {
       if (invalid !== null) return { status: 400, body: { error: invalid } };
       const personaOpen = body.persona_open;
       const unknown = isUnknownPersona(persona);
-      resolve(id, persona, personaOpen, data);
+      resolve(id, persona, personaOpen, data, claimTokenOf(body));
       const item = getItem(id);
       return {
         status: 200,
@@ -313,7 +325,7 @@ export function registerStagingRoutes(router: CoreRouter): void {
         },
       };
     } catch (err) {
-      return { status: 400, body: { error: errMsg(err) } };
+      return errorResponse(err);
     }
   });
 
@@ -321,11 +333,11 @@ export function registerStagingRoutes(router: CoreRouter): void {
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const id = typeof body.id === 'string' ? body.id : '';
     try {
-      fail(id);
+      fail(id, undefined, claimTokenOf(body));
       const item = getItem(id);
       return { status: 200, body: { id, retry_count: item?.retry_count ?? 0 } };
     } catch (err) {
-      return { status: 400, body: { error: errMsg(err) } };
+      return errorResponse(err);
     }
   });
 
@@ -349,10 +361,10 @@ export function registerStagingRoutes(router: CoreRouter): void {
     }
     const seconds = secondsRaw;
     try {
-      extendLease(id, seconds);
+      extendLease(id, seconds, claimTokenOf(body));
       return { status: 200, body: { id, extended_by: seconds } };
     } catch (err) {
-      return { status: 400, body: { error: errMsg(err) } };
+      return errorResponse(err);
     }
   });
 }

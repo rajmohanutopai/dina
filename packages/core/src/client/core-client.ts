@@ -773,14 +773,18 @@ export interface CoreClient {
    * Core decides whether to requeue or expire based on retry policy.
    * `reason` is free-form (logged for ops triage).
    */
-  stagingFail(itemId: string, reason: string): Promise<StagingFailResult>;
+  stagingFail(itemId: string, reason: string, claimToken?: string): Promise<StagingFailResult>;
 
   /**
    * Push the lease expiry out by `seconds` so a long-running classifier
    * doesn't lose its claim mid-enrichment. Idempotent — callers call
    * this on a timer.
    */
-  stagingExtendLease(itemId: string, seconds: number): Promise<StagingExtendLeaseResult>;
+  stagingExtendLease(
+    itemId: string,
+    seconds: number,
+    claimToken?: string,
+  ): Promise<StagingExtendLeaseResult>;
 
   // ─── D2D messaging (task 1.29h / 1.32 preamble) ──────────────────────
 
@@ -1840,6 +1844,8 @@ interface StagingResolveBaseRequest {
   itemId: string;
   /** Vault row payload to persist (usually the enriched item). */
   data: Record<string, unknown>;
+  /** `claim_token` from the claimed row; Core answers 409 to a stale one. */
+  claimToken?: string;
 }
 
 export interface StagingResolveSingleRequest extends StagingResolveBaseRequest {

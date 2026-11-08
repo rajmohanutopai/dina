@@ -307,7 +307,7 @@ export class AskApprovalResumer {
         return;
       }
       if (outcome.kind === 'approval') {
-        await this.registry.markPendingApproval(askId, outcome.approvalId);
+        await this.registry.markPendingApproval(askId, outcome.approvalId, outcome.pausedStateJson);
         this.onEvent?.({
           kind: 'resumed_re_approval',
           askId,

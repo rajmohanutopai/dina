@@ -42,6 +42,7 @@ import {
 } from '@dina/protocol';
 
 import { getCommerceRuntime } from '../commerce/runtime';
+import { pauseListingsWithDeadBindings } from '../service/service_config';
 import { getWorkflowService } from '../workflow/service';
 
 import { recordDecisionSafe } from './decisions';
@@ -1022,6 +1023,9 @@ export async function uninstall(
     installs.escalatePauseReason(installId, 'device_revoked', nowMs);
   }
   installs.markRevoked(installId, nowMs);
+  // A listing bound to this install stops being public now, whatever becomes of
+  // the device revoke below.
+  pauseListingsWithDeadBindings();
   // P1-4: terminate in-flight — a running task must not complete during the
   // uninstall seam. Effectful → outcome_unknown, queued → cancelled.
   terminateInstallInFlight(installId, 'plugin uninstalled', nowMs);

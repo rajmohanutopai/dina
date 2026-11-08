@@ -9,7 +9,7 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { onAgentDeviceRevoked } from '../devices/registry';
+import { onDeviceRevoked } from '../devices/registry';
 
 import { shiftCalendarDays } from './day';
 
@@ -494,7 +494,9 @@ export class PlanStore {
    * `status`; a known one is updated only when the item was seen later than
    * the stored copy, so a replayed old batch changes nothing. An agent never
    * reopens a task the owner finished or dropped, and its `closed` marks an
-   * open task done.
+   * open task done. A held item it closes is deleted: the owner never saw it,
+   * so no row stays for a block to miss or chat to reopen, and the same item
+   * sent again later waits for the owner like a new one.
    */
   upsertAgentItem(
     origin: string,
@@ -549,15 +551,24 @@ export class PlanStore {
       return 'inserted';
     }
     if (item.observedAt <= existing.observedAt) return 'stale';
+    if (item.closed && existing.status === 'held') {
+      this.db.run('DELETE FROM plan_tasks WHERE id = ?', [existing.id]);
+      return 'updated';
+    }
     let nextStatus: PlanTaskStatus = existing.status;
     let doneAt = existing.doneAt;
-    if (item.closed && (existing.status === 'open' || existing.status === 'held')) {
-      nextStatus = existing.status === 'held' ? 'dropped' : 'done';
+    let waitingOn = existing.waitingOn;
+    let waitingUntil = existing.waitingUntil;
+    if (item.closed && existing.status === 'open') {
+      nextStatus = 'done';
       doneAt = now;
+      waitingOn = '';
+      waitingUntil = null;
     }
     this.db.run(
       `UPDATE plan_tasks SET title = ?, summary = ?, source = ?, link = ?, due_at = ?, effort_min = ?,
-         project = ?, status = ?, done_at = ?, observed_at = ?, updated_at = ? WHERE id = ?`,
+         project = ?, status = ?, done_at = ?, waiting_on = ?, waiting_until = ?, observed_at = ?,
+         updated_at = ? WHERE id = ?`,
       [
         existing.titleByOwner ? existing.title : item.title,
         item.summary,
@@ -568,6 +579,8 @@ export class PlanStore {
         item.project,
         nextStatus,
         doneAt,
+        waitingOn,
+        waitingUntil,
         item.observedAt,
         now,
         existing.id,
@@ -599,6 +612,11 @@ export class PlanStore {
     if (patch.status !== undefined && patch.status !== task.status) {
       next.status = patch.status;
       next.doneAt = patch.status === 'done' ? now : null;
+      // Done ends the wait, so a task reopened later doesn't chase someone anew.
+      if (patch.status === 'done') {
+        next.waitingOn = '';
+        next.waitingUntil = null;
+      }
       // Reopened in a finished phase it would be hidden and off every day: it
       // moves on, as a task still open when the phase finished does.
       if (patch.status === 'open' && patch.phaseId === undefined && task.phaseId !== '') {
@@ -934,8 +952,12 @@ export class PlanStore {
     return next;
   }
 
-  /** Save or clear (null) a goal's drafted plan. */
+  /**
+   * Save or clear (null) a goal's drafted plan. A draft can't land on a goal
+   * that already has phases: nothing could accept it. Returns false then.
+   */
   setGoalDraft(id: string, draft: GoalDraft | null, now: number): boolean {
+    if (draft !== null && this.listPhases(id).length > 0) return false;
     return (
       this.db.run(
         'UPDATE plan_goals SET draft_json = ?, draft_at = ?, updated_at = ? WHERE id = ?',
@@ -1017,6 +1039,8 @@ export class PlanStore {
     const phases = this.listPhases(goalId);
     const anyOpen = phases.some((p) => p.status !== 'done');
     const position = phases.reduce((m, p) => Math.max(m, p.position + 1), 0);
+    // The goal now has a plan by hand: a draft waiting on it could never be accepted.
+    this.setGoalDraft(goalId, null, now);
     return this.insertPhase(
       goalId,
       title,
@@ -1392,8 +1416,10 @@ export function getPlanStore(): PlanStore | null {
   return store;
 }
 
-// Unpairing an agent ends its permission to add tasks and drops what it sent
-// that the owner never allowed. Tasks the owner already took on stay.
-onAgentDeviceRevoked((did) => {
+// Unpairing a device, of any role that can post to the inbox, ends its
+// permission to add tasks and drops what it sent that the owner never allowed.
+// Tasks the owner already took on stay. The boot reconcile runs this again, for
+// a revoke that happened with no store open.
+onDeviceRevoked((did) => {
   store?.forgetAgent(did);
 });

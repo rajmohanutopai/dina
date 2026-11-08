@@ -6,6 +6,10 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 
 # Health fact → Health vault
 - tapOn:

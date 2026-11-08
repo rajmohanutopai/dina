@@ -843,6 +843,7 @@ export class HttpCoreTransport implements CoreClient {
 
   async stagingResolve(req: StagingResolveRequest): Promise<StagingResolveResult> {
     const body: Record<string, unknown> = { id: req.itemId, data: req.data };
+    if (req.claimToken !== undefined) body.claim_token = req.claimToken;
     if (Array.isArray(req.persona)) {
       body.personas = req.persona;
       if (req.personaAccess !== undefined) body.persona_access = req.personaAccess;
@@ -871,23 +872,31 @@ export class HttpCoreTransport implements CoreClient {
     return out;
   }
 
-  async stagingFail(itemId: string, reason: string): Promise<StagingFailResult> {
+  async stagingFail(
+    itemId: string,
+    reason: string,
+    claimToken?: string,
+  ): Promise<StagingFailResult> {
     const raw = await this.call<{ id: string; retry_count: number }>(
       'POST',
       '/v1/staging/fail',
       undefined,
-      { id: itemId, reason },
+      { id: itemId, reason, ...(claimToken !== undefined ? { claim_token: claimToken } : {}) },
       `stagingFail(itemId=${itemId})`,
     );
     return { itemId: raw.id, retryCount: raw.retry_count };
   }
 
-  async stagingExtendLease(itemId: string, seconds: number): Promise<StagingExtendLeaseResult> {
+  async stagingExtendLease(
+    itemId: string,
+    seconds: number,
+    claimToken?: string,
+  ): Promise<StagingExtendLeaseResult> {
     const raw = await this.call<{ id: string; extended_by: number }>(
       'POST',
       '/v1/staging/extend-lease',
       undefined,
-      { id: itemId, seconds },
+      { id: itemId, seconds, ...(claimToken !== undefined ? { claim_token: claimToken } : {}) },
       `stagingExtendLease(itemId=${itemId})`,
     );
     return { itemId: raw.id, extendedBySeconds: raw.extended_by };

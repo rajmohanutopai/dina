@@ -13,8 +13,10 @@
  *      `#dina_signing` VM (or any 32-byte Multikey) wins.
  *   3. Trust comes from the contact directory (`getContact`),
  *      defaulting to 'unknown' for senders we haven't recorded.
- *   4. Resolve failures collapse to `{ keys: [], trust }` so the
- *      receive pipeline quarantines them rather than crashing.
+ *   4. A directory that says the DID has no usable document gives
+ *      `{ keys: [], trust }`, which the pipeline drops as unverified. A
+ *      directory that cannot answer gives `unresolved: true`: the message
+ *      stays at the relay for a later try. Neither accepts it unchecked.
  *
  * Keep this module runtime-agnostic: no node-fs, no react-native
  * primitives. Only depends on `@dina/core` (DIDResolver, getContact,
@@ -23,6 +25,16 @@
 
 import { getContact, multibaseToPublicKey } from '@dina/core';
 import { DIDResolver } from '@dina/core/runtime';
+
+import type { ResolvedSender } from '@dina/core';
+import type { ResolvedDID } from '@dina/core/runtime';
+
+/**
+ * One directory read per DID per minute at most, however many bad signatures
+ * arrive: a forged message must not become a way to hammer the directory.
+ */
+const REFRESH_MIN_INTERVAL_MS = 60_000;
+const REFRESH_TRACKED_DIDS = 1000;
 
 export interface MakeResolveSenderOptions {
   selfDID: string;
@@ -41,19 +53,50 @@ const sharedResolver = new DIDResolver();
  * sender's Ed25519 public key(s) + the trust level we've recorded.
  *
  * Failure modes:
- *   - DID doesn't resolve at all       → `{ keys: [], trust: 'unknown' }`
+ *   - Directory outage or bad answer   → `{ keys: [], trust, unresolved: true }`
+ *   - DID not found, or deactivated    → `{ keys: [], trust }`
  *   - DID resolves but no Ed25519 VM   → same (caller treats as unverified)
- *   - DID resolves with a key          → `{ keys: [k], trust }`
+ *   - DID resolves with a key          → `{ keys: [k], trust }`, plus `refresh`
+ *     when the key came from the cache
  */
 export function makeResolveSender(
   opts: MakeResolveSenderOptions,
-): (did: string) => Promise<{ keys: Uint8Array[]; trust: string }> {
+): (did: string) => Promise<ResolvedSender> {
   const resolver = opts.resolver ?? sharedResolver;
   const onError =
     opts.onResolveError ??
     ((did, err) => {
       console.warn(`[resolveSender] ${did} failed:`, err.message);
     });
+
+  const lastRefresh = new Map<string, number>();
+
+  const fromDocument = (resolved: ResolvedDID, trust: string): ResolvedSender => {
+    const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
+    if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
+      return { keys: [], trust };
+    }
+    return { keys: [multibaseToPublicKey(vm.publicKeyMultibase)], trust };
+  };
+
+  const onFailure = (did: string, trust: string, err: unknown): ResolvedSender => {
+    onError(did, err as Error);
+    // A did:key needs no directory, so its failure is a malformed DID.
+    const permanent =
+      did.startsWith('did:key:') ||
+      (err as { unresolvable?: unknown } | null)?.unresolvable === true;
+    return permanent ? { keys: [], trust } : { keys: [], trust, unresolved: true };
+  };
+
+  const refreshFor = (did: string, trust: string) => async (): Promise<ResolvedSender> => {
+    if (lastRefresh.size >= REFRESH_TRACKED_DIDS) lastRefresh.clear();
+    lastRefresh.set(did, Date.now());
+    try {
+      return fromDocument(await resolver.resolve(did, { fresh: true }), trust);
+    } catch (err) {
+      return onFailure(did, trust, err);
+    }
+  };
 
   return async (did: string) => {
     if (did === opts.selfDID) {
@@ -65,15 +108,14 @@ export function makeResolveSender(
 
     try {
       const resolved = await resolver.resolve(did);
-      const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
-      if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
-        return { keys: [], trust };
-      }
-      const pubkey = multibaseToPublicKey(vm.publicKeyMultibase);
-      return { keys: [pubkey], trust };
+      const sender = fromDocument(resolved, trust);
+      const stale =
+        resolved.source === 'cache' &&
+        !did.startsWith('did:key:') &&
+        Date.now() - (lastRefresh.get(did) ?? 0) >= REFRESH_MIN_INTERVAL_MS;
+      return stale ? { ...sender, refresh: refreshFor(did, trust) } : sender;
     } catch (err) {
-      onError(did, err as Error);
-      return { keys: [], trust };
+      return onFailure(did, trust, err);
     }
   };
 }

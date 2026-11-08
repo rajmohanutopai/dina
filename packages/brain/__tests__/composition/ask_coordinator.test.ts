@@ -568,11 +568,11 @@ describe('workflowTaskAsSource adapter', () => {
     expect(await source.getStatus('a1')).toBe('denied');
   });
 
-  it('maps completed → expired (already consumed)', async () => {
+  it('maps completed → approved (Core settles an access card once the grant is written)', async () => {
     const { client, tasks } = makeFakeCoreClient();
     tasks.set('a1', { id: 'a1', status: 'completed', payload: '{}' });
     const source = workflowTaskAsSource(client);
-    expect(await source.getStatus('a1')).toBe('expired');
+    expect(await source.getStatus('a1')).toBe('approved');
   });
 
   it('approve() calls approveWorkflowTask → task transitions to queued', async () => {

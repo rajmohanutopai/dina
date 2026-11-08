@@ -166,6 +166,12 @@ export interface AskCoordinator {
   subscribe: (listener: (event: AskEvent) => void) => () => void;
 }
 
+/**
+ * How long past its deadline the sweep lets a live ask run. Longer than a slow
+ * agentic loop; an answer that arrives after it is lost, so this errs long.
+ */
+export const ASK_IN_FLIGHT_GRACE_MS = 5 * 60 * 1000;
+
 export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoordinator {
   if (!opts || typeof opts !== 'object') {
     throw new TypeError('createAskCoordinator: options object is required');
@@ -206,8 +212,10 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
   const registryOpts: {
     adapter: AskPersistenceAdapter;
     defaultTtlMs?: number;
+    inFlightGraceMs: number;
     onEvent: (event: AskEvent) => void;
   } = {
+    inFlightGraceMs: ASK_IN_FLIGHT_GRACE_MS,
     adapter:
       opts.adapter ??
       (canKeepAskRecords(opts.coreClient)
@@ -227,9 +235,9 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
   if (opts.defaultTtlMs !== undefined) registryOpts.defaultTtlMs = opts.defaultTtlMs;
 
   const registry = new AskRegistry(registryOpts);
-  // Pick up asks a previous run left: an in_flight one past its deadline
-  // expires; one waiting on approval stays, and the gateway's reconcile
-  // resumes it once the owner says yes.
+  // Pick up asks a previous run left: an in_flight one expires, since its run
+  // died with that process; one waiting on approval stays, and the gateway's
+  // reconcile resumes it once the owner says yes.
   void registry.restoreOnStartup().catch(() => undefined);
 
   resumer = new AskApprovalResumer({
@@ -714,10 +722,12 @@ async function guardCompletedResult(
  *
  * Workflow task status → ApprovalSourceStatus mapping:
  *   pending_approval → pending
- *   queued | running  → approved (operator approved, ready to consume)
+ *   queued | running | completed → approved. Core settles an access card to
+ *                        `completed` once the grant is written (REQ-03), so a
+ *                        finished card is the yes the ask was waiting for.
+ *   failed, error 'expired' → expired (the card lapsed; the owner said nothing)
  *   cancelled | failed → denied
- *   (not found)        → expired
- *   completed          → expired (already consumed)
+ *   (not found) or any other end → expired
  */
 export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSource {
   return {
@@ -726,9 +736,9 @@ export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSo
       if (task === null) return 'expired';
       const s = task.status;
       if (s === 'pending_approval') return 'pending';
-      if (s === 'queued' || s === 'running') return 'approved';
+      if (s === 'queued' || s === 'running' || s === 'completed') return 'approved';
+      if (s === 'failed' && task.error === 'expired') return 'expired';
       if (s === 'cancelled' || s === 'failed') return 'denied';
-      // completed (already consumed) or other terminal
       return 'expired';
     },
     async approve(id: string, opts?: { scope?: 'single' | 'session' }): Promise<void> {

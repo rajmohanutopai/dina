@@ -24,6 +24,8 @@ import {
   BackupStoreClient,
   deriveBackupIdentity,
   findBackup,
+  forgetBackupRuns,
+  isBackupHeldForOwner,
   kvBackupStore,
   mnemonicToEntropy,
   restoreBackup,
@@ -44,6 +46,14 @@ let identity: BackupIdentity | null = null;
 let appStateSub: NativeEventSubscription | null = null;
 let firstLook: ReturnType<typeof setTimeout> | null = null;
 let flight: Promise<unknown> | null = null;
+/** One thing at a time reaches the store, so "Delete all" can't land under a run. */
+let tail: Promise<unknown> = Promise.resolve();
+
+function inTurn<T>(work: () => Promise<T>): Promise<T> {
+  const run = tail.then(work, work);
+  tail = run.catch(() => undefined);
+  return run;
+}
 
 export function backupStoreUrl(): string {
   // Static `process.env.X` reads only: Expo inlines nothing else in a release bundle.
@@ -107,15 +117,17 @@ export async function setBackupEnabled(on: boolean): Promise<void> {
 export async function backUpIfDueNow(): Promise<void> {
   const id = identity;
   if (id === null || flight !== null || !(await isBackupEnabled())) return;
-  const run = (async () => {
+  const run = inTurn(async () => {
     try {
+      // The queue may have waited: the vault can have sealed, or backup gone off.
+      if (identity !== id || !(await isBackupEnabled())) return;
       await backUpIfDue(await runDeps(id), { everyMs: DAY_MS });
     } catch {
       // Offline, or the store refused; the next foreground tries again.
     } finally {
       flight = null;
     }
-  })();
+  });
   flight = run;
   await run;
 }
@@ -124,7 +136,7 @@ export async function backUpIfDueNow(): Promise<void> {
 export async function backUpNowFromSettings(): Promise<BackupRunResult> {
   const id = identity;
   if (id === null) throw new Error('Unlock Dina to back up.');
-  return backUpNow(await runDeps(id));
+  return inTurn(async () => backUpNow(await runDeps(id)));
 }
 
 export interface BackupStatus {
@@ -132,21 +144,59 @@ export interface BackupStatus {
   /** When the last copy was written from this phone; null before the first. */
   lastAt: number | null;
   storeUrl: string;
+  /**
+   * The store holds copies this phone never restored, so the daily run stopped
+   * rather than push them aside. The owner restores, or starts fresh.
+   */
+  heldForOwner: boolean;
 }
 
 export async function backupStatus(): Promise<BackupStatus> {
   const raw = await kvBackupStore.get(BACKUP_LAST_AT_KEY);
   const lastAt = raw === null ? null : Number(raw) || null;
-  return { enabled: await isBackupEnabled(), lastAt, storeUrl: backupStoreUrl() };
+  return {
+    enabled: await isBackupEnabled(),
+    lastAt,
+    storeUrl: backupStoreUrl(),
+    heldForOwner: await isBackupHeldForOwner(kvBackupStore),
+  };
 }
 
-/** "Delete all backups": every copy in the store, and backup switched off. */
+/**
+ * "Delete all backups": every copy in the store, and backup switched off. The
+ * switch goes first and the delete waits its turn, so a run already uploading
+ * lands before the delete and one still queued finds backup off. A failed delete
+ * puts the switch back: the copies are still there.
+ */
 export async function deleteAllBackups(): Promise<void> {
   const id = identity;
   if (id === null) throw new Error('Unlock Dina to delete backups.');
-  await client(id).deleteAll();
-  await setBackupEnabled(false);
-  await kvBackupStore.set(BACKUP_LAST_AT_KEY, '');
+  const before = await kvBackupStore.get(ENABLED_KEY);
+  await kvBackupStore.set(ENABLED_KEY, '0');
+  try {
+    await inTurn(async () => {
+      await client(id).deleteAll();
+      await forgetBackupRuns(kvBackupStore);
+    });
+  } catch (err) {
+    await kvBackupStore.set(ENABLED_KEY, before ?? '');
+    throw err;
+  }
+}
+
+/**
+ * The Backup screen's answer to a hold: bring back the newest copy, replacing
+ * what this phone holds. The stores in memory still hold the old rows, so the
+ * screen reloads the app after this.
+ */
+export async function restoreNewestBackupFromSettings(): Promise<void> {
+  const id = identity;
+  if (id === null) throw new Error('Unlock Dina to restore.');
+  await inTurn(async () => {
+    const found = await findBackup(id, client(id));
+    if (found === null) throw new Error('The store holds no copy.');
+    await restoreFoundBackup(found, id, { replaceLocal: true });
+  });
 }
 
 /**
@@ -167,15 +217,15 @@ export async function findBackupForPhrase(
 }
 
 /**
- * Restore a copy into the install recovery just made, then keep backing up
- * from here. Forced: the app may already have written its own first rows
- * (a greeting, its settings) while the copy downloaded, and the owner asked
- * for their Dina back, not a merge with an empty one.
+ * Restore a copy, then keep backing up from here. Overwrites what this phone
+ * holds only when the owner agreed (`replaceLocal`); otherwise a phone with its
+ * own rows refuses, and they stay.
  */
 export async function restoreFoundBackup(
   found: FoundBackup,
   id: BackupIdentity,
+  opts: { replaceLocal?: boolean } = {},
 ): Promise<void> {
-  await restoreBackup(id, found, { force: true });
+  await restoreBackup(id, found, { force: opts.replaceLocal === true });
   await kvBackupStore.set(ENABLED_KEY, '1');
 }

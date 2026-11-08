@@ -11,6 +11,10 @@
 appId: com.dinakernel.mobile
 ---
 - launchApp
+- extendedWaitUntil:
+    visible:
+      id: 'root-layout-boot-ready'
+    timeout: 60000
 - tapOn:
     id: 'tab-network'
 - extendedWaitUntil:

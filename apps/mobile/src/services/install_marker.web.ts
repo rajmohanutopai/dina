@@ -45,6 +45,16 @@ export function installMarkerExists(): boolean {
   return true;
 }
 
+/** Always `present` on web, for the same reason. */
+export function installMarkerState(): 'present' | 'absent' | 'unknown' {
+  return 'present';
+}
+
+/** Nothing is ever wiped on web, so this answer is never used to wipe. */
+export function vaultFilesMayExist(): boolean {
+  return true;
+}
+
 /** No-op — same reasoning as `installMarkerExists`. */
 export function deleteInstallMarker(): void {
   /* no-op */

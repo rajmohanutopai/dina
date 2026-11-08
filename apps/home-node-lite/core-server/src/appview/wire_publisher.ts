@@ -247,6 +247,16 @@ export function wireServiceProfilePublisher(
           state: 'not_published',
           attemptedAtMs,
         });
+      } else {
+        try {
+          await getServiceConfigRepository()?.clearPendingUnpublish(rkey);
+        } catch (error) {
+          // Still recorded, so a later boot removes it again: the removal is idempotent.
+          logger.warn(
+            { rkey, error: error instanceof Error ? error.message : String(error) },
+            'service unpublish record not cleared',
+          );
+        }
       }
       return;
     }
@@ -307,6 +317,18 @@ export function wireServiceProfilePublisher(
   // older publish attempt to become the final PDS state.
   const unsubscribe = onServiceConfigChanged(reconcile);
   for (const { rkey, config } of listServiceConfigs()) reconcile(rkey, config);
+  // Listings deleted before their unpublish landed: no row names them (SERVICE-1).
+  void (async () => {
+    const pending = (await getServiceConfigRepository()?.listPendingUnpublish()) ?? [];
+    for (const rkey of pending) {
+      if (!disposed && !slots.has(rkey)) reconcile(rkey, null);
+    }
+  })().catch((error: unknown) => {
+    logger.warn(
+      { error: error instanceof Error ? error.message : String(error) },
+      'pending service unpublish list failed',
+    );
+  });
 
   return {
     pdsPublisher,

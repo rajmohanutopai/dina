@@ -899,6 +899,7 @@ export class InProcessTransport implements CoreClient {
     // Wire shape:  { id, persona | personas[], data, persona_open? | persona_access? }.
     // Single-persona string → `persona`; array → `personas` (GAP-MULTI-01).
     const body: Record<string, unknown> = { id: req.itemId, data: req.data };
+    if (req.claimToken !== undefined) body.claim_token = req.claimToken;
     if (Array.isArray(req.persona)) {
       body.personas = req.persona;
       if (req.personaAccess !== undefined) body.persona_access = req.personaAccess;
@@ -930,24 +931,32 @@ export class InProcessTransport implements CoreClient {
     return out;
   }
 
-  async stagingFail(itemId: string, reason: string): Promise<StagingFailResult> {
+  async stagingFail(
+    itemId: string,
+    reason: string,
+    claimToken?: string,
+  ): Promise<StagingFailResult> {
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
         path: '/v1/staging/fail',
-        body: { id: itemId, reason },
+        body: { id: itemId, reason, ...(claimToken !== undefined ? { claim_token: claimToken } : {}) },
       }),
     );
     const raw = expectOk<{ id: string; retry_count: number }>(res, `stagingFail(itemId=${itemId})`);
     return { itemId: raw.id, retryCount: raw.retry_count };
   }
 
-  async stagingExtendLease(itemId: string, seconds: number): Promise<StagingExtendLeaseResult> {
+  async stagingExtendLease(
+    itemId: string,
+    seconds: number,
+    claimToken?: string,
+  ): Promise<StagingExtendLeaseResult> {
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
         path: '/v1/staging/extend-lease',
-        body: { id: itemId, seconds },
+        body: { id: itemId, seconds, ...(claimToken !== undefined ? { claim_token: claimToken } : {}) },
       }),
     );
     const raw = expectOk<{ id: string; extended_by: number }>(

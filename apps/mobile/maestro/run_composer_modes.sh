@@ -51,7 +51,7 @@ center() { echo "$(( ($1 + $3) / 2 )) $(( ($2 + $4) / 2 ))"; }
 
 os_swipe() { # x1 y1 x2 y2
   if [ "$PLATFORM" = "ios" ]; then
-    idb ui swipe --udid "$DEVICE" "$1" "$2" "$3" "$4" --duration 0.4
+    idb ui swipe --udid "$DEVICE" --duration 0.6 --delta 8 "$1" "$2" "$3" "$4"
   else
     adb -s "$DEVICE" shell input swipe "$1" "$2" "$3" "$4" 400
   fi
@@ -66,10 +66,9 @@ os_tap() { # x y
 
 echo "== [2/3] scroll strip + tap Talk ($PLATFORM swipe) =="
 ASK=$(read_bounds index-mode-chip-ask)
-# With no paired agent Reviews is visible at rest. A paired agent inserts Task,
-# so Reviews can be clipped; Services remains the rightmost stable anchor.
-RIGHT=$(read_bounds index-mode-chip-reviews)
-[ -n "$RIGHT" ] || RIGHT=$(read_bounds index-mode-chip-services)
+# Reviews can sit clipped past the strip's edge, where a swipe starts outside the
+# strip. Services stays on screen with or without a paired agent.
+RIGHT=$(read_bounds index-mode-chip-services)
 [ -n "$ASK" ] || { echo "FAIL: ask chip not found"; exit 1; }
 [ -n "$RIGHT" ] || { echo "FAIL: right-side composer anchor not found"; exit 1; }
 read -r AX1 AY1 AX2 AY2 <<<"$ASK"
@@ -77,11 +76,13 @@ read -r RX1 RY1 RX2 RY2 <<<"$RIGHT"
 read -r ACX ACY <<<"$(center "$AX1" "$AY1" "$AX2" "$AY2")"
 read -r RCX RCY <<<"$(center "$RX1" "$RY1" "$RX2" "$RY2")"
 # Drag from the rightmost visible chip toward Ask (content moves left and
-# reveals Reviews + Talk). Two passes guarantee Talk clears the clip edge.
-os_swipe "$RCX" "$RCY" "$ACX" "$ACY"; sleep 1
-os_swipe "$RCX" "$RCY" "$ACX" "$ACY"; sleep 1
-REV=$(read_bounds index-mode-chip-reviews)
-[ -n "$REV" ] || { echo "FAIL: reviews chip not in hierarchy after swipe"; exit 1; }
+# reveals Reviews + Talk). The strip grows with paired agents, so swipe until
+# Talk clears the clip edge.
+# Start just inside the clipped chip: its far edge can lie outside the strip.
+for _ in 1 2 3 4 5; do
+  os_swipe "$((RX1 + 20))" "$RCY" "$AX1" "$ACY"; sleep 1
+  [ -n "$(read_bounds index-mode-chip-talk)" ] && break
+done
 TALK=$(read_bounds index-mode-chip-talk)
 [ -n "$TALK" ] || { echo "FAIL: talk chip not in hierarchy"; exit 1; }
 read -r TX1 TY1 TX2 TY2 <<<"$TALK"

@@ -191,6 +191,49 @@ describe('POST /v1/commerce/trade/delivery-note', () => {
   });
 });
 
+describe('a retried request makes one money document (COM-10)', () => {
+  const noteBody = (key?: string, quantity = '40'): Record<string, unknown> => ({
+    counterparty_did: BUYER_DID,
+    purchase_order_id: ORDER.purchase_order_id,
+    supplier_order_id: 'so-1',
+    lines: [{ line_id: ORDER.accepted_lines[0]?.line_id, delivered_quantity: { value: quantity, unit_code: 'each' } }],
+    ...(key === undefined ? {} : { idempotency_key: key }),
+  });
+  const documentOf = (body: unknown): { note_digest: string } =>
+    (body as { document: { note_digest: string } }).document;
+
+  it('the same key on a delivery note returns the first note and stores one', async () => {
+    const first = await router.handle(owner('/v1/commerce/trade/delivery-note', noteBody('tap-1')));
+    const again = await router.handle(owner('/v1/commerce/trade/delivery-note', noteBody('tap-1')));
+    expect([first.status, again.status]).toEqual([200, 200]);
+    expect(documentOf(again.body).note_digest).toBe(documentOf(first.body).note_digest);
+    expect(
+      tradeDocs.listByOrder(BUYER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(1);
+  });
+
+  it('one key with a different request is refused, and a new key is a new dispatch', async () => {
+    await router.handle(owner('/v1/commerce/trade/delivery-note', noteBody('tap-1')));
+    const reused = await router.handle(
+      owner('/v1/commerce/trade/delivery-note', noteBody('tap-1', '41')),
+    );
+    expect(reused.status).toBe(409);
+    expect(reused.body).toEqual({ error: 'idempotency_key_reused' });
+    const second = await router.handle(owner('/v1/commerce/trade/delivery-note', noteBody('tap-2')));
+    expect(second.status).toBe(200);
+    expect(
+      tradeDocs.listByOrder(BUYER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(2);
+  });
+
+  it('refuses a key that is not a short string', async () => {
+    const bad = await router.handle(
+      owner('/v1/commerce/trade/delivery-note', { ...noteBody(), idempotency_key: 'x'.repeat(129) }),
+    );
+    expect(bad.status).toBe(400);
+  });
+});
+
 describe('the supplier journey: note → buyer receipt → payment → ack → statement', () => {
   it('folds the routes and the inbound documents to one statement', async () => {
     // 1. Issue a note for 60.

@@ -319,6 +319,7 @@ import { collectTallyVouchers, renderTallyXml } from '../../commerce/tally_expor
 import {
   compareTender,
   createTender,
+  mintTenderId,
   NOT_ASKED_REASONS,
   type NotAskedReason,
 } from '../../commerce/tender';
@@ -4103,7 +4104,11 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
       // ORDER total, read from this node's own retained proposal, never
       // a caller value. Declines are gated identically: refusing an
       // order is as much a commercial act as accepting one.
-      const retained = tradeRelationshipReaders(runtime).readOrder(buyerDid, purchaseOrderId);
+      const retained = tradeRelationshipReaders(runtime).readOrder(
+        buyerDid,
+        purchaseOrderId,
+        'supplier',
+      );
       const gate = checkStaffOperation({
         repository: runtime.staffGrants,
         deviceDid: caller.deviceDid,
@@ -6884,6 +6889,21 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     return { status: 200, body: { ok: true, document: outcome.document, dispatched } };
   };
 
+  /**
+   * The caller's key for one authoring request (COM-10), mapped to the
+   * service's argument; a retry with the same key gets the first document.
+   */
+  const authoringKeyOf = (
+    body: Record<string, unknown>,
+  ): { idempotencyKey?: string } | CoreResponse => {
+    const key = body.idempotency_key;
+    if (key === undefined) return {};
+    if (typeof key !== 'string' || key === '' || key.length > 128) {
+      return { status: 400, body: { error: 'idempotency_key must be 1 to 128 characters' } };
+    }
+    return { idempotencyKey: key };
+  };
+
   router.post('/v1/commerce/trade/delivery-note', async (req): Promise<CoreResponse> => {
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
@@ -6901,10 +6921,13 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         body: { error: 'counterparty_did, purchase_order_id, supplier_order_id and lines are required' },
       };
     }
+    const authoringKey = authoringKeyOf(body);
+    if ('status' in authoringKey) return authoringKey;
     const money = moneyOrRefusal(runtime);
     if (isRefusal(money)) return money;
     const service = tradeLedgerService(runtime, money);
     const outcome = service.issueDeliveryNote({
+      ...authoringKey,
       counterpartyDid: body.counterparty_did,
       purchaseOrderId: body.purchase_order_id,
       supplierOrderId: body.supplier_order_id,
@@ -6915,12 +6938,13 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // §5.D — goods are on their way, so an active country pack may have a
     // filing to make (an e-way bill, an invoice). The hook is guarded and its
     // outcome is advisory: a note already signed, stored and sent must never
-    // be undone by a filing the node could not stage.
-    if (outcome.ok) {
+    // be undone by a filing the node could not stage. A replay filed already.
+    if (outcome.ok && outcome.replayed !== true) {
       const priced = service.priceDeliveryNote({ deliveryNoteDigest: outcome.document.note_digest });
       const terms = service.paymentTerms({
         counterpartyDid: body.counterparty_did,
         purchaseOrderId: body.purchase_order_id,
+        role: 'supplier',
       });
       askDeliveryFilingRail({
         note: outcome.document,
@@ -6951,6 +6975,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (typeof body.delivery_note_digest !== 'string' || !Array.isArray(body.lines)) {
       return { status: 400, body: { error: 'delivery_note_digest and lines are required' } };
     }
+    const authoringKey = authoringKeyOf(body);
+    if ('status' in authoringKey) return authoringKey;
     const money = moneyOrRefusal(runtime);
     if (isRefusal(money)) return money;
     const service = tradeLedgerService(runtime, money);
@@ -7001,6 +7027,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     }
     return tradeAnswerDispatched(
       service.issueDeliveryReceipt({
+        ...authoringKey,
         deliveryNoteDigest: body.delivery_note_digest,
         lines: body.lines as never,
       }),
@@ -7027,10 +7054,13 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return { status: 400, body: { error: 'supplier_did, amount and method are required' } };
     }
+    const authoringKey = authoringKeyOf(body);
+    if ('status' in authoringKey) return authoringKey;
     const money = moneyOrRefusal(runtime);
     if (isRefusal(money)) return money;
     return tradeAnswerDispatched(
       tradeLedgerService(runtime, money).issuePaymentNote({
+        ...authoringKey,
         supplierDid: body.supplier_did,
         amount: body.amount as never,
         method: body.method as never,
@@ -7207,7 +7237,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // Both figures are the khata's own; the smaller is the honest ask.
     const dueMinor = BigInt(due.amount.minor_units);
     const askMinor = outstanding < dueMinor ? outstanding : dueMinor;
-    const order = tradeRelationshipReaders(runtime).readOrder(counterparty, purchaseOrderId);
+    const order = tradeRelationshipReaders(runtime).readOrder(
+      counterparty,
+      purchaseOrderId,
+      'supplier',
+    );
     const subjectDigest = order?.order_digest ?? '';
     if (subjectDigest === '') {
       return { status: 409, body: { ok: false, reason: 'no_retained_order' } };
@@ -7616,14 +7650,24 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       if (suppliers.length === 0) return { status: 409, body: { error: 'no_unblocked_suppliers' } };
     }
     // Reserve the draft before anything reaches a supplier: a second open, or
-    // a dismiss, while this one is sending is refused, so one draft never
-    // starts two tenders. Core is one process, so a set held here is enough.
+    // a dismiss, while this one is sending is refused. Core is one process, so
+    // a set held here is enough for that. The tender id goes on the row as well,
+    // because the set dies with the process and the requests do not: an open
+    // after a crash resumes the tender the row names, so one draft never starts
+    // two tenders.
     if (draftsOpening.has(draft.draftId)) {
       return { status: 409, body: { error: 'draft_opening' } };
     }
     draftsOpening.add(draft.draftId);
     try {
-      return await openDraftNow(runtime, draft, suppliers, region, currency, body);
+      let tenderId = draft.tenderId;
+      if (tenderId === '') {
+        tenderId = mintTenderId();
+        if (!runtime.tenderDrafts.reserveTender(draft.draftId, tenderId)) {
+          return { status: 409, body: { error: 'draft_not_pending' } };
+        }
+      }
+      return await openDraftNow(runtime, draft, tenderId, suppliers, region, currency, body);
     } finally {
       draftsOpening.delete(draft.draftId);
     }
@@ -7632,6 +7676,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
   async function openDraftNow(
     runtime: CommerceRuntime,
     draft: TenderDraft,
+    reservedTenderId: string,
     suppliers: TenderDraft['suppliers'],
     region: unknown,
     currency: string,
@@ -7652,7 +7697,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         ...(typeof body.max_rounds === 'number' ? { max_rounds: body.max_rounds } : {}),
         ...(typeof body.deadline_seconds === 'number' ? { deadline_seconds: body.deadline_seconds } : {}),
       },
-    });
+    }, reservedTenderId);
     if (opened.status !== 200) return opened;
     const tenderId = String((opened.body as { tender_id: string }).tender_id);
     if (!runtime.tenderDrafts.move(draft.draftId, 'opened', tenderId)) {
@@ -7673,7 +7718,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     const draft = typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
     if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
     if (draftsOpening.has(draft.draftId)) return { status: 409, body: { error: 'draft_opening' } };
-    if (!runtime.tenderDrafts.move(draft.draftId, 'dismissed', '')) {
+    // A tender id on a pending draft is a crash's mid-open: it stays on the row.
+    if (!runtime.tenderDrafts.move(draft.draftId, 'dismissed', draft.tenderId)) {
       return { status: 409, body: { error: 'draft_not_pending' } };
     }
     retireDraftCard(draft.draftId, 'draft_dismissed');
@@ -8282,16 +8328,15 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     return typeof did === 'string' ? did : '';
   }
 
-  /** The award itself, after the caller is let in. */
-  async function awardTender(
+  /**
+   * The answer for a tender already awarded or closed, or null while it is
+   * still open. A closed tender takes no award, whichever way it closed.
+   */
+  function settledTenderAnswer(
     runtime: CommerceRuntime,
-    caller: CommerceRouteCaller,
+    tenderId: string,
     body: Record<string, unknown>,
-  ): Promise<CoreResponse> {
-    if (typeof body.tender_id !== 'string' || body.tender_id === '') {
-      return { status: 400, body: { error: 'tender_id is required' } };
-    }
-    const tenderId = body.tender_id;
+  ): CoreResponse | null {
     const policy = runtime.buyerNegotiation.getTender(tenderId);
     if (policy !== null && policy.state === 'awarded') {
       // A retry after a lost response gets the award it already made — the
@@ -8333,6 +8378,21 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (policy !== null && policy.state === 'closed') {
       return { status: 409, body: { error: 'tender_closed' } };
     }
+    return null;
+  }
+
+  /** The award itself, after the caller is let in. */
+  async function awardTender(
+    runtime: CommerceRuntime,
+    caller: CommerceRouteCaller,
+    body: Record<string, unknown>,
+  ): Promise<CoreResponse> {
+    if (typeof body.tender_id !== 'string' || body.tender_id === '') {
+      return { status: 400, body: { error: 'tender_id is required' } };
+    }
+    const tenderId = body.tender_id;
+    const settled = settledTenderAnswer(runtime, tenderId, body);
+    if (settled !== null) return settled;
     // The owner's rules decide among versions; one kept in a closed persona
     // must be read before anything is awarded (COMMITMENT_KERNEL §7, §8).
     // A clerk learns only that the award waits on the owner, never which
@@ -8346,6 +8406,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
             ? { error: 'persona_closed', personas: values.closedPersonas }
             : { error: 'persona_closed' },
       };
+    // Another award or the sweeper may have settled the tender during that
+    // await. Everything from this read to the move below runs with no await,
+    // so a loser holds no order and spends no owner's yes.
+    const lateSettled = settledTenderAnswer(runtime, tenderId, body);
+    if (lateSettled !== null) return lateSettled;
+    const policy = runtime.buyerNegotiation.getTender(tenderId);
     const ranked = rankTender({
       tenderId,
       nowMs: runtime.now(),
@@ -9086,6 +9152,8 @@ async function goodsBuyerModelNow(): Promise<{
 async function openTenderFromBody(
   runtime: CommerceRuntime,
   body: Record<string, unknown>,
+  /** Set by a draft's open: the id on its row, which a crash's retry resumes. */
+  reservedTenderId?: string,
 ): Promise<CoreResponse> {
   if (!Array.isArray(body.suppliers) || !Array.isArray(body.lines) || body.projection === null || typeof body.projection !== 'object') {
     return { status: 400, body: { error: 'suppliers, lines and projection are required' } };
@@ -9180,6 +9248,7 @@ async function openTenderFromBody(
     if (invalid !== null) return { status: 400, body: { error: 'negotiation_invalid', detail: invalid } };
   }
   const created = await createTender({
+    ...(reservedTenderId === undefined ? {} : { tenderId: reservedTenderId }),
     suppliers,
     ...(notAsked.length > 0 ? { notAsked } : {}),
     lines: tenderLines as never,

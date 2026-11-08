@@ -195,7 +195,7 @@ function nodeBRunner(mode: 'answer' | 'ask'): void {
   if (claimed === null) return;
   expect(admitInboundClaim(claimed, runnerB)).toBe('admitted');
   if (mode === 'answer') {
-    workflowB.complete(claimed.id, JSON.stringify({ eta_minutes: 4 }), 'done', runnerB);
+    workflowB.complete(claimed.id, JSON.stringify({ eta_minutes: 4 }), 'done', runnerB, claimed.claim_id ?? undefined);
     return;
   }
   const asked = requestInboundInput({

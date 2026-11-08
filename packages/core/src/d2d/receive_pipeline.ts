@@ -24,7 +24,7 @@ import {
 
 import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
-import { isCommerceCapability } from '../commerce/capability_names';
+import { isCommerceCapability, isCommerceWireCapability } from '../commerce/capability_names';
 import { getCommerceRuntime } from '../commerce/runtime';
 import { getInviteService } from '../commerce/invite_compose';
 import { handleConsentMessage } from '../commitment/evidence_handler';
@@ -47,13 +47,18 @@ import { isCapabilityConfigured, isKnownOnlyCapabilityConfigured } from '../serv
 import { getServiceGrantRepository } from '../service/service_grant_repository';
 import { requesterWindow, setProviderWindow } from '../service/windows';
 import { answerWithStandingReply } from '../standing/standing_replies';
-import { isReplayedMessage, isStaleMessage, recordMessageId } from '../transport/adversarial';
+import {
+  isPastTtl,
+  isReplayedMessage,
+  isStaleMessage,
+  recordMessageId,
+} from '../transport/adversarial';
 import { oneLine } from '../util/one_line';
 import { WorkflowConflictError } from '../workflow/repository';
 import { getWorkflowService } from '../workflow/service';
 
 
-import { unsealMessage, type D2DPayload } from './envelope';
+import { unsealMessage, type D2DPayload, type DinaMessage } from './envelope';
 import {
   alwaysPasses,
   isValidV1Type,
@@ -111,6 +116,11 @@ export interface ReceivePipelineResult {
    */
   senderCreatedTime?: number;
   reason: string;
+  /**
+   * Set when `holdBypassReplayKey` kept the replay key back. The caller runs it
+   * once its dispatcher has had the message.
+   */
+  commitReplay?: () => void;
 }
 
 /** Optional overrides for tests and dependency injection. */
@@ -145,7 +155,23 @@ export interface ReceivePipelineOptions {
    * with no transport envelope), mirroring `authenticatedFromDID`.
    */
   authenticatedToDID?: string;
+  /**
+   * Service traffic is taken in by the caller's dispatcher, so its durable home
+   * comes after this function returns. With this set, the replay key of such a
+   * message waits for `commitReplay`: a crash in the dispatcher then leaves the
+   * relay's resend able to run, and the dispatcher dedups on the query id.
+   */
+  holdBypassReplayKey?: boolean;
 }
+
+/** Replay keys waiting on a dispatcher, so a second copy cannot run alongside. */
+const replayKeysOnHold = new Set<string>();
+
+/**
+ * How far a sender's clock may lag before a `service.query` counts as past its
+ * own TTL. Generous, because a false refusal costs a query its owner asked for.
+ */
+const QUERY_TTL_SLACK_SECONDS = 120;
 
 /**
  * Process an incoming D2D payload through the full receive pipeline.
@@ -239,7 +265,7 @@ export function receiveD2D(
     };
   }
   const replayKey = `${message.from}|${message.id}`;
-  if (isReplayedMessage(replayKey)) {
+  if (isReplayedMessage(replayKey) || replayKeysOnHold.has(replayKey)) {
     appendAudit(message.from, 'd2d_recv_replay', message.to, `id=${message.id}`);
     return {
       action: 'dropped',
@@ -250,8 +276,37 @@ export function receiveD2D(
       reason: 'Replayed message (already processed)',
     };
   }
-  recordMessageId(replayKey, message.created_time);
 
+  // The key is recorded only AFTER the message has a home (TT-03). A throw below
+  // (a staging or quarantine write that failed) leaves no key, so the relay's
+  // next copy can land. A crash after the home and before the key lands that
+  // copy on the same staging row or quarantine id, which dedup it.
+  const result = admitVerifiedMessage(message, signatureHex, senderTrust, options);
+  if (
+    options.holdBypassReplayKey === true &&
+    result.action === 'bypassed' &&
+    result.bypassedBody !== undefined
+  ) {
+    replayKeysOnHold.add(replayKey);
+    return {
+      ...result,
+      commitReplay: () => {
+        replayKeysOnHold.delete(replayKey);
+        recordMessageId(replayKey, message.created_time);
+      },
+    };
+  }
+  recordMessageId(replayKey, message.created_time);
+  return result;
+}
+
+/** Everything after the replay check: decide what this verified message is, and store it. */
+function admitVerifiedMessage(
+  message: DinaMessage,
+  signatureHex: string,
+  senderTrust: string,
+  options: ReceivePipelineOptions,
+): ReceivePipelineResult {
   // 4. V1 type enforcement — silently drop non-V1 message types.
   // Matches Go's ProcessInbound which rejects non-V1 types (benign drop —
   // still returns 202 to prevent sender fingerprinting). Audit logged.
@@ -987,7 +1042,7 @@ export function receiveD2D(
   // If quarantined, also store in quarantine management
   let quarantineId: string | undefined;
   if (stageResult.action === 'quarantined') {
-    const q = quarantineMessage(message.from, message.type, message.body);
+    const q = quarantineMessage(message.from, message.type, message.body, undefined, message.id);
     quarantineId = q.id;
   }
 
@@ -1091,6 +1146,27 @@ function applyServiceIngressDecision(
   };
 
   if (messageType === MsgTypeServiceQuery) {
+    // TT-08: the asker gave up at its own TTL. Acting now could book something
+    // the owner was told had got no response. (A relay can hold a query for hours.)
+    if (
+      !isCommerceWireCapability(body.capability) &&
+      isPastTtl(message.created_time, body.ttl_seconds, QUERY_TTL_SLACK_SECONDS)
+    ) {
+      appendAudit(
+        message.from,
+        'd2d_recv_service_denied',
+        message.to,
+        `type=${messageType} reason=past_ttl id=${message.id}`,
+      );
+      return {
+        action: 'dropped',
+        messageId: message.id,
+        messageType,
+        senderDID: message.from,
+        signatureValid: true,
+        reason: 'service.query is past its own ttl_seconds',
+      };
+    }
     // Open the provider window so our `service.response` is authorised on
     // egress. TTL echoes the requester's window so both sides agree on
     // freshness.

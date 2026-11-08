@@ -28,7 +28,7 @@ import {
   PAIRING_CODE_ALPHABET,
   PAIRING_SECRET_BYTES,
 } from '../constants';
-import { registerDevice as persistDevice, revokeDevice } from '../devices/registry';
+import { isDeviceActive, registerDevice as persistDevice, revokeDevice } from '../devices/registry';
 import { multibaseToPublicKey , deriveDIDKey } from '../identity/did';
 import { getPluginInstallRepository } from '../plugins/registry';
 
@@ -89,6 +89,21 @@ interface PendingCode {
 }
 
 const pendingCodes = new Map<string, PendingCode>();
+
+/**
+ * Who completed each code. A retry by the same key gets the same answer, since
+ * the first one can be lost with the socket (TT-11). Kept until the code would
+ * have expired, or until it is restored.
+ */
+const completedCodes = new Map<
+  string,
+  {
+    publicKeyMultibase: string;
+    deviceId: string;
+    expiresAt: number;
+    standardPersonas?: string[];
+  }
+>();
 
 /** Node DID — MUST be set at startup via setNodeDID() before any pairing. */
 let nodeDID: string | null = null;
@@ -240,6 +255,9 @@ export function completePairing(
 ): PairingResult {
   if (!nodeDID) throw new Error('pairing: node DID not set — call setNodeDID() at startup');
 
+  const repeat = repeatOfCompletedPairing(code, publicKeyMultibase);
+  if (repeat !== null) return repeat;
+
   if (!isCodeValid(code)) {
     // Track failed attempt if the code exists but is being brute-forced
     recordFailedAttempt(code);
@@ -314,11 +332,35 @@ export function completePairing(
 
   // Mark code as used (single-use) — only after the device is registered.
   pending.used = true;
+  completedCodes.set(code, {
+    publicKeyMultibase,
+    deviceId: device.deviceId,
+    expiresAt: pending.expiresAt,
+    ...(pending.standardPersonas !== undefined ? { standardPersonas: pending.standardPersonas } : {}),
+  });
 
   return {
     deviceId: device.deviceId,
     nodeDID: nodeDID!,
     ...(pending.standardPersonas !== undefined ? { standardPersonas: [...pending.standardPersonas] } : {}),
+  };
+}
+
+/**
+ * The original answer for a retry of a pairing that already worked: same code,
+ * same key, device still live, code not past its time. A different key is
+ * refused as ever. The answer gives no authority the first call did not.
+ */
+function repeatOfCompletedPairing(code: string, publicKeyMultibase: string): PairingResult | null {
+  const done = completedCodes.get(code);
+  if (done === undefined || nodeDID === null) return null;
+  if (done.publicKeyMultibase !== publicKeyMultibase) return null;
+  if (Math.floor(Date.now() / 1000) > done.expiresAt) return null;
+  if (!isDeviceActive(done.deviceId)) return null;
+  return {
+    deviceId: done.deviceId,
+    nodeDID,
+    ...(done.standardPersonas !== undefined ? { standardPersonas: [...done.standardPersonas] } : {}),
   };
 }
 
@@ -371,6 +413,7 @@ export function restorePairingCode(code: string): void {
     }
   }
   pending.used = false;
+  completedCodes.delete(code);
 }
 
 /**
@@ -422,6 +465,9 @@ export function activePairingCount(): number {
 /** Purge expired and used pairing codes. Returns count of purged codes. */
 export function purgeExpiredCodes(): number {
   const now = Math.floor(Date.now() / 1000);
+  for (const [key, done] of completedCodes.entries()) {
+    if (now > done.expiresAt) completedCodes.delete(key);
+  }
   let purged = 0;
   for (const [key, pending] of pendingCodes.entries()) {
     if (now > pending.expiresAt || pending.used) {
@@ -459,6 +505,7 @@ export function verifyPairingIdentityBinding(
 /** Clear all pending codes and reset node DID (for testing). */
 export function clearPairingState(): void {
   pendingCodes.clear();
+  completedCodes.clear();
   nodeDID = null;
 }
 

@@ -100,3 +100,35 @@ describe('every client method reaches a registered route', () => {
     await expectRouted(call, name);
   });
 });
+
+describe('the retry key on trade documents', () => {
+  it('goes out when given, and stays off when not', async () => {
+    const seen: Record<string, unknown>[] = [];
+    const spy = new OwnerCommerceClient({
+      dispatch: async (req: { body?: unknown }) => {
+        seen.push(req.body as Record<string, unknown>);
+        return { status: 200, body: { kind: 'issued' } };
+      },
+    } as never);
+    await spy.issueDeliveryReceipt({ deliveryNoteDigest: 'd', lines: [], idempotencyKey: 'k1' });
+    await spy.issuePaymentNote({
+      supplierDid: 'did:x',
+      amount: { currency: 'INR', minor_units: '100' },
+      method: 'upi',
+      idempotencyKey: 'k2',
+    });
+    await spy.issueDeliveryNote({
+      counterpartyDid: 'did:x',
+      purchaseOrderId: 'po',
+      supplierOrderId: 'so',
+      lines: [],
+      idempotencyKey: 'k3',
+    });
+    await spy.issuePaymentNote({
+      supplierDid: 'did:x',
+      amount: { currency: 'INR', minor_units: '100' },
+      method: 'upi',
+    });
+    expect(seen.map((b) => b.idempotency_key)).toEqual(['k1', 'k2', 'k3', undefined]);
+  });
+});

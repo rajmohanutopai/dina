@@ -79,7 +79,8 @@ export interface BuyerNegotiationRepository {
     answerDigest: string,
     atMs: number,
   ): boolean;
-  putTender(policy: TenderNegotiation): void;
+  /** First writer wins: every later move is a CAS, so a row is never rewritten. */
+  putTender(policy: TenderNegotiation): boolean;
   getTender(tenderId: string): TenderNegotiation | null;
   listTenders(state: TenderNegotiationState): TenderNegotiation[];
   /**
@@ -212,24 +213,26 @@ export class SQLiteBuyerNegotiationRepository implements BuyerNegotiationReposit
     );
   }
 
-  putTender(policy: TenderNegotiation): void {
-    this.db.run(
-      `INSERT OR REPLACE INTO commerce_tender_negotiation
-         (tender_id, currency, target_total_minor, budget_ceiling_minor, max_rounds, deadline_at,
-          state, awarded_supplier_did, approval_id, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [
-        policy.tenderId,
-        policy.currency,
-        policy.targetTotalMinor,
-        policy.budgetCeilingMinor,
-        policy.maxRounds,
-        policy.deadlineAt,
-        policy.state,
-        policy.awardedSupplierDid,
-        policy.approvalId,
-        policy.updatedAt,
-      ],
+  putTender(policy: TenderNegotiation): boolean {
+    return (
+      this.db.run(
+        `INSERT OR IGNORE INTO commerce_tender_negotiation
+           (tender_id, currency, target_total_minor, budget_ceiling_minor, max_rounds, deadline_at,
+            state, awarded_supplier_did, approval_id, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          policy.tenderId,
+          policy.currency,
+          policy.targetTotalMinor,
+          policy.budgetCeilingMinor,
+          policy.maxRounds,
+          policy.deadlineAt,
+          policy.state,
+          policy.awardedSupplierDid,
+          policy.approvalId,
+          policy.updatedAt,
+        ],
+      ) > 0
     );
   }
 

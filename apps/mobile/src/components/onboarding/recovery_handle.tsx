@@ -21,7 +21,8 @@
  * store for a copy the 24 words open. When there is one, it fills in the
  * handle from inside it, shows its date and item count, and offers to
  * restore it once the identity is back (on unless the owner says no). The
- * rotation-key check above still runs on the handle.
+ * rotation-key check above still runs on the handle. When this phone still holds
+ * a vault, a restore would replace it, so the switch starts off and says so.
  */
 
 import React, { useEffect, useState } from 'react';
@@ -30,6 +31,7 @@ import { ActivityIndicator, StyleSheet, Switch, Text, TextInput, View } from 're
 import { resolveAndVerifyDidPlc, type ResolveDidResult } from '../../hooks/useOnboarding';
 import { locateStep, type Step } from '../../onboarding/state';
 import { findBackupForPhrase } from '../../services/cloud_backup';
+import { localVaultExists } from '../../services/install_marker';
 import { colors, radius, spacing, textStyles } from '../../theme';
 
 import { OnboardingShell } from './shell';
@@ -37,7 +39,12 @@ import { OnboardingShell } from './shell';
 export interface RecoveryHandleProps {
   mnemonic: string[];
   initialHandle?: string;
-  onContinue: (handle: string, did: string, restoreBackup: boolean) => void;
+  onContinue: (
+    handle: string,
+    did: string,
+    restoreBackup: boolean,
+    replaceLocalData: boolean,
+  ) => void;
   onBack: () => void;
 }
 
@@ -52,9 +59,15 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
   const [error, setError] = useState<string | null>(null);
   const [found, setFound] = useState<FoundCopy | null>(null);
   const [restore, setRestore] = useState(true);
+  const [localVault, setLocalVault] = useState(false);
 
   useEffect(() => {
     let live = true;
+    void localVaultExists().then((exists) => {
+      if (!live || !exists) return;
+      setLocalVault(true);
+      setRestore(false);
+    });
     void findBackupForPhrase(props.mnemonic).then((hit) => {
       if (!live || hit === null) return;
       const { meta } = hit.found;
@@ -72,7 +85,13 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
     try {
       const result: ResolveDidResult = await resolveAndVerifyDidPlc(handle, props.mnemonic);
       if (result.kind === 'ok') {
-        props.onContinue(handle.trim().toLowerCase(), result.did, found !== null && restore);
+        const restoring = found !== null && restore;
+        props.onContinue(
+          handle.trim().toLowerCase(),
+          result.did,
+          restoring,
+          restoring && localVault,
+        );
         return;
       }
       setError(result.message);
@@ -127,6 +146,12 @@ export function RecoveryHandle(props: RecoveryHandleProps): React.ReactElement {
             })}{' '}
             with {found.itemCount} {found.itemCount === 1 ? 'item' : 'items'}.
           </Text>
+          {localVault ? (
+            <Text style={styles.foundText} testID="recovery-backup-replaces">
+              This phone still holds a Dina. Restoring replaces it with this copy, and anything
+              written since that date is lost.
+            </Text>
+          ) : null}
           <View style={styles.foundRow}>
             <Text style={[styles.foundText, styles.flex]}>Restore it</Text>
             <Switch

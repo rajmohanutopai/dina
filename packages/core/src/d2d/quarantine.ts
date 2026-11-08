@@ -10,6 +10,10 @@
  * Source: ARCHITECTURE.md Task 6.13
  */
 
+import { randomBytes } from '@noble/ciphers/utils.js';
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex } from '@noble/hashes/utils.js';
+
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 export interface QuarantinedMessage {
@@ -23,11 +27,11 @@ export interface QuarantinedMessage {
 
 const TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 
+/** Most messages held per sender; a stranger who sends more loses their own oldest. */
+const MAX_PER_SENDER = 200;
+
 /** In-memory quarantine store keyed by message ID. */
 const quarantine = new Map<string, QuarantinedMessage>();
-
-/** Counter for generating quarantine IDs. */
-let idCounter = 0;
 
 // ── Persistence ──────────────────────────────────────────────────────────
 // The in-memory map above is the authoritative read surface, but a durable
@@ -90,8 +94,8 @@ export class SQLiteQuarantineRepository implements QuarantineRepository {
 
 /**
  * Re-populate the in-memory map from the durable repo on boot. Restores the
- * SAME ids the persisted quarantine cards reference, and advances the id
- * counter past them so new quarantines don't collide. Returns the count.
+ * SAME ids the persisted quarantine cards reference. Drops anything past its
+ * 30 days first (TT-14). Returns the count kept.
  *
  * REPLACE semantics: the in-memory map is cleared FIRST so a previous user's
  * quarantine (sender DID + body) can never survive into this session — e.g.
@@ -101,37 +105,61 @@ export class SQLiteQuarantineRepository implements QuarantineRepository {
 export function hydrateQuarantineFromRepository(): number {
   if (repo === null) return 0;
   quarantine.clear();
-  const entries = repo.listAll();
-  let maxId = 0;
-  for (const m of entries) {
-    quarantine.set(m.id, m);
-    const n = Number.parseInt(m.id.replace(/^q-/, ''), 10);
-    if (!Number.isNaN(n) && n > maxId) maxId = n;
-  }
-  idCounter = maxId;
+  const now = Date.now();
+  repo.deleteExpired(now);
+  const entries = repo.listAll().filter((m) => m.expiresAt > now);
+  for (const m of entries) quarantine.set(m.id, m);
   return entries.length;
 }
 
 /**
- * Add a message to quarantine.
+ * The id of a quarantined message. Accepting a message stages it with this id
+ * as `source_id`, and staging dedups on that, so an id must never come round
+ * again for a different message (TT-13: a counter did, after a restart). Taken
+ * from the sender's message id when there is one, so a copy the relay resends
+ * lands on the same row; random otherwise.
+ */
+function quarantineId(senderDID: string, messageId: string | undefined): string {
+  if (messageId === undefined || messageId === '') return `q-${bytesToHex(randomBytes(16))}`;
+  const digest = sha256(new TextEncoder().encode(`${senderDID}|${messageId}`));
+  return `q-${bytesToHex(digest).slice(0, 32)}`;
+}
+
+/** Drop a sender's oldest messages past the cap. */
+function enforceSenderCap(senderDID: string): void {
+  const held = listBySender(senderDID);
+  for (const old of held.slice(MAX_PER_SENDER)) {
+    repo?.deleteById(old.id);
+    quarantine.delete(old.id);
+  }
+}
+
+/**
+ * Add a message to quarantine. The durable write comes first: if it throws,
+ * nothing is held and the caller must not treat the message as kept.
  */
 export function quarantineMessage(
   senderDID: string,
   messageType: string,
   body: string,
   now?: number,
+  messageId?: string,
 ): QuarantinedMessage {
   const currentTime = now ?? Date.now();
+  const id = quarantineId(senderDID, messageId);
+  const existing = quarantine.get(id);
+  if (existing !== undefined) return existing;
   const msg: QuarantinedMessage = {
-    id: `q-${++idCounter}`,
+    id,
     senderDID,
     messageType,
     body,
     receivedAt: currentTime,
     expiresAt: currentTime + TTL_MS,
   };
-  quarantine.set(msg.id, msg);
   repo?.add(msg);
+  quarantine.set(msg.id, msg);
+  enforceSenderCap(senderDID);
   return msg;
 }
 
@@ -159,9 +187,11 @@ export function listBySender(senderDID: string): QuarantinedMessage[] {
  */
 export function unquarantineSender(senderDID: string): QuarantinedMessage[] {
   const messages: QuarantinedMessage[] = [];
+  const now = Date.now();
   for (const [id, msg] of quarantine.entries()) {
     if (msg.senderDID === senderDID) {
-      messages.push(msg);
+      // Past its 30 days it is gone, even if no sweep has run yet (TT-14).
+      if (now < msg.expiresAt) messages.push(msg);
       quarantine.delete(id);
     }
   }
@@ -238,5 +268,4 @@ export function getQuarantinedSenders(): string[] {
  */
 export function resetQuarantineState(): void {
   quarantine.clear();
-  idCounter = 0;
 }

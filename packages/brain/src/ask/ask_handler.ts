@@ -232,7 +232,21 @@ export function createAskHandler(
     if (typeof req.requesterDid !== 'string' || req.requesterDid.trim() === '') {
       throw new TypeError('handleAsk: requesterDid must be a non-empty string');
     }
-    const id = inboundRequestId(req.requestIdHeader ?? null) ?? newRequestId();
+    // REQ-16: a client retrying with its request id gets the ask it already
+    // started. The same id from anyone else is a new ask under a new id, which
+    // tells them nothing about whether the id is in use.
+    const inboundId = inboundRequestId(req.requestIdHeader ?? null);
+    let id = inboundId ?? newRequestId();
+    if (inboundId !== null) {
+      const existing = await registry.get(inboundId);
+      if (existing !== null) {
+        const sameCaller =
+          existing.requesterDid === req.requesterDid &&
+          (existing.sessionId ?? '') === (req.sessionId ?? '');
+        if (sameCaller) return resultForExisting(existing);
+        id = newRequestId();
+      }
+    }
 
     const enqueueInput: Parameters<typeof registry.enqueue>[0] = {
       id,
@@ -476,6 +490,39 @@ export function createAskStatusHandler(
 }
 
 // ── Internals ──────────────────────────────────────────────────────────
+
+/** A retried submit's answer: the first ask, as it stands now. */
+function resultForExisting(record: AskRecord): AskSubmitResult {
+  const id = record.id;
+  if (record.status === 'in_flight') {
+    return { kind: 'async', status: 202, body: { request_id: id, status: 'in_flight' } };
+  }
+  if (record.status === 'pending_approval') {
+    return {
+      kind: 'fast_path',
+      status: 200,
+      body: {
+        request_id: id,
+        status: 'pending_approval',
+        ...(record.approvalId !== undefined ? { approval_id: record.approvalId } : {}),
+      },
+    };
+  }
+  if (record.status === 'complete') {
+    const answer = (safeJsonParse(record.answerJson ?? '{}') ?? {}) as AskAnswer;
+    const text = typeof answer.text === 'string' ? answer.text : '';
+    return {
+      kind: 'fast_path',
+      status: 200,
+      body: { request_id: id, status: 'complete', answer, ...(text !== '' ? { content: text } : {}) },
+    };
+  }
+  const error: AskFailure =
+    record.status === 'failed' && record.errorJson !== undefined
+      ? (safeJsonParse(record.errorJson) as AskFailure)
+      : { kind: 'expired', message: 'the ask ended before it finished' };
+  return { kind: 'fast_path', status: 200, body: { request_id: id, status: 'failed', error } };
+}
 
 async function applyOutcome(
   registry: AskRegistry,

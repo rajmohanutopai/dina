@@ -27,7 +27,7 @@
  *   # runner (paired dina-agent "busagent" on Alonso):
  *   cd dina-nodes && ./agent.sh add busagent alonso
  *   cd demo/dina-services-demo && \
- *     DINA_CONFIG_DIR=$PWD/../../dina-nodes/agents/busagent/config/.dina/cli \
+ *     DINA_CONFIG_DIR=$PWD/../../dina-nodes/agents/busagent/config \
  *     STUB_ETA_DELAY_SECONDS=1 STUB_ETA_REVERSE_GEOCODE=0 \
  *     ../../dina-nodes/agents/busagent/.venv/bin/python run_daemon.py
  *   # then run with DINA_E2E_SERVICES_PROVIDER=1 (+ DINA_E2E_LIVE_JUDGE=1).
@@ -49,7 +49,7 @@ import { expectJudgePass, judgingEnabled } from '../fixtures/judge';
 import { Composer } from '../fixtures/pages/composer';
 
 import { attachHygiene } from './relay_hygiene';
-import { NODES, relaySkipReason } from './relay_nodes';
+import { NODES, openAsOwner, relaySkipReason } from './relay_nodes';
 
 const SERVICE_CARD = '[data-testid="chat-row"][data-kind="service-query"]';
 
@@ -75,7 +75,7 @@ test.describe('MRS-10 — Services, public (bus ETA)', () => {
     const page = await ctx.newPage();
     const hygiene = attachHygiene(page); // MRS-14 browser-half
     try {
-      await page.goto(NODES.sancho.web, { waitUntil: 'domcontentloaded' });
+      await openAsOwner(page, NODES.sancho);
 
       // Human asks a live-service question. ASK mode → the intent classifier
       // routes it to provider_services (the vault cannot hold a live ETA). The

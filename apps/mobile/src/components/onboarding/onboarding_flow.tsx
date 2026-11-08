@@ -288,10 +288,10 @@ export function OnboardingFlow(): React.ReactElement {
           mnemonic={step.draft.mnemonic ?? []}
           initialHandle={step.draft.handle}
           onBack={goBack}
-          onContinue={(handle, didPlc, restoreBackup) =>
+          onContinue={(handle, didPlc, restoreBackup, replaceLocalData) =>
             setStep({
               kind: 'recover_passphrase',
-              draft: { ...step.draft, handle, expectedDid: didPlc, restoreBackup },
+              draft: { ...step.draft, handle, expectedDid: didPlc, restoreBackup, replaceLocalData },
             })
           }
         />
@@ -313,6 +313,7 @@ export function OnboardingFlow(): React.ReactElement {
               passphrase,
               startupMode: mode,
               restoreBackup: step.draft.restoreBackup === true,
+              replaceLocalData: step.draft.replaceLocalData === true,
             };
             goToAiStep(
               { kind: 'provisioning_recover', draft: complete },
@@ -335,6 +336,7 @@ export function OnboardingFlow(): React.ReactElement {
             handle: step.draft.handle,
             startupMode: step.draft.startupMode,
             restoreBackup: step.draft.restoreBackup === true,
+            replaceLocalData: step.draft.replaceLocalData === true,
           }}
           onDone={() => {
             /* UnlockGate subscriber handles transition. */

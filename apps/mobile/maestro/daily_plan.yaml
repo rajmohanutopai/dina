@@ -81,6 +81,10 @@ appId: com.dinakernel.mobile
     visible:
       id: 'goals-screen'
     timeout: 10000
+- scrollUntilVisible:
+    element:
+      id: 'goal-add-input'
+    centerElement: true
 - tapOn:
     id: 'goal-add-input'
 - inputText: 'Run three times a week'

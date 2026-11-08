@@ -105,6 +105,11 @@ export async function requestQuote(args: {
   sharePincodeWithShippers?: boolean;
   nowMs: number;
   ttlSeconds?: number;
+  /**
+   * Called once the request is retained, before it is sent. An answer can land
+   * while the send is still out, so whatever correlates it must exist by then.
+   */
+  onRetained?: (request: QuoteRequest) => void;
 }): Promise<QuoteRequestOutcome> {
   const runtime = getCommerceRuntime();
   if (runtime === null) return { kind: 'refused', reason: 'commerce_unavailable' };
@@ -195,6 +200,7 @@ export async function requestQuote(args: {
   if (!runtime.buyerQuoteRequests.put(request, args.nowMs)) {
     return { kind: 'refused', reason: 'duplicate_request' };
   }
+  args.onRetained?.(request);
 
   try {
     const result = await dispatch({

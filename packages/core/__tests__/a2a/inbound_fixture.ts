@@ -297,6 +297,7 @@ export class InboundWorld {
   runChild(externalId: string, result: unknown): void {
     const { verdict, taskId } = this.claimChild(externalId);
     if (verdict !== 'admitted') throw new Error(`claim ${verdict}`);
-    this.world.workflow.complete(taskId, JSON.stringify(result), 'done', this.runnerDid);
+    const claimId = this.world.workflow.store().getById(taskId)?.claim_id;
+    this.world.workflow.complete(taskId, JSON.stringify(result), 'done', this.runnerDid, claimId);
   }
 }

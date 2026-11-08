@@ -35,7 +35,12 @@ appId: com.dinakernel.mobile
 # approval id rather than `approvals-approve-.*`, which also matches the
 # preceding `approvals-approve-once-*` button on Android.
 - tapOn:
-    id: 'approvals-approve-appr-.*-health'
+    id: 'approvals-approve-(?!once).*'
+# An agent's access grant lasts about an hour either way, so the card has one
+# Approve, with a native confirm.
+- waitForAnimationToEnd
+- tapOn:
+    point: '68%,57%'
 - extendedWaitUntil:
     notVisible:
       text: 'Vault read approval'

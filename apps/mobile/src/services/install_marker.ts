@@ -37,6 +37,7 @@
 import { File, Paths, type Directory } from 'expo-file-system';
 
 import * as Keychain from './keychain';
+import { loadVaultSalt } from './vault_salt_store';
 
 /**
  * The marker file name. Lives in the documents directory alongside the
@@ -80,8 +81,13 @@ function buildMarkerBody(now: number): string {
  *   - dina.infra.*                    services/infra_preferences.ts (5 keys)
  *   - dina.security.background_timeout_s services/security_preferences.ts
  *   - dina.llm.<provider>             ai/provider.ts (per-provider LLM keys)
+ *   - dina.llm.model_override.*       ai/model_overrides.ts (provider × tier)
+ *   - dina.linked_atproto_identity    services/linked_identity_record.ts
+ *   - dina.trust.first_run_dismissed_at peerlens/first_run.ts
+ *   - com.dina.staff-identity         services/staff_identity_store.ts
+ *   - dina.identity.signed_out        services/identity_scope.ts
  */
-const KEYCHAIN_SERVICES: readonly string[] = [
+export const KEYCHAIN_SERVICES: readonly string[] = [
   'dina.vault.wrapped_seed',
   // The vault salt goes with the databases it keys: cleared on reinstall and
   // "Erase everything", kept by "Sign out" (see vault_salt_store).
@@ -104,6 +110,13 @@ const KEYCHAIN_SERVICES: readonly string[] = [
   'dina.infra.pds_password',
   'dina.infra.pds_email',
   'dina.infra.appview_url',
+  'dina.infra.services_appview_url',
+  'dina.linked_atproto_identity',
+  'dina.trust.first_run_dismissed_at',
+  // A staff phone holds no wrapped seed, so the reinstall sweep never reaches
+  // it. "Erase everything" means this too.
+  'com.dina.staff-identity',
+  'dina.identity.signed_out',
   'dina.security.background_timeout_s',
   // Starter Credits custody — the minted bearer key must NEVER survive
   // a reinstall onto a new owner (review P2).
@@ -119,9 +132,15 @@ const KEYCHAIN_SERVICES: readonly string[] = [
  * matching entry here.
  */
 const LLM_PROVIDERS: readonly string[] = ['openai', 'gemini', 'claude', 'openrouter'];
+const LLM_TIERS: readonly string[] = ['primary', 'lite', 'heavy'];
 
 function llmServiceFor(provider: string): string {
   return `dina.llm.${provider}`;
+}
+
+/** Every model-override row: `dina.llm.model_override.<provider>:<tier>`. */
+function llmOverrideServices(): string[] {
+  return LLM_PROVIDERS.flatMap((p) => LLM_TIERS.map((t) => `dina.llm.model_override.${p}:${t}`));
 }
 
 function markerFile(): File {
@@ -141,6 +160,49 @@ export function installMarkerExists(): boolean {
     // expo-file-system can throw on access errors. Fall back to "marker
     // missing" so we re-provision rather than silently boot into a
     // possibly-orphan keychain.
+    return false;
+  }
+}
+
+/**
+ * The marker as far as we can tell. `unknown` means the check itself failed, and
+ * nothing may be wiped on it: a file-system error is not a reinstall.
+ */
+export function installMarkerState(): 'present' | 'absent' | 'unknown' {
+  try {
+    return markerFile().exists ? 'present' : 'absent';
+  } catch {
+    return 'unknown';
+  }
+}
+
+/**
+ * True when a database file is on this phone, or we can't tell. A real
+ * uninstall removes them along with the marker, so finding one means the marker
+ * was lost some other way (a failed write), and the keychain still belongs to it.
+ */
+export function vaultFilesMayExist(): boolean {
+  try {
+    const docDir = Paths.document;
+    if (!docDir.exists) return false;
+    return docDir.list().some((entry) => isSqliteArtifact(entry.name));
+  } catch {
+    return true;
+  }
+}
+
+/**
+ * True when this phone still holds a vault: its identity database, plus the
+ * salt row that keys it, which Sign out keeps and Erase clears. A recovery here
+ * may be coming back to it, and a restore would replace it. Read errors answer
+ * false: the restore then refuses to overwrite anything anyway.
+ */
+export async function localVaultExists(): Promise<boolean> {
+  try {
+    return (
+      new File(Paths.document, 'identity.sqlite').exists && (await loadVaultSalt()) !== null
+    );
+  } catch {
     return false;
   }
 }
@@ -199,7 +261,11 @@ export function writeInstallMarker(now: number = Date.now()): void {
  * (most installs won't have set every optional preference).
  */
 export async function clearOrphanKeychainState(): Promise<void> {
-  const services = [...KEYCHAIN_SERVICES, ...LLM_PROVIDERS.map(llmServiceFor)];
+  const services = [
+    ...KEYCHAIN_SERVICES,
+    ...LLM_PROVIDERS.map(llmServiceFor),
+    ...llmOverrideServices(),
+  ];
   for (const service of services) {
     try {
       await Keychain.resetGenericPassword({ service });

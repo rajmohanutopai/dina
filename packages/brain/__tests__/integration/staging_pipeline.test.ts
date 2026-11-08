@@ -181,15 +181,15 @@ describe('Staging Pipeline End-to-End Integration', () => {
       fail(id);
       expect(getItem(id)!.retry_count).toBe(1);
 
-      // Sweep requeues
-      sweep();
+      // Sweep requeues once the row's retry time arrives.
+      sweep(getItem(id)!.lease_until);
       expect(getItem(id)!.status).toBe('received');
 
       // Fail 3 more times → dead-letter
       for (let i = 0; i < 3; i++) {
         claim(10);
         fail(id);
-        sweep();
+        sweep(getItem(id)!.lease_until);
       }
       // retry_count is now 4 → should be dead-lettered
       expect(getItem(id)!.status).toBe('failed');

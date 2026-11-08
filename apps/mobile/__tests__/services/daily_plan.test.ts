@@ -42,6 +42,8 @@ import {
   addGoalTask,
   addRoutine,
   addTask,
+  addToToday,
+  discardGoalDraft,
   deleteGoalPhase,
   dropTask,
   loadRoutines,
@@ -765,6 +767,62 @@ describe('the review round on the phone', () => {
     const planned = (await loadToday(MORNING)).planned;
     expect(planned.map((p) => p.task.id)).toEqual([a.id]);
     expect(planned[0].task.status).toBe('done');
+  });
+
+  it('a task added by hand while the model thinks stays on the plan (PLAN-5)', async () => {
+    const a = await addTask('Reply to Sancho', MORNING);
+    const b = await addTask('Book the dentist', MORNING);
+    await planToday(MORNING, async () => {
+      await addToToday(b.id, MORNING);
+      return JSON.stringify({ entries: [{ task_id: a.id, reason: 'First' }] });
+    });
+    expect((await loadToday(MORNING)).planned.map((p) => p.task.id).sort()).toEqual(
+      [a.id, b.id].sort(),
+    );
+    expect(store.getTask(b.id)?.plannedFor).toBe(planDayKey(MORNING));
+    // A later re-plan keeps it too, and lists it once.
+    await planToday(MORNING, async () =>
+      JSON.stringify({
+        entries: [
+          { task_id: a.id, reason: 'First' },
+          { task_id: b.id, reason: 'Second' },
+        ],
+      }),
+    );
+    const planned = (await loadToday(MORNING)).planned;
+    expect(planned.filter((p) => p.task.id === b.id)).toHaveLength(1);
+    expect(planned.find((p) => p.task.id === b.id)?.reason).toBe('Added by you');
+  });
+
+  it('a plan landing after the owner ended the day leaves the review standing (PLAN-7)', async () => {
+    const a = await addTask('Reply to Sancho', MORNING);
+    await planToday(MORNING, null);
+    await planToday(MORNING, async () => {
+      await finishReview(MORNING);
+      return JSON.stringify({ entries: [{ task_id: a.id, reason: 'First' }] });
+    });
+    expect(store.getDay(planDayKey(MORNING))?.reviewedAt).toBe(MORNING);
+    expect(store.getTask(a.id)?.plannedFor).toBe(planDayKeyAfter(MORNING, 1));
+  });
+
+  it('a draft landing after a phase, or a discard, is not saved (PLAN-6)', async () => {
+    const answer = JSON.stringify({ phases: [{ title: 'Model', tasks: [{ title: 'x' }] }] });
+    const g = addGoal('House', '', MORNING);
+    const saved = await draftPlanForGoal(g.id, MORNING, async () => {
+      addGoalPhase(g.id, 'By hand', null, MORNING);
+      return answer;
+    });
+    expect(saved).toBe(false);
+    expect(store.getGoal(g.id)?.draft).toBeNull();
+
+    const g2 = addGoal('Move', '', MORNING);
+    expect(await draftPlanForGoal(g2.id, MORNING, async () => answer)).toBe(true);
+    const again = await draftPlanForGoal(g2.id, MORNING + 1, async () => {
+      discardGoalDraft(g2.id, MORNING + 1);
+      return answer;
+    });
+    expect(again).toBe(false);
+    expect(store.getGoal(g2.id)?.draft).toBeNull();
   });
 
   it('check-ins scheduled side by side end as the last run says', async () => {

@@ -4611,6 +4611,66 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       UPDATE plan_tasks SET title_by_owner = 1 WHERE origin != 'owner';
     `,
   },
+  {
+    // STATE_MACHINES COM-10: a retried authoring request returns the first
+    // document. The key lives on the document, so a backup carries it too.
+    version: 92,
+    name: 'commerce_trade_authoring_key',
+    sql: `
+      ALTER TABLE commerce_trade_documents ADD COLUMN authoring_key TEXT NOT NULL DEFAULT '';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_trade_docs_authoring_key
+        ON commerce_trade_documents(kind, authoring_key)
+        WHERE authoring_key != '';
+    `,
+  },
+  {
+    // STATE_MACHINES TT-04: each signed request's nonce, kept until its timestamp
+    // could no longer pass, so a restart cannot free it for a replay.
+    version: 96,
+    name: 'signed_request_nonces',
+    sql: `
+      CREATE TABLE IF NOT EXISTS signed_request_nonces (
+        did TEXT NOT NULL,
+        nonce TEXT NOT NULL,
+        expires_at INTEGER NOT NULL,
+        PRIMARY KEY (did, nonce)
+      ) WITHOUT ROWID;
+      CREATE INDEX IF NOT EXISTS idx_signed_request_nonces_expires
+        ON signed_request_nonces(expires_at);
+    `,
+  },
+  {
+    // STATE_MACHINES REQ-S1: names the claim holding a `classifying` row, so a
+    // worker whose lease lapsed cannot report over the next worker's claim.
+    version: 99,
+    name: 'staging_claim_token',
+    sql: `
+      ALTER TABLE staging_inbox ADD COLUMN claim_token TEXT;
+    `,
+  },
+  {
+    // STATE_MACHINES PLAN-2: a held item its agent closed used to stay as a
+    // dropped row, out of reach of the owner's block and open to a chat reopen.
+    // Only that path left an agent's dropped row with done_at set and never opened.
+    version: 102,
+    name: 'plan_drop_closed_held_tasks',
+    sql: `
+      DELETE FROM plan_tasks
+        WHERE status = 'dropped' AND origin != 'owner' AND opened_at = 0 AND done_at IS NOT NULL;
+    `,
+  },
+  {
+    // STATE_MACHINES SERVICE-1: deleting a listing leaves no row, so the intent
+    // to remove its published record has to live here until the removal lands.
+    version: 103,
+    name: 'service_listing_unpublish_pending',
+    sql: `
+      CREATE TABLE IF NOT EXISTS service_listing_unpublish_pending (
+        rkey TEXT PRIMARY KEY,
+        deleted_at INTEGER NOT NULL
+      );
+    `,
+  },
 ];
 
 // ---------------------------------------------------------------

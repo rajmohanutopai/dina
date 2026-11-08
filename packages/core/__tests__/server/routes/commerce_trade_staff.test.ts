@@ -654,6 +654,9 @@ describe('POST /v1/commerce/orders/decide as staff (§6.5 commerce_submit, suppl
     const cleared: string[] = [];
     const runtime = getCommerceRuntime();
     if (runtime === null) throw new Error('no runtime');
+    // A pending decision sits on the SUPPLIER: the order's value is read from
+    // this node's side of the order (COM-2).
+    (runtime as unknown as Record<string, unknown>).nodeDid = () => SUPPLIER_DID;
     (runtime as unknown as Record<string, unknown>).pendingDecisions = {
       list: () => [{ buyerDid, purchaseOrderId, createdAt: T0 }],
       get: (b: string, p: string) =>

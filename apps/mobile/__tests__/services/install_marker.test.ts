@@ -26,6 +26,7 @@ import * as Keychain from 'react-native-keychain';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import {
   clearOrphanKeychainState,
+  KEYCHAIN_SERVICES,
   installMarkerExists,
   wipeOrphanVaultFiles,
   writeInstallMarker,
@@ -244,5 +245,42 @@ describe('boot orchestration scenarios', () => {
       await Keychain.getGenericPassword({ service: 'dina.startup.passphrase' }),
     ).toBeFalsy();
     expect(installMarkerExists()).toBe(true);
+  });
+});
+
+describe('KEYCHAIN_SERVICES stays in step with the code (PH-11)', () => {
+  // Literal keychain services the sweep must not name, each with its reason.
+  const EXCEPTIONS = new Set([
+    // Prefixes: the sweep enumerates these by provider and tier.
+    'dina.llm.',
+    'dina.llm.model_override.',
+    // Not keychain services: a stub's name and two internal DIDs.
+    'dina.appview_stub',
+    'dina.local',
+    'dina.internal-brain',
+  ]);
+
+  it('names every dina.* and com.dina.* service under src/', () => {
+    const { readdirSync, readFileSync, statSync } = jest.requireActual('node:fs');
+    const { join } = jest.requireActual('node:path');
+    const found = new Set<string>();
+    const walk = (dir: string): void => {
+      for (const name of readdirSync(dir) as string[]) {
+        const path = join(dir, name);
+        if (statSync(path).isDirectory()) walk(path);
+        else if (/\.tsx?$/.test(name)) {
+          const text = readFileSync(path, 'utf8') as string;
+          // Comments and strings of other kinds use dots too: keep strict literals.
+          for (const m of text.matchAll(/'((?:dina|com\.dina)\.[A-Za-z0-9_.-]+)'/g)) {
+            found.add(m[1] as string);
+          }
+        }
+      }
+    };
+    walk(join(__dirname, '../../src'));
+    const missing = [...found].filter(
+      (s) => !KEYCHAIN_SERVICES.includes(s) && !EXCEPTIONS.has(s),
+    );
+    expect(missing).toEqual([]);
   });
 });

@@ -126,6 +126,7 @@ describe('Brain server — /api/v1/reminders HTTP wiring', () => {
     await core.reminderCreate({ message: 'ring', due_at: Date.now() - 1000, persona: 'general' });
 
     const hub = registerReminderApiRoutes(app, { core }); // register once
+    hub.subscriberCount = () => 1;
     const broadcasts: string[] = [];
     const realBroadcast = hub.broadcast.bind(hub);
     hub.broadcast = (r) => {
@@ -143,5 +144,51 @@ describe('Brain server — /api/v1/reminders HTTP wiring', () => {
     // Idempotent: the reminder fired once (flipped to 'fired'), so even
     // many ticks broadcast it a single time.
     expect(broadcasts.filter((m) => m === 'ring')).toHaveLength(1);
+  });
+
+  it('REQ-10: with nobody listening a due reminder stays due, and a tab opened later gets it', async () => {
+    const core = new MockCoreClient();
+    const app = Fastify({ logger: false });
+    await core.reminderCreate({ message: 'ring', due_at: Date.now() - 1000, persona: 'general' });
+
+    const hub = registerReminderApiRoutes(app, { core });
+    let listening = 0;
+    hub.subscriberCount = () => listening;
+    const broadcasts: string[] = [];
+    hub.broadcast = (r) => broadcasts.push(r.message);
+
+    const stop = startReminderFireLoop({ core, hub, tickMs: 5 });
+    await new Promise((res) => setTimeout(res, 30));
+    expect(broadcasts).toEqual([]);
+    expect(await core.reminderListPending()).toHaveLength(1);
+
+    listening = 1;
+    await new Promise((res) => setTimeout(res, 30));
+    stop();
+    await app.close();
+
+    expect(broadcasts).toEqual(['ring']);
+    expect(await core.reminderListPending()).toHaveLength(0);
+  });
+
+  it('REQ-10: a Core that fails the mark leaves the reminder due, to be told again', async () => {
+    const core = new MockCoreClient();
+    const app = Fastify({ logger: false });
+    await core.reminderCreate({ message: 'ring', due_at: Date.now() - 1000, persona: 'general' });
+    const hub = registerReminderApiRoutes(app, { core });
+    hub.subscriberCount = () => 1;
+    const broadcasts: string[] = [];
+    hub.broadcast = (r) => broadcasts.push(r.message);
+    core.reminderFireMissed = async () => {
+      throw new Error('lost answer');
+    };
+
+    const stop = startReminderFireLoop({ core, hub, tickMs: 5, onError: () => undefined });
+    await new Promise((res) => setTimeout(res, 40));
+    stop();
+    await app.close();
+
+    expect(broadcasts.length).toBeGreaterThan(1);
+    expect(await core.reminderListPending()).toHaveLength(1);
   });
 });
