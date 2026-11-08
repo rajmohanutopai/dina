@@ -1191,6 +1191,20 @@ export function lazyCoreClient(): Parameters<typeof createFindPreferredProviderT
     | 'openGroupPlan'
     | 'getGroupPlan'
     | 'listGroupPlanHandles'
+    | 'promisesList'
+    | 'talkSend'
+    | 'ownerExportPrepare'
+    | 'forgetPropose'
+    | 'spendAllowanceList'
+    | 'spendAllowancePropose'
+    | 'spendAllowanceRevoke'
+    | 'standingReplyList'
+    | 'standingReplyPropose'
+    | 'standingReplyRevoke'
+    | 'serviceProviderStanding'
+    | 'commitmentBrainView'
+    | 'commitmentProposeChanges'
+    | 'commitmentSetSavingShare'
   > {
   // All methods proxy through the booted node's BRAIN client (its workflow
   // calls are stamped `brain`, as on the server); the owner's client is
@@ -1232,6 +1246,53 @@ export function lazyCoreClient(): Parameters<typeof createFindPreferredProviderT
     },
     async memoryToC(...args) {
       return booted().memoryToC(...args);
+    },
+    // PROMISES_AND_WAITS.md: the `list_promises` tool registers only when the
+    // ask's Core client has this, so it must be forwarded like the rest.
+    async promisesList(...args) {
+      return booted().promisesList(...args);
+    },
+    // The owner's chat tools (agentic_ask registers each only when this client
+    // has its method). Missing here, "tell Sancho …", forget, export, spending
+    // limits, standing replies and deal values never reached the phone's chat.
+    async talkSend(...args) {
+      return booted().talkSend(...args);
+    },
+    async ownerExportPrepare(...args) {
+      return booted().ownerExportPrepare(...args);
+    },
+    async forgetPropose(...args) {
+      return booted().forgetPropose(...args);
+    },
+    async spendAllowanceList(...args) {
+      return booted().spendAllowanceList(...args);
+    },
+    async spendAllowancePropose(...args) {
+      return booted().spendAllowancePropose(...args);
+    },
+    async spendAllowanceRevoke(...args) {
+      return booted().spendAllowanceRevoke(...args);
+    },
+    async standingReplyList(...args) {
+      return booted().standingReplyList(...args);
+    },
+    async standingReplyPropose(...args) {
+      return booted().standingReplyPropose(...args);
+    },
+    async standingReplyRevoke(...args) {
+      return booted().standingReplyRevoke(...args);
+    },
+    async serviceProviderStanding(...args) {
+      return booted().serviceProviderStanding(...args);
+    },
+    async commitmentBrainView(...args) {
+      return booted().commitmentBrainView(...args);
+    },
+    async commitmentProposeChanges(...args) {
+      return booted().commitmentProposeChanges(...args);
+    },
+    async commitmentSetSavingShare(...args) {
+      return booted().commitmentSetSavingShare(...args);
     },
     async findContactsByPreference(category: string) {
       return node()?.brainCoreClient.findContactsByPreference(category) ?? [];

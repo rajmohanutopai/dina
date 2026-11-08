@@ -379,6 +379,8 @@ export interface RememberDrainResult {
   failedReason?: string;
   /** The item is staged (durable) but the drain did not file it in time. */
   notYetFiled?: boolean;
+  /** REQ-19: the model did not answer; the item is held and retried. */
+  heldForModel?: boolean;
   /** The owner already had this memory (REAL_LIFE_FIXES §2.4). */
   duplicate?: boolean;
   /** Earlier memories this one changes (REAL_LIFE_FIXES_2 §8.2). */
@@ -538,6 +540,11 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
       const personaName = formatPersonaDisplayName(drainResult.parkedPersona);
       return plainResponse(
         `I couldn't file that yet: ${describeSaveFailure(drainResult.reason ?? 'unknown_persona')} (${personaName}). I've kept it and will file it once a ${personaName} vault is available.`,
+      );
+    }
+    if (drainResult.heldForModel === true) {
+      return plainResponse(
+        `I've kept that, but your AI provider isn't answering right now, so I can't tell which vault it belongs in. I'll file it once it answers.`,
       );
     }
     if (drainResult.failedReason !== undefined) {
@@ -808,6 +815,10 @@ async function rememberOwnerWords(thread: string, words: string): Promise<Rememb
   }
   if (r.parkedPersona !== undefined) {
     return { status: 'parked', personas: [r.parkedPersona], reason: r.reason ?? 'unknown_persona' };
+  }
+  // REQ-19: held, not failed; it is filed once the model answers.
+  if (r.heldForModel === true) {
+    return { status: 'pending_unlock', personas: [], reason: 'kept; filed once the AI provider answers' };
   }
   if (r.failedReason !== undefined) return { status: 'failed', personas: [], reason: r.failedReason };
   return { status: 'pending_unlock', personas: [], reason: 'filing shortly' };

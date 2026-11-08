@@ -171,6 +171,7 @@ import type {
 } from './core-client';
 import type { StoredChatMessage } from '../chat/repository';
 import type { QuarantinedMessage } from '../d2d/quarantine';
+import type { PromisesAndWaits } from '../promises/view';
 
 // ---------------------------------------------------------------------------
 // DI abstractions — injected by the platform
@@ -1709,6 +1710,21 @@ export class HttpCoreTransport implements CoreClient {
       'reminderListPending',
     );
     return Array.isArray(raw.reminders) ? raw.reminders : [];
+  }
+
+  async promisesList(now?: number): Promise<PromisesAndWaits> {
+    const query = now !== undefined ? { now: String(now) } : undefined;
+    const raw = await this.call<Partial<PromisesAndWaits>>(
+      'GET',
+      '/v1/promises',
+      query,
+      undefined,
+      'promisesList',
+    );
+    return {
+      items: Array.isArray(raw.items) ? raw.items : [],
+      missing: Array.isArray(raw.missing) ? raw.missing : [],
+    };
   }
 
   async reminderComplete(id: string): Promise<Reminder | null> {

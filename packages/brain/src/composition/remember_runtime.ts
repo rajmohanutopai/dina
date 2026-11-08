@@ -118,6 +118,25 @@ export interface RememberTurnResult {
 const DEFAULT_PERSONA = 'general';
 
 /**
+ * REQ-19 (docs/STATE_MACHINES.md): the model did not answer, so no vault was
+ * chosen. The drain holds the item and tries again; nothing is filed.
+ */
+export class RememberModelUnavailableError extends Error {
+  readonly code = 'model_unavailable';
+  constructor() {
+    super('model_unavailable: the model did not answer, so no vault was chosen');
+    this.name = 'RememberModelUnavailableError';
+  }
+}
+
+export function isRememberModelUnavailable(err: unknown): boolean {
+  return (
+    err instanceof RememberModelUnavailableError ||
+    (typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'model_unavailable')
+  );
+}
+
+/**
  * Build the remember pipeline. Returns a `run` function the drain
  * calls per item. The tool registry is reconstructed per call because
  * each item gets its own `RememberSideEffects` collector — tools
@@ -254,6 +273,12 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
         userMessage,
       });
 
+      // REQ-19: with no answer from the model nothing chose a vault. Filing
+      // it in the default vault would put a health or money fact where any
+      // agent with that vault reads it; the drain holds the item instead.
+      if (result.finishReason === 'provider_error' && collect.routes.length === 0) {
+        throw new RememberModelUnavailableError();
+      }
       return {
         sideEffects: collect,
         text: result.answer ?? '',

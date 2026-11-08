@@ -127,6 +127,7 @@ import type {
   ReasoningCompletion,
   ReasoningFailRequest,
   ReasoningFailure,
+  PromisesAndWaits,
 } from '@dina/core';
 
 /** One captured call — method name + positional args passed. */
@@ -1330,6 +1331,13 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('reminderListByPersona', [persona], () =>
       this.reminders.filter((r) => r.persona === persona),
     );
+  }
+
+  /** What `promisesList` answers; tests set it. */
+  promises: PromisesAndWaits = { items: [], missing: [] };
+
+  async promisesList(now?: number): Promise<PromisesAndWaits> {
+    return this.dispatch('promisesList', [now], () => this.promises);
   }
 
   async reminderListPending(now?: number): Promise<Reminder[]> {

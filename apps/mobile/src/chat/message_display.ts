@@ -32,6 +32,7 @@ export type DisplayType =
   | 'quote-request-draft'
   | 'ucp-comparison'
   | 'export'
+  | 'promise-offer'
   | 'nudge'
   | 'reminder'
   | 'briefing';
@@ -129,6 +130,11 @@ export function toDisplayType(m: ChatMessage): DisplayType {
   if (m.type === 'dina' && lifecycle?.kind === 'export') {
     return 'export';
   }
+  // promise_offer card (PROMISES_AND_WAITS.md §4): a promise found in a Talk
+  // message, with Track it / Not now.
+  if (m.type === 'dina' && lifecycle?.kind === 'promise_offer') {
+    return 'promise-offer';
+  }
   if (m.type === 'dina') return 'dina';
   if (m.type === 'nudge') return 'nudge';
   if (m.type === 'reminder') return 'reminder';
@@ -158,6 +164,8 @@ export function chatRowKind(displayType: DisplayType): string {
       return 'ucp-comparison';
     case 'export':
       return 'export';
+    case 'promise-offer':
+      return 'promise-offer';
     case 'quarantine-request':
       return 'quarantine';
     case 'ask-approval':

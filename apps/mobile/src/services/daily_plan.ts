@@ -266,7 +266,7 @@ export async function shouldAutoPlan(now: number = Date.now()): Promise<boolean>
 }
 
 /** The model, through the shared router (PII scrubbed on the way out). */
-function routerAsk(): PlannerAsk | null {
+export function routerAsk(): PlannerAsk | null {
   const router = peekAgenticRouter();
   if (router === null) return null;
   return async ({ systemPrompt, user, responseSchema, maxTokens }) => {

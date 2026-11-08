@@ -21,6 +21,7 @@ import {
   OWNER_DIRECT_SOURCES,
   StaleStagingClaimError,
 } from '../../staging/service';
+import { STAGING_MODEL_UNAVAILABLE } from '../../staging/state_machine';
 
 import type { CoreRouter } from '../router';
 
@@ -333,7 +334,11 @@ export function registerStagingRoutes(router: CoreRouter): void {
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const id = typeof body.id === 'string' ? body.id : '';
     try {
-      fail(id, undefined, claimTokenOf(body));
+      // REQ-19: a closed code from Brain; any other reason is not stored.
+      const modelDown = body.reason === STAGING_MODEL_UNAVAILABLE;
+      fail(id, modelDown ? STAGING_MODEL_UNAVAILABLE : undefined, claimTokenOf(body), {
+        holdForModel: modelDown,
+      });
       const item = getItem(id);
       return { status: 200, body: { id, retry_count: item?.retry_count ?? 0 } };
     } catch (err) {

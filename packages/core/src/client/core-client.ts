@@ -1274,6 +1274,13 @@ export interface CoreClient {
   reminderListPending(now?: number): Promise<Reminder[]>;
 
   /**
+   * Every promise and wait Dina knows of (docs/PROMISES_AND_WAITS.md): what
+   * the owner is owed and owes, late first. `missing` names sources that
+   * could not be read just now.
+   */
+  promisesList(now?: number): Promise<PromisesAndWaits>;
+
+  /**
    * Mark a reminder complete. Returns the next occurrence for a recurring
    * reminder, else `null`. Backs the UI's "Mark Done" on lite-web (where
    * the reminder store lives in Core's process, not the browser).
@@ -2017,6 +2024,7 @@ export interface ServiceRespondResult {
 import type { TopicKind } from '../memory/domain';
 import type { StoredNotificationItem } from '../notifications/repository';
 import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
+import type { PromisesAndWaits } from '../promises/view';
 import type { WorkflowEvent } from '../workflow/domain';
 export type { WorkflowEvent };
 

@@ -157,6 +157,8 @@ import {
   type ServiceQueryOrchestrator,
   type ToolRegistry,
   type WorkflowEventConsumer,
+  noteTalkMessage,
+  setTalkPromiseRunner,
   type WorkflowEventDeliverer,
   AppViewClient,
 } from '@dina/brain';
@@ -244,6 +246,7 @@ import {
   stashPendingPreflight,
   takePendingPreflight,
 } from './pending_preflight';
+import { installTalkPromises } from './promises';
 import { clearRuntimeWarning, emitRuntimeWarning } from './runtime_warnings';
 import { installServerNotifications } from './server_notifications';
 import { resolveServiceConfigCoreClient } from './service_config_resolver';
@@ -1217,6 +1220,10 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
     // correlating workflow-task path the main-chat `query_service` tool uses.
     setServiceQueryDispatcher(orchestrator);
     globalDisposers.push(whileOwner(() => setServiceQueryDispatcher(null)));
+    // PROMISES_AND_WAITS.md §4: a promise in a Talk message is offered on a
+    // card in the owner's chat.
+    installTalkPromises();
+    globalDisposers.push(whileOwner(() => setTalkPromiseRunner(null)));
     // Contact Services seam 2: route a scheduling intent in a Talk thread to
     // THAT contact. We resolve the contact's prior `service.offer` (grant +
     // listing) from `contact_service_offers`; with one in hand, fire a
@@ -1621,26 +1628,7 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           // copy is authoritative; this is a UI fan-out only. Only
           // conversational types land here — trust/safety/social come
           // through as free-form text too.
-          onStagedD2D: ({ senderDID, messageType, body, senderCreatedTime }) => {
-            if (!isChatRenderableType(messageType)) return;
-            const text = extractChatText(body);
-            if (text === null) return;
-            // `type: 'dina'` renders left-aligned; the renderer checks
-            // metadata.source === 'd2d' to label with the peer's name
-            // instead of "Dina".
-            //
-            // `senderCreatedTime` (Unix ms) carries the sender's wire
-            // timestamp from the verified DinaMessage envelope. When
-            // present we use it as the message's `timestamp` so a
-            // burst of messages that arrives out-of-order (MsgBox
-            // replay-on-reconnect, network jitter) still renders
-            // chronologically. Falls back to receive-time only when
-            // the sender didn't provide one. MT-19-I2.
-            addMessage(senderDID, 'dina', text, {
-              metadata: { source: 'd2d', senderDID, messageType },
-              ...(senderCreatedTime !== undefined ? { timestamp: senderCreatedTime } : {}),
-            });
-          },
+          onStagedD2D: fanOutStagedD2D,
           // A stranger's message decrypted + verified but isn't from a
           // contact, so the pipeline quarantined it. Surface a review card
           // in the main chat thread so the message doesn't silently vanish
@@ -2053,6 +2041,41 @@ const CHAT_RENDERABLE_TYPES = new Set<string>([
   MsgTypeTrustVouchResponse,
   MsgTypeSafetyAlert,
 ]);
+
+/**
+ * Staged non-service D2D → the sender's Talk thread, so the People screen and
+ * /chat/[did] see it live. The vault copy is authoritative; this is a UI
+ * fan-out only. Only conversational types land here.
+ *
+ * `type: 'dina'` renders left-aligned; the renderer checks
+ * `metadata.source === 'd2d'` to label it with the peer's name. The sender's
+ * wire time (`senderCreatedTime`, from the verified envelope) orders a burst
+ * that arrived out of order (MT-19-I2). A promise in the message is offered
+ * for tracking in the background (PROMISES_AND_WAITS.md §4).
+ */
+export function fanOutStagedD2D(info: {
+  senderDID: string;
+  messageType: string;
+  body: string;
+  senderCreatedTime?: number;
+}): void {
+  const { senderDID, messageType, body, senderCreatedTime } = info;
+  if (!isChatRenderableType(messageType)) return;
+  const text = extractChatText(body);
+  if (text === null) return;
+  const talk = addMessage(senderDID, 'dina', text, {
+    metadata: { source: 'd2d', senderDID, messageType },
+    ...(senderCreatedTime !== undefined ? { timestamp: senderCreatedTime } : {}),
+  });
+  noteTalkMessage({
+    talkMessageId: talk.id,
+    contactDid: senderDID,
+    contactName: '',
+    text,
+    fromOwner: false,
+    now: Date.now(),
+  });
+}
 
 function isChatRenderableType(t: string): boolean {
   return CHAT_RENDERABLE_TYPES.has(t);

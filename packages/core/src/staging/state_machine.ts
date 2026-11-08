@@ -114,6 +114,17 @@ export function stagingRetryDelaySeconds(retryCount: number): number {
 }
 
 /**
+ * REQ-19 (docs/STATE_MACHINES.md): the reason Brain gives when the model did
+ * not answer, so it could not choose a vault. Such a row is held, not filed
+ * in General and not spent against its retries, for its first day.
+ */
+export const STAGING_MODEL_UNAVAILABLE = 'model_unavailable';
+/** How long a held row waits before the next try. */
+export const STAGING_MODEL_HOLD_SECONDS = 10 * 60;
+/** Holding stops this long after the row arrived; the normal retries follow. */
+export const STAGING_MODEL_HOLD_LIMIT_SECONDS = 24 * 60 * 60;
+
+/**
  * Check if a state transition is valid.
  */
 export function isValidTransition(from: StagingStatus, to: StagingStatus): boolean {

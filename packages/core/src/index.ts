@@ -1279,6 +1279,8 @@ export * from './plan/day';
 export * from './plan/goal_rules';
 export * from './plan/routines';
 export * from './plan/day_rules';
+export * from './promises/view';
+export * from './promises/track';
 
 // USER_BACKUP.md: the sealed copy, its keys, the store client and the runner.
 export * from './backup/keys';

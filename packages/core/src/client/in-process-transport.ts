@@ -171,6 +171,7 @@ import type {
 } from './core-client';
 import type { StoredChatMessage } from '../chat/repository';
 import type { QuarantinedMessage } from '../d2d/quarantine';
+import type { PromisesAndWaits } from '../promises/view';
 import type { CoreRouter, CoreRequest, CoreResponse } from '../server/router';
 
 /**
@@ -1757,6 +1758,22 @@ export class InProcessTransport implements CoreClient {
     if (res.status !== 200) return [];
     const raw = (res.body ?? {}) as { reminders?: Reminder[] };
     return Array.isArray(raw.reminders) ? raw.reminders : [];
+  }
+
+  async promisesList(now?: number): Promise<PromisesAndWaits> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'GET',
+        path: '/v1/promises',
+        query: now !== undefined ? { now: String(now) } : {},
+      }),
+    );
+    if (res.status !== 200) throw new Error(`promisesList: HTTP ${res.status}`);
+    const raw = (res.body ?? {}) as Partial<PromisesAndWaits>;
+    return {
+      items: Array.isArray(raw.items) ? raw.items : [],
+      missing: Array.isArray(raw.missing) ? raw.missing : [],
+    };
   }
 
   async reminderListPending(now?: number): Promise<Reminder[]> {

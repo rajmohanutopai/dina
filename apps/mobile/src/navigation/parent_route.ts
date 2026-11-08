@@ -109,6 +109,7 @@ const SECTION_PARENTS: Record<string, string> = {
   plan: '/goals',
   goals: '/',
   goal: '/goals',
+  promises: '/',
   help: '/',
 };
 

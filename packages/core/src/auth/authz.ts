@@ -533,6 +533,9 @@ const AUTHZ_RULES: {
   { prefix: '/v1/reminder', allowed: new Set(['admin', 'brain', 'device']) },
   { prefix: '/v1/reminders', allowed: new Set(['admin', 'brain', 'device']) },
 
+  // Promises and waits (docs/PROMISES_AND_WAITS.md) — read-only; never agents.
+  { prefix: '/v1/promises', allowed: new Set(['admin', 'brain', 'owner', 'device']), method: 'GET', exact: true },
+
   // Daily plan (docs/DAILY_PLAN.md §6) — the owner's agents send tasks and
   // read back their own tasks' state. The origin is the signed caller DID.
   { prefix: '/v1/plan/inbox', allowed: new Set(['admin', 'device', 'agent']), method: 'POST', exact: true },

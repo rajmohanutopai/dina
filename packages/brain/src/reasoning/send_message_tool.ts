@@ -13,6 +13,7 @@
 
 import { getCurrentOwnerTurn, proveOwnerWords } from '../chat/owner_turns';
 import { addMessage } from '../chat/thread';
+import { noteTalkMessage } from '../promises/offer';
 
 import type { AgentTool } from './tool_registry';
 import type { CoreClient } from '@dina/core';
@@ -48,8 +49,17 @@ export function createSendMessageTool(opts: {
       const out = await opts.core.talkSend({ proof: proven.proof, contact, proposedText });
       if (out.status === 'sent' && out.recipient_did !== undefined && out.text !== undefined) {
         // The outgoing message also shows in the contact's Talk thread.
-        addMessage(out.recipient_did, 'user', out.text, {
+        const sent = addMessage(out.recipient_did, 'user', out.text, {
           metadata: { source: 'd2d', peerDID: out.recipient_did, deliveryStatus: 'delivered' },
+        });
+        // A promise in what the owner sent is offered for tracking.
+        noteTalkMessage({
+          talkMessageId: sent.id,
+          contactDid: out.recipient_did,
+          contactName: out.recipient_name ?? '',
+          text: out.text,
+          fromOwner: true,
+          now: sent.timestamp,
         });
       }
       if (out.status === 'confirm_pending') {

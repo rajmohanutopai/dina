@@ -315,7 +315,28 @@ export interface ExportLifecycle {
   };
 }
 
+/**
+ * `promise_offer` lifecycle (docs/PROMISES_AND_WAITS.md §4) — a promise Brain
+ * found in a Talk message, offered for tracking. `open` until the owner
+ * answers: `tracked` (a plan task was made, `taskId`) or `dismissed`. Keyed by
+ * the Talk message, so one message is offered once.
+ */
+export interface PromiseOfferLifecycle {
+  kind: 'promise_offer';
+  status: 'open' | 'tracked' | 'dismissed';
+  /** The Talk message the promise was in. */
+  talkMessageId: string;
+  contactDid: string;
+  contactName: string;
+  /** `owed_to_me`: the contact promised. `owed_by_me`: the owner did. */
+  direction: 'owed_to_me' | 'owed_by_me';
+  what: string;
+  dueAt: number | null;
+  taskId?: string;
+}
+
 export type MessageLifecycle =
+  | PromiseOfferLifecycle
   | ServiceQueryLifecycle
   | MissingCapabilityLifecycle
   | AskPendingLifecycle
@@ -855,6 +876,9 @@ export function addLifecycleMessage(
     case 'export':
       key = lifecycle.exportId;
       break;
+    case 'promise_offer':
+      key = lifecycle.talkMessageId;
+      break;
   }
   return addMessage(threadId, 'dina', content, {
     metadata: { lifecycle: lifecycle as unknown as Record<string, unknown> },
@@ -937,6 +961,17 @@ export function readLifecycle(msg: ChatMessage): MessageLifecycle | null {
     const m = lc.manifest as { personas?: unknown } | null;
     if (typeof m !== 'object' || m === null || !Array.isArray(m.personas)) return null;
     return lc as unknown as ExportLifecycle;
+  }
+  if (lc.kind === 'promise_offer') {
+    if (lc.status !== 'open' && lc.status !== 'tracked' && lc.status !== 'dismissed') return null;
+    if (typeof lc.talkMessageId !== 'string' || lc.talkMessageId === '') return null;
+    if (typeof lc.contactDid !== 'string' || lc.contactDid === '') return null;
+    if (typeof lc.contactName !== 'string') return null;
+    if (lc.direction !== 'owed_to_me' && lc.direction !== 'owed_by_me') return null;
+    if (typeof lc.what !== 'string' || lc.what.trim() === '') return null;
+    if (lc.dueAt !== null && (typeof lc.dueAt !== 'number' || !Number.isFinite(lc.dueAt)))
+      return null;
+    return lc as unknown as PromiseOfferLifecycle;
   }
   if (lc.kind === 'ucp_comparison') {
     if (typeof lc.searchId !== 'string' || lc.searchId === '') return null;

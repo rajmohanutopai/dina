@@ -212,6 +212,15 @@ export interface OwnerTaskInput {
   blockedBy?: string[];
   routineId?: string;
   routineDay?: string;
+  /**
+   * The owner's own key for where the task came from (a Talk promise:
+   * `talk:<contact DID>:<message id>`). Unique among the owner's tasks, so the
+   * same thing is never added twice.
+   */
+  sourceRef?: string;
+  /** Who the owner is waiting on, as shown to them. */
+  waitingOn?: string;
+  waitingUntil?: number | null;
 }
 
 export interface TaskPatch {
@@ -455,6 +464,16 @@ export class PlanStore {
       .map(taskFromRow);
   }
 
+  /** The owner's task with this `sourceRef`, or null. */
+  getOwnerTaskBySourceRef(sourceRef: string): PlanTask | null {
+    if (sourceRef === '') return null;
+    const rows = this.db.query(
+      `SELECT ${TASK_COLUMNS} FROM plan_tasks WHERE origin = ? AND source_ref = ?`,
+      [OWNER_ORIGIN, sourceRef],
+    );
+    return rows.length > 0 ? taskFromRow(rows[0]) : null;
+  }
+
   addOwnerTask(input: OwnerTaskInput, now: number): PlanTask {
     const task: PlanTask = {
       id: newPlanId('task'),
@@ -462,7 +481,7 @@ export class PlanStore {
       title: input.title,
       summary: input.summary ?? '',
       source: input.source ?? 'manual',
-      sourceRef: '',
+      sourceRef: input.sourceRef ?? '',
       link: input.link ?? '',
       dueAt: input.dueAt ?? null,
       effortMin: input.effortMin ?? null,
@@ -478,8 +497,8 @@ export class PlanStore {
       doneAt: null,
       phaseId: input.phaseId ?? '',
       blockedBy: input.blockedBy ?? [],
-      waitingOn: '',
-      waitingUntil: null,
+      waitingOn: input.waitingOn ?? '',
+      waitingUntil: (input.waitingOn ?? '') === '' ? null : (input.waitingUntil ?? null),
       routineId: input.routineId ?? '',
       routineDay: input.routineDay ?? '',
       openedAt: now,

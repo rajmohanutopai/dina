@@ -41,6 +41,7 @@ import { InlineGroupPlanCard } from '../src/components/InlineGroupPlanCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
+import { InlinePromiseOfferCard } from '../src/components/InlinePromiseOfferCard';
 import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
 import { InlineExportCard } from '../src/components/InlineExportCard';
 import { InlineQuoteRequestDraftCard } from '../src/components/InlineQuoteRequestDraftCard';
@@ -419,6 +420,13 @@ export default function ChatScreen() {
         return (
           <View testID="chat-card-quote-request-draft">
             <InlineQuoteRequestDraftCard message={item} />
+          </View>
+        );
+      }
+      if (item.displayType === 'promise-offer') {
+        return (
+          <View testID="chat-card-promise-offer">
+            <InlinePromiseOfferCard message={item} />
           </View>
         );
       }

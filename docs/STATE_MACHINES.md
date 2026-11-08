@@ -80,7 +80,10 @@ Jest alone missed these. All are fixed, each with a test.
 | Simulator, MRS-07 | PH-S06: the phone's `lazyCoreClient` lacked the agent-read methods added on 2026-10-08, so every agent ask on a phone fell to the deny-all guard. Nothing leaked, but an agent could read nothing and the owner never saw a card. Older than this round | The client carries them and throws before boot (`ask_core_client`) |
 | Simulator, MRS-07 | PH-S07: the confirm for an agent's access called the owner's paired device "someone not in your contacts (no params)" | It names the vault and says the grant lasts an hour (`vault_access_confirm`) |
 | Browser, judged suite | PH-S08: on the web, a menu row picked while Dina starts navigated but left the menu's backdrop over the screen, taking every tap until a later render. React Native Web removes a Modal when its fade ends, and that end was lost | On the web a closed menu unmounts at once. The boot gate also covers the app while it checks instead of hiding it, since browsers run no animations under `display: none` (`gate_keeps_app`, proven by mutation; `remember_recall` in the judged suite) |
-| Browser, judged suite | REQ-19 (open, needs a decision): when the model call fails before the remember loop chooses a vault, the drain files the item in General "with confidence 1". A model outage puts health and finance facts where any agent with General access reads them | Not fixed. Throwing instead keeps them out, but then `/remember` says "the vault would not accept it" and, once the bounded retries run out, the fact is never stored. The choice between the two is the owner's; see Known limits |
+| Simulator, 2026-11-08 (promises run) | PH-S12: the same `lazyCoreClient` lacked 14 methods the owner's chat tools check for before registering (`talkSend`, `promisesList`, `forgetPropose`, `ownerExportPrepare`, the spending-limit, standing-reply and deal-value methods). On the phone, "tell Sancho I'm coming tomorrow morning" answered "I can't send messages from here", and those tools never appeared. Jest and the web bed pass full clients, so neither saw it. Older than this round | The client carries them, through the node's Brain-side Core client as on the server. `ask_core_client` now reads every `typeof … === 'function'` check in `agentic_ask.ts` and requires the phone's client to have it, so a new tool cannot miss the phone again. Rerun on the simulator: "tell Sancho" sent, and Sancho's node stored it |
+| Simulator, 2026-11-08 (promises run) | PH-S13: a Talk message was stored in the vault as its bare words, with its author only in metadata. Sancho's "I will send you the deck by Friday" made the remember loop set a reminder "Send the deck to Sancho today", and Ask once called it the owner's promise | Fixed. The drain gives a contact's message its author's name, "Sancho wrote to you: …", in what the remember loop reads and in the stored summary, body and L0; structured bodies with no text stay as they are; the owner's own memories are unchanged (`brain/__tests__/integration/d2d_attribution.test.ts`). Rerun on the simulator: Sancho's "I will bring the signed lease on Thursday" now sets "Sancho bringing the signed lease is tomorrow" |
+| Simulator, 2026-11-08 (promises run) | PH-S14: in a long chat, Ask repeated and "corrected" its own earlier replies, once saying a message it had sent was never sent. Earlier turns' tool results were not in the history, so a claim from a past turn looked unsupported under the rule "only say you did something when a tool reported it" | Fixed. An owner chat turn now carries the earlier turns' action receipts (already kept on each turn for the action-claims guard) as "Done earlier in this conversation", and the rule counts them; earlier replies are reopened only when this turn's tool results show they were wrong (`brain/__tests__/composition/earlier_actions.test.ts`). Rerun on the simulator in the same long thread: "Did you send my message to Sancho?" answered "Yes", with the text |
+| Browser, judged suite | REQ-19: when the model call failed before the remember loop chose a vault, the drain filed the item in General "with confidence 1". A model outage put health and finance facts where any agent with General access reads them | Fixed 2026-11-08. The remember runtime throws `RememberModelUnavailableError`; the drain fails the item with the closed code `model_unavailable`; Core holds such a row for its first 24 hours, retrying every 10 minutes without spending a retry, then the normal retries apply. `/remember` says the fact is kept and the AI provider isn't answering. Tests: `core/__tests__/staging/model_hold.test.ts`, `brain/__tests__/integration/remember_model_down.test.ts` (real runtime, drain and Core: held through an outage, then filed in Health once the model answers), `orchestrator.test.ts`, `home-node/__tests__/chat_runtime_held.test.ts` |
 
 Model note: on the web test stack Brain runs on Gemini. The default `gemini-3.5-flash` fails every call for this project's key, while `gemini-2.5-flash` (the judge's model) works. The judged suite ran with Brain on `gemini-2.5-flash`. On the simulator Dina runs on Claude Haiku 5.5 through the key in Settings.
 
@@ -145,7 +148,7 @@ These were taken without asking, as the safe option. Each can be changed.
 ### Known limits of the fixes
 
 
-- REQ-19 is open. When the model fails before the remember loop picks a vault (an outage, or a 429 from a rate-limited key), the fact is filed in General. Throwing instead keeps sensitive facts out of General, but `/remember` then says "the vault would not accept it" and the fact is lost once retries run out. Holding the item until the model answers, and saying so, would avoid both; that needs a decision on how long to hold it.
+- REQ-19, fixed 2026-11-08 with a reversible choice ("fix everything"): a fact met by a model outage is held for up to 24 hours from when it arrived, tried every 10 minutes, and spends no retry in that time. After 24 hours the normal retries (60 s, 15 min, 6 h) and dead-letter apply. To change the window, edit `STAGING_MODEL_HOLD_SECONDS` and `STAGING_MODEL_HOLD_LIMIT_SECONDS` in `core/src/staging/state_machine.ts`.
 - TT-01: past 64 unverified frames in memory, the rest wait for a reconnect.
 - TT-15: if both the revoke and its retry marker fail to write and the node restarts, the revoke is lost. The route tells the owner it is unfinished.
 - TT-11: the retry answer for pairing lives in memory until the code expires.
@@ -2319,6 +2322,25 @@ Files: `src/services/change_passphrase.ts`, `src/services/vault_salt_store.ts`.
 | pinned | change passphrase | same salt, new wrap | `change_passphrase.ts:87-94` |
 | pinned | sign out | kept | by design |
 | pinned | erase or orphan sweep | cleared | `install_marker.ts:88` |
+
+#### PH-M18. Promise card from Talk (explicit: `promise_offer` lifecycle `status`), added 2026-11-08
+
+Built after the audit (docs/PROMISES_AND_WAITS.md §4). States: no card, `open`, `tracked`, `dismissed`.
+
+Invariants:
+- At most one card per Talk message. The card's `sources` carries `promise:<talk message id>`, checked before and after the model call.
+- At most one plan task per Talk message. The task's `sourceRef` is `talk:<contact DID>:<message id>`, unique among the owner's tasks (`plan_tasks(origin, source_ref)`). Tracking again returns the same task.
+- `tracked` and `dismissed` are final. A second tap, or a stale card, changes nothing.
+- No model, a failed call or a muddled answer makes no card.
+
+| From | Event | To | Guard | Location |
+|------|-------|----|-------|----------|
+| no card | Talk message sent or received; the model finds a promise | `open` | no card for this message yet, before and after the call | `brain/src/promises/offer.ts` `offerTalkPromise` |
+| `open` | Track it | `tracked` + plan task (a wait owed to the owner; a task due on its date for the owner's own promise) | still `open` | `mobile/src/services/promises.ts` `trackPromiseOffer`, `core/src/promises/track.ts` |
+| `open` | Not now | `dismissed` | still `open` | `mobile/src/services/promises.ts` `dismissPromiseOffer` |
+| `tracked`, `dismissed` | any answer | same | | same |
+
+Tests: `core/__tests__/promises/promises_view.test.ts`, `brain/__tests__/promises/talk_promises.test.ts` (two checks of one message at once make one card), `mobile/__tests__/services/promises.test.tsx`.
 
 ---
 

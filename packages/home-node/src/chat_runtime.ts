@@ -113,6 +113,10 @@ export function wireChatRememberRuntime(
       if (item?.status === 'parked') {
         return { persona: null, parkedPersona: item.persona, reason: item.reason ?? 'unknown_persona' };
       }
+      // REQ-19: the model did not answer; Core holds the item and retries.
+      if (item?.status === 'failed' && item.reason === 'model_unavailable') {
+        return { persona: null, heldForModel: true };
+      }
       if (item?.status === 'failed') {
         return { persona: null, failedReason: item.reason ?? 'storage_error' };
       }

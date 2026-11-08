@@ -65,7 +65,7 @@ import { classifyDeterministic, HUMAN_CONNECTION_KINDS, preScreenMessage, type A
 import { checkActionClaims, receiptsFromToolCalls } from '../guardian/action_claims';
 import { checkRegulated, evidenceFromToolResults } from '../guardian/regulated';
 import { removeSentences, scanResponse, splitSentences, stripViolations } from '../guardian/guard_scan';
-import { earlierReceipts, storeTurnReceipts } from '../chat/turn_receipts';
+import { earlierActionsBlock, earlierReceipts, storeTurnReceipts } from '../chat/turn_receipts';
 import { reloadLoadedThreads } from '../chat/thread';
 import {
   resumeAgenticTurn,
@@ -457,6 +457,19 @@ export function buildAgenticExecuteFn(args: {
       },
     );
     if (history.length > 0) promptForTurn = `${promptForTurn}\n\n${outsideDataRule(fence)}`;
+    // PH-S14: what earlier turns did, from their receipts, so the model does
+    // not read its own past "I've sent it" as unsupported and take it back.
+    if (isOwnerChat && history.length > 0) {
+      try {
+        const done = earlierActionsBlock(
+          earlierReceipts(input.conversation ?? '', input.question),
+          pipeline.ownerTimeZone !== undefined ? await pipeline.ownerTimeZone() : undefined,
+        );
+        if (done !== '') promptForTurn = `${promptForTurn}\n\n${done}`;
+      } catch {
+        /* the records are help, never a reason to fail the turn */
+      }
+    }
     if (humanDirective !== '') promptForTurn = `${promptForTurn}\n\n${humanDirective}`;
     // REAL_LIFE_FIXES_2 §7.2: an agent's question is answered from the
     // owner's vault before general knowledge, so a question about the

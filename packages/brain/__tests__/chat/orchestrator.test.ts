@@ -132,6 +132,16 @@ describe('Chat Orchestrator', () => {
       expect(result.response).not.toContain('Got it');
     });
 
+    it('REQ-19: with the model down, says the fact is kept and why, never that the vault refused it', async () => {
+      setRememberDrainHook(async () => ({ persona: null, heldForModel: true }));
+
+      const result = await handleChat('/remember my blood pressure was 150/95');
+      expect(result.response).toContain("I've kept that");
+      expect(result.response).toContain("isn't answering");
+      expect(result.response).not.toContain("couldn't save");
+      expect(result.response).not.toContain('Stored in');
+    });
+
     it('a failed save says so (REAL_LIFE_FIXES §2.2)', async () => {
       setRememberDrainHook(async () => ({ persona: null, failedReason: 'storage_error' }));
 

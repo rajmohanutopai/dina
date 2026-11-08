@@ -49,6 +49,7 @@ import { registerAntiHerClassifier } from '../guardian/anti_her_classify';
 import { DEFAULT_SENSITIVE_PERSONAS, LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
+import { createListPromisesTool } from '../promises/list_promises_tool';
 import {
   createDelegateToA2AAgentTool,
   createListA2AAgentsTool,
@@ -462,6 +463,11 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       // DAILY_PLAN.md §10: the owner's to-dos and goals, where the plan
       // store lives in this process (the phone).
       for (const tool of createPlanTools()) reg.register(tool);
+      // PROMISES_AND_WAITS.md: what the owner is owed and owes, joined.
+      const promisesCore = input.coreClient as Partial<Pick<CoreClient, 'promisesList'>>;
+      if (typeof promisesCore.promisesList === 'function') {
+        reg.register(createListPromisesTool({ core: promisesCore as Pick<CoreClient, 'promisesList'> }));
+      }
       // REAL_LIFE_FIXES §7: message a contact on the owner's word.
       const talkCore = input.coreClient as Partial<Pick<CoreClient, 'talkSend'>>;
       if (typeof talkCore.talkSend === 'function') {

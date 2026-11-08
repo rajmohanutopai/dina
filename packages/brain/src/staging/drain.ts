@@ -28,6 +28,7 @@ import {
 } from '@dina/core';
 import { type Reminder } from '@dina/core/reminders';
 
+import { isRememberModelUnavailable } from '../composition/remember_runtime';
 import { enrichItem as enrichVaultItem } from '../enrichment/pipeline';
 import {
   touchTopicsForItem,
@@ -81,6 +82,20 @@ const LEASE_HEARTBEAT_EXTENSION_SECONDS = 15 * 60;
  * first text-bearing field; any non-JSON / unrecognised body falls back to
  * the raw string so nothing is ever dropped.
  */
+/**
+ * A contact's message as stored and read: "Sancho wrote to you: …". A Talk
+ * body arrives as JSON (`{"text": …}`); its text is used. Exported for tests.
+ */
+export function attributeMessage(authorName: string, raw: string): string {
+  const text = d2dMessageText(raw);
+  // Structured JSON with no text in it stays as it is: something may parse it.
+  if (text.trim() === '' || (raw.trim().startsWith('{') && text === raw)) return raw;
+  return `${authorName} wrote to you: ${text}`;
+}
+
+/** The reason a held item carries (Core's `STAGING_MODEL_UNAVAILABLE`). */
+const MODEL_UNAVAILABLE = 'model_unavailable';
+
 function d2dMessageText(raw: string): string {
   const trimmed = raw.trim();
   if (trimmed.startsWith('{')) {
@@ -454,13 +469,21 @@ export async function runStagingDrainTick(
           });
         }
       }
+      // PH-S13 (docs/STATE_MACHINES.md): a message from a contact is stored
+      // and read with its author named. Its "I" is the sender, so bare words
+      // ("I will send you the deck") read later as the owner's own note, and
+      // the loop set the owner a reminder to do the sender's task.
+      const authorName =
+        ingressChannel.toLowerCase() === 'd2d' ? (senderIdentity?.name.trim() ?? '') : '';
+      const attributed = (text: string): string =>
+        authorName !== '' && text.trim() !== '' ? attributeMessage(authorName, text) : text;
       // A run() failure (e.g. transient LLM/network error) re-throws so
       // the item stays claimed and retries on the next tick — never a
       // silent keyword-only store.
       let turn: RememberTurnResult;
       try {
         turn = await options.rememberRuntime.run({
-          memoryText,
+          memoryText: attributed(memoryText),
           sourceItemId: itemId,
           metadata: {
             type: classifyInput.type,
@@ -621,8 +644,8 @@ export async function runStagingDrainTick(
         source: pickString('source'),
         sender: pickString('sender'),
         timestamp: originalTimestamp,
-        summary: pick('summary') !== undefined ? pickString('summary') : undefined,
-        body: pickString('body'),
+        summary: pick('summary') !== undefined ? attributed(pickString('summary')) : undefined,
+        body: attributed(pickString('body')),
         sender_trust: senderScore.sender_trust,
       });
       // Yield again after embedding generation (another network + vector-math
@@ -680,6 +703,9 @@ export async function runStagingDrainTick(
         retrieval_policy: senderScore.retrieval_policy,
         ...(d2dContactDid !== '' ? { contact_did: d2dContactDid } : {}),
         ...(d2dAuthorPersonId !== '' ? { author_person_id: d2dAuthorPersonId } : {}),
+        // PH-S13: the stored words name their author (see `attributed`).
+        ...(authorName !== '' && pickString('body') !== '' ? { body: attributed(pickString('body')) } : {}),
+        ...(authorName !== '' && pickString('summary') !== '' ? { summary: attributed(pickString('summary')) } : {}),
         // REAL_LIFE_FIXES_2 §8.2: the earlier memory this one changes; Core
         // keeps the link only if that item exists in an open persona.
         ...(turn.sideEffects.changes !== undefined && turn.sideEffects.changes.length > 0
@@ -1129,8 +1155,14 @@ export async function runStagingDrainTick(
       results.push(result);
     } catch (err) {
       failed++;
-      const reason = err instanceof Error ? err.message : String(err);
-      log({ event: 'staging.drain.item_failed', item_id: itemId, error: reason });
+      // REQ-19: a model outage is held by Core, not spent as a retry.
+      const modelDown = isRememberModelUnavailable(err);
+      const reason = modelDown
+        ? MODEL_UNAVAILABLE
+        : err instanceof Error
+          ? err.message
+          : String(err);
+      log({ event: 'staging.drain.item_failed', item_id: itemId, error: modelDown ? MODEL_UNAVAILABLE : reason });
       try {
         if (claimToken !== undefined) await core.stagingFail(itemId, reason, claimToken);
         else await core.stagingFail(itemId, reason);
@@ -1146,7 +1178,7 @@ export async function runStagingDrainTick(
         persona: 'general',
         status: 'failed',
         enriched: false,
-        reason: 'storage_error',
+        reason: modelDown ? MODEL_UNAVAILABLE : 'storage_error',
       });
     } finally {
       stopHeartbeat();

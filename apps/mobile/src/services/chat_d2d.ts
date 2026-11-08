@@ -24,6 +24,7 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { noteTalkMessage } from '@dina/brain';
 import {
   addMessage,
   addLifecycleMessage,
@@ -345,6 +346,16 @@ export async function sendChatMessage(peerDID: string, text: string): Promise<Ch
     await sender(peerDID, MsgTypeCoordinationRequest, { text: trimmed });
     updateMessageMetadataById(peerDID, msg.id, {
       deliveryStatus: 'delivered' satisfies D2DDeliveryStatus,
+    });
+    // A promise in what the owner sent is offered for tracking
+    // (PROMISES_AND_WAITS.md §4). In the background; never fails the send.
+    noteTalkMessage({
+      talkMessageId: msg.id,
+      contactDid: peerDID,
+      contactName: '',
+      text: trimmed,
+      fromOwner: true,
+      now: msg.timestamp,
     });
     return msg;
   } catch (err) {

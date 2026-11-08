@@ -165,6 +165,9 @@ export * from './briefing/providers';
 export * from './plan/day_planner';
 export * from './plan/goal_planner';
 export * from './plan/plan_tools';
+export * from './promises/find_promise';
+export * from './promises/offer';
+export * from './promises/list_promises_tool';
 export { AppViewClient, AppViewError } from './appview_client/http';
 export type {
   AppViewClientOptions,

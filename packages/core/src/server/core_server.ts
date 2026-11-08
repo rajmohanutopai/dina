@@ -57,6 +57,7 @@ import { registerPluginInstallRoutes } from './routes/plugin_install';
 import { registerPluginInvokeRoutes } from './routes/plugin_invoke';
 import { registerPluginUpdateRoutes } from './routes/plugin_updates';
 import { registerPolicyRoutes } from './routes/policy';
+import { registerPromiseRoutes } from './routes/promises';
 import { registerReasoningRoutes, type ReasoningRouteOptions } from './routes/reasoning';
 import { registerPlanRoutes } from './routes/plan';
 import { registerReminderRoutes } from './routes/reminders';
@@ -219,6 +220,9 @@ export function createCoreRouter(options: CoreRouterOptions = {}): CoreRouter {
   // Core's process). Mobile Brain shares the process and calls the
   // reminder service directly, so it never hits these routes.
   registerReminderRoutes(router);
+
+  // Promises and waits (docs/PROMISES_AND_WAITS.md): one read-only list.
+  registerPromiseRoutes(router);
 
   // Notification log (R4-03) — the durable inbox backing. On the split server
   // Brain dual-writes through these routes into identity.sqlite; mobile Brain

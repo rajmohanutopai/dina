@@ -782,7 +782,7 @@ export function createShowGoalTool(opts: PlanToolOptions = {}): AgentTool {
   return {
     name: 'show_goal',
     description:
-      'Read where one of the user\'s goals stands: its phases, what is next, who they are waiting on, money, and any phase running late. Use it for "how is the house going?", "what am I waiting on?", "how much have I spent?". Answer briefly from the result. Goals change on the Goals page too, so call this rather than answering from earlier messages.',
+      'Read where one of the user\'s goals stands: its phases, what is next, who they are waiting on, money, and any phase running late. Use it for "how is the house going?", "what am I waiting on for the house?", "how much have I spent?". For everything the user is waiting on or promised, across goals and elsewhere, use list_promises. Answer briefly from the result. Goals change on the Goals page too, so call this rather than answering from earlier messages.',
     parameters: {
       type: 'object',
       properties: { goal: { type: 'string', description: 'The goal, by its title or id.' } },

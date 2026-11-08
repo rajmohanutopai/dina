@@ -5,9 +5,9 @@
  * hold names and message text, so forgetting a person scrubs them (§4.4).
  */
 
-import { getRecentMessages, updateMessageMetadataById } from './thread';
+import { receiptLine, type ActionReceipt } from '../guardian/action_claims';
 
-import type { ActionReceipt } from '../guardian/action_claims';
+import { getRecentMessages, updateMessageMetadataById } from './thread';
 
 const KEEP_TURNS = 10;
 
@@ -37,4 +37,19 @@ export function earlierReceipts(thread: string, question: string): ActionReceipt
     if (Array.isArray(r)) out.push(...(r as ActionReceipt[]));
   }
   return out;
+}
+
+/**
+ * PH-S14 (docs/STATE_MACHINES.md): the earlier turns' receipts, for the
+ * model. The history carries Dina's earlier replies but not their tool
+ * results, so under "say only what a tool reported" a past "I've sent it"
+ * looked unsupported and the model took it back. Empty when there are none.
+ */
+export function earlierActionsBlock(receipts: readonly ActionReceipt[], timeZone?: string): string {
+  if (receipts.length === 0) return '';
+  const lines = receipts.map((r) => `- ${receiptLine(r, true, timeZone)}`);
+  return [
+    'Done earlier in this conversation, from Dina\'s own records. Each line is an action a tool carried out in an earlier turn: it happened. Do not take it back or say it was not done.',
+    ...lines,
+  ].join('\n');
 }

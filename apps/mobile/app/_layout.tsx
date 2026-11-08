@@ -132,6 +132,7 @@ type NavMenuItem =
 const NAV_MENU_ITEMS: NavMenuItem[] = [
   { feature: 'vault', href: '/vault' },
   { href: '/goals', label: 'My Goals', ionicon: 'flag-outline' },
+  { href: '/promises', label: 'Promises and Waits', ionicon: 'hourglass-outline' },
   { feature: 'reminders', href: '/reminders' },
   { href: '/orders', label: 'My Orders', ionicon: 'receipt-outline' },
   { href: '/catalog', label: 'My Catalog', ionicon: 'pricetags-outline' },
@@ -1082,6 +1083,14 @@ export default function RootLayout() {
                     title: 'Today',
                     // DAILY_PLAN.md §9 — reached from My Goals and from a
                     // check-in notification.
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
+                />
+                <Tabs.Screen
+                  name="promises"
+                  options={{
+                    title: 'Promises and Waits',
                     href: null,
                     headerLeft: renderHeaderBackButton,
                   }}

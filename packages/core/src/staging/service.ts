@@ -42,6 +42,8 @@ import {
   isItemExpired,
   retainedPastTtl,
   stagingRetryDelaySeconds,
+  STAGING_MODEL_HOLD_LIMIT_SECONDS,
+  STAGING_MODEL_HOLD_SECONDS,
 } from './state_machine';
 
 export { CHAT_AUTO_SOURCE, OWNER_MEMORY_SOURCES };
@@ -1023,7 +1025,12 @@ export function resolveMulti(
  * Optionally stores an error message for debugging/audit
  * (matching Go's error column in staging inbox).
  */
-export function fail(id: string, errorMessage?: string, claimToken?: string): void {
+export function fail(
+  id: string,
+  errorMessage?: string,
+  claimToken?: string,
+  opts: { holdForModel?: boolean } = {},
+): void {
   const repo = getStagingRepository();
   const item = repo ? repo.get(id) : (inbox.get(id) ?? null);
   if (!item) throw new Error(`staging: item "${id}" not found`);
@@ -1034,9 +1041,16 @@ export function fail(id: string, errorMessage?: string, claimToken?: string): vo
   assertHoldsClaim(item, claimToken);
 
   item.status = 'failed';
-  item.retry_count += 1;
+  // REQ-19: while the model is down, a row in its first day waits and tries
+  // again without spending a retry; the owner's fact is neither lost nor
+  // filed where the model did not choose.
+  const now = nowSeconds();
+  const holding =
+    opts.holdForModel === true && now - item.created_at < STAGING_MODEL_HOLD_LIMIT_SECONDS;
+  if (!holding) item.retry_count += 1;
   // A failed row's lease is its retry time: the sweep requeues it when this passes.
-  item.lease_until = nowSeconds() + stagingRetryDelaySeconds(item.retry_count);
+  item.lease_until =
+    now + (holding ? STAGING_MODEL_HOLD_SECONDS : stagingRetryDelaySeconds(item.retry_count));
   if (errorMessage) {
     item.error = errorMessage;
   }
