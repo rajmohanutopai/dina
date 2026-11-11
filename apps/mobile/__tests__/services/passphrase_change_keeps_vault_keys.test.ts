@@ -17,9 +17,10 @@
  * key derivation. `keysWith` derives exactly as unlock does.
  */
 
-import { derivePersonaDEK, unwrapSeed, wrapSeed } from '@dina/core';
 import { bytesToHex } from '@noble/hashes/utils.js';
 import * as Keychain from 'react-native-keychain';
+
+import { derivePersonaDEK, unwrapSeed, wrapSeed } from '@dina/core';
 
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { changeVaultPassphrase } from '../../src/services/change_passphrase';

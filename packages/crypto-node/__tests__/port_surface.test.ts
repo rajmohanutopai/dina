@@ -69,7 +69,7 @@ describe('NodeCryptoAdapter — port-surface coverage audit (3.29)', () => {
       ['randomBytes', adapter.randomBytes(8)],
     ];
 
-    for (const [name, p] of calls) {
+    for (const [_name, p] of calls) {
       expect(p).toBeInstanceOf(Promise);
       // Swallow errors — individual per-method files assert correctness;
       // here we only care about the shape contract.

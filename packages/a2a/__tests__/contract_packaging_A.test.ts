@@ -10,7 +10,16 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -46,7 +55,9 @@ function workspaces(): Map<string, string> {
 
 const WORKSPACES = workspaces();
 const dinaDeps = (m: Manifest, withDev: boolean): string[] =>
-  Object.keys({ ...m.dependencies, ...(withDev ? m.devDependencies : {}) }).filter((n) => n.startsWith('@dina/'));
+  Object.keys({ ...m.dependencies, ...(withDev ? m.devDependencies : {}) }).filter((n) =>
+    n.startsWith('@dina/'),
+  );
 
 /** The workspace packages an app needs: its own @dina deps (dev too, npm ci installs them) and theirs, transitively. */
 function closure(appDir: string): string[] {
@@ -66,25 +77,34 @@ function closure(appDir: string): string[] {
 /** The lines of one Dockerfile stage, from its FROM to the next. */
 function stage(text: string, name: string): string[] {
   const lines = text.split('\n');
-  const start = lines.findIndex((l) => new RegExp(`^FROM\\s+\\S+\\s+AS\\s+${name}\\s*$`, 'i').test(l));
+  const start = lines.findIndex((l) =>
+    new RegExp(`^FROM\\s+\\S+\\s+AS\\s+${name}\\s*$`, 'i').test(l),
+  );
   if (start === -1) throw new Error(`no stage ${name}`);
   const end = lines.findIndex((l, i) => i > start && /^FROM\s/i.test(l));
   return lines.slice(start, end === -1 ? undefined : end);
 }
 
-const indexOf = (lines: string[], pattern: RegExp): number => lines.findIndex((l) => pattern.test(l));
+const indexOf = (lines: string[], pattern: RegExp): number =>
+  lines.findIndex((l) => pattern.test(l));
 const escape = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 describe('the lockfile knows @dina/a2a (notes M2: npm ci refused a tree without it)', () => {
-  const lock = readJson<{ packages: Record<string, { name?: string; resolved?: string; link?: boolean; dependencies?: Record<string, string> }> }>(
-    'package-lock.json',
-  );
+  const lock = readJson<{
+    packages: Record<
+      string,
+      { name?: string; resolved?: string; link?: boolean; dependencies?: Record<string, string> }
+    >;
+  }>('package-lock.json');
 
   // Plan X-3
   it('lists packages/a2a as a workspace and links node_modules/@dina/a2a to it', () => {
     expect(WORKSPACES.get('@dina/a2a')).toBe('packages/a2a');
     expect(lock.packages['packages/a2a']?.name).toBe('@dina/a2a');
-    expect(lock.packages['node_modules/@dina/a2a']).toMatchObject({ resolved: 'packages/a2a', link: true });
+    expect(lock.packages['node_modules/@dina/a2a']).toMatchObject({
+      resolved: 'packages/a2a',
+      link: true,
+    });
   });
 
   // Plan X-3
@@ -94,10 +114,19 @@ describe('the lockfile knows @dina/a2a (notes M2: npm ci refused a tree without 
       return m.dependencies?.['@dina/a2a'] !== undefined;
     });
     expect(dependents.map(([name]) => name)).toEqual(
-      expect.arrayContaining(['@dina/core', '@dina/brain', '@dina/home-node', '@dina/appview', '@dina/home-node-lite-a2a-gateway']),
+      expect.arrayContaining([
+        '@dina/core',
+        '@dina/brain',
+        '@dina/home-node',
+        '@dina/appview',
+        '@dina/home-node-lite-a2a-gateway',
+      ]),
     );
     for (const [name, dir] of dependents) {
-      expect([name, lock.packages[dir]?.dependencies?.['@dina/a2a']]).toEqual([name, expect.any(String)]);
+      expect([name, lock.packages[dir]?.dependencies?.['@dina/a2a']]).toEqual([
+        name,
+        expect.any(String),
+      ]);
     }
   });
 });
@@ -124,8 +153,18 @@ describe('npm ci accepts the tree as committed (notes M2: npm ci refused a tree 
 
   /** `npm ci` as a dry run: no network, no scripts, its own cache and logs, none of the npm settings of the run that started jest. */
   const npmCi = (dir: string): string => {
-    const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !k.toLowerCase().startsWith('npm_')));
-    const args = ['ci', '--dry-run', '--offline', '--ignore-scripts', '--no-audit', '--no-fund', '--no-update-notifier'];
+    const env = Object.fromEntries(
+      Object.entries(process.env).filter(([k]) => !k.toLowerCase().startsWith('npm_')),
+    );
+    const args = [
+      'ci',
+      '--dry-run',
+      '--offline',
+      '--ignore-scripts',
+      '--no-audit',
+      '--no-fund',
+      '--no-update-notifier',
+    ];
     args.push('--cache', join(dir, '.npm-cache'), '--logs-dir', join(dir, '.npm-logs'));
     return execFileSync('npm', args, { cwd: dir, env, encoding: 'utf8', stdio: 'pipe' });
   };
@@ -142,30 +181,22 @@ describe('npm ci accepts the tree as committed (notes M2: npm ci refused a tree 
   };
 
   // Plan X-3
-  it(
-    'installs from the committed lockfile and manifests',
-    () => {
-      const dir = join(tmp, 'as-committed');
-      manifestTree(dir, read('package-lock.json'));
-      expect(refusal(dir)).toBe('');
-    },
-    120_000,
-  );
+  it('installs from the committed lockfile and manifests', () => {
+    const dir = join(tmp, 'as-committed');
+    manifestTree(dir, read('package-lock.json'));
+    expect(refusal(dir)).toBe('');
+  }, 120_000);
 
   // Plan X-3
-  it(
-    'refuses the same tree once the lockfile drops @dina/a2a, the M2 fault',
-    () => {
-      const lock = readJson<{ packages: Record<string, unknown> }>('package-lock.json');
-      expect(lock.packages['packages/a2a']).toBeDefined();
-      delete lock.packages['packages/a2a'];
-      delete lock.packages['node_modules/@dina/a2a'];
-      const dir = join(tmp, 'without-a2a');
-      manifestTree(dir, JSON.stringify(lock, null, 2));
-      expect(refusal(dir)).toMatch(/Missing: @dina\/a2a@\S+ from lock file/);
-    },
-    120_000,
-  );
+  it('refuses the same tree once the lockfile drops @dina/a2a, the M2 fault', () => {
+    const lock = readJson<{ packages: Record<string, unknown> }>('package-lock.json');
+    expect(lock.packages['packages/a2a']).toBeDefined();
+    delete lock.packages['packages/a2a'];
+    delete lock.packages['node_modules/@dina/a2a'];
+    const dir = join(tmp, 'without-a2a');
+    manifestTree(dir, JSON.stringify(lock, null, 2));
+    expect(refusal(dir)).toMatch(/Missing: @dina\/a2a@\S+ from lock file/);
+  }, 120_000);
 });
 
 /**
@@ -187,7 +218,9 @@ function liteBuilderProblems(lines: string[], appDir: string): string[] {
       .map((name) => `${name} manifest`),
     ...(before(appDir) ? [] : [`${appDir} manifest`]),
     ...(after(/^COPY packages\/ \.\/packages\/$/) ? [] : ['packages sources']),
-    ...(after(new RegExp(`^COPY ${escape(appDir)}/ \\./${escape(appDir)}/$`)) ? [] : [`${appDir} sources`]),
+    ...(after(new RegExp(`^COPY ${escape(appDir)}/ \\./${escape(appDir)}/$`))
+      ? []
+      : [`${appDir} sources`]),
   ];
 }
 
@@ -197,10 +230,13 @@ describe('every lite image carries @dina/a2a and the rest of its workspace graph
     ['apps/home-node-lite/docker/Dockerfile.core', 'apps/home-node-lite/core-server'],
     ['apps/home-node-lite/docker/Dockerfile.brain', 'apps/home-node-lite/brain-server'],
     ['apps/home-node-lite/docker/Dockerfile.a2a-gateway', 'apps/home-node-lite/a2a-gateway'],
-  ])('%s copies the manifest of every package %s needs before npm ci, then their sources', (dockerfile, appDir) => {
-    expect(closure(appDir)).toContain('@dina/a2a');
-    expect(liteBuilderProblems(stage(read(dockerfile), 'builder'), appDir)).toEqual([]);
-  });
+  ])(
+    '%s copies the manifest of every package %s needs before npm ci, then their sources',
+    (dockerfile, appDir) => {
+      expect(closure(appDir)).toContain('@dina/a2a');
+      expect(liteBuilderProblems(stage(read(dockerfile), 'builder'), appDir)).toEqual([]);
+    },
+  );
 
   // Plan X-3
   it('names the manifest a builder leaves out, or copies only after npm ci', () => {
@@ -211,13 +247,18 @@ describe('every lite image carries @dina/a2a and the rest of its workspace graph
       expect(kept).toHaveLength(lines.length - 1);
       return kept;
     };
-    const moved = (pattern: RegExp): string[] => [...without(pattern), ...lines.filter((l) => pattern.test(l))];
+    const moved = (pattern: RegExp): string[] => [
+      ...without(pattern),
+      ...lines.filter((l) => pattern.test(l)),
+    ];
     const appManifest = /^COPY apps\/home-node-lite\/a2a-gateway\/package\.json /;
     const a2aManifest = /^COPY packages\/a2a\/package\.json /;
     expect(liteBuilderProblems(without(appManifest), appDir)).toEqual([`${appDir} manifest`]);
     expect(liteBuilderProblems(moved(appManifest), appDir)).toEqual([`${appDir} manifest`]);
     expect(liteBuilderProblems(without(a2aManifest), appDir)).toEqual(['@dina/a2a manifest']);
-    expect(liteBuilderProblems(without(/^COPY packages\/ \.\/packages\/$/), appDir)).toEqual(['packages sources']);
+    expect(liteBuilderProblems(without(/^COPY packages\/ \.\/packages\/$/), appDir)).toEqual([
+      'packages sources',
+    ]);
   });
 });
 
@@ -238,27 +279,39 @@ describe('AppView builds and tests the @dina/a2a it ships (notes M5 step 3)', ()
   const appviewDeps = closure('appview');
 
   // Plan X-3
-  it.each(['builder', 'migrator', 'runner'])('the %s stage installs every workspace package AppView needs, @dina/a2a among them', (name) => {
-    expect(appviewDeps).toContain('@dina/a2a');
-    const lines = stage(dockerfile, name);
-    const install = indexOf(lines, /^RUN npm ci\b/);
-    expect(install).toBeGreaterThan(0);
-    for (const dep of [...appviewDeps, '@dina/appview']) {
-      const dir = WORKSPACES.get(dep) as string;
-      expect([dep, (lines[install] ?? '').includes(`--workspace ${dep}`)]).toEqual([dep, true]);
-      const at = indexOf(lines, new RegExp(`^COPY ${escape(dir)}/package\\.json ${escape(dir)}/$`));
-      expect([dep, at >= 0 && at < install]).toEqual([dep, true]);
-    }
-  });
+  it.each(['builder', 'migrator', 'runner'])(
+    'the %s stage installs every workspace package AppView needs, @dina/a2a among them',
+    (name) => {
+      expect(appviewDeps).toContain('@dina/a2a');
+      const lines = stage(dockerfile, name);
+      const install = indexOf(lines, /^RUN npm ci\b/);
+      expect(install).toBeGreaterThan(0);
+      for (const dep of [...appviewDeps, '@dina/appview']) {
+        const dir = WORKSPACES.get(dep) as string;
+        expect([dep, (lines[install] ?? '').includes(`--workspace ${dep}`)]).toEqual([dep, true]);
+        const at = indexOf(
+          lines,
+          new RegExp(`^COPY ${escape(dir)}/package\\.json ${escape(dir)}/$`),
+        );
+        expect([dep, at >= 0 && at < install]).toEqual([dep, true]);
+      }
+    },
+  );
 
   // Plan X-3
   it('builds @dina/a2a in the builder before AppView compiles, and ships only that build', () => {
     const builder = stage(dockerfile, 'builder');
     expect(appviewBuilderProblems(builder)).toEqual([]);
     // A builder that never copies the a2a sources fails the check.
-    expect(appviewBuilderProblems(builder.filter((l) => !/^COPY packages\/a2a\/ packages\/a2a\/$/.test(l)))).toContain('a2a sources');
+    expect(
+      appviewBuilderProblems(
+        builder.filter((l) => !/^COPY packages\/a2a\/ packages\/a2a\/$/.test(l)),
+      ),
+    ).toContain('a2a sources');
     const runner = stage(dockerfile, 'runner');
-    expect(indexOf(runner, /^COPY --from=builder \/repo\/packages\/a2a\/dist packages\/a2a\/dist\/$/)).toBeGreaterThan(0);
+    expect(
+      indexOf(runner, /^COPY --from=builder \/repo\/packages\/a2a\/dist packages\/a2a\/dist\/$/),
+    ).toBeGreaterThan(0);
     expect(indexOf(runner, /^COPY packages\/a2a\/ /)).toBe(-1);
   });
 
@@ -278,13 +331,18 @@ describe('AppView builds and tests the @dina/a2a it ships (notes M5 step 3)', ()
     const triggers = workflow.slice(workflow.indexOf('\non:'), workflow.indexOf('\njobs:'));
     const push = triggers.slice(triggers.indexOf('push:'), triggers.indexOf('pull_request:'));
     const pr = triggers.slice(triggers.indexOf('pull_request:'));
-    const deps = Object.keys(readJson<Manifest>('appview/package.json').dependencies ?? {}).filter((d) =>
-      d.startsWith('@dina/'),
+    const deps = Object.keys(readJson<Manifest>('appview/package.json').dependencies ?? {}).filter(
+      (d) => d.startsWith('@dina/'),
     );
-    expect(deps).toEqual(expect.arrayContaining(['@dina/ucp', '@dina/net-policy', '@dina/net-socket-node']));
+    expect(deps).toEqual(
+      expect.arrayContaining(['@dina/ucp', '@dina/net-policy', '@dina/net-socket-node']),
+    );
     for (const dep of deps)
       for (const block of [push, pr])
-        expect([dep, block.includes(`- "packages/${dep.slice('@dina/'.length)}/**"`)]).toEqual([dep, true]);
+        expect([dep, block.includes(`- "packages/${dep.slice('@dina/'.length)}/**"`)]).toEqual([
+          dep,
+          true,
+        ]);
   });
 
   // Plan X-3
@@ -294,7 +352,10 @@ describe('AppView builds and tests the @dina/a2a it ships (notes M5 step 3)', ()
     const scripts = appview.scripts ?? {};
     expect(scripts['build:protocol']).toContain('--prefix ../packages/a2a run build');
     for (const name of ['test:unit', 'test:integration', 'test:all', 'typecheck', 'build']) {
-      expect([name, (scripts[name] ?? '').startsWith('npm run build:protocol && ')]).toEqual([name, true]);
+      expect([name, (scripts[name] ?? '').startsWith('npm run build:protocol && ')]).toEqual([
+        name,
+        true,
+      ]);
     }
     // The build starts from an empty dist, so a deleted source file leaves nothing behind.
     expect(a2a.scripts?.build).toMatch(/^rm -rf dist && tsc\b/);
@@ -302,7 +363,11 @@ describe('AppView builds and tests the @dina/a2a it ships (notes M5 step 3)', ()
     expect(a2a.exports?.['.']?.compiled?.default).toBe('./dist/index.js');
     expect(read('appview/vitest.config.ts')).toMatch(/conditions:\s*\['compiled'\]/);
     // CI checks out no dist to be stale: git never tracks one.
-    expect(read('.gitignore').split('\n').map((l) => l.trim())).toContain('dist/');
+    expect(
+      read('.gitignore')
+        .split('\n')
+        .map((l) => l.trim()),
+    ).toContain('dist/');
     // The CI steps run those scripts, never vitest on its own.
     const workflow = read('.github/workflows/appview-test.yml');
     expect(workflow).toContain('npm run test:unit --workspace @dina/appview');

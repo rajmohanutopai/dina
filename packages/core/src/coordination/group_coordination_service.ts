@@ -897,7 +897,13 @@ export async function applyGroupSlotMove(
   }
   const read = await readGroupPlan(planId, over);
   const plan = read.ok ? read.plan : null;
-  const slot = slotFromMove(plan, { planId, turn, result: input.result, input: input.input, nowMs });
+  const slot = slotFromMove(plan, {
+    planId,
+    turn,
+    result: input.result,
+    input: input.input,
+    nowMs,
+  });
   if (slot === null) return 'owner_picks';
   // `chooseSlot` checks the slot again under the plan's lock: a fold that
   // moved meanwhile refuses it, and the owner picks.
@@ -990,7 +996,10 @@ type DeleteOutcome =
   | { ok: true; removed: boolean }
   | { ok: false; refusal: 'cancellations_pending'; detail: string };
 
-async function deleteUnderLock(planId: string, deps: GroupCoordinationDeps): Promise<DeleteOutcome> {
+async function deleteUnderLock(
+  planId: string,
+  deps: GroupCoordinationDeps,
+): Promise<DeleteOutcome> {
   const plan = deps.plans.get(planId);
   if (plan === null) return { ok: true, removed: false };
   // A guest keeps no booking for a plan its organiser deleted. The owner's

@@ -46,9 +46,7 @@ const LIVE_BODY = {
   categories: [{ id: 'live_cat' }],
   // Policy-complete (intent_routable + requires_subject_authorization) — a
   // live catalog missing these is treated as a stale snapshot and degraded.
-  capabilities: [
-    { id: 'live_cap', intent_routable: true, requires_subject_authorization: false },
-  ],
+  capabilities: [{ id: 'live_cap', intent_routable: true, requires_subject_authorization: false }],
 };
 
 describe('resolveCatalog — live wins, else bundled (spec §2)', () => {
@@ -168,18 +166,28 @@ describe('defaultDiscoverabilityForCapabilities — safest catalog default (spec
   });
 
   it('a custom (unknown-to-catalog) capability defaults to unlisted (#13)', () => {
-    expect(defaultDiscoverabilityForCapabilities(['com.acme.widget_price'], catalog)).toBe('unlisted');
+    expect(defaultDiscoverabilityForCapabilities(['com.acme.widget_price'], catalog)).toBe(
+      'unlisted',
+    );
   });
 
   it('the MOST restrictive default wins across a mixed selection', () => {
     // public + known_only → known_only
-    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'deploy_status'], catalog)).toBe('known_only');
+    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'deploy_status'], catalog)).toBe(
+      'known_only',
+    );
     // public + unlisted → unlisted
-    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'appointment_status'], catalog)).toBe('unlisted');
+    expect(
+      defaultDiscoverabilityForCapabilities(['eta_query', 'appointment_status'], catalog),
+    ).toBe('unlisted');
     // public + known_only (school, post-taxonomy flip) → known_only
-    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'school_homework_status'], catalog)).toBe('known_only');
+    expect(
+      defaultDiscoverabilityForCapabilities(['eta_query', 'school_homework_status'], catalog),
+    ).toBe('known_only');
     // public official + custom → unlisted (custom contributes unlisted)
-    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'com.acme.thing'], catalog)).toBe('unlisted');
+    expect(defaultDiscoverabilityForCapabilities(['eta_query', 'com.acme.thing'], catalog)).toBe(
+      'unlisted',
+    );
   });
 });
 
@@ -208,7 +216,9 @@ describe('fetchLiveCatalog — fail-soft (spec §2)', () => {
   });
 
   it('returns null on non-2xx, network error, and bad JSON', async () => {
-    expect(await fetchLiveCatalog('https://a', mockFetch({ ok: false, status: 503 }).fetch)).toBeNull();
+    expect(
+      await fetchLiveCatalog('https://a', mockFetch({ ok: false, status: 503 }).fetch),
+    ).toBeNull();
     expect(await fetchLiveCatalog('https://a', mockFetch({ networkError: true }).fetch)).toBeNull();
     expect(await fetchLiveCatalog('https://a', mockFetch({ jsonThrows: true }).fetch)).toBeNull();
   });
@@ -223,12 +233,17 @@ describe('loadCatalog — live when valid, else bundled (never empty, never reje
 
   it('returns bundled on failure (non-2xx / network / empty URL)', async () => {
     expect((await loadCatalog('https://a', mockFetch({ ok: false }).fetch)).source).toBe('bundled');
-    expect((await loadCatalog('https://a', mockFetch({ networkError: true }).fetch)).source).toBe('bundled');
+    expect((await loadCatalog('https://a', mockFetch({ networkError: true }).fetch)).source).toBe(
+      'bundled',
+    );
     expect((await loadCatalog('', mockFetch({ body: LIVE_BODY }).fetch)).source).toBe('bundled');
   });
 
   it('returns bundled on a structurally-empty live response', async () => {
-    const c = await loadCatalog('https://a', mockFetch({ body: { categories: [], capabilities: [] } }).fetch);
+    const c = await loadCatalog(
+      'https://a',
+      mockFetch({ body: { categories: [], capabilities: [] } }).fetch,
+    );
     expect(c.source).toBe('bundled');
   });
 });

@@ -34,22 +34,7 @@ import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import { createCoreRouter } from '../../src/server/core_server';
-import {
-  getWorkflowRepository,
-  InMemoryWorkflowRepository,
-  setWorkflowRepository,
-} from '../../src/workflow/repository';
-
-import {
-  WorkflowService,
-  setWorkflowService,
-  getWorkflowService,
-} from '../../src/workflow/service';
-import type { CoreRequest, CoreResponse } from '../../src/server/router';
-
-import type { WorkflowTask } from '../../src/workflow/domain';
-
-import { WorkflowTaskState } from '../../src/workflow/domain';
+import { setD2DSender } from '../../src/server/routes/d2d_msg';
 import { setServiceQuerySender } from '../../src/server/routes/service_query';
 import { setServiceRespondSender } from '../../src/server/routes/service_respond';
 import {
@@ -57,11 +42,24 @@ import {
   resetServiceConfigState,
   setServiceConfig,
 } from '../../src/service/service_config';
-import { setD2DSender } from '../../src/server/routes/d2d_msg';
 import {
   setServiceGrantRepository,
   type ServiceGrant,
 } from '../../src/service/service_grant_repository';
+import { WorkflowTaskState } from '../../src/workflow/domain';
+import {
+  getWorkflowRepository,
+  InMemoryWorkflowRepository,
+  setWorkflowRepository,
+} from '../../src/workflow/repository';
+import {
+  WorkflowService,
+  setWorkflowService,
+  getWorkflowService,
+} from '../../src/workflow/service';
+
+import type { CoreRequest } from '../../src/server/router';
+import type { WorkflowTask } from '../../src/workflow/domain';
 
 interface Actor {
   did: string;

@@ -17,17 +17,25 @@ import type { GrantMode } from '../../agent/grant_repository';
 import type { CoreRequest, CoreResponse } from '../router';
 
 function isBrain(req: CoreRequest): boolean {
-  return req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  return (
+    req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined)
+  );
 }
 
 /** The authority a request carries: absent, a resolved record, or a refusal. */
 export function askAuthorityOf(
   req: CoreRequest,
-): { kind: 'none' } | { kind: 'ok'; authority: AskAuthority } | { kind: 'refuse'; response: CoreResponse } {
+):
+  | { kind: 'none' }
+  | { kind: 'ok'; authority: AskAuthority }
+  | { kind: 'refuse'; response: CoreResponse } {
   const raw = req.query.ask_authority;
   if (raw === undefined || raw === '') return { kind: 'none' };
   if (!isBrain(req)) {
-    return { kind: 'refuse', response: { status: 403, body: { error: 'ask_authority_brain_only' } } };
+    return {
+      kind: 'refuse',
+      response: { status: 403, body: { error: 'ask_authority_brain_only' } },
+    };
   }
   const authority = resolveAskAuthority(raw);
   if (authority === null) {
@@ -37,7 +45,11 @@ export function askAuthorityOf(
 }
 
 /** Whether the ask's requester may use `persona` in `mode` now (no side effects). */
-export function authorityMayAccess(authority: AskAuthority, persona: string, mode: GrantMode): boolean {
+export function authorityMayAccess(
+  authority: AskAuthority,
+  persona: string,
+  mode: GrantMode,
+): boolean {
   return (
     evaluateAgentPersonaAccess({
       agentDID: authority.requesterDid,

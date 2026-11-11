@@ -29,7 +29,10 @@ function review(overrides: Partial<Review> = {}): Review {
   };
 }
 
-function okBody(reviews: Review[] = [review()], cursor: string | null = null): Record<string, unknown> {
+function okBody(
+  reviews: Review[] = [review()],
+  cursor: string | null = null,
+): Record<string, unknown> {
   const body: Record<string, unknown> = { reviews, total: reviews.length };
   if (cursor !== null) body.cursor = cursor;
   return body;
@@ -58,10 +61,7 @@ describe('createReviewListClient (task 6.15)', () => {
   describe('happy path', () => {
     it('lists reviews by subject', async () => {
       const list = createReviewListClient({ fetchFn: stubFetch(okBody()) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
       expect(out.response.reviews).toHaveLength(1);
       expect(out.response.cursor).toBeNull();
@@ -112,10 +112,7 @@ describe('createReviewListClient (task 6.15)', () => {
         ],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(2);
       expect(out.response.reviews.map((r) => r.rating).sort()).toEqual([3, 5]);
     });
@@ -140,10 +137,7 @@ describe('createReviewListClient (task 6.15)', () => {
       const list = createReviewListClient({
         fetchFn: stubFetch(body as unknown as Record<string, unknown>),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(2);
     });
 
@@ -155,16 +149,10 @@ describe('createReviewListClient (task 6.15)', () => {
       ['id with at: but no //', { id: 'at:did:plc:abc' }],
     ])('parseResponse skips entry with %s', async (_label, override) => {
       const body = {
-        reviews: [
-          review(),
-          { ...review(), ...override },
-        ],
+        reviews: [review(), { ...review(), ...override }],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(1);
     });
 
@@ -175,16 +163,10 @@ describe('createReviewListClient (task 6.15)', () => {
       ['number author', { author: 42 as unknown as string }],
     ])('parseResponse skips entry with %s', async (_label, override) => {
       const body = {
-        reviews: [
-          review(),
-          { ...review(), ...override },
-        ],
+        reviews: [review(), { ...review(), ...override }],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(1);
     });
 
@@ -200,16 +182,10 @@ describe('createReviewListClient (task 6.15)', () => {
       ['rating=true', true],
     ])('parseResponse skips entry with %s', async (_label, rating) => {
       const body = {
-        reviews: [
-          review(),
-          { ...review(), rating: rating as unknown as number },
-        ],
+        reviews: [review(), { ...review(), rating: rating as unknown as number }],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(1);
     });
 
@@ -225,10 +201,7 @@ describe('createReviewListClient (task 6.15)', () => {
         ],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(3);
     });
 
@@ -238,16 +211,10 @@ describe('createReviewListClient (task 6.15)', () => {
       ['undefined summary', undefined],
     ])('parseResponse skips entry with %s', async (_label, summary) => {
       const body = {
-        reviews: [
-          review(),
-          { ...review(), summary: summary as unknown as string },
-        ],
+        reviews: [review(), { ...review(), summary: summary as unknown as string }],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(1);
     });
 
@@ -258,10 +225,7 @@ describe('createReviewListClient (task 6.15)', () => {
       // that "fixed" the summary to require non-empty surfaces.
       const body = { reviews: [{ ...review(), summary: '' }] };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(1);
       expect(out.response.reviews[0]?.summary).toBe('');
     });
@@ -278,10 +242,7 @@ describe('createReviewListClient (task 6.15)', () => {
         reviews: [{ ...review(), createdAtMs: createdAtMs as unknown as number }],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(kept ? 1 : 0);
     });
 
@@ -304,10 +265,7 @@ describe('createReviewListClient (task 6.15)', () => {
         ],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(8); // all entries kept
       const flagsByid = Object.fromEntries(
         out.response.reviews.map((r) => [r.id, r.verifiedActioned]),
@@ -340,14 +298,9 @@ describe('createReviewListClient (task 6.15)', () => {
         ],
       };
       const list = createReviewListClient({ fetchFn: stubFetch(body) });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.reviews).toHaveLength(6);
-      const ctxByid = Object.fromEntries(
-        out.response.reviews.map((r) => [r.id, r.context]),
-      );
+      const ctxByid = Object.fromEntries(out.response.reviews.map((r) => [r.id, r.context]));
       expect(ctxByid['at://x/r1']).toBe('transit');
       expect(ctxByid['at://x/r2']).toBe(''); // empty string preserved
       expect(ctxByid['at://x/r3']).toBeNull();
@@ -366,7 +319,11 @@ describe('createReviewListClient (task 6.15)', () => {
     });
 
     it('fires listed event with count + hasMore', async () => {
-      interface Ev { kind: 'listed'; count: number; hasMore: boolean }
+      interface Ev {
+        kind: 'listed';
+        count: number;
+        hasMore: boolean;
+      }
       const events: Ev[] = [];
       const list = createReviewListClient({
         fetchFn: stubFetch(okBody([review()], 'cursor')),
@@ -391,10 +348,13 @@ describe('createReviewListClient (task 6.15)', () => {
       ['non-integer limit', { subject: SUBJECT, limit: 1.5 }],
       ['cursor not string', { subject: SUBJECT, cursor: 42 as unknown as string }],
       ['cursor too long', { subject: SUBJECT, cursor: 'x'.repeat(513) }],
-      ['non-boolean verifiedActionedOnly', {
-        subject: SUBJECT,
-        verifiedActionedOnly: 'yes' as unknown as boolean,
-      }],
+      [
+        'non-boolean verifiedActionedOnly',
+        {
+          subject: SUBJECT,
+          verifiedActionedOnly: 'yes' as unknown as boolean,
+        },
+      ],
     ])('rejects %s', async (_label, input) => {
       const list = createReviewListClient({ fetchFn: stubFetch(okBody()) });
       const out = await list(input as ReviewListRequest);
@@ -483,11 +443,7 @@ describe('createReviewListClient (task 6.15)', () => {
   describe('events — rejected payloads (full reason taxonomy)', () => {
     interface RejectedEv {
       kind: 'rejected';
-      reason:
-        | 'invalid_input'
-        | 'network_error'
-        | 'rejected_by_appview'
-        | 'malformed_response';
+      reason: 'invalid_input' | 'network_error' | 'rejected_by_appview' | 'malformed_response';
     }
 
     function captureRejected(): {
@@ -643,10 +599,7 @@ describe('createReviewListClient (task 6.15)', () => {
       const list = createReviewListClient({
         fetchFn: stubFetch({ reviews: [review()], total: 47 }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.total).toBe(47);
     });
 
@@ -654,10 +607,7 @@ describe('createReviewListClient (task 6.15)', () => {
       const list = createReviewListClient({
         fetchFn: stubFetch({ reviews: [], total: 0 }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.total).toBe(0);
     });
 
@@ -674,10 +624,7 @@ describe('createReviewListClient (task 6.15)', () => {
           total: value as unknown as number,
         }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
     });
 
@@ -685,10 +632,7 @@ describe('createReviewListClient (task 6.15)', () => {
       const list = createReviewListClient({
         fetchFn: stubFetch({ reviews: [review(), review({ id: 'at://x/y' })] }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.total).toBe(2);
     });
   });
@@ -706,10 +650,7 @@ describe('createReviewListClient (task 6.15)', () => {
           cursor: 'opaque-token-abc123',
         }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.cursor).toBe('opaque-token-abc123');
     });
 
@@ -721,10 +662,7 @@ describe('createReviewListClient (task 6.15)', () => {
       const list = createReviewListClient({
         fetchFn: stubFetch({ reviews: [review()], cursor: '' }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.cursor).toBeNull();
     });
 
@@ -735,10 +673,7 @@ describe('createReviewListClient (task 6.15)', () => {
           cursor: 42 as unknown as string,
         }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.cursor).toBeNull();
     });
 
@@ -746,10 +681,7 @@ describe('createReviewListClient (task 6.15)', () => {
       const list = createReviewListClient({
         fetchFn: stubFetch({ reviews: [review()] }),
       });
-      const out = (await list({ subject: SUBJECT })) as Extract<
-        ReviewListOutcome,
-        { ok: true }
-      >;
+      const out = (await list({ subject: SUBJECT })) as Extract<ReviewListOutcome, { ok: true }>;
       expect(out.response.cursor).toBeNull();
     });
 

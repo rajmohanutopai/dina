@@ -23,11 +23,11 @@
  * a formality.
  */
 
+import { settleOwnerDecision } from '../../plugins/host_operation_completion';
 import { getPluginHostRuntime } from '../../plugins/host_operations';
 import { getPluginInstallRepository } from '../../plugins/registry';
-import { settleOwnerDecision } from '../../plugins/host_operation_completion';
-import { getWorkflowService } from '../../workflow/service';
 import { parsePluginEnvelope } from '../../workflow/plugin_envelope';
+import { getWorkflowService } from '../../workflow/service';
 
 import { makeOwnerGuard } from './owner_guard';
 
@@ -108,7 +108,10 @@ export function registerHostOperationRoutes(router: CoreRouter, ownerCapability?
       return { status: 409, body: { error: `proposal is already ${proposal.state}` } };
     }
     if (proposal.sourceEnvelopeJson === null) {
-      return { status: 409, body: { error: 'this proposal cannot be settled — no retained source' } };
+      return {
+        status: 409,
+        body: { error: 'this proposal cannot be settled — no retained source' },
+      };
     }
     const source = parsePluginEnvelope(proposal.sourceEnvelopeJson);
     if (source === null) {

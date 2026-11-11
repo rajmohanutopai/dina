@@ -98,7 +98,9 @@ describe('the projection revision: every card-affecting write bumps it, in its o
        VALUES ('pi-1', 'did:plc:pub', 'p', 'active', 'runner', 'bafy', '1.0.0', '{}', 'h', '{}', 'h', 'h', '{}', 1, 1)`,
     );
     expect(revision()).toBe(before + 1);
-    db.execute(`UPDATE plugin_installs SET status = 'paused', pause_reason = 'manual' WHERE install_id = 'pi-1'`);
+    db.execute(
+      `UPDATE plugin_installs SET status = 'paused', pause_reason = 'manual' WHERE install_id = 'pi-1'`,
+    );
     expect(revision()).toBe(before + 2);
     db.execute(`DELETE FROM plugin_installs WHERE install_id = 'pi-1'`);
     expect(revision()).toBe(before + 3);
@@ -137,9 +139,17 @@ describe('the row', () => {
     expect(setDirectoryListing(iw.world.store, true, iw.world.clock, newA2AId)).toEqual(
       expect.objectContaining({ listing_enabled: 1, card_projection_revision: before + 1 }),
     );
-    iw.world.store.db.execute(`UPDATE a2a_card_publication SET attempts = 3, next_retry_at = ? WHERE id = 1`, [iw.world.clock + 600_000]);
+    iw.world.store.db.execute(
+      `UPDATE a2a_card_publication SET attempts = 3, next_retry_at = ? WHERE id = 1`,
+      [iw.world.clock + 600_000],
+    );
     expect(setDirectoryListing(iw.world.store, false, iw.world.clock, newA2AId)).toEqual(
-      expect.objectContaining({ listing_enabled: 0, card_projection_revision: before + 2, attempts: 0, next_retry_at: null }),
+      expect.objectContaining({
+        listing_enabled: 0,
+        card_projection_revision: before + 2,
+        attempts: 0,
+        next_retry_at: null,
+      }),
     );
   });
 
@@ -149,7 +159,12 @@ describe('the row', () => {
     await save({ ...listing({ name: 'Closed' }), isDiscoverable: false }, 'closed');
     const r = make();
     expect(r.listing_enabled).toBe(0);
-    expect(publicationEligible({ ...r, publication_active: 1 }, { gatewayLive: true, projectableSkills: 2 })).toBe(false);
+    expect(
+      publicationEligible(
+        { ...r, publication_active: 1 },
+        { gatewayLive: true, projectableSkills: 2 },
+      ),
+    ).toBe(false);
   });
 });
 
@@ -178,7 +193,10 @@ describe('the publication predicate (design §8.2)', () => {
 });
 
 describe('the guarded steps: an attempt lands only on the state it was built on', () => {
-  const attemptFor = (r: PublicationRow, over: Partial<PublicationAttempt> = {}): PublicationAttempt => ({
+  const attemptFor = (
+    r: PublicationRow,
+    over: Partial<PublicationAttempt> = {},
+  ): PublicationAttempt => ({
     operation_kind: 'publish',
     card_projection_revision: r.card_projection_revision,
     freshness_epoch: r.freshness_epoch,
@@ -196,7 +214,14 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
   const activate = () => {
     const r = make();
     setDirectoryListing(iw.world.store, true, iw.world.clock, newA2AId);
-    expect(recordActivation(iw.world.store, { fencingGeneration: r.fencing_generation, epoch: 1, keyId: KEY, nowMs: iw.world.clock })).toBe(true);
+    expect(
+      recordActivation(iw.world.store, {
+        fencingGeneration: r.fencing_generation,
+        epoch: 1,
+        keyId: KEY,
+        nowMs: iw.world.clock,
+      }),
+    ).toBe(true);
     return row();
   };
 
@@ -204,7 +229,9 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
     const a = attemptFor(activate());
     expect(claim(a)).toBe(true);
     expect(row()).toEqual(expect.objectContaining({ state: 'pending', card_maybe_present: 1 }));
-    expect(completePublish(iw.world.store, a, { uri: 'at://d/c/self', cid: 'bafyrec' }, iw.world.clock)).toBe(true);
+    expect(
+      completePublish(iw.world.store, a, { uri: 'at://d/c/self', cid: 'bafyrec' }, iw.world.clock),
+    ).toBe(true);
     expect(row()).toEqual(
       expect.objectContaining({
         state: 'published',
@@ -235,7 +262,12 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
     expect(claim(attemptFor(row(), { operation_kind: 'unpublish' }))).toBe(true);
     expect(row().state).toBe('deactivating');
     // Stood down: nothing at all.
-    recordStandDown(iw.world.store, 'another_server_publishing', iw.world.clock, row().fencing_generation);
+    recordStandDown(
+      iw.world.store,
+      'another_server_publishing',
+      iw.world.clock,
+      row().fencing_generation,
+    );
     expect(claim(attemptFor(row()))).toBe(false);
     expect(claim(attemptFor(row(), { operation_kind: 'unpublish' }))).toBe(false);
   });
@@ -244,19 +276,32 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
     const r = activate();
     await save(listing({ name: 'Moved' }), 'moved');
     expect(claim(attemptFor(r))).toBe(false);
-    expect(claim(attemptFor(row(), { fencing_generation: row().fencing_generation - 1 }))).toBe(false);
+    expect(claim(attemptFor(row(), { fencing_generation: row().fencing_generation - 1 }))).toBe(
+      false,
+    );
     expect(claim(attemptFor(row()))).toBe(true);
   });
 
   it.each([
-    ['a stand-down', () => recordStandDown(iw.world.store, 'another_server_publishing', iw.world.clock, row().fencing_generation)],
+    [
+      'a stand-down',
+      () =>
+        recordStandDown(
+          iw.world.store,
+          'another_server_publishing',
+          iw.world.clock,
+          row().fencing_generation,
+        ),
+    ],
     ['a deactivation', () => beginDeactivation(iw.world.store, iw.world.clock)],
     ['a newer claim', () => claim(attemptFor(row(), { attempted_record_digest: 'c'.repeat(64) }))],
   ])('a late completion after %s writes nothing', (_name, between) => {
     const a = attemptFor(activate());
     expect(claim(a)).toBe(true);
     between();
-    expect(completePublish(iw.world.store, a, { uri: 'at://d/c/self', cid: 'bafylate' }, iw.world.clock)).toBe(false);
+    expect(
+      completePublish(iw.world.store, a, { uri: 'at://d/c/self', cid: 'bafylate' }, iw.world.clock),
+    ).toBe(false);
     expect(failAttempt(iw.world.store, a, iw.world.clock + 1000, iw.world.clock)).toBe(false);
     expect(row().last_published_cid).not.toBe('bafylate');
   });
@@ -266,7 +311,13 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
     claim(a);
     expect(failAttempt(iw.world.store, a, iw.world.clock + 5000, iw.world.clock)).toBe(true);
     expect(row()).toEqual(
-      expect.objectContaining({ state: 'failed', attempts: 1, next_retry_at: iw.world.clock + 5000, attempt_tuple_json: null, card_maybe_present: 1 }),
+      expect.objectContaining({
+        state: 'failed',
+        attempts: 1,
+        next_retry_at: iw.world.clock + 5000,
+        attempt_tuple_json: null,
+        card_maybe_present: 1,
+      }),
     );
   });
 
@@ -276,7 +327,11 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
     claim(pub);
     completePublish(iw.world.store, pub, { uri: 'at://d/c/self', cid: 'bafyrec' }, iw.world.clock);
     setDirectoryListing(iw.world.store, false, iw.world.clock, newA2AId);
-    const un = attemptFor(row(), { operation_kind: 'unpublish', desired_card_hash: null, attempted_record_digest: null });
+    const un = attemptFor(row(), {
+      operation_kind: 'unpublish',
+      desired_card_hash: null,
+      attempted_record_digest: null,
+    });
     expect(claim(un)).toBe(true);
     expect(completeUnpublish(iw.world.store, un, iw.world.clock)).toBe(true);
     expect(row()).toEqual(
@@ -302,29 +357,95 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
 
   it('a stand-down judged against a row an activation has since moved lands nothing', () => {
     const before = activate();
-    expect(recordActivation(iw.world.store, { fencingGeneration: before.fencing_generation, epoch: 2, keyId: KEY, nowMs: iw.world.clock })).toBe(true);
-    expect(recordStandDown(iw.world.store, 'another_server_publishing', iw.world.clock, before.fencing_generation)).toBe(false);
-    expect(row()).toEqual(expect.objectContaining({ publication_active: 1, publisher_epoch: 2, notice: null }));
-    expect(recordStandDown(iw.world.store, 'another_server_publishing', iw.world.clock, row().fencing_generation)).toBe(true);
+    expect(
+      recordActivation(iw.world.store, {
+        fencingGeneration: before.fencing_generation,
+        epoch: 2,
+        keyId: KEY,
+        nowMs: iw.world.clock,
+      }),
+    ).toBe(true);
+    expect(
+      recordStandDown(
+        iw.world.store,
+        'another_server_publishing',
+        iw.world.clock,
+        before.fencing_generation,
+      ),
+    ).toBe(false);
+    expect(row()).toEqual(
+      expect.objectContaining({ publication_active: 1, publisher_epoch: 2, notice: null }),
+    );
+    expect(
+      recordStandDown(
+        iw.world.store,
+        'another_server_publishing',
+        iw.world.clock,
+        row().fencing_generation,
+      ),
+    ).toBe(true);
     expect(row().state).toBe('stood_down');
   });
 
   it('the fence key is recorded at activation and after a re-sign, guarded on the generation', () => {
     const r = activate();
     expect(r.fence_key_id).toBe(KEY);
-    expect(recordFenceKey(iw.world.store, { fencingGeneration: r.fencing_generation, keyId: 'cd'.repeat(32), nowMs: iw.world.clock })).toBe(true);
+    expect(
+      recordFenceKey(iw.world.store, {
+        fencingGeneration: r.fencing_generation,
+        keyId: 'cd'.repeat(32),
+        nowMs: iw.world.clock,
+      }),
+    ).toBe(true);
     expect(row().fence_key_id).toBe('cd'.repeat(32));
-    recordStandDown(iw.world.store, 'another_server_publishing', iw.world.clock, row().fencing_generation);
-    expect(recordFenceKey(iw.world.store, { fencingGeneration: row().fencing_generation, keyId: KEY, nowMs: iw.world.clock })).toBe(false);
+    recordStandDown(
+      iw.world.store,
+      'another_server_publishing',
+      iw.world.clock,
+      row().fencing_generation,
+    );
+    expect(
+      recordFenceKey(iw.world.store, {
+        fencingGeneration: row().fencing_generation,
+        keyId: KEY,
+        nowMs: iw.world.clock,
+      }),
+    ).toBe(false);
     expect(row().fence_key_id).toBe('cd'.repeat(32));
   });
 
   it('activation is guarded on the generation it began under, and clears a stand-down', () => {
     const r = make();
-    recordStandDown(iw.world.store, 'another_server_publishing', iw.world.clock, row().fencing_generation);
-    expect(recordActivation(iw.world.store, { fencingGeneration: r.fencing_generation, epoch: 5, keyId: KEY, nowMs: iw.world.clock })).toBe(false);
-    expect(recordActivation(iw.world.store, { fencingGeneration: row().fencing_generation, epoch: 5, keyId: KEY, nowMs: iw.world.clock })).toBe(true);
-    expect(row()).toEqual(expect.objectContaining({ publication_active: 1, publisher_epoch: 5, state: 'not_published', notice: null }));
+    recordStandDown(
+      iw.world.store,
+      'another_server_publishing',
+      iw.world.clock,
+      row().fencing_generation,
+    );
+    expect(
+      recordActivation(iw.world.store, {
+        fencingGeneration: r.fencing_generation,
+        epoch: 5,
+        keyId: KEY,
+        nowMs: iw.world.clock,
+      }),
+    ).toBe(false);
+    expect(
+      recordActivation(iw.world.store, {
+        fencingGeneration: row().fencing_generation,
+        epoch: 5,
+        keyId: KEY,
+        nowMs: iw.world.clock,
+      }),
+    ).toBe(true);
+    expect(row()).toEqual(
+      expect.objectContaining({
+        publication_active: 1,
+        publisher_epoch: 5,
+        state: 'not_published',
+        notice: null,
+      }),
+    );
   });
 
   it('deactivation is two-phase: only from active, and completed only from deactivating', () => {
@@ -335,7 +456,9 @@ describe('the guarded steps: an attempt lands only on the state it was built on'
     expect(beginDeactivation(iw.world.store, iw.world.clock)).toBe(true);
     expect(row().state).toBe('deactivating');
     expect(completeDeactivation(iw.world.store, iw.world.clock)).toBe(true);
-    expect(row()).toEqual(expect.objectContaining({ state: 'not_published', publication_active: 0 }));
+    expect(row()).toEqual(
+      expect.objectContaining({ state: 'not_published', publication_active: 0 }),
+    );
   });
 });
 
@@ -366,33 +489,42 @@ describe('the owner routes', () => {
     ['POST', '/v1/owner/a2a/card-key'],
   ] as const;
 
-  it.each(ROUTES)('%s %s is the owner’s alone: Brain cannot publish, in one process or two', async (method, path) => {
-    // Two processes: Brain's signed service identity never passes the authz matrix.
-    for (const caller of ['brain', 'connector', 'agent', 'plugin', 'device'] as const) {
-      expect(isAuthorized(caller, method, path)).toBe(false);
-    }
-    // One process (the phone): the handler's guard refuses every caller but the owner.
-    const brain = await router.handle({
-      method,
-      path,
-      query: {},
-      headers: {},
-      body: { enabled: true },
-      rawBody: new Uint8Array(),
-      params: {},
-      trustedInProcess: true,
-      callerType: 'brain',
-      callerDID: 'did:key:brain',
-    } as unknown as CoreRequest);
-    expect(brain.status).toBe(403);
-  });
+  it.each(ROUTES)(
+    '%s %s is the owner’s alone: Brain cannot publish, in one process or two',
+    async (method, path) => {
+      // Two processes: Brain's signed service identity never passes the authz matrix.
+      for (const caller of ['brain', 'connector', 'agent', 'plugin', 'device'] as const) {
+        expect(isAuthorized(caller, method, path)).toBe(false);
+      }
+      // One process (the phone): the handler's guard refuses every caller but the owner.
+      const brain = await router.handle({
+        method,
+        path,
+        query: {},
+        headers: {},
+        body: { enabled: true },
+        rawBody: new Uint8Array(),
+        params: {},
+        trustedInProcess: true,
+        callerType: 'brain',
+        callerDID: 'did:key:brain',
+      } as unknown as CoreRequest);
+      expect(brain.status).toBe(403);
+    },
+  );
 
   it('the switch: a boolean, or 400; the view after', async () => {
-    expect((await owner('POST', '/v1/owner/a2a/directory-listing', { enabled: 'yes' })).status).toBe(400);
+    expect(
+      (await owner('POST', '/v1/owner/a2a/directory-listing', { enabled: 'yes' })).status,
+    ).toBe(400);
     const on = await owner('POST', '/v1/owner/a2a/directory-listing', { enabled: true });
     expect(on.status).toBe(200);
-    expect(on.body).toEqual(expect.objectContaining({ listing_enabled: true, active: false, eligible: false }));
-    expect((await owner('GET', '/v1/owner/a2a/publisher')).body).toEqual(expect.objectContaining({ listing_enabled: true }));
+    expect(on.body).toEqual(
+      expect.objectContaining({ listing_enabled: true, active: false, eligible: false }),
+    );
+    expect((await owner('GET', '/v1/owner/a2a/publisher')).body).toEqual(
+      expect.objectContaining({ listing_enabled: true }),
+    );
   });
 
   it('activation and deactivation go to the host’s publisher, or 503 without one', async () => {
@@ -442,7 +574,11 @@ describe('the owner routes', () => {
     installA2ACardKeyRotation(rotation);
     try {
       await rotation.start();
-      expect((await owner('GET', '/v1/owner/a2a/card-key')).body).toEqual({ generation: null, next: null, retiring: [] });
+      expect((await owner('GET', '/v1/owner/a2a/card-key')).body).toEqual({
+        generation: null,
+        next: null,
+        retiring: [],
+      });
       expect(await owner('POST', '/v1/owner/a2a/card-key', { action: 'rotate' })).toEqual(
         expect.objectContaining({ status: 409, body: { error: 'card_key_unknown' } }),
       );
@@ -451,12 +587,18 @@ describe('the owner routes', () => {
       expect((await owner('POST', '/v1/owner/a2a/card-key', { action: 'other' })).status).toBe(400);
       installOwnerPresenceVerifier(async (p) => p === 'right');
       expect(await owner('POST', '/v1/owner/a2a/card-key', { action: 'rotate' })).toEqual(
-        expect.objectContaining({ status: 403, body: expect.objectContaining({ error: 'no_user_presence' }) }),
+        expect.objectContaining({
+          status: 403,
+          body: expect.objectContaining({ error: 'no_user_presence' }),
+        }),
       );
       expect(rotation.view().next).toBeNull();
       await proveOwnerPresence('right', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
       expect(await owner('POST', '/v1/owner/a2a/card-key', { action: 'rotate' })).toEqual(
-        expect.objectContaining({ status: 200, body: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] } }),
+        expect.objectContaining({
+          status: 200,
+          body: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] },
+        }),
       );
     } finally {
       installA2ACardKeyRotation(null);

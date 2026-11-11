@@ -34,16 +34,30 @@ const PASS = 'a-strong-backup-pass';
 const PASSHEX = randomBytes(32).toString('hex');
 
 function openId(p: string): NodeSQLiteAdapter {
-  const a = new NodeSQLiteAdapter({ path: p, passphraseHex: PASSHEX, journalMode: 'WAL', synchronous: 'NORMAL' });
+  const a = new NodeSQLiteAdapter({
+    path: p,
+    passphraseHex: PASSHEX,
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(a, IDENTITY_MIGRATIONS);
   return a;
 }
 function openPersona(p: string): NodeSQLiteAdapter {
-  const a = new NodeSQLiteAdapter({ path: p, passphraseHex: PASSHEX, journalMode: 'WAL', synchronous: 'NORMAL' });
+  const a = new NodeSQLiteAdapter({
+    path: p,
+    passphraseHex: PASSHEX,
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(a, PERSONA_MIGRATIONS);
   return a;
 }
-function sourceOver(id: DatabaseAdapter, personas: Map<string, { tier: string; adapter: DatabaseAdapter }>, dir: string) {
+function sourceOver(
+  id: DatabaseAdapter,
+  personas: Map<string, { tier: string; adapter: DatabaseAdapter }>,
+  dir: string,
+) {
   return {
     identityAdapter: () => id,
     personaSources: async (): Promise<ArchivePersonaSource[]> =>
@@ -95,11 +109,28 @@ describe('preview + restore round-trip', () => {
     srcId.execute(
       `INSERT INTO reminders (id, short_id, message, due_at, persona, kind, source_item_id, source, recurring, timezone, status, completed, created_at)
        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-      ['rem-1', 'r1', 'water the plants', 9_999, 'general', 'manual', '', 'user', '', '', 'pending', 0, 1],
+      [
+        'rem-1',
+        'r1',
+        'water the plants',
+        9_999,
+        'general',
+        'manual',
+        '',
+        'user',
+        '',
+        '',
+        'pending',
+        0,
+        1,
+      ],
     );
     const srcPersonas = new Map<string, { tier: string; adapter: DatabaseAdapter }>();
     const gen = openPersona(path.join(srcDir, 'general.sqlite'));
-    gen.execute('INSERT INTO vault_items (id, content_l0, timestamp, created_at, updated_at) VALUES (?,?,?,?,?)', ['v1', 'note', 1, 1, 1]);
+    gen.execute(
+      'INSERT INTO vault_items (id, content_l0, timestamp, created_at, updated_at) VALUES (?,?,?,?,?)',
+      ['v1', 'note', 1, 1, 1],
+    );
     srcPersonas.set('general', { tier: 'default', adapter: gen });
 
     setArchiveDataSource(sourceOver(srcId, srcPersonas, srcDir));
@@ -121,8 +152,14 @@ describe('preview + restore round-trip', () => {
     setArchiveDataSource(sourceOver(destId, destPersonas, destDir));
     try {
       await restoreBackup(archive, PASS);
-      expect(destId.query('SELECT message FROM reminders WHERE id = ?', ['rem-1'])[0]?.message).toBe('water the plants');
-      expect(destPersonas.get('general')!.adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v1'])[0]?.content_l0).toBe('note');
+      expect(
+        destId.query('SELECT message FROM reminders WHERE id = ?', ['rem-1'])[0]?.message,
+      ).toBe('water the plants');
+      expect(
+        destPersonas
+          .get('general')!
+          .adapter.query('SELECT content_l0 FROM vault_items WHERE id = ?', ['v1'])[0]?.content_l0,
+      ).toBe('note');
     } finally {
       destId.close();
       for (const { adapter } of destPersonas.values()) (adapter as NodeSQLiteAdapter).close();

@@ -73,7 +73,7 @@ describe('verifyPairingIdentityBinding (task 4.27)', () => {
     }
   });
 
-  it('rejects DID substitution: two different keypairs — claiming keypair A\'s DID with keypair B\'s pubkey', async () => {
+  it("rejects DID substitution: two different keypairs — claiming keypair A's DID with keypair B's pubkey", async () => {
     const crypto = new Crypto();
 
     const seedA = new Uint8Array(32).fill(0x0a);

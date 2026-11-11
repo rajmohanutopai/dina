@@ -157,21 +157,28 @@ export interface EnsureA2ACardKeyOptions {
  * every other field, signed by the same rotation key as the Dina update
  * (`published`). Throws on any failure, like `applyDinaPlcUpdate`.
  */
-export async function ensureA2ACardKey(opts: EnsureA2ACardKeyOptions): Promise<'present' | 'published'> {
+export async function ensureA2ACardKey(
+  opts: EnsureA2ACardKeyOptions,
+): Promise<'present' | 'published'> {
   const plcURL = (opts.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
   const fetchFn = opts.fetch ?? globalThis.fetch;
-  if (typeof fetchFn !== 'function') throw new Error('ensureA2ACardKey: no fetch available (pass opts.fetch)');
+  if (typeof fetchFn !== 'function')
+    throw new Error('ensureA2ACardKey: no fetch available (pass opts.fetch)');
   const auditLog = await fetchAuditLog(opts.did, plcURL, fetchFn);
   const lastEntry = auditLog[auditLog.length - 1];
   const lastOp =
-    lastEntry !== null && typeof lastEntry === 'object' ? (lastEntry as Record<string, unknown>).operation : undefined;
-  if (lastOp === null || typeof lastOp !== 'object') throw new Error('PLC audit log has no last operation');
+    lastEntry !== null && typeof lastEntry === 'object'
+      ? (lastEntry as Record<string, unknown>).operation
+      : undefined;
+  if (lastOp === null || typeof lastOp !== 'object')
+    throw new Error('PLC audit log has no last operation');
   const lastOpRecord = lastOp as Record<string, unknown>;
   const cardDidKey = `did:key:${p256Multikey(opts.cardPublicKey)}`;
   const priorVMs = readStringMap(lastOpRecord.verificationMethods);
   if (priorVMs[A2A_CARD_KEY_FRAGMENT] === cardDidKey) return 'present';
   const priorRotationKeys = readStringArray(lastOpRecord.rotationKeys);
-  if (priorRotationKeys.length === 0) throw new Error('PLC prior op has no rotation keys — refusing to publish update');
+  if (priorRotationKeys.length === 0)
+    throw new Error('PLC prior op has no rotation keys — refusing to publish update');
   await updateDIDPLC(
     {
       did: opts.did,
@@ -200,13 +207,19 @@ export async function currentA2ACardKey(opts: {
 }): Promise<Uint8Array | null> {
   const plcURL = (opts.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
   const fetchFn = opts.fetch ?? globalThis.fetch;
-  if (typeof fetchFn !== 'function') throw new Error('currentA2ACardKey: no fetch available (pass opts.fetch)');
+  if (typeof fetchFn !== 'function')
+    throw new Error('currentA2ACardKey: no fetch available (pass opts.fetch)');
   const auditLog = await fetchAuditLog(opts.did, plcURL, fetchFn);
   const lastEntry = auditLog[auditLog.length - 1];
   const lastOp =
-    lastEntry !== null && typeof lastEntry === 'object' ? (lastEntry as Record<string, unknown>).operation : undefined;
-  if (lastOp === null || typeof lastOp !== 'object') throw new Error('PLC audit log has no last operation');
-  const named = readStringMap((lastOp as Record<string, unknown>).verificationMethods)[A2A_CARD_KEY_FRAGMENT];
+    lastEntry !== null && typeof lastEntry === 'object'
+      ? (lastEntry as Record<string, unknown>).operation
+      : undefined;
+  if (lastOp === null || typeof lastOp !== 'object')
+    throw new Error('PLC audit log has no last operation');
+  const named = readStringMap((lastOp as Record<string, unknown>).verificationMethods)[
+    A2A_CARD_KEY_FRAGMENT
+  ];
   if (named === undefined || !named.startsWith('did:key:')) return null;
   return p256FromMultikey(named.slice('did:key:'.length));
 }

@@ -171,9 +171,7 @@
         "highConfidenceVouches": 0,
         "endorsementCount": 0,
         "activeFlagCount": 1,
-        "flagSeverities": [
-          "critical"
-        ],
+        "flagSeverities": ["critical"],
         "totalAttestationsBy": 0,
         "revocationCount": 0,
         "tombstoneCount": 0,
@@ -213,9 +211,7 @@
         "highConfidenceVouches": 0,
         "endorsementCount": 0,
         "activeFlagCount": 1,
-        "flagSeverities": [
-          "serious"
-        ],
+        "flagSeverities": ["serious"],
         "totalAttestationsBy": 0,
         "revocationCount": 0,
         "tombstoneCount": 0,
@@ -255,9 +251,7 @@
         "highConfidenceVouches": 0,
         "endorsementCount": 0,
         "activeFlagCount": 1,
-        "flagSeverities": [
-          "warning"
-        ],
+        "flagSeverities": ["warning"],
         "totalAttestationsBy": 0,
         "revocationCount": 0,
         "tombstoneCount": 0,
@@ -297,10 +291,7 @@
         "highConfidenceVouches": 0,
         "endorsementCount": 0,
         "activeFlagCount": 2,
-        "flagSeverities": [
-          "warning",
-          "serious"
-        ],
+        "flagSeverities": ["warning", "serious"],
         "totalAttestationsBy": 0,
         "revocationCount": 0,
         "tombstoneCount": 0,
@@ -398,9 +389,7 @@
         "highConfidenceVouches": 4,
         "endorsementCount": 20,
         "activeFlagCount": 1,
-        "flagSeverities": [
-          "warning"
-        ],
+        "flagSeverities": ["warning"],
         "totalAttestationsBy": 50,
         "revocationCount": 0,
         "tombstoneCount": 2,

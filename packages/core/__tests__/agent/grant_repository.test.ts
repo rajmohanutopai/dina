@@ -192,9 +192,7 @@ describe.each(factories)('agent grant contract — $name', ({ make }) => {
     repo.insert(grant({ id: 'b-s1', agentDID: 'did:key:agentB', sessionId: 'sess-1' }));
 
     expect(repo.revokeForSession('did:key:agentA', 'sess-1', 8_000)).toBe(2);
-    expect(
-      repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-1', 8_500),
-    ).toBeNull();
+    expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-1', 8_500)).toBeNull();
     expect(repo.findActiveGrant('did:key:agentA', 'health', 'read', 'sess-2', 8_500)?.id).toBe(
       'a-s2',
     );
@@ -225,7 +223,11 @@ describe.each(factories)('standing grants (REAL_LIFE_FIXES_2 §7.2) — $name', 
   afterEach(() => cleanup());
 
   it('matches any session and never expires, and keeps its tier', () => {
-    repo.insert({ ...grant({ id: 's1', persona: 'work', expiresAt: 253_402_300_799_000 }), grantKind: 'standing', grantedTier: 'standard' });
+    repo.insert({
+      ...grant({ id: 's1', persona: 'work', expiresAt: 253_402_300_799_000 }),
+      grantKind: 'standing',
+      grantedTier: 'standard',
+    });
     for (const session of ['sess-1', 'sess-2', null]) {
       const g = repo.findActiveGrant('did:key:agentA', 'work', 'read', session, 9_000_000_000_000);
       expect(g?.id).toBe('s1');

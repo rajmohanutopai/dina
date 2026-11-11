@@ -13,7 +13,11 @@ import { checkPriceDivergence } from '../../src/commerce/price_divergence';
 import type { CatalogItem, Money, ProductRef, Quantity } from '@dina/commerce-protocol';
 
 const SUPPLIER = 'did:plc:chairmaker99';
-const PRODUCT: ProductRef = { scheme: 'manufacturer_sku', value: 'CM-CHAIR-1', issuer_did: SUPPLIER };
+const PRODUCT: ProductRef = {
+  scheme: 'manufacturer_sku',
+  value: 'CM-CHAIR-1',
+  issuer_did: SUPPLIER,
+};
 
 function item(over: {
   sellUnit?: Quantity;
@@ -80,7 +84,10 @@ const VECTORS: {
     name: 'ABSENT EVIDENCE: a case with no units_per_pack gets the badge, never a guess',
     quoted: { unitPrice: money('120000'), priceBasis: qty('1', 'case') },
     item: item({ indicativePrice: money('10000') }),
-    expect: { kind: 'no_comparable_basis', reason: 'case has no pack evidence on the resolved item' },
+    expect: {
+      kind: 'no_comparable_basis',
+      reason: 'case has no pack evidence on the resolved item',
+    },
   },
   {
     name: 'PALLET: no per-product evidence field exists — badge, stated',

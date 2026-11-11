@@ -121,7 +121,7 @@ describe('createGuardScanner', () => {
   const response =
     'Your doctor recommends 30 minutes of exercise daily. ' +
     "I'm here to talk whenever you need to. " +
-    "Eight out of ten users also recommend this.";
+    'Eight out of ten users also recommend this.';
 
   it('skips short-circuits when response is empty', async () => {
     const { provider } = mockProvider('');
@@ -258,7 +258,8 @@ describe('guard scan through a decision backend (Jev)', () => {
       trustToolNames: [],
       decide: async (req) => {
         const out: Record<string, { type: 'noul'; noul: number }> = {};
-        for (const k of Object.keys(req.questions)) out[k] = { type: 'noul', noul: k === 'ah_2' ? 0.93 : 0.02 };
+        for (const k of Object.keys(req.questions))
+          out[k] = { type: 'noul', noul: k === 'ah_2' ? 0.93 : 0.02 };
         return out;
       },
     });
@@ -284,8 +285,15 @@ describe('guard scan through a decision backend (Jev)', () => {
   });
 
   it('falls back to the model prompt when the backend throws or answers null', async () => {
-    for (const decide of [async () => { throw new Error('jev: HTTP 503'); }, async () => null]) {
-      const { provider } = mockProvider('{"anti_her_sentences": [2], "unsolicited_sentences": [], "fabricated_sentences": [], "consensus_sentences": []}');
+    for (const decide of [
+      async () => {
+        throw new Error('jev: HTTP 503');
+      },
+      async () => null,
+    ]) {
+      const { provider } = mockProvider(
+        '{"anti_her_sentences": [2], "unsolicited_sentences": [], "fabricated_sentences": [], "consensus_sentences": []}',
+      );
       const scan = createGuardScanner(provider, { trustToolNames: [], decide });
       const d = await scan({ userPrompt: 'q', response: reply });
       expect(provider.chat).toHaveBeenCalledTimes(1);

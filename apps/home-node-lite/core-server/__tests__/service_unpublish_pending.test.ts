@@ -3,6 +3,8 @@
  * removed from the PDS after a restart, though no row names it any more.
  */
 
+import pino from 'pino';
+
 import {
   InMemoryServiceConfigRepository,
   resetServiceConfigState,
@@ -11,7 +13,6 @@ import {
   clearServiceConfigDurable,
   type ServiceConfig,
 } from '@dina/core';
-import pino from 'pino';
 
 import { wireServiceProfilePublisher } from '../src/appview/wire_publisher';
 
@@ -52,7 +53,12 @@ function fakePds() {
     const url = String(input);
     if (!state.online) throw new Error('offline');
     if (url.includes('createSession')) {
-      return json(200, { did: IDENTITY.did, accessJwt: 'a', refreshJwt: 'r', handle: IDENTITY.handle });
+      return json(200, {
+        did: IDENTITY.did,
+        accessJwt: 'a',
+        refreshJwt: 'r',
+        handle: IDENTITY.handle,
+      });
     }
     if (url.includes('getRecord')) {
       const rkey = new URL(url).searchParams.get('rkey') ?? '';

@@ -185,7 +185,14 @@ describe('guided demo screens', () => {
   it('collapsed complete state keeps the End Demo CTA inline', () => {
     const onExit = jest.fn();
     render(
-      <GuidedDemoBanner onExit={onExit} onAdvance={jest.fn()} caption={null} step={6} stepCount={6} demoComplete />,
+      <GuidedDemoBanner
+        onExit={onExit}
+        onAdvance={jest.fn()}
+        caption={null}
+        step={6}
+        stepCount={6}
+        demoComplete
+      />,
     );
     fireEvent.press(screen.getByTestId('guided-demo-collapse'));
     // Body caption row is gone; the End Demo CTA rides in the thin bar.

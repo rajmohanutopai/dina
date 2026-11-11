@@ -16,12 +16,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
-import type {
-  CoreAPIComponents,
-  CoreAPIPaths,
-  BrainAPIComponents,
-  BrainAPIPaths,
-} from '../src';
+import type { CoreAPIComponents, CoreAPIPaths, BrainAPIComponents, BrainAPIPaths } from '../src';
 
 const genDir = path.join(__dirname, '..', 'src', 'gen');
 const corePath = path.join(genDir, 'core-api.d.ts');

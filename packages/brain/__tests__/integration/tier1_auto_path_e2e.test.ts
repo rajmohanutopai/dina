@@ -49,7 +49,10 @@ const VALID_RESULT = {
   slots: [{ time: '4:30 PM' }, { time: '5:15 PM' }],
 };
 
-function scriptedLLM(script: Partial<ChatResponse>[]): { provider: LLMProvider; systems: string[] } {
+function scriptedLLM(script: Partial<ChatResponse>[]): {
+  provider: LLMProvider;
+  systems: string[];
+} {
   let i = 0;
   const systems: string[] = [];
   const provider: LLMProvider = {

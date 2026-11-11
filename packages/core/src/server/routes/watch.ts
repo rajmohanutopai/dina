@@ -75,7 +75,9 @@ export function registerWatchRoutes(router: CoreRouter, ownerCapability?: string
     }
     const query = isRecord(body.query) ? body.query : {};
     const schemaHash =
-      typeof body.schema_hash === 'string' && body.schema_hash !== '' ? body.schema_hash : undefined;
+      typeof body.schema_hash === 'string' && body.schema_hash !== ''
+        ? body.schema_hash
+        : undefined;
     const freshnessSec =
       typeof body.freshness_sec === 'number' && body.freshness_sec > 0
         ? body.freshness_sec
@@ -146,7 +148,11 @@ function steer(
 
   const watchId = String(req.params.id ?? '');
   const ok =
-    command === 'pause' ? svc.pause(watchId) : command === 'resume' ? svc.resume(watchId) : svc.cancel(watchId);
+    command === 'pause'
+      ? svc.pause(watchId)
+      : command === 'resume'
+        ? svc.resume(watchId)
+        : svc.cancel(watchId);
   // A running watch was updated → 200; otherwise it was missing / already
   // terminal / not a watch → 404 (idempotent: a re-cancel of a cancelled watch
   // is a no-op the caller can treat as success).

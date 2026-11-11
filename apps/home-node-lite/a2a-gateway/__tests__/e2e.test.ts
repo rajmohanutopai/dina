@@ -383,7 +383,11 @@ describe('REST through the gateway (A2A §11, M4)', () => {
 
   it('a call over REST, from sending to the runner’s result, the bare v1.0 shapes throughout', async () => {
     const sending = rest('POST', '/message:send', {
-      message: { messageId: 'rest-1', role: 'ROLE_USER', parts: [{ data: { skill: 'eta_query', params: { route_id: '7' } } }] },
+      message: {
+        messageId: 'rest-1',
+        role: 'ROLE_USER',
+        parts: [{ data: { skill: 'eta_query', params: { route_id: '7' } } }],
+      },
     });
     await runQueuedCall({ eta_minutes: 3 });
     const sent = await sending;
@@ -393,9 +397,17 @@ describe('REST through the gateway (A2A §11, M4)', () => {
     const task = (sent.json() as { task: { id: string; status: { state: string } } }).task;
     expect(task.status.state).toBe('TASK_STATE_COMPLETED');
 
-    const got = (await rest('GET', `/tasks/${task.id}`)).json() as { status: { state: string }; artifacts: unknown };
+    const got = (await rest('GET', `/tasks/${task.id}`)).json() as {
+      status: { state: string };
+      artifacts: unknown;
+    };
     expect(got.status.state).toBe('TASK_STATE_COMPLETED');
-    expect(got.artifacts).toEqual([{ artifactId: 'result', parts: [{ data: { eta_minutes: 3 }, mediaType: 'application/json' }] }]);
+    expect(got.artifacts).toEqual([
+      {
+        artifactId: 'result',
+        parts: [{ data: { eta_minutes: 3 }, mediaType: 'application/json' }],
+      },
+    ]);
     // The same task, read by JSON-RPC.
     expect(result(await call('GetTask', { id: task.id })).status).toEqual(got.status);
   });
@@ -406,7 +418,11 @@ describe('REST through the gateway (A2A §11, M4)', () => {
     expect((missing.json() as { error: { status: string } }).error.status).toBe('NOT_FOUND');
     const cancel = await rest('POST', '/tasks/no-such-task:cancel');
     expect(cancel.statusCode).toBe(404);
-    const unauth = await gateway.inject({ method: 'GET', url: '/a2a/rest/tasks', headers: { 'a2a-version': '1.0' } });
+    const unauth = await gateway.inject({
+      method: 'GET',
+      url: '/a2a/rest/tasks',
+      headers: { 'a2a-version': '1.0' },
+    });
     expect(unauth.statusCode).toBe(401);
     expect((unauth.json() as { error: { status: string } }).error.status).toBe('UNAUTHENTICATED');
   });
@@ -439,7 +455,10 @@ describe('Core trusts the gateway with nothing', () => {
       expect.objectContaining({
         code: -32600,
         // A2A's own ErrorInfo first (spec §9.5), Dina's reason after it.
-        data: [expect.objectContaining({ reason: 'INVALID_REQUEST' }), expect.objectContaining({ reason: 'operation_mismatch' })],
+        data: [
+          expect.objectContaining({ reason: 'INVALID_REQUEST' }),
+          expect.objectContaining({ reason: 'operation_mismatch' }),
+        ],
       }),
     );
   });
@@ -542,7 +561,10 @@ describe('M3 through the gateway: streams, webhooks, push configs, the extended 
   });
 
   /** A call answered at once (these tests follow it by stream and webhook), with `extra` beside it. */
-  const message = (messageId: string, extra: { configuration?: Record<string, unknown> } & Record<string, unknown> = {}) => ({
+  const message = (
+    messageId: string,
+    extra: { configuration?: Record<string, unknown> } & Record<string, unknown> = {},
+  ) => ({
     message: {
       messageId,
       role: 'ROLE_USER',
@@ -636,15 +658,23 @@ describe('M3 through the gateway: streams, webhooks, push configs, the extended 
       claimId: repo.getById(child)?.claim_id,
       request: {
         prompt: 'Which stop are you at?',
-        input_schema: { type: 'object', required: ['stop'], properties: { stop: { type: 'string' } } },
+        input_schema: {
+          type: 'object',
+          required: ['stop'],
+          properties: { stop: { type: 'string' } },
+        },
       },
     });
     expect(asked.kind).toBe('parked');
     await pump.turn();
-    const question = (await next()) as { result: { statusUpdate: { status: Record<string, unknown> } } };
+    const question = (await next()) as {
+      result: { statusUpdate: { status: Record<string, unknown> } };
+    };
     expect(stateOf(question)).toBe('TASK_STATE_INPUT_REQUIRED');
     // Streamed = polled, the question included.
-    expect(question.result.statusUpdate.status).toEqual(result(await call('GetTask', { id })).status);
+    expect(question.result.statusUpdate.status).toEqual(
+      result(await call('GetTask', { id })).status,
+    );
     expect((question.result.statusUpdate.status.message as { parts: unknown[] }).parts[0]).toEqual({
       text: 'Which stop are you at?',
     });
@@ -653,7 +683,12 @@ describe('M3 through the gateway: streams, webhooks, push configs, the extended 
 
     // The answer, streamed: it opens on the task at work again and follows it to the end.
     const again = await stream('SendStreamingMessage', {
-      message: { messageId: 'm4-answer', role: 'ROLE_USER', taskId: id, parts: [{ data: { stop: 'Elm' } }] },
+      message: {
+        messageId: 'm4-answer',
+        role: 'ROLE_USER',
+        taskId: id,
+        parts: [{ data: { stop: 'Elm' } }],
+      },
     });
     const opening = (await again()) as { result: { task: { status: { state: string } } } };
     expect(opening.result.task.status.state).toBe('TASK_STATE_WORKING');
@@ -664,7 +699,11 @@ describe('M3 through the gateway: streams, webhooks, push configs, the extended 
       turns: [
         {
           prompt: 'Which stop are you at?',
-          input_schema: { type: 'object', required: ['stop'], properties: { stop: { type: 'string' } } },
+          input_schema: {
+            type: 'object',
+            required: ['stop'],
+            properties: { stop: { type: 'string' } },
+          },
           input: { stop: 'Elm' },
         },
       ],
@@ -764,14 +803,20 @@ describe('M3 through the gateway: streams, webhooks, push configs, the extended 
     const forms = cardSigningForms(card);
     expect(forms).toEqual(['spec', 'a2a_sdk']);
     expect(card.signatures).toHaveLength(forms.length);
-    const jwks = (await gw.inject({ method: 'GET', url: '/.well-known/jwks.json' })).json() as { keys: unknown[] };
+    const jwks = (await gw.inject({ method: 'GET', url: '/.well-known/jwks.json' })).json() as {
+      keys: unknown[];
+    };
     const key = parsePublicJwk(jwks.keys[0]);
     if (key === null) throw new Error('jwk');
     forms.forEach((form, i) => {
       const sig = card.signatures[i];
       if (sig === undefined) throw new Error('signature');
-      const input = new TextEncoder().encode(`${sig.protected}.${base64urlEncodeUtf8(cardFormPayload(card, form))}`);
-      expect(verifyWithJwk(key, 'ES256', input, Buffer.from(sig.signature, 'base64url'))).toBe(true);
+      const input = new TextEncoder().encode(
+        `${sig.protected}.${base64urlEncodeUtf8(cardFormPayload(card, form))}`,
+      );
+      expect(verifyWithJwk(key, 'ES256', input, Buffer.from(sig.signature, 'base64url'))).toBe(
+        true,
+      );
     });
   });
 
@@ -798,7 +843,12 @@ describe('M4 through the gateway: a client binds its DID, then signs its calls (
   const clientDid = deriveDIDKey(getPublicKey(clientKey));
 
   /** The client's signature over its own request to the gateway, addressed to this node (`didRequestSigningInput`). */
-  function signedHeaders(path: string, body: string, method = 'POST', query = ''): Record<string, string> {
+  function signedHeaders(
+    path: string,
+    body: string,
+    method = 'POST',
+    query = '',
+  ): Record<string, string> {
     const timestamp = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z');
     const nonce = randomBytes(16).toString('hex');
     const input = didRequestSigningInput({
@@ -814,7 +864,9 @@ describe('M4 through the gateway: a client binds its DID, then signs its calls (
       'x-did': clientDid,
       'x-timestamp': timestamp,
       'x-nonce': nonce,
-      'x-signature': Buffer.from(ed25519Sign(clientKey, new TextEncoder().encode(input))).toString('hex'),
+      'x-signature': Buffer.from(ed25519Sign(clientKey, new TextEncoder().encode(input))).toString(
+        'hex',
+      ),
     };
   }
 
@@ -833,7 +885,9 @@ describe('M4 through the gateway: a client binds its DID, then signs its calls (
     const binding = JSON.stringify({
       did: clientDid,
       challenge: issued.challenge,
-      signature: Buffer.from(ed25519Sign(clientKey, new TextEncoder().encode(input))).toString('hex'),
+      signature: Buffer.from(ed25519Sign(clientKey, new TextEncoder().encode(input))).toString(
+        'hex',
+      ),
     });
     const bound = await gateway.inject({
       method: 'POST',
@@ -868,7 +922,12 @@ describe('M4 through the gateway: a client binds its DID, then signs its calls (
     const signed = await gateway.inject({ method: 'POST', url: '/a2a/v1', headers, payload: body });
     expect(signed.statusCode).toBe(200);
     // The same signed request again is a replay.
-    const replayed = await gateway.inject({ method: 'POST', url: '/a2a/v1', headers, payload: body });
+    const replayed = await gateway.inject({
+      method: 'POST',
+      url: '/a2a/v1',
+      headers,
+      payload: body,
+    });
     expect(replayed.statusCode).toBe(401);
     expect((result(signed).task as { status: { state: string } }).status.state).toBe(
       'TASK_STATE_SUBMITTED',
@@ -892,7 +951,10 @@ describe('M4 through the gateway: a client binds its DID, then signs its calls (
     const listed = await gateway.inject({
       method: 'GET',
       url: '/a2a/rest/tasks?pageSize=5',
-      headers: { 'a2a-version': '1.0', ...signedHeaders('/a2a/rest/tasks', '', 'GET', 'pageSize=5') },
+      headers: {
+        'a2a-version': '1.0',
+        ...signedHeaders('/a2a/rest/tasks', '', 'GET', 'pageSize=5'),
+      },
     });
     expect(listed.statusCode).toBe(200);
     expect((listed.json() as { tasks: unknown[] }).tasks).toHaveLength(1);
@@ -900,7 +962,10 @@ describe('M4 through the gateway: a client binds its DID, then signs its calls (
     const changed = await gateway.inject({
       method: 'GET',
       url: '/a2a/rest/tasks?pageSize=50',
-      headers: { 'a2a-version': '1.0', ...signedHeaders('/a2a/rest/tasks', '', 'GET', 'pageSize=5') },
+      headers: {
+        'a2a-version': '1.0',
+        ...signedHeaders('/a2a/rest/tasks', '', 'GET', 'pageSize=5'),
+      },
     });
     expect(changed.statusCode).toBe(401);
   });

@@ -36,12 +36,16 @@ const readme = readFileSync(path.join(__dirname, '..', 'README.md'), 'utf8');
 /** Every user id (`adduser -u N`) and group id (`addgroup -g N`) an image recipe creates. */
 function idsOf(text: string): { users: number[]; groups: number[] } {
   const all = (re: RegExp): number[] => [...text.matchAll(re)].map((m) => Number(m[1]));
-  return { users: all(/adduser\s+(?:[^\n]*?\s)?-u\s+(\d+)/g), groups: all(/addgroup\s+(?:[^\n]*?\s)?-g\s+(\d+)/g) };
+  return {
+    users: all(/adduser\s+(?:[^\n]*?\s)?-u\s+(\d+)/g),
+    groups: all(/addgroup\s+(?:[^\n]*?\s)?-g\s+(\d+)/g),
+  };
 }
 
 const networksOf = (s: Service | undefined): string[] =>
   s?.networks === undefined ? [] : Array.isArray(s.networks) ? s.networks : Object.keys(s.networks);
-const volumeNames = (s: Service | undefined): string[] => (s?.volumes ?? []).map((v) => v.split(':')[0] ?? '');
+const volumeNames = (s: Service | undefined): string[] =>
+  (s?.volumes ?? []).map((v) => v.split(':')[0] ?? '');
 
 describe('the gateway container (design §4.1 precondition (a))', () => {
   const gateway = compose.services['a2a-gateway'];
@@ -66,18 +70,26 @@ describe('the gateway container (design §4.1 precondition (a))', () => {
   it('shares a network with Core only: never with Brain', () => {
     const nets = networksOf(gateway);
     expect(nets).toEqual(['dina-a2a']);
-    const sharing = others.filter(([, s]) => networksOf(s).some((n) => nets.includes(n))).map(([name]) => name);
+    const sharing = others
+      .filter(([, s]) => networksOf(s).some((n) => nets.includes(n)))
+      .map(([name]) => name);
     expect(sharing).toEqual(['core-lite']);
   });
 
   // Plan C7
   it('runs as its own user, UID 10003, which neither Core’s nor Brain’s image uses', () => {
     // The reader finds the ids it should: a control on a line written for it.
-    expect(idsOf('RUN addgroup -g 10003 -S dina-gw \\\n && adduser  -u 10003 -S -G dina-gw dina-gw')).toEqual({ users: [10003], groups: [10003] });
+    expect(
+      idsOf('RUN addgroup -g 10003 -S dina-gw \\\n && adduser  -u 10003 -S -G dina-gw dina-gw'),
+    ).toEqual({ users: [10003], groups: [10003] });
     expect(idsOf(dockerfile)).toEqual({ users: [10003], groups: [10003] });
     // The image runs as the user it made with that id.
     const line = dockerfile.match(/adduser\s+-u 10003\b[^\n]*/)?.[0] ?? '';
-    const made = line.replace(/\\\s*$/, '').trim().split(/\s+/).pop();
+    const made = line
+      .replace(/\\\s*$/, '')
+      .trim()
+      .split(/\s+/)
+      .pop();
     expect(made).toBe('dina-gw');
     // The image runs as the user on its last USER line; a later USER root would undo an earlier one.
     const users = [...dockerfile.matchAll(/^USER\s+(\S+)\s*$/gm)].map((m) => m[1]);
@@ -86,7 +98,11 @@ describe('the gateway container (design §4.1 precondition (a))', () => {
       const ids = idsOf(recipe(name));
       // Each image does make a user of its own, and never with the gateway's ids.
       expect([name, ids.users.length > 0, ids.groups.length > 0]).toEqual([name, true, true]);
-      expect([name, ids.users.includes(10003), ids.groups.includes(10003)]).toEqual([name, false, false]);
+      expect([name, ids.users.includes(10003), ids.groups.includes(10003)]).toEqual([
+        name,
+        false,
+        false,
+      ]);
     }
     // Compose sets no other user over the image's: none at all, or the same id.
     const user = gateway?.user;
@@ -100,7 +116,9 @@ describe('a native install (plan C8)', () => {
     const at = readme.indexOf('## Isolation');
     expect(at).toBeGreaterThanOrEqual(0);
     const section = readme.slice(at).replace(/\s+/g, ' ');
-    expect(section).toContain('A native install that runs the gateway as the same OS user as Core and Brain does not meet this.');
+    expect(section).toContain(
+      'A native install that runs the gateway as the same OS user as Core and Brain does not meet this.',
+    );
     expect(section).toContain("Do not open the gateway's port to the network there.");
   });
 });

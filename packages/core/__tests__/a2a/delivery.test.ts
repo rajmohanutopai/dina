@@ -219,7 +219,12 @@ describe('claiming and reporting', () => {
     const sse = first.items.filter((i) => i.target === 'sse');
     expect(sse.map((i) => i.seq)).toEqual([1, 2, 3]);
     // A stream event carries the client's credential generation and no webhook.
-    expect(sse.every((i) => i.task_id === id && !('webhook' in i) && 'credential_gen' in i && i.credential_gen === 0)).toBe(true);
+    expect(
+      sse.every(
+        (i) =>
+          i.task_id === id && !('webhook' in i) && 'credential_gen' in i && i.credential_gen === 0,
+      ),
+    ).toBe(true);
     const hooks = first.items.filter((i) => i.target === 'webhook');
     expect(hooks.map((i) => i.seq)).toEqual([1]);
     expect(hooks[0]?.webhook).toEqual({

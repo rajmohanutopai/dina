@@ -23,7 +23,10 @@
  * extra layer of indirection for no testability gain.
  */
 
-import { WorkflowTaskState, type MessageRecord, type RunRecord ,
+import {
+  WorkflowTaskState,
+  type MessageRecord,
+  type RunRecord,
   ApprovalManager,
   ApprovalRequest,
   WorkflowRepository,
@@ -97,7 +100,6 @@ export function notifyRunResponseLost(
     deepLink: 'dina://runs',
   });
 }
-
 
 /**
  * Subscribe an inbox bridge to an ApprovalManager. Every

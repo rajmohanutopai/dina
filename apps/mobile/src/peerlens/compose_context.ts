@@ -36,13 +36,8 @@
 import { BODY_MAX_LENGTH, HEADLINE_MAX_LENGTH, SENTIMENT_OPTIONS } from './write_form_data';
 
 import type { LastUsedBucket } from './write_form_data';
-import type {
-  ChatMessage,
-  ChatOptions,
-  LLMProvider,
-} from '@dina/brain/llm';
+import type { ChatMessage, ChatOptions, LLMProvider } from '@dina/brain/llm';
 import type { Sentiment } from '@dina/protocol';
-
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
@@ -182,7 +177,7 @@ const DRAFT_RESPONSE_SCHEMA = {
 
 const SYSTEM_PROMPT_PREFILL = [
   'You are summarising what a user already knows about a subject so they can review it.',
-  'You are reading the user\'s OWN vault — emails, calendar, messages, transactions about this subject.',
+  "You are reading the user's OWN vault — emails, calendar, messages, transactions about this subject.",
   'Be conservative: only emit values directly supported by the context.',
   'Never invent facts. If the context is ambiguous (e.g. "I tried gaming on this but hated it"), ' +
     'do NOT classify "gaming" as a use case.',
@@ -191,7 +186,7 @@ const SYSTEM_PROMPT_PREFILL = [
 
 const SYSTEM_PROMPT_DRAFT = [
   'You are drafting a review the user will read and edit before publishing.',
-  'You are reading the user\'s OWN vault — their own notes, emails, transactions about this subject.',
+  "You are reading the user's OWN vault — their own notes, emails, transactions about this subject.",
   'Write in the FIRST PERSON ("I sit in this chair every day…"), as if the user is writing.',
   'Stay strictly within facts visible in the vault items. NEVER invent details.',
   'If a field cannot be filled honestly, OMIT it — the user will fill it in. A blank ' +
@@ -211,9 +206,10 @@ function buildUserPrompt(opts: {
   const itemBlock = items
     .slice(0, 20) // cap so the prompt fits a reasonable token budget
     .map((it, i) => {
-      const date = Number.isFinite(it.timestamp) && it.timestamp > 0
-        ? new Date(it.timestamp).toISOString().slice(0, 10)
-        : 'unknown';
+      const date =
+        Number.isFinite(it.timestamp) && it.timestamp > 0
+          ? new Date(it.timestamp).toISOString().slice(0, 10)
+          : 'unknown';
       // Trim each item body so a single chatty email doesn't dominate
       // the budget. The full text is in the vault if the user wants
       // detail; for classification 600 chars per item is enough.
@@ -401,10 +397,7 @@ function parseLLMResponse(raw: string): LLMResponseShape | null {
   }
 }
 
-function filterUseCases(
-  raw: unknown,
-  vocabulary: readonly string[],
-): readonly string[] {
+function filterUseCases(raw: unknown, vocabulary: readonly string[]): readonly string[] {
   if (!Array.isArray(raw)) return [];
   const allowed = new Set<string>(vocabulary);
   const out: string[] = [];
@@ -459,7 +452,10 @@ function filterHeadline(raw: unknown): string | null {
  */
 function filterBody(raw: unknown): string | null {
   if (typeof raw !== 'string') return null;
-  const collapsed = raw.replace(/\r\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  const collapsed = raw
+    .replace(/\r\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
   if (collapsed.length === 0) return null;
   if (collapsed.length > BODY_MAX_LENGTH) return null;
   return collapsed;

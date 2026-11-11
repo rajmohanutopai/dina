@@ -50,10 +50,7 @@ export type OwnerGuard = (req: CoreRequest) => CoreResponse | null;
  * fix to be applied twice — so `reason` is the only parameter, and the check
  * itself lives here.
  */
-export function makeOwnerGuard(
-  expectedCapability: string | undefined,
-  reason: string,
-): OwnerGuard {
+export function makeOwnerGuard(expectedCapability: string | undefined, reason: string): OwnerGuard {
   return (req) => {
     if (expectedCapability === undefined || expectedCapability === '') {
       return {

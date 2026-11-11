@@ -616,9 +616,7 @@ export function isPlausibleHostname(value: string): boolean {
   // aren't useful retailer entries).
   if (!v.includes('.')) return false;
   const labels = v.split('.');
-  return labels.every(
-    (label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label),
-  );
+  return labels.every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/.test(label));
 }
 
 export function addHostname(
@@ -662,10 +660,7 @@ export function parseLeadDays(raw: string): number | null {
  * Toggle a month (1-12) in the seasonal-months list. Out-of-range
  * months are no-ops.
  */
-export function toggleSeasonalMonth(
-  current: readonly number[],
-  month: number,
-): readonly number[] {
+export function toggleSeasonalMonth(current: readonly number[], month: number): readonly number[] {
   if (!Number.isInteger(month) || month < 1 || month > 12) return current;
   const idx = current.indexOf(month);
   if (idx >= 0) {
@@ -677,8 +672,19 @@ export function toggleSeasonalMonth(
 }
 
 export const SEASONAL_MONTH_LABEL: readonly string[] = [
-  '', 'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  '',
+  'Jan',
+  'Feb',
+  'Mar',
+  'Apr',
+  'May',
+  'Jun',
+  'Jul',
+  'Aug',
+  'Sep',
+  'Oct',
+  'Nov',
+  'Dec',
 ];
 
 // ─── TN-V2-REV-008: alternatives selector ─────────────────────────────────
@@ -838,9 +844,7 @@ export const MAX_USE_CASES = 3;
  *
  * Pure helper, exported for the screen + tests.
  */
-export function useCasesForCategory(
-  category: string | null | undefined,
-): readonly string[] {
+export function useCasesForCategory(category: string | null | undefined): readonly string[] {
   if (typeof category !== 'string' || category.trim().length === 0) {
     return USE_CASES_DEFAULT;
   }
@@ -1068,9 +1072,7 @@ export function emptyWriteFormState(): WriteFormState {
  * `product` because that's the most common review target — the user
  * can pick another kind from the chip row.
  */
-export function emptyWriteFormStateWithSubject(
-  kind: SubjectKind = 'product',
-): WriteFormState {
+export function emptyWriteFormStateWithSubject(kind: SubjectKind = 'product'): WriteFormState {
   return {
     ...emptyWriteFormState(),
     subject: emptySubjectState(kind),
@@ -1158,9 +1160,7 @@ export function validateWriteForm(state: WriteFormState): WriteFormValidation {
  * outer form's error list so the screen renders them under the
  * relevant subject input.
  */
-export function validateSubjectState(
-  subject: WriteSubjectState,
-): readonly WriteFormError[] {
+export function validateSubjectState(subject: WriteSubjectState): readonly WriteFormError[] {
   const errors: WriteFormError[] = [];
   const name = subject.name.trim();
 

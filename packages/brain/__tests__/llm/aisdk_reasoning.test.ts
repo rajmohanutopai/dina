@@ -37,7 +37,9 @@ it("uses an OpenAI model's own lowest effort", async () => {
   const { model, seen } = capture('gpt-5-mini');
   const adapter = new AISDKAdapter({ model, name: 'openai' });
   await adapter.chat([{ role: 'user', content: 'x' }], { reasoning: 'low' });
-  expect((seen[0] as { openai: { reasoningEffort?: string } }).openai.reasoningEffort).toBe('minimal');
+  expect((seen[0] as { openai: { reasoningEffort?: string } }).openai.reasoningEffort).toBe(
+    'minimal',
+  );
 });
 
 it('sends nothing for a provider it does not know', async () => {
@@ -82,7 +84,7 @@ describe('the model each call names (TODO #10: lite tier ignored)', () => {
     expect(used).toEqual(['big']);
   });
 
-  it("applies the pinned effort to the default model only", async () => {
+  it('applies the pinned effort to the default model only', async () => {
     const seen: unknown[] = [];
     const build = (id: string) =>
       new MockLanguageModelV3({
@@ -105,7 +107,11 @@ describe('the model each call names (TODO #10: lite tier ignored)', () => {
     });
     await adapter.chat([{ role: 'user', content: 'x' }]);
     await adapter.chat([{ role: 'user', content: 'x' }], { model: 'gpt-5-mini' });
-    expect((seen[0] as { openai: { reasoning: { effort: string } } }).openai.reasoning.effort).toBe('high');
-    expect((seen[1] as { openai: { reasoning: { effort: string } } }).openai.reasoning.effort).toBe('minimal');
+    expect((seen[0] as { openai: { reasoning: { effort: string } } }).openai.reasoning.effort).toBe(
+      'high',
+    );
+    expect((seen[1] as { openai: { reasoning: { effort: string } } }).openai.reasoning.effort).toBe(
+      'minimal',
+    );
   });
 });

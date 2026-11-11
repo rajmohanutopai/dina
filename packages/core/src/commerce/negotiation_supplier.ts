@@ -55,7 +55,6 @@ import { ownerTimeZoneIfRead } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
 import { getWorkflowService } from '../workflow/service';
 
-
 import { goodsLimitKey, GOODS_SELLER_KIND, notePriceAnswer } from './goods_earned_room';
 import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from './negotiation_policy';
 import { partnerRunAlternatives } from './partner_run';

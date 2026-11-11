@@ -33,7 +33,11 @@ import { PersonaLockedError } from '../errors';
 import { buildEnqueuedMessageRow, parseHeldMessageMeta } from './ingest';
 import { getMessageRepository, type MessageRepository } from './message';
 import { getRunRepository, type RunRepository } from './repository';
-import { getReservationRepository, type ReservationRepository , ReservationRecord } from './reservation';
+import {
+  getReservationRepository,
+  type ReservationRepository,
+  ReservationRecord,
+} from './reservation';
 
 import type { AdmissionService } from './admission';
 import type { RunClassifyService } from './classification';
@@ -160,7 +164,11 @@ export class HeldReplayService {
         this.lockedArrival.finalize(meta.message_id, ref);
         this.reservations.commit(
           res.reservation_id,
-          { message_id: meta.message_id, dedup_key: meta.dedup_key, content_digest: meta.content_digest },
+          {
+            message_id: meta.message_id,
+            dedup_key: meta.dedup_key,
+            content_digest: meta.content_digest,
+          },
           this.now(),
           'held_by_lock',
         );
@@ -198,7 +206,11 @@ export class HeldReplayService {
       const nowMs = this.now();
       const committed = this.admission.commit(
         res.reservation_id,
-        { message_id: meta.message_id, dedup_key: meta.dedup_key, content_digest: meta.content_digest },
+        {
+          message_id: meta.message_id,
+          dedup_key: meta.dedup_key,
+          content_digest: meta.content_digest,
+        },
         () => {
           this.messages.create(buildEnqueuedMessageRow(meta, run, res, contentId, nowMs));
           this.classify.beginClassification(meta.message_id);

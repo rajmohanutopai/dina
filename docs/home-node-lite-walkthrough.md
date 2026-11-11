@@ -252,15 +252,12 @@ Five tiers, each catching a different class of regression:
 3. **Conformance suite** (`packages/protocol/conformance/`). 9
    frozen vectors. Self-checks the reference + exposes an HTTP
    harness for external implementations.
-4. **Lite suite in `run_all_tests.sh`** (task 12.7). Runs every
-   workspace's `npm test` as a Phase 1b gate before the Go/Python
-   Docker non-unit tests.
-5. **Milestone integration tests** (Phase 8 in the task plan).
-   M1–M5 gates validate the Lite stack against the same
-   `tests/integration/` suite the Go/Python stack satisfies.
+4. **Web end-to-end runs** (`apps/home-node-lite/web/__e2e__/`,
+   see `docs/E2E_TESTING.md`). Playwright drives the web app against
+   real Lite nodes.
 
-Every tier is green today except Phase 5 above, which lands across
-M1–M5.
+The Go/Python stack and its Python integration suites, which the Lite
+milestones were first checked against, have been removed.
 
 ## Where to go next
 

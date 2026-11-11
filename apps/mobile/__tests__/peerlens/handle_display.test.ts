@@ -35,9 +35,7 @@ describe('truncateDid', () => {
 describe('shortHandle', () => {
   it('returns the first DNS label of a multi-label handle', () => {
     expect(shortHandle('alice.pds.dinakernel.com')).toBe('alice');
-    expect(shortHandle('rajmohanddc9.test-pds.dinakernel.com')).toBe(
-      'rajmohanddc9',
-    );
+    expect(shortHandle('rajmohanddc9.test-pds.dinakernel.com')).toBe('rajmohanddc9');
   });
 
   it('passes a single-label handle through unchanged', () => {
@@ -68,9 +66,7 @@ describe('displayName', () => {
   it('prefers the first label of a non-empty handle', () => {
     // Default render: just the username. The full handle + DID + PLC
     // doc are revealed via the IdentityModal on tap.
-    expect(displayName('alice.pds.dinakernel.com', 'did:plc:abc')).toBe(
-      'alice',
-    );
+    expect(displayName('alice.pds.dinakernel.com', 'did:plc:abc')).toBe('alice');
   });
 
   it('falls back to truncated DID when handle is null', () => {
@@ -96,11 +92,8 @@ describe('displayName', () => {
     // Upstream wire types declare handle as `string | null`, but
     // unsafe deserialisation could land any value here. The helper
     // narrows on `typeof === 'string'` so the screen never throws.
-    const fn = (h: unknown, d: string): string =>
-      displayName(h as string | null | undefined, d);
-    expect(fn(42, 'did:plc:abc1234567890123')).toBe(
-      truncateDid('did:plc:abc1234567890123'),
-    );
+    const fn = (h: unknown, d: string): string => displayName(h as string | null | undefined, d);
+    expect(fn(42, 'did:plc:abc1234567890123')).toBe(truncateDid('did:plc:abc1234567890123'));
   });
 });
 
@@ -119,52 +112,33 @@ describe('displayNameWithOverride', () => {
     // someone else's display label even if the user has set one.
     // Renaming other people would be a per-contact alias feature, not
     // this one.
-    expect(
-      displayNameWithOverride(
-        'alice.pds.dinakernel.com',
-        OTHER,
-        SELF,
-        'Sancho',
-      ),
-    ).toBe('alice');
+    expect(displayNameWithOverride('alice.pds.dinakernel.com', OTHER, SELF, 'Sancho')).toBe(
+      'alice',
+    );
   });
 
   it('falls through to short handle when override is null', () => {
-    expect(
-      displayNameWithOverride(
-        'rajmohanddc9.test-pds.dinakernel.com',
-        SELF,
-        SELF,
-        null,
-      ),
-    ).toBe('rajmohanddc9');
+    expect(displayNameWithOverride('rajmohanddc9.test-pds.dinakernel.com', SELF, SELF, null)).toBe(
+      'rajmohanddc9',
+    );
   });
 
   it('falls through to short handle when override is the empty string', () => {
     // Defensive: the override service normalises '' to null on write,
     // but a stale render cycle could still pass '' here.
-    expect(
-      displayNameWithOverride(
-        'rajmohanddc9.test-pds.dinakernel.com',
-        SELF,
-        SELF,
-        '',
-      ),
-    ).toBe('rajmohanddc9');
+    expect(displayNameWithOverride('rajmohanddc9.test-pds.dinakernel.com', SELF, SELF, '')).toBe(
+      'rajmohanddc9',
+    );
   });
 
   it('falls through to truncated DID when handle is null and DID does not match selfDid', () => {
-    expect(displayNameWithOverride(null, OTHER, SELF, 'Sancho')).toBe(
-      truncateDid(OTHER),
-    );
+    expect(displayNameWithOverride(null, OTHER, SELF, 'Sancho')).toBe(truncateDid(OTHER));
   });
 
   it('falls through to truncated DID when selfDid is null', () => {
     // Pre-boot or signed-out state: there is no "self" yet, so the
     // override has nothing to attach to. The override must not leak
     // onto random rows just because selfDid hasn't loaded yet.
-    expect(displayNameWithOverride(null, SELF, null, 'Sancho')).toBe(
-      truncateDid(SELF),
-    );
+    expect(displayNameWithOverride(null, SELF, null, 'Sancho')).toBe(truncateDid(SELF));
   });
 });

@@ -138,9 +138,7 @@ export interface UcpLinkAuth {
    * The link's state at this merchant, its lifetime and its authorization
    * revision (an approved checkout binds both, §3.7); null: none.
    */
-  view(
-    origin: string,
-  ): {
+  view(origin: string): {
     state: 'active' | 'needs_relink' | 'revoking';
     link_id: string;
     auth_revision: number;

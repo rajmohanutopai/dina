@@ -165,7 +165,14 @@ describe('runReviewPublishTick', () => {
     const publishToPDS = jest.fn(async () => {
       // Move the row out of 'publishing' mid-write. The fence must match the
       // tick's claim (claimed_at = the tick clock, 1_000_000) for this to apply.
-      repo.requeue('job-1', 1, 0, { class: 'retryable', code: 'network', message: 'x' }, 1, 1_000_000);
+      repo.requeue(
+        'job-1',
+        1,
+        0,
+        { class: 'retryable', code: 'network', message: 'x' },
+        1,
+        1_000_000,
+      );
       return { uri: 'at://x', cid: 'c' };
     });
     const res = await runReviewPublishTick(deps(repo, { publishToPDS }));
@@ -177,7 +184,14 @@ describe('runReviewPublishTick', () => {
     const repo = new InMemoryReviewPublishRepository();
     repo.create(newJob());
     repo.claim('job-1', 1, LEASE);
-    repo.requeue('job-1', 1, 2_000_000, { class: 'retryable', code: 'network', message: 'x' }, 1, 1);
+    repo.requeue(
+      'job-1',
+      1,
+      2_000_000,
+      { class: 'retryable', code: 'network', message: 'x' },
+      1,
+      1,
+    );
     const publishToPDS = jest.fn(async () => ({ uri: 'x', cid: 'c' }));
     const res = await runReviewPublishTick(deps(repo, { now: () => 1_000_000, publishToPDS })); // < 2_000_000
     expect(publishToPDS).not.toHaveBeenCalled();

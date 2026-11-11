@@ -12,7 +12,6 @@ import {
   getStatusColor,
   configureHealthChecks,
   resetHealthChecks,
-  type HealthReport,
 } from '../../src/hooks/useHealthCheck';
 
 describe('Health Check Diagnostic Hook (9.14)', () => {

@@ -95,19 +95,25 @@ export function createNoteChangeTool(opts: {
     parameters: {
       type: 'object',
       properties: {
-        prior_item_id: { type: 'string', description: 'The id of the earlier memory, from vault_search.' },
+        prior_item_id: {
+          type: 'string',
+          description: 'The id of the earlier memory, from vault_search.',
+        },
         relation: { type: 'string', enum: ['supersedes', 'conflicts'] },
       },
       required: ['prior_item_id', 'relation'],
     },
     async execute(args) {
       const id = typeof args.prior_item_id === 'string' ? args.prior_item_id.trim() : '';
-      const relation = args.relation === 'supersedes' || args.relation === 'conflicts' ? args.relation : null;
+      const relation =
+        args.relation === 'supersedes' || args.relation === 'conflicts' ? args.relation : null;
       if (relation === null) return { error: 'relation must be supersedes or conflicts' };
       const summary = opts.seen.get(id);
-      if (summary === undefined) return { error: 'that id was not in a vault_search result in this memory; search first' };
+      if (summary === undefined)
+        return { error: 'that id was not in a vault_search result in this memory; search first' };
       const changes = (opts.collect.changes ??= []);
-      if (!changes.some((c) => c.priorItemId === id)) changes.push({ priorItemId: id, priorSummary: summary, relation });
+      if (!changes.some((c) => c.priorItemId === id))
+        changes.push({ priorItemId: id, priorSummary: summary, relation });
       return { noted: true };
     },
   };
@@ -173,9 +179,7 @@ export function createRouteToPersonaTool(opts: {
 // link_to_person
 // ---------------------------------------------------------------------------
 
-export function createLinkToPersonTool(opts: {
-  collect: RememberSideEffects;
-}): AgentTool {
+export function createLinkToPersonTool(opts: { collect: RememberSideEffects }): AgentTool {
   return {
     name: 'link_to_person',
     description:
@@ -195,7 +199,8 @@ export function createLinkToPersonTool(opts: {
         surfaceType: {
           type: 'string',
           enum: ['name', 'nickname', 'role_phrase'],
-          description: 'Kind of surface — name (Emma), nickname (Em), or role_phrase (my daughter).',
+          description:
+            'Kind of surface — name (Emma), nickname (Em), or role_phrase (my daughter).',
         },
         relationshipHint: {
           type: 'string',
@@ -227,8 +232,7 @@ export function createLinkToPersonTool(opts: {
         surfaceType,
         relationshipHint:
           typeof args.relationshipHint === 'string' ? args.relationshipHint.trim() : '',
-        sourceExcerpt:
-          typeof args.sourceExcerpt === 'string' ? args.sourceExcerpt.trim() : '',
+        sourceExcerpt: typeof args.sourceExcerpt === 'string' ? args.sourceExcerpt.trim() : '',
       });
       return { ok: true, linked: canonicalName !== '' ? canonicalName : surface };
     },
@@ -239,9 +243,7 @@ export function createLinkToPersonTool(opts: {
 // bind_preference
 // ---------------------------------------------------------------------------
 
-export function createBindPreferenceTool(opts: {
-  collect: RememberSideEffects;
-}): AgentTool {
+export function createBindPreferenceTool(opts: { collect: RememberSideEffects }): AgentTool {
   return {
     name: 'bind_preference',
     description:
@@ -284,8 +286,7 @@ export function createBindPreferenceTool(opts: {
         subjectKind,
         subject,
         preference,
-        sourceExcerpt:
-          typeof args.sourceExcerpt === 'string' ? args.sourceExcerpt.trim() : '',
+        sourceExcerpt: typeof args.sourceExcerpt === 'string' ? args.sourceExcerpt.trim() : '',
       });
       return { ok: true };
     },

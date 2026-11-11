@@ -290,7 +290,9 @@ function validateResource(r: unknown, i: number): string | null {
       const g = `${f}.alternatives[${String(i)}]`;
       const bad =
         validateId(alt?.alternative_id, `${g}.alternative_id`) ??
-        (/^(0|-?[1-9]\d{0,14})$/.test(String(alt.fee_delta)) ? null : `${g}.fee_delta: a whole number of minor units`);
+        (/^(0|-?[1-9]\d{0,14})$/.test(String(alt.fee_delta))
+          ? null
+          : `${g}.fee_delta: a whole number of minor units`);
       if (bad !== null) return bad;
       if (alt.alternative_id <= last) return `${f}.alternatives: sorted by id, unique`;
       last = alt.alternative_id;

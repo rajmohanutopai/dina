@@ -64,14 +64,21 @@ export function parseRelationshipPhrase(text: string): RelationshipPhrase | null
   const lower = t.toLowerCase();
   const own = /^(?:my|our)\s+(.+)$/.exec(lower);
   if (own !== null) {
-    const role = own[1]!;
+    const role = own[1];
+    if (role === undefined)
+      throw new Error('parseRelationshipPhrase: regex matched without its role group');
     return RELATIONSHIP_WORDS.has(role) ? { owner: 'self', role, phrase: `my ${role}` } : null;
   }
   if (RELATIONSHIP_WORDS.has(lower)) return { owner: 'self', role: lower, phrase: `my ${lower}` };
   const poss = /^(.+?)'s?\s+(\S+)$/.exec(t);
   if (poss !== null) {
-    const role = poss[2]!.toLowerCase();
-    const who = squeeze(poss[1]!);
+    const rawWho = poss[1];
+    const rawRole = poss[2];
+    if (rawWho === undefined || rawRole === undefined) {
+      throw new Error('parseRelationshipPhrase: regex matched without its owner or role group');
+    }
+    const role = rawRole.toLowerCase();
+    const who = squeeze(rawWho);
     if (RELATIONSHIP_WORDS.has(role) && who !== '' && !/^(?:my|our)$/i.test(who)) {
       return { owner: who, role, phrase: `${who.toLowerCase()}'s ${role}` };
     }

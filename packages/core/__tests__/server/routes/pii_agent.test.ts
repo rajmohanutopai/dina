@@ -3,10 +3,7 @@ import { registerPIIRoutes } from '../../../src/server/routes/pii';
 
 const AGENT_DID = 'did:key:z6MkCodingAgent';
 
-function request(
-  body: unknown,
-  over: Partial<CoreRequest> = {},
-): CoreRequest {
+function request(body: unknown, over: Partial<CoreRequest> = {}): CoreRequest {
   return {
     method: 'POST',
     path: '/v1/agent/scrub',
@@ -65,10 +62,7 @@ describe('POST /v1/agent/scrub', () => {
     expect(
       (
         await router.handle(
-          request(
-            { text: 'x'.repeat(100_001) },
-            { rawBody: new TextEncoder().encode('{}') },
-          ),
+          request({ text: 'x'.repeat(100_001) }, { rawBody: new TextEncoder().encode('{}') }),
         )
       ).status,
     ).toBe(413);

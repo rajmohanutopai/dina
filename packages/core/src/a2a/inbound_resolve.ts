@@ -30,9 +30,18 @@ import { effectiveDiscoverability, effectiveListingStatus, effectiveSurface } fr
 
 import { getPluginInstallRepository } from '../plugins/registry';
 import { namesReservedLane } from '../service/reserved_lanes';
-import { configuredCapabilityKey, listServiceConfigs, getServiceConfig, pluginBindingProblem } from '../service/service_config';
+import {
+  configuredCapabilityKey,
+  listServiceConfigs,
+  getServiceConfig,
+  pluginBindingProblem,
+} from '../service/service_config';
 
-import { classifyInboundCapability, type InboundActionClass, type InboundClassificationFailure } from './action_registry';
+import {
+  classifyInboundCapability,
+  type InboundActionClass,
+  type InboundClassificationFailure,
+} from './action_registry';
 import { liveRunnerBinding } from './runner_bindings';
 
 import type { PinnedSchemaPair } from './normalize';
@@ -103,7 +112,9 @@ export function selectA2AExecutor(
     if (pluginBindingProblem(cap) !== null) return null;
     const declared = getPluginInstallRepository()
       ?.getById(installId)
-      ?.manifest.capabilities.find((c: { id: string }) => c.id === capabilityId) as { action_class?: unknown } | undefined;
+      ?.manifest.capabilities.find((c: { id: string }) => c.id === capabilityId) as
+      | { action_class?: unknown }
+      | undefined;
     if (actionClass === null || declared?.action_class !== actionClass) return null;
     return { kind: 'plugin', installId, manifestCid, capabilityId };
   }
@@ -111,7 +122,9 @@ export function selectA2AExecutor(
   if (lane !== '') {
     const tool = typeof cap.mcpTool === 'string' ? cap.mcpTool : '';
     const binding = tool === '' ? null : liveRunnerBinding(store, lane);
-    return binding === null ? null : { kind: 'mcp_server', lane, mcpTool: tool, pepDid: binding.device_did };
+    return binding === null
+      ? null
+      : { kind: 'mcp_server', lane, mcpTool: tool, pepDid: binding.device_did };
   }
   const instruction = typeof cap.instruction === 'string' ? cap.instruction.trim() : '';
   return instruction === '' ? null : { kind: 'tier1' };
@@ -121,12 +134,16 @@ export function selectA2AExecutor(
 function liveServicesListing(rkey: string): ServiceConfig | null {
   const config = getServiceConfig(rkey);
   if (config === null) return null;
-  if (effectiveListingStatus(config) !== 'active' || effectiveSurface(config) !== 'services') return null;
+  if (effectiveListingStatus(config) !== 'active' || effectiveSurface(config) !== 'services')
+    return null;
   return config;
 }
 
 /** The pinned schema pair a listing publishes for one configured capability, or null. */
-export function pinnedSchemasOf(config: ServiceConfig, configuredKey: string): PinnedSchemaPair | null {
+export function pinnedSchemasOf(
+  config: ServiceConfig,
+  configuredKey: string,
+): PinnedSchemaPair | null {
   const s = config.capabilitySchemas?.[configuredKey];
   if (s === undefined || typeof s.params !== 'object' || s.params === null) return null;
   return {
@@ -141,7 +158,11 @@ export function pinnedSchemasOf(config: ServiceConfig, configuredKey: string): P
 /** How a listing is reached: its effective discoverability, as one access mode. */
 function accessModeOf(listing: ServiceConfig): AccessMode {
   const discoverability = effectiveDiscoverability(listing);
-  return discoverability === 'public' ? 'public' : discoverability === 'unlisted' ? 'unlisted' : 'known_only';
+  return discoverability === 'public'
+    ? 'public'
+    : discoverability === 'unlisted'
+      ? 'unlisted'
+      : 'known_only';
 }
 
 export function resolveInboundSkill(args: {
@@ -166,7 +187,8 @@ export function resolveInboundSkill(args: {
 
   if (envelope.skill.rkey !== undefined) {
     const listing = liveServicesListing(envelope.skill.rkey);
-    const key = listing === null ? null : configuredCapabilityKey(listing, envelope.skill.capability);
+    const key =
+      listing === null ? null : configuredCapabilityKey(listing, envelope.skill.capability);
     if (listing === null || key === null) return { ok: false, reason: 'skill_unknown' };
     rkey = envelope.skill.rkey;
     config = listing;
@@ -174,9 +196,11 @@ export function resolveInboundSkill(args: {
     mode = accessModeOf(listing);
   } else if (envelope.grantId !== undefined) {
     const grant = args.grants?.getById(envelope.grantId) ?? null;
-    if (grant === null || grant.granteeDid !== args.principal) return { ok: false, reason: 'grant_not_authorized' };
+    if (grant === null || grant.granteeDid !== args.principal)
+      return { ok: false, reason: 'grant_not_authorized' };
     const listing = liveServicesListing(grant.serviceRkey);
-    const key = listing === null ? null : configuredCapabilityKey(listing, envelope.skill.capability);
+    const key =
+      listing === null ? null : configuredCapabilityKey(listing, envelope.skill.capability);
     if (listing === null || key === null) return { ok: false, reason: 'skill_unknown' };
     rkey = grant.serviceRkey;
     config = listing;
@@ -207,7 +231,8 @@ export function resolveInboundSkill(args: {
     const c = classifyInboundCapability(key);
     return { canonical: c.ok ? c.canonical : null };
   });
-  if (ambiguousCanonicals(configured).has(canonical)) return { ok: false, reason: 'skill_ambiguous' };
+  if (ambiguousCanonicals(configured).has(canonical))
+    return { ok: false, reason: 'skill_ambiguous' };
 
   // The access mode, total over the three.
   if (mode === 'public') {
@@ -215,7 +240,11 @@ export function resolveInboundSkill(args: {
     // sensitive or subject-scoped capability is never public, whatever a
     // listing row says.
     if (!publicExposureAllowed) return { ok: false, reason: 'not_public_exposable' };
-    if (args.scope.length > 0 && !args.scope.includes(qualifySkill(canonical, rkey)) && !args.scope.includes(canonical)) {
+    if (
+      args.scope.length > 0 &&
+      !args.scope.includes(qualifySkill(canonical, rkey)) &&
+      !args.scope.includes(canonical)
+    ) {
       return { ok: false, reason: 'not_in_scope' };
     }
   } else if (mode === 'known_only' || envelope.grantId !== undefined) {

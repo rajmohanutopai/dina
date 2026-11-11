@@ -35,7 +35,8 @@ import { resetCallerTypeState, resetMiddlewareState } from '@dina/core/runtime';
 import { bootServer } from '../../src/boot';
 
 const REFERENCE_DIR = path.join(__dirname, 'reference');
-const PYTHON = process.env.DINA_A2A_REFERENCE_PYTHON ?? path.join(REFERENCE_DIR, '.venv', 'bin', 'python');
+const PYTHON =
+  process.env.DINA_A2A_REFERENCE_PYTHON ?? path.join(REFERENCE_DIR, '.venv', 'bin', 'python');
 const AVAILABLE = existsSync(PYTHON);
 const REQUIRED = process.env.DINA_A2A_REFERENCE_REQUIRED === '1';
 
@@ -69,14 +70,20 @@ function sdkCard(interfaces: string[]): Record<string, unknown> {
   return {
     name: 'Transit agent',
     description: 'Answers when the next bus comes.',
-    supportedInterfaces: interfaces.map((v) => ({ url: 'https://agent.example/a2a', protocolBinding: 'JSONRPC', protocolVersion: v })),
+    supportedInterfaces: interfaces.map((v) => ({
+      url: 'https://agent.example/a2a',
+      protocolBinding: 'JSONRPC',
+      protocolVersion: v,
+    })),
     version: '1.0.0',
     capabilities: { streaming: true },
     securitySchemes: { bearer: { httpAuthSecurityScheme: { scheme: 'Bearer' } } },
     securityRequirements: [{ schemes: { bearer: { list: [] } } }],
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
-    skills: [{ id: 'eta_query', name: 'ETA', description: 'When the bus comes.', tags: ['transit'] }],
+    skills: [
+      { id: 'eta_query', name: 'ETA', description: 'When the bus comes.', tags: ['transit'] },
+    ],
   };
 }
 
@@ -124,11 +131,25 @@ if (!AVAILABLE && REQUIRED) {
           status: 'active',
           name: 'Bus 42',
           // Answered in process, so the skill projects with no runner bound.
-          capabilities: { eta_query: { responsePolicy: 'auto', instruction: 'Answer from the timetable.', category: 'transit' } },
+          capabilities: {
+            eta_query: {
+              responsePolicy: 'auto',
+              instruction: 'Answer from the timetable.',
+              category: 'transit',
+            },
+          },
           capabilitySchemas: {
             eta_query: {
-              params: { type: 'object', required: ['route_id'], properties: { route_id: { type: 'string', minLength: 1 } } },
-              result: { type: 'object', required: ['eta_minutes'], properties: { eta_minutes: { type: 'integer' } } },
+              params: {
+                type: 'object',
+                required: ['route_id'],
+                properties: { route_id: { type: 'string', minLength: 1 } },
+              },
+              result: {
+                type: 'object',
+                required: ['eta_minutes'],
+                properties: { eta_minutes: { type: 'integer' } },
+              },
               schemaHash: 'h-eta',
             },
           },
@@ -136,14 +157,26 @@ if (!AVAILABLE && REQUIRED) {
         'bus',
       );
       registerService(GATEWAY_DID, 'gateway');
-      const headers = signRequest('GET', '/v1/a2a/card', '', new Uint8Array(), GATEWAY_SEED, GATEWAY_DID);
+      const headers = signRequest(
+        'GET',
+        '/v1/a2a/card',
+        '',
+        new Uint8Array(),
+        GATEWAY_SEED,
+        GATEWAY_DID,
+      );
       const res = await booted.app.inject({ method: 'GET', url: '/v1/a2a/card', headers });
       expect([res.statusCode, res.statusCode === 200 ? 'card' : res.body]).toEqual([200, 'card']);
-      const { card, jwks } = res.json() as { card: Record<string, unknown> & { signatures: unknown[] }; jwks: unknown };
+      const { card, jwks } = res.json() as {
+        card: Record<string, unknown> & { signatures: unknown[] };
+        jwks: unknown;
+      };
       expect(card.signatures).toHaveLength(2);
       expect(sdk('verify', { card, jwks })).toBe('verified');
       // Control: with the §8.4.1 signature alone, the SDK refuses Dina's card.
-      expect(sdk('verify', { card: { ...card, signatures: card.signatures.slice(0, 1) }, jwks })).toBe('InvalidSignaturesError');
+      expect(
+        sdk('verify', { card: { ...card, signatures: card.signatures.slice(0, 1) }, jwks }),
+      ).toBe('InvalidSignaturesError');
     } finally {
       await booted.app.close();
     }
@@ -153,12 +186,16 @@ if (!AVAILABLE && REQUIRED) {
     ['a v1.0 card with a bearer requirement', ['1.0']],
     ['a dual-version card, its v0.3 members added by the SDK’s server', ['1.0', '0.3']],
   ])('%s, signed by the SDK, verifies in Core’s production verifier', async (_name, interfaces) => {
-    const signed = JSON.parse(sdk('sign', { card: sdkCard(interfaces), jwk: SDK_KEY, kid: SDK_KEY.kid, jku: SDK_JKU })) as Record<string, unknown>;
+    const signed = JSON.parse(
+      sdk('sign', { card: sdkCard(interfaces), jwk: SDK_KEY, kid: SDK_KEY.kid, jku: SDK_JKU }),
+    ) as Record<string, unknown>;
     // The SDK checks its own card first: what Core reads is a card the SDK stands behind.
     expect(sdk('verify', { card: signed, jwks: { keys: [SDK_PUBLIC] } })).toBe('verified');
     const notes: KeyResolutionNote[] = [];
     const verify = createJkuVerifier(notes, async (url) =>
-      url === SDK_JKU ? { ok: true, keys: [SDK_PUBLIC as unknown as JsonValue] } : { ok: false, reason: 'unreachable' as never },
+      url === SDK_JKU
+        ? { ok: true, keys: [SDK_PUBLIC as unknown as JsonValue] }
+        : { ok: false, reason: 'unreachable' as never },
     );
     const report = await verifyAgentCardSignatures(signed, verify);
     expect(report.state).toBe('verified');

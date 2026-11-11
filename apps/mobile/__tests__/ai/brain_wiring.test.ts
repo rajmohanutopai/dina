@@ -95,7 +95,11 @@ describe('the single-shot path goes through the PII router (PII V2 §3, dual rev
   afterEach(() => installNameLexicon(null));
 
   it('query and context leave through one token table: names hidden, two emails two tokens, answer restored', async () => {
-    installNameLexicon(new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Emma'] }] }) }));
+    installNameLexicon(
+      new NameLexicon({
+        fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Emma'] }] }),
+      }),
+    );
     const seen: { system: string | undefined; prompt: string | undefined }[] = [];
     const model = makeMockModel({
       onCall: (args) => seen.push({ system: args.system, prompt: args.prompt }),
@@ -126,7 +130,7 @@ describe('registerBrainReasoningLLM — Brain orchestrator sees our provider', (
     // it's private, so we exercise it indirectly by invoking it via
     // the same module-level ref. Import-order friendly: reason() is
     // what actually calls the registered LLM in production.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     const pipeline = require('../../../brain/src/pipeline/chat_reasoning') as {
       reason: (req: {
         query: string;

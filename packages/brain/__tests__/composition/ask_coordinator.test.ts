@@ -156,13 +156,25 @@ function makeFakeCoreClient(): {
   const client = {
     // find_preferred_provider surface
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
-    async listPluginToolCapabilities() { return []; },
-    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    async listPluginToolCapabilities() {
+      return [];
+    },
+    async invokePluginTool() {
+      return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' };
+    },
     // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
-    async listContacts() { return []; },
-    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
-    async getGroupPlan() { return null; },
-    async listGroupPlanHandles() { return []; },
+    async listContacts() {
+      return [];
+    },
+    async openGroupPlan() {
+      return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' };
+    },
+    async getGroupPlan() {
+      return null;
+    },
+    async listGroupPlanHandles() {
+      return [];
+    },
     async findContactsByPreference() {
       return [];
     },
@@ -595,16 +607,24 @@ describe('workflowTaskAsSource adapter', () => {
 describe('buildAgenticExecuteFn translation', () => {
   it('an emotional message goes ahead with warmth, not a canned reply that ends the talk (REAL_LIFE_FIXES §8)', async () => {
     const llm = makeScripted();
-    llm.push(answerResp("That sounds really hard. Would it help to message someone you're close to?"));
+    llm.push(
+      answerResp("That sounds really hard. Would it help to message someone you're close to?"),
+    );
     const { client } = makeFakeCoreClient();
     const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });
     const fn = buildAgenticExecuteFn({ pipeline, systemPrompt: SYSTEM_PROMPT });
 
-    const out = await fn({ id: 'ask-anti-her', question: 'I feel so lonely', requesterDid: REQUESTER });
+    const out = await fn({
+      id: 'ask-anti-her',
+      question: 'I feel so lonely',
+      requesterDid: REQUESTER,
+    });
 
     expect(out.kind).toBe('answer');
     expect(llm.calls[0]?.options?.systemPrompt).toContain('Respond with warmth first');
-    expect(llm.calls[0]?.options?.systemPrompt).toContain('do not offer yourself as their main support');
+    expect(llm.calls[0]?.options?.systemPrompt).toContain(
+      'do not offer yourself as their main support',
+    );
   });
 
   it('acute risk gets the fixed crisis reply before any model or tool call', async () => {
@@ -672,7 +692,8 @@ describe('buildAgenticExecuteFn translation', () => {
 
   it('guards a wrap-up written when the step budget ran out, like any answer', async () => {
     const llm = makeScripted();
-    for (let i = 0; i < 8; i++) llm.push(toolCallResp({ id: `v${i}`, name: 'vault_search', arguments: { query: `q${i}` } }));
+    for (let i = 0; i < 8; i++)
+      llm.push(toolCallResp({ id: `v${i}`, name: 'vault_search', arguments: { query: `q${i}` } }));
     llm.push(answerResp("I'm always here for you. Call Sancho instead."));
     const { client } = makeFakeCoreClient();
     const pipeline = buildPipeline({ llm: llm.provider, coreClient: client });

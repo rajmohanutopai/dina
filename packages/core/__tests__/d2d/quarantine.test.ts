@@ -224,7 +224,11 @@ describe('Quarantine Management', () => {
       // User A: a quarantined stranger, hydrated in memory.
       const a = makeFakeRepo();
       setQuarantineRepository(a.repo);
-      const stale = quarantineMessage('did:plc:userA-stranger', 'social.update', '{"text":"A secret"}');
+      const stale = quarantineMessage(
+        'did:plc:userA-stranger',
+        'social.update',
+        '{"text":"A secret"}',
+      );
       expect(getQuarantined(stale.id)?.body).toBe('{"text":"A secret"}');
 
       // Sign-out teardown (what shutdownAllPersistence now does).

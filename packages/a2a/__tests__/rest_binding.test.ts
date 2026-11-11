@@ -32,10 +32,30 @@ describe('routes: the v1.0 paths, no /v1 prefix', () => {
     ['POST', '/tasks/t-1:cancel', 'CancelTask', { id: 't-1' }],
     ['GET', '/tasks/t-1:subscribe', 'SubscribeToTask', { id: 't-1' }],
     ['POST', '/tasks/t-1:subscribe', 'SubscribeToTask', { id: 't-1' }],
-    ['POST', '/tasks/t-1/pushNotificationConfigs', 'CreateTaskPushNotificationConfig', { taskId: 't-1' }],
-    ['GET', '/tasks/t-1/pushNotificationConfigs', 'ListTaskPushNotificationConfigs', { taskId: 't-1' }],
-    ['GET', '/tasks/t-1/pushNotificationConfigs/c-2', 'GetTaskPushNotificationConfig', { taskId: 't-1', id: 'c-2' }],
-    ['DELETE', '/tasks/t-1/pushNotificationConfigs/c-2', 'DeleteTaskPushNotificationConfig', { taskId: 't-1', id: 'c-2' }],
+    [
+      'POST',
+      '/tasks/t-1/pushNotificationConfigs',
+      'CreateTaskPushNotificationConfig',
+      { taskId: 't-1' },
+    ],
+    [
+      'GET',
+      '/tasks/t-1/pushNotificationConfigs',
+      'ListTaskPushNotificationConfigs',
+      { taskId: 't-1' },
+    ],
+    [
+      'GET',
+      '/tasks/t-1/pushNotificationConfigs/c-2',
+      'GetTaskPushNotificationConfig',
+      { taskId: 't-1', id: 'c-2' },
+    ],
+    [
+      'DELETE',
+      '/tasks/t-1/pushNotificationConfigs/c-2',
+      'DeleteTaskPushNotificationConfig',
+      { taskId: 't-1', id: 'c-2' },
+    ],
     ['GET', '/extendedAgentCard', 'GetExtendedAgentCard', {}],
   ])('%s %s → %s', (method, path, operation, ids) => {
     const m = matched(method, path);
@@ -61,11 +81,15 @@ describe('routes: the v1.0 paths, no /v1 prefix', () => {
   it('maps each request to its operation’s Core route, the ids from the path', () => {
     expect(restIngressPath(matched('POST', '/message:send'))).toBe('/v1/a2a/ingress/message');
     expect(restIngressPath(matched('GET', '/tasks/t%2F1'))).toBe('/v1/a2a/ingress/tasks/t%2F1/get');
-    expect(restIngressPath(matched('POST', '/tasks/t-1:subscribe'))).toBe('/v1/a2a/ingress/tasks/t-1/subscribe');
+    expect(restIngressPath(matched('POST', '/tasks/t-1:subscribe'))).toBe(
+      '/v1/a2a/ingress/tasks/t-1/subscribe',
+    );
     expect(restIngressPath(matched('DELETE', '/tasks/t-1/pushNotificationConfigs/c-2'))).toBe(
       '/v1/a2a/ingress/push-configs/t-1/c-2/delete',
     );
-    expect(restIngressPath(matched('GET', '/extendedAgentCard'))).toBe('/v1/a2a/ingress/extended-card');
+    expect(restIngressPath(matched('GET', '/extendedAgentCard'))).toBe(
+      '/v1/a2a/ingress/extended-card',
+    );
   });
 
   it('names the methods a path is served by', () => {
@@ -84,44 +108,89 @@ describe('routes: the v1.0 paths, no /v1 prefix', () => {
 describe('params', () => {
   it('a message call: the body is the request', () => {
     const body = JSON.stringify({ message: { messageId: 'm', role: 'ROLE_USER', parts: [] } });
-    expect(restParams(matched('POST', '/message:send'), '', body)).toEqual({ ok: true, params: JSON.parse(body) });
+    expect(restParams(matched('POST', '/message:send'), '', body)).toEqual({
+      ok: true,
+      params: JSON.parse(body),
+    });
   });
 
   it('a list: typed query parameters, and the version', () => {
     expect(
-      restParams(matched('GET', '/tasks'), 'contextId=c%201&pageSize=20&includeArtifacts=true&A2A-Version=1.0', ''),
-    ).toEqual({ ok: true, params: { contextId: 'c 1', pageSize: 20, includeArtifacts: true }, versionParameter: '1.0' });
+      restParams(
+        matched('GET', '/tasks'),
+        'contextId=c%201&pageSize=20&includeArtifacts=true&A2A-Version=1.0',
+        '',
+      ),
+    ).toEqual({
+      ok: true,
+      params: { contextId: 'c 1', pageSize: 20, includeArtifacts: true },
+      versionParameter: '1.0',
+    });
   });
 
   it('the path names the task: a body may repeat it, never change it', () => {
     const cancel = matched('POST', '/tasks/t-1:cancel');
     expect(restParams(cancel, '', '')).toEqual({ ok: true, params: { id: 't-1' } });
-    expect(restParams(cancel, '', '{"id":"t-1","metadata":{}}')).toEqual({ ok: true, params: { id: 't-1', metadata: {} } });
+    expect(restParams(cancel, '', '{"id":"t-1","metadata":{}}')).toEqual({
+      ok: true,
+      params: { id: 't-1', metadata: {} },
+    });
     expect(restParams(cancel, '', '{"id":"t-2"}')).toEqual({ ok: false, reason: 'id_mismatch' });
     const create = matched('POST', '/tasks/t-1/pushNotificationConfigs');
     expect(restParams(create, '', '{"url":"https://h.example/a"}')).toEqual({
       ok: true,
       params: { url: 'https://h.example/a', taskId: 't-1' },
     });
-    expect(restParams(create, '', '{"url":"https://h.example/a","taskId":"t-9"}')).toEqual({ ok: false, reason: 'id_mismatch' });
+    expect(restParams(create, '', '{"url":"https://h.example/a","taskId":"t-9"}')).toEqual({
+      ok: false,
+      reason: 'id_mismatch',
+    });
   });
 
   it.each([
     ['an unknown query parameter', 'GET', '/tasks/t-1', 'x=1', '', 'query_not_allowed'],
-    ['a key named after an Object.prototype member', 'GET', '/tasks/t-1', 'constructor=1', '', 'query_not_allowed'],
+    [
+      'a key named after an Object.prototype member',
+      'GET',
+      '/tasks/t-1',
+      'constructor=1',
+      '',
+      'query_not_allowed',
+    ],
     ['toString on a list', 'GET', '/tasks', 'toString=1', '', 'query_not_allowed'],
     ['__proto__', 'GET', '/tasks', '__proto__=1', '', 'query_not_allowed'],
-    ['hasOwnProperty on a body route', 'POST', '/message:send', 'hasOwnProperty=1', '{"message":{}}', 'query_not_allowed'],
+    [
+      'hasOwnProperty on a body route',
+      'POST',
+      '/message:send',
+      'hasOwnProperty=1',
+      '{"message":{}}',
+      'query_not_allowed',
+    ],
     ['a parameter twice', 'GET', '/tasks', 'pageSize=1&pageSize=2', '', 'query_not_allowed'],
     ['a number that is not one', 'GET', '/tasks', 'pageSize=ten', '', 'query_not_allowed'],
     ['a negative number', 'GET', '/tasks', 'pageSize=-1', '', 'query_not_allowed'],
     ['a boolean that is not one', 'GET', '/tasks', 'includeArtifacts=yes', '', 'query_not_allowed'],
     ['a version that is not one', 'GET', '/tasks', 'A2A-Version=latest', '', 'query_not_allowed'],
-    ['a query that does not decode', 'GET', '/tasks', 'contextId=%E0%A4%A', '', 'query_not_allowed'],
+    [
+      'a query that does not decode',
+      'GET',
+      '/tasks',
+      'contextId=%E0%A4%A',
+      '',
+      'query_not_allowed',
+    ],
     ['a body on a read', 'GET', '/tasks/t-1', '', '{}', 'body_not_allowed'],
     ['a message call with no body', 'POST', '/message:send', '', '', 'malformed_body'],
     ['a body that is not an object', 'POST', '/message:send', '', '[1]', 'malformed_body'],
-    ['a body with a member twice', 'POST', '/message:send', '', '{"message":{},"message":{}}', 'malformed_body'],
+    [
+      'a body with a member twice',
+      'POST',
+      '/message:send',
+      '',
+      '{"message":{},"message":{}}',
+      'malformed_body',
+    ],
   ])('refuses %s', (_name, method, path, query, body, reason) => {
     expect(restParams(matched(method, path), query, body)).toEqual({ ok: false, reason });
   });
@@ -145,7 +214,12 @@ describe('errors: google.rpc.Status, A2A’s mapping, Dina’s reason kept', () 
     ['taskNotCancelable', 400, 'FAILED_PRECONDITION', 'TASK_NOT_CANCELABLE'],
     ['unsupportedOperation', 400, 'FAILED_PRECONDITION', 'UNSUPPORTED_OPERATION'],
     ['versionNotSupported', 400, 'FAILED_PRECONDITION', 'VERSION_NOT_SUPPORTED'],
-    ['extendedAgentCardNotConfigured', 400, 'FAILED_PRECONDITION', 'EXTENDED_AGENT_CARD_NOT_CONFIGURED'],
+    [
+      'extendedAgentCardNotConfigured',
+      400,
+      'FAILED_PRECONDITION',
+      'EXTENDED_AGENT_CARD_NOT_CONFIGURED',
+    ],
     ['invalidParams', 400, 'INVALID_ARGUMENT', 'INVALID_PARAMS'],
     ['invalidRequest', 400, 'INVALID_ARGUMENT', 'INVALID_REQUEST'],
     ['methodNotFound', 404, 'NOT_FOUND', 'METHOD_NOT_FOUND'],
@@ -159,14 +233,25 @@ describe('errors: google.rpc.Status, A2A’s mapping, Dina’s reason kept', () 
         status,
         message: a2aError(kind).message,
         details: [
-          { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, domain: 'a2a-protocol.org', metadata: {} },
-          { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'dina_reason', domain: 'dinakernel.com' },
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason,
+            domain: 'a2a-protocol.org',
+            metadata: {},
+          },
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'dina_reason',
+            domain: 'dinakernel.com',
+          },
         ],
       },
     });
   });
 
   it('an error with no Dina reason carries A2A’s alone', () => {
-    expect((restError(a2aError('taskNotFound')).body.error as { details: unknown[] }).details).toHaveLength(1);
+    expect(
+      (restError(a2aError('taskNotFound')).body.error as { details: unknown[] }).details,
+    ).toHaveLength(1);
   });
 });

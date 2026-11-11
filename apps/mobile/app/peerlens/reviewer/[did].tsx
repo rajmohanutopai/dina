@@ -35,14 +35,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 
 import { FEATURE_NAMES } from '@dina/core';
 
@@ -153,7 +146,6 @@ export interface ReviewerProfileScreenProps {
   pendingItems?: readonly PendingReviewItem[];
 }
 
-
 /** Authored reviews shown before the "View all reviews" expander. */
 const AUTHORED_PREVIEW_COUNT = 5;
 
@@ -211,7 +203,9 @@ function pendingLabel(job: PublishJob): string {
       typeof d.headline === 'string' && d.headline.trim() !== '' ? d.headline.trim() : '';
     if (headline !== '') return headline;
     const subject =
-      typeof d.subjectTitle === 'string' && d.subjectTitle.trim() !== '' ? d.subjectTitle.trim() : '';
+      typeof d.subjectTitle === 'string' && d.subjectTitle.trim() !== ''
+        ? d.subjectTitle.trim()
+        : '';
     return subject !== '' ? `Review of ${subject}` : 'Your review';
   } catch {
     return 'Your review';
@@ -253,9 +247,7 @@ export default function ReviewerProfileScreen(
     namespace?: string | string[];
     did?: string | string[];
   }>();
-  const paramNamespace = Array.isArray(params.namespace)
-    ? params.namespace[0]
-    : params.namespace;
+  const paramNamespace = Array.isArray(params.namespace) ? params.namespace[0] : params.namespace;
   const paramDidRaw = Array.isArray(params.did) ? params.did[0] : params.did;
   // Reviewer links encode the DID (`did:plc:…` → `did%3Aplc%3A…`)
   // because the path segment otherwise contains literal colons. Expo
@@ -408,7 +400,9 @@ export default function ReviewerProfileScreen(
     if (props.profile !== undefined || props.error !== undefined) return;
     if (paramDid) return;
     const id = setTimeout(() => {
-      setAutoError(`Couldn't reach ${FEATURE_NAMES.peerlens}. Check your connection and try again.`);
+      setAutoError(
+        `Couldn't reach ${FEATURE_NAMES.peerlens}. Check your connection and try again.`,
+      );
     }, LOAD_BUDGET_MS);
     return () => clearTimeout(id);
   }, [paramDid, retryNonce, props.profile, props.error]);
@@ -487,10 +481,7 @@ export default function ReviewerProfileScreen(
           {onRetry && (
             <Pressable
               onPress={onRetry}
-              style={({ pressed }) => [
-                styles.retryBtn,
-                pressed && styles.retryBtnPressed,
-              ]}
+              style={({ pressed }) => [styles.retryBtn, pressed && styles.retryBtnPressed]}
               testID="reviewer-profile-retry"
               accessibilityRole="button"
               accessibilityLabel="Retry"
@@ -559,8 +550,7 @@ export default function ReviewerProfileScreen(
   // Default render is the short username. The full handle, full DID,
   // and PLC services are revealed in the IdentityModal when the user
   // taps the header — same affordance every other peer-row gets.
-  const shortName =
-    display.handle !== null ? shortHandle(display.handle) : null;
+  const shortName = display.handle !== null ? shortHandle(display.handle) : null;
 
   return (
     <>
@@ -574,261 +564,234 @@ export default function ReviewerProfileScreen(
         testID="reviewer-profile-screen"
       >
         {/* ─── Header card: identity + score + band ─────────────────── */}
-      <View style={styles.headerCard}>
-        <View style={styles.headerRow}>
-          <Pressable
-            style={styles.headerIdentity}
-            onPress={() => setIdentityOpen(true)}
-            accessibilityRole="button"
-            accessibilityLabel={`Show full identity for ${shortName ?? display.did}`}
-            testID="reviewer-identity-tap"
-          >
-            {/* Default: short username only — `alice` rather than
+        <View style={styles.headerCard}>
+          <View style={styles.headerRow}>
+            <Pressable
+              style={styles.headerIdentity}
+              onPress={() => setIdentityOpen(true)}
+              accessibilityRole="button"
+              accessibilityLabel={`Show full identity for ${shortName ?? display.did}`}
+              testID="reviewer-identity-tap"
+            >
+              {/* Default: short username only — `alice` rather than
                 `alice.pds.dinakernel.com`. The full handle, DID, and
                 PLC services are exposed in the IdentityModal on tap. */}
-            {shortName !== null ? (
-              <>
-                <Text
-                  style={styles.headerHandle}
-                  numberOfLines={1}
-                  ellipsizeMode="tail"
-                  accessibilityLabel={`Reviewer ${shortName}`}
-                  testID="reviewer-handle"
-                >
-                  {shortName}
+              {shortName !== null ? (
+                <>
+                  <Text
+                    style={styles.headerHandle}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                    accessibilityLabel={`Reviewer ${shortName}`}
+                    testID="reviewer-handle"
+                  >
+                    {shortName}
+                  </Text>
+                  <Text style={styles.headerHint} testID="reviewer-handle-hint">
+                    Tap for full identity
+                  </Text>
+                </>
+              ) : (
+                // No resolved handle — render a truncated DID + a clarifying
+                // hint so the screen doesn't read like raw machine output.
+                // The truncation matches every other peer-row in the app
+                // (`did:plc:abc1…7890`); the hint explains *why* there's no
+                // name (handle not yet backfilled, or this DID never
+                // published an `alsoKnownAs[0]`).
+                <>
+                  <Text
+                    style={styles.headerDid}
+                    numberOfLines={1}
+                    ellipsizeMode="middle"
+                    accessibilityLabel={`Reviewer ${display.did}`}
+                    testID="reviewer-handle"
+                  >
+                    {truncateDid(display.did)}
+                  </Text>
+                  <Text style={styles.headerHint} testID="reviewer-handle-hint">
+                    Anonymous identity. No handle published
+                  </Text>
+                </>
+              )}
+              {namespace && (
+                <Text style={styles.headerNamespace} testID="reviewer-namespace">
+                  #{namespace}
                 </Text>
-                <Text style={styles.headerHint} testID="reviewer-handle-hint">
-                  Tap for full identity
-                </Text>
-              </>
-            ) : (
-              // No resolved handle — render a truncated DID + a clarifying
-              // hint so the screen doesn't read like raw machine output.
-              // The truncation matches every other peer-row in the app
-              // (`did:plc:abc1…7890`); the hint explains *why* there's no
-              // name (handle not yet backfilled, or this DID never
-              // published an `alsoKnownAs[0]`).
-              <>
-                <Text
-                  style={styles.headerDid}
-                  numberOfLines={1}
-                  ellipsizeMode="middle"
-                  accessibilityLabel={`Reviewer ${display.did}`}
-                  testID="reviewer-handle"
-                >
-                  {truncateDid(display.did)}
-                </Text>
-                <Text style={styles.headerHint} testID="reviewer-handle-hint">
-                  Anonymous identity. No handle published
-                </Text>
-              </>
-            )}
-            {namespace && (
-              <Text style={styles.headerNamespace} testID="reviewer-namespace">
-                #{namespace}
-              </Text>
-            )}
-          </Pressable>
-          {isSelf ? (
-            <View
-              style={[styles.scoreBadge, styles.selfBadge]}
-              testID="reviewer-self-badge"
-            >
-              <Text style={styles.scoreLabel}>You</Text>
-            </View>
-          ) : (
-            <View
-              style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.band] }]}
-              testID={`reviewer-band-${display.band}`}
-            >
-              <Text style={styles.scoreLabel}>
-                {display.hasNumericScore ? display.scoreLabel : BAND_LABEL[display.band]}
-              </Text>
-            </View>
-          )}
-        </View>
-        <View style={styles.headerMeta}>
-          <Ionicons name="time-outline" size={14} color={colors.textMuted} />
-          <Text style={styles.headerMetaText}>Last active {lastActive}</Text>
-        </View>
-      </View>
-
-      <IdentityModal
-        visible={identityOpen}
-        onClose={() => setIdentityOpen(false)}
-        did={display.did}
-        initialHandle={display.handle}
-      />
-
-      {/* ─── Stats grid ─────────────────────────────────────────── */}
-      <View style={styles.statsGrid} testID="reviewer-stats-grid">
-        <StatCell
-          label="Reviews written"
-          testKey="attestations"
-          value={reviewsWrittenDisplay}
-        />
-        <StatCell label="Vouches" testKey="vouches" value={display.vouchCount} />
-        <StatCell
-          label="Endorsements"
-          testKey="endorsements"
-          value={display.endorsementCount}
-        />
-        <StatCell
-          label="Helpful"
-          testKey="helpful"
-          value={
-            display.helpfulRatioDisplay !== null
-              ? `${display.helpfulRatioDisplay}%`
-              : '—'
-          }
-        />
-        <StatCell
-          label="Corroborated"
-          testKey="corroborated"
-          value={
-            display.corroborationRateDisplay !== null
-              ? `${display.corroborationRateDisplay}%`
-              : '—'
-          }
-        />
-      </View>
-
-      {/* ─── Sentiment breakdown — computed from authored reviews ──
-          Counts describe THIS reviewer's authored attestations, not
-          reviews about them. See `authoredCounts` above for why. */}
-      <View style={styles.sentimentRow} testID="reviewer-sentiment-row">
-        <SentimentChip
-          label="Positive"
-          count={authoredCounts.positive}
-          colour={colors.success}
-        />
-        <SentimentChip
-          label="Neutral"
-          count={authoredCounts.neutral}
-          colour={colors.textMuted}
-        />
-        <SentimentChip
-          label="Negative"
-          count={authoredCounts.negative}
-          colour={colors.warning}
-        />
-      </View>
-
-      {/* ─── Active domains chip-row ────────────────────────────── */}
-      {display.activeDomains.length > 0 && (
-        <View style={styles.section} testID="reviewer-domains-section">
-          <Text style={styles.sectionTitle}>Active in</Text>
-          <View style={styles.chipRow}>
-            {display.activeDomains.map((domain) => (
-              <View key={domain} style={styles.chip}>
-                <Text style={styles.chipText}>{domain}</Text>
+              )}
+            </Pressable>
+            {isSelf ? (
+              <View style={[styles.scoreBadge, styles.selfBadge]} testID="reviewer-self-badge">
+                <Text style={styles.scoreLabel}>You</Text>
               </View>
-            ))}
+            ) : (
+              <View
+                style={[styles.scoreBadge, { backgroundColor: BAND_COLOUR[display.band] }]}
+                testID={`reviewer-band-${display.band}`}
+              >
+                <Text style={styles.scoreLabel}>
+                  {display.hasNumericScore ? display.scoreLabel : BAND_LABEL[display.band]}
+                </Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.headerMeta}>
+            <Ionicons name="time-outline" size={14} color={colors.textMuted} />
+            <Text style={styles.headerMetaText}>Last active {lastActive}</Text>
           </View>
         </View>
-      )}
 
-      {/* ─── Reviews written ────────────────────────────────────────
+        <IdentityModal
+          visible={identityOpen}
+          onClose={() => setIdentityOpen(false)}
+          did={display.did}
+          initialHandle={display.handle}
+        />
+
+        {/* ─── Stats grid ─────────────────────────────────────────── */}
+        <View style={styles.statsGrid} testID="reviewer-stats-grid">
+          <StatCell label="Reviews written" testKey="attestations" value={reviewsWrittenDisplay} />
+          <StatCell label="Vouches" testKey="vouches" value={display.vouchCount} />
+          <StatCell label="Endorsements" testKey="endorsements" value={display.endorsementCount} />
+          <StatCell
+            label="Helpful"
+            testKey="helpful"
+            value={display.helpfulRatioDisplay !== null ? `${display.helpfulRatioDisplay}%` : '—'}
+          />
+          <StatCell
+            label="Corroborated"
+            testKey="corroborated"
+            value={
+              display.corroborationRateDisplay !== null
+                ? `${display.corroborationRateDisplay}%`
+                : '—'
+            }
+          />
+        </View>
+
+        {/* ─── Sentiment breakdown — computed from authored reviews ──
+          Counts describe THIS reviewer's authored attestations, not
+          reviews about them. See `authoredCounts` above for why. */}
+        <View style={styles.sentimentRow} testID="reviewer-sentiment-row">
+          <SentimentChip label="Positive" count={authoredCounts.positive} colour={colors.success} />
+          <SentimentChip label="Neutral" count={authoredCounts.neutral} colour={colors.textMuted} />
+          <SentimentChip label="Negative" count={authoredCounts.negative} colour={colors.warning} />
+        </View>
+
+        {/* ─── Active domains chip-row ────────────────────────────── */}
+        {display.activeDomains.length > 0 && (
+          <View style={styles.section} testID="reviewer-domains-section">
+            <Text style={styles.sectionTitle}>Active in</Text>
+            <View style={styles.chipRow}>
+              {display.activeDomains.map((domain) => (
+                <View key={domain} style={styles.chip}>
+                  <Text style={styles.chipText}>{domain}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* ─── Reviews written ────────────────────────────────────────
           Lists the actual attestations this DID has authored. For a PEER the
           section stays hidden during the initial load (`null`) so it doesn't
           flash empty; for the OWN dashboard it always renders (title + the
           persistent Write-a-review CTA), with a "no reviews yet" line once the
           list resolves empty. */}
-      {(authoredRows !== null || isSelf) && (
-        <View style={styles.section} testID="reviewer-authored-section">
-          <Text style={styles.sectionTitle}>
-            {isSelf ? 'Reviews you wrote' : 'Reviews written'}
-          </Text>
-          {/* Persistent "Write a review" CTA on the OWN dashboard — works whether
+        {(authoredRows !== null || isSelf) && (
+          <View style={styles.section} testID="reviewer-authored-section">
+            <Text style={styles.sectionTitle}>
+              {isSelf ? 'Reviews you wrote' : 'Reviews written'}
+            </Text>
+            {/* Persistent "Write a review" CTA on the OWN dashboard — works whether
               the list is empty (new-user onramp) or already has reviews (write
               another), so there's no need for a separate empty page. */}
-          {isSelf && (
-            <Pressable
-              onPress={onWriteReview}
-              style={({ pressed }) => [styles.writeReviewBtn, pressed && styles.retryBtnPressed]}
-              testID="reviewer-profile-write-cta"
-              accessibilityRole="button"
-              accessibilityLabel="Write a review"
-            >
-              <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
-              <Text style={styles.retryLabel}>Write a review</Text>
-            </Pressable>
-          )}
-          {/* Pending (just-submitted) reviews — greyed, clear-only, newest first,
+            {isSelf && (
+              <Pressable
+                onPress={onWriteReview}
+                style={({ pressed }) => [styles.writeReviewBtn, pressed && styles.retryBtnPressed]}
+                testID="reviewer-profile-write-cta"
+                accessibilityRole="button"
+                accessibilityLabel="Write a review"
+              >
+                <Ionicons name="create-outline" size={16} color={colors.bgSecondary} />
+                <Text style={styles.retryLabel}>Write a review</Text>
+              </Pressable>
+            )}
+            {/* Pending (just-submitted) reviews — greyed, clear-only, newest first,
               above the live list. Replaced by the real row once AppView indexes
               them (deduped by URI in `pendingItems`). */}
-          {pendingItems.length > 0 && (
-            <View style={styles.authoredList} testID="reviewer-pending-list">
-              {pendingItems.map((p) => (
-                <PendingReviewRowView key={p.jobId} item={p} />
-              ))}
-            </View>
-          )}
-          {authoredRows === null ? null : authoredRows.length === 0 ? (
-            // Only "no reviews" when there are no pending ones either.
-            pendingItems.length === 0 ? (
-              <Text style={styles.authoredEmpty} testID="reviewer-authored-empty">
-                {isSelf ? "You haven't written any reviews yet." : 'No reviews written yet.'}
-              </Text>
-            ) : null
-          ) : (
-            <>
-              <View style={styles.authoredList}>
-                {/* Preview the latest N (rows arrive recency-sorted); expand on
-                    "View all". Avoids an unbounded scroll on the profile when a
-                    prolific reviewer has dozens. */}
-                {(showAllReviews
-                  ? authoredRows
-                  : authoredRows.slice(0, AUTHORED_PREVIEW_COUNT)
-                ).map((row) => (
-                  <AuthoredAttestationRowView
-                    key={row.uri}
-                    row={row}
-                    nowMs={nowMs}
-                    onPress={onSelectAuthoredSubject}
-                    onEdit={isSelf ? onEditAuthored : undefined}
-                  />
+            {pendingItems.length > 0 && (
+              <View style={styles.authoredList} testID="reviewer-pending-list">
+                {pendingItems.map((p) => (
+                  <PendingReviewRowView key={p.jobId} item={p} />
                 ))}
               </View>
-              {!showAllReviews && authoredRows.length > AUTHORED_PREVIEW_COUNT && (
-                <ProfileLinkRow
-                  label={`View all reviews (${authoredRows.length})`}
-                  testID="reviewer-authored-view-all"
-                  onPress={() => setShowAllReviews(true)}
-                />
-              )}
-            </>
-          )}
-        </View>
-      )}
+            )}
+            {authoredRows === null ? null : authoredRows.length === 0 ? (
+              // Only "no reviews" when there are no pending ones either.
+              pendingItems.length === 0 ? (
+                <Text style={styles.authoredEmpty} testID="reviewer-authored-empty">
+                  {isSelf ? "You haven't written any reviews yet." : 'No reviews written yet.'}
+                </Text>
+              ) : null
+            ) : (
+              <>
+                <View style={styles.authoredList}>
+                  {/* Preview the latest N (rows arrive recency-sorted); expand on
+                    "View all". Avoids an unbounded scroll on the profile when a
+                    prolific reviewer has dozens. */}
+                  {(showAllReviews
+                    ? authoredRows
+                    : authoredRows.slice(0, AUTHORED_PREVIEW_COUNT)
+                  ).map((row) => (
+                    <AuthoredAttestationRowView
+                      key={row.uri}
+                      row={row}
+                      nowMs={nowMs}
+                      onPress={onSelectAuthoredSubject}
+                      onEdit={isSelf ? onEditAuthored : undefined}
+                    />
+                  ))}
+                </View>
+                {!showAllReviews && authoredRows.length > AUTHORED_PREVIEW_COUNT && (
+                  <ProfileLinkRow
+                    label={`View all reviews (${authoredRows.length})`}
+                    testID="reviewer-authored-view-all"
+                    onPress={() => setShowAllReviews(true)}
+                  />
+                )}
+              </>
+            )}
+          </View>
+        )}
 
-      {/* ─── Publishing (SELF only) ──────────────────────────────────
+        {/* ─── Publishing (SELF only) ──────────────────────────────────
           The owner's profile doubles as their review-publishing hub:
           pending publishes, publish identity, and result preferences
           live here (moved off the Network home). Peers see a read-only
           profile — none of this. ("How Ranked Reviews work" now lives on
           the Network home Reviews card, not here.) */}
-      {isSelf && (
-        <View style={styles.section} testID="reviewer-publishing-section">
-          <Text style={styles.sectionTitle}>Publishing</Text>
-          <ProfileLinkRow
-            label="Pending reviews"
-            testID="reviewer-row-pending-reviews"
-            onPress={() => router.push('/peerlens/outbox')}
-          />
-          <ProfileLinkRow
-            label="Publish as"
-            testID="reviewer-row-publish-as"
-            onPress={() => router.push('/peerlens/namespace')}
-          />
-          <ProfileLinkRow
-            label="Review preferences"
-            testID="reviewer-row-review-preferences"
-            onPress={() => router.push('/peerlens-preferences')}
-          />
-        </View>
-      )}
-    </ScrollView>
+        {isSelf && (
+          <View style={styles.section} testID="reviewer-publishing-section">
+            <Text style={styles.sectionTitle}>Publishing</Text>
+            <ProfileLinkRow
+              label="Pending reviews"
+              testID="reviewer-row-pending-reviews"
+              onPress={() => router.push('/peerlens/outbox')}
+            />
+            <ProfileLinkRow
+              label="Publish as"
+              testID="reviewer-row-publish-as"
+              onPress={() => router.push('/peerlens/namespace')}
+            />
+            <ProfileLinkRow
+              label="Review preferences"
+              testID="reviewer-row-review-preferences"
+              onPress={() => router.push('/peerlens-preferences')}
+            />
+          </View>
+        )}
+      </ScrollView>
     </>
   );
 }
@@ -914,9 +877,7 @@ interface AuthoredAttestationRowViewProps {
   onEdit?: (row: AuthoredAttestationRow) => void;
 }
 
-function AuthoredAttestationRowView(
-  props: AuthoredAttestationRowViewProps,
-): React.ReactElement {
+function AuthoredAttestationRowView(props: AuthoredAttestationRowViewProps): React.ReactElement {
   const { row, nowMs, onPress, onEdit } = props;
   // When the row exposes an Edit affordance, the outer Pressable
   // drops its `accessibilityRole="button"` + label so iOS
@@ -931,20 +892,19 @@ function AuthoredAttestationRowView(
     row.sentiment === 'positive'
       ? colors.success
       : row.sentiment === 'negative'
-      ? colors.warning
-      : colors.textMuted;
+        ? colors.warning
+        : colors.textMuted;
   const sentimentLabel =
     row.sentiment === 'positive'
       ? 'Positive'
       : row.sentiment === 'negative'
-      ? 'Negative'
-      : 'Neutral';
+        ? 'Negative'
+        : 'Neutral';
   // `createdAtMs <= 0` means the wire shipped a malformed timestamp
   // and the data layer fell back to 0; "long ago" is a more honest
   // label than "60 months ago" (which is what formatLastActive
   // would compute against the unix epoch).
-  const relative =
-    row.createdAtMs > 0 ? formatLastActive(row.createdAtMs, nowMs) : 'long ago';
+  const relative = row.createdAtMs > 0 ? formatLastActive(row.createdAtMs, nowMs) : 'long ago';
   const handlePress = onPress ? () => onPress(row.subjectId) : undefined;
   return (
     <Pressable
@@ -955,16 +915,10 @@ function AuthoredAttestationRowView(
       ]}
       testID={`reviewer-authored-row-${row.uri}`}
       accessibilityRole={showEdit ? undefined : handlePress ? 'button' : 'text'}
-      accessibilityLabel={
-        showEdit ? undefined : `${sentimentLabel} review of ${row.subjectTitle}`
-      }
+      accessibilityLabel={showEdit ? undefined : `${sentimentLabel} review of ${row.subjectTitle}`}
     >
       <View style={styles.authoredHeader}>
-        <Text
-          style={styles.authoredTitle}
-          numberOfLines={1}
-          ellipsizeMode="tail"
-        >
+        <Text style={styles.authoredTitle} numberOfLines={1} ellipsizeMode="tail">
           {row.subjectTitle}
         </Text>
         <View
@@ -975,11 +929,7 @@ function AuthoredAttestationRowView(
         </View>
       </View>
       {row.headline.length > 0 && (
-        <Text
-          style={styles.authoredHeadline}
-          numberOfLines={2}
-          ellipsizeMode="tail"
-        >
+        <Text style={styles.authoredHeadline} numberOfLines={2} ellipsizeMode="tail">
           “{row.headline}”
         </Text>
       )}
@@ -1009,7 +959,6 @@ function AuthoredAttestationRowView(
     </Pressable>
   );
 }
-
 
 interface StatCellProps {
   label: string;

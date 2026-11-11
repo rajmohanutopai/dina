@@ -120,7 +120,10 @@ describe('risk gate (§6.3)', () => {
   it('above the ceiling → policy_refused', () => {
     const { messages, dispatch } = setup({ run: { action_risk_ceiling: 'MODERATE' } });
     messages.create(makeMsg({ risk_class: 'HIGH' }));
-    expect(dispatch.evaluateRisk('m1')).toEqual({ state: 'policy_refused', reason: 'above_ceiling' });
+    expect(dispatch.evaluateRisk('m1')).toEqual({
+      state: 'policy_refused',
+      reason: 'above_ceiling',
+    });
     expect(messages.getById('m1')?.state).toBe('policy_refused');
   });
 
@@ -173,13 +176,23 @@ describe('atomic outbox claim (§8)', () => {
 
   it('a permissive drain before the deadline still dispatches; a fencing drain does not', () => {
     const permissive = setup({
-      run: { state: 'draining', drain_strength: 'permissive', drain_cause: 'count', drain_deadline_at: NOW + 10_000 },
+      run: {
+        state: 'draining',
+        drain_strength: 'permissive',
+        drain_cause: 'count',
+        drain_deadline_at: NOW + 10_000,
+      },
     });
     permissive.messages.create(makeMsg({ state: 'risk_authorized' }));
     expect(permissive.dispatch.claimDispatch('m1').claimed).toBe(true);
 
     const fencing = setup({
-      run: { state: 'draining', drain_strength: 'fencing', drain_cause: 'cancel_pending', drain_deadline_at: NOW + 10_000 },
+      run: {
+        state: 'draining',
+        drain_strength: 'fencing',
+        drain_cause: 'cancel_pending',
+        drain_deadline_at: NOW + 10_000,
+      },
     });
     fencing.messages.create(makeMsg({ state: 'risk_authorized' }));
     expect(fencing.dispatch.claimDispatch('m1').claimed).toBe(false);
@@ -211,7 +224,10 @@ describe('completion advancement (§6.2)', () => {
     return { messages, runs, receipts, completion, delegationId: claim.delegation_id };
   }
 
-  function receipt(delegationId: string, status: 'completed' | 'failed' = 'completed'): IngestCompletionInput {
+  function receipt(
+    delegationId: string,
+    status: 'completed' | 'failed' = 'completed',
+  ): IngestCompletionInput {
     return { delegation_id: delegationId, message_id: 'm1', run_id: 'r1', status, issued_at: NOW };
   }
 
@@ -299,7 +315,9 @@ describe('completion advancement (§6.2)', () => {
       nowMsFn: () => NOW,
       verifyReceipt: () => true,
     });
-    expect(completion.ingestCompletion(receipt(claim.delegation_id))).toBe('reconciliation_evidence');
+    expect(completion.ingestCompletion(receipt(claim.delegation_id))).toBe(
+      'reconciliation_evidence',
+    );
     expect(messages.getById('m1')?.state).toBe('outcome_unknown'); // not mutated
     const ev = JSON.parse(String(messages.getById('m1')?.reconciliation_evidence)) as unknown[];
     expect(ev.length).toBe(1);
@@ -318,7 +336,8 @@ describe('completion advancement (§6.2)', () => {
       run_id: 'r1',
       status: 'completed',
       result_card_ref: null,
-      result_card_digest: null, result_card_staged_ref: null,
+      result_card_digest: null,
+      result_card_staged_ref: null,
       receipt_state: 'verified_pending',
       issued_at: NOW,
       received_at: NOW,
@@ -344,14 +363,19 @@ describe('completion advancement (§6.2)', () => {
       run_id: 'r1',
       status: 'completed',
       result_card_ref: null,
-      result_card_digest: null, result_card_staged_ref: null,
+      result_card_digest: null,
+      result_card_staged_ref: null,
       receipt_state: 'verified_pending',
       issued_at: NOW,
       received_at: NOW,
       created_at: NOW,
       updated_at: NOW,
     });
-    const completion = new CompletionService({ messageRepo: messages, receiptRepo: receipts, nowMsFn: () => NOW });
+    const completion = new CompletionService({
+      messageRepo: messages,
+      receiptRepo: receipts,
+      nowMsFn: () => NOW,
+    });
     expect(completion.reconcileAtDeadline('m1')).toBe('advanced');
     expect(messages.getById('m1')?.state).toBe('completed');
   });
@@ -362,7 +386,11 @@ describe('completion advancement (§6.2)', () => {
     const claim = dispatch.claimDispatch('m1');
     if (!claim.claimed) throw new Error('claim failed');
     expect(messages.getById('m1')?.state).toBe('sending');
-    const completion = new CompletionService({ messageRepo: messages, receiptRepo: receipts, nowMsFn: () => NOW });
+    const completion = new CompletionService({
+      messageRepo: messages,
+      receiptRepo: receipts,
+      nowMsFn: () => NOW,
+    });
     expect(completion.reconcileAtDeadline('m1')).toBe('outcome_unknown');
     expect(messages.getById('m1')?.state).toBe('outcome_unknown');
   });

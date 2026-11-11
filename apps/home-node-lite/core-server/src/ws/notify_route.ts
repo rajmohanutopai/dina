@@ -75,10 +75,7 @@ export type NotifyWsFactory = (
 ) => WebSocketLike | null | Promise<WebSocketLike | null>;
 
 /** Structural subset of Fastify we actually use. */
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   get(path: string, handler: RouteHandler): unknown;
@@ -104,10 +101,7 @@ export const DEFAULT_NOTIFY_WS_PATH = '/v1/ws/notify';
  *   3. `hub.register(deviceId, socket)` on success.
  *   4. Returns undefined — the reply is owned by the WS upgrade path.
  */
-export function registerNotifyRoute(
-  app: FastifyAppShape,
-  opts: NotifyRouteOptions,
-): void {
+export function registerNotifyRoute(app: FastifyAppShape, opts: NotifyRouteOptions): void {
   const { hub, authenticate, wsFactory } = opts;
   if (!hub) throw new Error('registerNotifyRoute: hub is required');
   if (!authenticate) {
@@ -143,9 +137,7 @@ export function registerNotifyRoute(
   });
 }
 
-function mapReasonToMessage(
-  reason: Exclude<NotifyAuthResult, { ok: true }>['reason'],
-): string {
+function mapReasonToMessage(reason: Exclude<NotifyAuthResult, { ok: true }>['reason']): string {
   switch (reason) {
     case 'missing':
       return 'authorization header is required';

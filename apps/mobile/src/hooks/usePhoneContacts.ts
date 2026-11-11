@@ -13,12 +13,7 @@
  * Source: ARCHITECTURE.md Task 6.18
  */
 
-import {
-  addContact,
-  listContacts,
-  resetContactDirectory,
-  type Contact,
-} from '@dina/core';
+import { addContact, listContacts, type Contact } from '@dina/core';
 
 export interface PhoneContact {
   id: string;

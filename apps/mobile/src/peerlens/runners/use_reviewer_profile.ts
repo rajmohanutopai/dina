@@ -31,9 +31,7 @@ export interface UseReviewerProfileOptions {
   retryNonce?: number;
 }
 
-export function useReviewerProfile(
-  opts: UseReviewerProfileOptions,
-): ReviewerProfileState {
+export function useReviewerProfile(opts: UseReviewerProfileOptions): ReviewerProfileState {
   const { did, enabled, retryNonce = 0 } = opts;
   const [state, setState] = useState<ReviewerProfileState>({
     profile: null,

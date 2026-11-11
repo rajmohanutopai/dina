@@ -96,7 +96,13 @@ import {
 
 import { ACTION_REGISTRY_REVISION, INBOUND_EFFECTFUL_CLASSES } from './action_registry';
 import { inboundChangeSignal } from './change_signal';
-import { clientIdOfPrincipal, credentialGenOf, endExpiredBearers, getA2AClient, streamClientKeyOf } from './clients';
+import {
+  clientIdOfPrincipal,
+  credentialGenOf,
+  endExpiredBearers,
+  getA2AClient,
+  streamClientKeyOf,
+} from './clients';
 import { endLostEgress, noteInboundCreated, recordInboundChange } from './delivery';
 import { sha256HexOfText } from './digest';
 import { newA2AId } from './ids';
@@ -109,8 +115,17 @@ import {
   inboundRoundHash,
   mintExecutionChild,
 } from './inbound_children';
-import { resolveInboundSkill, selectA2AExecutor, type ResolvedInboundSkill } from './inbound_resolve';
-import { A2A_INBOUND_REVIEW_TYPE, inboundReviewDisplay, parseInboundReviewCard, type InboundReviewCard } from './inbound_review_card';
+import {
+  resolveInboundSkill,
+  selectA2AExecutor,
+  type ResolvedInboundSkill,
+} from './inbound_resolve';
+import {
+  A2A_INBOUND_REVIEW_TYPE,
+  inboundReviewDisplay,
+  parseInboundReviewCard,
+  type InboundReviewCard,
+} from './inbound_review_card';
 import { continueInboundCall } from './inbound_turns';
 import {
   inboundEgressLoss,
@@ -163,23 +178,38 @@ export type AuthorityLoss = 'authority_revoked' | 'stale_authority';
  * `authority_revoked`); the listing, the capability, the registry and the
  * executor must be what the snapshot pinned (else `stale_authority`).
  */
-export function inboundAuthorityLoss(rt: InboundCore, op: A2ATaskRow, snapshot: InboundSnapshot): AuthorityLoss | null {
+export function inboundAuthorityLoss(
+  rt: InboundCore,
+  op: A2ATaskRow,
+  snapshot: InboundSnapshot,
+): AuthorityLoss | null {
   const egress = inboundEgressLoss(rt, op, snapshot);
   if (egress !== null) return egress;
   const live = getServiceConfig(snapshot.rkey);
-  if (live === null || effectiveListingStatus(live) !== 'active' || effectiveSurface(live) !== 'services') {
+  if (
+    live === null ||
+    effectiveListingStatus(live) !== 'active' ||
+    effectiveSurface(live) !== 'services'
+  ) {
     return 'authority_revoked';
   }
   if (snapshot.registry_revision !== ACTION_REGISTRY_REVISION) return 'stale_authority';
-  const row = rt.a2a.store.db.query('SELECT revision FROM service_configs WHERE rkey = ?', [snapshot.rkey]) as {
+  const row = rt.a2a.store.db.query('SELECT revision FROM service_configs WHERE rkey = ?', [
+    snapshot.rkey,
+  ]) as {
     revision: number;
   }[];
   if (row[0]?.revision !== snapshot.config_revision) return 'stale_authority';
   const config = getServiceConfig(snapshot.rkey);
   const cap = config?.capabilities[snapshot.configured_key];
-  if (config === null || cap === undefined || configDigest(config) !== snapshot.config_digest) return 'stale_authority';
+  if (config === null || cap === undefined || configDigest(config) !== snapshot.config_digest)
+    return 'stale_authority';
   const executor = selectA2AExecutor(rt.a2a.store, cap, snapshot.action_class);
-  if (executor === null || canonicalize(executor as unknown as JsonValue) !== canonicalize(snapshot.executor as unknown as JsonValue)) {
+  if (
+    executor === null ||
+    canonicalize(executor as unknown as JsonValue) !==
+      canonicalize(snapshot.executor as unknown as JsonValue)
+  ) {
     return 'stale_authority';
   }
   return null;
@@ -212,7 +242,10 @@ export function settleInbound(rt: InboundCore, op: A2ATaskRow): A2ATaskRow | nul
     // Anything Core cannot hand back after the effect began ends "unknown",
     // never a plain failure that invites a retry (A2A-I8): the work may be done.
     const unusable = (reason: string): A2ATaskRow | null =>
-      endInboundOperation(rt, fresh, { state: effectStarted ? 'outcome_unknown' : 'failed', reason_code: reason });
+      endInboundOperation(rt, fresh, {
+        state: effectStarted ? 'outcome_unknown' : 'failed',
+        reason_code: reason,
+      });
     if (snapshot === null) return unusable('snapshot_unreadable');
     switch (child.status) {
       case WorkflowTaskState.Completed: {
@@ -242,25 +275,37 @@ export function settleInbound(rt: InboundCore, op: A2ATaskRow): A2ATaskRow | nul
         } catch {
           return unusable('result_unreadable');
         }
-        if (!validateAgainstSchema(result, snapshot.schemas.result).ok) return unusable('result_schema_mismatch');
+        if (!validateAgainstSchema(result, snapshot.schemas.result).ok)
+          return unusable('result_schema_mismatch');
         let json: string;
         try {
           json = canonicalize(result as JsonValue);
         } catch {
           return unusable('result_unreadable');
         }
-        return endInboundOperation(rt, fresh, { state: 'completed', result_json: json, effect_phase: 'done' });
+        return endInboundOperation(rt, fresh, {
+          state: 'completed',
+          result_json: json,
+          effect_phase: 'done',
+        });
       }
       case WorkflowTaskState.OutcomeUnknown:
-        return endInboundOperation(rt, fresh, { state: 'outcome_unknown', reason_code: 'outcome_unknown' });
+        return endInboundOperation(rt, fresh, {
+          state: 'outcome_unknown',
+          reason_code: 'outcome_unknown',
+        });
       case WorkflowTaskState.Cancelled: {
         // A review card the owner refused, or that lapsed, ends neutral.
         const role = rt.a2a.store.getChild(child.id)?.role;
-        if (role === 'approval') return endInboundOperation(rt, fresh, { state: 'failed', reason_code: 'declined' });
+        if (role === 'approval')
+          return endInboundOperation(rt, fresh, { state: 'failed', reason_code: 'declined' });
         // An execution stopped after its effect began may have done it: never
         // "canceled" (A2A-I8, §10 "false canceled"), which invites a retry.
         return effectStarted
-          ? endInboundOperation(rt, fresh, { state: 'outcome_unknown', reason_code: 'canceled_after_effect' })
+          ? endInboundOperation(rt, fresh, {
+              state: 'outcome_unknown',
+              reason_code: 'canceled_after_effect',
+            })
           : endInboundOperation(rt, fresh, { state: 'canceled', reason_code: 'canceled' });
       }
       default:
@@ -300,11 +345,19 @@ export function inboundEgressGate(rt: () => InboundCore | null) {
 
 function commitRefusal(
   rt: InboundCore,
-  args: { principal: string; messageId: string; preHash: string; contextId: string; reason: IngressFailure },
+  args: {
+    principal: string;
+    messageId: string;
+    preHash: string;
+    contextId: string;
+    reason: IngressFailure;
+  },
 ): A2ATaskRow {
   const now = rt.a2a.nowMs();
   return rt.a2a.store.transaction(() => {
-    const op = rt.a2a.store.insertTask(blankInbound({ ...args, state: 'rejected', reason: args.reason, now }));
+    const op = rt.a2a.store.insertTask(
+      blankInbound({ ...args, state: 'rejected', reason: args.reason, now }),
+    );
     noteInboundCreated(rt, op.id);
     insertReceipt(rt.a2a.store, {
       principal: args.principal,
@@ -377,9 +430,10 @@ function commitAccepted(
   const { resolved, normalized } = args;
   const now = rt.a2a.nowMs();
   return rt.a2a.store.transaction(() => {
-    const row = rt.a2a.store.db.query('SELECT revision, created_at FROM service_configs WHERE rkey = ?', [
-      resolved.rkey,
-    ]) as {
+    const row = rt.a2a.store.db.query(
+      'SELECT revision, created_at FROM service_configs WHERE rkey = ?',
+      [resolved.rkey],
+    ) as {
       revision: number;
       created_at: number;
     }[];
@@ -388,7 +442,8 @@ function commitAccepted(
     // requires it: a valid listing already says so, and a row the validator
     // never saw cannot lower it.
     const def = getCatalogCapability(resolved.canonical);
-    const mustReview = def === null || reviewRulesFor(def, effectiveDiscoverability(resolved.config)).length > 0;
+    const mustReview =
+      def === null || reviewRulesFor(def, effectiveDiscoverability(resolved.config)).length > 0;
     const policy = resolved.cap.responsePolicy === 'review' || mustReview ? 'review' : 'auto';
     const snapshot: InboundSnapshot = {
       v: 1,
@@ -455,7 +510,13 @@ function commitAccepted(
         expiresAtSec: Math.floor(now / 1000) + INBOUND_REVIEW_DEADLINE_SECONDS,
         initialState: WorkflowTaskState.PendingApproval,
       });
-      rt.a2a.store.insertChild({ child_task_id: cardId, operation_ref: op.id, generation: 0, role: 'approval', created_at: now });
+      rt.a2a.store.insertChild({
+        child_task_id: cardId,
+        operation_ref: op.id,
+        generation: 0,
+        role: 'approval',
+        created_at: now,
+      });
       rt.a2a.store.updateTask(op.id, ['open'], { internal_id: cardId }, now);
     } else {
       mintExecutionChild(rt, op, snapshot, 0);
@@ -535,7 +596,13 @@ export async function awaitSendMessage(
     }
     const left = deadline - performance.now();
     if (left <= 0) {
-      return { status: 200, body: jsonRpcError(id, a2aError('internalError', 'wait_deadline_exceeded', { task_id: task.id })) };
+      return {
+        status: 200,
+        body: jsonRpcError(
+          id,
+          a2aError('internalError', 'wait_deadline_exceeded', { task_id: task.id }),
+        ),
+      };
     }
     await signal.next(opId, Math.min(left, INBOUND_WAIT_RECHECK_MS));
     // A bearer that ran out while the call waited ended with it, like one rotated or revoked.
@@ -569,13 +636,18 @@ function sendMessage(
   /** An answer with no task to wait on: a refusal of the request itself. */
   const noTask = (answer: GatewayAnswer): SentMessage => ({ answer });
   const message = params.message;
-  if (validateMessage(message) !== null || !isPlainObject(message)) return noTask(rpcError(id, 'invalidParams', 'message_malformed'));
+  if (validateMessage(message) !== null || !isPlainObject(message))
+    return noTask(rpcError(id, 'invalidParams', 'message_malformed'));
   if (message.role !== 'ROLE_USER') return noTask(rpcError(id, 'invalidParams', 'role_not_user'));
   const parts = message.parts;
-  if (!Array.isArray(parts) || parts.length > A2A_LIMITS.maxParts) return noTask(rpcError(id, 'invalidParams', 'too_many_parts'));
+  if (!Array.isArray(parts) || parts.length > A2A_LIMITS.maxParts)
+    return noTask(rpcError(id, 'invalidParams', 'too_many_parts'));
   const messageId = typeof message.messageId === 'string' ? message.messageId : '';
   const contextIn = message.contextId;
-  if (contextIn !== undefined && (typeof contextIn !== 'string' || contextIn === '' || contextIn.length > MAX_ID_LENGTH)) {
+  if (
+    contextIn !== undefined &&
+    (typeof contextIn !== 'string' || contextIn === '' || contextIn.length > MAX_ID_LENGTH)
+  ) {
     return noTask(rpcError(id, 'invalidParams', 'context_id_malformed'));
   }
   // A webhook set inline is checked with the call's structure: a bad one
@@ -584,14 +656,16 @@ function sendMessage(
   let returnImmediately = false;
   const configuration = params.configuration;
   if (configuration !== undefined) {
-    if (!isPlainObject(configuration)) return noTask(rpcError(id, 'invalidParams', 'configuration_malformed'));
+    if (!isPlainObject(configuration))
+      return noTask(rpcError(id, 'invalidParams', 'configuration_malformed'));
     if (configuration.taskPushNotificationConfig !== undefined) {
       const checked = parsePushConfigInput(configuration.taskPushNotificationConfig);
       if (!checked.ok) return noTask(rpcError(id, 'invalidParams', checked.reason));
       pushConfig = checked.config;
     }
     if (configuration.returnImmediately !== undefined) {
-      if (typeof configuration.returnImmediately !== 'boolean') return noTask(rpcError(id, 'invalidParams', 'return_immediately_malformed'));
+      if (typeof configuration.returnImmediately !== 'boolean')
+        return noTask(rpcError(id, 'invalidParams', 'return_immediately_malformed'));
       returnImmediately = configuration.returnImmediately;
     }
   }
@@ -601,18 +675,31 @@ function sendMessage(
   const answered = (op: A2ATaskRow): SentMessage => {
     const out = sendMessageAnswer(rt, id, op, streaming);
     return waits
-      ? { answer: out.answer, waiting: { id, opId: op.id, task: out.task, principal, credentialGen } }
+      ? {
+          answer: out.answer,
+          waiting: { id, opId: op.id, task: out.task, principal, credentialGen },
+        }
       : { answer: out.answer };
   };
   // A message that names a task answers that task's question (§7.7).
   if (message.taskId !== undefined) {
-    const out = continueInboundCall(rt, { principal, id, params, message, ...(pushConfig === undefined ? {} : { pushConfig }) });
+    const out = continueInboundCall(rt, {
+      principal,
+      id,
+      params,
+      message,
+      ...(pushConfig === undefined ? {} : { pushConfig }),
+    });
     return out.kind === 'answer' ? noTask(out.answer) : answered(out.op);
   }
   const parsed = parseInvocationEnvelope(parts);
   if (!parsed.ok) {
     const failure = ingressFailureResponse(parsed.reason);
-    return noTask(failure.kind === 'protocol_error' ? { status: 200, body: jsonRpcError(id, failure.error) } : rpcError(id, 'internalError'));
+    return noTask(
+      failure.kind === 'protocol_error'
+        ? { status: 200, body: jsonRpcError(id, failure.error) }
+        : rpcError(id, 'internalError'),
+    );
   }
 
   // 5. The receipt decides before anything else may.
@@ -623,11 +710,20 @@ function sendMessage(
     return noTask(rpcError(id, 'invalidParams', 'params_not_canonical'));
   }
   const now = rt.a2a.nowMs();
-  const receipt = checkReceipt(rt.a2a.store, { principal, operation: 'SendMessage', messageId }, preHash);
-  if (receipt.kind === 'conflict') return noTask(rpcError(id, 'invalidParams', 'message_id_reused'));
+  const receipt = checkReceipt(
+    rt.a2a.store,
+    { principal, operation: 'SendMessage', messageId },
+    preHash,
+  );
+  if (receipt.kind === 'conflict')
+    return noTask(rpcError(id, 'invalidParams', 'message_id_reused'));
   if (receipt.kind === 'replay') {
     if (!rt.budgets.chargeReplay(principal, now)) return noTask(slowDown());
-    const op = rt.a2a.store.getTaskByExternal('inbound', principal, receipt.receipt.mapped_external_id);
+    const op = rt.a2a.store.getTaskByExternal(
+      'inbound',
+      principal,
+      receipt.receipt.mapped_external_id,
+    );
     return op === null ? noTask(rpcError(id, 'internalError')) : answered(op);
   }
   // 6. A new call spends the principal's budget.
@@ -635,7 +731,8 @@ function sendMessage(
 
   const contextId = typeof contextIn === 'string' ? contextIn : newA2AId();
   const base = { principal, messageId, preHash, contextId };
-  const refuse = (reason: IngressFailure): SentMessage => answered(commitRefusal(rt, { ...base, reason }));
+  const refuse = (reason: IngressFailure): SentMessage =>
+    answered(commitRefusal(rt, { ...base, reason }));
 
   // 7–8. Resolution, registry, access mode, executor.
   const resolution = resolveInboundSkill({
@@ -659,7 +756,12 @@ function sendMessage(
   if (!normalized.ok) return refuse(normalized.reason);
   // The rules that leave a skill off the card, asked of the same capability: no call reaches what no card shows.
   if (!skillIdFits(resolved.canonical, resolved.rkey)) return refuse('skill_id_too_long');
-  if (!skillShareFits(resolved.rkey, projectionCapability(rt.a2a.store, resolved.config, resolved.configuredKey))) {
+  if (
+    !skillShareFits(
+      resolved.rkey,
+      projectionCapability(rt.a2a.store, resolved.config, resolved.configuredKey),
+    )
+  ) {
     return refuse('skill_too_large');
   }
 
@@ -699,7 +801,10 @@ function sendMessageAnswer(
   streaming: boolean,
 ): { answer: GatewayAnswer; task: Task } {
   const task = inboundTaskView(rt, op);
-  const answer: GatewayAnswer = { status: 200, body: jsonRpcResult(id, { task } as unknown as JsonValue) };
+  const answer: GatewayAnswer = {
+    status: 200,
+    body: jsonRpcResult(id, { task } as unknown as JsonValue),
+  };
   if (streaming) answer.headers = streamOpening(rt, op);
   return { answer, task };
 }
@@ -719,13 +824,23 @@ function streamOpening(rt: InboundRuntime, op: A2ATaskRow): Record<string, strin
 }
 
 /** `GetTask` (§4.3): the principal's own task only. */
-export function ingressGetTask(rt: InboundRuntime, envelope: GatewayEnvelope, extId: string): GatewayAnswer {
-  const admitted = admitIngress(rt, envelope, { template: ingressRouteOf('GetTask'), params: { extId } });
+export function ingressGetTask(
+  rt: InboundRuntime,
+  envelope: GatewayEnvelope,
+  extId: string,
+): GatewayAnswer {
+  const admitted = admitIngress(rt, envelope, {
+    template: ingressRouteOf('GetTask'),
+    params: { extId },
+  });
   if (!admitted.ok) return admitted.answer;
   if (!rt.budgets.chargeRead(admitted.principal, rt.a2a.nowMs())) return slowDown();
   const op = ownedOperation(rt, admitted.principal, admitted.params.id);
   if (op === null) return rpcError(admitted.id, 'taskNotFound');
-  return { status: 200, body: jsonRpcResult(admitted.id, inboundTaskView(rt, op) as unknown as JsonValue) };
+  return {
+    status: 200,
+    body: jsonRpcResult(admitted.id, inboundTaskView(rt, op) as unknown as JsonValue),
+  };
 }
 
 /**
@@ -734,14 +849,22 @@ export function ingressGetTask(rt: InboundRuntime, envelope: GatewayEnvelope, ex
  * as the streaming `SendMessage` does; an ended task is
  * `UnsupportedOperationError`.
  */
-export function ingressSubscribeToTask(rt: InboundRuntime, envelope: GatewayEnvelope, extId: string): GatewayAnswer {
-  const admitted = admitIngress(rt, envelope, { template: ingressRouteOf('SubscribeToTask'), params: { extId } });
+export function ingressSubscribeToTask(
+  rt: InboundRuntime,
+  envelope: GatewayEnvelope,
+  extId: string,
+): GatewayAnswer {
+  const admitted = admitIngress(rt, envelope, {
+    template: ingressRouteOf('SubscribeToTask'),
+    params: { extId },
+  });
   if (!admitted.ok) return admitted.answer;
   if (!rt.budgets.chargeRead(admitted.principal, rt.a2a.nowMs())) return slowDown();
   const op = ownedOperation(rt, admitted.principal, admitted.params.id);
   if (op === null) return rpcError(admitted.id, 'taskNotFound');
   const task = inboundTaskView(rt, op);
-  if (TERMINAL_TASK_STATES.has(task.status.state)) return rpcError(admitted.id, 'unsupportedOperation', 'task_terminal');
+  if (TERMINAL_TASK_STATES.has(task.status.state))
+    return rpcError(admitted.id, 'unsupportedOperation', 'task_terminal');
   return {
     status: 200,
     headers: streamOpening(rt, op),
@@ -753,8 +876,15 @@ export function ingressSubscribeToTask(rt: InboundRuntime, envelope: GatewayEnve
  * `CancelTask` (§7.4): only before any effect. A task whose child a runner
  * already took, or which settled, is not cancelable.
  */
-export function ingressCancelTask(rt: InboundRuntime, envelope: GatewayEnvelope, extId: string): GatewayAnswer {
-  const admitted = admitIngress(rt, envelope, { template: ingressRouteOf('CancelTask'), params: { extId } });
+export function ingressCancelTask(
+  rt: InboundRuntime,
+  envelope: GatewayEnvelope,
+  extId: string,
+): GatewayAnswer {
+  const admitted = admitIngress(rt, envelope, {
+    template: ingressRouteOf('CancelTask'),
+    params: { extId },
+  });
   if (!admitted.ok) return admitted.answer;
   if (!rt.budgets.chargeRead(admitted.principal, rt.a2a.nowMs())) return slowDown();
   const op = ownedOperation(rt, admitted.principal, admitted.params.id);
@@ -779,7 +909,10 @@ export function ingressCancelTask(rt: InboundRuntime, envelope: GatewayEnvelope,
     return ended;
   });
   if (canceled === null) return rpcError(admitted.id, 'taskNotCancelable');
-  return { status: 200, body: jsonRpcResult(admitted.id, inboundTaskView(rt, canceled) as unknown as JsonValue) };
+  return {
+    status: 200,
+    body: jsonRpcResult(admitted.id, inboundTaskView(rt, canceled) as unknown as JsonValue),
+  };
 }
 
 /**
@@ -792,7 +925,10 @@ export function ingressCancelTask(rt: InboundRuntime, envelope: GatewayEnvelope,
  * exactly, and an inexact filter would page wrongly.
  */
 export function ingressListTasks(rt: InboundRuntime, envelope: GatewayEnvelope): GatewayAnswer {
-  const admitted = admitIngress(rt, envelope, { template: ingressRouteOf('ListTasks'), params: {} });
+  const admitted = admitIngress(rt, envelope, {
+    template: ingressRouteOf('ListTasks'),
+    params: {},
+  });
   if (!admitted.ok) return admitted.answer;
   if (!rt.budgets.chargeRead(admitted.principal, rt.a2a.nowMs())) return slowDown();
   const { params } = admitted;
@@ -836,8 +972,12 @@ export function ingressListTasks(rt: InboundRuntime, envelope: GatewayEnvelope):
     args.push(params.contextId);
   }
   if (params.statusTimestampAfter !== undefined) {
-    const at = typeof params.statusTimestampAfter === 'string' ? Date.parse(params.statusTimestampAfter) : Number.NaN;
-    if (!Number.isFinite(at)) return rpcError(admitted.id, 'invalidParams', 'status_timestamp_malformed');
+    const at =
+      typeof params.statusTimestampAfter === 'string'
+        ? Date.parse(params.statusTimestampAfter)
+        : Number.NaN;
+    if (!Number.isFinite(at))
+      return rpcError(admitted.id, 'invalidParams', 'status_timestamp_malformed');
     // "greater than or equal to this value" (a2a.proto v1.0.1): a client polling from the
     // last time it saw misses nothing changed at that same time.
     filters.push('status_updated_at >= ?');
@@ -854,7 +994,12 @@ export function ingressListTasks(rt: InboundRuntime, envelope: GatewayEnvelope):
   const asOf: InboundRuntime = { ...rt, a2a: { ...rt.a2a, nowMs: () => at } };
   reconcileForListing(asOf, admitted.principal);
   const where = filters.join(' AND ');
-  const total = (rt.a2a.store.db.query(`SELECT COUNT(*) AS n FROM a2a_tasks WHERE ${where}`, args) as { n: number }[])[0]?.n ?? 0;
+  const total =
+    (
+      rt.a2a.store.db.query(`SELECT COUNT(*) AS n FROM a2a_tasks WHERE ${where}`, args) as {
+        n: number;
+      }[]
+    )[0]?.n ?? 0;
   const rows = rt.a2a.store.db.query(
     `SELECT id FROM a2a_tasks WHERE ${where}
        ${after === null ? '' : 'AND (status_updated_at < ? OR (status_updated_at = ? AND external_id < ?))'}
@@ -876,7 +1021,9 @@ export function ingressListTasks(rt: InboundRuntime, envelope: GatewayEnvelope):
     totalSize: total,
     pageSize: size,
     nextPageToken:
-      rows.length > size && last !== undefined ? base64urlEncodeUtf8(JSON.stringify([last.status_updated_at, last.external_id])) : '',
+      rows.length > size && last !== undefined
+        ? base64urlEncodeUtf8(JSON.stringify([last.status_updated_at, last.external_id]))
+        : '',
   };
   return { status: 200, body: jsonRpcResult(admitted.id, result) };
 }
@@ -908,7 +1055,8 @@ function reconcileForListing(rt: InboundRuntime, principal: string): void {
     if (authority.listing_created_at !== null) {
       const sample = store.getTask(sampleId);
       const snapshot = sample === null ? null : readInboundSnapshot(sample);
-      if (sample === null || snapshot === null || inboundEgressLoss(rt, sample, snapshot) === null) continue;
+      if (sample === null || snapshot === null || inboundEgressLoss(rt, sample, snapshot) === null)
+        continue;
     }
     // A lost authority (or an unpinned one, judged task by task) ends what each result still holds.
     for (const op of store.completedInboundUnder(principal, authority)) endLostEgress(rt, op);
@@ -929,19 +1077,29 @@ export function isInboundReviewCard(payload: string): boolean {
  * commit. Idempotent: a card already acted on, or an operation already
  * settled, changes nothing.
  */
-export function approveInboundReview(core: InboundCore, cardId: string): 'minted' | 'closed' | null {
+export function approveInboundReview(
+  core: InboundCore,
+  cardId: string,
+): 'minted' | 'closed' | null {
   const link = core.a2a.store.getChild(cardId);
   if (link === null || link.role !== 'approval') return null;
   return core.a2a.store.transaction(() => {
     const op = core.a2a.store.getTask(link.operation_ref);
     const card = core.a2a.workflow.store().getById(cardId);
-    if (op === null || op.direction !== 'inbound' || op.state !== 'open' || op.internal_id !== cardId) return null;
+    if (
+      op === null ||
+      op.direction !== 'inbound' ||
+      op.state !== 'open' ||
+      op.internal_id !== cardId
+    )
+      return null;
     if (card === null || card.status !== WorkflowTaskState.Queued) return null;
     // The approved card ends in this commit, as Lane 1's consent card does: completed once its
     // round is minted, failed with the reason the call closed for. Left queued, it would lapse
     // a day later into a "failed, expired" record of a decision the owner made.
     const close = (reason: string): 'closed' | null => {
-      if (endInboundOperation(core, op, { state: 'failed', reason_code: reason }) === null) return null;
+      if (endInboundOperation(core, op, { state: 'failed', reason_code: reason }) === null)
+        return null;
       settleReviewCard(core, cardId, { ok: false, reason });
       return 'closed';
     };
@@ -985,19 +1143,31 @@ export function withdrawLapsedReview(core: InboundCore, op: A2ATaskRow): boolean
     if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== cardId) return false;
     if (card?.status !== WorkflowTaskState.PendingApproval) return false;
     const snapshot = readInboundSnapshot(fresh);
-    const reason = snapshot === null ? 'snapshot_unreadable' : inboundAuthorityLoss(core, fresh, snapshot);
+    const reason =
+      snapshot === null ? 'snapshot_unreadable' : inboundAuthorityLoss(core, fresh, snapshot);
     if (reason === null) return false;
-    if (endInboundOperation(core, fresh, { state: 'failed', reason_code: reason }) === null) return false;
+    if (endInboundOperation(core, fresh, { state: 'failed', reason_code: reason }) === null)
+      return false;
     core.a2a.workflow.cancel(cardId, `a2a_${reason}`);
     return true;
   });
 }
 
 /** An approved (queued) review card, run to its end: the decision has been acted on. */
-function settleReviewCard(core: InboundCore, cardId: string, outcome: { ok: true; childId: string } | { ok: false; reason: string }): void {
-  core.a2a.workflow.store().transition(cardId, WorkflowTaskState.Queued, WorkflowTaskState.Running, core.a2a.nowMs());
+function settleReviewCard(
+  core: InboundCore,
+  cardId: string,
+  outcome: { ok: true; childId: string } | { ok: false; reason: string },
+): void {
+  core.a2a.workflow
+    .store()
+    .transition(cardId, WorkflowTaskState.Queued, WorkflowTaskState.Running, core.a2a.nowMs());
   if (outcome.ok) {
-    core.a2a.workflow.complete(cardId, JSON.stringify({ execution_task_id: outcome.childId }), 'approved and started');
+    core.a2a.workflow.complete(
+      cardId,
+      JSON.stringify({ execution_task_id: outcome.childId }),
+      'approved and started',
+    );
   } else {
     core.a2a.workflow.fail(cardId, outcome.reason);
   }
@@ -1009,7 +1179,13 @@ function settleReviewCard(core: InboundCore, cardId: string, outcome: { ok: true
  * the card's end and answers a neutral FAILED.
  */
 export function makeInboundDecisionHandler(core: () => InboundCore | null) {
-  return ({ task, decision }: { task: { id: string; payload: string }; decision: 'approved' | 'denied' | 'lapsed' }): void => {
+  return ({
+    task,
+    decision,
+  }: {
+    task: { id: string; payload: string };
+    decision: 'approved' | 'denied' | 'lapsed';
+  }): void => {
     if (!isInboundReviewCard(task.payload)) return;
     const c = core();
     if (c === null) return;
@@ -1070,7 +1246,10 @@ export function sweepA2AInbound(
       core.a2a.store.transaction(() => recordInboundChange(core, op.id));
     } catch (err) {
       counts.failed += 1;
-      onError?.({ operation_id: op.external_id, error: err instanceof Error ? err.name : 'unknown' });
+      onError?.({
+        operation_id: op.external_id,
+        error: err instanceof Error ? err.name : 'unknown',
+      });
     }
   }
   return counts;
@@ -1105,10 +1284,13 @@ function roundPermitProblem(
 ): { reason: string } | { permitId: string } {
   const permit = core.a2a.store
     .permitsOf(op.id)
-    .find((p) => p.direction === 'inbound' && p.execution_child_id === childId && p.state === 'minted');
+    .find(
+      (p) => p.direction === 'inbound' && p.execution_child_id === childId && p.state === 'minted',
+    );
   if (permit === undefined || permit.expires_at <= now) return { reason: 'permit_unavailable' };
   const child = core.a2a.workflow.store().getById(childId);
-  const continuation = child === null ? undefined : parseServiceQueryExecutionPayload(child.payload)?.continuation;
+  const continuation =
+    child === null ? undefined : parseServiceQueryExecutionPayload(child.payload)?.continuation;
   if (permit.payload_hash !== inboundRoundHash(snapshot, continuation) || permit.pep_did !== pep) {
     return { reason: 'permit_mismatch' };
   }
@@ -1116,7 +1298,12 @@ function roundPermitProblem(
 }
 
 /** Consume a checked permit, once: the round's effect then counts as started. */
-function crossEffectBoundary(core: InboundCore, op: A2ATaskRow, permitId: string, now: number): boolean {
+function crossEffectBoundary(
+  core: InboundCore,
+  op: A2ATaskRow,
+  permitId: string,
+  now: number,
+): boolean {
   if (!core.a2a.store.consumePermit(permitId, now)) return false;
   core.a2a.store.updateTask(op.id, ['open'], { effect_phase: 'effect_started' }, now);
   return true;
@@ -1145,14 +1332,16 @@ export function admitInboundClaimWith(
   const now = core.a2a.nowMs();
   const refusal = core.a2a.store.transaction((): string | null => {
     const fresh = core.a2a.store.getTask(op.id);
-    if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== task.id) return 'operation_settled';
+    if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== task.id)
+      return 'operation_settled';
     const refuse = (reason: string): string => {
       // Ended here, with the reason, before the child fails: settling the
       // failed child then finds the operation closed.
       endInboundOperation(core, fresh, { state: 'failed', reason_code: reason });
       return reason;
     };
-    if (link.pep_did !== null && link.pep_did !== undefined && link.pep_did !== claimantDid) return refuse('not_the_pinned_runner');
+    if (link.pep_did !== null && link.pep_did !== undefined && link.pep_did !== claimantDid)
+      return refuse('not_the_pinned_runner');
     const snapshot = readInboundSnapshot(fresh);
     if (snapshot === null) return refuse('snapshot_unreadable');
     const loss = inboundAuthorityLoss(core, fresh, snapshot);
@@ -1160,7 +1349,8 @@ export function admitInboundClaimWith(
     if (INBOUND_EFFECTFUL_CLASSES.has(snapshot.action_class)) {
       const permit = roundPermitProblem(core, fresh, task.id, snapshot, link.pep_did ?? null, now);
       if ('reason' in permit) return refuse(permit.reason);
-      if (boundary === 'at_claim' && !crossEffectBoundary(core, fresh, permit.permitId, now)) return refuse('permit_unavailable');
+      if (boundary === 'at_claim' && !crossEffectBoundary(core, fresh, permit.permitId, now))
+        return refuse('permit_unavailable');
     }
     // SUBMITTED (or a continued round's WORKING) becomes WORKING: recorded
     // when the view changed (§4.3, §7.5).
@@ -1189,7 +1379,11 @@ export type InboundEffectVerdict = 'not_inbound' | 'authorized' | 'refused';
  * with the reason (OUTCOME_UNKNOWN should its effect have begun) and fails
  * the child, as a refused claim does; nothing may act on it.
  */
-export function authorizeInboundEffectWith(core: InboundCore, task: ClaimedChild, claimantDid: string): InboundEffectVerdict {
+export function authorizeInboundEffectWith(
+  core: InboundCore,
+  task: ClaimedChild,
+  claimantDid: string,
+): InboundEffectVerdict {
   const link = core.a2a.store.getChild(task.id);
   if (link === null || link.role !== 'execution') return 'not_inbound';
   const op = core.a2a.store.getTask(link.operation_ref);
@@ -1197,9 +1391,11 @@ export function authorizeInboundEffectWith(core: InboundCore, task: ClaimedChild
   const now = core.a2a.nowMs();
   const refusal = core.a2a.store.transaction((): string | null => {
     const fresh = core.a2a.store.getTask(op.id);
-    if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== task.id) return 'operation_settled';
+    if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== task.id)
+      return 'operation_settled';
     const child = core.a2a.workflow.store().getById(task.id);
-    if (child?.status !== WorkflowTaskState.Running || child.agent_did !== claimantDid) return 'claim_lost';
+    if (child?.status !== WorkflowTaskState.Running || child.agent_did !== claimantDid)
+      return 'claim_lost';
     const refuse = (reason: string): string => {
       endInboundOperation(core, fresh, {
         state: fresh.effect_phase === 'effect_started' ? 'outcome_unknown' : 'failed',
@@ -1207,7 +1403,9 @@ export function authorizeInboundEffectWith(core: InboundCore, task: ClaimedChild
       });
       return reason;
     };
-    const mine = core.a2a.store.permitsOf(fresh.id).find((p) => p.execution_child_id === task.id && p.state === 'consumed');
+    const mine = core.a2a.store
+      .permitsOf(fresh.id)
+      .find((p) => p.execution_child_id === task.id && p.state === 'consumed');
     if (mine !== undefined) return null;
     const snapshot = readInboundSnapshot(fresh);
     if (snapshot === null) return refuse('snapshot_unreadable');
@@ -1216,7 +1414,9 @@ export function authorizeInboundEffectWith(core: InboundCore, task: ClaimedChild
     if (!INBOUND_EFFECTFUL_CLASSES.has(snapshot.action_class)) return null;
     const permit = roundPermitProblem(core, fresh, task.id, snapshot, link.pep_did ?? null, now);
     if ('reason' in permit) return refuse(permit.reason);
-    return crossEffectBoundary(core, fresh, permit.permitId, now) ? null : refuse('permit_unavailable');
+    return crossEffectBoundary(core, fresh, permit.permitId, now)
+      ? null
+      : refuse('permit_unavailable');
   });
   if (refusal === null) return 'authorized';
   failRefusedChild(core.a2a.workflow, task, refusal, claimantDid);
@@ -1236,7 +1436,12 @@ export interface ClaimedChild {
  * Fail a child its claim was refused for, under that claim: the claim just
  * made, never a later one. One that already ended stays as it ended.
  */
-function failRefusedChild(workflow: WorkflowService, task: ClaimedChild, reason: string, claimantDid: string): void {
+function failRefusedChild(
+  workflow: WorkflowService,
+  task: ClaimedChild,
+  reason: string,
+  claimantDid: string,
+): void {
   try {
     workflow.fail(task.id, reason, claimantDid, task.claim_id ?? undefined);
   } catch (err) {
@@ -1275,7 +1480,10 @@ export function admitInboundClaim(
 }
 
 /** `authorizeInboundEffectWith` against the installed A2A runtime, for the in-process runner. */
-export function authorizeInboundEffect(task: ClaimedChild, claimantDid: string): InboundEffectVerdict {
+export function authorizeInboundEffect(
+  task: ClaimedChild,
+  claimantDid: string,
+): InboundEffectVerdict {
   const store = getA2AStore();
   if (store === null) return 'not_inbound';
   const link = store.getChild(task.id);

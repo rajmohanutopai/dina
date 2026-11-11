@@ -105,7 +105,7 @@ export function isSelfReference(text: string): boolean {
 export function mentionsContact(text: string, contactNames: string[]): string | null {
   if (!text || !contactNames || contactNames.length === 0) return null;
 
-  const textLower = text.toLowerCase();
+  const _textLower = text.toLowerCase();
   // Sort longest-first to match "Dr. Shah" before "Shah"
   const sorted = [...contactNames].sort((a, b) => b.length - a.length);
 

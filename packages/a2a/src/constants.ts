@@ -23,7 +23,8 @@ export const A2A_PROTOCOL_VERSION = '1.0';
  * optional patch, digits in canonical form (no leading zeros), so `01.0`
  * and `1.00` are not versions.
  */
-export const A2A_VERSION_GRAMMAR = /^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})(?:\.(0|[1-9][0-9]{0,5}))?$/;
+export const A2A_VERSION_GRAMMAR =
+  /^(0|[1-9][0-9]{0,3})\.(0|[1-9][0-9]{0,3})(?:\.(0|[1-9][0-9]{0,5}))?$/;
 
 /**
  * Whether a client's `A2A-Version` names the version Dina speaks. The value

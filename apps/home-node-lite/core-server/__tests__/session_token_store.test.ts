@@ -14,10 +14,9 @@ import {
   type SessionTokenStoreEvent,
 } from '../src/appview/session_token_store';
 
-function rec(overrides: Partial<Omit<SessionRecord, 'updatedAtMs'>> = {}): Omit<
-  SessionRecord,
-  'updatedAtMs'
-> {
+function rec(
+  overrides: Partial<Omit<SessionRecord, 'updatedAtMs'>> = {},
+): Omit<SessionRecord, 'updatedAtMs'> {
   return {
     did: 'did:plc:abcdefghijklmnopqrstuvwx',
     handle: 'alice.bsky.social',
@@ -153,9 +152,7 @@ describe('SessionTokenStore (task 6.3)', () => {
       const store = new SessionTokenStore({
         keystore: new InMemoryKeystoreAdapter(),
       });
-      await expect(
-        store.save(rec({ refreshExpiresAtMs: null })),
-      ).resolves.toBeUndefined();
+      await expect(store.save(rec({ refreshExpiresAtMs: null }))).resolves.toBeUndefined();
     });
   });
 
@@ -172,10 +169,7 @@ describe('SessionTokenStore (task 6.3)', () => {
         refreshCalls++;
         return { ok: true, record: rec() };
       };
-      const out = (await store.getActive(refreshFn)) as Extract<
-        GetActiveOutcome,
-        { ok: true }
-      >;
+      const out = (await store.getActive(refreshFn)) as Extract<GetActiveOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
       expect(out.refreshed).toBe(false);
       expect(refreshCalls).toBe(0);
@@ -200,10 +194,7 @@ describe('SessionTokenStore (task 6.3)', () => {
           accessExpiresAtMs: 2_000_000,
         }),
       });
-      const out = (await store.getActive(refreshFn)) as Extract<
-        GetActiveOutcome,
-        { ok: true }
-      >;
+      const out = (await store.getActive(refreshFn)) as Extract<GetActiveOutcome, { ok: true }>;
       expect(out.refreshed).toBe(true);
       expect(out.record.accessJwt).toBe('access-2');
     });
@@ -350,9 +341,7 @@ describe('SessionTokenStore (task 6.3)', () => {
         keystore: new InMemoryKeystoreAdapter(),
       });
       await store.save(rec());
-      await expect(
-        store.getActive(undefined as unknown as RefreshFn),
-      ).rejects.toThrow(/refreshFn/);
+      await expect(store.getActive(undefined as unknown as RefreshFn)).rejects.toThrow(/refreshFn/);
     });
   });
 
@@ -364,9 +353,7 @@ describe('SessionTokenStore (task 6.3)', () => {
         nowMsFn: clock.nowMsFn,
         refreshLeewayMs: 10_000,
       });
-      await store.save(
-        rec({ accessJwt: 'first', accessExpiresAtMs: 1_100_000 }),
-      );
+      await store.save(rec({ accessJwt: 'first', accessExpiresAtMs: 1_100_000 }));
       // Fresh: ~100s to expiry, leeway 10s.
       const fresh = await store.getActive(async () => ({
         ok: true,

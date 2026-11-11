@@ -87,9 +87,9 @@ describe('NodeCryptoAdapter — sealed-box (3.26)', () => {
 
   it('rejects wrong-length recipient pubkey', async () => {
     const adapter = new NodeCryptoAdapter();
-    await expect(
-      adapter.sealedBoxSeal(new Uint8Array(1), new Uint8Array(31)),
-    ).rejects.toThrow(/recipient pubkey must be 32 bytes/);
+    await expect(adapter.sealedBoxSeal(new Uint8Array(1), new Uint8Array(31))).rejects.toThrow(
+      /recipient pubkey must be 32 bytes/,
+    );
     await expect(
       adapter.sealedBoxOpen(new Uint8Array(48), new Uint8Array(31), new Uint8Array(32)),
     ).rejects.toThrow(/recipient pubkey must be 32 bytes/);

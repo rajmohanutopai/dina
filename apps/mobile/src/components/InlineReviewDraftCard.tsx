@@ -21,27 +21,13 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
-import {
-  readLifecycle,
-  type ChatMessage,
-  type ReviewDraftLifecycle,
-} from '@dina/brain/chat';
+import { readLifecycle, type ChatMessage, type ReviewDraftLifecycle } from '@dina/brain/chat';
 import { type PublishJob } from '@dina/core';
 
 import { describePublishErrorCode } from '../peerlens/classify_publish_error';
-import {
-  buildAttestationRecord,
-  newPublishKeys,
-} from '../peerlens/publish_helpers';
+import { buildAttestationRecord, newPublishKeys } from '../peerlens/publish_helpers';
 import { setReviewDraftStatus } from '../peerlens/review_draft';
 import { type AttestationDraftBody } from '../peerlens/review_draft_body';
 import { cancelReviewPublishJob, retryReviewPublishJob } from '../peerlens/review_publish_actions';
@@ -58,7 +44,6 @@ import { colors, radius, spacing, textStyles } from '../theme';
 import { MessageTimestamp } from './MessageTimestamp';
 
 import type { Sentiment } from '@dina/protocol';
-
 
 export interface InlineReviewDraftCardProps {
   message: ChatMessage;
@@ -108,8 +93,7 @@ function DraftingState({
   message: ChatMessage;
   lc: ReviewDraftLifecycle;
 }): React.JSX.Element {
-  const subjectName =
-    typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
+  const subjectName = typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
   return (
     <View style={styles.card} testID="review-draft-card-drafting">
       <View style={styles.headerRow}>
@@ -131,16 +115,13 @@ function ReadyState({
 }): React.JSX.Element {
   const router = useRouter();
   const initialValues = (lc.values ?? {}) as Partial<WriteFormState>;
-  const subjectName =
-    typeof lc.subject.name === 'string' ? lc.subject.name : 'subject';
+  const subjectName = typeof lc.subject.name === 'string' ? lc.subject.name : 'subject';
 
   // Local edit state — mirrors the lifecycle values but lets the user
   // tweak fields before publishing without round-tripping each
   // keystroke through `updateReviewDraftLifecycle`. On Publish we read
   // from this local state.
-  const [sentiment, setSentiment] = useState<Sentiment | null>(
-    initialValues.sentiment ?? null,
-  );
+  const [sentiment, setSentiment] = useState<Sentiment | null>(initialValues.sentiment ?? null);
   const [headline, setHeadline] = useState<string>(initialValues.headline ?? '');
   const [body, setBody] = useState<string>(initialValues.body ?? '');
   const [submitting, setSubmitting] = useState(false);
@@ -199,7 +180,7 @@ function ReadyState({
       } else if (outcome.kind === 'cap_exceeded') {
         setError('Your outbox is full. Dismiss some queued reviews and try again.');
       } else if (outcome.kind === 'demo_scope') {
-        setError("Publishing isn’t available in the demo. Switch to your own space to publish.");
+        setError('Publishing isn’t available in the demo. Switch to your own space to publish.');
       } else if (outcome.kind === 'error') {
         setError(outcome.message);
       }
@@ -242,15 +223,7 @@ function ReadyState({
       pathname: '/peerlens/write',
       params: { draftId: lc.draftId, threadId: message.threadId },
     });
-  }, [
-    router,
-    message.threadId,
-    lc.draftId,
-    initialValues,
-    sentiment,
-    headline,
-    body,
-  ]);
+  }, [router, message.threadId, lc.draftId, initialValues, sentiment, headline, body]);
 
   const onDiscard = useCallback(() => {
     setReviewDraftStatus(message.threadId, lc.draftId, 'discarded', {
@@ -287,12 +260,7 @@ function ReadyState({
                   size={14}
                   color={active ? colors.bgPrimary : colors.textPrimary}
                 />
-                <Text
-                  style={[
-                    styles.sentimentPillText,
-                    active && styles.sentimentPillTextActive,
-                  ]}
-                >
+                <Text style={[styles.sentimentPillText, active && styles.sentimentPillTextActive]}>
                   {SENTIMENT_LABEL[s]}
                 </Text>
               </Pressable>
@@ -354,10 +322,7 @@ function ReadyState({
           testID="review-draft-publish"
           onPress={onPublish}
           disabled={publishDisabled}
-          style={[
-            styles.primaryButton,
-            publishDisabled && styles.primaryButtonDisabled,
-          ]}
+          style={[styles.primaryButton, publishDisabled && styles.primaryButtonDisabled]}
           accessibilityRole="button"
           accessibilityLabel="Publish"
           accessibilityState={{ disabled: publishDisabled }}
@@ -495,8 +460,7 @@ function DiscardedState({
   message: ChatMessage;
   lc: ReviewDraftLifecycle;
 }): React.JSX.Element {
-  const subjectName =
-    typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
+  const subjectName = typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
   return (
     <View style={[styles.card, styles.cardMuted]} testID="review-draft-card-discarded">
       <View style={styles.headerRow}>
@@ -522,8 +486,7 @@ function DraftFailedState({
   lc: ReviewDraftLifecycle;
 }): React.JSX.Element {
   const router = useRouter();
-  const subjectName =
-    typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
+  const subjectName = typeof lc.subject.name === 'string' ? lc.subject.name : 'this subject';
   const onWriteInForm = useCallback(() => {
     // No drafted values to recover, but we DO know the subject — open the form in
     // create-mode SEEDED with the subject (kind + name) so the user can actually

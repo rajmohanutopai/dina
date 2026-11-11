@@ -40,7 +40,7 @@ test.describe('MRS-01/02 — Remember + persona routing + Ask recall', () => {
     const dinoP = await backstage.waitForPersonaContaining(PERSONAS, 'dinosaur');
     const hbaP = await backstage.waitForPersonaContaining(PERSONAS, 'HbA1c');
     const bankP = await backstage.waitForPersonaContaining(PERSONAS, 'Barclays');
-     
+
     console.log(`[MRS-01 routing] dinosaur→${dinoP} HbA1c→${hbaP} Barclays→${bankP}`);
     // Pin the exact bucket for ALL three (matching health/finance) — the
     // general fact routes to `general` (no sensitive signal), not merely

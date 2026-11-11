@@ -102,7 +102,9 @@ describe('Brain server — /api/v1/contacts HTTP wiring', () => {
    */
   it('GET /contacts/lookup resolves one contact from Core', async () => {
     const core = new MockCoreClient();
-    core.contactLookupResult = { 'did:plc:abc': contact({ did: 'did:plc:abc', legalName: 'ChairMaker LLP' }) };
+    core.contactLookupResult = {
+      'did:plc:abc': contact({ did: 'did:plc:abc', legalName: 'ChairMaker LLP' }),
+    };
     const app = makeApp(core);
     try {
       const res = await app.inject({ method: 'GET', url: '/api/v1/contacts/lookup?q=did:plc:abc' });
@@ -133,7 +135,12 @@ describe('Brain server — /api/v1/contacts HTTP wiring', () => {
         payload: {
           legal_name: 'ChairMaker LLP',
           registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZV' }],
-          billing_address: { line1: '4 Kalasipalya Road', city: 'Bengaluru', postal_code: '560002', country: 'IN' },
+          billing_address: {
+            line1: '4 Kalasipalya Road',
+            city: 'Bengaluru',
+            postal_code: '560002',
+            country: 'IN',
+          },
         },
       });
       expect(res.statusCode).toBe(200);
@@ -142,7 +149,12 @@ describe('Brain server — /api/v1/contacts HTTP wiring', () => {
       expect(call?.args[1]).toEqual({
         legalName: 'ChairMaker LLP',
         registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZV' }],
-        billingAddress: { line1: '4 Kalasipalya Road', city: 'Bengaluru', postalCode: '560002', country: 'IN' },
+        billingAddress: {
+          line1: '4 Kalasipalya Road',
+          city: 'Bengaluru',
+          postalCode: '560002',
+          country: 'IN',
+        },
       });
       // Absent fields stay absent: a tri-state wire must not become a clear.
       expect(call?.args[1]).not.toHaveProperty('phone');

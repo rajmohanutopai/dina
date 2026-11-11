@@ -18,6 +18,10 @@
  * Source: ARCHITECTURE.md Task 3.5
  */
 
+import { DEFAULT_GEMINI_MODEL, DEFAULT_MAX_TOKENS as MAX_TOKENS } from '../../constants';
+
+import { safeCall, GEMINI_TIMEOUT_MS } from './safety';
+
 import type {
   LLMProvider,
   ChatMessage,
@@ -90,10 +94,6 @@ export interface GeminiEmbedRequest {
 export interface GeminiEmbedResult {
   embedding: { values: number[] };
 }
-
-import { DEFAULT_GEMINI_MODEL, DEFAULT_MAX_TOKENS as MAX_TOKENS } from '../../constants';
-
-import { safeCall, GEMINI_TIMEOUT_MS } from './safety';
 
 const DEFAULT_CHAT_MODEL = DEFAULT_GEMINI_MODEL;
 const DEFAULT_EMBED_MODEL = 'embedding-001'; // Gemini-specific, not shared
@@ -304,6 +304,7 @@ function mapGeminiResponse(result: GeminiResult, modelName: string): ChatRespons
  * Create a Gemini adapter from an API key.
  */
 export function createGeminiAdapter(apiKey: string, model?: string): GeminiAdapter {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional SDK, not a brain dependency; load only when this adapter is built
   const { GoogleGenerativeAI } = require('@google/generative-ai');
   const client = new GoogleGenerativeAI(apiKey);
   return new GeminiAdapter(client, model);

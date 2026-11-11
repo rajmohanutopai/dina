@@ -38,7 +38,12 @@ describe('the Tier 1 adapter runs for the listing the task names (§7.3)', () =>
     sent.push(JSON.parse(init.body) as { config: ServiceConfig | null });
     return new Response('{"result":{"eta_minutes":4}}', { status: 200 });
   }) as unknown as typeof fetch;
-  const runner = () => makeHttpTier1Runner({ brainUrl: 'http://brain.test', logger: pino({ level: 'silent' }) as never, fetchImpl });
+  const runner = () =>
+    makeHttpTier1Runner({
+      brainUrl: 'http://brain.test',
+      logger: pino({ level: 'silent' }) as never,
+      fetchImpl,
+    });
 
   beforeEach(() => {
     sent = [];
@@ -51,7 +56,11 @@ describe('the Tier 1 adapter runs for the listing the task names (§7.3)', () =>
   const instructionSent = () => sent.map((s) => s.config?.capabilities.eta_query?.instruction);
 
   it('a task naming a listing gets that listing’s config', async () => {
-    await runner()('eta_query', { route_id: '42' }, taskNaming('at://did:plc:node/com.dinakernel.service.profile/night'));
+    await runner()(
+      'eta_query',
+      { route_id: '42' },
+      taskNaming('at://did:plc:node/com.dinakernel.service.profile/night'),
+    );
     expect(instructionSent()).toEqual(['Answer from the night timetable.']);
   });
 
@@ -61,8 +70,14 @@ describe('the Tier 1 adapter runs for the listing the task names (§7.3)', () =>
   });
 
   it('a task naming a listing it cannot read fails, and Brain is asked nothing', async () => {
-    for (const uri of ['night', 'at://did:plc:node/app.bsky.feed.post/night', 'at://did:plc:node/com.dinakernel.service.profile/..']) {
-      await expect(runner()('eta_query', { route_id: '42' }, taskNaming(uri))).rejects.toThrow(/not a listing reference/);
+    for (const uri of [
+      'night',
+      'at://did:plc:node/app.bsky.feed.post/night',
+      'at://did:plc:node/com.dinakernel.service.profile/..',
+    ]) {
+      await expect(runner()('eta_query', { route_id: '42' }, taskNaming(uri))).rejects.toThrow(
+        /not a listing reference/,
+      );
     }
     expect(sent).toEqual([]);
   });

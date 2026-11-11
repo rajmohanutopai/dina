@@ -33,7 +33,11 @@
 import { servedByCore } from '../../commerce/first_party_packs';
 import { type InvocationSubject } from '../../plugins/context_sources';
 import { consentedCapability } from '../../plugins/host_operation_lane';
-import { invokeToolCapability, type InvokePolicy, type InvokeToolCapabilityResult } from '../../plugins/invoke';
+import {
+  invokeToolCapability,
+  type InvokePolicy,
+  type InvokeToolCapabilityResult,
+} from '../../plugins/invoke';
 import { getPluginInstallRepository } from '../../plugins/registry';
 import { getWorkflowService } from '../../workflow/service';
 
@@ -84,7 +88,10 @@ export function listPluginToolCapabilities(): PluginToolCapabilityView[] {
 }
 
 /** Brain (server: the signed service key; phone: in-process) or the owner. */
-function brainOrOwner(req: CoreRequest, ownerOnlyGuard: (r: CoreRequest) => CoreResponse | null): CoreResponse | null {
+function brainOrOwner(
+  req: CoreRequest,
+  ownerOnlyGuard: (r: CoreRequest) => CoreResponse | null,
+): CoreResponse | null {
   if (req.callerType === 'brain') return null;
   // In-process Brain calls carry no caller type — the phone's one VM.
   if (req.trustedInProcess === true && req.callerType === undefined) return null;
@@ -152,7 +159,8 @@ function invocationSubject(value: unknown): InvocationSubject | null | 'invalid'
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return 'invalid';
   const raw = value as { contact_did?: unknown; document_digest?: unknown };
   if (raw.contact_did !== undefined && typeof raw.contact_did !== 'string') return 'invalid';
-  if (raw.document_digest !== undefined && typeof raw.document_digest !== 'string') return 'invalid';
+  if (raw.document_digest !== undefined && typeof raw.document_digest !== 'string')
+    return 'invalid';
   return {
     ...(typeof raw.contact_did === 'string' ? { contactDid: raw.contact_did } : {}),
     ...(typeof raw.document_digest === 'string' ? { documentDigest: raw.document_digest } : {}),
@@ -161,7 +169,9 @@ function invocationSubject(value: unknown): InvocationSubject | null | 'invalid'
 
 function stringList(value: unknown): string[] | null | 'invalid' {
   if (value === undefined) return null;
-  return Array.isArray(value) && value.every((c) => typeof c === 'string') ? (value as string[]) : 'invalid';
+  return Array.isArray(value) && value.every((c) => typeof c === 'string')
+    ? (value as string[])
+    : 'invalid';
 }
 
 export function registerPluginInvokeRoutes(
@@ -184,12 +194,18 @@ export function registerPluginInvokeRoutes(
       return { status: 400, body: { error: 'params are required (use {} for none)' } };
     }
     const categories = body.param_categories;
-    if (categories !== undefined && !(Array.isArray(categories) && categories.every((c) => typeof c === 'string'))) {
+    if (
+      categories !== undefined &&
+      !(Array.isArray(categories) && categories.every((c) => typeof c === 'string'))
+    ) {
       return { status: 400, body: { error: 'param_categories must be a list of strings' } };
     }
     const subject = invocationSubject(body.subject);
     if (subject === 'invalid') {
-      return { status: 400, body: { error: 'subject must be an object with string contact_did / document_digest' } };
+      return {
+        status: 400,
+        body: { error: 'subject must be an object with string contact_did / document_digest' },
+      };
     }
     const workflow = getWorkflowService();
     if (workflow === null) return { status: 503, body: { error: 'workflow service not wired' } };
@@ -203,7 +219,9 @@ export function registerPluginInvokeRoutes(
         ...(categories !== undefined ? { paramCategories: categories as string[] } : {}),
         ...(typeof body.resource === 'string' ? { resource: body.resource } : {}),
         ...(typeof body.value === 'number' ? { value: body.value } : {}),
-        ...(typeof body.idempotency_key === 'string' ? { idempotencyKey: body.idempotency_key } : {}),
+        ...(typeof body.idempotency_key === 'string'
+          ? { idempotencyKey: body.idempotency_key }
+          : {}),
         ...(typeof body.correlation_id === 'string' ? { correlationId: body.correlation_id } : {}),
         origin: 'api',
         nowMs: Date.now(),

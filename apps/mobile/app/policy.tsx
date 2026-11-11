@@ -129,7 +129,11 @@ export default function PolicyScreen() {
       const node = getBootedNode();
       if (node === null) return;
 
-      const options: { text: string; onPress?: () => void; style?: 'cancel' | 'destructive' | 'default' }[] = [
+      const options: {
+        text: string;
+        onPress?: () => void;
+        style?: 'cancel' | 'destructive' | 'default';
+      }[] = [
         { text: 'Cancel', style: 'cancel' },
         ...RISK_ORDER.filter((r) => r !== entry.risk).map((r) => ({
           text: RISK_META[r].label,
@@ -159,19 +163,13 @@ export default function PolicyScreen() {
             void node.coreClient
               .deleteActionOverride(entry.action)
               .then(() => load())
-              .catch((err) =>
-                Alert.alert('Error', (err as Error).message ?? 'Failed to remove'),
-              )
+              .catch((err) => Alert.alert('Error', (err as Error).message ?? 'Failed to remove'))
               .finally(() => setPendingAction(null));
           },
         });
       }
 
-      Alert.alert(
-        `Set risk for "${entry.action}"`,
-        `Current: ${entry.risk}`,
-        options,
-      );
+      Alert.alert(`Set risk for "${entry.action}"`, `Current: ${entry.risk}`, options);
     },
     [load],
   );
@@ -190,27 +188,23 @@ export default function PolicyScreen() {
               if (!trimmed) return;
               const node = getBootedNode();
               if (node === null) return;
-              Alert.alert(
-                `Set risk for "${trimmed}"`,
-                'Choose the risk level for this action.',
-                [
-                  { text: 'Cancel', style: 'cancel' },
-                  ...RISK_ORDER.map((r) => ({
-                    text: RISK_META[r].label,
-                    style: r === 'BLOCKED' ? ('destructive' as const) : ('default' as const),
-                    onPress: () => {
-                      setPendingAction(trimmed);
-                      void node.coreClient
-                        .setActionRisk(trimmed, r)
-                        .then(() => load())
-                        .catch((err) =>
-                          Alert.alert('Error', (err as Error).message ?? 'Failed to add action'),
-                        )
-                        .finally(() => setPendingAction(null));
-                    },
-                  })),
-                ],
-              );
+              Alert.alert(`Set risk for "${trimmed}"`, 'Choose the risk level for this action.', [
+                { text: 'Cancel', style: 'cancel' },
+                ...RISK_ORDER.map((r) => ({
+                  text: RISK_META[r].label,
+                  style: r === 'BLOCKED' ? ('destructive' as const) : ('default' as const),
+                  onPress: () => {
+                    setPendingAction(trimmed);
+                    void node.coreClient
+                      .setActionRisk(trimmed, r)
+                      .then(() => load())
+                      .catch((err) =>
+                        Alert.alert('Error', (err as Error).message ?? 'Failed to add action'),
+                      )
+                      .finally(() => setPendingAction(null));
+                  },
+                })),
+              ]);
             },
           },
         ],
@@ -228,27 +222,21 @@ export default function PolicyScreen() {
     if (!trimmed) return;
     const node = getBootedNode();
     if (node === null) return;
-    Alert.alert(
-      `Set risk for "${trimmed}"`,
-      'Choose the risk level for this action.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        ...RISK_ORDER.map((r) => ({
-          text: RISK_META[r].label,
-          style: r === 'BLOCKED' ? ('destructive' as const) : ('default' as const),
-          onPress: () => {
-            setPendingAction(trimmed);
-            void node.coreClient
-              .setActionRisk(trimmed, r)
-              .then(() => load())
-              .catch((err) =>
-                Alert.alert('Error', (err as Error).message ?? 'Failed to add action'),
-              )
-              .finally(() => setPendingAction(null));
-          },
-        })),
-      ],
-    );
+    Alert.alert(`Set risk for "${trimmed}"`, 'Choose the risk level for this action.', [
+      { text: 'Cancel', style: 'cancel' },
+      ...RISK_ORDER.map((r) => ({
+        text: RISK_META[r].label,
+        style: r === 'BLOCKED' ? ('destructive' as const) : ('default' as const),
+        onPress: () => {
+          setPendingAction(trimmed);
+          void node.coreClient
+            .setActionRisk(trimmed, r)
+            .then(() => load())
+            .catch((err) => Alert.alert('Error', (err as Error).message ?? 'Failed to add action'))
+            .finally(() => setPendingAction(null));
+        },
+      })),
+    ]);
   }, [addModalInput, load]);
 
   useLayoutEffect(() => {

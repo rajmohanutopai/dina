@@ -7,7 +7,12 @@
  */
 
 import { p256Multikey } from '@dina/a2a';
-import { cidForOperation, deriveP256SigningKey, deriveRotationKey, secp256k1ToDidKeyMultibase } from '@dina/core';
+import {
+  cidForOperation,
+  deriveP256SigningKey,
+  deriveRotationKey,
+  secp256k1ToDidKeyMultibase,
+} from '@dina/core';
 
 import { currentA2ACardKey, ensureA2ACardKey } from '../src/plc_dina_update';
 
@@ -21,7 +26,11 @@ function lastOp(extraVMs: Record<string, string> = {}, over: Record<string, unkn
   return {
     type: 'plc_operation',
     rotationKeys: ['did:key:zQ3shPDSmanaged00000000000000000000000000000000', ROTATION],
-    verificationMethods: { atproto: 'did:key:zQ3shatproto', dina_signing: 'did:key:z6MkSigning', ...extraVMs },
+    verificationMethods: {
+      atproto: 'did:key:zQ3shatproto',
+      dina_signing: 'did:key:z6MkSigning',
+      ...extraVMs,
+    },
     services: {
       atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: 'https://pds.example' },
       'dina-messaging': { type: 'DinaMsgBox', endpoint: 'wss://msgbox.example' },
@@ -42,13 +51,21 @@ function directory(op: Record<string, unknown> | null, auditStatus = 200) {
       return new Response('{}', { status: 200 });
     }
     expect(u).toBe(`${PLC}/${DID}/log/audit`);
-    return new Response(JSON.stringify(op === null ? [] : [{ operation: op }]), { status: auditStatus });
+    return new Response(JSON.stringify(op === null ? [] : [{ operation: op }]), {
+      status: auditStatus,
+    });
   }) as typeof fetch;
   return { fetchFn, posts };
 }
 
 const ensure = (fetchFn: typeof fetch) =>
-  ensureA2ACardKey({ did: DID, cardPublicKey: CARD_KEY, masterSeed: SEED, plcURL: PLC, fetch: fetchFn });
+  ensureA2ACardKey({
+    did: DID,
+    cardPublicKey: CARD_KEY,
+    masterSeed: SEED,
+    plcURL: PLC,
+    fetch: fetchFn,
+  });
 
 it('writes nothing when the document already names the key', async () => {
   const { fetchFn, posts } = directory(lastOp({ a2a_card: `did:key:${p256Multikey(CARD_KEY)}` }));
@@ -64,7 +81,10 @@ it('adds the key in a chained update that keeps every other field, signed', asyn
   const update = posts[0]?.body ?? {};
   expect(posts[0]?.url).toBe(`${PLC}/${DID}`);
   expect(update.prev).toBe(cidForOperation(op));
-  expect(update.verificationMethods).toEqual({ ...op.verificationMethods, a2a_card: `did:key:${p256Multikey(CARD_KEY)}` });
+  expect(update.verificationMethods).toEqual({
+    ...op.verificationMethods,
+    a2a_card: `did:key:${p256Multikey(CARD_KEY)}`,
+  });
   expect(update.rotationKeys).toEqual(op.rotationKeys);
   expect(update.services).toEqual(op.services);
   expect(update.alsoKnownAs).toEqual(op.alsoKnownAs);
@@ -74,13 +94,19 @@ it('adds the key in a chained update that keeps every other field, signed', asyn
 it('replaces an older card key after a rotation', async () => {
   const { fetchFn, posts } = directory(lastOp({ a2a_card: 'did:key:zDnaeOldKey' }));
   expect(await ensure(fetchFn)).toBe('published');
-  expect((posts[0]?.body.verificationMethods as Record<string, string>).a2a_card).toBe(`did:key:${p256Multikey(CARD_KEY)}`);
+  expect((posts[0]?.body.verificationMethods as Record<string, string>).a2a_card).toBe(
+    `did:key:${p256Multikey(CARD_KEY)}`,
+  );
 });
 
 it.each([
   ['an audit log it cannot read', () => directory(lastOp(), 503), /audit log fetch failed/],
   ['an empty audit log', () => directory(null), /no last operation/],
-  ['a last operation with no rotation keys', () => directory(lastOp({}, { rotationKeys: [] })), /no rotation keys/],
+  [
+    'a last operation with no rotation keys',
+    () => directory(lastOp({}, { rotationKeys: [] })),
+    /no rotation keys/,
+  ],
 ])('throws on %s, writing nothing', async (_name, make, error) => {
   const { fetchFn, posts } = make();
   await expect(ensure(fetchFn)).rejects.toThrow(error);
@@ -88,11 +114,14 @@ it.each([
 });
 
 describe('the card key the document names now (UCP plan §4.8: a restored node adopts its generation)', () => {
-  const read = (fetchFn: typeof fetch) => currentA2ACardKey({ did: DID, plcURL: PLC, fetch: fetchFn });
+  const read = (fetchFn: typeof fetch) =>
+    currentA2ACardKey({ did: DID, plcURL: PLC, fetch: fetchFn });
 
   it('reads it back as the compressed point', async () => {
     const { fetchFn } = directory(lastOp({ a2a_card: `did:key:${p256Multikey(CARD_KEY)}` }));
-    expect(Buffer.from((await read(fetchFn)) ?? []).toString('hex')).toBe(Buffer.from(CARD_KEY).toString('hex'));
+    expect(Buffer.from((await read(fetchFn)) ?? []).toString('hex')).toBe(
+      Buffer.from(CARD_KEY).toString('hex'),
+    );
   });
 
   it('none named, or something that is not a P-256 did:key: null', async () => {

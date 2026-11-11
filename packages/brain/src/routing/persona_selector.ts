@@ -12,11 +12,7 @@
  */
 
 import { personaExists, listPersonas } from '@dina/core';
-import {
-  getContact,
-  resolveByName,
-  type DataResponsibility,
-} from '@dina/core';
+import { getContact, resolveByName, type DataResponsibility } from '@dina/core';
 
 import { PERSONA_SELECTOR_THRESHOLD } from '../constants';
 import { resolveAlias } from '../persona/registry';

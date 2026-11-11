@@ -305,8 +305,8 @@ export async function ownerDidHere(): Promise<string | null> {
   // Loaded lazily: the booted node is the phone's; the browser has none.
   // `require`, not `import()`: Metro can't fetch a split chunk in a
   // `--no-dev` bundle (see __tests__/services/no_local_dynamic_import.test.ts).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const bootstrap =
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- the browser boots no node, so useNodeBootstrap loads only when asked; Metro needs require(), not import()
     require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
   const booted = bootstrap.getBootedNode()?.did ?? null;
   if (booted !== null && booted !== '') return booted;

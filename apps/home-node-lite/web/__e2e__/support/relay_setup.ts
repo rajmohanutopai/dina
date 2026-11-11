@@ -77,7 +77,9 @@ async function ensureFreshRelayNodes(): Promise<void> {
       return;
     }
     if (Date.now() > deadline) {
-      console.warn(`[relay] dina-nodes still not ready after restart (${reason}); specs will skip.`);
+      console.warn(
+        `[relay] dina-nodes still not ready after restart (${reason}); specs will skip.`,
+      );
       return;
     }
     await new Promise((resolve) => setTimeout(resolve, 2_000));

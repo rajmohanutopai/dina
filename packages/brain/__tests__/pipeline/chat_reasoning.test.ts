@@ -10,7 +10,6 @@ import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 import { reason, registerReasoningLLM, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 
-
 describe('Chat Reasoning Pipeline', () => {
   beforeEach(() => {
     resetFactoryCounters();
@@ -122,7 +121,7 @@ describe('Chat Reasoning Pipeline', () => {
       };
 
       registerReasoningLLM(async () => 'LLM should NOT be called');
-      const mockLLM = jest.fn();
+      const _mockLLM = jest.fn();
 
       const result = await reason({
         query: 'meeting',

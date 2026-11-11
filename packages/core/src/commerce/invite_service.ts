@@ -180,7 +180,9 @@ export class InviteService {
     const offer: InviteOffer = {
       ...draft,
       offer_digest: offerDigest,
-      inviter_signature: bytesToHex(this.deps.signOfferDigest(inviteOfferSigningBytes(offerDigest))),
+      inviter_signature: bytesToHex(
+        this.deps.signOfferDigest(inviteOfferSigningBytes(offerDigest)),
+      ),
     };
     const shapeError = validateInviteOffer(offer, hash);
     if (shapeError !== null) return refuse(shapeError);
@@ -256,7 +258,8 @@ export class InviteService {
     // the SAME digest gets the same confirmation back — the loss story.
     // Anything else under a used nonce refuses: single-use means one
     // redemption, ever.
-    const stored = row.redemptionJson === '' ? null : rehydrateStoredInviteRedemption(row.redemptionJson);
+    const stored =
+      row.redemptionJson === '' ? null : rehydrateStoredInviteRedemption(row.redemptionJson);
     if (
       stored === null ||
       stored.redemption_digest !== redemption.redemption_digest ||
@@ -380,13 +383,16 @@ export class InviteService {
   async redeemCode(args: {
     code: string;
     serviceRkeys: readonly string[];
-  }): Promise<InviteOutcome<{ redemption: InviteRedemption; resent: boolean; dispatched: boolean }>> {
+  }): Promise<
+    InviteOutcome<{ redemption: InviteRedemption; resent: boolean; dispatched: boolean }>
+  > {
     const decoded = decodeInviteCode(args.code, hash);
     if ('error' in decoded) return refuse(decoded.error);
     const offer = decoded.offer;
     const now = this.deps.now();
     if (Date.parse(offer.expires_at) <= now) return refuse('the offer expired');
-    if (offer.inviter_did === this.deps.nodeDid()) return refuse('a node cannot redeem its own offer');
+    if (offer.inviter_did === this.deps.nodeDid())
+      return refuse('a node cannot redeem its own offer');
 
     // The embedded signature is the offer's ONLY origin proof — the string
     // travelled outside any envelope. Unresolvable key = unverifiable = no.
@@ -580,7 +586,11 @@ export class InviteService {
   }
 
   private markActivationProven(row: InviteRow): void {
-    this.deps.invites.put({ ...row, activationProvenAt: this.deps.now(), updatedAt: this.deps.now() });
+    this.deps.invites.put({
+      ...row,
+      activationProvenAt: this.deps.now(),
+      updatedAt: this.deps.now(),
+    });
   }
 
   // -------------------------------------------------------------------------
@@ -761,7 +771,10 @@ export class InviteService {
     else this.deps.invites.put({ ...heir, createdContact: true });
   }
 
-  private async sendRevocation(row: InviteRow, reason: 'expired' | 'no_activation_proof'): Promise<void> {
+  private async sendRevocation(
+    row: InviteRow,
+    reason: 'expired' | 'no_activation_proof',
+  ): Promise<void> {
     if (row.counterpartyDid === '') return;
     const draft = {
       protocol_version: '1.0',

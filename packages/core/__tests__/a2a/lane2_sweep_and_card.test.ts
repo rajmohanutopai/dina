@@ -32,19 +32,36 @@ afterEach(() => {
 
 const reviewListing = () =>
   listing({
-    capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'review', category: 'transit' } },
+    capabilities: {
+      eta_query: {
+        mcpServer: 'transit',
+        mcpTool: 'get_eta',
+        responsePolicy: 'review',
+        category: 'transit',
+      },
+    },
   });
 
 describe('the repair sweep reports a failing call by id and error class only (notes M2 review)', () => {
   // Plan C238
   it('one call that throws is counted and named by its id and error class, never the message; the rest are repaired, and it is retried next sweep', async () => {
     // Approved review cards whose decision handler never ran: the sweep mints their execution.
-    iw.world.useService(false, { responseEgressGate: a2aWorkflowHooks(() => iw.world.runtime).responseEgressGate });
+    iw.world.useService(false, {
+      responseEgressGate: a2aWorkflowHooks(() => iw.world.runtime).responseEgressGate,
+    });
     const rt = { ...iw.rt, a2a: iw.world.runtime };
     await save(reviewListing(), 'bus');
     // The fixture's runtime still points at the first service; send through the new one.
     const call = (route: string) =>
-      sentTask(ingressSendMessage(rt, iw.request('SendMessage', iw.message({ skill: 'eta_query', params: { route_id: route } })))).id as string;
+      sentTask(
+        ingressSendMessage(
+          rt,
+          iw.request(
+            'SendMessage',
+            iw.message({ skill: 'eta_query', params: { route_id: route } }),
+          ),
+        ),
+      ).id as string;
     const bad = call('SECRET-PARAM-VALUE');
     const good = call('2');
     iw.world.workflow.approve(iw.childOf(bad).id);
@@ -74,7 +91,11 @@ describe('one requeue observer per repository (notes M3: "One slot, not a list")
   it('after the early workflow service is swapped for the full plane over one repository, a lapsed lease is one event, told to the new observer only', () => {
     const early = jest.fn();
     // The server's early service, then the full plane over the same repository.
-    new WorkflowService({ repository: iw.world.repo, nowMsFn: () => iw.world.clock, onTaskRequeued: early });
+    new WorkflowService({
+      repository: iw.world.repo,
+      nowMsFn: () => iw.world.clock,
+      onTaskRequeued: early,
+    });
     const hooks = a2aWorkflowHooks(() => iw.world.runtime);
     const counted = jest.fn(hooks.onTaskRequeued);
     iw.world.useService(true, {
@@ -83,7 +104,12 @@ describe('one requeue observer per repository (notes M3: "One slot, not a list")
       responseBridgeSender: async () => undefined,
     });
     const rt = { ...iw.rt, a2a: iw.world.runtime };
-    const id = sentTask(ingressSendMessage(rt, iw.request('SendMessage', iw.message({ skill: 'eta_query', params: { route_id: '1' } })))).id as string;
+    const id = sentTask(
+      ingressSendMessage(
+        rt,
+        iw.request('SendMessage', iw.message({ skill: 'eta_query', params: { route_id: '1' } })),
+      ),
+    ).id as string;
     iw.claimChild(id, 1_000);
     iw.world.clock += 5_000;
     expect(iw.world.repo.expireLeasedTasks(iw.world.clock)).toHaveLength(1);
@@ -92,21 +118,35 @@ describe('one requeue observer per repository (notes M3: "One slot, not a list")
     const story = iw.world.store
       .outboxOf(iw.opOf(id).id)
       .filter((r) => r.target_kind === 'sse')
-      .map((r) => (JSON.parse(r.event_json) as { statusUpdate?: { status: { state: string } } }).statusUpdate?.status.state);
+      .map(
+        (r) =>
+          (JSON.parse(r.event_json) as { statusUpdate?: { status: { state: string } } })
+            .statusUpdate?.status.state,
+      );
     expect(story).toEqual(['TASK_STATE_WORKING', 'TASK_STATE_SUBMITTED']);
     // And the claim hands the gateway each once.
-    const claimed = claimDeliveries(rt, { claimant: 'did:key:z6MkGateway', limit: 100, webhookLimit: 0 });
+    const claimed = claimDeliveries(rt, {
+      claimant: 'did:key:z6MkGateway',
+      limit: 100,
+      webhookLimit: 0,
+    });
     expect(claimed.items.filter((i) => i.task_id === id)).toHaveLength(2);
   });
 });
 
 describe('the public card’s name (notes M2: "the self listing when it is live and public, else the first such listing")', () => {
   const CONFIG: A2ACardConfig = {
-    key: { privateKey: deriveP256SigningKey(new Uint8Array(32).fill(9), 0).privateKey, generation: 0 },
+    key: {
+      privateKey: deriveP256SigningKey(new Uint8Array(32).fill(9), 0).privateKey,
+      generation: 0,
+    },
     publicOrigin: 'https://dina.example.org',
   };
   const card = async (): Promise<AgentCard> => {
-    const built = await buildInboundCard(iw.world.store, { nodeDid: 'did:plc:ewvi7nxzyoun6zhxrhs64oiz', config: CONFIG });
+    const built = await buildInboundCard(iw.world.store, {
+      nodeDid: 'did:plc:ewvi7nxzyoun6zhxrhs64oiz',
+      config: CONFIG,
+    });
     if (!built.ok) throw new Error(built.reason);
     return built.card;
   };
@@ -115,12 +155,18 @@ describe('the public card’s name (notes M2: "the self listing when it is live 
   it('a paused self listing gives the name to the first other live public listing in rkey order, passing over a known_only one, and the version moves with it', async () => {
     await save(listing({ name: 'Corner Shop', description: 'The self listing.' }), 'self');
     // A live known_only listing sorts first; a second public listing sorts last.
-    await save(listing({ name: 'Hidden', discoverability: 'known_only', isDiscoverable: false }), 'aaa-hidden');
+    await save(
+      listing({ name: 'Hidden', discoverability: 'known_only', isDiscoverable: false }),
+      'aaa-hidden',
+    );
     await save(listing({ name: 'Zoo Line' }), 'zoo');
     expect(listServiceConfigs().map((l) => l.rkey)).toEqual(['aaa-hidden', 'bus', 'self', 'zoo']);
     const first = await card();
     expect([first.name, first.description]).toEqual(['Corner Shop', 'The self listing.']);
-    await save(listing({ name: 'Corner Shop', description: 'The self listing.', status: 'paused' }), 'self');
+    await save(
+      listing({ name: 'Corner Shop', description: 'The self listing.', status: 'paused' }),
+      'self',
+    );
     const second = await card();
     expect(second.name).toBe('Bus 42');
     expect(second.version).not.toBe(first.version);

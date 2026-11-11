@@ -198,7 +198,9 @@ export function exclusionReason(
  * calls this over the listing's configured keys, classified as projection
  * classifies them.
  */
-export function ambiguousCanonicals(capabilities: readonly { canonical: string | null }[]): ReadonlySet<string> {
+export function ambiguousCanonicals(
+  capabilities: readonly { canonical: string | null }[],
+): ReadonlySet<string> {
   const seen = new Set<string>();
   const ambiguous = new Set<string>();
   for (const { canonical } of capabilities) {
@@ -229,7 +231,10 @@ function projectedSkill(
     outputModes: [JSON_MEDIA_TYPE],
   };
   const sample = sampleFromSchema(paramsSchema);
-  if (isPlainObject(sample) && (acceptsExample === undefined || acceptsExample(sample as JsonObject, paramsSchema))) {
+  if (
+    isPlainObject(sample) &&
+    (acceptsExample === undefined || acceptsExample(sample as JsonObject, paramsSchema))
+  ) {
     const call: JsonObject = { skill: id, params: sample };
     if (envelope.grantId !== undefined) call.grant_id = envelope.grantId;
     if (envelope.full) call.schema_hash = schemaHash;
@@ -404,12 +409,17 @@ export function skillIdFits(canonical: string, rkey: string): boolean {
 }
 
 export function skillShareFits(rkey: string, cap: ProjectionCapability): boolean {
-  if (cap.canonical === null || cap.paramsSchema === undefined || cap.schemaHash === undefined) return false;
+  if (cap.canonical === null || cap.paramsSchema === undefined || cap.schemaHash === undefined)
+    return false;
   try {
     const largest = projectedSkill(rkey, cap, { full: true, grantId: LONGEST_GRANT_ID });
     const share = canonicalize({
       skill: largest.skill as unknown as JsonValue,
-      contract: { paramsSchema: largest.paramsSchema, schemaHash: largest.schemaHash, grantId: LONGEST_GRANT_ID },
+      contract: {
+        paramsSchema: largest.paramsSchema,
+        schemaHash: largest.schemaHash,
+        grantId: LONGEST_GRANT_ID,
+      },
     });
     return utf8Bytes(share).length <= A2A_LIMITS.maxSkillShareBytes;
   } catch (err) {
@@ -504,7 +514,11 @@ interface Sample {
 }
 
 /** A bound keyword's value: a non-negative integer, `fallback` when absent, null when malformed. */
-function countBound(schema: Readonly<Record<string, unknown>>, key: string, fallback: number): number | null {
+function countBound(
+  schema: Readonly<Record<string, unknown>>,
+  key: string,
+  fallback: number,
+): number | null {
   if (!Object.prototype.hasOwnProperty.call(schema, key)) return fallback;
   const v = schema[key];
   return typeof v === 'number' && Number.isInteger(v) && v >= 0 ? v : null;

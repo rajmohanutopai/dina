@@ -42,13 +42,25 @@ export function createStandingReplyTool(opts: { thread: string; core: Core }): A
         return opts.core.standingReplyRevoke(args.id, proven.proof);
       }
       if (args.action !== 'set') return { error: 'action must be set, list or cancel' };
-      const contacts = Array.isArray(args.contacts) ? args.contacts.filter((x): x is string => typeof x === 'string') : [];
-      if (typeof args.reply_text !== 'string' || typeof args.until !== 'string') return { error: 'reply_text and until are required' };
-      const out = await opts.core.standingReplyPropose({ proof: proven.proof, contacts, replyText: args.reply_text, until: args.until });
+      const contacts = Array.isArray(args.contacts)
+        ? args.contacts.filter((x): x is string => typeof x === 'string')
+        : [];
+      if (typeof args.reply_text !== 'string' || typeof args.until !== 'string')
+        return { error: 'reply_text and until are required' };
+      const out = await opts.core.standingReplyPropose({
+        proof: proven.proof,
+        contacts,
+        replyText: args.reply_text,
+        until: args.until,
+      });
       // Core cannot tell a work request from any other, so the rule answers
       // every request from these contacts; the reply must not promise less.
       return out.status === 'confirm_pending'
-        ? { ...out, scope: 'Once approved, this answers EVERY request from these contacts until the end date, whatever the subject. Tell the user so.' }
+        ? {
+            ...out,
+            scope:
+              'Once approved, this answers EVERY request from these contacts until the end date, whatever the subject. Tell the user so.',
+          }
         : out;
     },
   };

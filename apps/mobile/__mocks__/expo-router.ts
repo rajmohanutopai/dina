@@ -8,9 +8,14 @@
  * locally to override.
  */
 
+import { useEffect, type EffectCallback } from 'react';
+
 /** Empty params — tests that pass route data via props don't need URL state. */
 export function useLocalSearchParams<
-  T extends Record<string, string | string[] | undefined> = Record<string, string | string[] | undefined>,
+  T extends Record<string, string | string[] | undefined> = Record<
+    string,
+    string | string[] | undefined
+  >,
 >(): T {
   return {} as T;
 }
@@ -51,18 +56,14 @@ export function useRouter(): {
  * mount — sufficient for the unit tests that just need the callback
  * not to be a missing-import error.
  */
-export function useFocusEffect(
-  effect: () => void | (() => void),
-): void {
-   
-  const React = require('react');
-  React.useEffect(() => {
+export function useFocusEffect(effect: EffectCallback): void {
+  useEffect(() => {
     const cleanup = effect();
     return typeof cleanup === 'function' ? cleanup : undefined;
     // The real expo-router runs `effect` every time focus changes; the
     // unit tests don't drive focus, so once-on-mount is the right
-    // approximation (matches `useEffect(..., [])`).
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // approximation (matches `useEffect(..., [])`), so `effect` stays out
+    // of the dependency list on purpose.
   }, []);
 }
 

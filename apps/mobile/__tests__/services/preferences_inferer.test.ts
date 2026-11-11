@@ -10,10 +10,7 @@
  *   - Pure: same input → same output, no global state.
  */
 
-import {
-  inferPreferences,
-  type InferenceContext,
-} from '../../src/services/preferences_inferer';
+import { inferPreferences, type InferenceContext } from '../../src/services/preferences_inferer';
 
 function ctx(overrides: Partial<InferenceContext> = {}): InferenceContext {
   return {
@@ -48,15 +45,11 @@ describe('inferPreferences — languages', () => {
 
 describe('inferPreferences — devices', () => {
   it('iOS phone → ios', () => {
-    expect(inferPreferences(ctx({ platform: 'ios', isIpad: false })).devices).toEqual([
-      'ios',
-    ]);
+    expect(inferPreferences(ctx({ platform: 'ios', isIpad: false })).devices).toEqual(['ios']);
   });
 
   it('iPad → ipad (so iPad-native apps stay in the rank)', () => {
-    expect(inferPreferences(ctx({ platform: 'ios', isIpad: true })).devices).toEqual([
-      'ipad',
-    ]);
+    expect(inferPreferences(ctx({ platform: 'ios', isIpad: true })).devices).toEqual(['ipad']);
   });
 
   it('android → android', () => {
@@ -106,9 +99,7 @@ describe('inferPreferences — dietary (first-person assertions only)', () => {
   });
 
   it('matches gluten-free via "coeliac" / "celiac" diagnosis terms', () => {
-    const items = [
-      { headline: 'medical', bodyPreview: "I'm coeliac, must avoid gluten" },
-    ];
+    const items = [{ headline: 'medical', bodyPreview: "I'm coeliac, must avoid gluten" }];
     expect(inferPreferences(ctx({ vaultItems: items })).dietary).toEqual(['gluten-free']);
   });
 
@@ -118,9 +109,7 @@ describe('inferPreferences — dietary (first-person assertions only)', () => {
   });
 
   it('matches nut-free via "peanut allergy" / "nut allergy"', () => {
-    const items = [
-      { headline: 'kid bio', bodyPreview: 'My son has a peanut allergy.' },
-    ];
+    const items = [{ headline: 'kid bio', bodyPreview: 'My son has a peanut allergy.' }];
     expect(inferPreferences(ctx({ vaultItems: items })).dietary).toEqual(['nut-free']);
   });
 

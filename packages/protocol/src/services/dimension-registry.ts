@@ -37,19 +37,31 @@
 
 export interface CanonicalDimension {
   /** The one true dimension name the aggregate is keyed on. */
-  readonly canonical: string
+  readonly canonical: string;
   /** Synonyms that resolve to `canonical`. Excludes `canonical` itself. */
-  readonly aliases: readonly string[]
+  readonly aliases: readonly string[];
   /** Human / LLM-readable label — chip text + query-side description. */
-  readonly description: string
+  readonly description: string;
 }
 
 /** Generic dimensions for categories without a specific entry. */
 export const GENERIC_DIMENSIONS: readonly CanonicalDimension[] = Object.freeze([
-  Object.freeze({ canonical: 'quality', aliases: Object.freeze(['overall_quality', 'build']), description: 'Overall quality' }),
-  Object.freeze({ canonical: 'value', aliases: Object.freeze(['value_for_money', 'price_value']), description: 'Value for money' }),
-  Object.freeze({ canonical: 'reliability', aliases: Object.freeze(['dependability']), description: 'Reliability' }),
-])
+  Object.freeze({
+    canonical: 'quality',
+    aliases: Object.freeze(['overall_quality', 'build']),
+    description: 'Overall quality',
+  }),
+  Object.freeze({
+    canonical: 'value',
+    aliases: Object.freeze(['value_for_money', 'price_value']),
+    description: 'Value for money',
+  }),
+  Object.freeze({
+    canonical: 'reliability',
+    aliases: Object.freeze(['dependability']),
+    description: 'Reliability',
+  }),
+]);
 
 /**
  * Per-category canonical dimension lists. Keyed by first slash-segment of
@@ -111,7 +123,7 @@ export const DIMENSION_BY_CATEGORY: Readonly<Record<string, readonly CanonicalDi
         description: 'Accessibility',
       }),
     ]),
-  })
+  });
 
 /**
  * Category aliases → canonical category KEY. String normalization alone
@@ -124,7 +136,7 @@ export const CATEGORY_ALIASES: Readonly<Record<string, string>> = Object.freeze(
   restaurants: 'dining',
   restaurant: 'dining',
   food: 'dining',
-})
+});
 
 /**
  * Resolve a raw category string to its canonical category KEY: lowercase
@@ -133,18 +145,18 @@ export const CATEGORY_ALIASES: Readonly<Record<string, string>> = Object.freeze(
  * normalized so they fall back to GENERIC dimensions.
  */
 export function resolveCategoryKey(rawCategory: string): string {
-  const trimmed = rawCategory.trim().toLowerCase()
+  const trimmed = rawCategory.trim().toLowerCase();
   // `split('/')[0]` is `string | undefined` under noUncheckedIndexedAccess;
   // it can only be undefined for an empty split, which can't happen here —
   // coalesce to `trimmed` to keep the return type a plain `string`.
-  const firstSegment = trimmed.includes('/') ? (trimmed.split('/')[0] ?? trimmed) : trimmed
-  return CATEGORY_ALIASES[firstSegment] ?? firstSegment
+  const firstSegment = trimmed.includes('/') ? (trimmed.split('/')[0] ?? trimmed) : trimmed;
+  return CATEGORY_ALIASES[firstSegment] ?? firstSegment;
 }
 
 /** The canonical dimension list for a category (specific or GENERIC). */
 export function dimensionsForCategory(rawCategory: string): readonly CanonicalDimension[] {
-  const key = resolveCategoryKey(rawCategory)
-  return DIMENSION_BY_CATEGORY[key] ?? GENERIC_DIMENSIONS
+  const key = resolveCategoryKey(rawCategory);
+  return DIMENSION_BY_CATEGORY[key] ?? GENERIC_DIMENSIONS;
 }
 
 /**
@@ -155,36 +167,36 @@ export function dimensionsForCategory(rawCategory: string): readonly CanonicalDi
 export function buildDimensionAliasMap(
   dims: readonly CanonicalDimension[],
 ): ReadonlyMap<string, string> {
-  const m = new Map<string, string>()
+  const m = new Map<string, string>();
   for (const dim of dims) {
-    registerDim(m, dim.canonical, dim.canonical)
+    registerDim(m, dim.canonical, dim.canonical);
     for (const alias of dim.aliases) {
-      registerDim(m, alias, dim.canonical)
+      registerDim(m, alias, dim.canonical);
     }
   }
-  return m
+  return m;
 }
 
 function registerDim(m: Map<string, string>, token: string, canonical: string): void {
-  const existing = m.get(token)
+  const existing = m.get(token);
   if (existing !== undefined && existing !== canonical) {
     throw new Error(
       `dimension-registry: token "${token}" maps to both "${existing}" and ` +
         `"${canonical}" within one category — dimension tokens must be unique.`,
-    )
+    );
   }
-  m.set(token, canonical)
+  m.set(token, canonical);
 }
 
 /** Per-category alias maps, built once. */
 const ALIAS_MAP_BY_CATEGORY: ReadonlyMap<string, ReadonlyMap<string, string>> = (() => {
-  const outer = new Map<string, ReadonlyMap<string, string>>()
+  const outer = new Map<string, ReadonlyMap<string, string>>();
   for (const [cat, dims] of Object.entries(DIMENSION_BY_CATEGORY)) {
-    outer.set(cat, buildDimensionAliasMap(dims))
+    outer.set(cat, buildDimensionAliasMap(dims));
   }
-  outer.set('__generic__', buildDimensionAliasMap(GENERIC_DIMENSIONS))
-  return outer
-})()
+  outer.set('__generic__', buildDimensionAliasMap(GENERIC_DIMENSIONS));
+  return outer;
+})();
 
 /**
  * Resolve a raw dimension string to its canonical name WITHIN a category,
@@ -195,10 +207,14 @@ const ALIAS_MAP_BY_CATEGORY: ReadonlyMap<string, ReadonlyMap<string, string>> = 
  * under the raw string). Returning `null` (not the raw string) forces
  * that decision to be explicit at every call site.
  */
-export function resolveCanonicalDimension(rawCategory: string, rawDimension: string): string | null {
-  const normalizedDim = rawDimension.trim().toLowerCase()
-  if (normalizedDim.length === 0) return null
-  const key = resolveCategoryKey(rawCategory)
-  const map = ALIAS_MAP_BY_CATEGORY.get(key) ?? ALIAS_MAP_BY_CATEGORY.get('__generic__')!
-  return map.get(normalizedDim) ?? null
+export function resolveCanonicalDimension(
+  rawCategory: string,
+  rawDimension: string,
+): string | null {
+  const normalizedDim = rawDimension.trim().toLowerCase();
+  if (normalizedDim.length === 0) return null;
+  const key = resolveCategoryKey(rawCategory);
+  const map = ALIAS_MAP_BY_CATEGORY.get(key) ?? ALIAS_MAP_BY_CATEGORY.get('__generic__');
+  if (map === undefined) throw new Error('dimension-registry: generic alias map is missing');
+  return map.get(normalizedDim) ?? null;
 }

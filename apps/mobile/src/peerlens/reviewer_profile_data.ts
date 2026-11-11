@@ -129,9 +129,7 @@ const NUMERIC_SCORE_MIN_ATTESTATIONS = 3;
  *   - Negative or out-of-range raw values fall back to `null` rather
  *     than rendering as nonsense.
  */
-export function deriveReviewerProfileDisplay(
-  profile: PeerlensProfile,
-): ReviewerProfileDisplay {
+export function deriveReviewerProfileDisplay(profile: PeerlensProfile): ReviewerProfileDisplay {
   const total = profile.attestationSummary.total;
   return {
     did: profile.did,
@@ -150,8 +148,7 @@ export function deriveReviewerProfileDisplay(
     helpfulRatioDisplay: percentDisplay(profile.reviewerStats.helpfulRatio),
     corroborationRateDisplay: percentDisplay(profile.reviewerStats.corroborationRate),
     lastActiveMs: profile.lastActive,
-    hasNumericScore:
-      profile.overallTrustScore !== null && total >= NUMERIC_SCORE_MIN_ATTESTATIONS,
+    hasNumericScore: profile.overallTrustScore !== null && total >= NUMERIC_SCORE_MIN_ATTESTATIONS,
   };
 }
 
@@ -180,10 +177,7 @@ function percentDisplay(rate: number | null | undefined): number | null {
  *   - < 4 weeks → "Nw ago"
  *   - else → "N months ago"
  */
-export function formatLastActive(
-  lastActiveMs: number | null,
-  nowMs: number,
-): string {
+export function formatLastActive(lastActiveMs: number | null, nowMs: number): string {
   if (lastActiveMs === null || lastActiveMs > nowMs) return 'never';
   const diffMs = nowMs - lastActiveMs;
   const minutes = Math.floor(diffMs / 60_000);

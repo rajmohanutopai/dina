@@ -60,7 +60,9 @@ export function assertBytesEqual(
   assert(
     actual instanceof Uint8Array,
     `${message}: value is not a Uint8Array (got ${
-      actual === null ? 'null' : (actual as { constructor?: { name?: string } })?.constructor?.name ?? typeof actual
+      actual === null
+        ? 'null'
+        : ((actual as { constructor?: { name?: string } })?.constructor?.name ?? typeof actual)
     })`,
   );
   const bytes = actual as Uint8Array;

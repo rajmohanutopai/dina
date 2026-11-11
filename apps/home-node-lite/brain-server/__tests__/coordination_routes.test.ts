@@ -29,8 +29,25 @@ const PLAN: GroupPlanWire = {
   updated_at: 2,
   candidates: [{ start: 'Sat 26' }],
   chosen: null,
-  fold: { state: 'converged', agreed: [{ start: 'Sat 26' }], missing_required: [], emptied_by: [], optional_fit: {}, counters: {}, needs_more_info: [] },
-  guests: [{ contact_did: 'did:plc:garcia', required: true, outcome: 'answered', reply: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] }, disclosures: [], spokes: [] }],
+  fold: {
+    state: 'converged',
+    agreed: [{ start: 'Sat 26' }],
+    missing_required: [],
+    emptied_by: [],
+    optional_fit: {},
+    counters: {},
+    needs_more_info: [],
+  },
+  guests: [
+    {
+      contact_did: 'did:plc:garcia',
+      required: true,
+      outcome: 'answered',
+      reply: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] },
+      disclosures: [],
+      spokes: [],
+    },
+  ],
   requirements: [],
 };
 
@@ -51,7 +68,16 @@ describe('/api/v1/coordination — web read path', () => {
 
   it('lists handles, and forwards Core’s own status on a refusal', async () => {
     const core = new MockCoreClient();
-    core.groupPlanHandles = [{ plan_id: 'gp_1', intent: 'x', state: 'settled', round: 2, chosen: { start: 'Sat 26' }, updated_at: 3 }];
+    core.groupPlanHandles = [
+      {
+        plan_id: 'gp_1',
+        intent: 'x',
+        state: 'settled',
+        round: 2,
+        chosen: { start: 'Sat 26' },
+        updated_at: 3,
+      },
+    ];
     const app = makeApp(core);
     const handles = await app.inject({ method: 'GET', url: '/api/v1/coordination/handles' });
     expect(handles.statusCode).toBe(200);

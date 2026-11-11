@@ -44,11 +44,7 @@ describe('ViewerFilterChipsView — render', () => {
 
   it('renders the container + one chip per filter when filters are present', () => {
     const { getByTestId } = render(
-      <ViewerFilterChipsView
-        filters={[LANG, SYNTHETIC]}
-        active={new Set()}
-        onToggle={() => {}}
-      />,
+      <ViewerFilterChipsView filters={[LANG, SYNTHETIC]} active={new Set()} onToggle={() => {}} />,
     );
     expect(getByTestId('viewer-filter-chips')).toBeTruthy();
     expect(getByTestId('viewer-filter-chip-languages')).toBeTruthy();
@@ -68,9 +64,7 @@ describe('ViewerFilterChipsView — accessibility', () => {
     const { getByTestId } = render(
       <ViewerFilterChipsView filters={[LANG]} active={new Set()} onToggle={() => {}} />,
     );
-    expect(getByTestId('viewer-filter-chip-languages').props.accessibilityRole).toBe(
-      'checkbox',
-    );
+    expect(getByTestId('viewer-filter-chip-languages').props.accessibilityRole).toBe('checkbox');
   });
 
   it('inactive chip has accessibilityState.checked=false', () => {
@@ -107,11 +101,7 @@ describe('ViewerFilterChipsView — toggle', () => {
   it('tap fires onToggle with the filter id', () => {
     const onToggle = jest.fn();
     const { getByTestId } = render(
-      <ViewerFilterChipsView
-        filters={[LANG, SYNTHETIC]}
-        active={new Set()}
-        onToggle={onToggle}
-      />,
+      <ViewerFilterChipsView filters={[LANG, SYNTHETIC]} active={new Set()} onToggle={onToggle} />,
     );
     fireEvent.press(getByTestId('viewer-filter-chip-languages'));
     expect(onToggle).toHaveBeenCalledWith('languages');

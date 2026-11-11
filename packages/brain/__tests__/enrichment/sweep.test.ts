@@ -9,7 +9,10 @@ import {
   clearVaults,
   getItem,
   queryByEnrichmentStatus,
- createPersona, resetPersonaState, openPersona } from '@dina/core';
+  createPersona,
+  resetPersonaState,
+  openPersona,
+} from '@dina/core';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 import { registerEnrichmentLLM, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';

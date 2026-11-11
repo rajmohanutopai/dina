@@ -7,7 +7,14 @@ Ed25519-signed over its `buildMessageJSON` output.
 ## Wire format
 
 ```json
-{"id":"m-0001","type":"presence.signal","from":"did:plc:alice","to":["did:plc:bob"],"created_time":1745318400,"body":"PGJhc2U2NCBjb250ZW50Pg=="}
+{
+  "id": "m-0001",
+  "type": "presence.signal",
+  "from": "did:plc:alice",
+  "to": ["did:plc:bob"],
+  "created_time": 1745318400,
+  "body": "PGJhc2U2NCBjb250ZW50Pg=="
+}
 ```
 
 ## Rules

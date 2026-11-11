@@ -27,11 +27,7 @@
  * still works). The caller passes our identity in as a closure.
  */
 
-import {
-  makeResolveSender,
-  resolveHostedDinaEndpoints,
-  type MakeResolveSenderOptions,
-} from '@dina/home-node';
+import { resolveHostedDinaEndpoints } from '@dina/home-node';
 
 import { mobileHostedEndpoints } from './hosted_endpoints';
 

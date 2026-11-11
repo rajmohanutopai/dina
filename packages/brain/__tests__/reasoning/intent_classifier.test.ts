@@ -112,8 +112,12 @@ describe('parseIntentClassification — coerce', () => {
     expect(INTENT_SOURCES).toContain('products');
     // The prompt the model reads names the source and tells it from a named store's live state.
     expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toContain('"products"');
-    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/A PRODUCT compared across suppliers[\s\S]*is "products"/);
-    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(/NOT "provider_services", which is a NAMED store/);
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(
+      /A PRODUCT compared across suppliers[\s\S]*is "products"/,
+    );
+    expect(INTENT_CLASSIFIER_SYSTEM_PROMPT).toMatch(
+      /NOT "provider_services", which is a NAMED store/,
+    );
   });
 
   it('passes the modern peerlens source through unchanged', () => {

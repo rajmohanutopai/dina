@@ -32,9 +32,7 @@ export interface AllowGrantRequestArgs {
  * the contact was removed in the meantime → 403). The caller surfaces the
  * failure inline.
  */
-export async function allowGrantRequest(
-  args: AllowGrantRequestArgs,
-): Promise<{ grantId: string }> {
+export async function allowGrantRequest(args: AllowGrantRequestArgs): Promise<{ grantId: string }> {
   const node = getBootedNode();
   if (node === null) {
     throw new Error('Dina is still starting — try again in a moment.');

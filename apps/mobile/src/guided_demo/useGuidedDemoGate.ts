@@ -256,7 +256,9 @@ export function useGuidedDemoGate(
   // will run next. While a step runs it IS that step (its content is appearing,
   // so `currentAction`); when idle it's the last completed step (`previousAction`);
   // before anything has run, fall back to the first step as the intro prompt.
-  const displayedAction = actionInFlight ? currentAction : (runner?.previousAction ?? currentAction);
+  const displayedAction = actionInFlight
+    ? currentAction
+    : (runner?.previousAction ?? currentAction);
   const caption = displayedAction?.caption ?? null;
   const step =
     runner === null

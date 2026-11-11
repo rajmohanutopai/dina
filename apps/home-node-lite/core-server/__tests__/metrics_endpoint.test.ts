@@ -7,10 +7,7 @@ import { pino } from 'pino';
 import { PROMETHEUS_CONTENT_TYPE } from '../src/metrics/exporter';
 import { installMetricsHook } from '../src/metrics/hook';
 import { MetricsRegistry } from '../src/metrics/registry';
-import {
-  DEFAULT_METRICS_PATH,
-  registerMetricsRoutes,
-} from '../src/metrics/routes';
+import { DEFAULT_METRICS_PATH, registerMetricsRoutes } from '../src/metrics/routes';
 import { createServer } from '../src/server';
 
 import type { CoreServerConfig } from '../src/config';
@@ -133,9 +130,9 @@ describe('GET /metrics (task 4.85)', () => {
     it('rejects non-slash-prefixed path', async () => {
       const app = await createServer({ config: baseConfig(), logger: silentLogger() });
       const registry = new MetricsRegistry();
-      expect(() =>
-        registerMetricsRoutes(app, { registry, path: 'metrics' }),
-      ).toThrow(/must start with/);
+      expect(() => registerMetricsRoutes(app, { registry, path: 'metrics' })).toThrow(
+        /must start with/,
+      );
       await app.close();
     });
   });

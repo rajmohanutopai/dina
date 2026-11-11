@@ -349,7 +349,8 @@ function readOrderRecord(
   const alt = fallbackApplied(order.value.buyer_did, order.value.purchase_order_id)
     ? undefined
     : order.value.alternative_id;
-  const version = alt === undefined || quote === null || !quote.ok ? null : quoteVersion(quote.value, alt);
+  const version =
+    alt === undefined || quote === null || !quote.ok ? null : quoteVersion(quote.value, alt);
   const taken =
     alt === undefined
       ? null
@@ -469,7 +470,11 @@ export function listOrderDecisionEvents(
     }
   }
   events.sort((a, b) =>
-    a.decidedAt !== b.decidedAt ? a.decidedAt - b.decidedAt : a.orderDigest < b.orderDigest ? -1 : 1,
+    a.decidedAt !== b.decidedAt
+      ? a.decidedAt - b.decidedAt
+      : a.orderDigest < b.orderDigest
+        ? -1
+        : 1,
   );
   const kept = events.slice(0, page.limit);
   // The cursor is the last event kept when the page was cut; otherwise the
@@ -486,7 +491,8 @@ export function listOrderDecisionEvents(
       ? lastEvent
       : lastEvent === undefined ||
           lastEvent.decidedAt < lastRead.decidedAt ||
-          (lastEvent.decidedAt === lastRead.decidedAt && lastEvent.orderDigest < lastRead.orderDigest)
+          (lastEvent.decidedAt === lastRead.decidedAt &&
+            lastEvent.orderDigest < lastRead.orderDigest)
         ? lastRead
         : lastEvent;
   return {

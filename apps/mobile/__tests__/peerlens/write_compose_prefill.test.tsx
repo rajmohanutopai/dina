@@ -29,12 +29,7 @@ import * as vaultCrud from '@dina/core';
 
 import WriteScreen from '../../app/peerlens/write';
 
-import type {
-  ChatMessage,
-  ChatOptions,
-  ChatResponse,
-  LLMProvider,
-} from '@dina/brain/llm';
+import type { ChatMessage, ChatOptions, ChatResponse, LLMProvider } from '@dina/brain/llm';
 
 const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<typeof vaultCrud.queryVault>;
 
@@ -111,11 +106,13 @@ describe('WriteScreen + compose-context prefill', () => {
         timestamp: NOW - 6 * 60 * 60 * 1000,
       }),
     ] as never);
-    const llm = stubLLM(
-      JSON.stringify({ use_cases: ['office'], last_used_bucket: 'today' }),
-    );
+    const llm = stubLLM(JSON.stringify({ use_cases: ['office'], last_used_bucket: 'today' }));
     const { findByTestId, findByText } = render(
-      <WriteScreen subjectTitle="Aeron chair" composeLLMProvider={llm} composePersonas={['general']} />,
+      <WriteScreen
+        subjectTitle="Aeron chair"
+        composeLLMProvider={llm}
+        composePersonas={['general']}
+      />,
     );
     const banner = await findByTestId('write-prefill-banner');
     expect(banner).toBeTruthy();
@@ -127,7 +124,11 @@ describe('WriteScreen + compose-context prefill', () => {
     queryVaultMock.mockReturnValue([] as never);
     const llm = stubLLM(JSON.stringify({}));
     const { queryByTestId } = render(
-      <WriteScreen subjectTitle="Aeron chair" composeLLMProvider={llm} composePersonas={['general']} />,
+      <WriteScreen
+        subjectTitle="Aeron chair"
+        composeLLMProvider={llm}
+        composePersonas={['general']}
+      />,
     );
     // The compose-context runner is async; flush microtasks so any
     // would-be prefill has had a chance to fire before we assert
@@ -148,7 +149,11 @@ describe('WriteScreen + compose-context prefill', () => {
       }),
     ] as never);
     const { queryByTestId } = render(
-      <WriteScreen subjectTitle="Aeron chair" composeLLMProvider={null} composePersonas={['general']} />,
+      <WriteScreen
+        subjectTitle="Aeron chair"
+        composeLLMProvider={null}
+        composePersonas={['general']}
+      />,
     );
     await act(async () => {
       await Promise.resolve();
@@ -165,11 +170,13 @@ describe('WriteScreen + compose-context prefill', () => {
         timestamp: NOW - 2 * 60 * 60 * 1000,
       }),
     ] as never);
-    const llm = stubLLM(
-      JSON.stringify({ use_cases: ['home_office'], last_used_bucket: 'today' }),
-    );
+    const llm = stubLLM(JSON.stringify({ use_cases: ['home_office'], last_used_bucket: 'today' }));
     const { findByText, getByTestId } = render(
-      <WriteScreen subjectTitle="Aeron chair" composeLLMProvider={llm} composePersonas={['general']} />,
+      <WriteScreen
+        subjectTitle="Aeron chair"
+        composeLLMProvider={llm}
+        composePersonas={['general']}
+      />,
     );
     // Step 1: banner is present.
     await findByText(/Dina prefilled/);

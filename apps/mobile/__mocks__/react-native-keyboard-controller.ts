@@ -11,7 +11,7 @@
 import React from 'react';
 
 function passthrough(hostName: string) {
-  const Component: React.FC<any> = (props) =>
+  const Component: React.FC<Record<string, unknown> & { children?: React.ReactNode }> = (props) =>
     React.createElement(hostName, props, props.children);
   Component.displayName = hostName;
   return Component;

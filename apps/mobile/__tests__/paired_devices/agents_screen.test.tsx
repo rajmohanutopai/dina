@@ -152,7 +152,9 @@ it('a ticked work-type vault goes with the code (REAL_LIFE_FIXES_2 §7.2)', asyn
   fireEvent(screen.getByTestId('paired-devices-persona-work'), 'valueChange', true);
   fireEvent.changeText(screen.getByTestId('paired-devices-agent-name'), 'research-bot');
   fireEvent.press(screen.getByTestId('paired-devices-generate'));
-  await waitFor(() => expect(mockClient.mintCodingAgentCode).toHaveBeenCalledWith('research-bot', ['work']));
+  await waitFor(() =>
+    expect(mockClient.mintCodingAgentCode).toHaveBeenCalledWith('research-bot', ['work']),
+  );
 });
 
 it('a staff phone’s code comes from the staff route', async () => {

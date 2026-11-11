@@ -82,23 +82,17 @@ describe('deriveSubjectDetail — header', () => {
   });
 
   it('showNumericScore=true at the N=3 boundary with a non-null score', () => {
-    const detail = deriveSubjectDetail(
-      makeInput({ subjectTrustScore: 0.7, reviewCount: 3 }),
-    );
+    const detail = deriveSubjectDetail(makeInput({ subjectTrustScore: 0.7, reviewCount: 3 }));
     expect(detail.header.showNumericScore).toBe(true);
   });
 
   it('showNumericScore=false when reviewCount < 3', () => {
-    const detail = deriveSubjectDetail(
-      makeInput({ subjectTrustScore: 0.95, reviewCount: 2 }),
-    );
+    const detail = deriveSubjectDetail(makeInput({ subjectTrustScore: 0.95, reviewCount: 2 }));
     expect(detail.header.showNumericScore).toBe(false);
   });
 
   it('showNumericScore=false when score is null even with N≥3', () => {
-    const detail = deriveSubjectDetail(
-      makeInput({ subjectTrustScore: null, reviewCount: 5 }),
-    );
+    const detail = deriveSubjectDetail(makeInput({ subjectTrustScore: null, reviewCount: 5 }));
     expect(detail.header.showNumericScore).toBe(false);
   });
 
@@ -175,17 +169,14 @@ describe('deriveSubjectDetail — header chips (TN-V2-P1-004)', () => {
   });
 
   it('drops the location chip when subjectKind is omitted (legacy callers)', () => {
-    const detail = deriveSubjectDetail(
-      makeInput({ coordinates: { lat: 37.77, lng: -122.42 } }),
-    );
+    const detail = deriveSubjectDetail(makeInput({ coordinates: { lat: 37.77, lng: -122.42 } }));
     expect(detail.header.location).toBeNull();
   });
 
   it('drops the location chip for out-of-range or non-finite coords', () => {
     expect(
-      deriveSubjectDetail(
-        makeInput({ subjectKind: 'place', coordinates: { lat: 91, lng: 0 } }),
-      ).header.location,
+      deriveSubjectDetail(makeInput({ subjectKind: 'place', coordinates: { lat: 91, lng: 0 } }))
+        .header.location,
     ).toBeNull();
     expect(
       deriveSubjectDetail(
@@ -249,9 +240,7 @@ describe('deriveSubjectDetail — header price chip (TN-V2-RANK-013)', () => {
   it('passes through valid tiers ($, $$, $$$)', () => {
     expect(deriveSubjectDetail(makeInput({ priceTier: '$' })).header.priceTier).toBe('$');
     expect(deriveSubjectDetail(makeInput({ priceTier: '$$' })).header.priceTier).toBe('$$');
-    expect(deriveSubjectDetail(makeInput({ priceTier: '$$$' })).header.priceTier).toBe(
-      '$$$',
-    );
+    expect(deriveSubjectDetail(makeInput({ priceTier: '$$$' })).header.priceTier).toBe('$$$');
   });
 
   it('priceTier defaults to null when omitted', () => {
@@ -261,9 +250,7 @@ describe('deriveSubjectDetail — header price chip (TN-V2-RANK-013)', () => {
 
   it('null / undefined priceTier coerce to null (string | null contract)', () => {
     expect(deriveSubjectDetail(makeInput({ priceTier: null })).header.priceTier).toBeNull();
-    expect(
-      deriveSubjectDetail(makeInput({ priceTier: undefined })).header.priceTier,
-    ).toBeNull();
+    expect(deriveSubjectDetail(makeInput({ priceTier: undefined })).header.priceTier).toBeNull();
   });
 
   it('chip parity — same input produces same priceTier on card + detail', () => {
@@ -356,18 +343,16 @@ describe('deriveSubjectDetail — header recency badge (TN-V2-RANK-011)', () => 
 
 describe('deriveSubjectDetail — header region pill (TN-V2-RANK-012)', () => {
   it('derives region pill when viewer NOT in availability list', () => {
-    const detail = deriveSubjectDetail(
-      makeInput({ availabilityRegions: ['UK'] }),
-      { viewerRegion: 'US' },
-    );
+    const detail = deriveSubjectDetail(makeInput({ availabilityRegions: ['UK'] }), {
+      viewerRegion: 'US',
+    });
     expect(detail.header.regionPill).toBe('📍 UK only');
   });
 
   it('regionPill is null when viewer IS in availability list', () => {
-    const detail = deriveSubjectDetail(
-      makeInput({ availabilityRegions: ['UK', 'US'] }),
-      { viewerRegion: 'US' },
-    );
+    const detail = deriveSubjectDetail(makeInput({ availabilityRegions: ['UK', 'US'] }), {
+      viewerRegion: 'US',
+    });
     expect(detail.header.regionPill).toBeNull();
   });
 
@@ -406,21 +391,15 @@ describe('deriveFlagWarning — null/missing inputs', () => {
 
 describe('deriveFlagWarning — count guards', () => {
   it('returns null when count is 0 (no signal)', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 0, scope: 'brand' }),
-    ).toBeNull();
+    expect(deriveFlagWarning({ contactsFlaggedCount: 0, scope: 'brand' })).toBeNull();
   });
 
   it('returns null when count is negative', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: -3, scope: 'brand' }),
-    ).toBeNull();
+    expect(deriveFlagWarning({ contactsFlaggedCount: -3, scope: 'brand' })).toBeNull();
   });
 
   it('returns null when count is NaN / Infinity', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: Number.NaN, scope: 'brand' }),
-    ).toBeNull();
+    expect(deriveFlagWarning({ contactsFlaggedCount: Number.NaN, scope: 'brand' })).toBeNull();
     expect(
       deriveFlagWarning({
         contactsFlaggedCount: Number.POSITIVE_INFINITY,
@@ -453,9 +432,9 @@ describe('deriveFlagWarning — count guards', () => {
 
 describe('deriveFlagWarning — copy', () => {
   it('singular "1 contact" for count=1', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 1, scope: 'brand' })?.text,
-    ).toBe('1 of your contacts flagged this brand');
+    expect(deriveFlagWarning({ contactsFlaggedCount: 1, scope: 'brand' })?.text).toBe(
+      '1 of your contacts flagged this brand',
+    );
     // Wait — singular should say "1 of your contact" or "1 of your
     // contacts"? Standard English uses "contacts" for the prepositional
     // phrase regardless of count ("1 of your contacts" = "1 contact
@@ -467,30 +446,30 @@ describe('deriveFlagWarning — copy', () => {
   });
 
   it('plural "N contacts" for count > 1', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'brand' })?.text,
-    ).toBe('2 of your contacts flagged this brand');
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 17, scope: 'brand' })?.text,
-    ).toBe('17 of your contacts flagged this brand');
+    expect(deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'brand' })?.text).toBe(
+      '2 of your contacts flagged this brand',
+    );
+    expect(deriveFlagWarning({ contactsFlaggedCount: 17, scope: 'brand' })?.text).toBe(
+      '17 of your contacts flagged this brand',
+    );
   });
 
   it('uses "product" noun for scope=subject', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'subject' })?.text,
-    ).toBe('2 of your contacts flagged this product');
+    expect(deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'subject' })?.text).toBe(
+      '2 of your contacts flagged this product',
+    );
   });
 
   it('uses "brand" noun for scope=brand', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'brand' })?.text,
-    ).toBe('2 of your contacts flagged this brand');
+    expect(deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'brand' })?.text).toBe(
+      '2 of your contacts flagged this brand',
+    );
   });
 
   it('uses "category" noun for scope=category', () => {
-    expect(
-      deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'category' })?.text,
-    ).toBe('2 of your contacts flagged this category');
+    expect(deriveFlagWarning({ contactsFlaggedCount: 2, scope: 'category' })?.text).toBe(
+      '2 of your contacts flagged this category',
+    );
   });
 
   it('preserves the scope in the output for the screen layer', () => {
@@ -524,9 +503,7 @@ describe('deriveSubjectDetail — flag-warning wired through (TN-V2-RANK-015)', 
     );
     expect(detail.header.flagWarning).not.toBeNull();
     expect(detail.header.flagWarning?.count).toBe(3);
-    expect(detail.header.flagWarning?.text).toBe(
-      '3 of your contacts flagged this brand',
-    );
+    expect(detail.header.flagWarning?.text).toBe('3 of your contacts flagged this brand');
   });
 
   it('header.flagWarning is null when summary is omitted', () => {
@@ -699,9 +676,7 @@ describe('ring → friends parity — subject_card vs subject_detail_data', () =
 
     // Detail path: friendsReviews is non-empty when at least one
     // review went into the friends bucket.
-    const detail = deriveSubjectDetail(
-      makeInput({ reviews: [onlyReview] }),
-    );
+    const detail = deriveSubjectDetail(makeInput({ reviews: [onlyReview] }));
     const detailGroupedAsFriend = detail.friendsReviews.length > 0;
     return { cardCountedAsFriend, detailGroupedAsFriend };
   }
@@ -714,8 +689,7 @@ describe('ring → friends parity — subject_card vs subject_detail_data', () =
   ])(
     'ring=$ring: card and detail agree on friend-classification (expected=$expectedFriend)',
     ({ ring, expectedFriend }) => {
-      const { cardCountedAsFriend, detailGroupedAsFriend } =
-        pairFriendsClassification(ring);
+      const { cardCountedAsFriend, detailGroupedAsFriend } = pairFriendsClassification(ring);
       expect(cardCountedAsFriend).toBe(expectedFriend);
       expect(detailGroupedAsFriend).toBe(expectedFriend);
       // Always assert parity directly: even if the expected value
@@ -781,9 +755,7 @@ describe('showNumericScore parity — subject_card vs subject_detail_data', () =
       reviewCount,
       reviews: [],
     });
-    const detail = deriveSubjectDetail(
-      makeInput({ subjectTrustScore, reviewCount }),
-    );
+    const detail = deriveSubjectDetail(makeInput({ subjectTrustScore, reviewCount }));
     return { card: card.showNumericScore, detail: detail.header.showNumericScore };
   }
 
@@ -869,18 +841,13 @@ describe('deriveSubjectDetail — ring grouping', () => {
     );
     expect(detail.friendsReviews.map((r) => r.reviewerName)).toEqual(['Self', 'Sancho']);
     expect(detail.fofReviews.map((r) => r.reviewerName)).toEqual(['Albert']);
-    expect(detail.strangerReviews.map((r) => r.reviewerName)).toEqual([
-      'Stranger1',
-      'Stranger2',
-    ]);
+    expect(detail.strangerReviews.map((r) => r.reviewerName)).toEqual(['Stranger1', 'Stranger2']);
   });
 
   it('self collapses with contacts under the friends bucket', () => {
     const detail = deriveSubjectDetail(
       makeInput({
-        reviews: [
-          makeReview({ ring: 'self', reviewerName: 'Self', reviewerTrustScore: 0.9 }),
-        ],
+        reviews: [makeReview({ ring: 'self', reviewerName: 'Self', reviewerTrustScore: 0.9 })],
       }),
     );
     expect(detail.friendsReviews).toHaveLength(1);
@@ -1019,12 +986,8 @@ describe('deriveAlternatives — null/missing inputs', () => {
 
   it('returns empty array when raw is not actually an array (defensive)', () => {
     type Raws = readonly AlternativeInput[];
-    expect(
-      deriveAlternatives('not-an-array' as unknown as Raws, ''),
-    ).toEqual([]);
-    expect(
-      deriveAlternatives({ length: 3 } as unknown as Raws, ''),
-    ).toEqual([]);
+    expect(deriveAlternatives('not-an-array' as unknown as Raws, '')).toEqual([]);
+    expect(deriveAlternatives({ length: 3 } as unknown as Raws, '')).toEqual([]);
   });
 });
 
@@ -1128,7 +1091,7 @@ describe('deriveAlternatives — band derivation', () => {
     expect(out[0]?.band).toBe('low');
   });
 
-  it("very-low band for score < 0.2", () => {
+  it('very-low band for score < 0.2', () => {
     const out = deriveAlternatives(
       [makeAlternative({ subjectId: 'a', subjectTrustScore: 0.1 })],
       '',
@@ -1278,7 +1241,12 @@ describe('imported sources', () => {
     market: 'IN',
     count: 12,
     latest: [
-      { uri: 'at://x/1', text: 'Sturdy', sentiment: 'positive', url: 'https://reviews.example/in/1' },
+      {
+        uri: 'at://x/1',
+        text: 'Sturdy',
+        sentiment: 'positive',
+        url: 'https://reviews.example/in/1',
+      },
       { uri: 'at://x/2', text: null, sentiment: 'negative', url: 'https://reviews.example/in/2' },
     ],
   };
@@ -1316,8 +1284,18 @@ describe('imported sources', () => {
             ...GROUP,
             homepage: 'http://reviews.example/in',
             latest: [
-              { uri: 'at://x/1', text: 'a', sentiment: 'positive', url: 'http://reviews.example/in/1' },
-              { uri: 'at://x/2', text: 'b', sentiment: 'positive', url: 'https://reviews.example/in/2' },
+              {
+                uri: 'at://x/1',
+                text: 'a',
+                sentiment: 'positive',
+                url: 'http://reviews.example/in/1',
+              },
+              {
+                uri: 'at://x/2',
+                text: 'b',
+                sentiment: 'positive',
+                url: 'https://reviews.example/in/2',
+              },
             ],
           },
         ],
@@ -1328,12 +1306,14 @@ describe('imported sources', () => {
   });
 
   it('orders by contribution and bounds how many sources a card credits', () => {
-    const many = Array.from({ length: 8 }, (_, i) => ({ ...GROUP, feed: `feed${i}`, count: i + 1 }));
+    const many = Array.from({ length: 8 }, (_, i) => ({
+      ...GROUP,
+      feed: `feed${i}`,
+      count: i + 1,
+    }));
     const detail = deriveSubjectDetail(makeInput({ imported: many }));
     expect(detail.importedSources).toHaveLength(5);
-    expect(detail.importedSources[0]?.count).toBeGreaterThan(
-      detail.importedSources[4]?.count ?? 0,
-    );
+    expect(detail.importedSources[0]?.count).toBeGreaterThan(detail.importedSources[4]?.count ?? 0);
   });
 
   it('drops a group that contributed nothing rather than crediting a source for zero', () => {

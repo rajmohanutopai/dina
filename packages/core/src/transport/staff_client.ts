@@ -21,7 +21,6 @@ import { getPublicKey } from '../crypto/ed25519';
 import { deriveDIDKey, publicKeyToMultibase } from '../identity/did';
 import { parseAgentSetupCode } from '../pairing/setup_code';
 
-
 import { RemoteCoreClient, type WebSocketLike } from './remote_core_client';
 
 export interface StaffIdentity {
@@ -246,7 +245,11 @@ export class StaffCoreClient {
    */
   async issueDeliveryReceipt(args: {
     deliveryNoteDigest: string;
-    lines: { line_id: string; accepted_quantity: { value: string; unit_code: string }; reason_code?: string }[];
+    lines: {
+      line_id: string;
+      accepted_quantity: { value: string; unit_code: string };
+      reason_code?: string;
+    }[];
     /** The same key on a retry returns the first receipt instead of a second. */
     idempotencyKey?: string;
   }): Promise<

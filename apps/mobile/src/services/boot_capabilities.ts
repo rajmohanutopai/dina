@@ -30,7 +30,6 @@
  *         service-discovery demo is actually runnable from the current app shell.
  */
 
-import { isAppActive, subscribeAppActive } from './app_active';
 import {
   AppViewClient,
   PDSAccountClient,
@@ -105,18 +104,14 @@ import {
 import { startReviewDraft } from '../peerlens/review_draft';
 import { getIdentityAdapter } from '../storage/init';
 
+import { isAppActive, subscribeAppActive } from './app_active';
 import { AppViewStub, demoServiceProfile } from './appview_stub';
 import { MOBILE_PERSONA_DESCRIPTIONS, type BootServiceInputs } from './boot_service';
 import { mobileHostedEndpoints } from './hosted_endpoints';
 import { loadPersistedDid } from './identity_record';
 import { loadIdentitySeeds, loadOrGenerateSeeds } from './identity_store';
 import { loadInfraPreferences, resolveServicesAppViewURL } from './infra_preferences';
-import {
-  DEFAULT_MSGBOX_URL,
-  makeResolveSender,
-  makeWSFactory,
-  resolveMsgBoxURL,
-} from './msgbox_wiring';
+import { makeResolveSender, makeWSFactory, resolveMsgBoxURL } from './msgbox_wiring';
 import { wireNameDetector } from './name_detector_wiring';
 import {
   getMobilePolicySocket,
@@ -1155,8 +1150,8 @@ function lazyOrchestratorHandle(): Parameters<typeof createQueryServiceTool>[0][
       // Deferred import to avoid a cycle: useNodeBootstrap → boot_capabilities
       // → useNodeBootstrap. At *call* time the bootstrap module is already
       // loaded because a query was only possible after the node started.
-
       const { getBootedNode } =
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy require breaks the useNodeBootstrap -> boot_capabilities import cycle at boot
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();
       if (node === null) {
@@ -1214,6 +1209,7 @@ export function lazyCoreClient(): Parameters<typeof createFindPreferredProviderT
   // path keeps tool calls on fail-soft rails rather than throwing.
   function node() {
     const { getBootedNode } =
+      // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy require breaks the useNodeBootstrap -> boot_capabilities import cycle at boot
       require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
     return getBootedNode();
   }
@@ -1406,6 +1402,7 @@ function lazyWorkflowClient(): Parameters<typeof createDelegateToAgentTool>[0]['
   return {
     async createWorkflowTask(input) {
       const { getBootedNode } =
+        // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy require breaks the useNodeBootstrap -> boot_capabilities import cycle at boot
         require('../hooks/useNodeBootstrap') as typeof import('../hooks/useNodeBootstrap');
       const node = getBootedNode();
       if (node === null) {

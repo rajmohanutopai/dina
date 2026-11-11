@@ -27,7 +27,8 @@ export function checkOutboundUrl(raw: string): OutboundUrlCheck {
     return { ok: false, reason: 'url_unparseable' };
   }
   if (url.protocol !== 'https:') return { ok: false, reason: 'not_https' };
-  if (url.username !== '' || url.password !== '') return { ok: false, reason: 'credentials_in_url' };
+  if (url.username !== '' || url.password !== '')
+    return { ok: false, reason: 'credentials_in_url' };
   if (url.hostname === '') return { ok: false, reason: 'no_host' };
   if (isLiteralIp(url.hostname)) return { ok: false, reason: 'literal_ip' };
   if (url.hash !== '') return { ok: false, reason: 'fragment' };

@@ -18,7 +18,10 @@ jest.mock('../../src/peerlens/inject_publish', () => ({
   INJECT_SENTINEL_PUBLISHER: { __inject_sentinel: true },
 }));
 
-import { INJECT_SENTINEL_PUBLISHER, isTestPublishConfigured } from '../../src/peerlens/inject_publish';
+import {
+  INJECT_SENTINEL_PUBLISHER,
+  isTestPublishConfigured,
+} from '../../src/peerlens/inject_publish';
 import {
   startReviewPublishWorker,
   canDrainReviewPublish,
@@ -27,7 +30,9 @@ import {
 
 import type { PDSPublisher } from '@dina/brain';
 
-const mockInjectConfigured = isTestPublishConfigured as jest.MockedFunction<typeof isTestPublishConfigured>;
+const mockInjectConfigured = isTestPublishConfigured as jest.MockedFunction<
+  typeof isTestPublishConfigured
+>;
 const PUBLISHER = {} as unknown as PDSPublisher;
 const NODE = { did: 'did:plc:owner', pdsPublisher: PUBLISHER };
 

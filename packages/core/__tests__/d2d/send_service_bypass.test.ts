@@ -24,7 +24,6 @@ import { clearOutbox } from '../../src/transport/outbox';
 
 import type { ProviderServiceResolver } from '../../src/service/bypass';
 
-
 const senderPriv = TEST_ED25519_SEED;
 const senderDID = 'did:plc:sender';
 const busDID = 'did:plc:bus42';

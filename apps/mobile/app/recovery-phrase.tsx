@@ -52,9 +52,7 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
   // Honour ?from so confirm-recovery-phrase → view phrase → back returns
   // to the verify step, and Settings → view phrase → back returns to Settings.
   const backTarget: string =
-    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
-      ? from
-      : '/settings';
+    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/settings';
   // Reached from the periodic backup prompt: this IS the user's backup, so it
   // runs reveal → verification quiz before completing. Only PASSING the quiz
   // (proves they actually copied the words — review P2) calls markVerified()
@@ -211,7 +209,9 @@ export default function RecoveryPhraseScreen(): React.ReactElement {
           }}
           accessibilityRole="button"
           accessibilityLabel={
-            fromBackup ? 'Continue to confirm your recovery phrase' : 'Hide recovery phrase and go back'
+            fromBackup
+              ? 'Continue to confirm your recovery phrase'
+              : 'Hide recovery phrase and go back'
           }
           style={({ pressed }) => [styles.primaryButton, pressed && styles.primaryButtonPressed]}
         >

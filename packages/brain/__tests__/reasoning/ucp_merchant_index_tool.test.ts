@@ -64,7 +64,8 @@ describe('the client reads the index strictly', () => {
       limit: 5,
     });
     expect(got.map((m) => m.origin)).toEqual(['https://tea.example', 'https://ok.example']);
-    expect(got[0]?.name).not.toMatch(/[‮\u0000]/);
+    expect(got[0]?.name).not.toContain('\u202e');
+    expect(got[0]?.name).not.toContain('\u0000');
     expect(got[1]).toMatchObject({ name: '', trustScore: null, verified: false });
     const url = new URL(urls[0] ?? '');
     expect(url.pathname).toBe('/xrpc/com.dinakernel.ucp.searchMerchants');

@@ -112,7 +112,14 @@ describe.each(backends)('staff grant repository ($name)', ({ make }) => {
   it('lists per device, sorted by scope', () => {
     repo.put(grant({ scope: 'commerce_submit' }));
     repo.put(grant({ scope: 'commerce_confirm', maxOrderMinorUnits: '', currency: '' }));
-    repo.put(grant({ deviceDid: 'did:key:other', scope: 'commerce_confirm', maxOrderMinorUnits: '', currency: '' }));
+    repo.put(
+      grant({
+        deviceDid: 'did:key:other',
+        scope: 'commerce_confirm',
+        maxOrderMinorUnits: '',
+        currency: '',
+      }),
+    );
     expect(repo.listByDevice(DEVICE).map((g) => g.scope)).toEqual([
       'commerce_confirm',
       'commerce_submit',
@@ -138,9 +145,9 @@ describe.each(backends)('staff grant repository ($name)', ({ make }) => {
 
 describe('validateStaffGrantInput', () => {
   it('a capped scope requires cap and currency, well-formed', () => {
-    expect(
-      validateStaffGrantInput({ scope: 'commerce_submit', installs: 'buyer' }),
-    ).toContain('requires');
+    expect(validateStaffGrantInput({ scope: 'commerce_submit', installs: 'buyer' })).toContain(
+      'requires',
+    );
     expect(
       validateStaffGrantInput({
         scope: 'commerce_submit',

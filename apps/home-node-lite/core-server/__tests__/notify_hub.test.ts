@@ -67,11 +67,7 @@ describe('NotifyHub (task 4.37)', () => {
         reason: 'replaced by new session',
       });
       expect(hub.size()).toBe(1);
-      expect(events.map((e) => e.kind)).toEqual([
-        'registered',
-        'replaced',
-        'registered',
-      ]);
+      expect(events.map((e) => e.kind)).toEqual(['registered', 'replaced', 'registered']);
     });
 
     it('replace tolerates close() throwing on the prior socket', () => {
@@ -102,16 +98,14 @@ describe('NotifyHub (task 4.37)', () => {
 
     it('rejects empty deviceId', () => {
       const hub = new NotifyHub();
-      expect(() => hub.register('', new FakeSocket())).toThrow(
-        /deviceId is required/,
-      );
+      expect(() => hub.register('', new FakeSocket())).toThrow(/deviceId is required/);
     });
 
     it('rejects missing socket', () => {
       const hub = new NotifyHub();
-      expect(() =>
-        hub.register('dev-1', undefined as unknown as WebSocketLike),
-      ).toThrow(/socket is required/);
+      expect(() => hub.register('dev-1', undefined as unknown as WebSocketLike)).toThrow(
+        /socket is required/,
+      );
     });
   });
 

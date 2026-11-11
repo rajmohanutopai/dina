@@ -187,7 +187,6 @@ const BROWSE_FIELD_CHARS = 500;
  * parameters schema + execute).
  */
 export function createVaultSearchTool(options: VaultSearchToolOptions = {}): AgentTool {
-
   // Per ask (the registry is built per ask): has the open fan-out run?
   let openSearchDone = false;
   /** Agent fan-out: search only what Core says the requester may read now. */
@@ -195,10 +194,15 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
     openSearchDone = true;
     const scope = resolveScope();
     const accessiblePersonas =
-      scope === null ? getAccessiblePersonas() : getAccessiblePersonas().filter((p) => scope.has(p));
+      scope === null
+        ? getAccessiblePersonas()
+        : getAccessiblePersonas().filter((p) => scope.has(p));
     let allowed: ReadonlySet<string>;
     try {
-      allowed = options.accessCheck !== undefined ? await options.accessCheck(accessiblePersonas) : new Set();
+      allowed =
+        options.accessCheck !== undefined
+          ? await options.accessCheck(accessiblePersonas)
+          : new Set();
     } catch {
       allowed = new Set(); // fail closed
     }
@@ -206,7 +210,15 @@ export function createVaultSearchTool(options: VaultSearchToolOptions = {}): Age
     const gated = accessiblePersonas.filter((p) => !allowed.has(p));
     const merged: Awaited<ReturnType<typeof executeToolSearch>> = [];
     for (const persona of searchSet) {
-      merged.push(...(await executeToolSearch(persona, query, limit, options.releaseSession, options.readBackend)));
+      merged.push(
+        ...(await executeToolSearch(
+          persona,
+          query,
+          limit,
+          options.releaseSession,
+          options.readBackend,
+        )),
+      );
     }
     merged.sort((a, b) => b.score - a.score);
     return {

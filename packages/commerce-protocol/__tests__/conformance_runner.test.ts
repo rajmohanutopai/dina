@@ -126,11 +126,7 @@ const ours: ConformanceImplementation = {
   },
 
   recordDigest: (domain, record) =>
-    commerceRecordDigest(
-      domain as CommerceDigestDomain,
-      record as Record<string, unknown>,
-      hash,
-    ),
+    commerceRecordDigest(domain as CommerceDigestDomain, record as Record<string, unknown>, hash),
 
   unitDef: (code) => unitDefOrNull(code),
 
@@ -405,8 +401,9 @@ describe('the runner detects a divergence — it is not a rubber stamp', () => {
     const report = runConformance(kindBlind, VECTORS);
 
     expect(report.ok).toBe(false);
-    expect(report.cases.filter((c) => c.family === 'relationship.claims' && c.status === 'fail'))
-      .toHaveLength(2);
+    expect(
+      report.cases.filter((c) => c.family === 'relationship.claims' && c.status === 'fail'),
+    ).toHaveLength(2);
   });
 
   it('fails an index whose candidates name no reason they matched', () => {
@@ -426,7 +423,10 @@ describe('the runner detects a divergence — it is not a rubber stamp', () => {
     expect(report.ok).toBe(false);
     expect(
       report.cases.some(
-        (c) => c.family === 'search_candidate.invalid' && c.name === 'no_matched_fields' && c.status === 'fail',
+        (c) =>
+          c.family === 'search_candidate.invalid' &&
+          c.name === 'no_matched_fields' &&
+          c.status === 'fail',
       ),
     ).toBe(true);
   });
@@ -635,8 +635,9 @@ describe('a partial claim is reported as partial', () => {
     expect(report.failed).toBe(0);
     expect(report.ok).toBe(false);
     expect(report.skippedFamilies).toContain('arithmetic.line_subtotals');
-    expect(report.cases.some((c) => c.status === 'skipped' && c.detail?.includes('not supplied')))
-      .toBe(true);
+    expect(
+      report.cases.some((c) => c.status === 'skipped' && c.detail?.includes('not supplied')),
+    ).toBe(true);
   });
 
   it('fails a port whose CANONICALIZER is correct but whose PARSER strips', () => {
@@ -663,9 +664,7 @@ describe('a partial claim is reported as partial', () => {
       VECTORS,
     );
     expect(report.ok).toBe(false);
-    const parseCases = report.cases.filter(
-      (c) => c.family === 'schema_evolution.parse_round_trip',
-    );
+    const parseCases = report.cases.filter((c) => c.family === 'schema_evolution.parse_round_trip');
     expect(parseCases.some((c) => c.status === 'fail')).toBe(true);
     // And the family that only sees the canonicalizer is still perfectly happy,
     // which is precisely why it could not have caught this.
@@ -735,15 +734,55 @@ describe('a partial claim is reported as partial', () => {
       if (Array.isArray(value)) return value.map((v) => stripNested(v, depth + 1));
       if (typeof value !== 'object' || value === null) return value;
       const known = new Set([
-        'a', 'b', 'protocol_version', 'supplier_did', 'catalog_id', 'snapshot_sequence',
-        'published_at', 'snapshot_rkey', 'snapshot_digest', 'previous_snapshot_digest',
-        'page_digests', 'item_count', 'payload_root', 'page_index', 'items', 'page_digest',
-        'product', 'scheme', 'value', 'issuer_did', 'variant_digest', 'item_revision',
-        'name', 'brand', 'description', 'category_ids', 'identifiers', 'pack', 'sell_unit',
-        'unit_code', 'units_per_pack', 'fulfilment_regions', 'indicative_price', 'currency',
-        'minor_units', 'minimum_order', 'freshness', 'generated_at', 'valid_until',
-        'attributes', 'relationship_claim_refs', 'claim_id', 'subject', 'relationship',
-        'object', 'effective_from', 'effective_until', 'evidence_refs', 'withdrawn',
+        'a',
+        'b',
+        'protocol_version',
+        'supplier_did',
+        'catalog_id',
+        'snapshot_sequence',
+        'published_at',
+        'snapshot_rkey',
+        'snapshot_digest',
+        'previous_snapshot_digest',
+        'page_digests',
+        'item_count',
+        'payload_root',
+        'page_index',
+        'items',
+        'page_digest',
+        'product',
+        'scheme',
+        'value',
+        'issuer_did',
+        'variant_digest',
+        'item_revision',
+        'name',
+        'brand',
+        'description',
+        'category_ids',
+        'identifiers',
+        'pack',
+        'sell_unit',
+        'unit_code',
+        'units_per_pack',
+        'fulfilment_regions',
+        'indicative_price',
+        'currency',
+        'minor_units',
+        'minimum_order',
+        'freshness',
+        'generated_at',
+        'valid_until',
+        'attributes',
+        'relationship_claim_refs',
+        'claim_id',
+        'subject',
+        'relationship',
+        'object',
+        'effective_from',
+        'effective_until',
+        'evidence_refs',
+        'withdrawn',
         'service_rkey',
       ]);
       const entries = Object.entries(value as Record<string, unknown>)
@@ -767,14 +806,15 @@ describe('a partial claim is reported as partial', () => {
     expect(nested.some((c) => c.status === 'fail')).toBe(true);
     // Specifically the DEEP ones, not merely "something failed".
     expect(
-      nested.filter((c) => c.status === 'fail').map((c) => c.name).join(' | '),
+      nested
+        .filter((c) => c.status === 'fail')
+        .map((c) => c.name)
+        .join(' | '),
     ).toContain('inside an item PRODUCT REF, two levels down');
 
     // And the flat family is perfectly happy, which is why it could not have
     // caught this on its own.
-    const flat = report.cases.filter(
-      (c) => c.family === 'schema_evolution.parse_round_trip',
-    );
+    const flat = report.cases.filter((c) => c.family === 'schema_evolution.parse_round_trip');
     expect(flat.every((c) => c.status === 'pass')).toBe(true);
   });
 
@@ -843,7 +883,9 @@ describe('a verdict covers the vectors it was given', () => {
 
     expect(report.ok).toBe(false);
     expect(report.missingVectorFamilies.sort()).toEqual(
-      REQUIRED_CASE_FAMILIES.filter((f) => !f.startsWith('units.')).slice().sort(),
+      REQUIRED_CASE_FAMILIES.filter((f) => !f.startsWith('units.'))
+        .slice()
+        .sort(),
     );
   });
 
@@ -860,9 +902,10 @@ describe('a verdict covers the vectors it was given', () => {
     const report = runConformance(ours, { ...VECTORS, digests: null });
 
     expect(report.ok).toBe(false);
-    expect(report.missingVectorFamilies.sort()).toEqual(
-      ['digests.domain_separation', 'digests.records'],
-    );
+    expect(report.missingVectorFamilies.sort()).toEqual([
+      'digests.domain_separation',
+      'digests.records',
+    ]);
   });
 
   it('is ok on the complete set, so the guard is not simply refusing everything', () => {
@@ -895,7 +938,9 @@ describe('a verdict covers the cases that ran', () => {
 
     expect(report.ok).toBe(false);
     expect(report.missingVectorFamilies.sort()).toEqual(
-      REQUIRED_CASE_FAMILIES.filter((f) => !f.startsWith('arithmetic.')).slice().sort(),
+      REQUIRED_CASE_FAMILIES.filter((f) => !f.startsWith('arithmetic.'))
+        .slice()
+        .sort(),
     );
   });
 
@@ -919,9 +964,10 @@ describe('a verdict covers the cases that ran', () => {
     const report = runConformance(ours, { ...VECTORS, quantity: { comparisons: [] } });
 
     expect(report.ok).toBe(false);
-    expect(report.missingVectorFamilies.sort()).toEqual(
-      ['quantity.comparisons', 'quantity.rejected'],
-    );
+    expect(report.missingVectorFamilies.sort()).toEqual([
+      'quantity.comparisons',
+      'quantity.rejected',
+    ]);
   });
 
   it('is still ok on the complete set', () => {

@@ -42,7 +42,13 @@ import { isPlainObject } from '@dina/a2a';
 
 import type { A2AStore } from './store';
 
-export type PublicationState = 'pending' | 'published' | 'failed' | 'not_published' | 'stood_down' | 'deactivating';
+export type PublicationState =
+  | 'pending'
+  | 'published'
+  | 'failed'
+  | 'not_published'
+  | 'stood_down'
+  | 'deactivating';
 
 export interface PublicationRow {
   listing_enabled: number;
@@ -89,7 +95,11 @@ export function readPublication(store: A2AStore): PublicationRow | null {
  * The publication, made if missing: switched off, inactive, under a fresh
  * random publisher instance (a UUID, as the envelope and fence require).
  */
-export function ensurePublication(store: A2AStore, nowMs: number, newInstance: () => string): PublicationRow {
+export function ensurePublication(
+  store: A2AStore,
+  nowMs: number,
+  newInstance: () => string,
+): PublicationRow {
   store.db.execute(
     `INSERT OR IGNORE INTO a2a_card_publication (id, publisher_instance, updated_at) VALUES (1, ?, ?)`,
     [newInstance(), nowMs],
@@ -106,7 +116,12 @@ export function ensurePublication(store: A2AStore, nowMs: number, newInstance: (
  * restart until the evidence clears it. A fresh instruction from the owner,
  * so any backoff from an earlier failure is dropped.
  */
-export function setDirectoryListing(store: A2AStore, enabled: boolean, nowMs: number, newInstance: () => string): PublicationRow {
+export function setDirectoryListing(
+  store: A2AStore,
+  enabled: boolean,
+  nowMs: number,
+  newInstance: () => string,
+): PublicationRow {
   return store.transaction(() => {
     ensurePublication(store, nowMs, newInstance);
     store.db.execute(
@@ -275,7 +290,11 @@ export function markPublishedCurrent(
 }
 
 /** An unpublish that landed, or a read under this node's fence that found no card: the evidence that clears the intent. */
-export function completeUnpublish(store: A2AStore, attempt: PublicationAttempt, nowMs: number): boolean {
+export function completeUnpublish(
+  store: A2AStore,
+  attempt: PublicationAttempt,
+  nowMs: number,
+): boolean {
   return (
     store.db.run(
       `UPDATE a2a_card_publication
@@ -296,7 +315,12 @@ export function completeUnpublish(store: A2AStore, attempt: PublicationAttempt, 
  * its own attempt is released; one that lost its claim meanwhile changes
  * nothing.
  */
-export function failAttempt(store: A2AStore, attempt: PublicationAttempt, retryAtMs: number, nowMs: number): boolean {
+export function failAttempt(
+  store: A2AStore,
+  attempt: PublicationAttempt,
+  retryAtMs: number,
+  nowMs: number,
+): boolean {
   return (
     store.db.run(
       `UPDATE a2a_card_publication
@@ -305,7 +329,13 @@ export function failAttempt(store: A2AStore, attempt: PublicationAttempt, retryA
               attempt_tuple_json = NULL, attempt_expected_cid = NULL, attempt_expected_repo_commit_cid = NULL,
               updated_at = ?
         WHERE ${ATTEMPT_GUARD}`,
-      [retryAtMs, attempt.operation_kind, nowMs, JSON.stringify(attempt), attempt.fencing_generation],
+      [
+        retryAtMs,
+        attempt.operation_kind,
+        nowMs,
+        JSON.stringify(attempt),
+        attempt.fencing_generation,
+      ],
     ) === 1
   );
 }
@@ -341,7 +371,10 @@ export function recordActivation(
  * epoch and instance). Guarded on the generation the re-sign began under,
  * so a stand-down or deactivation in between is not overwritten.
  */
-export function recordFenceKey(store: A2AStore, args: { fencingGeneration: number; keyId: string; nowMs: number }): boolean {
+export function recordFenceKey(
+  store: A2AStore,
+  args: { fencingGeneration: number; keyId: string; nowMs: number },
+): boolean {
   return (
     store.db.run(
       `UPDATE a2a_card_publication SET fence_key_id = ?, updated_at = ?
@@ -359,7 +392,12 @@ export function recordFenceKey(store: A2AStore, args: { fencingGeneration: numbe
  * row an activation has since moved (the owner's own new fence looks foreign
  * to the old epoch) lands nothing. Returns whether it landed.
  */
-export function recordStandDown(store: A2AStore, notice: string, nowMs: number, fencingGeneration: number): boolean {
+export function recordStandDown(
+  store: A2AStore,
+  notice: string,
+  nowMs: number,
+  fencingGeneration: number,
+): boolean {
   return (
     store.db.run(
       `UPDATE a2a_card_publication
@@ -408,14 +446,31 @@ export function completeDeactivation(store: A2AStore, nowMs: number): boolean {
 }
 
 /** Whether a failed attempt's wait still holds back `operation` at `nowMs` (`retry_operation`). */
-export function retryWaiting(row: PublicationRow, operation: 'publish' | 'unpublish', nowMs: number): boolean {
-  return row.next_retry_at !== null && nowMs < row.next_retry_at && (row.retry_operation ?? operation) === operation;
+export function retryWaiting(
+  row: PublicationRow,
+  operation: 'publish' | 'unpublish',
+  nowMs: number,
+): boolean {
+  return (
+    row.next_retry_at !== null &&
+    nowMs < row.next_retry_at &&
+    (row.retry_operation ?? operation) === operation
+  );
 }
 
 /** What the owner sees: the switch, the activation, where the card stands, and any notice. */
-export function publicationView(row: PublicationRow | null, inputs: PublicationInputs): Record<string, unknown> {
+export function publicationView(
+  row: PublicationRow | null,
+  inputs: PublicationInputs,
+): Record<string, unknown> {
   if (row === null) {
-    return { listing_enabled: false, active: false, state: 'not_published', eligible: false, notice: null };
+    return {
+      listing_enabled: false,
+      active: false,
+      state: 'not_published',
+      eligible: false,
+      notice: null,
+    };
   }
   return {
     listing_enabled: row.listing_enabled === 1,
@@ -435,9 +490,14 @@ export function publicationView(row: PublicationRow | null, inputs: PublicationI
 
 export type ActivationOutcome =
   | { ok: true; epoch: number }
-  | { ok: false; reason: 'fence_unverifiable' | 'repo_unreachable' | 'lost_race' | 'not_configured' };
+  | {
+      ok: false;
+      reason: 'fence_unverifiable' | 'repo_unreachable' | 'lost_race' | 'not_configured';
+    };
 
-export type DeactivationOutcome = { ok: true } | { ok: false; reason: 'not_active' | 'repo_unreachable' };
+export type DeactivationOutcome =
+  | { ok: true }
+  | { ok: false; reason: 'not_active' | 'repo_unreachable' };
 
 /**
  * The card publisher a server host installs (design §8.2: a trusted host
@@ -468,4 +528,3 @@ export function installA2APublisher(port: A2APublisherPort | null): void {
 export function getA2APublisher(): A2APublisherPort | null {
   return publisher;
 }
-

@@ -276,7 +276,12 @@ export function checkFallbackNotice(
  */
 export function sellerOrderHoldsExit(
   stores: {
-    orders: { load(buyerDid: string, purchaseOrderId: string): { ref: { orderDigest: string; quoteDigest: string } } | null };
+    orders: {
+      load(
+        buyerDid: string,
+        purchaseOrderId: string,
+      ): { ref: { orderDigest: string; quoteDigest: string } } | null;
+    };
     receipts: { get(recordDigest: string): { recordJson: string } | null };
   },
   buyerDid: string,
@@ -302,7 +307,9 @@ export function quoteGrantsExit(
   stores: {
     families: { load(quoteId: string): { headDigest: string } | null };
     receipts: { get(recordDigest: string): { recordJson: string } | null };
-    settings: { readSupplier(): { ok: true; settings: { grantExitIfRunFails?: boolean } } | { ok: false } };
+    settings: {
+      readSupplier(): { ok: true; settings: { grantExitIfRunFails?: boolean } } | { ok: false };
+    };
   },
   quoteId: string,
 ): boolean {

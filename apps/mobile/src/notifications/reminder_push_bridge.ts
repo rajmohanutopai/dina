@@ -70,10 +70,7 @@ export function installReminderPushBridge(): () => void {
     void scheduleNotification({
       id: `notif-rem-${reminder.id}`,
       title: reminder.message,
-      body:
-        reminder.persona !== '' && reminder.persona !== 'general'
-          ? `/${reminder.persona}`
-          : '',
+      body: reminder.persona !== '' && reminder.persona !== 'general' ? `/${reminder.persona}` : '',
       channel: tierToChannel(tier),
       triggerAt: reminder.due_at,
       data: {

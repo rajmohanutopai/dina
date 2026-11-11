@@ -154,7 +154,12 @@ it('after an update a window grant does not run silently: the next call cards', 
   expect(invoke(T0 + 30_000)).toMatchObject({ ok: true, mode: 'approval_required' });
   // Three new approvals earn the silent run back.
   for (let i = 0; i < 3; i++) {
-    recordInvocationDecision(identity(newHash), 'invocation_approved', 'card', T0 + 40_000 + i * 1000);
+    recordInvocationDecision(
+      identity(newHash),
+      'invocation_approved',
+      'card',
+      T0 + 40_000 + i * 1000,
+    );
   }
   expect(invoke(T0 + 50_000)).toMatchObject({ ok: true, mode: 'dispatched' });
 });

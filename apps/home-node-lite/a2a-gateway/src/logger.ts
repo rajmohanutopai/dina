@@ -23,7 +23,10 @@ export function createLogger(config: GatewayConfig): Logger {
     redact: { paths: ['req.headers.authorization', 'authorization'], remove: true },
   };
   if (config.runtime.prettyLogs) {
-    options.transport = { target: 'pino-pretty', options: { colorize: true, singleLine: true, translateTime: 'SYS:standard' } };
+    options.transport = {
+      target: 'pino-pretty',
+      options: { colorize: true, singleLine: true, translateTime: 'SYS:standard' },
+    };
   }
   return pino(options);
 }

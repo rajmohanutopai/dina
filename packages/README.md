@@ -35,12 +35,12 @@ Current SQLite-under-go-sqlcipher is synchronous, so an async port adds one prom
 
 Phase 2.3 codified four patterns as pilots landed (7 of 11 repositories + 1 of 2 storage adapters converted). Each maps to a different service-layer constraint:
 
-| Pattern | When to use | Caller churn | Examples |
-|---------|------------|--------------|----------|
-| **Full-async wrapper** | Service is a thin routing layer; callers few / already async-friendly | Callers ripple async (TSC-guided) | `KVRepository`, `TopicRepository`, `DBProvider` |
-| **Fire-and-forget write-through** | Service has authoritative in-memory state + prior try/catch with fail-safe comment | **Zero** | `AuditRepository`, `DeviceRepository`, `ReminderRepository`, `StagingRepository`, `VaultRepository` |
-| **Hybrid** | Mixed read/write shape — writes can be fire-and-forget, reads must be awaited | One read-path function becomes async | `ChatMessageRepository` |
-| **Explicit boot hydrate** | Service-layer has a sync read hot path (e.g. D2D ingress) + wants restart-restore from persistence | Boot adds one `await hydrateX()` call | `ServiceConfigRepository` (`hydrateServiceConfig()` replaces lazy-hydrate-in-getter) |
+| Pattern                           | When to use                                                                                        | Caller churn                          | Examples                                                                                            |
+| --------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| **Full-async wrapper**            | Service is a thin routing layer; callers few / already async-friendly                              | Callers ripple async (TSC-guided)     | `KVRepository`, `TopicRepository`, `DBProvider`                                                     |
+| **Fire-and-forget write-through** | Service has authoritative in-memory state + prior try/catch with fail-safe comment                 | **Zero**                              | `AuditRepository`, `DeviceRepository`, `ReminderRepository`, `StagingRepository`, `VaultRepository` |
+| **Hybrid**                        | Mixed read/write shape — writes can be fire-and-forget, reads must be awaited                      | One read-path function becomes async  | `ChatMessageRepository`                                                                             |
+| **Explicit boot hydrate**         | Service-layer has a sync read hot path (e.g. D2D ingress) + wants restart-restore from persistence | Boot adds one `await hydrateX()` call | `ServiceConfigRepository` (`hydrateServiceConfig()` replaces lazy-hydrate-in-getter)                |
 
 ### Fire-and-forget canonical shape
 
@@ -109,8 +109,8 @@ Exemptions are enumerated in the `EXEMPTED_PORTS` list inside `packages/core/__t
 
 Current exemptions (1):
 
-| Port | File | Why sync is correct |
-|------|------|---------------------|
+| Port              | File                             | Why sync is correct                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------- | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `DatabaseAdapter` | `core/src/storage/db_adapter.ts` | SQLite via better-sqlite3-multiple-ciphers (Node) and op-sqlite via JSI (RN) both expose synchronous native calls. Async wrap would push identical work into a microtask, mask synchronous throw semantics, and break the `transaction(fn)` callback contract where `fn()` must run to completion before `COMMIT`. Pinned as the canonical counter-example per task 3.4. |
 
 ## Dependency graph

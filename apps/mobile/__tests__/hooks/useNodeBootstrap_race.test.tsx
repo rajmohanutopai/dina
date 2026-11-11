@@ -9,7 +9,7 @@ import { act, renderHook } from '@testing-library/react-native';
 import { getBootedNode, useNodeBootstrap } from '../../src/hooks/useNodeBootstrap';
 
 const order: string[] = [];
-const gates: Array<() => void> = [];
+const gates: (() => void)[] = [];
 let booted = 0;
 
 jest.mock('../../src/services/boot_capabilities', () => ({

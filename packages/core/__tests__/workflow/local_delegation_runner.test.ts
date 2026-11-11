@@ -233,7 +233,9 @@ describe('LocalDelegationRunner', () => {
   it('fails the task when the result is not JSON-serializable (issue #15)', async () => {
     const { repo, service } = makeFixture();
     seedDelegation(repo, 'd-cyclic', { capability: 'eta_query', params: {} });
-    interface Cyclic { self?: Cyclic }
+    interface Cyclic {
+      self?: Cyclic;
+    }
     const cyclic: Cyclic = {};
     cyclic.self = cyclic;
     const runner = new LocalDelegationRunner({

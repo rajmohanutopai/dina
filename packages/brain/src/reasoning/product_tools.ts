@@ -213,7 +213,9 @@ export interface ProductResearchTools {
  * Build both research tools over one cache, so `recommend_offer` can only name
  * offers `search_products` found recently in this pipeline.
  */
-export function createProductResearchTools(options: SearchProductsToolOptions): ProductResearchTools {
+export function createProductResearchTools(
+  options: SearchProductsToolOptions,
+): ProductResearchTools {
   const now = options.now ?? ((): Date => new Date());
   const cache = options.cache ?? createResearchCache(now);
   return {
@@ -247,7 +249,8 @@ function buildSearchProductsTool(
         category: { type: 'string', description: 'A category id to narrow discovery.' },
         region: {
           type: 'string',
-          description: 'Restrict to suppliers who fulfil into this region (e.g. "iso-3166-2:IN-KA").',
+          description:
+            'Restrict to suppliers who fulfil into this region (e.g. "iso-3166-2:IN-KA").',
         },
         quantity: {
           type: 'object',
@@ -256,7 +259,8 @@ function buildSearchProductsTool(
         },
         currency: {
           type: 'string',
-          description: 'The currency to compare in (ISO-4217). Defaults to what the suppliers quote.',
+          description:
+            'The currency to compare in (ISO-4217). Defaults to what the suppliers quote.',
         },
       },
       // "query or identifiers" is enforced in execute (JSON Schema can't say it).
@@ -272,7 +276,8 @@ function buildSearchProductsTool(
       }
       const category =
         typeof args.category === 'string' && args.category !== '' ? args.category : undefined;
-      const region = typeof args.region === 'string' && args.region !== '' ? args.region : undefined;
+      const region =
+        typeof args.region === 'string' && args.region !== '' ? args.region : undefined;
       const requestedQuantity = parseQuantity(args.quantity);
 
       let candidates: CommerceCatalogCandidate[];
@@ -330,7 +335,10 @@ function buildSearchProductsTool(
         NO_CURRENCY;
 
       const bridged = catalogCandidatesToOffers(kept.map(toBridgeInput), requestedQuantity);
-      const { offers, unpriced, collapsedListings } = oneListingPerSupplier(bridged.offers, bridged.unpriced);
+      const { offers, unpriced, collapsedListings } = oneListingPerSupplier(
+        bridged.offers,
+        bridged.unpriced,
+      );
 
       // The owner's own knowledge of each seller (A6): a DID that is one of
       // their contacts carries the name they use, their trust level and the
@@ -339,11 +347,15 @@ function buildSearchProductsTool(
       // A client that THROWS is logged by DID and the seller stays unnamed;
       // both production transports answer null on a transport fault (their
       // `contactLookup` contract), which this tool cannot tell from a stranger.
-      const supplierDids = [...new Set([...offers.map((o) => o.supplierDid), ...unpriced.map((u) => u.supplierDid)])];
+      const supplierDids = [
+        ...new Set([...offers.map((o) => o.supplierDid), ...unpriced.map((u) => u.supplierDid)]),
+      ];
       const contacts = await lookupContacts(core, supplierDids, logger);
       const sellerNames: Record<string, string> = {};
       for (const [did, contact] of contacts) sellerNames[did] = contact.name;
-      const withContact = <T extends { supplierDid: string }>(row: T): T & { contact?: OfferContact } => {
+      const withContact = <T extends { supplierDid: string }>(
+        row: T,
+      ): T & { contact?: OfferContact } => {
         const contact = contacts.get(row.supplierDid);
         return contact === undefined ? row : { ...row, contact };
       };
@@ -395,7 +407,9 @@ function buildSearchProductsTool(
           price: formatMoney({ currency: r.offer.currency, minor_units: r.offer.totalMinorUnits }),
           scoreBp: r.scoreBp,
           ...(r.offer.leadTimeDays !== undefined ? { leadTimeDays: r.offer.leadTimeDays } : {}),
-          ...(r.offer.trustBp !== undefined ? { trustPercent: Math.round(r.offer.trustBp / 100) } : {}),
+          ...(r.offer.trustBp !== undefined
+            ? { trustPercent: Math.round(r.offer.trustBp / 100) }
+            : {}),
           ...(serviceUri !== undefined ? { serviceUri } : {}),
         });
       });
@@ -445,11 +459,13 @@ function buildRecommendOfferTool(recall: (id: string) => ResearchRecord | null):
         research_id: { type: 'string', description: 'research_id from search_products.' },
         supplier_did: {
           type: 'string',
-          description: 'The recommended offer, by supplier DID. Omit when no offer fits the user’s preferences.',
+          description:
+            'The recommended offer, by supplier DID. Omit when no offer fits the user’s preferences.',
         },
         reason: {
           type: 'string',
-          description: "Why, in the user's terms — one line, e.g. 'your rule: a proven seller over the cheapest'.",
+          description:
+            "Why, in the user's terms — one line, e.g. 'your rule: a proven seller over the cheapest'.",
         },
         set_aside: {
           type: 'array',
@@ -467,14 +483,23 @@ function buildRecommendOfferTool(recall: (id: string) => ResearchRecord | null):
       const researchId = typeof args.research_id === 'string' ? args.research_id : '';
       const research = researchId === '' ? null : recall(researchId);
       if (research === null) {
-        throw new Error('recommend_offer: unknown or expired research_id — call search_products again');
+        throw new Error(
+          'recommend_offer: unknown or expired research_id — call search_products again',
+        );
       }
       const reason = oneLine(args.reason);
       if (reason === '') throw new Error('recommend_offer: reason is required');
       const supplierDid =
-        typeof args.supplier_did === 'string' && args.supplier_did.trim() !== '' ? args.supplier_did.trim() : undefined;
-      if (supplierDid !== undefined && !research.ranking.ranked.some((r) => r.offer.supplierDid === supplierDid)) {
-        throw new Error(`recommend_offer: ${supplierDid} is not among the ranked offers of this research`);
+        typeof args.supplier_did === 'string' && args.supplier_did.trim() !== ''
+          ? args.supplier_did.trim()
+          : undefined;
+      if (
+        supplierDid !== undefined &&
+        !research.ranking.ranked.some((r) => r.offer.supplierDid === supplierDid)
+      ) {
+        throw new Error(
+          `recommend_offer: ${supplierDid} is not among the ranked offers of this research`,
+        );
       }
       // Bounded by construction: one entry per supplier the research holds, no
       // repeats — the card renders one "Set aside" line per entry, and an
@@ -482,7 +507,8 @@ function buildRecommendOfferTool(recall: (id: string) => ResearchRecord | null):
       // CardSpec block cap.
       const setAside: NonNullable<ComparisonChoice['setAside']> = [];
       if (args.set_aside !== undefined) {
-        if (!Array.isArray(args.set_aside)) throw new Error('recommend_offer: set_aside must be an array');
+        if (!Array.isArray(args.set_aside))
+          throw new Error('recommend_offer: set_aside must be an array');
         if (args.set_aside.length > research.supplierDids.size) {
           throw new Error(
             `recommend_offer: set_aside lists ${String(args.set_aside.length)} entries for ${String(research.supplierDids.size)} suppliers`,
@@ -493,11 +519,15 @@ function buildRecommendOfferTool(recall: (id: string) => ResearchRecord | null):
           const row = (entry ?? {}) as Record<string, unknown>;
           const did = typeof row.supplier_did === 'string' ? row.supplier_did.trim() : '';
           const why = oneLine(row.reason);
-          if (did === '' || why === '') throw new Error('recommend_offer: each set_aside entry needs supplier_did and reason');
+          if (did === '' || why === '')
+            throw new Error('recommend_offer: each set_aside entry needs supplier_did and reason');
           if (!research.supplierDids.has(did)) {
-            throw new Error(`recommend_offer: set_aside names ${did}, which this research does not hold`);
+            throw new Error(
+              `recommend_offer: set_aside names ${did}, which this research does not hold`,
+            );
           }
-          if (did === supplierDid) throw new Error('recommend_offer: the recommended offer cannot also be set aside');
+          if (did === supplierDid)
+            throw new Error('recommend_offer: the recommended offer cannot also be set aside');
           if (seen.has(did)) throw new Error(`recommend_offer: set_aside names ${did} twice`);
           seen.add(did);
           setAside.push({ supplierDid: did, reason: why });
@@ -572,11 +602,17 @@ async function lookupContacts(
           preferredFor: [...(contact.preferredFor ?? [])],
         });
       } catch (err) {
-        logger?.({ event: 'search_products.contact_lookup_failed', did, error: (err as Error).message });
+        logger?.({
+          event: 'search_products.contact_lookup_failed',
+          did,
+          error: (err as Error).message,
+        });
       }
     }
   };
-  await Promise.all(Array.from({ length: Math.min(CONTACT_LOOKUP_CONCURRENCY, queue.length) }, worker));
+  await Promise.all(
+    Array.from({ length: Math.min(CONTACT_LOOKUP_CONCURRENCY, queue.length) }, worker),
+  );
   return out;
 }
 

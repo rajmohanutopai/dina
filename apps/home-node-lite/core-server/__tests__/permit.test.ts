@@ -6,12 +6,7 @@
  * expiry is deterministic.
  */
 
-import {
-  hashPayload,
-  PermitStore,
-  stableStringify,
-  type ToolPayload,
-} from '../src/gate/permit';
+import { hashPayload, PermitStore, stableStringify, type ToolPayload } from '../src/gate/permit';
 
 const AGENT = 'did:key:z6MkAgent';
 const SESSION = 'sess-1';
@@ -73,9 +68,19 @@ describe('consume — happy path & single-use', () => {
       sessionId: SESSION,
       decision: 'approved',
     });
-    const first = store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: p.permitId });
+    const first = store.consume({
+      agentDid: AGENT,
+      sessionId: SESSION,
+      payload: payloadA,
+      permitId: p.permitId,
+    });
     expect(first.ok).toBe(true);
-    const second = store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: p.permitId });
+    const second = store.consume({
+      agentDid: AGENT,
+      sessionId: SESSION,
+      payload: payloadA,
+      permitId: p.permitId,
+    });
     expect(second).toEqual({ ok: false, reason: 'already_consumed' });
   });
 
@@ -131,7 +136,12 @@ describe('consume — principal binding', () => {
       sessionId: SESSION,
       decision: 'auto',
     });
-    const res = store.consume({ agentDid: 'did:key:z6MkOther', sessionId: SESSION, payload: payloadA, permitId: p.permitId });
+    const res = store.consume({
+      agentDid: 'did:key:z6MkOther',
+      sessionId: SESSION,
+      payload: payloadA,
+      permitId: p.permitId,
+    });
     expect(res).toEqual({ ok: false, reason: 'principal_mismatch' });
   });
   it('refuses a different session', () => {
@@ -144,7 +154,12 @@ describe('consume — principal binding', () => {
       sessionId: SESSION,
       decision: 'auto',
     });
-    const res = store.consume({ agentDid: AGENT, sessionId: 'other', payload: payloadA, permitId: p.permitId });
+    const res = store.consume({
+      agentDid: AGENT,
+      sessionId: 'other',
+      payload: payloadA,
+      permitId: p.permitId,
+    });
     expect(res).toEqual({ ok: false, reason: 'principal_mismatch' });
   });
 });
@@ -179,7 +194,12 @@ describe('consume — time binding', () => {
       ttlMs: 1000,
     });
     clock.advance(1001);
-    const res = store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: p.permitId });
+    const res = store.consume({
+      agentDid: AGENT,
+      sessionId: SESSION,
+      payload: payloadA,
+      permitId: p.permitId,
+    });
     expect(res).toEqual({ ok: false, reason: 'expired' });
   });
 });
@@ -188,9 +208,23 @@ describe('consume by re-sent payload (hook flow)', () => {
   it('finds the newest matching un-consumed permit without an id', () => {
     const clock = makeClock();
     const store = new PermitStore(clock.now);
-    store.mint({ action: 'a', risk: 'SAFE', payload: payloadA, agentDid: AGENT, sessionId: SESSION, decision: 'auto' });
+    store.mint({
+      action: 'a',
+      risk: 'SAFE',
+      payload: payloadA,
+      agentDid: AGENT,
+      sessionId: SESSION,
+      decision: 'auto',
+    });
     clock.advance(10);
-    const newer = store.mint({ action: 'a', risk: 'SAFE', payload: payloadA, agentDid: AGENT, sessionId: SESSION, decision: 'auto' });
+    const newer = store.mint({
+      action: 'a',
+      risk: 'SAFE',
+      payload: payloadA,
+      agentDid: AGENT,
+      sessionId: SESSION,
+      decision: 'auto',
+    });
     const res = store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA });
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.permit.permitId).toBe(newer.permitId);
@@ -218,12 +252,21 @@ describe('mintApprovedFromHash (Item B — owner-approval path)', () => {
     // Redeems once for the exact payload (the gate's no-permitId path)…
     expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(true);
     // …precisely: the SAME permit is now consumed…
-    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: rec.permitId })).toEqual({
+    expect(
+      store.consume({
+        agentDid: AGENT,
+        sessionId: SESSION,
+        payload: payloadA,
+        permitId: rec.permitId,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'already_consumed',
     });
     // …and the gate's no-id retry sees no LIVE permit to redeem (→ re-gates).
-    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(false);
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(
+      false,
+    );
   });
 
   it('is principal-bound: a foreign session cannot redeem it', () => {
@@ -255,11 +298,20 @@ describe('mintApprovedFromHash (Item B — owner-approval path)', () => {
     clock.advance(200);
     // Explicit id → the precise `expired` reason; the gate's no-id path sees no
     // live match and re-gates.
-    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA, permitId: rec.permitId })).toEqual({
+    expect(
+      store.consume({
+        agentDid: AGENT,
+        sessionId: SESSION,
+        payload: payloadA,
+        permitId: rec.permitId,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'expired',
     });
-    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(false);
+    expect(store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadA }).ok).toBe(
+      false,
+    );
   });
 });
 
@@ -267,10 +319,39 @@ describe('sweep', () => {
   it('drops consumed and expired permits, keeps live ones', () => {
     const clock = makeClock();
     const store = new PermitStore(clock.now);
-    const live = store.mint({ action: 'a', risk: 'SAFE', payload: payloadA, agentDid: AGENT, sessionId: SESSION, decision: 'auto', ttlMs: 100_000 });
-    const consumed = store.mint({ action: 'b', risk: 'SAFE', payload: payloadB, agentDid: AGENT, sessionId: SESSION, decision: 'auto', ttlMs: 100_000 });
-    store.consume({ agentDid: AGENT, sessionId: SESSION, payload: payloadB, permitId: consumed.permitId });
-    const expired = store.mint({ action: 'c', risk: 'SAFE', payload: { tool: 'X', input: 1 }, agentDid: AGENT, sessionId: SESSION, decision: 'auto', ttlMs: 10 });
+    const live = store.mint({
+      action: 'a',
+      risk: 'SAFE',
+      payload: payloadA,
+      agentDid: AGENT,
+      sessionId: SESSION,
+      decision: 'auto',
+      ttlMs: 100_000,
+    });
+    const consumed = store.mint({
+      action: 'b',
+      risk: 'SAFE',
+      payload: payloadB,
+      agentDid: AGENT,
+      sessionId: SESSION,
+      decision: 'auto',
+      ttlMs: 100_000,
+    });
+    store.consume({
+      agentDid: AGENT,
+      sessionId: SESSION,
+      payload: payloadB,
+      permitId: consumed.permitId,
+    });
+    const expired = store.mint({
+      action: 'c',
+      risk: 'SAFE',
+      payload: { tool: 'X', input: 1 },
+      agentDid: AGENT,
+      sessionId: SESSION,
+      decision: 'auto',
+      ttlMs: 10,
+    });
     clock.advance(20);
     const removed = store.sweep();
     expect(removed).toBe(2);

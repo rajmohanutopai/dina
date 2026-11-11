@@ -67,7 +67,11 @@ export const STORAGE_CASES: readonly ConformanceCase<ConformanceDatabaseAdapter>
       db.execute('CREATE TABLE t (id INTEGER PRIMARY KEY, v TEXT)');
       db.run('INSERT INTO t (v) VALUES (?)', ['a']);
       // No row matches → 0 affected. A constant-1 return (the bug) breaks CAS.
-      assertEqual(db.run('UPDATE t SET v = ? WHERE v = ?', ['x', 'nomatch']), 0, 'no-match UPDATE → 0');
+      assertEqual(
+        db.run('UPDATE t SET v = ? WHERE v = ?', ['x', 'nomatch']),
+        0,
+        'no-match UPDATE → 0',
+      );
     },
   },
   {
@@ -86,8 +90,16 @@ export const STORAGE_CASES: readonly ConformanceCase<ConformanceDatabaseAdapter>
       // version column must report 0 when the guard fails, 1 when it matches.
       db.execute('CREATE TABLE kv (k TEXT PRIMARY KEY, val TEXT, ver INTEGER)');
       db.run('INSERT INTO kv (k, val, ver) VALUES (?, ?, ?)', ['x', 'v1', 1]);
-      assertEqual(db.run('UPDATE kv SET val=?, ver=ver+1 WHERE k=? AND ver=?', ['v2', 'x', 9]), 0, 'stale CAS → 0');
-      assertEqual(db.run('UPDATE kv SET val=?, ver=ver+1 WHERE k=? AND ver=?', ['v2', 'x', 1]), 1, 'fresh CAS → 1');
+      assertEqual(
+        db.run('UPDATE kv SET val=?, ver=ver+1 WHERE k=? AND ver=?', ['v2', 'x', 9]),
+        0,
+        'stale CAS → 0',
+      );
+      assertEqual(
+        db.run('UPDATE kv SET val=?, ver=ver+1 WHERE k=? AND ver=?', ['v2', 'x', 1]),
+        1,
+        'fresh CAS → 1',
+      );
     },
   },
 
@@ -275,10 +287,12 @@ export const STORAGE_CASES: readonly ConformanceCase<ConformanceDatabaseAdapter>
   {
     name: 'fts5-create-insert-match-ranked',
     run(db) {
-      db.execute("CREATE VIRTUAL TABLE docs USING fts5(body, tokenize='unicode61 remove_diacritics 1')");
+      db.execute(
+        "CREATE VIRTUAL TABLE docs USING fts5(body, tokenize='unicode61 remove_diacritics 1')",
+      );
       db.run("INSERT INTO docs (body) VALUES ('the quick brown fox')", []);
       db.run("INSERT INTO docs (body) VALUES ('a slow brown bear and a quick quick hare')", []);
-      const rows = db.query("SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank", ['quick']);
+      const rows = db.query('SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank', ['quick']);
       assertEqual(rows.length, 2, 'both docs match "quick"');
       // BM25 ranks the doc with more/denser hits first.
       const top = first(rows, 'fts5 ranked').body;
@@ -291,7 +305,9 @@ export const STORAGE_CASES: readonly ConformanceCase<ConformanceDatabaseAdapter>
   {
     name: 'fts5-diacritic-folding',
     run(db) {
-      db.execute("CREATE VIRTUAL TABLE docs USING fts5(body, tokenize='unicode61 remove_diacritics 1')");
+      db.execute(
+        "CREATE VIRTUAL TABLE docs USING fts5(body, tokenize='unicode61 remove_diacritics 1')",
+      );
       db.run("INSERT INTO docs (body) VALUES ('café société')", []);
       const rows = db.query('SELECT body FROM docs WHERE docs MATCH ?', ['cafe']);
       assertEqual(rows.length, 1, 'diacritic-folded search matches');

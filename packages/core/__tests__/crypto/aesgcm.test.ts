@@ -23,7 +23,7 @@ import {
 } from '@dina/test-harness';
 
 import { wrapSeed, unwrapSeed, changePassphrase, WrappedSeed } from '../../src/crypto/aesgcm';
-import { deriveKEK, ARGON2ID_PARAMS } from '../../src/crypto/argon2id';
+import { ARGON2ID_PARAMS } from '../../src/crypto/argon2id';
 
 // Each test involves Argon2id (128MB WASM) — allow time
 jest.setTimeout(60_000);

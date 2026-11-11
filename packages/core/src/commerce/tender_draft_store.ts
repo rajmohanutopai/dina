@@ -12,7 +12,6 @@
 import { validateQuantity, validateRegionRef, type RegionRef } from '@dina/commerce-protocol';
 import { isValidServiceListingRkey } from '@dina/protocol';
 
-
 import {
   MAX_DRAFT_LINES,
   MAX_REQUIREMENT_TEXT,

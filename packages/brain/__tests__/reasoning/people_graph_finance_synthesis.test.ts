@@ -43,10 +43,7 @@ import { runAgenticTurn } from '../../src/reasoning/agentic_loop';
 import { createFindPersonTool } from '../../src/reasoning/people_tool';
 import { ToolRegistry } from '../../src/reasoning/tool_registry';
 import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
-import {
-  setAccessiblePersonas,
-  setPeopleReadBackend,
-} from '../../src/vault_context/assembly';
+import { setAccessiblePersonas, setPeopleReadBackend } from '../../src/vault_context/assembly';
 
 import type {
   ChatOptions,
@@ -186,7 +183,7 @@ function scriptedProvider(script: Partial<ChatResponse>[]): {
         finishReason: calls.length > 0 ? 'tool_use' : 'end',
       };
     },
-    async *stream() {
+    stream() {
       throw new Error('not used');
     },
     async embed() {
@@ -279,7 +276,8 @@ describe('agentic synthesis — people graph + finance vault', () => {
     // The agentic loop didn't silently drop the finance vault_search —
     // it routed the persona='finance' arg through.
     const financeCall = toolCalls.find(
-      (c) => c.name === 'vault_search' && (c.arguments as { persona?: string }).persona === 'finance',
+      (c) =>
+        c.name === 'vault_search' && (c.arguments as { persona?: string }).persona === 'finance',
     );
     expect(financeCall).toBeDefined();
 
@@ -299,7 +297,11 @@ describe('agentic synthesis — people graph + finance vault', () => {
       { toolCalls: [{ id: 't1', name: 'find_person', arguments: { name: 'Emma' } }] },
       {
         toolCalls: [
-          { id: 't2', name: 'vault_search', arguments: { query: 'toy budget', persona: 'finance' } },
+          {
+            id: 't2',
+            name: 'vault_search',
+            arguments: { query: 'toy budget', persona: 'finance' },
+          },
         ],
       },
       {
@@ -327,7 +329,11 @@ describe('agentic synthesis — people graph + finance vault', () => {
       { toolCalls: [{ id: 't1', name: 'find_person', arguments: { name: 'Emma' } }] },
       {
         toolCalls: [
-          { id: 't2', name: 'vault_search', arguments: { query: 'toy budget', persona: 'finance' } },
+          {
+            id: 't2',
+            name: 'vault_search',
+            arguments: { query: 'toy budget', persona: 'finance' },
+          },
         ],
       },
       {

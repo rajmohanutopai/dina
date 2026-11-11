@@ -23,18 +23,14 @@ import {
 
 const SECONDS_PER_DAY = 86_400;
 
-function topic(
-  partial: Partial<Topic> & Pick<Topic, 's_short' | 's_long' | 'last_update'>,
-): Topic {
+function topic(partial: Partial<Topic> & Pick<Topic, 's_short' | 's_long' | 'last_update'>): Topic {
   return {
     topic: partial.topic ?? 'tax',
     kind: partial.kind ?? 'theme',
     last_update: partial.last_update,
     s_short: partial.s_short,
     s_long: partial.s_long,
-    ...(partial.sample_item_id !== undefined
-      ? { sample_item_id: partial.sample_item_id }
-      : {}),
+    ...(partial.sample_item_id !== undefined ? { sample_item_id: partial.sample_item_id } : {}),
   };
 }
 
@@ -57,20 +53,12 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
   describe('dt = 0 — no decay', () => {
     it('returns s_long + TOPIC_SHORT_MIX * s_short', () => {
       const now = 1_700_000_000;
-      const s = computeSalience(
-        topic({ s_short: 2, s_long: 5, last_update: now }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 2, s_long: 5, last_update: now }), now);
       expect(s).toBeCloseTo(5 + 0.3 * 2, 9);
     });
 
     it('is 0 for a freshly-reset row', () => {
-      expect(
-        computeSalience(
-          topic({ s_short: 0, s_long: 0, last_update: 100 }),
-          100,
-        ),
-      ).toBe(0);
+      expect(computeSalience(topic({ s_short: 0, s_long: 0, last_update: 100 }), 100)).toBe(0);
     });
   });
 
@@ -78,10 +66,7 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
     it('short component drops to 1/e ≈ 0.3679', () => {
       const last = 1_700_000_000;
       const now = last + TOPIC_TAU_SHORT_DAYS * SECONDS_PER_DAY;
-      const s = computeSalience(
-        topic({ s_short: 1, s_long: 0, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 1, s_long: 0, last_update: last }), now);
       // s_long = 0 so only the short branch contributes.
       // short branch at dt = tau_short = 14/14 → e^(-1) ≈ 0.3679
       // scaled by TOPIC_SHORT_MIX = 0.3 → 0.11036...
@@ -92,10 +77,7 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
     it('long component is nearly intact at dt = tau_short', () => {
       const last = 1_700_000_000;
       const now = last + TOPIC_TAU_SHORT_DAYS * SECONDS_PER_DAY;
-      const s = computeSalience(
-        topic({ s_short: 0, s_long: 1, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 0, s_long: 1, last_update: last }), now);
       // long branch: exp(-14/180) ≈ 0.9253
       expect(s).toBeCloseTo(Math.exp(-14 / 180), 9);
       expect(s).toBeGreaterThan(0.9);
@@ -106,20 +88,14 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
     it('long component drops to 1/e ≈ 0.3679', () => {
       const last = 1_700_000_000;
       const now = last + TOPIC_TAU_LONG_DAYS * SECONDS_PER_DAY;
-      const s = computeSalience(
-        topic({ s_short: 0, s_long: 1, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 0, s_long: 1, last_update: last }), now);
       expect(s).toBeCloseTo(Math.exp(-1), 9);
     });
 
     it('short component is effectively gone at dt = tau_long', () => {
       const last = 1_700_000_000;
       const now = last + TOPIC_TAU_LONG_DAYS * SECONDS_PER_DAY;
-      const s = computeSalience(
-        topic({ s_short: 1, s_long: 0, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 1, s_long: 0, last_update: last }), now);
       // short branch at dt/tau_short = 180/14 ≈ 12.86 → e^(-12.86) ≈ 2.6e-6
       // scaled by 0.3 → ~8e-7. Effectively zero.
       expect(s).toBeLessThan(1e-6);
@@ -130,10 +106,7 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
     it('returns s_long + TOPIC_SHORT_MIX * s_short when now < last_update', () => {
       const last = 1_700_000_100;
       const now = 1_700_000_000; // 100 seconds in the past
-      const s = computeSalience(
-        topic({ s_short: 2, s_long: 5, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 2, s_long: 5, last_update: last }), now);
       expect(s).toBeCloseTo(5 + 0.3 * 2, 9);
     });
   });
@@ -145,10 +118,7 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
       const now = last + dtDays * SECONDS_PER_DAY;
       const sLong = 1;
       const sShort = 1;
-      const s = computeSalience(
-        topic({ s_short: sShort, s_long: sLong, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: sShort, s_long: sLong, last_update: last }), now);
 
       const longFactor = Math.exp(-dtDays / TOPIC_TAU_LONG_DAYS);
       const shortFactor = Math.exp(-dtDays / TOPIC_TAU_SHORT_DAYS);
@@ -179,14 +149,8 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
     it('scaling both counters by k scales salience by k (exact)', () => {
       const last = 1_700_000_000;
       const now = last + 30 * SECONDS_PER_DAY;
-      const base = computeSalience(
-        topic({ s_short: 1, s_long: 2, last_update: last }),
-        now,
-      );
-      const scaled = computeSalience(
-        topic({ s_short: 5, s_long: 10, last_update: last }),
-        now,
-      );
+      const base = computeSalience(topic({ s_short: 1, s_long: 2, last_update: last }), now);
+      const scaled = computeSalience(topic({ s_short: 5, s_long: 10, last_update: last }), now);
       expect(scaled).toBeCloseTo(5 * base, 9);
     });
 
@@ -209,20 +173,14 @@ describe('computeSalience — EWMA verification (task 4.75)', () => {
   describe('half-life parity (design-doc §5 worked example)', () => {
     it('fresh touch (dt=0) yields s_long + 0.3 * s_short', () => {
       const now = 1_700_000_000;
-      const s = computeSalience(
-        topic({ s_short: 1, s_long: 1, last_update: now }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 1, s_long: 1, last_update: now }), now);
       expect(s).toBeCloseTo(1.3, 9);
     });
 
     it('one short-tau later (dt=14d), salience = s_long*exp(-14/180) + 0.3*s_short*exp(-1)', () => {
       const last = 1_700_000_000;
       const now = last + 14 * SECONDS_PER_DAY;
-      const s = computeSalience(
-        topic({ s_short: 1, s_long: 1, last_update: last }),
-        now,
-      );
+      const s = computeSalience(topic({ s_short: 1, s_long: 1, last_update: last }), now);
       const expected = Math.exp(-14 / 180) + 0.3 * Math.exp(-1);
       expect(s).toBeCloseTo(expected, 9);
     });

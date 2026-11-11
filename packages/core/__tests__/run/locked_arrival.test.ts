@@ -73,7 +73,12 @@ function setup() {
   const seed = randomBytes(32);
   const sealer = new NaclDeviceSealer(getPublicKey(seed), seed);
   const spool = new InMemoryRunSpool();
-  const locked = new LockedArrivalStore({ spool, deviceSealer: sealer, payloadStore, erasureStore: erasure });
+  const locked = new LockedArrivalStore({
+    spool,
+    deviceSealer: sealer,
+    payloadStore,
+    erasureStore: erasure,
+  });
   return { erasure, cipher, payloadStore, spool, sealer, locked };
 }
 
@@ -144,7 +149,10 @@ describe('LockedArrivalStore (§7)', () => {
 
   it('a missing spool blob surfaces response_lost', () => {
     const { locked } = setup();
-    const out = locked.publish('p1', 'r1', 'general', { spool_id: 'spool-nope', content_digest: 'a'.repeat(64) });
+    const out = locked.publish('p1', 'r1', 'general', {
+      spool_id: 'spool-nope',
+      content_digest: 'a'.repeat(64),
+    });
     expect(out).toEqual({ outcome: 'response_lost', reason: 'blob_missing' });
   });
 
@@ -152,7 +160,10 @@ describe('LockedArrivalStore (§7)', () => {
     const { spool, locked } = setup();
     // A 2-byte blob can't even hold the 4-byte length header.
     const spoolId = spool.store(new Uint8Array([0, 0]));
-    const out = locked.publish('p1', 'r1', 'general', { spool_id: spoolId, content_digest: 'a'.repeat(64) });
+    const out = locked.publish('p1', 'r1', 'general', {
+      spool_id: spoolId,
+      content_digest: 'a'.repeat(64),
+    });
     expect(out).toEqual({ outcome: 'response_lost', reason: 'corrupt' });
   });
 

@@ -92,7 +92,10 @@ export function wireChatRememberRuntime(
       const tick = await options.stagingDrain.runTick();
       const item = tick.results.find((r) => r.itemId === stagingId);
       if (item?.status === 'stored' && item.persona) {
-        return { persona: item.persona, ...(item.changes !== undefined ? { changes: item.changes } : {}) };
+        return {
+          persona: item.persona,
+          ...(item.changes !== undefined ? { changes: item.changes } : {}),
+        };
       }
       // MT-13-I1 — classifier routed to a closed persona; staging
       // parks the row + (when an approval flow is wired) creates a
@@ -111,7 +114,11 @@ export function wireChatRememberRuntime(
         return { persona: null, duplicate: true };
       }
       if (item?.status === 'parked') {
-        return { persona: null, parkedPersona: item.persona, reason: item.reason ?? 'unknown_persona' };
+        return {
+          persona: null,
+          parkedPersona: item.persona,
+          reason: item.reason ?? 'unknown_persona',
+        };
       }
       // REQ-19: the model did not answer; Core holds the item and retries.
       if (item?.status === 'failed' && item.reason === 'model_unavailable') {

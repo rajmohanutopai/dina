@@ -9,8 +9,14 @@ import { installCommerceRuntime, type CommerceRuntime } from '../../../src/comme
 import { blockDestination, checkEgressGates } from '../../../src/d2d/gates';
 import { isTradeCounterparty } from '../../../src/d2d/trade_ingress_seam';
 
-import { publishListing , BRAND2_DID, BRAND_DID, Fleet, juicePolicy, STORE_DID } from './term_harness';
-
+import {
+  publishListing,
+  BRAND2_DID,
+  BRAND_DID,
+  Fleet,
+  juicePolicy,
+  STORE_DID,
+} from './term_harness';
 
 import type { TermRequest } from '@dina/commerce-protocol';
 

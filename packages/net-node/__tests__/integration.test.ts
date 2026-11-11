@@ -56,7 +56,12 @@ async function collectBody(req: IncomingMessage): Promise<Uint8Array> {
 describe('net-node — HTTP integration with real server', () => {
   let server: Server;
   let url: string;
-  let received: { method?: string; path?: string; headers?: Record<string, string>; body?: Uint8Array } = {};
+  let received: {
+    method?: string;
+    path?: string;
+    headers?: Record<string, string>;
+    body?: Uint8Array;
+  } = {};
 
   beforeEach(async () => {
     received = {};
@@ -64,7 +69,10 @@ describe('net-node — HTTP integration with real server', () => {
       received.method = req.method;
       received.path = req.url;
       received.headers = Object.fromEntries(
-        Object.entries(req.headers).map(([k, v]) => [k.toLowerCase(), Array.isArray(v) ? v.join(',') : String(v ?? '')]),
+        Object.entries(req.headers).map(([k, v]) => [
+          k.toLowerCase(),
+          Array.isArray(v) ? v.join(',') : String(v ?? ''),
+        ]),
       );
       received.body = await collectBody(req);
       res.statusCode = 200;
@@ -213,7 +221,7 @@ describe('net-node — WebSocket integration with real ws.WebSocketServer', () =
     expect([1000, 1005]).toContain(code);
   });
 
-  it("client Upgrade request does NOT advertise permessage-deflate (CLAUDE.md RSV1 parity)", async () => {
+  it('client Upgrade request does NOT advertise permessage-deflate (CLAUDE.md RSV1 parity)', async () => {
     // The client's handshake must not include
     // `Sec-WebSocket-Extensions: permessage-deflate`, or Go's
     // `coder/websocket` server will close with 1002 protocol error

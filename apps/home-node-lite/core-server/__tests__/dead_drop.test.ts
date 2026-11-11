@@ -42,24 +42,22 @@ function scriptedRandom(scripts: number[][]): (n: number) => Uint8Array {
 describe('DeadDropSpool (task 4.34)', () => {
   describe('construction validation', () => {
     it('rejects empty dir', () => {
-      expect(
-        () => new DeadDropSpool('', { maxBlobs: 10, maxBytes: 1024 }),
-      ).toThrow(/dir is required/);
+      expect(() => new DeadDropSpool('', { maxBlobs: 10, maxBytes: 1024 })).toThrow(
+        /dir is required/,
+      );
     });
 
     it('rejects non-positive maxBlobs', () => {
-      expect(
-        () => new DeadDropSpool('/tmp/x', { maxBlobs: 0, maxBytes: 1024 }),
-      ).toThrow(/maxBlobs/);
-      expect(
-        () => new DeadDropSpool('/tmp/x', { maxBlobs: 1.5, maxBytes: 1024 }),
-      ).toThrow(/maxBlobs/);
+      expect(() => new DeadDropSpool('/tmp/x', { maxBlobs: 0, maxBytes: 1024 })).toThrow(
+        /maxBlobs/,
+      );
+      expect(() => new DeadDropSpool('/tmp/x', { maxBlobs: 1.5, maxBytes: 1024 })).toThrow(
+        /maxBlobs/,
+      );
     });
 
     it('rejects non-positive maxBytes', () => {
-      expect(
-        () => new DeadDropSpool('/tmp/x', { maxBlobs: 10, maxBytes: 0 }),
-      ).toThrow(/maxBytes/);
+      expect(() => new DeadDropSpool('/tmp/x', { maxBlobs: 10, maxBytes: 0 })).toThrow(/maxBytes/);
     });
   });
 
@@ -134,11 +132,7 @@ describe('DeadDropSpool (task 4.34)', () => {
         Buffer.from([9]),
       );
       const ids = await spool.list();
-      expect(ids).toEqual([
-        '11'.repeat(16),
-        '22'.repeat(16),
-        '33'.repeat(16),
-      ]);
+      expect(ids).toEqual(['11'.repeat(16), '22'.repeat(16), '33'.repeat(16)]);
     });
 
     it('list excludes non-.blob filenames + non-hex names', async () => {
@@ -318,14 +312,10 @@ describe('DeadDropSpool (task 4.34)', () => {
         randomBytesFn: scriptedRandom(scripts),
       });
       const settled = await Promise.allSettled(
-        Array.from({ length: 6 }, (_, i) =>
-          spool.store(new Uint8Array([i + 1])),
-        ),
+        Array.from({ length: 6 }, (_, i) => spool.store(new Uint8Array([i + 1]))),
       );
       const ok = settled.filter((r) => r.status === 'fulfilled');
-      const failed = settled.filter(
-        (r) => r.status === 'rejected',
-      ) as PromiseRejectedResult[];
+      const failed = settled.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
       expect(ok).toHaveLength(3);
       expect(failed).toHaveLength(3);
       for (const f of failed) {

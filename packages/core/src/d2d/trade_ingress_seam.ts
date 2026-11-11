@@ -108,7 +108,10 @@ export function setTradeCounterpartyCheck(next: TradeCounterpartyCheck | null): 
 export function isTradeCounterparty(
   peerDid: string,
   kind: string,
-  context: { document: unknown; direction: 'inbound' | 'outbound' } = { document: null, direction: 'inbound' },
+  context: { document: unknown; direction: 'inbound' | 'outbound' } = {
+    document: null,
+    direction: 'inbound',
+  },
 ): boolean {
   if (counterparty === null) return false;
   try {

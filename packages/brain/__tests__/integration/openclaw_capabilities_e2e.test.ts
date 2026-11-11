@@ -37,13 +37,17 @@
  * agentic loop needs an LLM round-trip.
  */
 
-import { evaluateIntent , clearVaults ,
+import {
+  evaluateIntent,
   resetStagingState,
   stagingGetItem as getStagingItem,
-
   createPersona,
   openPersona,
-  resetPersonaState, configureRateLimiter , createCoreRouter , InProcessTransport } from '@dina/core';
+  resetPersonaState,
+  configureRateLimiter,
+  createCoreRouter,
+  InProcessTransport,
+} from '@dina/core';
 
 import {
   handleChat,
@@ -54,20 +58,13 @@ import {
 } from '../../src/chat/orchestrator';
 import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
 import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
-import { createGeminiClassifier } from '../../src/routing/gemini_classify';
-import {
-  registerPersonaSelector,
-  resetPersonaSelector,
-} from '../../src/routing/persona_selector';
+import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
 import { ToolRegistry } from '../../src/reasoning/tool_registry';
 import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
-import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
+import { createGeminiClassifier } from '../../src/routing/gemini_classify';
+import { registerPersonaSelector, resetPersonaSelector } from '../../src/routing/persona_selector';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import {
-  resetReasoningProvider,
-  setAccessiblePersonas,
-} from '../../src/vault_context/assembly';
-
+import { resetReasoningProvider, setAccessiblePersonas } from '../../src/vault_context/assembly';
 
 import {
   closeSQLiteVault,
@@ -227,31 +224,26 @@ describeReal('OpenClaw `dina ask` (CAPABILITIES.md bank-account recall)', () => 
     }
   });
 
-  it(
-    "/remember bank account → /ask 'which bank' surfaces Barclay's",
-    async () => {
-      const remember = await handleChat(
-        "/remember My bank account is in Barclay's and ends with 0102",
-      );
-      expect(remember.intent).toBe('remember');
-      expect(remember.response).toMatch(/Stored in (Finance|General) vault\./i);
+  it("/remember bank account → /ask 'which bank' surfaces Barclay's", async () => {
+    const remember = await handleChat(
+      "/remember My bank account is in Barclay's and ends with 0102",
+    );
+    expect(remember.intent).toBe('remember');
+    expect(remember.response).toMatch(/Stored in (Finance|General) vault\./i);
 
-      const ask = await handleChat('/ask Which bank has my account');
-      expect(ask.intent).toBe('ask');
-      expect(ask.response).not.toBe('');
-      // Recall — case-insensitive substring. Either the bank name or
-      // the last-4 of the account number is sufficient evidence the
-      // LLM read the row out of the SQLite vault.
-      const haystack = ask.response.toLowerCase();
-      const recalled = haystack.includes('barclay') || haystack.includes('0102');
-      if (!recalled) {
-         
-        console.log(`[openclaw-ask] response did not recall bank fact:\n  ${ask.response}`);
-      }
-      expect(recalled).toBe(true);
-    },
-    60_000,
-  );
+    const ask = await handleChat('/ask Which bank has my account');
+    expect(ask.intent).toBe('ask');
+    expect(ask.response).not.toBe('');
+    // Recall — case-insensitive substring. Either the bank name or
+    // the last-4 of the account number is sufficient evidence the
+    // LLM read the row out of the SQLite vault.
+    const haystack = ask.response.toLowerCase();
+    const recalled = haystack.includes('barclay') || haystack.includes('0102');
+    if (!recalled) {
+      console.log(`[openclaw-ask] response did not recall bank fact:\n  ${ask.response}`);
+    }
+    expect(recalled).toBe(true);
+  }, 60_000);
 });
 
 if (!GEMINI_API_KEY) {

@@ -204,7 +204,13 @@ export function buildDemoPlan(steps: readonly DemoStep[] = DEMO_STEPS): DemoActi
               : 'chat';
       // Carry the step's own clear policy up to the action level so the runner
       // reads one field for every action kind.
-      return { kind, id: step.id, caption: step.caption, step, clearStageBefore: step.clearStageBefore };
+      return {
+        kind,
+        id: step.id,
+        caption: step.caption,
+        step,
+        clearStageBefore: step.clearStageBefore,
+      };
     }),
     {
       kind: 'd2d',

@@ -9,7 +9,6 @@
 
 import {
   registerDevice as registerDeviceInRegistry,
-  listActiveDevices,
   resetDeviceRegistry,
 } from '../../../core/src/devices/registry';
 import {
@@ -20,7 +19,6 @@ import {
   resetSyncState,
   registerDevice,
   connectDevice,
-  disconnectDevice,
   addSyncItem,
   corruptCache,
 } from '../../../core/src/sync/client';

@@ -40,11 +40,7 @@ import { contextScopeViolation, paramsExceedInspectableLimits } from './dispatch
 import { getDrainAuthorizationRepository } from './drain_authorizations';
 import { getPluginGrantRepository, invocationDigest } from './grants';
 import { validateAgainstSchema } from './schema_validate';
-import {
-  LIFECYCLE_CAPABILITIES,
-  bareCapabilityName,
-  releaseMajorOf,
-} from './update_rebind';
+import { LIFECYCLE_CAPABILITIES, bareCapabilityName, releaseMajorOf } from './update_rebind';
 
 import type { PluginInstall } from './registry';
 import type { WorkflowTask } from '../workflow/domain';
@@ -377,7 +373,8 @@ export function claimPluginTask(args: {
     // used to throw out of the claim loop, so the lane wedged and the drain
     // never finished — exactly the "dead oldest row starves valid work"
     // failure this guard's own comment says it exists to avoid.
-    const drainedResultSchema = drained === null ? undefined : parseStoredSchema(drained.resultSchemaJson);
+    const drainedResultSchema =
+      drained === null ? undefined : parseStoredSchema(drained.resultSchemaJson);
     if (drained !== null && drainedResultSchema === undefined) {
       failStale('retained result schema is unreadable');
       continue;
@@ -398,7 +395,8 @@ export function claimPluginTask(args: {
     // tasks were validated against the PRIOR params_schema at enqueue;
     // the current schema cannot judge them (inspectability limits below
     // still apply).
-    const drainedParamsSchema = drained === null ? undefined : parseStoredSchema(drained.paramsSchemaJson);
+    const drainedParamsSchema =
+      drained === null ? undefined : parseStoredSchema(drained.paramsSchemaJson);
     if (drained !== null && drainedParamsSchema === undefined) {
       failStale('retained params schema is unreadable');
       continue;

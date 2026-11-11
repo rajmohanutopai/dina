@@ -125,7 +125,8 @@ function resolveLocalKey(name: string): string | undefined {
   // prototype, and a capability of that name would "resolve" to a function.
   if (Object.prototype.hasOwnProperty.call(CAPABILITIES, name)) return name;
   const canonical = resolveCanonicalCapability(name);
-  if (canonical !== null && Object.prototype.hasOwnProperty.call(CAPABILITIES, canonical)) return canonical;
+  if (canonical !== null && Object.prototype.hasOwnProperty.call(CAPABILITIES, canonical))
+    return canonical;
   return undefined;
 }
 

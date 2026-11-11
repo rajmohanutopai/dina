@@ -18,7 +18,6 @@ import {
 } from '../../src/hooks/reminder_transport.web';
 import {
   BRAIN,
-  configLoaded,
   installBrainStreams,
   installCoreServedPage,
   streamDelivered,

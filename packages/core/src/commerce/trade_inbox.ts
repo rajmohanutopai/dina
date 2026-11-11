@@ -206,7 +206,6 @@ export function buildTradeInbox(runtime: CommerceRuntime, nowMs: number): TradeI
         // the ledger integrity error surfaces where the row is acted on.
       }
     }
-
   }
 
   // Ordered on EVERY path: the clerk's queue must not depend on plugin state.

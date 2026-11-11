@@ -22,7 +22,11 @@ import {
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, getWorkflowService, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 const SESSION = 'chat:main';
 let dir: string;
@@ -36,7 +40,13 @@ async function turn(text: string): Promise<SpanProof> {
   await new Promise((r) => setTimeout(r, 3));
   const id = `t${++n}`;
   log.recordUtterance(SESSION, id, text);
-  return { releaseSession: SESSION, turnId: id, turnText: text, start: 0, end: cleanForProvenance(text).length };
+  return {
+    releaseSession: SESSION,
+    turnId: id,
+    turnText: text,
+    start: 0,
+    end: cleanForProvenance(text).length,
+  };
 }
 
 const DAY = 86_400_000;
@@ -44,7 +54,12 @@ const inDays = (d: number) => new Date(Date.now() + d * DAY).toISOString();
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'standing-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'id.sqlite'), passphraseHex: 'cd'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'id.sqlite'),
+    passphraseHex: 'cd'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   log = new A2AReleaseLog(db, () => Date.now(), { chatLivesIn: 'brain' });
   installA2AReleaseLog(log);
@@ -87,7 +102,11 @@ it("answers a named contact with the owner's words, once a day", async () => {
   await liveRule();
   expect(await answerWithStandingReply('did:plc:oskar000')).toBe(true);
   expect(sent).toEqual([
-    { to: 'did:plc:oskar000', type: 'coordination.response', body: { text: "I'll reply when I'm back", auto: true } },
+    {
+      to: 'did:plc:oskar000',
+      type: 'coordination.response',
+      body: { text: "I'll reply when I'm back", auto: true },
+    },
   ]);
   expect(await answerWithStandingReply('did:plc:oskar000')).toBe(false);
   expect(await answerWithStandingReply('did:plc:oskar000', Date.now() + DAY + 1)).toBe(true);
@@ -135,10 +154,16 @@ it('refuses words the owner did not say, no named contact, a stranger, and an ex
 
 it('two arrivals at once send one reply, and a send never undoes a revoke', async () => {
   const id = await liveRule();
-  const [a, b] = await Promise.all([answerWithStandingReply('did:plc:oskar000'), answerWithStandingReply('did:plc:oskar000')]);
+  const [a, b] = await Promise.all([
+    answerWithStandingReply('did:plc:oskar000'),
+    answerWithStandingReply('did:plc:oskar000'),
+  ]);
   expect([a, b].filter(Boolean)).toHaveLength(1);
   expect(sent).toHaveLength(1);
   // A send for another contact's day racing a revoke: the revoke stands.
-  await Promise.all([answerWithStandingReply('did:plc:oskar000', Date.now() + DAY + 1), revokeStandingReply(id)]);
+  await Promise.all([
+    answerWithStandingReply('did:plc:oskar000', Date.now() + DAY + 1),
+    revokeStandingReply(id),
+  ]);
   expect(await answerWithStandingReply('did:plc:oskar000', Date.now() + 2 * DAY + 2)).toBe(false);
 });

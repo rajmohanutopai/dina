@@ -252,7 +252,11 @@ export function decideBarrier(
   if (current === null) {
     return {
       kind: 'open',
-      barrier: { cause: incomingCause, strength: incomingStrength, deadline_at: incomingDeadlineAt },
+      barrier: {
+        cause: incomingCause,
+        strength: incomingStrength,
+        deadline_at: incomingDeadlineAt,
+      },
     };
   }
 
@@ -352,7 +356,23 @@ const VALID_RISK_CEILINGS: ReadonlySet<string> = new Set(['SAFE', 'MODERATE', 'H
 export function validateCreateParams(
   params: CreateRunParams,
   nowMs: number,
-): Omit<RunRecord, 'run_id' | 'created_at' | 'updated_at' | 'state' | 'config_version' | 'produced_count' | 'decided_count' | 'last_commit_at' | 'next_fetch_at' | 'fetch_cursor' | 'drain_deadline_at' | 'drain_cause' | 'drain_strength' | 'paused_reason'> & {
+): Omit<
+  RunRecord,
+  | 'run_id'
+  | 'created_at'
+  | 'updated_at'
+  | 'state'
+  | 'config_version'
+  | 'produced_count'
+  | 'decided_count'
+  | 'last_commit_at'
+  | 'next_fetch_at'
+  | 'fetch_cursor'
+  | 'drain_deadline_at'
+  | 'drain_cause'
+  | 'drain_strength'
+  | 'paused_reason'
+> & {
   drain_deadline_ms: number;
 } {
   const transport = params.transport ?? 'pull';
@@ -382,7 +402,10 @@ export function validateCreateParams(
   // queue_cap ∈ 1..MAX_QUEUE_CAP.
   const queue_cap = params.queue_cap ?? DEFAULT_QUEUE_CAP;
   if (!Number.isInteger(queue_cap) || queue_cap < 1 || queue_cap > MAX_QUEUE_CAP) {
-    throw new RunValidationError('queue_cap', `queue_cap must be an integer in 1..${MAX_QUEUE_CAP}`);
+    throw new RunValidationError(
+      'queue_cap',
+      `queue_cap must be an integer in 1..${MAX_QUEUE_CAP}`,
+    );
   }
 
   // priority_ceiling: V1 rejects fiduciary (Tier-1 is Phase 2, §9.1).
@@ -394,7 +417,10 @@ export function validateCreateParams(
     );
   }
   if (priority_ceiling !== 'solicited' && priority_ceiling !== 'engagement') {
-    throw new RunValidationError('priority_ceiling', `invalid priority_ceiling "${priority_ceiling}"`);
+    throw new RunValidationError(
+      'priority_ceiling',
+      `invalid priority_ceiling "${priority_ceiling}"`,
+    );
   }
 
   // action_risk_ceiling never BLOCKED.
@@ -432,17 +458,26 @@ export function validateCreateParams(
 
   const interval_ms = params.interval_ms ?? 60_000;
   if (!Number.isInteger(interval_ms) || interval_ms < 0) {
-    throw new RunValidationError('interval_ms', 'interval_ms must be a non-negative integer (pull mode)');
+    throw new RunValidationError(
+      'interval_ms',
+      'interval_ms must be a non-negative integer (pull mode)',
+    );
   }
 
   const classify_timeout_ms = params.classify_timeout_ms ?? DEFAULT_CLASSIFY_TIMEOUT_MS;
   if (!Number.isInteger(classify_timeout_ms) || classify_timeout_ms < 0) {
-    throw new RunValidationError('classify_timeout_ms', 'classify_timeout_ms must be a non-negative integer');
+    throw new RunValidationError(
+      'classify_timeout_ms',
+      'classify_timeout_ms must be a non-negative integer',
+    );
   }
 
   const drain_deadline_ms = params.drain_deadline_ms ?? DEFAULT_DRAIN_DEADLINE_MS;
   if (!Number.isInteger(drain_deadline_ms) || drain_deadline_ms < 0) {
-    throw new RunValidationError('drain_deadline_ms', 'drain_deadline_ms must be a non-negative integer');
+    throw new RunValidationError(
+      'drain_deadline_ms',
+      'drain_deadline_ms must be a non-negative integer',
+    );
   }
 
   const on_stop = params.on_stop ?? 'cancel_pending';

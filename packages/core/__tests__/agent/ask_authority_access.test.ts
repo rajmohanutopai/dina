@@ -9,17 +9,17 @@
  * judged as the requester; nothing gated reaches the ToC.
  */
 
-import {
-  activateAgentPersonaGrant,
-  reserveAgentPersonaGrant,
-} from '../../src/agent/access';
+import { activateAgentPersonaGrant, reserveAgentPersonaGrant } from '../../src/agent/access';
 import {
   bindAskAuthority,
   mintAskAuthority,
   resetAskAuthorities,
   resolveAskAuthority,
 } from '../../src/agent/ask_authority';
-import { InMemoryAgentGrantRepository, setAgentGrantRepository } from '../../src/agent/grant_repository';
+import {
+  InMemoryAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../src/agent/grant_repository';
 import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerAgentPersonaAccessRoute } from '../../src/server/routes/agent_persona_access';
@@ -27,14 +27,22 @@ import { registerVaultRoutes } from '../../src/server/routes/vault';
 import { SessionRegistry, setSessionRegistry } from '../../src/session/registry';
 import { clearVaults, storeItem } from '../../src/vault/crud';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, getWorkflowService, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 const AGENT = 'did:key:z6MkAgentAlpha';
 
 function brainReq(
   method: CoreRequest['method'],
   path: string,
-  opts: { body?: unknown; query?: Record<string, string>; callerType?: CoreRequest['callerType'] } = {},
+  opts: {
+    body?: unknown;
+    query?: Record<string, string>;
+    callerType?: CoreRequest['callerType'];
+  } = {},
 ): CoreRequest {
   return {
     method,
@@ -74,7 +82,10 @@ async function check(authority: string, personas: string[]): Promise<Record<stri
   return (res.body as { decisions: Record<string, string> }).decisions;
 }
 
-async function request(authority: string, persona: string): Promise<{ decision: string; task_id?: string }> {
+async function request(
+  authority: string,
+  persona: string,
+): Promise<{ decision: string; task_id?: string }> {
   const res = await router.handle(
     brainReq('POST', '/v1/agent/persona-access', {
       body: { ask_authority: authority, op: 'request', persona },
@@ -110,9 +121,12 @@ beforeEach(() => {
   grants = new InMemoryAgentGrantRepository();
   setAgentGrantRepository(grants);
   // Session end revokes the session's grants, as the hosts wire it.
-  sessions = new SessionRegistry(() => Date.now(), (session) => {
-    grants.revokeForSession(session.agentDid, session.sessionId, Date.now());
-  });
+  sessions = new SessionRegistry(
+    () => Date.now(),
+    (session) => {
+      grants.revokeForSession(session.agentDid, session.sessionId, Date.now());
+    },
+  );
   setSessionRegistry(sessions);
   router = new CoreRouter();
   registerVaultRoutes(router);
@@ -249,7 +263,6 @@ describe('reads carrying the authority are judged as the requester (§0.1 B)', (
   });
 });
 
-
 describe('Core names the ask before Brain runs (dual review, 2026-10-08)', () => {
   it('a card raised inside the ask carries its ask id, and Approve Once serves that ask alone', async () => {
     const { registerAskRoutes } = await import('../../src/server/routes/ask');
@@ -267,15 +280,23 @@ describe('Core names the ask before Brain runs (dual review, 2026-10-08)', () =>
         handleStatus: async () => ({ status: 200, body: { status: 'complete' } }),
       },
     });
-    const res = await router.handle(
-      { ...brainReq('POST', '/api/v1/ask', { body: { prompt: 'my LDL?', session_id: session }, callerType: 'agent' }), callerDID: AGENT },
-    );
+    const res = await router.handle({
+      ...brainReq('POST', '/api/v1/ask', {
+        body: { prompt: 'my LDL?', session_id: session },
+        callerType: 'agent',
+      }),
+      callerDID: AGENT,
+    });
     expect(res.status).toBe(202);
-    const card = JSON.parse(getWorkflowService()!.store().getById(raisedTask)!.payload) as { ask_id?: string };
+    const card = JSON.parse(getWorkflowService()!.store().getById(raisedTask)!.payload) as {
+      ask_id?: string;
+    };
     expect(card.ask_id).toBe((res.body as { request_id: string }).request_id);
     await approve(raisedTask, 'single');
     expect((await check(askAuthority, ['health'])).health).toBe('allowed');
     // Another ask in the same session is not covered by Approve Once.
-    expect((await check(authorityFor(session, 'another-ask-id-0000'), ['health'])).health).not.toBe('allowed');
+    expect((await check(authorityFor(session, 'another-ask-id-0000'), ['health'])).health).not.toBe(
+      'allowed',
+    );
   });
 });

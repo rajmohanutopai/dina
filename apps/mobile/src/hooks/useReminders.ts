@@ -67,7 +67,10 @@ export async function getOverdueReminders(now?: number): Promise<ReminderUIItem[
 /**
  * Get reminders for a specific persona.
  */
-export async function getPersonaReminders(persona: string, now?: number): Promise<ReminderUIItem[]> {
+export async function getPersonaReminders(
+  persona: string,
+  now?: number,
+): Promise<ReminderUIItem[]> {
   const currentTime = now ?? Date.now();
   const all = await transportListByPersona(persona);
   return all
@@ -86,8 +89,9 @@ export function groupByDay(reminders: ReminderUIItem[]): ReminderGroup[] {
     const date = new Date(r.dueAt);
     const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(r);
+    const group = groups.get(key);
+    if (group === undefined) groups.set(key, [r]);
+    else group.push(r);
   }
 
   return [...groups.entries()]

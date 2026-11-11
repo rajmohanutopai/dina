@@ -299,7 +299,8 @@ describe('missing data is explained, never substituted (§13.4, FR-B7)', () => {
     });
     const newcomer = offer({ quoteId: 'q-new', totalMinorUnits: '100000', leadTimeDays: 5 });
     const result = rankOffers([mediocre, newcomer], REQUIREMENTS, NOW);
-    const scoreOf = (id: string) => result.ranked.find((r) => r.offer.quoteId === id)?.scoreBp ?? -1;
+    const scoreOf = (id: string) =>
+      result.ranked.find((r) => r.offer.quoteId === id)?.scoreBp ?? -1;
     expect(scoreOf('q-new')).toBeGreaterThan(scoreOf('q-mediocre'));
     expect(result.ranked[0]?.offer.quoteId).toBe('q-new');
   });

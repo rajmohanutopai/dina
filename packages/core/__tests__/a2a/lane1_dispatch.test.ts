@@ -41,7 +41,13 @@ beforeEach(async () => {
 afterEach(() => world.close());
 
 function propose(text = 'Summarize the attached note.', skill = 'summarize', agent = agentId) {
-  const out = proposeDelegation(world.runtime, { releaseSession: SESSION, agentId: agent, skill, text, replyTo: 'main' });
+  const out = proposeDelegation(world.runtime, {
+    releaseSession: SESSION,
+    agentId: agent,
+    skill,
+    text,
+    replyTo: 'main',
+  });
   if (!out.ok) throw new Error(`propose: ${out.reason}`);
   return out;
 }
@@ -73,7 +79,12 @@ function router(): CoreRouter {
   return r;
 }
 
-function req(method: CoreRequest['method'], path: string, body: Record<string, unknown>, callerType: string): CoreRequest {
+function req(
+  method: CoreRequest['method'],
+  path: string,
+  body: Record<string, unknown>,
+  callerType: string,
+): CoreRequest {
   return {
     method,
     path,
@@ -92,13 +103,28 @@ function req(method: CoreRequest['method'], path: string, body: Record<string, u
 /** A second active agent on its own card URL, bound to `summarize`. */
 async function anotherAgent(n: number): Promise<string> {
   const url = `https://agent${n}.example/.well-known/agent-card.json`;
-  world.cards.set(url, agentCard({ supportedInterfaces: [{ url: `https://agent${n}.example/rpc`, protocolBinding: 'JSONRPC', protocolVersion: '1.0' }] }));
+  world.cards.set(
+    url,
+    agentCard({
+      supportedInterfaces: [
+        {
+          url: `https://agent${n}.example/rpc`,
+          protocolBinding: 'JSONRPC',
+          protocolVersion: '1.0',
+        },
+      ],
+    }),
+  );
   const d = { store: world.store, nowMs: () => world.clock };
   const reg = await registerRemoteAgent(d, url);
   if (!reg.ok) throw new Error(reg.reason);
   const cred = createNoneCredential(d, reg.agent.agent_id);
   if (!cred.ok) throw new Error(cred.reason);
-  bindRemoteSkill(d, reg.agent.agent_id, { skill: 'summarize', actionClass: 'read', credentialRef: cred.credential.credential_ref });
+  bindRemoteSkill(d, reg.agent.agent_id, {
+    skill: 'summarize',
+    actionClass: 'read',
+    credentialRef: cred.credential.credential_ref,
+  });
   activateRemoteAgent(d, reg.agent.agent_id);
   return reg.agent.agent_id;
 }
@@ -112,29 +138,53 @@ describe('proposal bounds (design §6.2 step 0)', () => {
     // The hourly cap is 30, so the first 30 cards wait unswept past the hour.
     let made = 0;
     for (const agent of agents.slice(0, 3)) {
-      for (let i = 0; i < MAX_PENDING_PER_AGENT; i += 1) propose(`message ${made++}`, 'summarize', agent);
+      for (let i = 0; i < MAX_PENDING_PER_AGENT; i += 1)
+        propose(`message ${made++}`, 'summarize', agent);
     }
     expect(made).toBe(MAX_PROPOSALS_PER_HOUR);
     world.clock += 60 * 60_000 + 1;
     world.turn();
     for (const agent of agents.slice(3, 5)) {
-      for (let i = 0; i < MAX_PENDING_PER_AGENT; i += 1) propose(`message ${made++}`, 'summarize', agent);
+      for (let i = 0; i < MAX_PENDING_PER_AGENT; i += 1)
+        propose(`message ${made++}`, 'summarize', agent);
     }
-    expect(world.store.listTasksInStates('outbound', ['pending_decision'])).toHaveLength(MAX_PENDING_TOTAL);
+    expect(world.store.listTasksInStates('outbound', ['pending_decision'])).toHaveLength(
+      MAX_PENDING_TOTAL,
+    );
     const sixth = agents[5] ?? '';
-    expect(proposeDelegation(world.runtime, { releaseSession: SESSION, agentId: sixth, skill: 'summarize', text: 'one more' })).toEqual({
+    expect(
+      proposeDelegation(world.runtime, {
+        releaseSession: SESSION,
+        agentId: sixth,
+        skill: 'summarize',
+        text: 'one more',
+      }),
+    ).toEqual({
       ok: false,
       reason: 'too_many_pending',
     });
-    expect(world.store.listTasksInStates('outbound', ['pending_decision'])).toHaveLength(MAX_PENDING_TOTAL);
+    expect(world.store.listTasksInStates('outbound', ['pending_decision'])).toHaveLength(
+      MAX_PENDING_TOTAL,
+    );
   });
 
   // Plan B125
   it('refuses data nested deeper than the envelope can carry, and stages nothing', () => {
     let deep: Record<string, unknown> = { leaf: 1 };
     for (let i = 0; i < 64; i += 1) deep = { next: deep };
-    expect(buildOutgoingProjection({ text: 'x', data: deep })).toEqual({ ok: false, reason: 'data_too_deep' });
-    expect(proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill: 'summarize', text: 'x', data: deep })).toEqual({
+    expect(buildOutgoingProjection({ text: 'x', data: deep })).toEqual({
+      ok: false,
+      reason: 'data_too_deep',
+    });
+    expect(
+      proposeDelegation(world.runtime, {
+        releaseSession: SESSION,
+        agentId,
+        skill: 'summarize',
+        text: 'x',
+        data: deep,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'data_too_deep',
     });
@@ -151,7 +201,9 @@ describe('a lapsed consent card (design §6.2 step 1 "expiry terminalizes")', ()
     expect(op(p.operationId).state).toBe('expired');
 
     expect(() => world.workflow.approve(p.approvalTaskId)).toThrow(/cannot be approved from state/);
-    const owner = await router().handle(req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/approve`, {}, 'owner'));
+    const owner = await router().handle(
+      req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/approve`, {}, 'owner'),
+    );
     expect(owner.status).toBe(409);
     expect(mintOutboundPermit(world.runtime, p.approvalTaskId)).toBe('not_pending');
     expect(sweepA2AOutbound(world.runtime).minted).toBe(0);
@@ -163,19 +215,37 @@ describe('a lapsed consent card (design §6.2 step 1 "expiry terminalizes")', ()
 
 describe('who decides a consent card (design §6.2 step 6)', () => {
   // Plan B139
-  it.each(['agent', 'plugin'])('refuses %s callers the approve and both denials (cancel and fail)', async (callerType) => {
-    const p = propose();
-    const r = router();
-    const approve = await r.handle(req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/approve`, {}, callerType));
-    const deny = await r.handle(req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/cancel`, {}, callerType));
-    // A claim token, so the plugin caller passes the shape check and meets the decision rule.
-    const fail = await r.handle(req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/fail`, { error: 'no', claim_id: 'claim-1' }, callerType));
-    expect([approve.status, deny.status, fail.status]).toEqual([403, 403, 403]);
-    expect([approve, deny, fail].map((x) => (x.body as { error: string }).error)).toEqual(['access_denied', 'access_denied', 'access_denied']);
-    expect(world.repo.getById(p.approvalTaskId)?.status).toBe('pending_approval');
-    expect(op(p.operationId).state).toBe('pending_decision');
-    expect(world.store.permitsOf(op(p.operationId).id)).toEqual([]);
-  });
+  it.each(['agent', 'plugin'])(
+    'refuses %s callers the approve and both denials (cancel and fail)',
+    async (callerType) => {
+      const p = propose();
+      const r = router();
+      const approve = await r.handle(
+        req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/approve`, {}, callerType),
+      );
+      const deny = await r.handle(
+        req('POST', `/v1/workflow/tasks/${p.approvalTaskId}/cancel`, {}, callerType),
+      );
+      // A claim token, so the plugin caller passes the shape check and meets the decision rule.
+      const fail = await r.handle(
+        req(
+          'POST',
+          `/v1/workflow/tasks/${p.approvalTaskId}/fail`,
+          { error: 'no', claim_id: 'claim-1' },
+          callerType,
+        ),
+      );
+      expect([approve.status, deny.status, fail.status]).toEqual([403, 403, 403]);
+      expect([approve, deny, fail].map((x) => (x.body as { error: string }).error)).toEqual([
+        'access_denied',
+        'access_denied',
+        'access_denied',
+      ]);
+      expect(world.repo.getById(p.approvalTaskId)?.status).toBe('pending_approval');
+      expect(op(p.operationId).state).toBe('pending_decision');
+      expect(world.store.permitsOf(op(p.operationId).id)).toEqual([]);
+    },
+  );
 });
 
 describe('lanes that only look reserved (design §6.3)', () => {
@@ -187,33 +257,48 @@ describe('lanes that only look reserved (design §6.3)', () => {
     ['a no-break space', '\u00A0a2a:x'],
   ];
   const rows = (spellings: [string, string][]) =>
-    spellings.flatMap(([name, lane]) => CALLERS.map((caller): [string, string, string] => [name, caller, lane]));
+    spellings.flatMap(([name, lane]) =>
+      CALLERS.map((caller): [string, string, string] => [name, caller, lane]),
+    );
   const create = (callerType: string, lane: string) =>
     router().handle(
       req(
         'POST',
         '/v1/workflow/tasks',
-        { id: 't-lookalike', kind: 'delegation', description: 'x', payload: '{}', requested_runner: lane, initial_state: 'queued' },
+        {
+          id: 't-lookalike',
+          kind: 'delegation',
+          description: 'x',
+          payload: '{}',
+          requested_runner: lane,
+          initial_state: 'queued',
+        },
         callerType,
       ),
     );
 
   // Plan B157
-  it.each(rows(REFUSED))('a lane spelt with %s, from a %s caller, is refused as reserved, and no task exists', async (_name, callerType, spelt) => {
-    const resp = await create(callerType, spelt.replace('x', agentId));
-    expect(resp.status).toBe(400);
-    expect((resp.body as { error: string }).error).toBe('reserved_runner');
-    expect(world.repo.getById('t-lookalike')).toBeNull();
-  });
+  it.each(rows(REFUSED))(
+    'a lane spelt with %s, from a %s caller, is refused as reserved, and no task exists',
+    async (_name, callerType, spelt) => {
+      const resp = await create(callerType, spelt.replace('x', agentId));
+      expect(resp.status).toBe(400);
+      expect((resp.body as { error: string }).error).toBe('reserved_runner');
+      expect(world.repo.getById('t-lookalike')).toBeNull();
+    },
+  );
 
   // Plan B157
-  it.each(CALLERS)('a lane spelt with a zero-width space, from a %s caller, is created outside the agent’s lane and never reaches its runner', async (callerType) => {
-    const resp = await create(callerType, `\u200Ba2a:${agentId}`);
-    expect(resp.status).toBe(201);
-    expect(world.repo.getById('t-lookalike')?.requested_runner).toBe(`\u200Ba2a:${agentId}`);
-    expect(world.repo.getById('t-lookalike')?.requested_runner).not.toBe(a2aLaneFor(agentId));
-    expect(world.claim(agentId)).toBeNull();
-  });
+  it.each(CALLERS)(
+    'a lane spelt with a zero-width space, from a %s caller, is created outside the agent’s lane and never reaches its runner',
+    async (callerType) => {
+      const resp = await create(callerType, `\u200Ba2a:${agentId}`);
+      expect(resp.status).toBe(201);
+      expect(world.repo.getById('t-lookalike')?.requested_runner).toBe(`\u200Ba2a:${agentId}`);
+      expect(world.repo.getById('t-lookalike')?.requested_runner).not.toBe(a2aLaneFor(agentId));
+      expect(world.claim(agentId)).toBeNull();
+    },
+  );
 
   // Plan B157 (control: the refusals above are the lane rule at work)
   it.each(CALLERS)('an ordinary lane from a %s caller is created', async (callerType) => {
@@ -231,21 +316,35 @@ describe('the dispatch transaction (design §6.3, §5.3)', () => {
     const claim = claimDispatch();
     const other = createNoneCredential({ store: world.store, nowMs: () => world.clock }, agentId);
     if (!other.ok) throw new Error(other.reason);
-    expect(beginOutboundDispatch(world.runtime, claim, { credential: { ref: other.credential.credential_ref, problem: null } })).toEqual({
+    expect(
+      beginOutboundDispatch(world.runtime, claim, {
+        credential: { ref: other.credential.credential_ref, problem: null },
+      }),
+    ).toEqual({
       kind: 'settled',
       state: 'stale_authority',
       reason: 'credential_changed',
     });
     const row = op(p.operationId);
-    expect(row).toMatchObject({ state: 'stale_authority', reason_code: 'credential_changed', message_id: null });
-    expect(world.store.permitsOf(row.id).map((x) => [x.state, x.void_reason])).toEqual([['void', 'credential_changed']]);
+    expect(row).toMatchObject({
+      state: 'stale_authority',
+      reason_code: 'credential_changed',
+      message_id: null,
+    });
+    expect(world.store.permitsOf(row.id).map((x) => [x.state, x.void_reason])).toEqual([
+      ['void', 'credential_changed'],
+    ]);
     expect(world.repo.getById(claim.childTaskId)?.status).toBe('failed');
   });
 
   // Plan B168
   it('never sends twice under one claim: a second dispatch after transmitting ends outcome_unknown', () => {
     const { p, claim, start } = sending();
-    expect(beginOutboundDispatch(world.runtime, claim)).toEqual({ kind: 'settled', state: 'outcome_unknown', reason: 'lease_lost_after_send' });
+    expect(beginOutboundDispatch(world.runtime, claim)).toEqual({
+      kind: 'settled',
+      state: 'outcome_unknown',
+      reason: 'lease_lost_after_send',
+    });
     const row = op(p.operationId);
     expect(row).toMatchObject({ state: 'outcome_unknown', message_id: start.messageId });
     expect(world.store.permitsOf(row.id).map((x) => x.state)).toEqual(['consumed']);
@@ -270,7 +369,9 @@ describe('the dispatch transaction (design §6.3, §5.3)', () => {
     const row = op(p.operationId);
     expect(world.store.permitsOf(row.id)).toHaveLength(1);
     expect(world.store.childrenOf(row.id, 'dispatch')).toHaveLength(1);
-    const onLane = world.db.query(`SELECT id FROM workflow_tasks WHERE requested_runner = ?`, [a2aLaneFor(agentId)]);
+    const onLane = world.db.query(`SELECT id FROM workflow_tasks WHERE requested_runner = ?`, [
+      a2aLaneFor(agentId),
+    ]);
     expect(onLane).toHaveLength(1);
   });
 });
@@ -278,27 +379,50 @@ describe('the dispatch transaction (design §6.3, §5.3)', () => {
 describe('result parts Dina refuses (design §6.5; A2A-I8)', () => {
   const REFUSED: [string, JsonObject[], string][] = [
     ['a url part', [{ url: 'https://agent.example/file.pdf' }], 'result_refused:url_part_refused'],
-    ['text and data in one part', [{ text: 'a', data: { b: 1 } }], 'result_refused:part_content_not_exactly_one'],
+    [
+      'text and data in one part',
+      [{ text: 'a', data: { b: 1 } }],
+      'result_refused:part_content_not_exactly_one',
+    ],
     ['no parts at all', [], 'result_refused:no_parts'],
   ];
 
   // Plan B200
-  it.each(REFUSED)('a read (summarize) refuses %s as a plain failure, and holds nothing for the guard', (_name, parts, reason) => {
-    const { p, claim } = sending();
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts })).toEqual({ ok: true, state: 'failed' });
-    const row = op(p.operationId);
-    expect(row).toMatchObject({ state: 'failed', reason_code: reason, result_quarantine: null, result_json: null });
-    expect(world.store.getGuardJobForOperation(row.id)).toBeNull();
-    expect(world.repo.getById(claim.childTaskId)?.status).toBe('failed');
-  });
+  it.each(REFUSED)(
+    'a read (summarize) refuses %s as a plain failure, and holds nothing for the guard',
+    (_name, parts, reason) => {
+      const { p, claim } = sending();
+      expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts })).toEqual({
+        ok: true,
+        state: 'failed',
+      });
+      const row = op(p.operationId);
+      expect(row).toMatchObject({
+        state: 'failed',
+        reason_code: reason,
+        result_quarantine: null,
+        result_json: null,
+      });
+      expect(world.store.getGuardJobForOperation(row.id)).toBeNull();
+      expect(world.repo.getById(claim.childTaskId)?.status).toBe('failed');
+    },
+  );
 
   it.each(REFUSED)(
     'a write (extract) the remote reported done, refusing %s: outcome unknown, never a plain failure; nothing for the guard',
     (_name, parts, reason) => {
       const { p, claim } = sending('go', 'extract');
-      expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts })).toEqual({ ok: true, state: 'outcome_unknown' });
+      expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts })).toEqual({
+        ok: true,
+        state: 'outcome_unknown',
+      });
       const row = op(p.operationId);
-      expect(row).toMatchObject({ state: 'outcome_unknown', reason_code: reason, result_quarantine: null, result_json: null });
+      expect(row).toMatchObject({
+        state: 'outcome_unknown',
+        reason_code: reason,
+        result_quarantine: null,
+        result_json: null,
+      });
       expect(world.store.getGuardJobForOperation(row.id)).toBeNull();
       expect(world.repo.getById(claim.childTaskId)?.status).toBe('outcome_unknown');
     },
@@ -310,17 +434,34 @@ describe('result parts Dina refuses (design §6.5; A2A-I8)', () => {
     const row = op(p.operationId);
     const snapshot = JSON.parse(row.snapshot_json ?? '{}') as JsonObject;
     expect(typeof snapshot.result_schema_json).toBe('string');
-    world.db.run('UPDATE a2a_tasks SET snapshot_json = ? WHERE id = ?', [JSON.stringify({ ...snapshot, result_schema_json: '{' }), row.id]);
+    world.db.run('UPDATE a2a_tasks SET snapshot_json = ? WHERE id = ?', [
+      JSON.stringify({ ...snapshot, result_schema_json: '{' }),
+      row.id,
+    ]);
     // A result the default envelope would take; the write may have happened.
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'fine' }] })).toEqual({ ok: true, state: 'outcome_unknown' });
-    expect(op(p.operationId)).toMatchObject({ state: 'outcome_unknown', reason_code: 'result_refused:schema_unreadable', result_quarantine: null });
+    expect(
+      recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'fine' }] }),
+    ).toEqual({ ok: true, state: 'outcome_unknown' });
+    expect(op(p.operationId)).toMatchObject({
+      state: 'outcome_unknown',
+      reason_code: 'result_refused:schema_unreadable',
+      result_quarantine: null,
+    });
     expect(world.store.getGuardJobForOperation(row.id)).toBeNull();
   });
 
   it('a snapshot that cannot be read hides the class: the refusal is judged as one that may have acted', () => {
     const { p, claim } = sending();
-    world.db.run('UPDATE a2a_tasks SET snapshot_json = ? WHERE id = ?', ['{', op(p.operationId).id]);
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'fine' }] })).toEqual({ ok: true, state: 'outcome_unknown' });
-    expect(op(p.operationId)).toMatchObject({ state: 'outcome_unknown', reason_code: 'result_refused:snapshot_unreadable' });
+    world.db.run('UPDATE a2a_tasks SET snapshot_json = ? WHERE id = ?', [
+      '{',
+      op(p.operationId).id,
+    ]);
+    expect(
+      recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'fine' }] }),
+    ).toEqual({ ok: true, state: 'outcome_unknown' });
+    expect(op(p.operationId)).toMatchObject({
+      state: 'outcome_unknown',
+      reason_code: 'result_refused:snapshot_unreadable',
+    });
   });
 });

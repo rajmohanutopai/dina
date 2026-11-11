@@ -34,10 +34,7 @@ import {
   validatePluginManifest,
 } from '@dina/protocol';
 
-import {
-  describePreflightRefusal,
-  preflightCommerceArchive,
-} from '../commerce/archive_preflight';
+import { describePreflightRefusal, preflightCommerceArchive } from '../commerce/archive_preflight';
 import { LEDGER_ARCHIVE_TABLES, ledgerRowsForRestore } from '../commerce/ledger_archive_rows';
 import {
   COMMERCE_EPOCH_HELD_KEY,
@@ -910,10 +907,10 @@ export async function importArchivePayload(
                       self_rev: Math.max(Number(r.self_rev ?? 0) + 1, Date.now()),
                     }))
                   : (UCP_ARCHIVE_TABLES as readonly string[]).includes(table)
-                  ? // The archive is the importer's file: UCP rows are put in their
-                    // restored form again here, whatever it says.
-                    ucpRowsForArchive(table, rows, Date.now())
-                  : rows;
+                    ? // The archive is the importer's file: UCP rows are put in their
+                      // restored form again here, whatever it says.
+                      ucpRowsForArchive(table, rows, Date.now())
+                    : rows;
           restoreTable(idAdapter, table, safe);
         }
       }

@@ -14,7 +14,7 @@ export const ACCESSIBLE = {
   ALWAYS_THIS_DEVICE_ONLY: 'AccessibleAlwaysThisDeviceOnly',
 } as const;
 
-const store: Record<string, { username: string; password: string }> = {};
+const store = new Map<string, { username: string; password: string }>();
 
 export async function setGenericPassword(
   username: string,
@@ -22,7 +22,7 @@ export async function setGenericPassword(
   options?: { service?: string },
 ): Promise<boolean> {
   const key = options?.service ?? 'default';
-  store[key] = { username, password };
+  store.set(key, { username, password });
   return true;
 }
 
@@ -30,17 +30,15 @@ export async function getGenericPassword(options?: {
   service?: string;
 }): Promise<false | { username: string; password: string }> {
   const key = options?.service ?? 'default';
-  return store[key] ?? false;
+  return store.get(key) ?? false;
 }
 
 export async function resetGenericPassword(options?: { service?: string }): Promise<boolean> {
   const key = options?.service ?? 'default';
-  delete store[key];
+  store.delete(key);
   return true;
 }
 
 export function resetKeychainMock(): void {
-  for (const key of Object.keys(store)) {
-    delete store[key];
-  }
+  store.clear();
 }

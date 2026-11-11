@@ -83,7 +83,12 @@ const TEXT_HEADERS = {
   'cache-control': 'no-store',
 };
 
-function send(res: ServerResponse, status: number, body: string, headers: Record<string, string>): void {
+function send(
+  res: ServerResponse,
+  status: number,
+  body: string,
+  headers: Record<string, string>,
+): void {
   res.writeHead(status, headers);
   res.end(body);
 }
@@ -120,11 +125,16 @@ function handle(req: IncomingMessage, res: ServerResponse, opts: HarnessOptions)
 
   const vectorMatch = pathname.match(/^\/vectors\/([a-z0-9_]+)$/);
   if (vectorMatch) {
-    const name = vectorMatch[1]!;
+    const name = vectorMatch[1];
+    if (name === undefined)
+      throw new Error('http_harness: vector path matched without its name group');
     try {
       const index = JSON.parse(readFileSync(join(opts.vectorsDir, 'index.json'), 'utf8')) as Index;
       const entry = index.vectors.find((v) => v.name === name);
-      if (!entry) { sendJSON(res, 404, { error: 'unknown_vector', name }); return; }
+      if (!entry) {
+        sendJSON(res, 404, { error: 'unknown_vector', name });
+        return;
+      }
       if (entry.status !== 'frozen') {
         sendJSON(res, 404, { error: 'vector_not_frozen', name, status: entry.status });
         return;

@@ -15,11 +15,7 @@ import {
   generateMnemonic,
 } from '@dina/core';
 
-import {
-  deriveIdentity,
-  SERVICE_INDEX,
-  PERSONA_INDEX,
-} from '../src/identity/derivations';
+import { deriveIdentity, SERVICE_INDEX, PERSONA_INDEX } from '../src/identity/derivations';
 
 function seedFromFixedMnemonic(): Uint8Array {
   // A fresh mnemonic is fine for deterministic tests — same mnemonic
@@ -150,7 +146,9 @@ describe('deriveIdentity (tasks 4.54 + 4.55)', () => {
       const gen0 = deriveIdentity({ masterSeed: seed, generation: 0 });
       const gen1 = deriveIdentity({ masterSeed: seed, generation: 1 });
       expect(Array.from(gen0.root.privateKey)).not.toEqual(Array.from(gen1.root.privateKey));
-      expect(Array.from(gen0.rotation.privateKey)).not.toEqual(Array.from(gen1.rotation.privateKey));
+      expect(Array.from(gen0.rotation.privateKey)).not.toEqual(
+        Array.from(gen1.rotation.privateKey),
+      );
     });
 
     it('service keys are NOT affected by generation rotation (install-time keys)', () => {
@@ -175,15 +173,11 @@ describe('deriveIdentity (tasks 4.54 + 4.55)', () => {
 
   describe('input validation', () => {
     it('rejects too-short seed', () => {
-      expect(() =>
-        deriveIdentity({ masterSeed: new Uint8Array(15) }),
-      ).toThrow(/at least 16 bytes/);
+      expect(() => deriveIdentity({ masterSeed: new Uint8Array(15) })).toThrow(/at least 16 bytes/);
     });
 
     it('rejects empty seed', () => {
-      expect(() =>
-        deriveIdentity({ masterSeed: new Uint8Array(0) }),
-      ).toThrow(/at least 16 bytes/);
+      expect(() => deriveIdentity({ masterSeed: new Uint8Array(0) })).toThrow(/at least 16 bytes/);
     });
 
     it('derivePersona rejects negative or non-integer index', () => {
@@ -225,13 +219,16 @@ describe('deriveIdentity (tasks 4.54 + 4.55)', () => {
       const calls: string[] = [];
       const walk = (dir: string): void => {
         for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-          if (entry.name === 'node_modules' || entry.name === '__tests__' || entry.name === 'dist') continue;
+          if (entry.name === 'node_modules' || entry.name === '__tests__' || entry.name === 'dist')
+            continue;
           const full = path.join(dir, entry.name);
           if (entry.isDirectory()) walk(full);
           else if (/\.tsx?$/.test(entry.name)) {
             const text = fs.readFileSync(full, 'utf8');
             // Calls only: the declaration `function deriveServiceKey(` is not a use.
-            for (const m of text.matchAll(/(?<!function )deriveServiceKey\(\s*[^,()]+,\s*([^)]+)\)/g)) {
+            for (const m of text.matchAll(
+              /(?<!function )deriveServiceKey\(\s*[^,()]+,\s*([^)]+)\)/g,
+            )) {
               calls.push(`${path.relative(root, full)}: ${(m[1] ?? '').trim()}`);
             }
           }

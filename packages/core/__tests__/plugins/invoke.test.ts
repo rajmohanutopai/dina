@@ -21,7 +21,10 @@ import path from 'node:path';
 import { PLUGIN_NSIDS, pluginLane, type PluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { SQLitePluginDecisionRepository, setPluginDecisionRepository } from '../../src/plugins/decisions';
+import {
+  SQLitePluginDecisionRepository,
+  setPluginDecisionRepository,
+} from '../../src/plugins/decisions';
 import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import {
   approvedInvocationCount,
@@ -31,7 +34,10 @@ import {
   readInvocationCardPolicy,
   type InvokeToolCapabilityResult,
 } from '../../src/plugins/invoke';
-import { SQLitePluginInstallRepository, setPluginInstallRepository } from '../../src/plugins/registry';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { parsePluginEnvelope } from '../../src/workflow/plugin_envelope';
@@ -67,7 +73,11 @@ const MANIFEST: PluginManifest = {
       effects: { idempotency: 'supported' },
       data_scope: { categories: ['reference'] },
       params_schema: { type: 'object', required: ['ref'], properties: { ref: { type: 'string' } } },
-      result_schema: { type: 'object', required: ['status'], properties: { status: { type: 'string' } } },
+      result_schema: {
+        type: 'object',
+        required: ['status'],
+        properties: { status: { type: 'string' } },
+      },
     },
     {
       id: CAPS.pay,
@@ -134,7 +144,12 @@ beforeEach(() => {
     currentVersion: '1.0.0',
     manifest: MANIFEST,
     installScopeHash: 's'.repeat(64),
-    capabilityHashes: { [CAPS.read]: SCOPE, [CAPS.pay]: SCOPE, [CAPS.provider]: SCOPE, [CAPS.eta]: SCOPE },
+    capabilityHashes: {
+      [CAPS.read]: SCOPE,
+      [CAPS.pay]: SCOPE,
+      [CAPS.provider]: SCOPE,
+      [CAPS.eta]: SCOPE,
+    },
     behaviorHash: 'b'.repeat(64),
     presentationHash: 'p'.repeat(64),
     trustAnchor: { kind: 'repo_proof' },
@@ -166,7 +181,12 @@ function invoke(
 
 describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
   it('a payment-class capability is BLOCKED at every ring: no task, a typed refusal', () => {
-    const res = invoke(CAPS.pay, { to: 'x', amount: 1 }, { paramCategories: ['payment'] }, { publisherRing: () => 'verified_actioned' });
+    const res = invoke(
+      CAPS.pay,
+      { to: 'x', amount: 1 },
+      { paramCategories: ['payment'] },
+      { publisherRing: () => 'verified_actioned' },
+    );
     expect(res).toMatchObject({ ok: false, code: 'blocked' });
     expect((res as { message: string }).message).toMatch(/BLOCKED at every trust ring/);
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(installId))).toEqual([]);
@@ -174,7 +194,11 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
 
   it('a custom read cards on first use (MODERATE floor) and the task is pending_approval, never queued', () => {
     const res = invoke(CAPS.read, { ref: 'r-1' });
-    expect(res).toMatchObject({ ok: true, mode: 'approval_required', card: { riskLevel: 'MODERATE' } });
+    expect(res).toMatchObject({
+      ok: true,
+      mode: 'approval_required',
+      card: { riskLevel: 'MODERATE' },
+    });
     if (!res.ok || res.mode !== 'approval_required') throw new Error('unreachable');
     expect(res.card.paramsText).toContain('r-1');
     const task = workflowRepo.getById(res.taskId);
@@ -215,7 +239,13 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
 
   it('a standing grant silences a MODERATE read, is CHARGED, and pins its provenance', () => {
     const grantId = grants.create(
-      { installId, capability: CAPS.read, approvedScopeHash: SCOPE, grantType: 'standing', constraints: { version: 1, max_count: 2 } },
+      {
+        installId,
+        capability: CAPS.read,
+        approvedScopeHash: SCOPE,
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 2 },
+      },
       'read',
       T0,
     );
@@ -232,7 +262,13 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
 
   it('a grant whose constraints refuse THIS invocation cards with the refusal as the reason — it does not fail', () => {
     grants.create(
-      { installId, capability: CAPS.read, approvedScopeHash: SCOPE, grantType: 'standing', constraints: { version: 1, resources: ['allowed'] } },
+      {
+        installId,
+        capability: CAPS.read,
+        approvedScopeHash: SCOPE,
+        grantType: 'standing',
+        constraints: { version: 1, resources: ['allowed'] },
+      },
       'read',
       T0,
     );
@@ -249,19 +285,35 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
 
   it('a params-schema violation is a typed refusal and gives the reserved grant use back', () => {
     const grantId = grants.create(
-      { installId, capability: CAPS.read, approvedScopeHash: SCOPE, grantType: 'standing', constraints: { version: 1, max_count: 1 } },
+      {
+        installId,
+        capability: CAPS.read,
+        approvedScopeHash: SCOPE,
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 1 },
+      },
       'read',
       T0,
     );
     // `ref` is required by the consented params_schema.
     expect(invoke(CAPS.read, { nope: 1 })).toMatchObject({ ok: false, code: 'params_invalid' });
     // The single use was released: the next valid ask can still ride the grant.
-    expect(invoke(CAPS.read, { ref: 'ok' })).toMatchObject({ ok: true, mode: 'dispatched', grantId });
+    expect(invoke(CAPS.read, { ref: 'ok' })).toMatchObject({
+      ok: true,
+      mode: 'dispatched',
+      grantId,
+    });
   });
 
   it('a create that FAULTS (not a dedup conflict) rethrows — and gives the charged use back when no row landed', () => {
     const grantId = grants.create(
-      { installId, capability: CAPS.read, approvedScopeHash: SCOPE, grantType: 'standing', constraints: { version: 1, max_count: 1 } },
+      {
+        installId,
+        capability: CAPS.read,
+        approvedScopeHash: SCOPE,
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 1 },
+      },
       'read',
       T0,
     );
@@ -273,17 +325,33 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
     };
     expect(() =>
       invokeToolCapability(
-        { installId, capabilityId: CAPS.read, params: { ref: 'r-9' }, paramCategories: ['reference'], nowMs: T0 },
+        {
+          installId,
+          capabilityId: CAPS.read,
+          params: { ref: 'r-9' },
+          paramCategories: ['reference'],
+          nowMs: T0,
+        },
         { workflow: faulting },
       ),
     ).toThrow(/SQLITE_FULL/);
     // The single use is free again: the next ask still rides the grant.
-    expect(invoke(CAPS.read, { ref: 'r-10' })).toMatchObject({ ok: true, mode: 'dispatched', grantId });
+    expect(invoke(CAPS.read, { ref: 'r-10' })).toMatchObject({
+      ok: true,
+      mode: 'dispatched',
+      grantId,
+    });
   });
 
   it('a create that faults AFTER the row landed keeps the use — the task exists and may run', () => {
     const grantId = grants.create(
-      { installId, capability: CAPS.read, approvedScopeHash: SCOPE, grantType: 'standing', constraints: { version: 1, max_count: 1 } },
+      {
+        installId,
+        capability: CAPS.read,
+        approvedScopeHash: SCOPE,
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 1 },
+      },
       'read',
       T0,
     );
@@ -296,7 +364,13 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
     };
     expect(() =>
       invokeToolCapability(
-        { installId, capabilityId: CAPS.read, params: { ref: 'r-11' }, paramCategories: ['reference'], nowMs: T0 },
+        {
+          installId,
+          capabilityId: CAPS.read,
+          params: { ref: 'r-11' },
+          paramCategories: ['reference'],
+          nowMs: T0,
+        },
         { workflow: landedThenFaulted },
       ),
     ).toThrow(/event append/);
@@ -304,7 +378,10 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
     const executionId = parsePluginEnvelope(task?.payload ?? '')?.execution_id ?? '';
     expect(grants.getUse(grantId, executionId)).not.toBeNull();
     // The grant's one use is spent by the task that exists — the next ask cards.
-    expect(invoke(CAPS.read, { ref: 'r-12' })).toMatchObject({ ok: true, mode: 'approval_required' });
+    expect(invoke(CAPS.read, { ref: 'r-12' })).toMatchObject({
+      ok: true,
+      mode: 'approval_required',
+    });
   });
 
   it('a carded task carries Core-owned card facts in `policy` and names the capability by id, never by the plugin’s words', () => {
@@ -326,20 +403,36 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
     });
     // A silent task carries no card facts.
     const grantId = grants.create(
-      { installId, capability: CAPS.read, approvedScopeHash: SCOPE, grantType: 'standing', constraints: { version: 1, max_count: 5 } },
+      {
+        installId,
+        capability: CAPS.read,
+        approvedScopeHash: SCOPE,
+        grantType: 'standing',
+        constraints: { version: 1, max_count: 5 },
+      },
       'read',
       T0,
     );
     const silent = invoke(CAPS.read, { ref: 'r-14' });
     expect(silent).toMatchObject({ ok: true, mode: 'dispatched', grantId });
     if (!silent.ok) throw new Error('unreachable');
-    expect(readInvocationCardPolicy(workflowRepo.getById(silent.taskId) ?? { policy: '' })).toBeNull();
+    expect(
+      readInvocationCardPolicy(workflowRepo.getById(silent.taskId) ?? { policy: '' }),
+    ).toBeNull();
   });
 
   it('refuses a paused install and an unknown one', () => {
     installs.pause(installId, T0);
-    expect(invoke(CAPS.read, { ref: 'r' })).toMatchObject({ ok: false, code: 'install_not_active' });
-    expect(invokeToolCapability({ installId: 'nope', capabilityId: CAPS.read, params: {}, nowMs: T0 }, { workflow })).toMatchObject({
+    expect(invoke(CAPS.read, { ref: 'r' })).toMatchObject({
+      ok: false,
+      code: 'install_not_active',
+    });
+    expect(
+      invokeToolCapability(
+        { installId: 'nope', capabilityId: CAPS.read, params: {}, nowMs: T0 },
+        { workflow },
+      ),
+    ).toMatchObject({
       ok: false,
       code: 'install_unknown',
     });
@@ -347,11 +440,16 @@ describe('invokeToolCapability — the gate (§8 / §11.5)', () => {
 
   it('with no registry wired the door is closed', () => {
     setPluginInstallRepository(null);
-    expect(invoke(CAPS.read, { ref: 'r' })).toMatchObject({ ok: false, code: 'registry_unavailable' });
+    expect(invoke(CAPS.read, { ref: 'r' })).toMatchObject({
+      ok: false,
+      code: 'registry_unavailable',
+    });
   });
 
   it('a task is a plugin invocation only by its pinned payload type', () => {
-    expect(isPluginInvocationTask({ payload: JSON.stringify({ type: 'intent_validation' }) })).toBe(false);
+    expect(isPluginInvocationTask({ payload: JSON.stringify({ type: 'intent_validation' }) })).toBe(
+      false,
+    );
     expect(isPluginInvocationTask({ payload: 'not json' })).toBe(false);
   });
 });
@@ -373,15 +471,26 @@ describe('parseApprovalGrantRequest — the approve body’s grant block (§15.5
   it('accepts a window of at most 24 hours and a bounded standing grant; refuses everything else', () => {
     expect(parseApprovalGrantRequest(undefined)).toBeNull();
     expect(parseApprovalGrantRequest({ type: 'window' })).toEqual({ type: 'window' });
-    expect(parseApprovalGrantRequest({ type: 'window', hours: 2 })).toEqual({ type: 'window', hours: 2 });
+    expect(parseApprovalGrantRequest({ type: 'window', hours: 2 })).toEqual({
+      type: 'window',
+      hours: 2,
+    });
     expect(parseApprovalGrantRequest({ type: 'window', hours: 25 })).toBe('invalid');
     expect(parseApprovalGrantRequest({ type: 'window', hours: 0 })).toBe('invalid');
-    expect(parseApprovalGrantRequest({ type: 'standing', constraints: { version: 1, max_count: 5 }, expires_in_hours: 48 })).toEqual({
+    expect(
+      parseApprovalGrantRequest({
+        type: 'standing',
+        constraints: { version: 1, max_count: 5 },
+        expires_in_hours: 48,
+      }),
+    ).toEqual({
       type: 'standing',
       constraints: { version: 1, max_count: 5 },
       expires_in_hours: 48,
     });
-    expect(parseApprovalGrantRequest({ type: 'standing', constraints: { version: 9 } })).toBe('invalid');
+    expect(parseApprovalGrantRequest({ type: 'standing', constraints: { version: 9 } })).toBe(
+      'invalid',
+    );
     expect(parseApprovalGrantRequest({ type: 'standing', expires_in_hours: -1 })).toBe('invalid');
     expect(parseApprovalGrantRequest({ type: 'forever' })).toBe('invalid');
     expect(parseApprovalGrantRequest('window')).toBe('invalid');

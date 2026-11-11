@@ -15,7 +15,10 @@
           "did": { "type": "string", "format": "did" },
           "publisher_epoch": { "type": "integer", "minimum": 0 },
           "publisher_instance": { "type": "string", "description": "A v4 UUID." },
-          "sig": { "type": "string", "description": "Base64 Ed25519 signature by #dina_signing over the RFC 8785 form without sig." }
+          "sig": {
+            "type": "string",
+            "description": "Base64 Ed25519 signature by #dina_signing over the RFC 8785 form without sig."
+          }
         }
       }
     }

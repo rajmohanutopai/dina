@@ -49,7 +49,10 @@ const STATE_LABEL: Record<CosigInboxRowDisplay['state'], string> = {
   expired: 'Expired',
 };
 
-const STATE_ICON: Record<CosigInboxRowDisplay['state'], 'time' | 'checkmark-circle' | 'close-circle' | 'hourglass'> = {
+const STATE_ICON: Record<
+  CosigInboxRowDisplay['state'],
+  'time' | 'checkmark-circle' | 'close-circle' | 'hourglass'
+> = {
   pending: 'time',
   accepted: 'checkmark-circle',
   declined: 'close-circle',
@@ -80,9 +83,7 @@ export interface CosigInboxRowViewProps {
   onAction?: (rowId: string, action: CosigInboxAction) => void;
 }
 
-export function CosigInboxRowView(
-  props: CosigInboxRowViewProps,
-): React.ReactElement {
+export function CosigInboxRowView(props: CosigInboxRowViewProps): React.ReactElement {
   const { rowId, display, onPress, onAction } = props;
   const showExpiry = display.state === 'pending' && display.msUntilExpiry > 0;
 
@@ -95,11 +96,7 @@ export function CosigInboxRowView(
       accessibilityLabel={`${display.title}. ${STATE_LABEL[display.state]}`}
     >
       <View style={styles.header}>
-        <Ionicons
-          name={STATE_ICON[display.state]}
-          size={16}
-          color={STATE_COLOUR[display.state]}
-        />
+        <Ionicons name={STATE_ICON[display.state]} size={16} color={STATE_COLOUR[display.state]} />
         <Text
           style={[styles.stateLabel, { color: STATE_COLOUR[display.state] }]}
           testID={`cosig-inbox-state-${rowId}`}
@@ -125,10 +122,7 @@ export function CosigInboxRowView(
           {display.actions.includes('endorse') && (
             <Pressable
               onPress={onAction ? () => onAction(rowId, 'endorse') : undefined}
-              style={({ pressed }) => [
-                styles.endorseBtn,
-                pressed && styles.endorseBtnPressed,
-              ]}
+              style={({ pressed }) => [styles.endorseBtn, pressed && styles.endorseBtnPressed]}
               testID={`cosig-inbox-endorse-${rowId}`}
               accessibilityRole="button"
               accessibilityLabel="Endorse"
@@ -140,10 +134,7 @@ export function CosigInboxRowView(
           {display.actions.includes('decline') && (
             <Pressable
               onPress={onAction ? () => onAction(rowId, 'decline') : undefined}
-              style={({ pressed }) => [
-                styles.declineBtn,
-                pressed && styles.declineBtnPressed,
-              ]}
+              style={({ pressed }) => [styles.declineBtn, pressed && styles.declineBtnPressed]}
               testID={`cosig-inbox-decline-${rowId}`}
               accessibilityRole="button"
               accessibilityLabel="Decline"

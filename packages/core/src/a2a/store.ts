@@ -66,7 +66,14 @@ export const OUTBOUND_OPERATION_STATES = [
 export type OutboundOperationState = (typeof OUTBOUND_OPERATION_STATES)[number];
 
 /** An inbound operation is `open` until it ends, once (design §7.4). */
-export const INBOUND_OPERATION_STATES = ['open', 'rejected', 'completed', 'failed', 'canceled', 'outcome_unknown'] as const;
+export const INBOUND_OPERATION_STATES = [
+  'open',
+  'rejected',
+  'completed',
+  'failed',
+  'canceled',
+  'outcome_unknown',
+] as const;
 export type InboundOperationState = (typeof INBOUND_OPERATION_STATES)[number];
 export const TERMINAL_INBOUND_STATES: ReadonlySet<InboundOperationState> = new Set(
   INBOUND_OPERATION_STATES.filter((s) => s !== 'open'),
@@ -359,7 +366,11 @@ export class A2AStore {
       // Throwing inside the transaction rolls back whatever it wrote before
       // its first await. What runs after that await cannot be stopped here:
       // this is a trap for a programming mistake, not a way to run async work.
-      if (value !== null && typeof value === 'object' && typeof (value as { then?: unknown }).then === 'function') {
+      if (
+        value !== null &&
+        typeof value === 'object' &&
+        typeof (value as { then?: unknown }).then === 'function'
+      ) {
         throw new Error('A2AStore.transaction: the body must be synchronous');
       }
       out = { value };
@@ -547,7 +558,10 @@ export class A2AStore {
 
   /** Record that a rotation replaced `oldRef` with `newRef`. */
   setCredentialReplacement(oldRef: string, newRef: string): void {
-    this.db.run(`UPDATE a2a_remote_credentials SET replaced_by = ? WHERE credential_ref = ?`, [newRef, oldRef]);
+    this.db.run(`UPDATE a2a_remote_credentials SET replaced_by = ? WHERE credential_ref = ?`, [
+      newRef,
+      oldRef,
+    ]);
   }
 
   /**
@@ -576,11 +590,10 @@ export class A2AStore {
    * `readCredentialMaterial`, which only `credentials.ts`'s one door calls.
    */
   insertCredentialSecret(ref: string, material: string, nowMs: number): void {
-    this.db.execute(`INSERT INTO a2a_credential_secrets (credential_ref, material, created_at) VALUES (?, ?, ?)`, [
-      ref,
-      material,
-      nowMs,
-    ]);
+    this.db.execute(
+      `INSERT INTO a2a_credential_secrets (credential_ref, material, created_at) VALUES (?, ?, ?)`,
+      [ref, material, nowMs],
+    );
   }
 
   deleteCredentialSecret(ref: string): boolean {
@@ -720,10 +733,10 @@ export class A2AStore {
   /** A principal's inbound tasks in one state, oldest first. */
   inboundTasksOf(principal: string, state: string): A2ATaskRow[] {
     return rows(
-      this.db.query(`SELECT * FROM a2a_tasks WHERE direction = 'inbound' AND principal = ? AND state = ? ORDER BY id`, [
-        principal,
-        state,
-      ]),
+      this.db.query(
+        `SELECT * FROM a2a_tasks WHERE direction = 'inbound' AND principal = ? AND state = ? ORDER BY id`,
+        [principal, state],
+      ),
     );
   }
 
@@ -790,8 +803,14 @@ export class A2AStore {
   }
 
   /** Ended outbound operations whose last state change is at or before `endedBefore`, oldest first. */
-  listEndedTasksBefore(direction: 'inbound' | 'outbound', endedBefore: number, limit: number): A2ATaskRow[] {
-    const ended: string[] = [...(direction === 'outbound' ? TERMINAL_OUTBOUND_STATES : TERMINAL_INBOUND_STATES)];
+  listEndedTasksBefore(
+    direction: 'inbound' | 'outbound',
+    endedBefore: number,
+    limit: number,
+  ): A2ATaskRow[] {
+    const ended: string[] = [
+      ...(direction === 'outbound' ? TERMINAL_OUTBOUND_STATES : TERMINAL_INBOUND_STATES),
+    ];
     return rows(
       this.db.query(
         `SELECT * FROM a2a_tasks
@@ -824,10 +843,10 @@ export class A2AStore {
     if (op.direction === 'inbound') {
       // The receipt answers a replay with this task; with the task gone, it
       // would answer with one GetTask cannot find.
-      this.db.run(`DELETE FROM a2a_idempotency_receipts WHERE principal = ? AND mapped_external_id = ?`, [
-        op.principal,
-        op.external_id,
-      ]);
+      this.db.run(
+        `DELETE FROM a2a_idempotency_receipts WHERE principal = ? AND mapped_external_id = ?`,
+        [op.principal, op.external_id],
+      );
     }
     this.db.run(`DELETE FROM a2a_tasks WHERE id = ?`, [id]);
   }
@@ -866,7 +885,14 @@ export class A2AStore {
     this.db.execute(
       `INSERT INTO a2a_task_children (child_task_id, operation_ref, generation, role, created_at, pep_did)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      [row.child_task_id, row.operation_ref, row.generation, row.role, row.created_at, row.pep_did ?? null],
+      [
+        row.child_task_id,
+        row.operation_ref,
+        row.generation,
+        row.role,
+        row.created_at,
+        row.pep_did ?? null,
+      ],
     );
   }
 
@@ -1082,12 +1108,24 @@ export class A2AStore {
     this.db.execute(
       `INSERT INTO a2a_entities (operation_ref, placeholder, seal, persona, sealed, created_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [row.operation_ref, row.placeholder, row.seal, row.persona, row.sealed, row.created_at, row.expires_at],
+      [
+        row.operation_ref,
+        row.placeholder,
+        row.seal,
+        row.persona,
+        row.sealed,
+        row.created_at,
+        row.expires_at,
+      ],
     );
   }
 
   entitiesOf(operationRef: number): EntityRow[] {
-    return rows(this.db.query(`SELECT * FROM a2a_entities WHERE operation_ref = ? ORDER BY placeholder`, [operationRef]));
+    return rows(
+      this.db.query(`SELECT * FROM a2a_entities WHERE operation_ref = ? ORDER BY placeholder`, [
+        operationRef,
+      ]),
+    );
   }
 
   /**
@@ -1115,9 +1153,10 @@ export class A2AStore {
   }
 
   countProposalRefusalsAfter(after: number): number {
-    const row = this.db.query(`SELECT COUNT(*) AS n FROM a2a_proposal_refusals WHERE refused_at > ?`, [after])[0] as
-      | { n?: number }
-      | undefined;
+    const row = this.db.query(
+      `SELECT COUNT(*) AS n FROM a2a_proposal_refusals WHERE refused_at > ?`,
+      [after],
+    )[0] as { n?: number } | undefined;
     return Number(row?.n ?? 0);
   }
 
@@ -1177,7 +1216,11 @@ export class A2AStore {
 
   /** Move an inbound task's event cursor (§7.5): the count of events recorded, and the state the last one reported. */
   setEventCursor(id: number, seq: number, state: string): void {
-    this.db.run(`UPDATE a2a_tasks SET event_seq = ?, event_state = ? WHERE id = ?`, [seq, state, id]);
+    this.db.run(`UPDATE a2a_tasks SET event_seq = ?, event_state = ? WHERE id = ?`, [
+      seq,
+      state,
+      id,
+    ]);
   }
 
   insertPushConfig(row: PushConfigRow): void {
@@ -1188,12 +1231,20 @@ export class A2AStore {
   }
 
   getPushConfig(operationRef: number, id: string): PushConfigRow | null {
-    return first(this.db.query(`SELECT * FROM a2a_push_configs WHERE operation_ref = ? AND id = ?`, [operationRef, id]));
+    return first(
+      this.db.query(`SELECT * FROM a2a_push_configs WHERE operation_ref = ? AND id = ?`, [
+        operationRef,
+        id,
+      ]),
+    );
   }
 
   pushConfigsOf(operationRef: number): PushConfigRow[] {
     return rows(
-      this.db.query(`SELECT * FROM a2a_push_configs WHERE operation_ref = ? ORDER BY created_at, id`, [operationRef]),
+      this.db.query(
+        `SELECT * FROM a2a_push_configs WHERE operation_ref = ? ORDER BY created_at, id`,
+        [operationRef],
+      ),
     );
   }
 
@@ -1208,16 +1259,34 @@ export class A2AStore {
         WHERE operation_ref = ? AND target_kind = 'webhook' AND target_id = ? AND status IN ('pending','claimed')`,
       [operationRef, id],
     );
-    return this.db.run(`DELETE FROM a2a_push_configs WHERE operation_ref = ? AND id = ?`, [operationRef, id]) === 1;
+    return (
+      this.db.run(`DELETE FROM a2a_push_configs WHERE operation_ref = ? AND id = ?`, [
+        operationRef,
+        id,
+      ]) === 1
+    );
   }
 
   /** Add one event row; a row already there for the same (event, target) stays as it is. */
-  insertOutboxRow(row: Omit<OutboxRow, 'id' | 'status' | 'claim_id' | 'claimed_by' | 'claimed_until' | 'attempts' | 'next_attempt_at'>): void {
+  insertOutboxRow(
+    row: Omit<
+      OutboxRow,
+      'id' | 'status' | 'claim_id' | 'claimed_by' | 'claimed_until' | 'attempts' | 'next_attempt_at'
+    >,
+  ): void {
     this.db.execute(
       `INSERT OR IGNORE INTO a2a_push_outbox
          (operation_ref, source_event_id, seq, target_kind, target_id, event_json, status, attempts, created_at)
        VALUES (?, ?, ?, ?, ?, ?, 'pending', 0, ?)`,
-      [row.operation_ref, row.source_event_id, row.seq, row.target_kind, row.target_id, row.event_json, row.created_at],
+      [
+        row.operation_ref,
+        row.source_event_id,
+        row.seq,
+        row.target_kind,
+        row.target_id,
+        row.event_json,
+        row.created_at,
+      ],
     );
   }
 
@@ -1226,7 +1295,11 @@ export class A2AStore {
   }
 
   outboxOf(operationRef: number): OutboxRow[] {
-    return rows(this.db.query(`SELECT * FROM a2a_push_outbox WHERE operation_ref = ? ORDER BY id`, [operationRef]));
+    return rows(
+      this.db.query(`SELECT * FROM a2a_push_outbox WHERE operation_ref = ? ORDER BY id`, [
+        operationRef,
+      ]),
+    );
   }
 
   /**
@@ -1237,12 +1310,7 @@ export class A2AStore {
    * fill a stream claim.
    */
   dueStreamRows(nowMs: number, limit: number): OutboxRow[] {
-    return rows(
-      this.db.query(
-        DUE_STREAM_ROWS_SQL,
-        [nowMs, nowMs, nowMs, nowMs, limit],
-      ),
-    );
+    return rows(this.db.query(DUE_STREAM_ROWS_SQL, [nowMs, nowMs, nowMs, nowMs, limit]));
   }
 
   /**
@@ -1253,16 +1321,17 @@ export class A2AStore {
    * another's events wait.
    */
   dueWebhookHeads(nowMs: number, limit: number): OutboxRow[] {
-    return rows(
-      this.db.query(
-        DUE_WEBHOOK_HEADS_SQL,
-        [nowMs, nowMs, limit],
-      ),
-    );
+    return rows(this.db.query(DUE_WEBHOOK_HEADS_SQL, [nowMs, nowMs, limit]));
   }
 
   /** Take a due row under a lease; false when another claim got it first. */
-  claimOutboxRow(id: number, claimId: string, claimant: string, untilMs: number, nowMs: number): boolean {
+  claimOutboxRow(
+    id: number,
+    claimId: string,
+    claimant: string,
+    untilMs: number,
+    nowMs: number,
+  ): boolean {
     return (
       this.db.run(
         `UPDATE a2a_push_outbox
@@ -1287,7 +1356,13 @@ export class A2AStore {
         `UPDATE a2a_push_outbox
             SET status = ?, next_attempt_at = ?, claim_id = NULL, claimed_by = NULL, claimed_until = NULL
           WHERE id = ? AND status = 'claimed' AND claim_id = ? AND claimed_by = ?`,
-        [to.status, to.status === 'pending' ? to.nextAttemptAt : null, id, claim.claimId, claim.claimant],
+        [
+          to.status,
+          to.status === 'pending' ? to.nextAttemptAt : null,
+          id,
+          claim.claimId,
+          claim.claimant,
+        ],
       ) === 1
     );
   }
@@ -1330,7 +1405,9 @@ export class A2AStore {
 
   /** A client's credential generation: 0 until one of its credentials ends, and for no such client. */
   credentialGen(clientId: string): number {
-    const rows = this.db.query(`SELECT credential_gen FROM a2a_clients WHERE client_id = ?`, [clientId]) as unknown as {
+    const rows = this.db.query(`SELECT credential_gen FROM a2a_clients WHERE client_id = ?`, [
+      clientId,
+    ]) as unknown as {
       credential_gen: number;
     }[];
     return rows[0]?.credential_gen ?? 0;

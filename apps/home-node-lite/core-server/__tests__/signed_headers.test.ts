@@ -71,7 +71,7 @@ describe('extractSignedHeaders (task 4.21)', () => {
       [HEADER_SIGNATURE, 'missing_signature'],
     ])('undefined %s → %s', (header, reason) => {
       const h = validHeaders();
-      delete h[header];
+      Reflect.deleteProperty(h, header);
       expect(extractSignedHeaders(h)).toEqual({ ok: false, reason });
     });
 
@@ -178,14 +178,14 @@ describe('extractSignedHeaders (task 4.21)', () => {
     // order helps log-grepping.
     it('reports missing_did before other failures', () => {
       const h = validHeaders();
-      delete h[HEADER_DID];
-      delete h[HEADER_NONCE];
+      Reflect.deleteProperty(h, HEADER_DID);
+      Reflect.deleteProperty(h, HEADER_NONCE);
       expect(extractSignedHeaders(h)).toMatchObject({ ok: false, reason: 'missing_did' });
     });
 
     it('reports missing headers before malformed headers', () => {
       const h = validHeaders();
-      delete h[HEADER_DID];
+      Reflect.deleteProperty(h, HEADER_DID);
       h[HEADER_SIGNATURE] = 'bad';
       expect(extractSignedHeaders(h)).toMatchObject({ ok: false, reason: 'missing_did' });
     });

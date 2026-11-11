@@ -95,7 +95,10 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
     setWorkflowService(new WorkflowService({ repository: new InMemoryWorkflowRepository() }));
     setAgentGrantRepository(new InMemoryAgentGrantRepository());
     const sessions = new SessionRegistry();
-    sessionId = sessions.start({ agentDid: AGENT_DID, hostSessionId: 'workflow-authz-test' }).sessionId;
+    sessionId = sessions.start({
+      agentDid: AGENT_DID,
+      hostSessionId: 'workflow-authz-test',
+    }).sessionId;
     setSessionRegistry(sessions);
     setAgentPersonaUnlockHook(null); // grant row alone gates the in-memory vault
   });
@@ -202,9 +205,9 @@ describe('workflow approve/deny — agent callers are refused (no self-approval)
       // Terminal (cancelled), NOT a stranded 'queued' zombie the agent re-dedupes.
       expect(getWorkflowService()?.store().getById(taskId)?.status).toBe('cancelled');
       // No active grant survived the throw.
-      expect(
-        grantRepo.findActiveGrant(AGENT_DID, 'health', 'read', sessionId, Date.now()),
-      ).toBe(null);
+      expect(grantRepo.findActiveGrant(AGENT_DID, 'health', 'read', sessionId, Date.now())).toBe(
+        null,
+      );
     } finally {
       spy.mockRestore();
     }

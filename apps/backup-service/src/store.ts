@@ -42,7 +42,9 @@ export interface CopyRow {
 }
 
 export type PutOutcome = 'stored' | 'not_newer';
-export type GetOutcome = { ok: true; bytes: Uint8Array; counter: number } | { ok: false; reason: 'not_found' | 'corrupt' };
+export type GetOutcome =
+  | { ok: true; bytes: Uint8Array; counter: number }
+  | { ok: false; reason: 'not_found' | 'corrupt' };
 
 export class CopyStore {
   private readonly db: Database.Database;
@@ -93,7 +95,9 @@ export class CopyStore {
             )
             .get(backupId)
         : this.db
-            .prepare('SELECT counter, digest, bytes FROM copies WHERE backup_id = ? AND counter = ?')
+            .prepare(
+              'SELECT counter, digest, bytes FROM copies WHERE backup_id = ? AND counter = ?',
+            )
             .get(backupId, counter)
     ) as { counter: number; digest: string; bytes: Buffer } | undefined;
     if (row === undefined) return { ok: false, reason: 'not_found' };

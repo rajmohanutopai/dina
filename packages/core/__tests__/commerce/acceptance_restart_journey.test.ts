@@ -45,6 +45,7 @@ import {
   buildBuyerApprovalPayload,
   type BuyerApprovalContext,
 } from '../../src/commerce/approval_payload';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import { submitApprovedOrder } from '../../src/commerce/buyer_executor';
 import { describeOrderForOwner } from '../../src/commerce/buyer_reconciliation';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
@@ -80,7 +81,6 @@ import {
 
 import type { CommerceRuntime } from '../../src/commerce/runtime';
 import type { PurchaseOrderProposal } from '@dina/commerce-protocol';
-import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 
 /** The owner this node acts for. §7.3: one grant, evaluated like any other. */
 const TEST_OWNER_DID = 'did:plc:testowner00000000';
@@ -292,7 +292,7 @@ afterEach(() => {
  * A module const would capture `buyerPack` before `beforeEach` assigns it.
  */
 function buildContext(): BuyerApprovalContext {
-    return {
+  return {
     actingBusinessDid: BUYER_DID,
     principal: {
       principalDid: 'did:plc:sanchoowner',
@@ -378,10 +378,17 @@ function deliverToSancho(index: number): void {
     body: JSON.stringify(frame.body),
   };
   asSancho(() =>
-    receiveD2D(sealMessage(msg, chairmakerPriv, sanchoPub), sanchoPub, sanchoPriv, [chairmakerPub], 'unknown', {
-      authenticatedFromDID: SUPPLIER_DID,
-      authenticatedToDID: BUYER_DID,
-    }),
+    receiveD2D(
+      sealMessage(msg, chairmakerPriv, sanchoPub),
+      sanchoPub,
+      sanchoPriv,
+      [chairmakerPub],
+      'unknown',
+      {
+        authenticatedFromDID: SUPPLIER_DID,
+        authenticatedToDID: BUYER_DID,
+      },
+    ),
   );
 }
 
@@ -400,7 +407,7 @@ async function sanchoBuys(): Promise<void> {
         await chairmakerHandles(theOrder);
         return { kind: 'ambiguous', reason: 'sent; awaiting the supplier acknowledgement' };
       },
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({
@@ -484,7 +491,7 @@ describe('§25.6 step 13 — both sides restart mid-trade', () => {
           sends += 1;
           return { kind: 'ambiguous', reason: 'sent' };
         },
-      
+
         // DR-1: authority is REQUIRED now. The single-owner configuration is
         // one grant evaluated like any other — not a branch that skips §7.3.
         authority: singleOwnerAuthority({

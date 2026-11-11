@@ -370,7 +370,11 @@ describe('boot reconciliation — the staff cascade retries after a crash (§6.2
     const removedPins: string[] = [];
     installCommerceRuntime({
       staffGrants,
-      staffPins: { put: () => undefined, get: () => null, remove: (did: string) => removedPins.push(did) },
+      staffPins: {
+        put: () => undefined,
+        get: () => null,
+        remove: (did: string) => removedPins.push(did),
+      },
     } as unknown as CommerceRuntime);
     try {
       const d = registerDevice('Order clerk phone', 'z6MkStaffCrash', 'staff');

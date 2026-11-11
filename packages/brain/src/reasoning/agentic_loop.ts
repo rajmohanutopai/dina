@@ -195,7 +195,11 @@ export async function runAgenticTurn(args: {
    * owner's vault before anything else). A call that needs the owner's
    * approval pauses the turn exactly like a model-made one.
    */
-  seedToolCalls?: { name: string; arguments: Record<string, unknown>; onlyIfNothingFound?: boolean }[];
+  seedToolCalls?: {
+    name: string;
+    arguments: Record<string, unknown>;
+    onlyIfNothingFound?: boolean;
+  }[];
 }): Promise<AgenticLoopResult> {
   const { provider, tools, systemPrompt, initialMessages = [], userMessage, options = {} } = args;
   let transcript: ChatMessage[] = [...initialMessages, { role: 'user', content: userMessage }];
@@ -216,9 +220,11 @@ export async function runAgenticTurn(args: {
     const run = firstOutcomes.some(found) ? first : [...first, ...later];
     const calls = run.map((c, i) => ({ id: `seed-${i}`, name: c.name, arguments: c.arguments }));
     transcript = [...transcript, { role: 'assistant', content: '', toolCalls: calls }];
-    for (let i = 0; i < calls.length; i++) {
-      const call = calls[i]!;
-      const outcome = i < firstOutcomes.length ? firstOutcomes[i] : await tools.execute(call.name, call.arguments);
+    for (const [i, call] of calls.entries()) {
+      const outcome =
+        i < firstOutcomes.length
+          ? firstOutcomes[i]
+          : await tools.execute(call.name, call.arguments);
       toolLog.push(buildToolLogEntry(call.name, call.arguments, outcome));
       if (isApprovalRequired(outcome)) {
         return {
@@ -592,11 +598,12 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
     const batchedTerminal =
       resp.toolCalls.some((c) => tools.isTerminal(c.name)) &&
       resp.toolCalls.some((c) => !tools.isTerminal(c.name));
-    for (let i = 0; i < resp.toolCalls.length; i++) {
-      const call = resp.toolCalls[i]!;
+    for (const [i, call] of resp.toolCalls.entries()) {
       if (options.signal?.aborted) return done('cancelled');
       if (batchedTerminal && tools.isTerminal(call.name)) {
-        console.log('[agentic_loop] terminal tool batched with others — not run', { tool: call.name });
+        console.log('[agentic_loop] terminal tool batched with others — not run', {
+          tool: call.name,
+        });
         const skipped: ToolExecutionOutcome = {
           success: false,
           code: 'execution_failed',
@@ -611,7 +618,11 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
         // the wrap-up request pairs each tool call with its result (some
         // providers refuse a dangling call).
         for (const left of resp.toolCalls.slice(i)) {
-          const notRun: ToolExecutionOutcome = { success: false, code: 'execution_failed', error: 'not run: the step budget for this request ran out' };
+          const notRun: ToolExecutionOutcome = {
+            success: false,
+            code: 'execution_failed',
+            error: 'not run: the step budget for this request ran out',
+          };
           transcript = pushToolResult(transcript, left.id, left.name, notRun);
         }
         const wrapped = await wrapUp();
@@ -689,7 +700,8 @@ async function runLoopBody(state: LoopBodyInput): Promise<AgenticLoopResult> {
       if (outcome.success === true && tools.isTerminal(call.name)) {
         // The model's own words when it wrote any; otherwise the tool's note,
         // so the owner is never handed an empty reply.
-        answer = resp.content.trim() !== '' ? resp.content : tools.ownerNote(call.name, outcome.result);
+        answer =
+          resp.content.trim() !== '' ? resp.content : tools.ownerNote(call.name, outcome.result);
         console.log('[agentic_loop] terminal tool — finalizing turn', { tool: call.name });
         return done('completed');
       }

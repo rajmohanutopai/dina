@@ -700,9 +700,13 @@ describe('the Slot Pack at the owner’s doors (SHELF_SPACE_NEGOTIATION §4)', (
   it('a paused half is still held (its listings stay); a device-revoked or revoked half is not', async () => {
     const begun = await slotBegin('seller');
     const installId = String(begun.body.install_id);
-    const paired = await router.handle(post('/v1/commerce/install/bind_reference_runner', { install_id: installId }));
+    const paired = await router.handle(
+      post('/v1/commerce/install/bind_reference_runner', { install_id: installId }),
+    );
     const deviceDid = (paired.body as { device_did: string }).device_did;
-    await router.handle(post('/v1/commerce/install/confirm', { install_id: installId, device_did: deviceDid }));
+    await router.handle(
+      post('/v1/commerce/install/confirm', { install_id: installId, device_did: deviceDid }),
+    );
     const installs = getPluginInstallRepository();
     if (installs === null) throw new Error('no registry');
     expect(termPackHeld('term_seller')).toBe(true);

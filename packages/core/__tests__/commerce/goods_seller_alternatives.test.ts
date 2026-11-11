@@ -87,13 +87,16 @@ describe("the seller's cheaper days", () => {
         id: 'n1',
         kind: 'goods.seller',
         covers: ['saving_share'],
-        body: { type: 'never' as const, label: 'never most', all: [{ part: 'saving_share', choice: 'most' }] },
+        body: {
+          type: 'never' as const,
+          label: 'never most',
+          all: [{ part: 'saving_share', choice: 'most' }],
+        },
       },
     ];
     expect(offered(8_000, neverMost)).toEqual([]);
     expect(offered(5_000, neverMost)).toEqual(['4000']);
   });
-
 
   it('S-30: Tuesday saves the seller ₹80; ₹40 is offered', () => {
     const offered = costLedAlternatives({

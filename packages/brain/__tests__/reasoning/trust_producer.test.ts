@@ -75,10 +75,8 @@ describe('fetchSellerTrustBp — fail-soft per DID', () => {
       'did:plc:ok': { overallTrustScore: 0.6 },
       'did:plc:boom': new Error('appview down'),
     });
-    const result = await fetchSellerTrustBp(
-      client,
-      ['did:plc:ok', 'did:plc:boom'],
-      (e) => events.push(e),
+    const result = await fetchSellerTrustBp(client, ['did:plc:ok', 'did:plc:boom'], (e) =>
+      events.push(e),
     );
     expect(result.get('did:plc:ok')).toBe(6000);
     expect(result.has('did:plc:boom')).toBe(false);

@@ -49,6 +49,7 @@ import { registerAntiHerClassifier } from '../guardian/anti_her_classify';
 import { DEFAULT_SENSITIVE_PERSONAS, LLMRouter, RoutedLLMProvider } from '../llm/router_dispatch';
 import { registerPersonLinkProvider } from '../person/linking';
 import { registerIdentityExtractor } from '../pipeline/identity_extraction';
+import { createPlanTools } from '../plan/plan_tools';
 import { createListPromisesTool } from '../promises/list_promises_tool';
 import {
   createDelegateToA2AAgentTool,
@@ -60,6 +61,8 @@ import {
 import { createClassifyIntentTool } from '../reasoning/classify_intent_tool';
 import { createDelegateToAgentTool } from '../reasoning/delegate_agent_tool';
 import { createDraftReviewTool } from '../reasoning/draft_review_tool';
+import { createExportTool } from '../reasoning/export_tool';
+import { createForgetTool } from '../reasoning/forget_tool';
 import {
   createCoordinateGroupTool,
   createGroupPlanHandoffTool,
@@ -82,11 +85,6 @@ import {
   type ResearchCache,
 } from '../reasoning/product_tools';
 import { createDraftQuoteRequestTool } from '../reasoning/quote_request_tool';
-import { createExportTool } from '../reasoning/export_tool';
-import { createForgetTool } from '../reasoning/forget_tool';
-import { createSpendAllowanceTool } from '../reasoning/spend_allowance_tool';
-import { createStandingReplyTool } from '../reasoning/standing_reply_tool';
-import { createPlanTools } from '../plan/plan_tools';
 import { createRememberChatTool } from '../reasoning/remember_chat_tool';
 import { createScheduleReminderTool } from '../reasoning/schedule_reminder_tool';
 import { createSendMessageTool } from '../reasoning/send_message_tool';
@@ -97,6 +95,8 @@ import {
   createQueryServiceTool,
   createFindPreferredProviderTool,
 } from '../reasoning/service_tools';
+import { createSpendAllowanceTool } from '../reasoning/spend_allowance_tool';
+import { createStandingReplyTool } from '../reasoning/standing_reply_tool';
 import { ToolRegistry } from '../reasoning/tool_registry';
 import { createSearchUcpMerchantsTool } from '../reasoning/ucp_merchant_index_tool';
 import { createUcpShopTools, type UcpShopCoreClient } from '../reasoning/ucp_shop_tools';
@@ -129,8 +129,8 @@ import {
   type VaultApprovalWorkflowClient,
 } from './persona_guard';
 
-import type { DecisionBackend } from '../llm/decisions';
 import type { LLMProvider } from '../llm/adapters/provider';
+import type { DecisionBackend } from '../llm/decisions';
 import type { ProviderName, TaskType } from '../llm/router';
 import type { AgenticAskHandlerOptions } from '../reasoning/ask_handler';
 
@@ -341,7 +341,10 @@ export interface AgenticAskPipeline {
   /** Up to three close contacts' names, closest first (Law 4, §8). */
   closeContacts?: () => Promise<string[]>;
   /** Report-or-enforce for the reply guards (REAL_LIFE_FIXES_2 §0); report when unknown. */
-  guardModes?: () => Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }>;
+  guardModes?: () => Promise<{
+    action_claims: 'report' | 'enforce';
+    regulated: 'report' | 'enforce';
+  }>;
   /** The owner's time zone (REAL_LIFE_FIXES_2 §0); the host's when unknown. */
   ownerTimeZone?: () => Promise<string>;
   /** Core's forget counter (REAL_LIFE_FIXES_2 §4.4); Brain reloads its threads when it moves. */
@@ -397,10 +400,19 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
   const closeContacts = async (): Promise<string[]> => {
     if (typeof contactsCore.listContacts !== 'function') return [];
     const rank = (t: string): number =>
-      t === 'contact_ring1' || t === 'trusted' || t === 'verified' ? 0 : t === 'contact_ring2' ? 1 : 2;
+      t === 'contact_ring1' || t === 'trusted' || t === 'verified'
+        ? 0
+        : t === 'contact_ring2'
+          ? 1
+          : 2;
     const all = await contactsCore.listContacts();
     return all
-      .filter((c) => c.trustLevel !== 'blocked' && typeof c.displayName === 'string' && c.displayName.trim() !== '')
+      .filter(
+        (c) =>
+          c.trustLevel !== 'blocked' &&
+          typeof c.displayName === 'string' &&
+          c.displayName.trim() !== '',
+      )
       .sort((a, b) => rank(String(a.trustLevel)) - rank(String(b.trustLevel)))
       .slice(0, 3)
       .map((c) => c.displayName);
@@ -466,7 +478,9 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       // PROMISES_AND_WAITS.md: what the owner is owed and owes, joined.
       const promisesCore = input.coreClient as Partial<Pick<CoreClient, 'promisesList'>>;
       if (typeof promisesCore.promisesList === 'function') {
-        reg.register(createListPromisesTool({ core: promisesCore as Pick<CoreClient, 'promisesList'> }));
+        reg.register(
+          createListPromisesTool({ core: promisesCore as Pick<CoreClient, 'promisesList'> }),
+        );
       }
       // REAL_LIFE_FIXES §7: message a contact on the owner's word.
       const talkCore = input.coreClient as Partial<Pick<CoreClient, 'talkSend'>>;
@@ -481,32 +495,59 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       // REAL_LIFE_FIXES_2 §5: the owner's readable export (manifest only here).
       const exportCore = input.coreClient as Partial<Pick<CoreClient, 'ownerExportPrepare'>>;
       if (typeof exportCore.ownerExportPrepare === 'function') {
-        reg.register(createExportTool({ core: exportCore as Pick<CoreClient, 'ownerExportPrepare'> }));
+        reg.register(
+          createExportTool({ core: exportCore as Pick<CoreClient, 'ownerExportPrepare'> }),
+        );
       }
       // REAL_LIFE_FIXES_2 §14: standing replies, always confirmed on a card.
-      const standingCore = input.coreClient as Partial<Pick<CoreClient, 'standingReplyPropose' | 'standingReplyList' | 'standingReplyRevoke'>>;
-      if (typeof standingCore.standingReplyPropose === 'function' && typeof standingCore.standingReplyList === 'function' && typeof standingCore.standingReplyRevoke === 'function') {
+      const standingCore = input.coreClient as Partial<
+        Pick<CoreClient, 'standingReplyPropose' | 'standingReplyList' | 'standingReplyRevoke'>
+      >;
+      if (
+        typeof standingCore.standingReplyPropose === 'function' &&
+        typeof standingCore.standingReplyList === 'function' &&
+        typeof standingCore.standingReplyRevoke === 'function'
+      ) {
         reg.register(
           createStandingReplyTool({
             thread: ownerChatThread,
-            core: standingCore as Pick<CoreClient, 'standingReplyPropose' | 'standingReplyList' | 'standingReplyRevoke'>,
+            core: standingCore as Pick<
+              CoreClient,
+              'standingReplyPropose' | 'standingReplyList' | 'standingReplyRevoke'
+            >,
           }),
         );
       }
       // REAL_LIFE_FIXES_2 §15: an agent's spending budget, set on a card in person.
-      const spendCore = input.coreClient as Partial<Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>>;
-      if (typeof spendCore.spendAllowancePropose === 'function' && typeof spendCore.spendAllowanceList === 'function' && typeof spendCore.spendAllowanceRevoke === 'function') {
+      const spendCore = input.coreClient as Partial<
+        Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>
+      >;
+      if (
+        typeof spendCore.spendAllowancePropose === 'function' &&
+        typeof spendCore.spendAllowanceList === 'function' &&
+        typeof spendCore.spendAllowanceRevoke === 'function'
+      ) {
         reg.register(
           createSpendAllowanceTool({
             thread: ownerChatThread,
-            core: spendCore as Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>,
+            core: spendCore as Pick<
+              CoreClient,
+              'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'
+            >,
           }),
         );
       }
       // COMMITMENT_KERNEL §15 step 5: drawing out the owner's deal values; every change is a card.
-      const valuesCore = input.coreClient as Partial<Pick<CoreClient, 'commitmentBrainView' | 'commitmentProposeChanges'>>;
-      if (typeof valuesCore.commitmentBrainView === 'function' && typeof valuesCore.commitmentProposeChanges === 'function') {
-        reg.register(createReadDealValuesTool({ core: valuesCore as Pick<CoreClient, 'commitmentBrainView'> }));
+      const valuesCore = input.coreClient as Partial<
+        Pick<CoreClient, 'commitmentBrainView' | 'commitmentProposeChanges'>
+      >;
+      if (
+        typeof valuesCore.commitmentBrainView === 'function' &&
+        typeof valuesCore.commitmentProposeChanges === 'function'
+      ) {
+        reg.register(
+          createReadDealValuesTool({ core: valuesCore as Pick<CoreClient, 'commitmentBrainView'> }),
+        );
         reg.register(
           createProposeDealValuesTool({
             thread: ownerChatThread,
@@ -518,13 +559,20 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
       const shareCore = input.coreClient as Partial<Pick<CoreClient, 'commitmentSetSavingShare'>>;
       if (typeof shareCore.commitmentSetSavingShare === 'function') {
         reg.register(
-          createSetSavingShareTool({ core: shareCore as Pick<CoreClient, 'commitmentSetSavingShare'> }),
+          createSetSavingShareTool({
+            core: shareCore as Pick<CoreClient, 'commitmentSetSavingShare'>,
+          }),
         );
       }
       // REAL_LIFE_FIXES_2 §4: forget on the owner's word; Core plans, the owner approves.
       const forgetCore = input.coreClient as Partial<Pick<CoreClient, 'forgetPropose'>>;
       if (typeof forgetCore.forgetPropose === 'function') {
-        reg.register(createForgetTool({ thread: ownerChatThread, core: forgetCore as Pick<CoreClient, 'forgetPropose'> }));
+        reg.register(
+          createForgetTool({
+            thread: ownerChatThread,
+            core: forgetCore as Pick<CoreClient, 'forgetPropose'>,
+          }),
+        );
       }
     }
     const vaultOpts = {
@@ -564,9 +612,10 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     reg.register(createSearchCapabilitiesTool({ appViewClient: input.appViewClient }));
     // REAL_LIFE_FIXES §9: Core's record of providers that went quiet.
     const standingCore = input.coreClient as Partial<Pick<CoreClient, 'serviceProviderStanding'>>;
+    const serviceProviderStanding = standingCore.serviceProviderStanding;
     const providerStanding =
-      typeof standingCore.serviceProviderStanding === 'function'
-        ? (dids: string[]) => standingCore.serviceProviderStanding!(dids)
+      typeof serviceProviderStanding === 'function'
+        ? (dids: string[]) => serviceProviderStanding.call(standingCore, dids)
         : undefined;
     reg.register(
       createSearchProviderServicesTool({
@@ -584,7 +633,9 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
         // auto-fetch `schema_hash` on SHORTCUT dispatches. Fail-soft.
         appViewClient: input.appViewClient,
         logger: input.logger,
-        ...(scope.replyTo !== undefined && scope.replyTo !== '' ? { replyThread: scope.replyTo } : {}),
+        ...(scope.replyTo !== undefined && scope.replyTo !== ''
+          ? { replyThread: scope.replyTo }
+          : {}),
         ...(input.ownerDid !== undefined ? { selfDid: input.ownerDid } : {}),
         ...(providerStanding !== undefined ? { providerStanding } : {}),
       }),
@@ -599,7 +650,9 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     // PLUGIN_ARCHITECTURE §6 — `/ask` into the owner's installed plugins
     // (country-pack rails, third-party tools): list what is consented, ask one
     // capability to run. Core gates every ask; the owner decides on the phone.
-    reg.register(createListPluginCapabilitiesTool({ core: input.coreClient, logger: input.logger }));
+    reg.register(
+      createListPluginCapabilitiesTool({ core: input.coreClient, logger: input.logger }),
+    );
     reg.register(createInvokePluginTool({ core: input.coreClient, logger: input.logger }));
     // GROUP_COORDINATION §11 — "plan X with A, B and C": ONE tool hands the
     // guest list and candidates to Core, which fans out, bounds, collapses and
@@ -728,16 +781,19 @@ export function buildAgenticAskPipeline(input: BuildAgenticAskPipelineInput): Ag
     closeContacts,
     guardModes: async () => {
       try {
-        if (input.coreClient.getGuardModes !== undefined) return await input.coreClient.getGuardModes();
+        if (input.coreClient.getGuardModes !== undefined)
+          return await input.coreClient.getGuardModes();
       } catch {
         /* report when unknown */
       }
       return { action_claims: 'report', regulated: 'report' };
     },
-    forgetEpoch: async () => (input.coreClient.forgetEpoch !== undefined ? input.coreClient.forgetEpoch() : 0),
+    forgetEpoch: async () =>
+      input.coreClient.forgetEpoch !== undefined ? input.coreClient.forgetEpoch() : 0,
     ownerTimeZone: async () => {
       try {
-        if (input.coreClient.getOwnerTimeZone !== undefined) return (await input.coreClient.getOwnerTimeZone()).timezone;
+        if (input.coreClient.getOwnerTimeZone !== undefined)
+          return (await input.coreClient.getOwnerTimeZone()).timezone;
       } catch {
         /* the host's zone */
       }
@@ -886,14 +942,18 @@ function buildIntentClassifier(
           // belongs there is routed to the vault (and Core asks the owner).
           const closed = (toc.gated_personas ?? []).map((g) => ({
             persona: g.name,
-            topic: `(closed to this requester; the owner must approve access) ${g.description}`.trim(),
+            topic:
+              `(closed to this requester; the owner must approve access) ${g.description}`.trim(),
             kind: 'theme' as const,
             salience: 0,
             last_update: 0,
           }));
           return [...toc.entries, ...closed];
         } catch (err) {
-          console.log('[agentic_ask] agent toc failed', { status: (err as { status?: number }).status, message: err instanceof Error ? err.message.slice(0, 120) : '' });
+          console.log('[agentic_ask] agent toc failed', {
+            status: (err as { status?: number }).status,
+            message: err instanceof Error ? err.message.slice(0, 120) : '',
+          });
           return [];
         }
       }
@@ -917,7 +977,9 @@ function buildIntentClassifier(
         return await svc.toc(
           undefined,
           20,
-          releaseSession !== undefined ? { sessionId: releaseSession, audience: 'brain' } : undefined,
+          releaseSession !== undefined
+            ? { sessionId: releaseSession, audience: 'brain' }
+            : undefined,
         );
       } catch {
         return [];

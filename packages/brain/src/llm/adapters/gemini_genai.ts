@@ -116,7 +116,9 @@ export class GeminiGenaiAdapter implements LLMProvider {
 
     const contents = toGeminiContents(messages);
     const tools =
-      options.tools && options.tools.length > 0 ? [toFunctionDeclarations(options.tools)] : undefined;
+      options.tools && options.tools.length > 0
+        ? [toFunctionDeclarations(options.tools)]
+        : undefined;
 
     const response = await this.client.models.generateContent({
       model,
@@ -313,8 +315,7 @@ function mapResponse(response: GenerateContentResponse, model: string): ChatResp
   // Token telemetry for cost calibration — metadata ONLY (counts + model),
   // never prompt/response content. Every LLM call across every flow (ask,
   // remember, enrichment, capability runtime) passes through here.
-  const cachedTokens =
-    (usage as { cachedContentTokenCount?: number }).cachedContentTokenCount ?? 0;
+  const cachedTokens = (usage as { cachedContentTokenCount?: number }).cachedContentTokenCount ?? 0;
   console.log(
     `[LLM-USAGE] model=${model} in=${inputTokens} out=${outputTokens} cached=${cachedTokens} tools=${toolCalls.length}`,
   );

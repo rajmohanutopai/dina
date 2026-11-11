@@ -107,7 +107,9 @@ test.describe('MRS-08 — Agent risk ladder + approval state machine', () => {
     // button. SAFE (auto-approved) and BLOCKED (auto-denied) raised no task, so
     // no card renders for them. Wait for the gated cards to arrive, then assert
     // the exact count (a SAFE/BLOCKED card would push it past 3).
-    await page.getByTestId(`approvals-deny-${highId}`).waitFor({ state: 'visible', timeout: 40_000 });
+    await page
+      .getByTestId(`approvals-deny-${highId}`)
+      .waitFor({ state: 'visible', timeout: 40_000 });
     expect(
       await page.getByTestId(/^approvals-deny-/).count(),
       'only the 3 gated intents raise cards — SAFE + BLOCKED never render one',

@@ -83,12 +83,7 @@ export interface TrustScore {
    *     value past its stale window.
    *   - `unknown` → AppView reports no data for this DID.
    */
-  source:
-    | 'fresh'
-    | 'stale-while-revalidate'
-    | 'network'
-    | 'error-fallback'
-    | 'unknown';
+  source: 'fresh' | 'stale-while-revalidate' | 'network' | 'error-fallback' | 'unknown';
   /** Age of the served score in ms. 0 for a freshly-fetched value. */
   ageMs: number;
 }
@@ -145,10 +140,7 @@ export class TrustScoreResolver {
    * "unknown". Passing `{mustRevalidate: true}` forces a blocking
    * refresh.
    */
-  async getTrustScore(
-    did: Did,
-    opts: { mustRevalidate?: boolean } = {},
-  ): Promise<TrustScore> {
+  async getTrustScore(did: Did, opts: { mustRevalidate?: boolean } = {}): Promise<TrustScore> {
     if (typeof did !== 'string' || did === '') {
       throw new TypeError('TrustScoreResolver.getTrustScore: did is required');
     }

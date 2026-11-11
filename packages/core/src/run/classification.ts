@@ -18,7 +18,12 @@ import { getRunRepository, type RunRepository } from './repository';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
-export type ClassificationJobState = 'pending' | 'classified' | 'timed_out' | 'cancelled' | 'expired';
+export type ClassificationJobState =
+  | 'pending'
+  | 'classified'
+  | 'timed_out'
+  | 'cancelled'
+  | 'expired';
 
 export interface ClassificationJobRecord {
   message_id: string;
@@ -73,13 +78,16 @@ function rowToJob(row: DBRow): ClassificationJobRecord {
     message_id: String(row.message_id),
     message_revision: Number(row.message_revision),
     state: String(row.state) as ClassificationJobState,
-    lease_token: row.lease_token === null || row.lease_token === undefined ? null : String(row.lease_token),
+    lease_token:
+      row.lease_token === null || row.lease_token === undefined ? null : String(row.lease_token),
     lease_expires_at:
       row.lease_expires_at === null || row.lease_expires_at === undefined
         ? null
         : Number(row.lease_expires_at),
     tier_candidate:
-      row.tier_candidate === null || row.tier_candidate === undefined ? null : Number(row.tier_candidate),
+      row.tier_candidate === null || row.tier_candidate === undefined
+        ? null
+        : Number(row.tier_candidate),
     created_at: Number(row.created_at),
     updated_at: Number(row.updated_at),
   };
@@ -107,9 +115,10 @@ export class SQLiteClassificationJobRepository implements ClassificationJobRepos
   }
 
   getByMessage(messageId: string): ClassificationJobRecord | null {
-    const rows = this.db.query('SELECT * FROM run_classification_jobs WHERE message_id = ? LIMIT 1', [
-      messageId,
-    ]);
+    const rows = this.db.query(
+      'SELECT * FROM run_classification_jobs WHERE message_id = ? LIMIT 1',
+      [messageId],
+    );
     return rows.length > 0 ? rowToJob(rows[0]) : null;
   }
 
@@ -122,7 +131,11 @@ export class SQLiteClassificationJobRepository implements ClassificationJobRepos
       .map(rowToJob);
   }
 
-  listPendingAfter(afterCreatedAt: number, afterMessageId: string, limit = 200): ClassificationJobRecord[] {
+  listPendingAfter(
+    afterCreatedAt: number,
+    afterMessageId: string,
+    limit = 200,
+  ): ClassificationJobRecord[] {
     return this.db
       .query(
         `SELECT * FROM run_classification_jobs
@@ -219,7 +232,11 @@ export class InMemoryClassificationJobRepository implements ClassificationJobRep
       .slice(0, limit)
       .map((j) => ({ ...j }));
   }
-  listPendingAfter(afterCreatedAt: number, afterMessageId: string, limit = 200): ClassificationJobRecord[] {
+  listPendingAfter(
+    afterCreatedAt: number,
+    afterMessageId: string,
+    limit = 200,
+  ): ClassificationJobRecord[] {
     return [...this.jobs.values()]
       .filter(
         (j) =>
@@ -233,7 +250,9 @@ export class InMemoryClassificationJobRepository implements ClassificationJobRep
   }
   listAcquirable(nowMs: number, limit = 32): ClassificationJobRecord[] {
     return [...this.jobs.values()]
-      .filter((j) => j.state === 'pending' && (j.lease_expires_at === null || j.lease_expires_at < nowMs))
+      .filter(
+        (j) => j.state === 'pending' && (j.lease_expires_at === null || j.lease_expires_at < nowMs),
+      )
       .sort((a, b) => a.created_at - b.created_at)
       .slice(0, limit)
       .map((j) => ({ ...j }));
@@ -255,7 +274,12 @@ export class InMemoryClassificationJobRepository implements ClassificationJobRep
     nowMs: number,
   ): boolean {
     const j = this.jobs.get(messageId);
-    if (!j || j.state !== 'pending' || j.message_revision !== messageRevision || j.lease_token !== leaseToken) {
+    if (
+      !j ||
+      j.state !== 'pending' ||
+      j.message_revision !== messageRevision ||
+      j.lease_token !== leaseToken
+    ) {
       return false;
     }
     // Reject a report on a lapsed lease (§12.6) — mirrors the SQLite CAS.
@@ -325,7 +349,11 @@ export interface RunClassifyServiceOptions {
   isPersonaOpen?: (persona: string) => boolean;
   /** Build the bounded classification view for a message (title/body from its
    *  card). Default returns empty display text (payload wiring is composed in). */
-  buildClassificationView?: (message: MessageRecord) => { title: string; body: string; content_digest: string };
+  buildClassificationView?: (message: MessageRecord) => {
+    title: string;
+    body: string;
+    content_digest: string;
+  };
   leaseMs?: number;
   /** Runs a classify mutation atomically (rollback on throw). Default is a
    *  passthrough; boot passes the SQLite `db.transaction` so the paired
@@ -350,7 +378,11 @@ export class RunClassifyService {
   private readonly now: () => number;
   private readonly nextId: () => string;
   private readonly personaOpen: (persona: string) => boolean;
-  private readonly viewOf: (m: MessageRecord) => { title: string; body: string; content_digest: string };
+  private readonly viewOf: (m: MessageRecord) => {
+    title: string;
+    body: string;
+    content_digest: string;
+  };
   private readonly leaseMs: number;
   private readonly tx: (fn: () => void) => void;
   private readonly onClassified: ((message: MessageRecord, run: RunRecord) => void) | undefined;
@@ -367,9 +399,11 @@ export class RunClassifyService {
     this.jobs = jobs;
     this.runs = runs;
     this.now = opts.nowMsFn ?? (() => Date.now());
-    this.nextId = opts.idFn ?? (() => `lease-${(++this.seq).toString(36)}-${this.now().toString(36)}`);
+    this.nextId =
+      opts.idFn ?? (() => `lease-${(++this.seq).toString(36)}-${this.now().toString(36)}`);
     this.personaOpen = opts.isPersonaOpen ?? (() => true);
-    this.viewOf = opts.buildClassificationView ?? (() => ({ title: '', body: '', content_digest: '' }));
+    this.viewOf =
+      opts.buildClassificationView ?? (() => ({ title: '', body: '', content_digest: '' }));
     this.leaseMs = opts.leaseMs ?? 30_000;
     this.tx = opts.tx ?? ((fn) => fn());
     this.onClassified = opts.onClassified;
@@ -449,7 +483,8 @@ export class RunClassifyService {
     const nowMs = this.now();
     for (const job of this.jobs.listAcquirable(nowMs)) {
       const msg = this.messages.getById(job.message_id);
-      if (msg === null || msg.state !== 'classification_pending' || msg.kind !== 'informational') continue;
+      if (msg === null || msg.state !== 'classification_pending' || msg.kind !== 'informational')
+        continue;
       const run = this.runs.getById(msg.run_id);
       if (run === null || !this.runEligible(run, nowMs) || !this.personaOpen(run.persona)) continue;
 
@@ -554,7 +589,11 @@ export class RunClassifyService {
       this.jobs.timeout(messageId, nowMs);
       this.messages.transition(messageId, 'classification_pending', 'classified', nowMs);
       if (result !== null) {
-        this.messages.setTier(messageId, { final_tier: result.tier, tier_source: result.tier_source }, nowMs);
+        this.messages.setTier(
+          messageId,
+          { final_tier: result.tier, tier_source: result.tier_source },
+          nowMs,
+        );
       }
     });
     // R5-02 — surface the timeout-finalized message post-commit (fireClassified

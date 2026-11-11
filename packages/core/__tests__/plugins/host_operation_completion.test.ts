@@ -83,7 +83,9 @@ function install(overrides: Partial<PluginInstall> = {}): PluginInstall {
   } as PluginInstall;
 }
 
-function setup(options: { decide?: ProposalDecision; installOverrides?: Partial<PluginInstall> } = {}) {
+function setup(
+  options: { decide?: ProposalDecision; installOverrides?: Partial<PluginInstall> } = {},
+) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xop-complete-'));
   DIRS.push(dir);
   const db = new NodeSQLiteAdapter({
@@ -104,7 +106,11 @@ function setup(options: { decide?: ProposalDecision; installOverrides?: Partial<
     requiredFeature: 'commerce-host-ops-v1',
     actionClass: 'read',
   });
-  const broker = new ExtensionOperationBroker({ db, now: () => 1_700_000_000_000, validate: () => null });
+  const broker = new ExtensionOperationBroker({
+    db,
+    now: () => 1_700_000_000_000,
+    validate: () => null,
+  });
   const dispatcher = new HostOperationDispatcher({
     broker,
     resultSchemaFor: (name) => registry.get(name)?.resultSchema,
@@ -262,9 +268,7 @@ describe('completing a claim with a typed proposal', () => {
 
     // The owner approves; the SAME follow-up path runs, so the runner cannot
     // tell whether a human was involved.
-    const parked = ctx.broker.get(
-      ctx.broker.listExecuting()[0]?.proposalId ?? findProposalId(ctx),
-    );
+    const parked = ctx.broker.get(ctx.broker.listExecuting()[0]?.proposalId ?? findProposalId(ctx));
     const source = parsePluginEnvelope(ctx.repository.getById(id)?.payload ?? '');
     if (parked === null || source === null) throw new Error('unreachable');
     await settleOwnerDecision({
@@ -307,7 +311,13 @@ describe('completing a claim with a typed proposal', () => {
     } as never);
     const claimed = ctx.repository.claimDelegationTask(RUNNER_DID, Date.now(), 60_000, undefined);
     expect(claimed?.id).toBe(task.id);
-    service.complete(task.id, proposal(), 'even a proposal-shaped result', RUNNER_DID, claimed?.claim_id);
+    service.complete(
+      task.id,
+      proposal(),
+      'even a proposal-shaped result',
+      RUNNER_DID,
+      claimed?.claim_id,
+    );
     await settle();
     expect(called).toBe(0);
   });

@@ -60,7 +60,9 @@ export default function MyListingsScreen(): React.ReactElement {
       setLoadError(null);
     } catch (err) {
       if (err instanceof ServiceConfigNotConfiguredError) {
-        setLoadError('Service settings couldn’t load yet. Dina may still be starting up. Reopen and try again.');
+        setLoadError(
+          'Service settings couldn’t load yet. Dina may still be starting up. Reopen and try again.',
+        );
       } else {
         setLoadError((err as Error).message ?? 'Failed to load listings');
       }

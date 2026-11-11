@@ -9,7 +9,6 @@ export type VersionCheck =
   | { ok: true; version: typeof A2A_PROTOCOL_VERSION }
   | { ok: false; requested: string };
 
-
 /**
  * Accept `Major.Minor` = 1.0 (spec §3.6). The value comes from the
  * `A2A-Version` header, or, when the header is absent, from the request

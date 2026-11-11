@@ -42,7 +42,15 @@ import type { ServiceQueryBody } from '../../../src/d2d/service_bodies';
 const OWNER_CAP = 'test-owner-capability-secret';
 const GARCIA = 'did:plc:garcia';
 const MILLER = 'did:plc:miller';
-const NON_OWNER: (string | undefined)[] = [undefined, 'brain', 'agent', 'plugin', 'connector', 'device', 'service'];
+const NON_OWNER: (string | undefined)[] = [
+  undefined,
+  'brain',
+  'agent',
+  'plugin',
+  'connector',
+  'device',
+  'service',
+];
 
 function req(
   method: CoreRequest['method'],
@@ -156,7 +164,11 @@ describe('/v1/coordination/* — owner boundary', () => {
     ];
     // Opening and reading are also Brain's doors (the next test); every other
     // caller is refused on every route, and every caller on every decision.
-    const brainDoors = new Set(['POST /v1/coordination/plans', 'GET /v1/coordination/plans/p1', 'GET /v1/coordination/handles']);
+    const brainDoors = new Set([
+      'POST /v1/coordination/plans',
+      'GET /v1/coordination/plans/p1',
+      'GET /v1/coordination/handles',
+    ]);
     for (const [method, path] of routes) {
       for (const ct of NON_OWNER) {
         if (brainDoors.has(`${method} ${path}`) && (ct === 'brain' || ct === undefined)) continue;
@@ -181,7 +193,14 @@ describe('/v1/coordination/* — owner boundary', () => {
       expect(list.map((h) => h.plan_id)).toContain(planId);
       // A handle names the plan and nothing about who is in it.
       for (const h of list) {
-        expect(Object.keys(h).sort()).toEqual(['chosen', 'intent', 'plan_id', 'round', 'state', 'updated_at']);
+        expect(Object.keys(h).sort()).toEqual([
+          'chosen',
+          'intent',
+          'plan_id',
+          'round',
+          'state',
+          'updated_at',
+        ]);
         expect(JSON.stringify(h)).not.toContain('did:');
       }
       for (const [method, path, body] of [
@@ -262,15 +281,26 @@ describe('/v1/coordination/* — the wire', () => {
     );
     // Both guests are required (the second by default), so the plan folds only
     // once both have answered; in between the fold is provisional.
-    const provisional = await router.handle(req('GET', `/v1/coordination/plans/${plan.plan_id}`, 'owner'));
+    const provisional = await router.handle(
+      req('GET', `/v1/coordination/plans/${plan.plan_id}`, 'owner'),
+    );
     expect((provisional.body as { plan: { state: string; fold: { state: string } } }).plan).toEqual(
-      expect.objectContaining({ state: 'proposing', fold: expect.objectContaining({ state: 'waiting', missing_required: [MILLER] }) }),
+      expect.objectContaining({
+        state: 'proposing',
+        fold: expect.objectContaining({ state: 'waiting', missing_required: [MILLER] }),
+      }),
     );
     workflow.store().completeWithDetails(
       guests[1].spokes[0].task_id,
       '',
       'received',
-      JSON.stringify({ status: 'success', result: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }, { start: 'Sat 19' }] } }),
+      JSON.stringify({
+        status: 'success',
+        result: {
+          status: 'accepted',
+          accepted_slots: [{ start: 'Sat 26' }, { start: 'Sat 19' }],
+        },
+      }),
       '{}',
       Date.now(),
     );
@@ -279,26 +309,44 @@ describe('/v1/coordination/* — the wire', () => {
     const read = (resp.body as { plan: Record<string, unknown> }).plan;
     expect((read.guests as Record<string, unknown>[])[0].outcome).toBe('answered');
     expect(read.fold).toEqual(
-      expect.objectContaining({ state: 'converged', agreed: [{ start: 'Sat 26' }], missing_required: [], emptied_by: [] }),
+      expect.objectContaining({
+        state: 'converged',
+        agreed: [{ start: 'Sat 26' }],
+        missing_required: [],
+        emptied_by: [],
+      }),
     );
     expect(read.state).toBe('folded');
     expect(read.requirements).toEqual([{ kind: 'dietary', count: 1, needs: ['gluten-free'] }]);
     const list = await router.handle(req('GET', '/v1/coordination/plans', 'owner'));
     expect(list.status).toBe(200);
-    expect((list.body as { plans: { plan_id: string }[] }).plans.map((p) => p.plan_id)).toEqual([plan.plan_id]);
+    expect((list.body as { plans: { plan_id: string }[] }).plans.map((p) => p.plan_id)).toEqual([
+      plan.plan_id,
+    ]);
   });
 
   it('refusals are named on the wire with a status that says what kind', async () => {
-    const malformed = await router.handle(req('POST', '/v1/coordination/plans', 'owner', { ...PLAN_BODY, guests: [{ required: true }] }));
+    const malformed = await router.handle(
+      req('POST', '/v1/coordination/plans', 'owner', {
+        ...PLAN_BODY,
+        guests: [{ required: true }],
+      }),
+    );
     expect(malformed.status).toBe(400);
     expect(malformed.body).toEqual({ error: 'malformed_guest', detail: 'guests[].contact_did' });
     const stranger = await router.handle(
-      req('POST', '/v1/coordination/plans', 'owner', { ...PLAN_BODY, guests: [{ contact_did: 'did:plc:stranger' }] }),
+      req('POST', '/v1/coordination/plans', 'owner', {
+        ...PLAN_BODY,
+        guests: [{ contact_did: 'did:plc:stranger' }],
+      }),
     );
     expect(stranger.status).toBe(400);
     expect(stranger.body).toEqual({ error: 'guest_not_a_contact', detail: 'did:plc:stranger' });
     const tooMany = await router.handle(
-      req('POST', '/v1/coordination/plans', 'owner', { ...PLAN_BODY, candidates: Array.from({ length: 13 }, (_, i) => ({ start: `d${i}` })) }),
+      req('POST', '/v1/coordination/plans', 'owner', {
+        ...PLAN_BODY,
+        candidates: Array.from({ length: 13 }, (_, i) => ({ start: `d${i}` })),
+      }),
     );
     expect(tooMany.status).toBe(400);
     expect((tooMany.body as { error: string }).error).toBe('too_many_candidates');
@@ -309,15 +357,25 @@ describe('/v1/coordination/* — the wire', () => {
     expect(missing.body).toEqual({ error: 'not_found' });
 
     const plan = await open();
-    const early = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/choose`, 'owner', { slot: { start: 'Sat 26' } }));
+    const early = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/choose`, 'owner', {
+        slot: { start: 'Sat 26' },
+      }),
+    );
     expect(early.status).toBe(409);
     expect((early.body as { error: string }).error).toBe('wrong_state');
-    const noSlot = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/choose`, 'owner', {}));
+    const noSlot = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/choose`, 'owner', {}),
+    );
     expect(noSlot.status).toBe(400);
     expect((noSlot.body as { error: string }).error).toBe('malformed_slot');
-    const noGuest = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/optional`, 'owner', {}));
+    const noGuest = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/optional`, 'owner', {}),
+    );
     expect(noGuest.status).toBe(400);
-    const noCandidates = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/widen`, 'owner', {}));
+    const noCandidates = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/widen`, 'owner', {}),
+    );
     expect(noCandidates.status).toBe(400);
     expect((noCandidates.body as { error: string }).error).toBe('no_candidates');
   });
@@ -330,34 +388,63 @@ describe('/v1/coordination/* — the wire', () => {
         g.spokes[0].task_id,
         '',
         'received',
-        JSON.stringify({ status: 'success', result: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] } }),
+        JSON.stringify({
+          status: 'success',
+          result: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] },
+        }),
         '{}',
         Date.now(),
       );
     }
-    const optional = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/optional`, 'owner', { contact_did: MILLER }));
+    const optional = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/optional`, 'owner', {
+        contact_did: MILLER,
+      }),
+    );
     expect(optional.status).toBe(200);
-    expect(((optional.body as { plan: { guests: { required: boolean }[] } }).plan.guests)[1].required).toBe(false);
+    expect(
+      (optional.body as { plan: { guests: { required: boolean }[] } }).plan.guests[1].required,
+    ).toBe(false);
 
-    const chosen = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/choose`, 'owner', { slot: { start: 'Sat 26' } }));
+    const chosen = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/choose`, 'owner', {
+        slot: { start: 'Sat 26' },
+      }),
+    );
     expect(chosen.status).toBe(200);
-    expect((chosen.body as { plan: { state: string; round: number } }).plan).toEqual(expect.objectContaining({ state: 'confirming', round: 2 }));
+    expect((chosen.body as { plan: { state: string; round: number } }).plan).toEqual(
+      expect.objectContaining({ state: 'confirming', round: 2 }),
+    );
     expect(sent).toHaveLength(4);
 
-    const widened = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/widen`, 'owner', { candidates: [{ start: 'Sun 27' }] }));
+    const widened = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/widen`, 'owner', {
+        candidates: [{ start: 'Sun 27' }],
+      }),
+    );
     expect(widened.status).toBe(200);
-    expect((widened.body as { plan: { state: string; round: number } }).plan).toEqual(expect.objectContaining({ state: 'proposing', round: 3 }));
+    expect((widened.body as { plan: { state: string; round: number } }).plan).toEqual(
+      expect.objectContaining({ state: 'proposing', round: 3 }),
+    );
 
-    const abandoned = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/abandon`, 'owner'));
+    const abandoned = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/abandon`, 'owner'),
+    );
     expect(abandoned.status).toBe(200);
     expect((abandoned.body as { plan: { state: string } }).plan.state).toBe('abandoned');
-    const again = await router.handle(req('POST', `/v1/coordination/plans/${plan.plan_id}/abandon`, 'owner'));
+    const again = await router.handle(
+      req('POST', `/v1/coordination/plans/${plan.plan_id}/abandon`, 'owner'),
+    );
     expect(again.status).toBe(409);
 
-    const removed = await router.handle(req('DELETE', `/v1/coordination/plans/${plan.plan_id}`, 'owner'));
+    const removed = await router.handle(
+      req('DELETE', `/v1/coordination/plans/${plan.plan_id}`, 'owner'),
+    );
     expect(removed.status).toBe(200);
     expect(removed.body).toEqual({ removed: true });
-    const gone = await router.handle(req('DELETE', `/v1/coordination/plans/${plan.plan_id}`, 'owner'));
+    const gone = await router.handle(
+      req('DELETE', `/v1/coordination/plans/${plan.plan_id}`, 'owner'),
+    );
     expect(gone.status).toBe(404);
   });
 

@@ -676,7 +676,10 @@ describe('the money line (§5.B1 Cut 3): money() follows the Commerce Pack insta
       ),
       behaviorHash: 'b'.repeat(64),
       presentationHash: 'p'.repeat(64),
-      trustAnchor: overrides.trustAnchor ?? { kind: 'local_publisher_key', keyId: KERNEL_REFERENCE_KEY_ID },
+      trustAnchor: overrides.trustAnchor ?? {
+        kind: 'local_publisher_key',
+        keyId: KERNEL_REFERENCE_KEY_ID,
+      },
       pendingExpiresAtSec: Math.floor(now / 1000) + 900,
       nowMs: now,
     });
@@ -808,5 +811,4 @@ describe('the money line (§5.B1 Cut 3): money() follows the Commerce Pack insta
     expect(installs.getById(installId)?.status).toBe('revoked');
     expect(runtime.money()).toMatchObject({ available: false, reason: 'pack_revoked' });
   });
-
 });

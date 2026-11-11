@@ -41,7 +41,6 @@ import { oneLine } from '../util/one_line';
 
 import type { ActionClass } from '@dina/protocol';
 
-
 /** Bump when a template gains, loses, or re-classes a field. */
 export const CONTEXT_TEMPLATE_VERSION = 1;
 
@@ -65,7 +64,14 @@ export interface ContextTemplateField {
 }
 
 /** The coarse buckets a `date_class` field may carry. Never an instant. */
-export const DATE_CLASSES = ['today', 'this_week', 'this_month', 'this_quarter', 'older', 'future'] as const;
+export const DATE_CLASSES = [
+  'today',
+  'this_week',
+  'this_month',
+  'this_quarter',
+  'older',
+  'future',
+] as const;
 export type DateClass = (typeof DATE_CLASSES)[number];
 
 export interface ContextTemplate {
@@ -81,7 +87,11 @@ export interface ContextTemplate {
 }
 
 /** Which side of the trade an item describes. */
-const ROLE: ContextTemplateField = { name: 'role', class: 'kind', values: ['self', 'counterparty'] };
+const ROLE: ContextTemplateField = {
+  name: 'role',
+  class: 'kind',
+  values: ['self', 'counterparty'],
+};
 
 /**
  * The table. Three categories, because a category belongs here only once Dina
@@ -162,7 +172,10 @@ export const CONTEXT_TEMPLATES: Readonly<Record<string, ContextTemplate>> = {
  * The fields (category, action class) admits, in table order — or an empty
  * list when either the category or the class is not in the table.
  */
-export function templateFieldsFor(category: string, actionClass: string): readonly ContextTemplateField[] {
+export function templateFieldsFor(
+  category: string,
+  actionClass: string,
+): readonly ContextTemplateField[] {
   const template = Object.prototype.hasOwnProperty.call(CONTEXT_TEMPLATES, category)
     ? CONTEXT_TEMPLATES[category]
     : undefined;
@@ -206,7 +219,11 @@ export function oneLineText(value: string): string {
  * dropped, never coerced. Coercion is how a timestamp becomes a string that
  * looks like a bucket and a card number becomes a "kind".
  */
-export function convertField(field: ContextTemplateField, raw: unknown, nowMs: number): string | null {
+export function convertField(
+  field: ContextTemplateField,
+  raw: unknown,
+  nowMs: number,
+): string | null {
   if (raw === undefined || raw === null) return null;
   if (field.class === 'kind') {
     if (typeof raw !== 'string') return null;

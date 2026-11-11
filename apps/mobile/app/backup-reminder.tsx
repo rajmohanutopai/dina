@@ -42,8 +42,8 @@ export default function BackupReminderScreen(): React.ReactElement {
         <Text style={styles.body}>
           Once you&apos;ve written down your recovery phrase, Dina keeps an encrypted copy that only
           those words open — we can&apos;t read it. On a new phone, the words bring everything back.
-          It takes about two minutes, and you only do it once. You can turn the copy off in
-          Settings → Backup.
+          It takes about two minutes, and you only do it once. You can turn the copy off in Settings
+          → Backup.
         </Text>
       </View>
 

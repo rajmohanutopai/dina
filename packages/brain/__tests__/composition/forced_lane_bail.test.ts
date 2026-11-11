@@ -35,7 +35,11 @@ function bail(finishReason: 'max_iterations' | 'max_tool_calls'): AgenticLoopRes
 
 describe('translateLoopResult — forced-lane budget bail', () => {
   it('Services lane + max_iterations → clean Services answer (not a generic failure)', () => {
-    const out = translateLoopResult(bail('max_iterations'), 'Book me a seat in the sports center', SERVICES);
+    const out = translateLoopResult(
+      bail('max_iterations'),
+      'Book me a seat in the sports center',
+      SERVICES,
+    );
     expect(out.kind).toBe('answer');
     if (out.kind === 'answer') expect(out.answer.text).toBe(SERVICES_INCOMPLETE_ANSWER);
   });

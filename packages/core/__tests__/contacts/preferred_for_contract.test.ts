@@ -15,7 +15,6 @@
 
 import {
   addContact,
-  getContact,
   listContacts,
   setPreferredFor,
   getPreferredFor,

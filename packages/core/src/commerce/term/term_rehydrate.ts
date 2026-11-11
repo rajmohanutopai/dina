@@ -201,7 +201,8 @@ export function readTermDecisionHolding(json: string): { held: number; premiumBp
   const premium = holding?.premium_bps_per_count;
   return {
     held: typeof held === 'number' && Number.isInteger(held) && held >= 0 ? held : 0,
-    premiumBps: typeof premium === 'number' && Number.isInteger(premium) && premium >= 0 ? premium : 0,
+    premiumBps:
+      typeof premium === 'number' && Number.isInteger(premium) && premium >= 0 ? premium : 0,
   };
 }
 

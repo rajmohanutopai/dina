@@ -190,7 +190,9 @@ export function termHoldingCount(args: {
   for (const status of hostAgreements(args.store, args.selfDid)) {
     if (status.proposal.general.tag !== args.tag) continue;
     if (Date.parse(status.heldUntil) <= args.nowMs) continue; // ended
-    if (!overlaps(Date.parse(status.proposal.general.start), Date.parse(status.heldUntil), start, end))
+    if (
+      !overlaps(Date.parse(status.proposal.general.start), Date.parse(status.heldUntil), start, end)
+    )
       continue;
     const root = lineageRoot(args.store, status.proposal.proposal_digest);
     if (root !== excluded) chains.add(root);
@@ -225,7 +227,9 @@ export function termResourceFree(args: {
     if (status.proposal.resource_ref !== args.resourceRef) continue;
     if (status.proposal.proposal_digest === args.renews) continue;
     if (Date.parse(status.heldUntil) <= args.nowMs) continue;
-    if (overlaps(Date.parse(status.proposal.general.start), Date.parse(status.heldUntil), start, end))
+    if (
+      overlaps(Date.parse(status.proposal.general.start), Date.parse(status.heldUntil), start, end)
+    )
       return false;
   }
   for (const holding of args.manualHoldings) {

@@ -230,7 +230,8 @@ export class PayloadStore {
     const kE = this.erasure().get(payloadId);
     if (kE === null) return null;
 
-    const wrappedKey = row.wrapped_key instanceof Uint8Array ? row.wrapped_key : new Uint8Array(row.wrapped_key);
+    const wrappedKey =
+      row.wrapped_key instanceof Uint8Array ? row.wrapped_key : new Uint8Array(row.wrapped_key);
     const blob = row.blob instanceof Uint8Array ? row.blob : new Uint8Array(row.blob);
 
     const conf = aeadDecrypt(kE, wrappedKey);
@@ -339,9 +340,10 @@ export class PayloadStore {
    *      publish never race; §13 reachability holds because a blob referenced
    *      by a live message/receipt keeps its leaf key until terminal shred).
    */
-  sweepMaintenance(
-    opts: { preparedTtlMs?: number; limit?: number } = {},
-  ): { reclaimed_prepared: number; gc_blobs: number } {
+  sweepMaintenance(opts: { preparedTtlMs?: number; limit?: number } = {}): {
+    reclaimed_prepared: number;
+    gc_blobs: number;
+  } {
     const preparedTtl = opts.preparedTtlMs ?? 600_000;
     const limit = opts.limit ?? 200;
     const now = this.now();

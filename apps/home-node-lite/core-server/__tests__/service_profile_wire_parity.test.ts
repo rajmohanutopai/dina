@@ -19,16 +19,11 @@
  * re-checking one capability.
  */
 
-import {
-  buildServiceProfileRecord,
-  shouldPublishProfile,
-  toPublisherConfig,
-} from '@dina/brain';
+import { buildServiceProfileRecord, shouldPublishProfile, toPublisherConfig } from '@dina/brain';
 
 import { buildWireServiceProfile, shouldPublishListing } from '../src/appview/wire_publisher';
 
 import type { ServiceConfig } from '@dina/core';
-
 
 /** A representative two-capability listing with concrete categories. */
 function makeConfig(over: Partial<ServiceConfig> = {}): ServiceConfig {
@@ -175,7 +170,9 @@ describe('service.profile wire-record parity (HNL ↔ brain)', () => {
       },
     });
     // eta_query has no schema → only appointment_availability appears, in BOTH.
-    expect(Object.keys(wire(cfg).capabilitySchemas as object)).toEqual(['appointment_availability']);
+    expect(Object.keys(wire(cfg).capabilitySchemas as object)).toEqual([
+      'appointment_availability',
+    ]);
     expect(Object.keys(brain(cfg).capabilitySchemas as object)).toEqual([
       'appointment_availability',
     ]);
@@ -201,21 +198,11 @@ describe('service.profile wire-record parity (HNL ↔ brain)', () => {
       },
     });
 
-    const hnlSchemas = wire(cfg).capabilitySchemas as Record<
-      string,
-      Record<string, unknown>
-    >;
-    const brainSchemas = brain(cfg).capabilitySchemas as Record<
-      string,
-      Record<string, unknown>
-    >;
+    const hnlSchemas = wire(cfg).capabilitySchemas as Record<string, Record<string, unknown>>;
+    const brainSchemas = brain(cfg).capabilitySchemas as Record<string, Record<string, unknown>>;
 
     expect(hnlSchemas.eta_query?.schema_hash).toMatch(/^[0-9a-f]{64}$/);
-    expect(hnlSchemas.eta_query?.schema_hash).toBe(
-      brainSchemas.eta_query?.schema_hash,
-    );
-    expect(hnlSchemas.eta_query?.schema_hash).not.toBe(
-      'stale-non-protocol-cache-value',
-    );
+    expect(hnlSchemas.eta_query?.schema_hash).toBe(brainSchemas.eta_query?.schema_hash);
+    expect(hnlSchemas.eta_query?.schema_hash).not.toBe('stale-non-protocol-cache-value');
   });
 });

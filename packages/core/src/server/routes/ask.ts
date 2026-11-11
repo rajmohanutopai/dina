@@ -20,6 +20,7 @@
 
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
+
 import { bindAskAuthority, closeAskAuthority, mintAskAuthority } from '../../agent/ask_authority';
 import { getSessionRegistry } from '../../session/registry';
 
@@ -140,8 +141,7 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
       typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : null;
     // Coding agents bind the session inside the signed JSON body. Legacy
     // device/Brain callers may still use X-Session during the transition.
-    const bodySessionId =
-      typeof body.session_id === 'string' ? body.session_id.trim() : '';
+    const bodySessionId = typeof body.session_id === 'string' ? body.session_id.trim() : '';
     const headerSessionId =
       typeof req.headers['x-session'] === 'string' ? req.headers['x-session'].trim() : '';
     const sessionId = req.callerType === 'agent' ? bodySessionId : bodySessionId || headerSessionId;
@@ -199,8 +199,7 @@ export function registerAskRoutes(router: CoreRouter, options: AskRouteOptions =
       };
     }
     if (req.callerType === 'agent') {
-      const sessionId =
-        typeof req.query.session_id === 'string' ? req.query.session_id.trim() : '';
+      const sessionId = typeof req.query.session_id === 'string' ? req.query.session_id.trim() : '';
       if (sessionId === '' || !getSessionRegistry().renew(sessionId, requesterDid).ok) {
         return { status: 401, body: { error: 'invalid_session' } };
       }

@@ -8,7 +8,6 @@ import { isRelation, relationsOnly } from '../../src/services/people_relations';
 
 import type { Person, PersonSurface } from '@dina/core';
 
-
 function person(overrides: Partial<Person>): Person {
   return {
     personId: 'person-x',
@@ -73,9 +72,19 @@ describe('isRelation', () => {
 
   it('relationsOnly filters the list shape used by the screen', () => {
     const rows = [
-      person({ personId: 'p1', canonicalName: 'Bus Depot 42', contactDid: 'did:plc:bus', surfaces: [surface('name')] }),
+      person({
+        personId: 'p1',
+        canonicalName: 'Bus Depot 42',
+        contactDid: 'did:plc:bus',
+        surfaces: [surface('name')],
+      }),
       person({ personId: 'p2', canonicalName: 'Mia' }),
-      person({ personId: 'p3', canonicalName: 'Emma', contactDid: 'did:plc:e', relationshipHint: 'daughter' }),
+      person({
+        personId: 'p3',
+        canonicalName: 'Emma',
+        contactDid: 'did:plc:e',
+        relationshipHint: 'daughter',
+      }),
     ];
     expect(relationsOnly(rows).map((p) => p.canonicalName)).toEqual(['Mia', 'Emma']);
   });

@@ -59,8 +59,12 @@ function toKVFormat(overrides: Map<string, RiskLevel>): Record<string, string[]>
   const result: Record<string, string[]> = { blocked: [], high: [], moderate: [], safe: [] };
   for (const [action, risk] of overrides) {
     const key = risk.toLowerCase();
-    if (!result[key]) result[key] = [];
-    result[key]!.push(action);
+    let bucket = result[key];
+    if (!bucket) {
+      bucket = [];
+      result[key] = bucket;
+    }
+    bucket.push(action);
   }
   for (const key of Object.keys(result)) {
     result[key] = (result[key] ?? []).sort();
@@ -106,7 +110,10 @@ export function registerPolicyRoutes(router: CoreRouter): void {
     const body = (req.body as Record<string, unknown>) ?? {};
     const rawRisk = typeof body.risk === 'string' ? body.risk.toUpperCase() : '';
     if (!VALID_RISKS.has(rawRisk)) {
-      return { status: 400, body: { error: `risk must be one of: ${[...VALID_RISKS].join(', ')}` } };
+      return {
+        status: 400,
+        body: { error: `risk must be one of: ${[...VALID_RISKS].join(', ')}` },
+      };
     }
     const risk = rawRisk as RiskLevel;
 

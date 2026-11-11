@@ -20,12 +20,12 @@ subject_id = "sub_" + lowercase_hex(SHA-256(canonical_input)).slice(0, 32)
 
 where `canonical_input` is one of (highest priority first):
 
-| Tier | Input ref carries | `canonical_input` |
-|---|---|---|
-| 1a | `did`        | `"v3:did:" + did` |
-| 1b | `uri`        | `"v3:uri:" + canonicalize_uri(uri)` |
-| 1c | `identifier` | `"v3:id:" + canonicalize_identifier(identifier)` |
-| 2  | `name` only  | `"v3:name:" + lowercase(type) + ":" + normalize_name(name)` |
+| Tier | Input ref carries | `canonical_input`                                           |
+| ---- | ----------------- | ----------------------------------------------------------- |
+| 1a   | `did`             | `"v3:did:" + did`                                           |
+| 1b   | `uri`             | `"v3:uri:" + canonicalize_uri(uri)`                         |
+| 1c   | `identifier`      | `"v3:id:" + canonicalize_identifier(identifier)`            |
+| 2    | `name` only       | `"v3:name:" + lowercase(type) + ":" + normalize_name(name)` |
 
 **Tier-1 precedence is TYPE-SPECIFIC (v3).** `did` always wins. After
 that the order depends on `ref.type`:
@@ -34,7 +34,7 @@ that the order depends on `ref.type`:
   ASIN / MPN — the precise SKU) **beats** `uri`. The barcode is the
   correct variant-level key; a store page URL is weaker + fragmenting.
 - **`content` / `place` / `organization` / `claim` / `did`**: `uri`
-  (the canonical content URL/ID) **beats** `identifier`. The URL *is*
+  (the canonical content URL/ID) **beats** `identifier`. The URL _is_
   the content's identity.
 - `name` (Tier 2) is always the last resort.
 
@@ -66,7 +66,7 @@ The DID string is hashed **verbatim**. No lowercasing, no trimming, no
 Unicode normalization. Callers own the canonical form (DIDs are
 lowercase by `did:plc` method spec).
 
-**Presence + tier selection.** A Tier 1 field is *present* iff it is
+**Presence + tier selection.** A Tier 1 field is _present_ iff it is
 a non-empty string (length > 0). Tier selection is `did` first, then
 the **type-specific** order above (`identifier`/`uri` swap by type),
 then name; the first present field wins. Because `did` hashing is
@@ -86,7 +86,7 @@ contract can't depend on a normalization step some ports skip).
 - scheme **lowercased** (`ASIN:` == `asin:`);
 - `asin` value **uppercased** (ASINs are case-insensitive alphanumerics);
 - `gtin` / `ean` / `upc` numeric value → **unified to `gtin:<value
-  left-zero-padded to 14 digits>`** (GS1 GTIN-14 canonical form). A UPC-A
+left-zero-padded to 14 digits>`** (GS1 GTIN-14 canonical form). A UPC-A
   (12), the EAN-13, and the GTIN-14 of the same product are the SAME GS1
   code at different lengths, so the scheme collapses to `gtin` and all
   three converge to one subject id;
@@ -178,16 +178,16 @@ hashes them, but new producers should stay within the closed set.
 
 ## Examples
 
-| `SubjectRef`                                                      | `subject_id` derivation                              |
-|--------------------------------------------------------------------|-------------------------------------------------------|
-| `{type:"did", did:"did:plc:abc"}`                                  | `SHA256("v3:did:did:plc:abc")[:32]`                  |
-| `{type:"content", uri:"HTTPS://Example.COM/"}`                     | `SHA256("v3:uri:https://example.com")[:32]`          |
-| `{type:"content", uri:"https://youtu.be/dQw4w9WgXcQ?t=42"}`        | `SHA256("v3:uri:youtube:dQw4w9WgXcQ")[:32]`          |
-| `{type:"product", identifier:"ASIN:b01234abcd"}`                   | `SHA256("v3:id:asin:B01234ABCD")[:32]`               |
-| `{type:"product", uri:"…/dp/X", identifier:"asin:X"}` (both)       | resolves by **identifier** (product: id beats uri)    |
-| `{type:"content", uri:"…", identifier:"…"}` (both)                 | resolves by **uri** (content: uri beats id)           |
-| `{type:"product", name:"  Aeron  Chair  "}`                        | `SHA256("v3:name:product:aeron chair")[:32]`         |
-| `{type:"place", name:"café"}` (decomposed `é`)                     | `SHA256("v3:name:place:café")[:32]` (composed `é`)    |
+| `SubjectRef`                                                 | `subject_id` derivation                            |
+| ------------------------------------------------------------ | -------------------------------------------------- |
+| `{type:"did", did:"did:plc:abc"}`                            | `SHA256("v3:did:did:plc:abc")[:32]`                |
+| `{type:"content", uri:"HTTPS://Example.COM/"}`               | `SHA256("v3:uri:https://example.com")[:32]`        |
+| `{type:"content", uri:"https://youtu.be/dQw4w9WgXcQ?t=42"}`  | `SHA256("v3:uri:youtube:dQw4w9WgXcQ")[:32]`        |
+| `{type:"product", identifier:"ASIN:b01234abcd"}`             | `SHA256("v3:id:asin:B01234ABCD")[:32]`             |
+| `{type:"product", uri:"…/dp/X", identifier:"asin:X"}` (both) | resolves by **identifier** (product: id beats uri) |
+| `{type:"content", uri:"…", identifier:"…"}` (both)           | resolves by **uri** (content: uri beats id)        |
+| `{type:"product", name:"  Aeron  Chair  "}`                  | `SHA256("v3:name:product:aeron chair")[:32]`       |
+| `{type:"place", name:"café"}` (decomposed `é`)               | `SHA256("v3:name:place:café")[:32]` (composed `é`) |
 
 ## Disambiguation policy
 

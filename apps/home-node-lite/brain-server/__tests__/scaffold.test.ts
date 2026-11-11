@@ -197,7 +197,10 @@ describe('brain-server — config (task 5.1/5.4 scaffold)', () => {
       DINA_OPENROUTER_API_KEY: 'sk-or-test',
       DINA_OPENROUTER_BASE_URL: 'http://127.0.0.1:18999/api/v1',
     });
-    expect(viaProxy.llm).toMatchObject({ provider: 'openrouter', baseUrl: 'http://127.0.0.1:18999/api/v1' });
+    expect(viaProxy.llm).toMatchObject({
+      provider: 'openrouter',
+      baseUrl: 'http://127.0.0.1:18999/api/v1',
+    });
     expect(() =>
       loadConfig({
         DINA_BRAIN_LLM_PROVIDER: 'openrouter',
@@ -470,9 +473,12 @@ describe('brain-server — boot (task 5.1)', () => {
       }
       // Brain is ready only after reading Core's persona list (REAL_LIFE_FIXES §2.3).
       if (url.endsWith('/v1/personas')) {
-        return new Response(JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }), {
-          headers: { 'content-type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }),
+          {
+            headers: { 'content-type': 'application/json' },
+          },
+        );
       }
       return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
         status: 500,
@@ -580,9 +586,12 @@ describe('brain-server — boot (task 5.1)', () => {
       }
       // Brain is ready only after reading Core's persona list (REAL_LIFE_FIXES §2.3).
       if (url.endsWith('/v1/personas')) {
-        return new Response(JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }), {
-          headers: { 'content-type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }),
+          {
+            headers: { 'content-type': 'application/json' },
+          },
+        );
       }
       return new Response(JSON.stringify({ error: `unexpected url ${url}` }), {
         status: 500,
@@ -647,9 +656,12 @@ describe('brain-server — boot (task 5.1)', () => {
     const originalFetch = globalThis.fetch;
     const fetchFn = jest.fn(async (url: string) => {
       if (url === 'http://core.example:8100/v1/personas') {
-        return new Response(JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }), {
-          headers: { 'content-type': 'application/json' },
-        });
+        return new Response(
+          JSON.stringify({ personas: [{ name: 'general', tier: 'default', isOpen: true }] }),
+          {
+            headers: { 'content-type': 'application/json' },
+          },
+        );
       }
       if (url === 'http://core.example:8100/v1/staging/claim?limit=10') {
         return new Response(JSON.stringify({ items: [], count: 0 }), {

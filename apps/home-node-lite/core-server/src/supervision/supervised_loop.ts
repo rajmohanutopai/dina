@@ -121,19 +121,14 @@ export class SupervisedLoop {
 
   private validateTiming(): void {
     if (!Number.isFinite(this.intervalMs) || this.intervalMs <= 0) {
-      throw new Error(
-        `SupervisedLoop: intervalMs must be > 0 (got ${this.intervalMs})`,
-      );
+      throw new Error(`SupervisedLoop: intervalMs must be > 0 (got ${this.intervalMs})`);
     }
     if (!Number.isFinite(this.initialBackoffMs) || this.initialBackoffMs <= 0) {
       throw new Error(
         `SupervisedLoop: initialBackoffMs must be > 0 (got ${this.initialBackoffMs})`,
       );
     }
-    if (
-      !Number.isFinite(this.maxBackoffMs) ||
-      this.maxBackoffMs < this.initialBackoffMs
-    ) {
+    if (!Number.isFinite(this.maxBackoffMs) || this.maxBackoffMs < this.initialBackoffMs) {
       throw new Error(
         `SupervisedLoop: maxBackoffMs must be >= initialBackoffMs (got ${this.maxBackoffMs} vs ${this.initialBackoffMs})`,
       );

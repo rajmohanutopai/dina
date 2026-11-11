@@ -30,7 +30,9 @@ let dir: string;
 let adapter: NodeSQLiteAdapter;
 let runtime: CommerceRuntime;
 
-const sign = (fields: Record<string, unknown>): Record<string, unknown> & { status_digest: string } => {
+const sign = (
+  fields: Record<string, unknown>,
+): Record<string, unknown> & { status_digest: string } => {
   const base = {
     protocol_version: '1.0',
     purchase_order_id: PO,
@@ -120,7 +122,9 @@ beforeEach(() => {
   } as never);
   const live = runtime.buyerOrders.get(SUPPLIER, PO);
   if (live === null) throw new Error('no order');
-  expect(runtime.buyerOrders.put(SUPPLIER, { ...live, state: 'accepted', acknowledgement: ack })).toBe(true);
+  expect(
+    runtime.buyerOrders.put(SUPPLIER, { ...live, state: 'accepted', acknowledgement: ack }),
+  ).toBe(true);
 });
 
 afterEach(() => {
@@ -146,7 +150,11 @@ describe('COM-11: an older record already held', () => {
 
   it('a second record at a held sequence with another digest is still a fork', () => {
     expect(answer([s0, s1, s2], 'e1')).toBe('applied');
-    const other = sign({ sequence: '1', state: 'cancelled', previous_status_digest: s0.status_digest });
+    const other = sign({
+      sequence: '1',
+      state: 'cancelled',
+      previous_status_digest: s0.status_digest,
+    });
     expect(answer([other], 'e2')).toBe('chain_fork');
     expect(runtime.buyerOrders.get(SUPPLIER, PO)?.protocolFault).toBeTruthy();
   });

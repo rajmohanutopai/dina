@@ -32,11 +32,7 @@ import { validateProductRef, vouchReceiptDigest } from '@dina/commerce-protocol'
 import { TERMINAL_CONVERSATION_STATES } from './order_draft_store';
 
 import type { AttributionBoundaryRepository } from './attribution_boundary';
-import type {
-  OrderDraft,
-  OrderDraftLine,
-  OrderDraftRepository,
-} from './order_draft_store';
+import type { OrderDraft, OrderDraftLine, OrderDraftRepository } from './order_draft_store';
 import type { Sha256Fn, VouchedRequirement } from '@dina/commerce-protocol';
 
 export type OrderDraftOutcome =
@@ -186,7 +182,11 @@ export class OrderDraftService {
   /** Resolve / re-resolve — as the repair row, scoped to the line. */
   resolveLine(
     draftId: string,
-    args: { lineId: string; resolution: OrderDraftLine['resolution']; evidence?: OrderDraftLine['evidence'] },
+    args: {
+      lineId: string;
+      resolution: OrderDraftLine['resolution'];
+      evidence?: OrderDraftLine['evidence'];
+    },
   ): OrderDraftOutcome {
     // REFUSE what the store cannot RE-READ. The store validates rows on
     // load and treats an invalid one as absent, so storing a resolution
@@ -280,10 +280,12 @@ export class OrderDraftService {
     if ('ok' in loaded) return loaded;
     const draft = loaded;
     const requirement = draft.requirements.find((r) => r.key === args.key);
-    if (requirement === undefined) return refuse('no_such_requirement', `no requirement ${args.key}`);
+    if (requirement === undefined)
+      return refuse('no_such_requirement', `no requirement ${args.key}`);
 
     if (args.action === 'edit') {
-      if (args.value === undefined) return refuse('value_required', 'an edit carries the new value');
+      if (args.value === undefined)
+        return refuse('value_required', 'an edit carries the new value');
       requirement.value = args.value;
       requirement.omitted = false;
       requirement.provenance = 'edited';
@@ -340,8 +342,7 @@ export class OrderDraftService {
     }
 
     const included = draft.lines.filter(
-      (line) =>
-        !line.deferred && line.resolution.kind === 'resolved' && line.submittedIn === null,
+      (line) => !line.deferred && line.resolution.kind === 'resolved' && line.submittedIn === null,
     );
     if (included.length === 0) {
       return refuse('nothing_included', 'no resolved, undeferred lines to confirm');
@@ -476,9 +477,7 @@ export class OrderDraftService {
     const loaded = this.load(draftId);
     if ('ok' in loaded) return loaded;
     const draft = loaded;
-    const conversation = draft.conversations.find(
-      (c) => c.conversationId === args.conversationId,
-    );
+    const conversation = draft.conversations.find((c) => c.conversationId === args.conversationId);
     if (conversation === undefined) {
       return refuse('no_such_conversation', `no conversation ${args.conversationId}`);
     }
@@ -546,9 +545,7 @@ export class OrderDraftService {
     const loaded = this.load(draftId);
     if ('ok' in loaded) return loaded;
     const draft = loaded;
-    const conversation = draft.conversations.find(
-      (c) => c.conversationId === args.conversationId,
-    );
+    const conversation = draft.conversations.find((c) => c.conversationId === args.conversationId);
     if (conversation === undefined) {
       return refuse('no_such_conversation', `no conversation ${args.conversationId}`);
     }

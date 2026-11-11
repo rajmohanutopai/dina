@@ -5,10 +5,7 @@
  */
 
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
-import {
-  listNotifications,
-  resetNotifications,
-} from '../../../brain/src/notifications/inbox';
+import { listNotifications, resetNotifications } from '../../../brain/src/notifications/inbox';
 import {
   createNudge,
   dismissNudge,
@@ -186,7 +183,7 @@ describe('Chat Nudge Cards Hook (4.12)', () => {
   describe('getActiveNudges', () => {
     it('returns only non-dismissed nudges', () => {
       const n1 = createNudge('health_alert', 'A', 'a', 1);
-      const n2 = createNudge('reconnection', 'B', 'b', 1);
+      const _n2 = createNudge('reconnection', 'B', 'b', 1);
       dismissNudge(n1!.id);
 
       const active = getActiveNudges();

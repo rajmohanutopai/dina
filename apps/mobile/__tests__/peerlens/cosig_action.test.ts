@@ -174,9 +174,7 @@ describe('buildCosigRejectFrame — happy path', () => {
       reason: 'declined',
       nowMs: T0,
     });
-    expect(Object.keys(frame).sort()).toEqual(
-      ['type', 'requestId', 'reason', 'createdAt'].sort(),
-    );
+    expect(Object.keys(frame).sort()).toEqual(['type', 'requestId', 'reason', 'createdAt'].sort());
   });
 
   it('supports all four CosigRejectReason values', () => {
@@ -202,9 +200,7 @@ describe('buildCosigRejectFrame — happy path', () => {
 
 describe('buildCosigRejectFrame — validation throws', () => {
   it('throws on empty requestId (sender bug — should never reach the wire)', () => {
-    expect(() =>
-      buildCosigRejectFrame({ requestId: '', reason: 'declined', nowMs: T0 }),
-    ).toThrow();
+    expect(() => buildCosigRejectFrame({ requestId: '', reason: 'declined', nowMs: T0 })).toThrow();
   });
 
   it('throws on unknown reason value', () => {

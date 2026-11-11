@@ -13,7 +13,6 @@ import {
   validateEtaQueryParams,
   validateEtaQueryResult,
 } from '../../../src/service/capabilities/eta_query';
-import { capabilitySchemaHash } from '../../../src/service/capability_schema_hash';
 import {
   FALLBACK_TTL_SECONDS,
   getCapability,
@@ -21,11 +20,17 @@ import {
   listCapabilities,
   SUPPORTED_CAPABILITIES,
 } from '../../../src/service/capabilities/registry';
+import { capabilitySchemaHash } from '../../../src/service/capability_schema_hash';
 
 describe('capabilities registry', () => {
   describe('SUPPORTED_CAPABILITIES', () => {
     it('lists exactly the registered capabilities', () => {
-      expect(SUPPORTED_CAPABILITIES).toEqual(['eta_query', 'appointment_availability', 'appointment_book', 'availability_coordination']);
+      expect(SUPPORTED_CAPABILITIES).toEqual([
+        'eta_query',
+        'appointment_availability',
+        'appointment_book',
+        'availability_coordination',
+      ]);
     });
 
     it('is immutable', () => {
@@ -66,9 +71,8 @@ describe('capabilities registry', () => {
       expect(cap?.name).toBe('availability_coordination');
       expect(cap?.defaultTtlSeconds).toBe(300);
       // result schema is the symmetric accept/counter/needs_more_info shape
-      const resultEnum = (
-        cap?.resultSchema as { properties?: { status?: { enum?: string[] } } }
-      ).properties?.status?.enum;
+      const resultEnum = (cap?.resultSchema as { properties?: { status?: { enum?: string[] } } })
+        .properties?.status?.enum;
       expect(resultEnum).toEqual(['accepted', 'counter', 'needs_more_info']);
     });
 
@@ -80,7 +84,11 @@ describe('capabilities registry', () => {
       expect(JSON.stringify(cap?.resultSchema)).toBe(JSON.stringify(catalog?.result_schema));
       // The result carries the household disclosure (GROUP_COORDINATION §6), about one thing only.
       const about = (
-        cap?.resultSchema as { properties?: { disclosures?: { items?: { properties?: { about?: { enum?: string[] } } } } } }
+        cap?.resultSchema as {
+          properties?: {
+            disclosures?: { items?: { properties?: { about?: { enum?: string[] } } } };
+          };
+        }
       ).properties?.disclosures?.items?.properties?.about?.enum;
       expect(about).toEqual(['household']);
     });
@@ -108,7 +116,12 @@ describe('capabilities registry', () => {
   describe('listCapabilities', () => {
     it('returns one entry per registered capability', () => {
       const list = listCapabilities();
-      expect(list.map((c) => c.name)).toEqual(['eta_query', 'appointment_availability', 'appointment_book', 'availability_coordination']);
+      expect(list.map((c) => c.name)).toEqual([
+        'eta_query',
+        'appointment_availability',
+        'appointment_book',
+        'availability_coordination',
+      ]);
     });
   });
 
@@ -145,7 +158,9 @@ describe('capabilitySchemaHash (the one recipe the publishers and the ingress sh
   });
 
   it('a missing description hashes as the empty one', () => {
-    expect(capabilitySchemaHash(pair({}))).toBe(capabilitySchemaHash({ ...pair({}), description: '' }));
+    expect(capabilitySchemaHash(pair({}))).toBe(
+      capabilitySchemaHash({ ...pair({}), description: '' }),
+    );
   });
 
   it('differs when the schema differs', () => {
@@ -192,9 +207,9 @@ describe('eta_query capability', () => {
     });
 
     it('rejects malformed location.lat / lng (non-finite)', () => {
-      expect(
-        validateEtaQueryParams({ ...valid, location: { lat: Number.NaN, lng: 0 } }),
-      ).toContain('lat');
+      expect(validateEtaQueryParams({ ...valid, location: { lat: Number.NaN, lng: 0 } })).toContain(
+        'lat',
+      );
       expect(
         validateEtaQueryParams({
           ...valid,
@@ -275,7 +290,10 @@ describe('eta_query capability', () => {
     });
 
     it('schema_hash for params is stable', () => {
-      const schemas = { params: EtaQueryParamsSchema as unknown as Record<string, unknown>, result: EtaQueryResultSchema as unknown as Record<string, unknown> };
+      const schemas = {
+        params: EtaQueryParamsSchema as unknown as Record<string, unknown>,
+        result: EtaQueryResultSchema as unknown as Record<string, unknown>,
+      };
       const h1 = capabilitySchemaHash(schemas);
       const h2 = capabilitySchemaHash(schemas);
       expect(h1).toBe(h2);
@@ -285,8 +303,11 @@ describe('eta_query capability', () => {
 });
 
 describe('the registry reads its own keys only', () => {
-  it.each(['toString', 'constructor', 'hasOwnProperty', '__proto__'])('%s is not a capability', (name) => {
-    expect(getCapability(name)).toBeUndefined();
-    expect(getTTL(name)).toBe(FALLBACK_TTL_SECONDS);
-  });
+  it.each(['toString', 'constructor', 'hasOwnProperty', '__proto__'])(
+    '%s is not a capability',
+    (name) => {
+      expect(getCapability(name)).toBeUndefined();
+      expect(getTTL(name)).toBe(FALLBACK_TTL_SECONDS);
+    },
+  );
 });

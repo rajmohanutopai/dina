@@ -17,12 +17,11 @@ import {
   type CancellationRequest,
   type CommerceOrderStatus,
   type OrderAcknowledgement,
+  RetainedEnvelope,
 } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
-  CommerceAdmissionEngine,
-  CommerceLifecycleEngine,
   InMemoryCommerceOrderRefRepository,
   InMemoryCommerceQuoteLedgerRepository,
   InMemoryCommerceReceiptRepository,
@@ -55,8 +54,6 @@ import {
   makeQuoteRequest,
   makeSignedQuote,
 } from './helpers';
-
-import type { RetainedEnvelope } from '@dina/commerce-protocol';
 
 interface Harness {
   orderRefs: CommerceOrderRefRepository;
@@ -1103,9 +1100,7 @@ describe.each([
       engine.resolveCancellation(cancellation, BUYER_DID, () => 'pending_review');
 
       const waiting = engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id);
-      expect(waiting.map((entry) => entry.cancellation_id)).toEqual([
-        cancellation.cancellation_id,
-      ]);
+      expect(waiting.map((entry) => entry.cancellation_id)).toEqual([cancellation.cancellation_id]);
 
       engine.finalizePendingCancellation(
         BUYER_DID,
@@ -1117,9 +1112,7 @@ describe.each([
       // that read for `pending_review` alone would keep offering a decision
       // already made. Asking what the cancellation's current result is, is
       // what makes that impossible.
-      expect(engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)).toEqual(
-        [],
-      );
+      expect(engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)).toEqual([]);
     });
 
     it('skips a result receipt that parses to null instead of throwing', () => {
@@ -1273,9 +1266,7 @@ describe.each([
       acceptOrder(order.purchase_order_id);
       engine.signGenesis(BUYER_DID, order.purchase_order_id);
       engine.resolveCancellation(makeCancellation(order), BUYER_DID, () => 'refused_policy');
-      expect(engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)).toEqual(
-        [],
-      );
+      expect(engine.listPendingReviewCancellations(BUYER_DID, order.purchase_order_id)).toEqual([]);
     });
 
     /**

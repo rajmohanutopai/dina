@@ -20,11 +20,11 @@ investigation.
 
 ## Baseline (2026-04-22, pre-M1)
 
-| Container       | Image size | Boot RAM     | Idle (40s)   | Under load (50 probes each) | CPU idle |
-|-----------------|------------|--------------|--------------|------------------------------|----------|
-| `dina-core-lite`  | **362 MB** | 95.25 MiB    | 95.89 MiB    | 97.61 MiB                    | ≤ 0.3 %  |
-| `dina-brain-lite` | **359 MB** | 70.47 MiB    | 73.48 MiB    | 74.87 MiB                    | ≤ 0.3 %  |
-| **Combined**      | **721 MB** | **166 MiB**  | **170 MiB**  | **172 MiB**                  | —        |
+| Container         | Image size | Boot RAM    | Idle (40s)  | Under load (50 probes each) | CPU idle |
+| ----------------- | ---------- | ----------- | ----------- | --------------------------- | -------- |
+| `dina-core-lite`  | **362 MB** | 95.25 MiB   | 95.89 MiB   | 97.61 MiB                   | ≤ 0.3 %  |
+| `dina-brain-lite` | **359 MB** | 70.47 MiB   | 73.48 MiB   | 74.87 MiB                   | ≤ 0.3 %  |
+| **Combined**      | **721 MB** | **166 MiB** | **170 MiB** | **172 MiB**                 | —        |
 
 ## Interpretation
 
@@ -85,11 +85,11 @@ DINA_BENCH_JSON=/tmp/bench.json \
 
 ### Measured against both budgets (2026-04-22, 10 s idle)
 
-| Metric                                  | Target   | Measured      | Margin |
-|-----------------------------------------|----------|---------------|--------|
-| Core cold-start (boot → /healthz 200)   | < 3000 ms | **1132 ms**  | 2.6 × |
-| Brain cold-start                        | < 3000 ms | **570 ms**   | 5.3 × |
-| Core + Brain idle RSS                   | < 250 MB | **167.71 MiB**| 1.5 × |
+| Metric                                | Target    | Measured       | Margin |
+| ------------------------------------- | --------- | -------------- | ------ |
+| Core cold-start (boot → /healthz 200) | < 3000 ms | **1132 ms**    | 2.6 ×  |
+| Brain cold-start                      | < 3000 ms | **570 ms**     | 5.3 ×  |
+| Core + Brain idle RSS                 | < 250 MB  | **167.71 MiB** | 1.5 ×  |
 
 Both budgets pass with comfortable headroom. Run the benchmark on
 every Docker image change so regressions surface in the PR + the
@@ -105,12 +105,12 @@ session — the scripts already exist and work on any platform; Pi
 scope is about running them on real Pi hardware with the relaxed
 budgets set via env.
 
-| Task  | What                         | x86_64 budget | **Pi 5 budget**   | How to run |
-|-------|------------------------------|---------------|-------------------|------------|
-| 11.17 | First-boot wall-clock (cold-start → /healthz 200) | < 3000 ms | **< 10000 ms** | `./apps/home-node-lite/docker/security-checks/pi5-smoke.sh` |
-| 11.18 | Combined Core+Brain idle RSS | < 250 MB      | **< 400 MB**      | same script (11.17 + 11.18 bundled) |
-| 11.19 | FTS5 p95 / HNSW p95 at 10K items | FTS5 < 50 ms, HNSW < 100 ms | **FTS5 < 200 ms, HNSW < 400 ms** | see §*11.19 — FTS/HNSW on Pi* below |
-| 11.20 | 24h stability — no memory growth > 20% | same budget     | **same budget**     | see §*11.20 — 24h stability on Pi* below |
+| Task  | What                                              | x86_64 budget               | **Pi 5 budget**                  | How to run                                                  |
+| ----- | ------------------------------------------------- | --------------------------- | -------------------------------- | ----------------------------------------------------------- |
+| 11.17 | First-boot wall-clock (cold-start → /healthz 200) | < 3000 ms                   | **< 10000 ms**                   | `./apps/home-node-lite/docker/security-checks/pi5-smoke.sh` |
+| 11.18 | Combined Core+Brain idle RSS                      | < 250 MB                    | **< 400 MB**                     | same script (11.17 + 11.18 bundled)                         |
+| 11.19 | FTS5 p95 / HNSW p95 at 10K items                  | FTS5 < 50 ms, HNSW < 100 ms | **FTS5 < 200 ms, HNSW < 400 ms** | see §_11.19 — FTS/HNSW on Pi_ below                         |
+| 11.20 | 24h stability — no memory growth > 20%            | same budget                 | **same budget**                  | see §_11.20 — 24h stability on Pi_ below                    |
 
 The Pi gates are looser on absolute numbers (11.17/11.18/11.19) but
 **identical on growth-rate invariants** (11.20 — a memory leak is a
@@ -134,6 +134,7 @@ HNSW_ROW_COUNT=10000 \
 
 The env knobs (already existing, documented in each probe file's
 header):
+
 - `PERF_P95_MS` — FTS5 budget in ms (default 50, Pi 200)
 - `HNSW_P95_MS` — HNSW budget in ms (default 100, Pi 400)
 - `HNSW_ROW_COUNT` — corpus size (default 10000, keep at 10k for the
@@ -160,8 +161,8 @@ DINA_SOAK_MEMORY_GROWTH_CEILING=20 \
 The three gates (memory growth ≤ 20%, no unhandled rejections,
 throughput-probe PASS) apply identically on Pi — the invariant is
 "no regression over 24h," which doesn't change with architecture.
-Only the *initial* RSS baseline shifts with ARM's slightly larger
-base; the *growth percentage* is arch-neutral.
+Only the _initial_ RSS baseline shifts with ARM's slightly larger
+base; the _growth percentage_ is arch-neutral.
 
 **Pi-specific run notes:**
 
@@ -180,7 +181,7 @@ base; the *growth percentage* is arch-neutral.
 ## See also
 
 - Dockerfile TODOs: `apps/home-node-lite/docker/Dockerfile.core`
-  + `Dockerfile.brain` (M1+ optimisation block at top)
+  - `Dockerfile.brain` (M1+ optimisation block at top)
 - Phase 11a benchmark targets:
   `docs/HOME_NODE_LITE_TASKS.md` — 11.1 (memory idle), 11.3
   (throughput 50 req/s), 11.6 (end-to-end latency)

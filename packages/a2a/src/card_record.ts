@@ -38,10 +38,12 @@ export type CardRecordText =
  */
 export function readCardRecordText(record: unknown): CardRecordText {
   if (!isPlainObject(record)) return { ok: false, reason: 'record_not_object' };
-  if (Object.keys(record).some((k) => !A2A_CARD_RECORD_MEMBERS.has(k))) return { ok: false, reason: 'record_members' };
+  if (Object.keys(record).some((k) => !A2A_CARD_RECORD_MEMBERS.has(k)))
+    return { ok: false, reason: 'record_members' };
   const cardText = record.card;
   if (typeof cardText !== 'string') return { ok: false, reason: 'card_not_string' };
-  if (utf8Bytes(cardText).length > A2A_LIMITS.maxCardBytes) return { ok: false, reason: 'card_too_large' };
+  if (utf8Bytes(cardText).length > A2A_LIMITS.maxCardBytes)
+    return { ok: false, reason: 'card_too_large' };
   const parsed = parseStrictJson(cardText);
   if (!parsed.ok || !isPlainObject(parsed.value)) return { ok: false, reason: 'card_not_json' };
   const card = parsed.value;
@@ -70,22 +72,37 @@ export type CardRecordFacts =
  * interface and skills; and the record's `endpoint`, `protocol_version` and
  * `skills` equal the card's. The card has passed `readCardRecordText`.
  */
-export function readCardRecordFacts(card: JsonObject, record: JsonObject, repoDid: string): CardRecordFacts {
-  const extensions = isPlainObject(card.capabilities) && Array.isArray(card.capabilities.extensions) ? card.capabilities.extensions : [];
+export function readCardRecordFacts(
+  card: JsonObject,
+  record: JsonObject,
+  repoDid: string,
+): CardRecordFacts {
+  const extensions =
+    isPlainObject(card.capabilities) && Array.isArray(card.capabilities.extensions)
+      ? card.capabilities.extensions
+      : [];
   const dina = extensions.find((e) => isPlainObject(e) && e.uri === DINA_A2A_EXTENSION_URI);
-  if (!isPlainObject(dina) || !isPlainObject(dina.params) || dina.params.did !== repoDid) return { ok: false, reason: 'extension_did' };
+  if (!isPlainObject(dina) || !isPlainObject(dina.params) || dina.params.did !== repoDid)
+    return { ok: false, reason: 'extension_did' };
   const interfaces = card.supportedInterfaces as Record<string, unknown>[];
   const rpc = interfaces.find((i) => i.protocolBinding === 'JSONRPC');
   if (rpc === undefined) return { ok: false, reason: 'no_jsonrpc_interface' };
   const endpoint = rpc.url as string;
   const protocolVersion = rpc.protocolVersion as string;
-  const ids = Array.isArray(card.skills) ? card.skills.map((s) => (isPlainObject(s) && typeof s.id === 'string' ? s.id : null)) : [];
+  const ids = Array.isArray(card.skills)
+    ? card.skills.map((s) => (isPlainObject(s) && typeof s.id === 'string' ? s.id : null))
+    : [];
   if (ids.length === 0 || ids.includes(null)) return { ok: false, reason: 'skills' };
   const skillIds = ids as string[];
   if (record.endpoint !== endpoint) return { ok: false, reason: 'sibling_endpoint' };
-  if (record.protocol_version !== protocolVersion) return { ok: false, reason: 'sibling_protocol_version' };
+  if (record.protocol_version !== protocolVersion)
+    return { ok: false, reason: 'sibling_protocol_version' };
   const listed = record.skills;
-  if (!Array.isArray(listed) || listed.length !== skillIds.length || listed.some((s, i) => s !== skillIds[i])) {
+  if (
+    !Array.isArray(listed) ||
+    listed.length !== skillIds.length ||
+    listed.some((s, i) => s !== skillIds[i])
+  ) {
     return { ok: false, reason: 'sibling_skills' };
   }
   return { ok: true, endpoint, protocolVersion, skillIds };

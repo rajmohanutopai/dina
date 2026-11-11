@@ -4,7 +4,11 @@
  * so the gateway sends only what follows.
  */
 
-import { A2A_CREDENTIAL_GEN_HEADER, A2A_EVENT_SEQ_HEADER, A2A_STREAM_CLIENT_HEADER } from '@dina/a2a';
+import {
+  A2A_CREDENTIAL_GEN_HEADER,
+  A2A_EVENT_SEQ_HEADER,
+  A2A_STREAM_CLIENT_HEADER,
+} from '@dina/a2a';
 
 import {
   ingressSendMessage,

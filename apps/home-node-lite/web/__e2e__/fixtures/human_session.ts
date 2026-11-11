@@ -18,8 +18,8 @@ import { egressHost, isAllowedEgress, scanForLeaks } from '../support/log_hygien
 
 import * as backstage from './backstage';
 import { ChatThread } from './pages/chat_thread';
-import { connectAsOwner } from './pages/owner_access';
 import { Composer } from './pages/composer';
+import { connectAsOwner } from './pages/owner_access';
 
 export interface HumanSession {
   page: Page;

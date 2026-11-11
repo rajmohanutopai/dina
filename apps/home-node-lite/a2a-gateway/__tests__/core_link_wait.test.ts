@@ -38,16 +38,29 @@ afterAll(async () => {
 });
 
 const seed = new Uint8Array(32).fill(51);
-const envelope: GatewayEnvelope = { request: { method: 'POST', path: '/a2a/v1', query: '', body: '{}' }, client_auth: {} };
+const envelope: GatewayEnvelope = {
+  request: { method: 'POST', path: '/a2a/v1', query: '', body: '{}' },
+  client_auth: {},
+};
 
 describe('the SendMessage forward waits longer than Core’s wait', () => {
   it('outlasts the timeout set for other calls', async () => {
     delayMs = 400;
-    const link = createCoreLink({ baseUrl: base, key: { seed, did: deriveDIDKey(getPublicKey(seed)) }, timeoutMs: 150 });
+    const link = createCoreLink({
+      baseUrl: base,
+      key: { seed, did: deriveDIDKey(getPublicKey(seed)) },
+      timeoutMs: 150,
+    });
     const sent = await link.forward(ingressRouteOf('SendMessage'), envelope);
     expect(sent.ok).toBe(true);
     // Every other forward gives up at the timeout set.
-    expect(await link.forward(ingressRouteOf('ListTasks'), envelope)).toEqual({ ok: false, status: 'unreachable' });
-    expect(await link.forward(ingressRouteOf('SendStreamingMessage'), envelope)).toEqual({ ok: false, status: 'unreachable' });
+    expect(await link.forward(ingressRouteOf('ListTasks'), envelope)).toEqual({
+      ok: false,
+      status: 'unreachable',
+    });
+    expect(await link.forward(ingressRouteOf('SendStreamingMessage'), envelope)).toEqual({
+      ok: false,
+      status: 'unreachable',
+    });
   });
 });

@@ -22,7 +22,11 @@ const PEER = process.env.PEER_URL ?? 'http://127.0.0.1:18298';
 const MOBILE_DID = process.env.MOBILE_DID ?? '';
 if (MOBILE_DID === '') throw new Error('set MOBILE_DID');
 
-async function debug(method: string, path: string, body?: unknown): Promise<{ status: number; body: unknown }> {
+async function debug(
+  method: string,
+  path: string,
+  body?: unknown,
+): Promise<{ status: number; body: unknown }> {
   const r = await fetch(`${PEER}/v1/debug/dispatch`, {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
@@ -53,7 +57,7 @@ async function main(): Promise<void> {
     status: 'active',
     surface: 'talk',
     defaultOfferable: true,
-    name: "Sancho — Find a time",
+    name: 'Sancho — Find a time',
     description: 'Coordinate a meeting time with me',
     capabilities: {
       availability_coordination: {
@@ -75,17 +79,30 @@ async function main(): Promise<void> {
     },
   };
 
-  console.log('1) PUT listing →', JSON.stringify(await debug('PUT', '/v1/service/config/self', config)));
-  console.log('2) add mobile contact →', JSON.stringify(await debug('POST', '/v1/contacts', {
-    did: MOBILE_DID,
-    display_name: 'Alonso',
-    trust_level: 'verified',
-  })));
-  console.log('3) issue offer →', JSON.stringify(await debug('POST', '/v1/service/offer', {
-    to_did: MOBILE_DID,
-    rkey: 'self',
-    capability: 'availability_coordination',
-  })));
+  console.log(
+    '1) PUT listing →',
+    JSON.stringify(await debug('PUT', '/v1/service/config/self', config)),
+  );
+  console.log(
+    '2) add mobile contact →',
+    JSON.stringify(
+      await debug('POST', '/v1/contacts', {
+        did: MOBILE_DID,
+        display_name: 'Alonso',
+        trust_level: 'verified',
+      }),
+    ),
+  );
+  console.log(
+    '3) issue offer →',
+    JSON.stringify(
+      await debug('POST', '/v1/service/offer', {
+        to_did: MOBILE_DID,
+        rkey: 'self',
+        capability: 'availability_coordination',
+      }),
+    ),
+  );
 }
 
 main().catch((e) => {

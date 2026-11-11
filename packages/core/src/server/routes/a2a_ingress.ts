@@ -44,7 +44,11 @@ import {
   ingressSubscribeToTask,
   inboundCore,
 } from '../../a2a/inbound';
-import { buildInboundCard, getA2ACardConfig, ingressGetExtendedAgentCard } from '../../a2a/inbound_card';
+import {
+  buildInboundCard,
+  getA2ACardConfig,
+  ingressGetExtendedAgentCard,
+} from '../../a2a/inbound_card';
 import {
   isRestRequest,
   parseGatewayEnvelope,
@@ -126,21 +130,28 @@ function cardInputs() {
  * `webhook_limit` webhook POSTs (none when absent).
  */
 function claimEvents(req: CoreRequest): CoreResponse {
-  if (req.callerType !== 'gateway' || req.callerDID === undefined) return json(403, { error: 'gateway_only' });
+  if (req.callerType !== 'gateway' || req.callerDID === undefined)
+    return json(403, { error: 'gateway_only' });
   const body = req.body === undefined || req.body === null ? {} : req.body;
   if (!isPlainObject(body)) return json(400, { error: 'body_malformed' });
   const count = (v: unknown, fallback: number): number =>
-    typeof v === 'number' && Number.isInteger(v) && v >= 0 ? Math.min(v, DELIVERY_LIMITS.maxClaim) : fallback;
+    typeof v === 'number' && Number.isInteger(v) && v >= 0
+      ? Math.min(v, DELIVERY_LIMITS.maxClaim)
+      : fallback;
   const limit = count(body.limit, DELIVERY_LIMITS.maxClaim);
   const webhookLimit = count(body.webhook_limit, 0);
   const a2a = currentRuntime();
   if (a2a === null) return json(503, { error: 'a2a_unavailable' });
-  return json(200, claimDeliveries(inboundCore(a2a), { claimant: req.callerDID, limit, webhookLimit }));
+  return json(
+    200,
+    claimDeliveries(inboundCore(a2a), { claimant: req.callerDID, limit, webhookLimit }),
+  );
 }
 
 /** The gateway reports what became of each claimed event. */
 function ackEvents(req: CoreRequest): CoreResponse {
-  if (req.callerType !== 'gateway' || req.callerDID === undefined) return json(403, { error: 'gateway_only' });
+  if (req.callerType !== 'gateway' || req.callerDID === undefined)
+    return json(403, { error: 'gateway_only' });
   const acks = parseDeliveryAcks(req.body);
   if (acks === null) return json(400, { error: 'acks_malformed' });
   const a2a = currentRuntime();
@@ -171,13 +182,20 @@ async function serveCard(req: CoreRequest): Promise<CoreResponse> {
 export function isA2AGatewayRoute(method: string, path: string): boolean {
   if (method === 'GET') return path === A2A_CARD_ROUTE;
   if (method !== 'POST') return false;
-  if (path === A2A_EVENTS_CLAIM_ROUTE || path === A2A_EVENTS_ACK_ROUTE || path === A2A_DID_COMPLETE_ROUTE) return true;
+  if (
+    path === A2A_EVENTS_CLAIM_ROUTE ||
+    path === A2A_EVENTS_ACK_ROUTE ||
+    path === A2A_DID_COMPLETE_ROUTE
+  )
+    return true;
   const given = path.split('/');
   return A2A_METHODS.some((m) => {
     const template = ingressRouteOf(m).split('/');
     return (
       template.length === given.length &&
-      template.every((part, i) => (part.startsWith(':') ? (given[i] ?? '') !== '' : part === given[i]))
+      template.every((part, i) =>
+        part.startsWith(':') ? (given[i] ?? '') !== '' : part === given[i],
+      )
     );
   });
 }
@@ -195,15 +213,20 @@ export function registerA2AIngressRoutes(router: CoreRouter): void {
   const cfg = (req: CoreRequest): string => req.params.configId ?? '';
   const handlers: Readonly<Record<A2AMethod, Handler>> = {
     SendMessage: (rt, envelope) => awaitSendMessage(rt, envelope),
-    SendStreamingMessage: (rt, envelope) => ingressSendMessage(rt, envelope, 'SendStreamingMessage'),
+    SendStreamingMessage: (rt, envelope) =>
+      ingressSendMessage(rt, envelope, 'SendStreamingMessage'),
     ListTasks: (rt, envelope) => ingressListTasks(rt, envelope),
     GetTask: (rt, envelope, req) => ingressGetTask(rt, envelope, ext(req)),
     CancelTask: (rt, envelope, req) => ingressCancelTask(rt, envelope, ext(req)),
     SubscribeToTask: (rt, envelope, req) => ingressSubscribeToTask(rt, envelope, ext(req)),
-    CreateTaskPushNotificationConfig: (rt, envelope, req) => ingressCreatePushConfig(rt, envelope, ext(req)),
-    GetTaskPushNotificationConfig: (rt, envelope, req) => ingressGetPushConfig(rt, envelope, ext(req), cfg(req)),
-    ListTaskPushNotificationConfigs: (rt, envelope, req) => ingressListPushConfigs(rt, envelope, ext(req)),
-    DeleteTaskPushNotificationConfig: (rt, envelope, req) => ingressDeletePushConfig(rt, envelope, ext(req), cfg(req)),
+    CreateTaskPushNotificationConfig: (rt, envelope, req) =>
+      ingressCreatePushConfig(rt, envelope, ext(req)),
+    GetTaskPushNotificationConfig: (rt, envelope, req) =>
+      ingressGetPushConfig(rt, envelope, ext(req), cfg(req)),
+    ListTaskPushNotificationConfigs: (rt, envelope, req) =>
+      ingressListPushConfigs(rt, envelope, ext(req)),
+    DeleteTaskPushNotificationConfig: (rt, envelope, req) =>
+      ingressDeletePushConfig(rt, envelope, ext(req), cfg(req)),
     GetExtendedAgentCard: (rt, envelope) => ingressGetExtendedAgentCard(rt, envelope, cardInputs()),
   };
   for (const method of A2A_METHODS) router.post(ingressRouteOf(method), serve(handlers[method]));

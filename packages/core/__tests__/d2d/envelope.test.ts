@@ -4,14 +4,13 @@
  * Source: core/test/transport_d2d_sig_test.go
  */
 
-import { TEST_ED25519_SEED, bytesToHex } from '@dina/test-harness';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { buildMessage, parseMessage, sealMessage, unsealMessage } from '../../src/d2d/envelope';
 import { verifyMessageSingle } from '../../src/d2d/signature';
 
 import type { DinaMessage } from '../../src/d2d/envelope';
-
 
 describe('D2D Envelope', () => {
   const testMsg: DinaMessage = {
@@ -95,7 +94,11 @@ describe('D2D Envelope', () => {
 
     it('seal → unseal recovers original message', () => {
       const payload = sealMessage(testMsg, senderPriv, recipientPub);
-      const { message, signatureHex } = unsealMessage(payload, recipientPub, recipientPriv);
+      const { message, signatureHex: _signatureHex } = unsealMessage(
+        payload,
+        recipientPub,
+        recipientPriv,
+      );
       expect(message.id).toBe(testMsg.id);
       expect(message.type).toBe(testMsg.type);
       expect(message.body).toBe(testMsg.body);

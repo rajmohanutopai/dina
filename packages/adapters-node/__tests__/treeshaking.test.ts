@@ -111,8 +111,7 @@ function reachesPackage(bundled: string[], pkgName: string): boolean {
 describe('adapters-node — treeshaking', () => {
   it('importing only FileSystem leaves crypto/keystore/net out of the bundle', async () => {
     const { bundled } = await bundleConsumer(
-      `import { FileSystem } from '@dina/adapters-node';\n` +
-        `const __sink = new FileSystem();`,
+      `import { FileSystem } from '@dina/adapters-node';\n` + `const __sink = new FileSystem();`,
     );
     expect(reachesPackage(bundled, '@dina/fs-node')).toBe(true);
     expect(reachesPackage(bundled, '@dina/crypto-node')).toBe(false);
@@ -126,8 +125,7 @@ describe('adapters-node — treeshaking', () => {
 
   it('importing only Crypto leaves fs/keystore/net out of the bundle', async () => {
     const { bundled } = await bundleConsumer(
-      `import { Crypto } from '@dina/adapters-node';\n` +
-        `const __sink = new Crypto();`,
+      `import { Crypto } from '@dina/adapters-node';\n` + `const __sink = new Crypto();`,
     );
     expect(reachesPackage(bundled, '@dina/crypto-node')).toBe(true);
     expect(reachesPackage(bundled, '@dina/fs-node')).toBe(false);
@@ -137,8 +135,7 @@ describe('adapters-node — treeshaking', () => {
 
   it('importing only HttpClient leaves fs/keystore/crypto out of the bundle', async () => {
     const { bundled } = await bundleConsumer(
-      `import { HttpClient } from '@dina/adapters-node';\n` +
-        `const __sink = new HttpClient();`,
+      `import { HttpClient } from '@dina/adapters-node';\n` + `const __sink = new HttpClient();`,
     );
     expect(reachesPackage(bundled, '@dina/net-node')).toBe(true);
     expect(reachesPackage(bundled, '@dina/fs-node')).toBe(false);
@@ -177,8 +174,7 @@ describe('adapters-node — treeshaking', () => {
     // declarations, the bundle will balloon past this limit because the
     // whole capability stack lands.
     const { bundleSize } = await bundleConsumer(
-      `import { FileSystem } from '@dina/adapters-node';\n` +
-        `const __sink = new FileSystem();`,
+      `import { FileSystem } from '@dina/adapters-node';\n` + `const __sink = new FileSystem();`,
     );
     expect(bundleSize).toBeLessThan(5 * 1024);
   });

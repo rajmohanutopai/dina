@@ -33,7 +33,9 @@ const API_KEY =
     : (process.env.DINA_OPENROUTER_API_KEY ?? process.env.OPENROUTER_API_KEY ?? '');
 const ENABLED = process.env.RUN_INTENT_EVAL === '1' && API_KEY !== '';
 // The production tier for `intent_classification` is the lite model.
-const MODEL = process.env.EVAL_MODEL ?? (PROVIDER === 'gemini' ? 'gemini-2.5-flash' : DEFAULT_OPENROUTER_LITE_MODEL);
+const MODEL =
+  process.env.EVAL_MODEL ??
+  (PROVIDER === 'gemini' ? 'gemini-2.5-flash' : DEFAULT_OPENROUTER_LITE_MODEL);
 
 /** Skip the whole suite unless explicitly opted in with a key present. */
 const suite = ENABLED ? describe : describe.skip;
@@ -71,9 +73,23 @@ const CASES: readonly EvalCase[] = [
   // ── products (offers across suppliers — the research loop, §5.A1). A product
   //    compared across suppliers is NOT a named store's live state; "where can I
   //    buy" may honestly carry both, so only the first two exclude the store path.
-  { kind: 'products', q: 'best ergonomic office chair for me', expect: 'products', notExpect: 'provider_services' },
-  { kind: 'products', q: 'compare prices for a 1TB NVMe SSD', expect: 'products', notExpect: 'provider_services' },
-  { kind: 'products', q: 'where can I buy a Prestige 3-litre pressure cooker?', expect: 'products' },
+  {
+    kind: 'products',
+    q: 'best ergonomic office chair for me',
+    expect: 'products',
+    notExpect: 'provider_services',
+  },
+  {
+    kind: 'products',
+    q: 'compare prices for a 1TB NVMe SSD',
+    expect: 'products',
+    notExpect: 'provider_services',
+  },
+  {
+    kind: 'products',
+    q: 'where can I buy a Prestige 3-litre pressure cooker?',
+    expect: 'products',
+  },
   { kind: 'products', q: 'which running shoes should I get', expect: 'products' },
   // ── provider services (live / local / commercial state) ──
   {
@@ -118,10 +134,15 @@ suite(`IntentClassifier — live routing eval (${PROVIDER} ${MODEL})`, () => {
       });
       return res.text ?? '';
     }
-    if (openrouter === null) openrouter = new OpenRouterAdapter({ apiKey: API_KEY, defaultModel: MODEL });
+    if (openrouter === null)
+      openrouter = new OpenRouterAdapter({ apiKey: API_KEY, defaultModel: MODEL });
     // The production budget (`buildLightweightLLMCall`): a reasoning model
     // spends tokens thinking before the JSON, and 512 leaves it with none.
-    const res = await openrouter.chat([{ role: 'user', content: prompt }], { systemPrompt: system, temperature: 0, maxTokens: 2048 });
+    const res = await openrouter.chat([{ role: 'user', content: prompt }], {
+      systemPrompt: system,
+      temperature: 0,
+      maxTokens: 2048,
+    });
     return res.content;
   };
 

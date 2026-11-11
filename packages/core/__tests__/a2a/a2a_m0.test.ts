@@ -517,19 +517,23 @@ describe('ingress failure classes (design §7.2: steps 1–4 protocol error, 7�
     (reason) => {
       const out = ingressFailureResponse(reason);
       expect(out.kind).toBe('protocol_error');
-      expect(out.kind === 'protocol_error' && out.error.code).toBe(CONTENT_TYPE.has(reason) ? -32005 : -32602);
+      expect(out.kind === 'protocol_error' && out.error.code).toBe(
+        CONTENT_TYPE.has(reason) ? -32005 : -32602,
+      );
       expect(out.kind === 'protocol_error' && dinaErrorInfo(out.error)?.reason).toBe(reason);
     },
   );
 
-  it.each([...INBOUND_CLASSIFICATION_FAILURES, ...INBOUND_ACCESS_FAILURES, ...NORMALIZATION_FAILURES, ...INBOUND_CARD_FAILURES])(
-    'refusal %s collapses to the one REJECTED view',
-    (reason) => {
-      const out = ingressFailureResponse(reason);
-      expect(out).toEqual({ kind: 'rejected', view: REFUSAL_VIEW, reason });
-      expect(REFUSAL_VIEW.state).toBe('TASK_STATE_REJECTED');
-    },
-  );
+  it.each([
+    ...INBOUND_CLASSIFICATION_FAILURES,
+    ...INBOUND_ACCESS_FAILURES,
+    ...NORMALIZATION_FAILURES,
+    ...INBOUND_CARD_FAILURES,
+  ])('refusal %s collapses to the one REJECTED view', (reason) => {
+    const out = ingressFailureResponse(reason);
+    expect(out).toEqual({ kind: 'rejected', view: REFUSAL_VIEW, reason });
+    expect(REFUSAL_VIEW.state).toBe('TASK_STATE_REJECTED');
+  });
 });
 
 describe('dispatch binding (design §5.1)', () => {
@@ -551,7 +555,8 @@ describe('dispatch binding (design §5.1)', () => {
 
   it('maps every A2A method to its own route under the ingress prefix (M3: streaming too)', () => {
     expect(Object.keys(A2A_DISPATCH_TABLE).sort()).toEqual([...A2A_METHODS].sort());
-    for (const route of Object.values(A2A_DISPATCH_TABLE)) expect(route.path.startsWith('/v1/a2a/ingress/')).toBe(true);
+    for (const route of Object.values(A2A_DISPATCH_TABLE))
+      expect(route.path.startsWith('/v1/a2a/ingress/')).toBe(true);
     expect(A2A_DISPATCH_TABLE.SendStreamingMessage.path).toBe('/v1/a2a/ingress/message/stream');
     expect(A2A_DISPATCH_TABLE.SubscribeToTask.path).toBe('/v1/a2a/ingress/tasks/:extId/subscribe');
   });
@@ -606,7 +611,12 @@ describe('dispatch binding (design §5.1)', () => {
     const at = (signedPath: string) => bind({ signedPath }).ok;
     expect(at(rpcPath)).toBe(true);
     expect(at(`${rpcPath}/`)).toBe(true);
-    expect([at(`${rpcPath}//`), at(`${rpcPath}/x`), at(rpcPath.slice(0, -1)), at(`${rpcPath}.`)]).toEqual([false, false, false, false]);
+    expect([
+      at(`${rpcPath}//`),
+      at(`${rpcPath}/x`),
+      at(rpcPath.slice(0, -1)),
+      at(`${rpcPath}.`),
+    ]).toEqual([false, false, false, false]);
   });
 
   it('refuses a signature over another external request', () => {
@@ -625,7 +635,11 @@ describe('dispatch binding (design §5.1)', () => {
   });
 
   it.each([
-    ['a streaming body sent to another door', body('SendStreamingMessage', {}), 'operation_mismatch'],
+    [
+      'a streaming body sent to another door',
+      body('SendStreamingMessage', {}),
+      'operation_mismatch',
+    ],
     ['a body that is not JSON-RPC', '{"x":1}', 'malformed_body'],
     ['a missing task id', body('GetTask', {}), 'id_missing'],
   ])('refuses %s', (_name, rawBody, reason) => {

@@ -48,7 +48,7 @@ import {
   type CatalogSnapshotPage,
 } from '../src/catalog_publication';
 import { checkProtocolVersion, validateProtocolVersionShape } from '../src/common';
-import { COMMERCE_DIGEST_DOMAINS, commerceDigest, commerceRecordDigest } from '../src/digests';
+import { COMMERCE_DIGEST_DOMAINS, commerceDigest } from '../src/digests';
 import { productRefsEqual, validateProductRef, type ProductRef } from '../src/product';
 import { compareQuantities, validateQuantity, type Quantity } from '../src/quantity';
 import { termsDigestInput } from '../src/quote';
@@ -1254,8 +1254,7 @@ const heldWrongSenderEnvelope = { ...heldEnvelope, from: 'did:plc:othersupplier'
 const heldWrongRecipientEnvelope = { ...heldEnvelope, to: ['did:plc:otherbuyer'] };
 
 /** Flip one hex digit — a signature that is well-formed and simply wrong. */
-const flipHex = (hex: string): string =>
-  `${hex.slice(0, -1)}${hex.slice(-1) === '0' ? '1' : '0'}`;
+const flipHex = (hex: string): string => `${hex.slice(0, -1)}${hex.slice(-1) === '0' ? '1' : '0'}`;
 
 write('held_signed.json', {
   description:
@@ -1460,7 +1459,10 @@ const nestedUnknownCases = [
     name: 'inside the DELIVERY projection',
     record: {
       ...order,
-      delivery: { ...(order.delivery as unknown as Record<string, unknown>), future_qualifier: 'x' },
+      delivery: {
+        ...(order.delivery as unknown as Record<string, unknown>),
+        future_qualifier: 'x',
+      },
     },
   },
   {

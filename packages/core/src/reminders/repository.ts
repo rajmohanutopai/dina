@@ -97,10 +97,10 @@ export class SQLiteReminderRepository implements ReminderRepository {
   }
 
   async listByPersona(persona: string): Promise<Reminder[]> {
-    const rows = this.db.query(
-      `SELECT * FROM reminders WHERE persona = ? AND ${scopedWhere()}`,
-      [persona, ...scopedParams()],
-    );
+    const rows = this.db.query(`SELECT * FROM reminders WHERE persona = ? AND ${scopedWhere()}`, [
+      persona,
+      ...scopedParams(),
+    ]);
     return rows.map(rowToReminder);
   }
 
@@ -137,7 +137,10 @@ export class SQLiteReminderRepository implements ReminderRepository {
     if (sets.length === 0) return;
     // Exact-id + scope: a demo id can never update a user reminder.
     params.push(id, ...scopedParams());
-    this.db.execute(`UPDATE reminders SET ${sets.join(', ')} WHERE id = ? AND ${scopedWhere()}`, params);
+    this.db.execute(
+      `UPDATE reminders SET ${sets.join(', ')} WHERE id = ? AND ${scopedWhere()}`,
+      params,
+    );
   }
 
   async remove(id: string): Promise<boolean> {

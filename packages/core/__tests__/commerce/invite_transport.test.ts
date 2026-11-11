@@ -171,26 +171,65 @@ it('mint → redeem → four sealed messages → both sides active, from non-con
   }
 
   // 3. Redemption reaches the inviter → it confirms.
-  await deliver(REDEEMER, redeemerPriv, redeemerPub, INVITER, inviterPriv, inviterPub, inviter, redemptionMsg.body);
+  await deliver(
+    REDEEMER,
+    redeemerPriv,
+    redeemerPub,
+    INVITER,
+    inviterPriv,
+    inviterPub,
+    inviter,
+    redemptionMsg.body,
+  );
   const confirmationMsg = inviter.outbox.shift();
   if (confirmationMsg === undefined) throw new Error('no confirmation dispatched');
 
   // 4. Confirmation reaches the redeemer → it ACTIVATES and acks.
-  await deliver(INVITER, inviterPriv, inviterPub, REDEEMER, redeemerPriv, redeemerPub, redeemer, confirmationMsg.body);
+  await deliver(
+    INVITER,
+    inviterPriv,
+    inviterPub,
+    REDEEMER,
+    redeemerPriv,
+    redeemerPub,
+    redeemer,
+    confirmationMsg.body,
+  );
   expect(redeemer.contacts.has(INVITER)).toBe(true);
   expect(redeemer.grants).toHaveLength(1); // you_supply_me: the redeemer supplies
   const ackMsg = redeemer.outbox.shift();
   if (ackMsg === undefined) throw new Error('no ack dispatched');
 
   // 5. Ack reaches the inviter → it ACTIVATES and pongs the receipt.
-  await deliver(REDEEMER, redeemerPriv, redeemerPub, INVITER, inviterPriv, inviterPub, inviter, ackMsg.body);
+  await deliver(
+    REDEEMER,
+    redeemerPriv,
+    redeemerPub,
+    INVITER,
+    inviterPriv,
+    inviterPub,
+    inviter,
+    ackMsg.body,
+  );
   expect(inviter.contacts.has(REDEEMER)).toBe(true);
   const receiptMsg = inviter.outbox.shift();
   if (receiptMsg === undefined) throw new Error('no receipt dispatched');
 
   // 6. The receipt reaches the redeemer → activation PROOF.
-  await deliver(INVITER, inviterPriv, inviterPub, REDEEMER, redeemerPriv, redeemerPub, redeemer, receiptMsg.body);
-  expect(redeemer.repo.get((minted.body as { offer: { nonce: string } }).offer.nonce)?.activationProvenAt).toBe(T0);
+  await deliver(
+    INVITER,
+    inviterPriv,
+    inviterPub,
+    REDEEMER,
+    redeemerPriv,
+    redeemerPub,
+    redeemer,
+    receiptMsg.body,
+  );
+  expect(
+    redeemer.repo.get((minted.body as { offer: { nonce: string } }).offer.nonce)
+      ?.activationProvenAt,
+  ).toBe(T0);
 
   // 7. The owner surface reads the exchange.
   installCommerceRuntime({
@@ -200,9 +239,14 @@ it('mint → redeem → four sealed messages → both sides active, from non-con
   } as unknown as CommerceRuntime);
   const listed = await router.handle(owner('/v1/commerce/invites', undefined));
   expect(listed.status).toBe(200);
-  const rows = (listed.body as { invites: { state: string; activation_proven: boolean }[] }).invites;
+  const rows = (listed.body as { invites: { state: string; activation_proven: boolean }[] })
+    .invites;
   expect(rows).toEqual([
-    expect.objectContaining({ state: 'active', activation_proven: true, counterparty_did: INVITER }),
+    expect.objectContaining({
+      state: 'active',
+      activation_proven: true,
+      counterparty_did: INVITER,
+    }),
   ]);
   // The nonce is a CREDENTIAL: the list hands it out ONLY for held rows
   // (where the surface needs it to accept). An active row never carries
@@ -222,7 +266,8 @@ it('the list returns the nonce for HELD rows only — it is the accept credentia
   });
   if (!minted.ok) throw new Error(minted.refusal);
   expect(
-    (await redeemer.service.applyInboundColdOffer({ senderDid: INVITER, body: minted.value.offer })).ok,
+    (await redeemer.service.applyInboundColdOffer({ senderDid: INVITER, body: minted.value.offer }))
+      .ok,
   ).toBe(true);
   const router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);

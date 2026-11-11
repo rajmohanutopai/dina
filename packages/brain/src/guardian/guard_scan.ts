@@ -705,7 +705,8 @@ export function removeSentences(text: string, sentences: readonly string[]): str
     // Close the gap the sentence leaves, touching only the spaces around it.
     const before = out.slice(0, at).replace(/[ \t]+$/, '');
     const after = out.slice(at + sentence.length).replace(/^[ \t]+/, '');
-    const joiner = before === '' || after === '' || /\n$/.test(before) || /^\n/.test(after) ? '' : ' ';
+    const joiner =
+      before === '' || after === '' || /\n$/.test(before) || /^\n/.test(after) ? '' : ' ';
     out = before + joiner + after;
   }
   return out.replace(/\n{3,}/g, '\n\n').trim();
@@ -723,10 +724,7 @@ export function stripViolations(response: string, scanResult: ScanResult): strin
 // Internal: LLM guard scan
 // ---------------------------------------------------------------
 
-async function runLLMGuardScan(
-  response: string,
-  llmFn: GuardScanLLMFn,
-): Promise<GuardViolation[]> {
+async function runLLMGuardScan(response: string, llmFn: GuardScanLLMFn): Promise<GuardViolation[]> {
   // PII scrub before sending to cloud LLM — the response may contain
   // emails, phone numbers, etc. from vault context that shouldn't leak.
   const { scrubbed: scrubbedResponse } = scrubPII(response);
@@ -742,10 +740,7 @@ async function runLLMGuardScan(
   const sentences = splitSentences(scrubbedResponse);
   const numbered = sentences.map((s, i) => `[${i + 1}] ${s}`).join('\n');
 
-  const prompt = GUARD_SCAN.replace('{{prompt}}', '').replace(
-    '{{numbered_content}}',
-    numbered,
-  );
+  const prompt = GUARD_SCAN.replace('{{prompt}}', '').replace('{{numbered_content}}', numbered);
   const raw = await llmFn(
     'You are a safety classifier for Dina, a personal AI assistant. Check responses for violations.',
     prompt,
@@ -803,7 +798,11 @@ export function parseLLMGuardResult(output: string, originalResponse: string): G
       const sentences = splitSentences(originalResponse);
       const violations: GuardViolation[] = [];
       const pushCategory = (
-        key: 'anti_her_sentences' | 'unsolicited_sentences' | 'fabricated_sentences' | 'consensus_sentences',
+        key:
+          | 'anti_her_sentences'
+          | 'unsolicited_sentences'
+          | 'fabricated_sentences'
+          | 'consensus_sentences',
         category: GuardViolation['category'],
         severity: GuardViolation['severity'],
       ): void => {
@@ -816,7 +815,12 @@ export function parseLLMGuardResult(output: string, originalResponse: string): G
           indices.push(zero);
         }
         if (indices.length > 0) {
-          violations.push({ category, severity, detail: `LLM guard: ${key}`, sentenceIndices: indices });
+          violations.push({
+            category,
+            severity,
+            detail: `LLM guard: ${key}`,
+            sentenceIndices: indices,
+          });
         }
       };
       pushCategory('anti_her_sentences', 'anti_her', 'block');

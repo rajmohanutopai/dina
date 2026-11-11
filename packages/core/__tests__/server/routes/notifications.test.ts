@@ -19,7 +19,9 @@ function req(
   path: string,
   opts: { body?: Record<string, unknown>; query?: Record<string, string> } = {},
 ): CoreRequest {
-  const rawBody = opts.body ? new TextEncoder().encode(JSON.stringify(opts.body)) : new Uint8Array();
+  const rawBody = opts.body
+    ? new TextEncoder().encode(JSON.stringify(opts.body))
+    : new Uint8Array();
   return {
     method,
     path,
@@ -57,14 +59,20 @@ describe('/v1/notifications core routes', () => {
     setNotificationLogRepository(null);
     expect((await h.append(req('POST', '/v1/notifications', { body: item() }))).status).toBe(503);
     expect((await h.list(req('GET', '/v1/notifications'))).status).toBe(503);
-    expect((await h.markRead(req('POST', '/v1/notifications/read', { body: { id: 'n1' } }))).status).toBe(503);
-    expect((await h.purge(req('POST', '/v1/notifications/purge', { body: { cutoff: 1 } }))).status).toBe(503);
+    expect(
+      (await h.markRead(req('POST', '/v1/notifications/read', { body: { id: 'n1' } }))).status,
+    ).toBe(503);
+    expect(
+      (await h.purge(req('POST', '/v1/notifications/purge', { body: { cutoff: 1 } }))).status,
+    ).toBe(503);
     expect((await h.reset(req('POST', '/v1/notifications/reset'))).status).toBe(503);
   });
 
   it('append + list round-trips through the wired repository', async () => {
     setNotificationLogRepository(new InMemoryNotificationLogRepository());
-    expect((await h.append(req('POST', '/v1/notifications', { body: item({ id: 'a' }) }))).status).toBe(200);
+    expect(
+      (await h.append(req('POST', '/v1/notifications', { body: item({ id: 'a' }) }))).status,
+    ).toBe(200);
     const res = await h.list(req('GET', '/v1/notifications'));
     expect(res.status).toBe(200);
     const { notifications } = res.body as { notifications: NotificationWireDTO[] };
@@ -92,11 +100,17 @@ describe('/v1/notifications core routes', () => {
   it('markRead is one-shot; unknown id → changed:false', async () => {
     setNotificationLogRepository(new InMemoryNotificationLogRepository());
     await h.append(req('POST', '/v1/notifications', { body: item({ id: 'a' }) }));
-    const first = await h.markRead(req('POST', '/v1/notifications/read', { body: { id: 'a', read_at: 123 } }));
+    const first = await h.markRead(
+      req('POST', '/v1/notifications/read', { body: { id: 'a', read_at: 123 } }),
+    );
     expect((first.body as { changed: boolean }).changed).toBe(true);
-    const second = await h.markRead(req('POST', '/v1/notifications/read', { body: { id: 'a', read_at: 456 } }));
+    const second = await h.markRead(
+      req('POST', '/v1/notifications/read', { body: { id: 'a', read_at: 456 } }),
+    );
     expect((second.body as { changed: boolean }).changed).toBe(false);
-    const missing = await h.markRead(req('POST', '/v1/notifications/read', { body: { id: 'nope' } }));
+    const missing = await h.markRead(
+      req('POST', '/v1/notifications/read', { body: { id: 'nope' } }),
+    );
     expect((missing.body as { changed: boolean }).changed).toBe(false);
   });
 

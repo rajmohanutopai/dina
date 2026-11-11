@@ -121,7 +121,10 @@ export function signWithCurrentKey(data: Uint8Array): string {
 export function verifyWithAnyKey(data: Uint8Array, signatureHex: string): boolean {
   if (signatureHex.length !== 128 || !/^[0-9a-f]+$/i.test(signatureHex)) return false;
 
-  const sigBytes = new Uint8Array(signatureHex.match(/.{2}/g)!.map((b) => parseInt(b, 16)));
+  const hexPairs = signatureHex.match(/.{2}/g);
+  if (hexPairs === null)
+    throw new Error('verifyWithAnyKey: checked hex signature split into no byte pairs');
+  const sigBytes = new Uint8Array(hexPairs.map((b) => parseInt(b, 16)));
 
   for (const entry of keyHistory) {
     try {

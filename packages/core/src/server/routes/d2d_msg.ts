@@ -54,7 +54,7 @@ export type D2DSender = (
   messageType: string,
   body: Record<string, unknown>,
   options?: D2DSendOptions,
-) => Promise<D2DSendOutcome | void>;
+) => Promise<D2DSendOutcome | undefined> | Promise<void>;
 
 let senderInstance: D2DSender | null = null;
 

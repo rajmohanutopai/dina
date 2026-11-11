@@ -17,9 +17,10 @@
 
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
 import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
-import { applyReconcileAnswer, askReconcilePolls } from '../../src/commerce/reconcile_poller';
 import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
+import { applyReconcileAnswer, askReconcilePolls } from '../../src/commerce/reconcile_poller';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+
 import { makeHeldEvidence } from './helpers';
 
 import type { OrderAcknowledgement, OrderReconcileRequest } from '@dina/commerce-protocol';

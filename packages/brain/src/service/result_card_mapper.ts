@@ -109,10 +109,23 @@ const DESTINATION_RE = /(^stop|_stop$|destination|arrival|drop_?off)/i;
 /** status value → tone (the color scheme). */
 function toneForStatus(value: string): CardTone {
   const v = value.toLowerCase();
-  if (['confirmed', 'available', 'on_route', 'in_stock', 'open', 'active', 'ok', 'in-network'].includes(v)) {
+  if (
+    [
+      'confirmed',
+      'available',
+      'on_route',
+      'in_stock',
+      'open',
+      'active',
+      'ok',
+      'in-network',
+    ].includes(v)
+  ) {
     return 'positive';
   }
-  if (['rescheduled', 'delayed', 'low_stock', 'pending', 'limited', 'out_for_delivery'].includes(v)) {
+  if (
+    ['rescheduled', 'delayed', 'low_stock', 'pending', 'limited', 'out_for_delivery'].includes(v)
+  ) {
     return 'caution';
   }
   if (
@@ -175,7 +188,9 @@ function listRows(items: unknown[]): { text: string; sub?: string }[] {
     }
     if (typeof item !== 'object' || item === null || Array.isArray(item)) continue;
     const o = item as Record<string, unknown>;
-    const scalars = Object.entries(o).filter(([, val]) => isScalar(val) && String(val).trim() !== '');
+    const scalars = Object.entries(o).filter(
+      ([, val]) => isScalar(val) && String(val).trim() !== '',
+    );
     if (scalars.length === 0) continue;
     const pick = (fields: readonly string[], skip: Set<string>): string | undefined => {
       for (const f of fields) {
@@ -231,7 +246,10 @@ function unitForNumericField(key: string): string | undefined {
 /** Read a {lat,lng} pair from the result top-level or a nested location. */
 function extractCoords(obj: Record<string, unknown>): { lat: number; lng: number } | null {
   const tryPair = (lat: unknown, lng: unknown): { lat: number; lng: number } | null =>
-    typeof lat === 'number' && Number.isFinite(lat) && typeof lng === 'number' && Number.isFinite(lng)
+    typeof lat === 'number' &&
+    Number.isFinite(lat) &&
+    typeof lng === 'number' &&
+    Number.isFinite(lng)
       ? { lat, lng }
       : null;
   const top = tryPair(obj.lat, obj.lng);
@@ -270,7 +288,11 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
       break;
     }
   }
-  if ((titleText === undefined || titleText === '') && input.serviceName && input.serviceName.trim() !== '') {
+  if (
+    (titleText === undefined || titleText === '') &&
+    input.serviceName &&
+    input.serviceName.trim() !== ''
+  ) {
     titleText = input.serviceName.trim();
   }
   if (titleText !== undefined && titleText !== '') {
@@ -294,12 +316,17 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
 
   // 3) Rating — a 0–5 rating field.
   for (const f of RATING_FIELDS) {
-    const hit = entries.find(([k, v]) => !used.has(k) && k.toLowerCase() === f && typeof v === 'number');
+    const hit = entries.find(
+      ([k, v]) => !used.has(k) && k.toLowerCase() === f && typeof v === 'number',
+    );
     if (hit) {
       const value = hit[1] as number;
       if (value >= 0 && value <= 5) {
-        const count = typeof obj.rating_count === 'number' ? (obj.rating_count as number) : undefined;
-        blocks.push(count !== undefined ? { kind: 'rating', value, count } : { kind: 'rating', value });
+        const count =
+          typeof obj.rating_count === 'number' ? (obj.rating_count as number) : undefined;
+        blocks.push(
+          count !== undefined ? { kind: 'rating', value, count } : { kind: 'rating', value },
+        );
         used.add(hit[0]);
         if (typeof obj.rating_count === 'number') used.add('rating_count');
         break;
@@ -332,7 +359,9 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
   );
   let statKey: string | undefined;
   for (const pref of STAT_PRIORITY) {
-    const hit = numericEntries.find(([k]) => k.toLowerCase() === pref || k.toLowerCase().includes(pref));
+    const hit = numericEntries.find(
+      ([k]) => k.toLowerCase() === pref || k.toLowerCase().includes(pref),
+    );
     if (hit) {
       statKey = hit[0];
       break;
@@ -348,7 +377,10 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
       // Fold a sibling currency into the headline ($0.79), not a separate row.
       const curHit = entries.find(
         ([k, v]) =>
-          !used.has(k) && typeof v === 'string' && v.trim() !== '' && fieldMatches(k, CURRENCY_FIELDS),
+          !used.has(k) &&
+          typeof v === 'string' &&
+          v.trim() !== '' &&
+          fieldMatches(k, CURRENCY_FIELDS),
       );
       if (curHit) {
         const code = String(curHit[1]).trim().toUpperCase();
@@ -399,7 +431,12 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
   for (const [k, v] of entries) {
     if (used.has(k)) continue;
     if (isHttpsUrl(v)) {
-      blocks.push({ kind: 'link', label: labelForUrlField(k), url: String(v).trim(), action: 'open_url' });
+      blocks.push({
+        kind: 'link',
+        label: labelForUrlField(k),
+        url: String(v).trim(),
+        action: 'open_url',
+      });
       used.add(k);
     }
   }
@@ -408,7 +445,11 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
   for (const [k, v] of entries) {
     if (used.has(k)) continue;
     if (fieldMatches(k, BODY_FIELDS)) continue;
-    if (fieldMatches(k, STALE_GENERATED_FIELDS) || fieldMatches(k, STALE_EXPIRES_FIELDS) || fieldMatches(k, STALE_TTL_FIELDS)) {
+    if (
+      fieldMatches(k, STALE_GENERATED_FIELDS) ||
+      fieldMatches(k, STALE_EXPIRES_FIELDS) ||
+      fieldMatches(k, STALE_TTL_FIELDS)
+    ) {
       continue;
     }
     if (!isScalar(v)) continue;
@@ -428,7 +469,8 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
     const rows = listRows(v);
     if (rows.length === 0) continue;
     const shown = rows.slice(0, MAX_LIST_ROWS);
-    if (rows.length > MAX_LIST_ROWS) shown.push({ text: `and ${rows.length - MAX_LIST_ROWS} more` });
+    if (rows.length > MAX_LIST_ROWS)
+      shown.push({ text: `and ${rows.length - MAX_LIST_ROWS} more` });
     blocks.push({ kind: 'section', label: humanizeLabel(k) });
     blocks.push({ kind: 'list', rows: shown });
     used.add(k);
@@ -452,13 +494,25 @@ export function buildResultCardSpec(input: ResultCardInput): CardSpec | null {
   // 10) Staleness — lift as_of / ttl / expires from the result.
   const stale: Partial<Pick<CardSpec, 'generatedAt' | 'expiresAt' | 'ttlSeconds'>> = {};
   for (const [k, v] of entries) {
-    if (typeof v === 'string' && fieldMatches(k, STALE_GENERATED_FIELDS) && stale.generatedAt === undefined) {
+    if (
+      typeof v === 'string' &&
+      fieldMatches(k, STALE_GENERATED_FIELDS) &&
+      stale.generatedAt === undefined
+    ) {
       stale.generatedAt = v.trim();
     }
-    if (typeof v === 'string' && fieldMatches(k, STALE_EXPIRES_FIELDS) && stale.expiresAt === undefined) {
+    if (
+      typeof v === 'string' &&
+      fieldMatches(k, STALE_EXPIRES_FIELDS) &&
+      stale.expiresAt === undefined
+    ) {
       stale.expiresAt = v.trim();
     }
-    if (typeof v === 'number' && fieldMatches(k, STALE_TTL_FIELDS) && stale.ttlSeconds === undefined) {
+    if (
+      typeof v === 'number' &&
+      fieldMatches(k, STALE_TTL_FIELDS) &&
+      stale.ttlSeconds === undefined
+    ) {
       stale.ttlSeconds = v;
     }
   }

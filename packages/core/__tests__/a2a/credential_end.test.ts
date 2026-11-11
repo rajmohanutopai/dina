@@ -44,7 +44,10 @@ afterEach(() => iw.close());
 const GATEWAY = 'did:key:z6MkGateway';
 const claim = () => claimDeliveries(iw.rt, { claimant: GATEWAY, limit: 100, webhookLimit: 100 });
 const deliverAll = (items: ReturnType<typeof claim>['items']) =>
-  ackDeliveries(iw.rt, { claimant: GATEWAY, acks: items.map((i) => ({ id: i.id, claim_id: i.claim_id, outcome: 'delivered' as const })) });
+  ackDeliveries(iw.rt, {
+    claimant: GATEWAY,
+    acks: items.map((i) => ({ id: i.id, claim_id: i.claim_id, outcome: 'delivered' as const })),
+  });
 const key = () => streamClientKeyOf(`a2a:${iw.clientId}`);
 
 /** A streaming call that also set a webhook (as a thief holding the bearer might). */
@@ -53,7 +56,10 @@ function callWithWebhook(routeId: string): string {
     ingressSendMessage(
       iw.rt,
       iw.request('SendStreamingMessage', {
-        ...iw.message({ skill: 'eta_query', params: { route_id: routeId } }, { messageId: `call-${routeId}` }),
+        ...iw.message(
+          { skill: 'eta_query', params: { route_id: routeId } },
+          { messageId: `call-${routeId}` },
+        ),
         configuration: { taskPushNotificationConfig: { url: 'https://thief.example.test/hook' } },
       }),
       'SendStreamingMessage',
@@ -73,7 +79,8 @@ function opening(id: string): { client: string | undefined; gen: string | undefi
   return { client: headers?.[A2A_STREAM_CLIENT_HEADER], gen: headers?.[A2A_CREDENTIAL_GEN_HEADER] };
 }
 
-const streamGens = (c: ReturnType<typeof claim>) => c.items.flatMap((i) => (i.target === 'sse' ? [i.credential_gen] : []));
+const streamGens = (c: ReturnType<typeof claim>) =>
+  c.items.flatMap((i) => (i.target === 'sse' ? [i.credential_gen] : []));
 
 it('a stream opens under its client’s key and generation; the key names no client', () => {
   const id = callWithWebhook('0');
@@ -146,8 +153,13 @@ describe('only the client whose credential ended is touched: another client’s 
         iw.request(
           'SendStreamingMessage',
           {
-            ...iw.message({ skill: 'eta_query', params: { route_id: '77' } }, { messageId: 'bystander-call' }),
-            configuration: { taskPushNotificationConfig: { url: 'https://bystander.example.test/hook' } },
+            ...iw.message(
+              { skill: 'eta_query', params: { route_id: '77' } },
+              { messageId: 'bystander-call' },
+            ),
+            configuration: {
+              taskPushNotificationConfig: { url: 'https://bystander.example.test/hook' },
+            },
           },
           {},
           `Bearer ${other.token}`,
@@ -156,10 +168,21 @@ describe('only the client whose credential ended is touched: another client’s 
       ),
     ).id as string;
     const op = iw.world.store.getTaskByExternal('inbound', principal, id);
-    const claimed = iw.world.repo.claimDelegationTask(iw.runnerDid, iw.world.clock, 60_000, 'transit');
+    const claimed = iw.world.repo.claimDelegationTask(
+      iw.runnerDid,
+      iw.world.clock,
+      60_000,
+      'transit',
+    );
     if (op === null || claimed === null || claimed.id !== op.internal_id) throw new Error('claim');
     admitInboundClaimWith(iw.rt, claimed, iw.runnerDid);
-    iw.world.workflow.complete(claimed.id, JSON.stringify({ eta_minutes: 7 }), 'done', iw.runnerDid, claimed.claim_id);
+    iw.world.workflow.complete(
+      claimed.id,
+      JSON.stringify({ eta_minutes: 7 }),
+      'done',
+      iw.runnerDid,
+      claimed.claim_id,
+    );
     return { principal, id };
   }
   const configsOf = (principal: string) =>
@@ -171,7 +194,17 @@ describe('only the client whose credential ended is touched: another client’s 
   it.each([
     ['rotation', 'live', () => rotate()],
     ['a bearer that runs out', 'live', () => (iw.world.clock += A2A_BEARER_LIFETIME_MS - 1_000)],
-    ['revocation', 'lost', () => revokeA2AClient(iw.world.store, new SQLiteServiceGrantRepository(iw.world.store.db), iw.clientId, iw.world.clock)],
+    [
+      'revocation',
+      'lost',
+      () =>
+        revokeA2AClient(
+          iw.world.store,
+          new SQLiteServiceGrantRepository(iw.world.store.db),
+          iw.clientId,
+          iw.world.clock,
+        ),
+    ],
   ] as const)('%s', (_how, ended, end) => {
     const mine = callWithWebhook('8');
     iw.runChild(mine, { eta_minutes: 3 });
@@ -187,12 +220,16 @@ describe('only the client whose credential ended is touched: another client’s 
     const ofTask = (id: string) => after.items.filter((i) => i.task_id === id);
     expect(ofTask(other.id).filter((i) => i.target === 'webhook').length).toBeGreaterThan(0);
     // Its stream events keep its own generation, so its open streams are not ended.
-    const otherGens = ofTask(other.id).flatMap((i) => (i.target === 'sse' ? [i.credential_gen] : []));
+    const otherGens = ofTask(other.id).flatMap((i) =>
+      i.target === 'sse' ? [i.credential_gen] : [],
+    );
     expect(otherGens.length).toBeGreaterThan(0);
     expect(new Set(otherGens)).toEqual(new Set([0]));
     // The ended client's stream events carry its new generation, or, revoked, none go out.
     const mineGens = ofTask(mine).flatMap((i) => (i.target === 'sse' ? [i.credential_gen] : []));
-    expect(ended === 'live' ? new Set(mineGens) : mineGens.length).toEqual(ended === 'live' ? new Set([1]) : 0);
+    expect(ended === 'live' ? new Set(mineGens) : mineGens.length).toEqual(
+      ended === 'live' ? new Set([1]) : 0,
+    );
   });
 });
 
@@ -206,7 +243,9 @@ describe('a bearer that runs out is a credential that ended (§5.1, §10)', () =
     expect(after.fenced).toEqual([{ client: key(), before_gen: 1 }]);
     expect(after.items.filter((i) => i.target === 'webhook')).toEqual([]);
     expect(new Set(streamGens(after))).toEqual(new Set([1]));
-    expect(iw.world.store.db.query(`SELECT COUNT(*) AS n FROM a2a_push_configs`)).toEqual([{ n: 0 }]);
+    expect(iw.world.store.db.query(`SELECT COUNT(*) AS n FROM a2a_push_configs`)).toEqual([
+      { n: 0 },
+    ]);
     // Taken once: later claims hold the same fence, and the generation rises no further.
     expect(endExpiredBearers(iw.world.store, iw.world.clock)).toBe(0);
     expect(claim().fenced).toEqual([{ client: key(), before_gen: 1 }]);
@@ -216,7 +255,9 @@ describe('a bearer that runs out is a credential that ended (§5.1, §10)', () =
     callWithWebhook('10');
     iw.world.clock += A2A_BEARER_LIFETIME_MS - 1;
     expect(claim().fenced).toEqual([]);
-    expect(iw.world.store.db.query(`SELECT COUNT(*) AS n FROM a2a_push_configs`)).toEqual([{ n: 1 }]);
+    expect(iw.world.store.db.query(`SELECT COUNT(*) AS n FROM a2a_push_configs`)).toEqual([
+      { n: 1 },
+    ]);
   });
 
   it('a new bearer after it ran out opens streams at the newer generation, which no fence holds back', () => {
@@ -231,7 +272,12 @@ describe('a bearer that runs out is a credential that ended (§5.1, §10)', () =
 
 it('revoking the client ends what it set up the same way, and no stream of it can open again', () => {
   const id = callWithWebhook('6');
-  const out = revokeA2AClient(iw.world.store, new SQLiteServiceGrantRepository(iw.world.store.db), iw.clientId, iw.world.clock);
+  const out = revokeA2AClient(
+    iw.world.store,
+    new SQLiteServiceGrantRepository(iw.world.store.db),
+    iw.clientId,
+    iw.world.clock,
+  );
   expect(out.ok).toBe(true);
   expect(claim().fenced).toEqual([{ client: key(), before_gen: 1 }]);
   expect(iw.world.store.db.query(`SELECT COUNT(*) AS n FROM a2a_push_configs`)).toEqual([{ n: 0 }]);

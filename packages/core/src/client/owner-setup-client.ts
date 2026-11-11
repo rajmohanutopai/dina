@@ -124,13 +124,18 @@ export class OwnerSetupClient {
    * `standardPersonas`: work-type personas this agent may read from the
    * start (REAL_LIFE_FIXES_2 §7.2); others raise a card when it asks.
    */
-  async mintCodingAgentCode(deviceName?: string, standardPersonas?: readonly string[]): Promise<MintedSetupCode> {
+  async mintCodingAgentCode(
+    deviceName?: string,
+    standardPersonas?: readonly string[],
+  ): Promise<MintedSetupCode> {
     const res = await this.dispatcher.dispatch({
       method: 'POST',
       path: `${OWNER_SETUP_PREFIX}/coding-agent`,
       body: {
         ...(deviceName !== undefined ? { device_name: deviceName } : {}),
-        ...(standardPersonas !== undefined && standardPersonas.length > 0 ? { standard_personas: [...standardPersonas] } : {}),
+        ...(standardPersonas !== undefined && standardPersonas.length > 0
+          ? { standard_personas: [...standardPersonas] }
+          : {}),
       },
     });
     return expectStatus<MintedSetupCode>(res, 201, 'mintCodingAgentCode');

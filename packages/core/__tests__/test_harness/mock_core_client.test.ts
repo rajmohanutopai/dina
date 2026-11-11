@@ -126,9 +126,9 @@ describe('MockCoreClient (task 1.34)', () => {
     const m = new MockCoreClient();
     m.throwOn = { vaultStore: new Error('simulated core outage') };
 
-    await expect(
-      m.vaultStore('personal', { type: 'note', content: {} }),
-    ).rejects.toThrow(/simulated core outage/);
+    await expect(m.vaultStore('personal', { type: 'note', content: {} })).rejects.toThrow(
+      /simulated core outage/,
+    );
 
     // healthz unaffected.
     await expect(m.healthz()).resolves.toMatchObject({ status: 'ok' });
@@ -345,9 +345,10 @@ describe('MockCoreClient (task 1.34)', () => {
     m.throwOn = { scratchpadResume: new Error('scratchpad offline') };
     await expect(m.scratchpadResume('any')).rejects.toThrow(/scratchpad offline/);
     // Checkpoint still works — the throwOn key is per-method.
-    await expect(
-      m.scratchpadCheckpoint('other-task', 1, {}),
-    ).resolves.toMatchObject({ taskId: 'other-task', step: 1 });
+    await expect(m.scratchpadCheckpoint('other-task', 1, {})).resolves.toMatchObject({
+      taskId: 'other-task',
+      step: 1,
+    });
   });
 
   // ─── Service respond (task 1.32 slice A) ──────────────────────────────
@@ -759,9 +760,9 @@ describe('MockCoreClient (task 1.34)', () => {
   it('updateContact throwOn injection simulates the 404-path', async () => {
     const m = new MockCoreClient();
     m.throwOn = { updateContact: new Error('contact not found') };
-    await expect(
-      m.updateContact('did:plc:unknown', { preferredFor: ['x'] }),
-    ).rejects.toThrow(/contact not found/);
+    await expect(m.updateContact('did:plc:unknown', { preferredFor: ['x'] })).rejects.toThrow(
+      /contact not found/,
+    );
   });
 
   it('reset() clears memoryTouches + contactUpdates + memoryTouchResult override', async () => {

@@ -2,11 +2,11 @@
 
 **Run timestamp**: 2026-05-18 (Phase 0); re-validated Phase 1 via Playwright
 **Driver**: Chrome plugin (Claude in Chrome MCP) for Phase 0;
-  Playwright + Chromium for Phase 1 (apps/home-node-lite/web/__e2e__/smoke.spec.ts)
+Playwright + Chromium for Phase 1 (apps/home-node-lite/web/**e2e**/smoke.spec.ts)
 **Bundle**: produced by `npx expo export --platform web` with
-  `experiments.baseUrl: "/web"` set in `apps/mobile/app.json` (Phase 1).
-  Phase 0 ran the bundle without baseUrl from `/tmp/dina-web-spike/`;
-  Phase 1 serves the same shape from the brain-server's `/web/*` route.
+`experiments.baseUrl: "/web"` set in `apps/mobile/app.json` (Phase 1).
+Phase 0 ran the bundle without baseUrl from `/tmp/dina-web-spike/`;
+Phase 1 serves the same shape from the brain-server's `/web/*` route.
 **Scenario file**: `apps/mobile/__chrome__/welcome_screen_renders.scenario.md`
 
 ## Status: ✅ PASS
@@ -20,12 +20,12 @@ All four pass criteria met.
 
 ## Pass criteria check
 
-| Criterion | Expected | Actual | Result |
-|---|---|---|---|
-| Dina brand wordmark visible | `D-I-N-A` letterforms | `read_page` returned `generic "DINA" [ref_1]` | ✅ |
-| Onboarding-shell text | one of welcome / mode-choice / infra-setup | `"Choose your infrastructure"` rendered | ✅ |
-| No console errors | zero `Cannot read properties of undefined` | `read_console_messages onlyErrors=true` → 0 messages | ✅ |
-| Page background = Dina cream | `rgb(250, 248, 245)` (`#FAF8F5`) | matched on the styled root content div | ✅ |
+| Criterion                    | Expected                                   | Actual                                               | Result |
+| ---------------------------- | ------------------------------------------ | ---------------------------------------------------- | ------ |
+| Dina brand wordmark visible  | `D-I-N-A` letterforms                      | `read_page` returned `generic "DINA" [ref_1]`        | ✅     |
+| Onboarding-shell text        | one of welcome / mode-choice / infra-setup | `"Choose your infrastructure"` rendered              | ✅     |
+| No console errors            | zero `Cannot read properties of undefined` | `read_console_messages onlyErrors=true` → 0 messages | ✅     |
+| Page background = Dina cream | `rgb(250, 248, 245)` (`#FAF8F5`)           | matched on the styled root content div               | ✅     |
 
 ## Visible text dump
 

@@ -25,15 +25,14 @@ import {
   setPDSFetchFn,
   type Attestation,
   type SignedAttestation,
-
   ListRecordsOptions,
   ListRecordsResult,
   PDSAccountInput,
   PDSClient,
   PDSRecord,
   PDSSession,
-  PutRecordInput} from '../../src/pds';
-
+  PutRecordInput,
+} from '../../src/pds';
 
 describe('@dina/core/pds namespace scaffold (task 6.1)', () => {
   it('type imports resolve — PDSClient contract is shape-checkable', () => {

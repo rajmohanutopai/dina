@@ -12,10 +12,7 @@ import {
   type ConfigSnapshotReader,
 } from '../src/appview/profile_auto_republisher';
 
-import type {
-  BuildProfileInput,
-  ServiceProfileRecord,
-} from '../src/appview/profile_builder';
+import type { BuildProfileInput, ServiceProfileRecord } from '../src/appview/profile_builder';
 import type {
   PublishOutcome,
   ServiceProfilePublisher,
@@ -113,11 +110,12 @@ describe('ProfileAutoRepublisher (task 6.20)', () => {
           buildFn: stubBuildFn(),
           publisher: stubPublisher({ ok: true, cid: 'x', uri: 'y' }),
         };
-        delete (opts as Record<string, unknown>)[missing];
-        expect(() =>
-          new ProfileAutoRepublisher(
-            opts as unknown as ConstructorParameters<typeof ProfileAutoRepublisher>[0],
-          ),
+        Reflect.deleteProperty(opts, missing);
+        expect(
+          () =>
+            new ProfileAutoRepublisher(
+              opts as unknown as ConstructorParameters<typeof ProfileAutoRepublisher>[0],
+            ),
         ).toThrow(new RegExp(missing));
       },
     );
@@ -362,9 +360,7 @@ describe('ProfileAutoRepublisher (task 6.20)', () => {
       await new Promise((r) => setImmediate(r));
       expect(calls.count).toBe(1);
       expect(rep.getState()).toBe('idle');
-      expect(
-        events.some((e) => e.kind === 'build_validation_failed'),
-      ).toBe(true);
+      expect(events.some((e) => e.kind === 'build_validation_failed')).toBe(true);
     });
 
     it('build function throw → build_validation_failed + no publish', async () => {
@@ -381,9 +377,10 @@ describe('ProfileAutoRepublisher (task 6.20)', () => {
       rep.triggerPublish();
       await new Promise((r) => setImmediate(r));
       expect(calls.count).toBe(0);
-      const validation = events.find(
-        (e) => e.kind === 'build_validation_failed',
-      ) as Extract<AutoRepublisherEvent, { kind: 'build_validation_failed' }>;
+      const validation = events.find((e) => e.kind === 'build_validation_failed') as Extract<
+        AutoRepublisherEvent,
+        { kind: 'build_validation_failed' }
+      >;
       expect(validation.error).toMatch(/responsePolicy mismatch/);
     });
   });

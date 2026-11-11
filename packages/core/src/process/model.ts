@@ -59,6 +59,6 @@ export function usesLocalhostHTTP(): boolean {
  * Check if Core and Brain have separate JS contexts.
  * Always true on both platforms.
  */
-export function hasSeparateJSContexts(platform: Platform): boolean {
+export function hasSeparateJSContexts(_platform: Platform): boolean {
   return true;
 }

@@ -94,7 +94,6 @@ export function installHeldEvidenceReader(value: HeldEvidenceReader | null): voi
   heldEvidenceReader = value;
 }
 
-
 /**
  * The reader a real node installs: what this buyer actually holds (§12.7).
  *

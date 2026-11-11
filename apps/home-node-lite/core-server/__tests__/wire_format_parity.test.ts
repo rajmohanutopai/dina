@@ -148,9 +148,7 @@ describe('wire-format response parity (task 4.16)', () => {
         // `body_shape` is present (some fixtures declare shape without
         // exhaustive keys).
         if (!fx.expected.body_shape) {
-          expect(Object.keys(body).sort()).toEqual(
-            [...fx.expected.body_keys].sort(),
-          );
+          expect(Object.keys(body).sort()).toEqual([...fx.expected.body_keys].sort());
         }
       }
 
@@ -222,8 +220,6 @@ function validateShape(value: unknown, shape: string, fieldPath: string): void {
       return;
     }
     default:
-      throw new Error(
-        `wire-format fixture: unknown shape descriptor "${shape}" at ${fieldPath}`,
-      );
+      throw new Error(`wire-format fixture: unknown shape descriptor "${shape}" at ${fieldPath}`);
   }
 }

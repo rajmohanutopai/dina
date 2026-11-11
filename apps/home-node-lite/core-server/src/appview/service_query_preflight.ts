@@ -70,10 +70,7 @@ export type SearchFn = (query: {
   capability?: string;
   location?: { lat: number; lng: number; radiusKm?: number };
   limit?: number;
-}) => Promise<
-  | { ok: true; candidates: PreflightCandidate[] }
-  | { ok: false; error: string }
->;
+}) => Promise<{ ok: true; candidates: PreflightCandidate[] } | { ok: false; error: string }>;
 
 export type TrustFn = (
   did: string,
@@ -232,8 +229,8 @@ export function createServiceQueryPreflight(
 
     // 3. Filter by minAction + sort by urgency.
     const minRank = ACTION_RANK[minAction];
-    const filtered = verdicts.filter((v) =>
-      v.decision !== null && ACTION_RANK[v.decision.action] <= minRank,
+    const filtered = verdicts.filter(
+      (v) => v.decision !== null && ACTION_RANK[v.decision.action] <= minRank,
     );
     // Also include trust_failed so callers can see + manually decide.
     // BUT putting them AFTER successful verdicts keeps the proceed list clean.
@@ -284,15 +281,17 @@ function validateRequest(req: PreflightRequest): string | null {
   return null;
 }
 
-function comparatorByActionThenRing(
-  a: PreflightVerdict,
-  b: PreflightVerdict,
-): number {
-  const actionDiff =
-    ACTION_RANK[a.decision!.action] - ACTION_RANK[b.decision!.action];
+function comparatorByActionThenRing(a: PreflightVerdict, b: PreflightVerdict): number {
+  // Only verdicts with a decision reach the sort (filtered above).
+  const da = a.decision;
+  const db = b.decision;
+  if (da === null || db === null) {
+    throw new Error('comparatorByActionThenRing: verdict without a decision');
+  }
+  const actionDiff = ACTION_RANK[da.action] - ACTION_RANK[db.action];
   if (actionDiff !== 0) return actionDiff;
   // Same action — higher score first, then closer distance.
-  const scoreDiff = (b.decision!.score ?? 0) - (a.decision!.score ?? 0);
+  const scoreDiff = (db.score ?? 0) - (da.score ?? 0);
   if (scoreDiff !== 0) return scoreDiff;
   return a.candidate.distanceKm - b.candidate.distanceKm;
 }

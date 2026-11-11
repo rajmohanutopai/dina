@@ -143,7 +143,8 @@ function stubClient(opts: { pending?: WorkflowTask[]; resolvedCompleted?: Workfl
       listCalls.value++;
       // Core filters by kind AND state; a delegation never answers an
       // approval-kind query and vice versa (§15.5 reads both kinds).
-      const byKind = (tasks: WorkflowTask[]): WorkflowTask[] => tasks.filter((t) => t.kind === query?.kind);
+      const byKind = (tasks: WorkflowTask[]): WorkflowTask[] =>
+        tasks.filter((t) => t.kind === query?.kind);
       if (query?.state === 'pending_approval') return byKind(pending);
       if (query?.state === 'completed') return byKind(resolvedCompleted);
       return [];
@@ -313,7 +314,9 @@ function disclosureReviewTask(id: string, createdAt: number): WorkflowTask {
         ttlSeconds: 120,
         serviceName: "The Millers' Dina",
       },
-      disclosures: [{ kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' }],
+      disclosures: [
+        { kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' },
+      ],
     }),
     result_summary: '',
     policy: '',
@@ -431,7 +434,10 @@ describe('a shelf-space card (SHELF_SPACE_NEGOTIATION §7.2)', () => {
   it.each([
     ['the deciding node can check presence', async () => ({ available: true })],
     ['its answer has not come yet', () => new Promise<{ available: boolean }>(() => undefined)],
-    ['asking it failed', async (): Promise<{ available: boolean }> => Promise.reject(new Error('down'))],
+    [
+      'asking it failed',
+      async (): Promise<{ available: boolean }> => Promise.reject(new Error('down')),
+    ],
   ])('no warning when %s', async (_why, answer) => {
     mockPresenceAnswer = answer;
     wrappedSeed = null; // and this device's own keychain does not matter
@@ -450,7 +456,9 @@ describe('Approval inbox inline in Activity — a refused decision is shown on t
   it("Core's refusal reason lands on the card instead of vanishing (an Alert is a no-op on the web)", async () => {
     const stub = stubClient({ pending: [disclosureReviewTask('disclosure-review-exec-1', 1_000)] });
     stub.cancel.mockRejectedValueOnce(
-      new Error('inbox: 403 {"error":"access_denied","reason":"brain cannot decide a household disclosure; owner decision required"}'),
+      new Error(
+        'inbox: 403 {"error":"access_denied","reason":"brain cannot decide a household disclosure; owner decision required"}',
+      ),
     );
     setInboxCoreClient(stub.client);
     const alertSpy = jest.spyOn(Alert, 'alert').mockImplementation((_t, _m, buttons) => {
@@ -463,8 +471,12 @@ describe('Approval inbox inline in Activity — a refused decision is shown on t
       await act(async () => {
         fireEvent.press(screen.getByTestId('approvals-deny-disclosure-review-exec-1'));
       });
-      await waitFor(() => expect(screen.getByTestId('approvals-error-disclosure-review-exec-1')).toBeTruthy());
-      expect(screen.getByTestId('approvals-error-disclosure-review-exec-1').props.children).toMatch(/owner decision required/);
+      await waitFor(() =>
+        expect(screen.getByTestId('approvals-error-disclosure-review-exec-1')).toBeTruthy(),
+      );
+      expect(screen.getByTestId('approvals-error-disclosure-review-exec-1').props.children).toMatch(
+        /owner decision required/,
+      );
       // The card stays: the decision did not land.
       expect(screen.getByTestId('approvals-deny-disclosure-review-exec-1')).toBeTruthy();
       // Only Alert.alert's confirm dialog was raised — never an error alert.
@@ -476,7 +488,10 @@ describe('Approval inbox inline in Activity — a refused decision is shown on t
 });
 
 describe('Approval inbox inline in Activity — a carded plugin invocation (§15.5)', () => {
-  function pluginTask(id: string, status: WorkflowTask['status'] = 'pending_approval'): WorkflowTask {
+  function pluginTask(
+    id: string,
+    status: WorkflowTask['status'] = 'pending_approval',
+  ): WorkflowTask {
     return {
       id,
       kind: 'delegation',
@@ -497,7 +512,11 @@ describe('Approval inbox inline in Activity — a carded plugin invocation (§15
         type: 'plugin_invocation',
         install_id: 'pli_in',
         capability_id: 'com.dinakernel.country.in.eway-bill',
-        params: { delivery_note_digest: 'd'.repeat(64), consignor_gstin: '27AAPFU0939F1ZV', value: { currency: 'INR', minor_units: '1000000' } },
+        params: {
+          delivery_note_digest: 'd'.repeat(64),
+          consignor_gstin: '27AAPFU0939F1ZV',
+          value: { currency: 'INR', minor_units: '1000000' },
+        },
         context: [],
         manifest_cid: 'bafy',
         approved_scope_hash: 'a'.repeat(64),
@@ -523,15 +542,23 @@ describe('Approval inbox inline in Activity — a carded plugin invocation (§15
     fireEvent.press(screen.getByTestId('filter-needs_action'));
 
     expect(screen.getByText('Plugin action approval')).toBeTruthy();
-    expect(screen.getByTestId('approvals-plugin-capability-plgx_9')).toHaveTextContent('com.dinakernel.country.in.eway-bill');
+    expect(screen.getByTestId('approvals-plugin-capability-plgx_9')).toHaveTextContent(
+      'com.dinakernel.country.in.eway-bill',
+    );
     expect(screen.getByTestId('approvals-plugin-why-plgx_9')).toHaveTextContent(/High-risk action/);
     // Nothing the plugin wrote (display names) reaches the card's chrome.
     expect(screen.queryByText(/Country pack — India/)).toBeNull();
     expect(screen.queryByText(/Generate an e-way bill/)).toBeNull();
-    expect(screen.getByTestId('approvals-plugin-effect-plgx_9')).toHaveTextContent(/external action may occur/);
-    expect(screen.getByTestId('approvals-plugin-effect-plgx_9')).toHaveTextContent(/retry .* is safe/);
+    expect(screen.getByTestId('approvals-plugin-effect-plgx_9')).toHaveTextContent(
+      /external action may occur/,
+    );
+    expect(screen.getByTestId('approvals-plugin-effect-plgx_9')).toHaveTextContent(
+      /retry .* is safe/,
+    );
     // WYSIWYG: the literal outbound params, unclipped.
-    expect(screen.getByTestId('approvals-plugin-params-plgx_9')).toHaveTextContent(/27AAPFU0939F1ZV/);
+    expect(screen.getByTestId('approvals-plugin-params-plgx_9')).toHaveTextContent(
+      /27AAPFU0939F1ZV/,
+    );
     expect(screen.getByTestId('approvals-plugin-params-plgx_9')).toHaveTextContent(/1000000/);
     // §11 — the owner is told what Dina attached, in counts and categories.
     // The facts themselves are above in the params, and a second copy here is
@@ -581,7 +608,12 @@ describe('Approval inbox inline in Activity — a carded plugin invocation (§15
   it('"Allow 24h" appears only where Core says a grant can silence the capability — never on a regulated one — and asks for a 24 h window grant', async () => {
     const moderateRead: WorkflowTask = {
       ...pluginTask('plgx_read'),
-      policy: JSON.stringify({ type: 'plugin_invocation_card', risk_level: 'MODERATE', reasons: ['Moderate-risk action'], grant_can_silence: true }),
+      policy: JSON.stringify({
+        type: 'plugin_invocation_card',
+        risk_level: 'MODERATE',
+        reasons: ['Moderate-risk action'],
+        grant_can_silence: true,
+      }),
       payload: JSON.stringify({
         ...JSON.parse(pluginTask('plgx_read').payload),
         capability_id: 'com.dinakernel.country.in.gstin-validate',
@@ -604,22 +636,32 @@ describe('Approval inbox inline in Activity — a carded plugin invocation (§15
     await act(async () => {
       fireEvent.press(screen.getByTestId('approvals-allow-24h-plgx_read'));
     });
-    expect(stub.approve).toHaveBeenCalledWith('plgx_read', { pluginGrant: { type: 'window', hours: 24 } });
+    expect(stub.approve).toHaveBeenCalledWith('plgx_read', {
+      pluginGrant: { type: 'window', hours: 24 },
+    });
     alertSpy.mockRestore();
   });
 
   it('a resolved plugin row still names the capability and its action class, and shows the validated answer in Dina’s chrome', async () => {
     const done: WorkflowTask = {
       ...pluginTask('plgx_done', 'completed'),
-      result: JSON.stringify({ eway_bill_no: 'EWB-4471', valid_until: '2026-09-20', memo: '<a href="x">click</a>' }),
+      result: JSON.stringify({
+        eway_bill_no: 'EWB-4471',
+        valid_until: '2026-09-20',
+        memo: '<a href="x">click</a>',
+      }),
     };
     const stub = stubClient({ resolvedCompleted: [done] });
     setInboxCoreClient(stub.client);
     const screen = render(<NotificationsScreen />);
     await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
     fireEvent.press(screen.getByTestId('filter-all'));
-    await waitFor(() => expect(screen.getByTestId('approvals-resolved-plugin-capability-plgx_done')).toBeTruthy());
-    expect(screen.getByTestId('approvals-resolved-plugin-capability-plgx_done')).toHaveTextContent('com.dinakernel.country.in.eway-bill');
+    await waitFor(() =>
+      expect(screen.getByTestId('approvals-resolved-plugin-capability-plgx_done')).toBeTruthy(),
+    );
+    expect(screen.getByTestId('approvals-resolved-plugin-capability-plgx_done')).toHaveTextContent(
+      'com.dinakernel.country.in.eway-bill',
+    );
     expect(screen.getByText(/Plugin action approval · write/)).toBeTruthy();
     // §15.6 — the answer's fields as label: value lines; text stays text (no link, no layout).
     const result = screen.getByTestId('approvals-resolved-plugin-result-plgx_done');
@@ -656,7 +698,9 @@ describe('Approval inbox inline in Activity — a carded plugin invocation (§15
     const screen = render(<NotificationsScreen />);
     await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
     fireEvent.press(screen.getByTestId('filter-all'));
-    await waitFor(() => expect(screen.getByTestId('approvals-resolved-plugin-result-plgx_card')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('approvals-resolved-plugin-result-plgx_card')).toBeTruthy(),
+    );
 
     const result = screen.getByTestId('approvals-resolved-plugin-result-plgx_card');
     // The publisher's labels, the runner's values — and no raw field names,
@@ -871,7 +915,9 @@ describe('supportsAllow24h (§15.5 — where Core says a grant can silence)', ()
   it("follows Core's word, not the class or the level: a HIGH write a grant can silence may be allowed; a regulated read may not; other kinds never", () => {
     expect(supportsAllow24h(base)).toBe(true);
     // §8: a HIGH capability cards its first invocations, then a standing approval silences it.
-    expect(supportsAllow24h({ ...base, riskLevel: 'HIGH', effect: { ...effect, actionClass: 'write' } })).toBe(true);
+    expect(
+      supportsAllow24h({ ...base, riskLevel: 'HIGH', effect: { ...effect, actionClass: 'write' } }),
+    ).toBe(true);
     // A regulated/sensitive capability or persona scope: Core says no grant ever silences.
     expect(supportsAllow24h({ ...base, grantCanSilence: false })).toBe(false);
     // No Core card facts at all → the phone offers nothing it cannot back.
@@ -986,14 +1032,25 @@ describe('a checkout hand-off card (UCP plan §3.7)', () => {
       session_id: 'ucp-checkout-1',
       merchant: 'https://shop.example',
       status: 'incomplete',
-      lines: [{ title: 'Sencha', quantity: '2', unit: 'each', total: { amount: '5600', currency: 'EUR' } }],
+      lines: [
+        {
+          title: 'Sencha',
+          quantity: '2',
+          unit: 'each',
+          total: { amount: '5600', currency: 'EUR' },
+        },
+      ],
       totals: [{ type: 'total', label: 'Total', amount: { amount: '5600', currency: 'EUR' } }],
       messages: [],
       discounts: [],
       fulfillment: [],
       links: [],
       expires_at: 2_000_000_000_000,
-      handoff: { url: 'https://shop.example/checkout/chk_1', source: 'continue_url', off_host: false },
+      handoff: {
+        url: 'https://shop.example/checkout/chk_1',
+        source: 'continue_url',
+        off_host: false,
+      },
       notes: [],
     }),
     result_summary: '',
@@ -1032,7 +1089,9 @@ describe('a checkout hand-off card (UCP plan §3.7)', () => {
       await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
       fireEvent.press(screen.getByTestId('filter-needs_action'));
       await waitFor(() =>
-        expect(screen.getByTestId('approvals-presence-unavailable-ucp-checkout-handoff-2')).toBeTruthy(),
+        expect(
+          screen.getByTestId('approvals-presence-unavailable-ucp-checkout-handoff-2'),
+        ).toBeTruthy(),
       );
       expect(screen.queryByTestId('approvals-approve-ucp-checkout-handoff-2')).toBeNull();
       // This phone's own card: no server to send the owner to; it asks for a passphrase.
@@ -1151,7 +1210,9 @@ describe('a linked-account card from the server node (UCP plan §3.17)', () => {
       const screen = render(<NotificationsScreen />);
       await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
       fireEvent.press(screen.getByTestId('filter-needs_action'));
-      await waitFor(() => expect(screen.getByTestId('approvals-presence-unavailable-m-link-1')).toBeTruthy());
+      await waitFor(() =>
+        expect(screen.getByTestId('approvals-presence-unavailable-m-link-1')).toBeTruthy(),
+      );
       expect(screen.queryByTestId('approvals-approve-m-link-1')).toBeNull();
       expect(screen.getByText(/Linking needs a passphrase/)).toBeTruthy();
       expect(screen.queryByText(/server node’s console/)).toBeNull();

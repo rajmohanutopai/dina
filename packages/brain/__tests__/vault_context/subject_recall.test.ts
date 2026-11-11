@@ -41,7 +41,10 @@ describe('recallSenderSubjectMemories', () => {
 
     const vault = new InMemoryVaultRepository();
     setVaultRepository('general', vault);
-    const pref = makeVaultItem({ summary: 'loves eggs and bacon', content_l0: 'loves eggs and bacon' });
+    const pref = makeVaultItem({
+      summary: 'loves eggs and bacon',
+      content_l0: 'loves eggs and bacon',
+    });
     vault.storeItemSync(pref);
     vault.linkSubjectSync(pref.id, personId);
 
@@ -112,7 +115,7 @@ describe('resolveSenderIdentity', () => {
   it('out-of-process: bare name when the contact relationship is unknown', async () => {
     setContactReadBackend({
       contactLookup: async () =>
-        ({ did: 'did:plc:x', displayName: 'Albert', relationship: 'unknown' } as never),
+        ({ did: 'did:plc:x', displayName: 'Albert', relationship: 'unknown' }) as never,
     });
     expect(await resolveSenderIdentity('did:plc:x')).toEqual({ name: 'Albert' });
   });

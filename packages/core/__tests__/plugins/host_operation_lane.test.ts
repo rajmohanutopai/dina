@@ -103,7 +103,11 @@ function setup(options: { searchHits?: unknown[]; searchThrows?: boolean } = {})
     actionClass: 'payment',
   });
 
-  const broker = new ExtensionOperationBroker({ db, now: () => 1_700_000_000_000, validate: () => null });
+  const broker = new ExtensionOperationBroker({
+    db,
+    now: () => 1_700_000_000_000,
+    validate: () => null,
+  });
   const dispatcher = new HostOperationDispatcher({
     broker,
     resultSchemaFor: (name) => registry.get(name)?.resultSchema,
@@ -254,7 +258,10 @@ describe('decideExtensionProposal', () => {
     // approval-every-time policy for regulated data.
     expect(
       decideExtensionProposal({
-        operation: { operationName: 'x', actionClass: 'read' } as unknown as RegisteredExtensionOperation,
+        operation: {
+          operationName: 'x',
+          actionClass: 'read',
+        } as unknown as RegisteredExtensionOperation,
         capability: { id: CAP, privacy_class: 'regulated' } as never,
         capabilityKind: 'canonical',
         publisherRing: 'verified',

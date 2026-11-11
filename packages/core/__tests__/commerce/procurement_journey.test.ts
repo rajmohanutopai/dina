@@ -53,6 +53,7 @@ import {
   type Offer,
 } from '../../src/commerce';
 import { buildBuyerApprovalPayload } from '../../src/commerce/approval_payload';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import { submitApprovedOrder } from '../../src/commerce/buyer_executor';
 import { describeOrderForOwner } from '../../src/commerce/buyer_reconciliation';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
@@ -70,7 +71,6 @@ import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService } from '../../src/workflow/service';
 
-import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import {
   BUYER_DID,
   SUPPLIER_DID,
@@ -446,7 +446,7 @@ describe('Sancho discovers ChairMaker and buys from them — the whole journey',
           ? { kind: 'ambiguous', reason: 'no acknowledgement came back' }
           : { kind: 'acknowledged', acknowledgement: signed as never };
       },
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({

@@ -127,7 +127,7 @@ describe('RPCWorkerPool — submitDuplicate dedup (CORE-P0-T04)', () => {
 describe('RPCWorkerPool — queue-full rejection', () => {
   it('rejects with WorkerPoolQueueFullError when queue depth is exceeded', async () => {
     const pool = new RPCWorkerPool({ maxConcurrent: 1, maxQueueDepth: 2 });
-    const d = makeDeferred<void>();
+    const d = makeDeferred<undefined>();
     // Occupy the running slot (swallow rejection on test cleanup).
     const a = pool.submitDuplicate('a', () => d.promise).catch(() => {});
     // Fill the queue.
@@ -138,7 +138,7 @@ describe('RPCWorkerPool — queue-full rejection', () => {
       WorkerPoolQueueFullError,
     );
     // Drain so jest doesn't see dangling promises.
-    d.resolve();
+    d.resolve(undefined);
     await Promise.all([a, b, c]);
   });
 });

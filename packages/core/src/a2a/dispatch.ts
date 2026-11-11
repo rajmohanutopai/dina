@@ -32,7 +32,12 @@ import { canonicalDigest } from './digest';
 import { newA2AId } from './ids';
 import { endOutboundOperation } from './operation_end';
 import { parseStored, snapshotDrift } from './permits';
-import { currentAuthority, type ConsentPayload, type OutboundSnapshot, type OutgoingPart } from './proposal';
+import {
+  currentAuthority,
+  type ConsentPayload,
+  type OutboundSnapshot,
+  type OutgoingPart,
+} from './proposal';
 import { ingestRemoteResult } from './result_ingest';
 
 import type { AuthProblem } from './credentials';
@@ -69,7 +74,11 @@ class ClaimLost extends Error {}
 
 function heldChild(runtime: A2ARuntime, claim: DispatchClaim): void {
   const child = runtime.workflow.store().getById(claim.childTaskId);
-  if (child === null || child.status !== WorkflowTaskState.Running || child.claim_id !== claim.claimId) {
+  if (
+    child === null ||
+    child.status !== WorkflowTaskState.Running ||
+    child.claim_id !== claim.claimId
+  ) {
     throw new ClaimLost();
   }
 }
@@ -90,7 +99,13 @@ function endChild(
   const message = `a2a: ${code}`;
   if (how === 'cancel') runtime.workflow.cancel(claim.childTaskId, message);
   else if (how === 'unknown') {
-    runtime.workflow.failEffectfulUnknown(claim.childTaskId, message, '', claim.runnerDid, claim.claimId);
+    runtime.workflow.failEffectfulUnknown(
+      claim.childTaskId,
+      message,
+      '',
+      claim.runnerDid,
+      claim.claimId,
+    );
   } else runtime.workflow.fail(claim.childTaskId, message, claim.runnerDid, claim.claimId);
 }
 
@@ -143,7 +158,11 @@ export function beginOutboundDispatch(
         reason: string,
         how: 'fail' | 'cancel' | 'unknown',
       ): DispatchStart => {
-        endOutboundOperation(runtime, op, [op.state as OutboundOperationState], { state, reason_code: reason, submission_phase: 'terminal' });
+        endOutboundOperation(runtime, op, [op.state as OutboundOperationState], {
+          state,
+          reason_code: reason,
+          submission_phase: 'terminal',
+        });
         endChild(runtime, claim, how, reason);
         return { kind: 'settled', state, reason };
       };
@@ -151,8 +170,18 @@ export function beginOutboundDispatch(
       const consent = parseStored<ConsentPayload>(op.consent_json);
 
       if (op.state === 'running') {
-        if (op.submission_phase === 'acknowledged' && op.remote_task_id !== null && op.sent_at !== null && snapshot !== null) {
-          return { ...target(op, snapshot), kind: 'resume', remoteTaskId: op.remote_task_id, sentAt: op.sent_at };
+        if (
+          op.submission_phase === 'acknowledged' &&
+          op.remote_task_id !== null &&
+          op.sent_at !== null &&
+          snapshot !== null
+        ) {
+          return {
+            ...target(op, snapshot),
+            kind: 'resume',
+            remoteTaskId: op.remote_task_id,
+            sentAt: op.sent_at,
+          };
         }
         return settle('outcome_unknown', 'lease_lost_after_send', 'unknown');
       }
@@ -162,10 +191,16 @@ export function beginOutboundDispatch(
       }
       if (op.state !== 'queued' || op.submission_phase !== 'built') {
         endChild(runtime, claim, 'fail', `operation_${op.state}`);
-        return { kind: 'settled', state: op.state as OutboundOperationState, reason: `operation_${op.state}` };
+        return {
+          kind: 'settled',
+          state: op.state as OutboundOperationState,
+          reason: `operation_${op.state}`,
+        };
       }
 
-      const permit = runtime.store.permitsOf(op.id).find((p) => p.direction === 'outbound' && p.state === 'minted');
+      const permit = runtime.store
+        .permitsOf(op.id)
+        .find((p) => p.direction === 'outbound' && p.state === 'minted');
       const voidAndSettle = (reason: string, state: OutboundOperationState): DispatchStart => {
         if (permit !== undefined) runtime.store.voidPermit(permit.permit_id, reason);
         return settle(state, reason, state === 'cancelled' ? 'cancel' : 'fail');
@@ -176,9 +211,14 @@ export function beginOutboundDispatch(
         return voidAndSettle('cancelled_by_owner', 'cancelled');
       }
       if (permit === undefined) return voidAndSettle('no_permit', 'stale_authority');
-      if (snapshot === null || consent === null) return voidAndSettle('snapshot_unreadable', 'stale_authority');
+      if (snapshot === null || consent === null)
+        return voidAndSettle('snapshot_unreadable', 'stale_authority');
       const consentHash = canonicalDigest(consent);
-      if (consentHash !== op.request_hash || consentHash !== permit.payload_hash || consentHash !== snapshot.consent_hash) {
+      if (
+        consentHash !== op.request_hash ||
+        consentHash !== permit.payload_hash ||
+        consentHash !== snapshot.consent_hash
+      ) {
         return voidAndSettle('consent_mismatch', 'stale_authority');
       }
       const approval = runtime.workflow.store().getById(snapshot.approval_task_id);
@@ -189,11 +229,14 @@ export function beginOutboundDispatch(
       const drift = authority.ok ? snapshotDrift(snapshot, authority) : authority.reason;
       if (drift !== null) return voidAndSettle(drift, 'stale_authority');
       if (opts.credential !== undefined) {
-        if (opts.credential.ref !== snapshot.credential_ref) return voidAndSettle('credential_changed', 'stale_authority');
+        if (opts.credential.ref !== snapshot.credential_ref)
+          return voidAndSettle('credential_changed', 'stale_authority');
         // Nothing is sent either way; the owner reads which it was.
-        if (opts.credential.problem !== null) return voidAndSettle(opts.credential.problem, 'failed');
+        if (opts.credential.problem !== null)
+          return voidAndSettle(opts.credential.problem, 'failed');
       }
-      if (!runtime.store.consumePermit(permit.permit_id, now)) return voidAndSettle('permit_expired', 'expired');
+      if (!runtime.store.consumePermit(permit.permit_id, now))
+        return voidAndSettle('permit_expired', 'expired');
 
       const messageId = newA2AId();
       runtime.store.updateTask(
@@ -202,7 +245,13 @@ export function beginOutboundDispatch(
         { state: 'running', submission_phase: 'transmitting', message_id: messageId, sent_at: now },
         now,
       );
-      return { ...target(op, snapshot), kind: 'send', messageId, parts: consent.projection.parts, sentAt: now };
+      return {
+        ...target(op, snapshot),
+        kind: 'send',
+        messageId,
+        parts: consent.projection.parts,
+        sentAt: now,
+      };
     });
   } catch (err) {
     if (err instanceof ClaimLost) return { kind: 'not_ours' };
@@ -278,7 +327,11 @@ export function recordRemoteOutcome(
         reason: string,
         how: 'fail' | 'cancel' | 'unknown',
       ): RecordOutcome => {
-        endOutboundOperation(runtime, op, ['running'], { state, reason_code: reason, submission_phase: 'terminal' });
+        endOutboundOperation(runtime, op, ['running'], {
+          state,
+          reason_code: reason,
+          submission_phase: 'terminal',
+        });
         endChild(runtime, claim, how, reason);
         return { ok: true, state };
       };
@@ -291,7 +344,9 @@ export function recordRemoteOutcome(
             {
               submission_phase: 'acknowledged',
               remote_task_id: outcome.remoteTaskId,
-              ...(outcome.remoteContextId !== undefined ? { remote_context_id: outcome.remoteContextId } : {}),
+              ...(outcome.remoteContextId !== undefined
+                ? { remote_context_id: outcome.remoteContextId }
+                : {}),
             },
             now,
           );
@@ -303,7 +358,8 @@ export function recordRemoteOutcome(
         case 'unknown':
           return end('outcome_unknown', outcome.reason, 'unknown');
         case 'send_error': {
-          if (REFUSED_BEFORE_ACTING.has(outcome.code)) return end('failed', 'remote_rejected', 'fail');
+          if (REFUSED_BEFORE_ACTING.has(outcome.code))
+            return end('failed', 'remote_rejected', 'fail');
           const snapshot = parseStored<OutboundSnapshot>(op.snapshot_json);
           // An error after the request arrived may follow a side effect (A2A-I8):
           // only a class that cannot change anything is a plain failure.
@@ -316,7 +372,11 @@ export function recordRemoteOutcome(
           if (cancel !== null && cancel.state !== 'confirmed') {
             runtime.store.updateCancelRequest(op.id, [cancel.state], 'confirmed', { nowMs: now });
           }
-          return end('cancelled', cancel === null ? 'cancelled_by_remote' : 'cancelled_by_owner', 'cancel');
+          return end(
+            'cancelled',
+            cancel === null ? 'cancelled_by_remote' : 'cancelled_by_owner',
+            'cancel',
+          );
         }
         case 'result': {
           const snapshot = parseStored<OutboundSnapshot>(op.snapshot_json);
@@ -397,10 +457,16 @@ export function takeCancelRequest(runtime: A2ARuntime, claim: DispatchClaim): bo
       if (request === null) return false;
       const now = runtime.nowMs();
       if (request.state === 'requested') {
-        return runtime.store.updateCancelRequest(op.id, ['requested'], 'attempting', { resolvingClaimId: claim.claimId, nowMs: now });
+        return runtime.store.updateCancelRequest(op.id, ['requested'], 'attempting', {
+          resolvingClaimId: claim.claimId,
+          nowMs: now,
+        });
       }
       if (request.state === 'attempting' && request.resolving_claim_id !== claim.claimId) {
-        return runtime.store.updateCancelRequest(op.id, ['attempting'], 'attempting', { resolvingClaimId: claim.claimId, nowMs: now });
+        return runtime.store.updateCancelRequest(op.id, ['attempting'], 'attempting', {
+          resolvingClaimId: claim.claimId,
+          nowMs: now,
+        });
       }
       return false;
     });

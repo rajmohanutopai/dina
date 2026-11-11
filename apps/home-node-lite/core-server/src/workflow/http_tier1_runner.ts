@@ -46,7 +46,8 @@ export function makeHttpTier1Runner(options: HttpTier1RunnerOptions): LocalCapab
     const payload = parseServiceQueryExecutionPayload(task.payload);
     const serviceUri = payload?.service_uri ?? '';
     const rkey = serviceUri === '' ? DEFAULT_RKEY : parseServiceListingUri(serviceUri)?.rkey;
-    if (rkey === undefined) throw new Error('tier1: the task names a listing that is not a listing reference');
+    if (rkey === undefined)
+      throw new Error('tier1: the task names a listing that is not a listing reference');
     const config = getServiceConfig(rkey);
 
     options.logger.info(

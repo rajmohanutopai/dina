@@ -43,11 +43,9 @@ function silentLogger(): Logger {
 describe('path param audit (task 4.14)', () => {
   it('URL-decodes %20 / %2F in path captures', async () => {
     const coreRouter = new CoreRouter();
-    coreRouter.get(
-      '/v1/item/:id',
-      (req) => ({ status: 200, body: { id: req.params['id'] } }),
-      { auth: 'public' },
-    );
+    coreRouter.get('/v1/item/:id', (req) => ({ status: 200, body: { id: req.params['id'] } }), {
+      auth: 'public',
+    });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app });
@@ -111,11 +109,9 @@ describe('path param audit (task 4.14)', () => {
 
   it('param at end of path', async () => {
     const coreRouter = new CoreRouter();
-    coreRouter.get(
-      '/v1/items/:id',
-      (req) => ({ status: 200, body: { id: req.params['id'] } }),
-      { auth: 'public' },
-    );
+    coreRouter.get('/v1/items/:id', (req) => ({ status: 200, body: { id: req.params['id'] } }), {
+      auth: 'public',
+    });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app });
@@ -150,11 +146,7 @@ describe('path param audit (task 4.14)', () => {
     // Fastify's default for "path matches but method doesn't" is 404
     // — we don't configure 405 semantics. Document that.
     const coreRouter = new CoreRouter();
-    coreRouter.post(
-      '/v1/thing',
-      () => ({ status: 201, body: {} }),
-      { auth: 'public' },
-    );
+    coreRouter.post('/v1/thing', () => ({ status: 201, body: {} }), { auth: 'public' });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app });
@@ -169,11 +161,9 @@ describe('path param audit (task 4.14)', () => {
 
   it('HEAD on a GET route returns 200 + headers (Fastify auto-wires)', async () => {
     const coreRouter = new CoreRouter();
-    coreRouter.get(
-      '/v1/healthz',
-      () => ({ status: 200, body: { status: 'ok' } }),
-      { auth: 'public' },
-    );
+    coreRouter.get('/v1/healthz', () => ({ status: 200, body: { status: 'ok' } }), {
+      auth: 'public',
+    });
 
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     bindCoreRouter({ coreRouter, app });

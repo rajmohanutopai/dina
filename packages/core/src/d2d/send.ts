@@ -112,7 +112,10 @@ function tradeOf(req: SendRequest): { kind: string; document: unknown } {
   if (req.messageType !== 'commerce.trade') return { kind: '', document: null };
   try {
     const body = JSON.parse(req.body) as { kind?: unknown; document?: unknown };
-    return { kind: typeof body.kind === 'string' ? body.kind : '', document: body.document ?? null };
+    return {
+      kind: typeof body.kind === 'string' ? body.kind : '',
+      document: body.document ?? null,
+    };
   } catch {
     return { kind: '', document: null };
   }
@@ -300,8 +303,7 @@ export async function sendD2D(req: SendRequest): Promise<SendResult> {
     type: req.messageType,
     from: req.senderDID,
     to: req.recipientDID,
-    created_time:
-      ttlLeft !== null && req.createdTime !== undefined ? req.createdTime : Date.now(),
+    created_time: ttlLeft !== null && req.createdTime !== undefined ? req.createdTime : Date.now(),
     body: req.body,
   };
 

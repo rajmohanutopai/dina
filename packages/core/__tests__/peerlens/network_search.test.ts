@@ -10,7 +10,6 @@ import {
   registerTrustQueryClient,
   resetTrustQueryClient,
   resetSearchCache,
-  type PeerlensSearchResult,
 } from '../../src/peerlens/network_search';
 import {
   PeerlensQueryClient,
@@ -227,7 +226,9 @@ describe('PeerLens Search', () => {
       await searchTrustNetwork({ query: 'ProductCo', type: 'entity_reviews' });
       expect(mockClient.queryProfile).not.toHaveBeenCalled();
       expect(searchSpy).toHaveBeenCalledTimes(1);
-      expect((searchSpy.mock.calls[0] as unknown[] | undefined)?.[0]).toMatchObject({ q: 'ProductCo' });
+      expect((searchSpy.mock.calls[0] as unknown[] | undefined)?.[0]).toMatchObject({
+        q: 'ProductCo',
+      });
     });
   });
 
@@ -340,7 +341,10 @@ describe('PeerLens Search', () => {
         limit: 50,
       });
 
-      const params = (searchSpy.mock.calls[0] as unknown[] | undefined)?.[0] as Record<string, unknown>;
+      const params = (searchSpy.mock.calls[0] as unknown[] | undefined)?.[0] as Record<
+        string,
+        unknown
+      >;
       expect(params).toMatchObject({
         q: 'aeron chair',
         subjectType: 'product',

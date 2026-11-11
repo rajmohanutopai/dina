@@ -40,7 +40,8 @@ export async function setGuardModes(update: Record<string, unknown>): Promise<Gu
     if (!(GUARD_KEYS as readonly string[]).includes(key)) return `unknown guard: ${key}`;
     if (value !== 'report' && value !== 'enforce') return `mode must be report or enforce: ${key}`;
   }
-  for (const [key, value] of Object.entries(update)) await kvSet(`guard_mode:${key}`, String(value), NS);
+  for (const [key, value] of Object.entries(update))
+    await kvSet(`guard_mode:${key}`, String(value), NS);
   return getGuardModes();
 }
 
@@ -100,4 +101,3 @@ export function ownerTimeZoneNow(): string {
 export function ownerTimeZoneIfRead(): string | null {
   return zoneRead ? (lastZone ?? hostTimeZone()) : null;
 }
-

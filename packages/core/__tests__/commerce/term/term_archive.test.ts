@@ -22,8 +22,7 @@ import {
 import { applyMigrations } from '../../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../../src/storage/schemas';
 
-import { publishListing , BRAND_DID, Fleet, juicePolicy, STORE_DID } from './term_harness';
-
+import { publishListing, BRAND_DID, Fleet, juicePolicy, STORE_DID } from './term_harness';
 
 const PASS = 'archive passphrase for shelf space';
 const TERM_TABLES = [

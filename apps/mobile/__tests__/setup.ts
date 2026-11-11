@@ -26,8 +26,7 @@ jest.mock('react-native-safe-area-context', () => {
     useSafeAreaInsets: () => inset,
     useSafeAreaFrame: () => frame,
     SafeAreaProvider: ({ children }: { children: unknown }) => children,
-    SafeAreaConsumer: ({ children }: { children: (i: typeof inset) => unknown }) =>
-      children(inset),
+    SafeAreaConsumer: ({ children }: { children: (i: typeof inset) => unknown }) => children(inset),
     SafeAreaView: ({ children }: { children: unknown }) => children,
     initialWindowMetrics: { insets: inset, frame },
   };
@@ -38,10 +37,7 @@ import {
   ingest as stagingIngest,
   getItem as getStagingItem,
 } from '../../../packages/core/src/staging/service';
-import {
-  clearVaults,
-  DEFAULT_TEST_PERSONAS,
-} from '../../../packages/core/src/vault/crud';
+import { clearVaults, DEFAULT_TEST_PERSONAS } from '../../../packages/core/src/vault/crud';
 
 beforeEach(() => {
   clearVaults(DEFAULT_TEST_PERSONAS);

@@ -22,14 +22,14 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { installImageReencoder } from '../../../src/commerce/image_artifacts';
 import { installImageEgressBroker } from '../../../src/commerce/image_egress';
-import { createCommerceRuntime, installCommerceRuntime } from '../../../src/commerce/runtime';
-import { clearPairingState, setNodeDID } from '../../../src/pairing/ceremony';
-import { CoreRouter, type CoreRequest } from '../../../src/server/router';
-import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
 import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
 } from '../../../src/commerce/owner_presence';
+import { createCommerceRuntime, installCommerceRuntime } from '../../../src/commerce/runtime';
+import { clearPairingState, setNodeDID } from '../../../src/pairing/ceremony';
+import { CoreRouter, type CoreRequest } from '../../../src/server/router';
+import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
 import { applyMigrations } from '../../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../../src/storage/schemas';
 
@@ -87,7 +87,8 @@ const [DRAFT_ROUTES, INGRESS_ROUTES]: [string[], string[]] = (() => {
   // below vacuous, which is the failure mode this replaces. Each half needs a
   // floor: a regex that stopped matching the ingress routes would empty that
   // loop while leaving this one looking healthy.
-  if (withDraftId.length < 6) throw new Error(`derived only ${String(withDraftId.length)} draft routes`);
+  if (withDraftId.length < 6)
+    throw new Error(`derived only ${String(withDraftId.length)} draft routes`);
   if (ingress.length < 3) throw new Error(`derived only ${String(ingress.length)} ingress routes`);
   if (all.filter(isPresence).length !== 1) throw new Error('expected exactly one presence route');
   return [withDraftId, ingress];
@@ -307,11 +308,16 @@ describe('what each route requires before it reaches an engine', () => {
     // Different problems for a client: one is a bad id, the other is an
     // ordering mistake, and collapsing them sends an operator to the wrong
     // place.
-    expect((await router.handle(post(DRAFT_ROUTES[0], { draft_id: 'nope' }, 'owner'))).status).toBe(404);
+    expect((await router.handle(post(DRAFT_ROUTES[0], { draft_id: 'nope' }, 'owner'))).status).toBe(
+      404,
+    );
     seedDraft();
     expect(
-      (await router.handle(post('/v1/commerce/catalog/drafts/prepare', { draft_id: 'draft-1' }, 'owner')))
-        .status,
+      (
+        await router.handle(
+          post('/v1/commerce/catalog/drafts/prepare', { draft_id: 'draft-1' }, 'owner'),
+        )
+      ).status,
     ).toBe(409);
   });
 });
@@ -322,7 +328,9 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // which is the point of asserting the current state rather than mocking
     // past it: the day it lands is visible in the diff.
     seedDraft();
-    const resp = await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
+    const resp = await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'),
+    );
     expect(resp.status).toBe(409);
     expect((resp.body as { error: string }).error).toBe('no_user_presence');
   });
@@ -331,7 +339,9 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // The mirror. Without it "presence is never established" would be
     // indistinguishable from "every draft is refused for every reason".
     seedDraft({ provenanceClass: 'source_parsed', provenance: {} });
-    const resp = await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
+    const resp = await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'),
+    );
     expect(resp.status).toBe(200);
     expect((resp.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
     expect((resp.body as { draft: CatalogDraft }).draft.receipt).toBeNull();
@@ -341,12 +351,18 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // Proves the route chain actually composes: settings-free assembly, the
     // publisher's leakage gate, pagination and the digest, through HTTP.
     seedDraft({ provenanceClass: 'source_parsed', provenance: {} });
-    await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
+    await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'),
+    );
     const resp = await router.handle(
-      post('/v1/commerce/catalog/drafts/prepare', {
-        draft_id: 'draft-1',
-        published_at: '2026-08-13T09:00:00.000Z',
-      }, 'owner'),
+      post(
+        '/v1/commerce/catalog/drafts/prepare',
+        {
+          draft_id: 'draft-1',
+          published_at: '2026-08-13T09:00:00.000Z',
+        },
+        'owner',
+      ),
     );
     expect(resp.status).toBe(200);
     const draft = (resp.body as { draft: CatalogDraft }).draft;
@@ -360,19 +376,29 @@ describe('presence is not wired, and the lane says so rather than pretending', (
     // the rule the service tests pin: the confirm exemption must not reach the
     // snapshot review.
     seedDraft({ provenanceClass: 'source_parsed', provenance: {} });
-    await router.handle(post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'));
+    await router.handle(
+      post('/v1/commerce/catalog/drafts/confirm', { draft_id: 'draft-1' }, 'owner'),
+    );
     const prepared = await router.handle(
-      post('/v1/commerce/catalog/drafts/prepare', {
-        draft_id: 'draft-1',
-        published_at: '2026-08-13T09:00:00.000Z',
-      }, 'owner'),
+      post(
+        '/v1/commerce/catalog/drafts/prepare',
+        {
+          draft_id: 'draft-1',
+          published_at: '2026-08-13T09:00:00.000Z',
+        },
+        'owner',
+      ),
     );
     const digest = (prepared.body as { draft: CatalogDraft }).draft.held?.snapshot.snapshot_digest;
     const resp = await router.handle(
-      post('/v1/commerce/catalog/drafts/approve', {
-        draft_id: 'draft-1',
-        approved_snapshot_digest: digest,
-      }, 'owner'),
+      post(
+        '/v1/commerce/catalog/drafts/approve',
+        {
+          draft_id: 'draft-1',
+          approved_snapshot_digest: digest,
+        },
+        'owner',
+      ),
     );
     expect(resp.status).toBe(409);
     expect((resp.body as { error: string }).error).toBe('no_user_presence');
@@ -417,7 +443,12 @@ describe('the shipped publish route is untouched', () => {
  */
 describe('rows ingress', () => {
   /** One readable row, in the extraction's own record shape. */
-  const ROW = { identifier: 'CHAIR-1', name: 'Oak dining chair', pack_size: '1', unit_code: 'each' };
+  const ROW = {
+    identifier: 'CHAIR-1',
+    name: 'Oak dining chair',
+    pack_size: '1',
+    unit_code: 'each',
+  };
 
   /** §5 asks which model read the values, and against which schema. */
   const EXTRACTION = { model: 'gemini-2.5-flash', schema_version: 'catalog-rows-1' };
@@ -464,7 +495,11 @@ describe('rows ingress', () => {
     for (const routePath of INGRESS_ROUTES) {
       for (const callerType of NON_OWNER) {
         const resp = await router.handle(
-          post(routePath, { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], csv: 'x' }, callerType),
+          post(
+            routePath,
+            { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], csv: 'x' },
+            callerType,
+          ),
         );
         expect(resp.status).toBe(403);
       }
@@ -502,7 +537,12 @@ describe('rows ingress', () => {
     // the person was shown when they vouched for it — and the model is inside
     // the receipt preimage, so it cannot be attached afterwards either.
     writeSettings();
-    for (const partial of [{}, { model: 'm' }, { schema_version: 'v' }, { model: '', schema_version: 'v' }]) {
+    for (const partial of [
+      {},
+      { model: 'm' },
+      { schema_version: 'v' },
+      { model: '', schema_version: 'v' },
+    ]) {
       const resp = await router.handle(
         post(
           '/v1/commerce/catalog/drafts/from_extraction',
@@ -609,7 +649,9 @@ describe('rows ingress', () => {
     expect(body.draft.items[0]?.name).toBe('Oak dining chair');
     // The seller's settings supplied these; no row did.
     expect(body.draft.items[0]?.category_ids).toEqual(['furniture.seating']);
-    expect(body.draft.items[0]?.fulfilment_regions).toEqual([{ scheme: 'admin_area', value: 'IN-KA' }]);
+    expect(body.draft.items[0]?.fulfilment_regions).toEqual([
+      { scheme: 'admin_area', value: 'IN-KA' },
+    ]);
 
     // MINTED ONCE AND STORED. A rebuild that re-derives either moves
     // `snapshot_digest` out from under the owner's approval (§10 item 8), so
@@ -671,7 +713,9 @@ describe('rows ingress', () => {
         'owner',
       ),
     );
-    expect((extraction.body as { draft: CatalogDraft }).draft.provenanceClass).toBe('model_derived');
+    expect((extraction.body as { draft: CatalogDraft }).draft.provenanceClass).toBe(
+      'model_derived',
+    );
 
     const file = await router.handle(
       post(
@@ -924,7 +968,15 @@ describe('rows ingress', () => {
           catalog_id: CATALOG,
           default_scheme: 'sku',
           ...EXTRACTION,
-          rows: [ROW, { identifier: 'GHOST-1', name: 'A product that does not exist', pack_size: '1', unit_code: 'each' }],
+          rows: [
+            ROW,
+            {
+              identifier: 'GHOST-1',
+              name: 'A product that does not exist',
+              pack_size: '1',
+              unit_code: 'each',
+            },
+          ],
         },
         'owner',
       ),
@@ -1000,7 +1052,7 @@ describe('rows ingress', () => {
     expect(after.items.map((i) => i.product.value).sort()).toEqual(['P-0001', 'P-0002']);
   });
 
-  it('a repair taking another product\'s SKU is an identifier_claimed finding (§4.2)', async () => {
+  it("a repair taking another product's SKU is an identifier_claimed finding (§4.2)", async () => {
     writeSettings({ tradingCurrency: 'INR' });
     const created = await router.handle(
       post(
@@ -1044,7 +1096,7 @@ describe('rows ingress', () => {
     expect(after.items).toEqual([]);
   });
 
-  it('ERASE-UNPUBLISHED-THEN-REPHOTOGRAPH: the dead draft\'s claims release (§4.2)', async () => {
+  it("ERASE-UNPUBLISHED-THEN-REPHOTOGRAPH: the dead draft's claims release (§4.2)", async () => {
     // The seller's most ordinary recovery: give up on a half-repaired
     // draft, re-photograph the same page. Without the claims lifecycle the
     // dead draft holds every printed SKU for ever and the new draft meets
@@ -1115,7 +1167,9 @@ describe('rows ingress', () => {
       now: () => 1_800_000_000_000,
       verifyHeldEvidence: () => true,
     });
-    expect(runtime.catalogDrafts.claimForPublish(draftId, 'tok-live', 1_800_000_000_000, 60_000)).toBe(true);
+    expect(
+      runtime.catalogDrafts.claimForPublish(draftId, 'tok-live', 1_800_000_000_000, 60_000),
+    ).toBe(true);
     const erased = await router.handle(
       post('/v1/commerce/catalog/drafts/erase', { draft_id: draftId }, 'owner'),
     );
@@ -1126,16 +1180,29 @@ describe('rows ingress', () => {
   describe('the photo path (§4.1 capture → §3 gate → §5 draft)', () => {
     function pngPage(seed: number): Uint8Array {
       const u32 = (v: number): number[] => [
-        (v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff,
+        (v >>> 24) & 0xff,
+        (v >>> 16) & 0xff,
+        (v >>> 8) & 0xff,
+        v & 0xff,
       ];
       const chunk = (type: string, data: number[]): number[] => [
         ...u32(data.length),
         ...[...type].map((c) => c.charCodeAt(0)),
         ...data,
-        0, 0, 0, 0,
+        0,
+        0,
+        0,
+        0,
       ];
       return new Uint8Array([
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
         ...chunk('IHDR', [...u32(640), ...u32(480), 8, 6, 0, 0, 0]),
         ...chunk('IDAT', [seed, 2, 3]),
         ...chunk('IEND', []),
@@ -1161,8 +1228,20 @@ describe('rows ingress', () => {
         extractRows: (args) => {
           transmitted.push(args.pages.length);
           const rows: { page_index: number; cells: Record<string, string> }[] = [
-            { page_index: 0, cells: { sku: 'CM-STOOL-1', name: 'Teak workshop stool', list_price_minor_units: '450000', pack_size: '1', unit_code: 'each' } },
-            { page_index: 1, cells: { name: 'Rosewood side table', pack_size: '1', unit_code: 'each' } },
+            {
+              page_index: 0,
+              cells: {
+                sku: 'CM-STOOL-1',
+                name: 'Teak workshop stool',
+                list_price_minor_units: '450000',
+                pack_size: '1',
+                unit_code: 'each',
+              },
+            },
+            {
+              page_index: 1,
+              cells: { name: 'Rosewood side table', pack_size: '1', unit_code: 'each' },
+            },
           ];
           return Promise.resolve({ rows, model: 'gpt-4o-mini' });
         },
@@ -1235,7 +1314,12 @@ describe('rows ingress', () => {
         provider: 'openai',
         extractRows: () =>
           Promise.resolve({
-            rows: [{ page_index: 0, cells: { sku: 'A-1', name: 'Item', pack_size: '1', unit_code: 'each' } }],
+            rows: [
+              {
+                page_index: 0,
+                cells: { sku: 'A-1', name: 'Item', pack_size: '1', unit_code: 'each' },
+              },
+            ],
             model: 'gpt-4o-mini',
           }),
       });
@@ -1276,12 +1360,36 @@ describe('rows ingress', () => {
         extractRows: () => Promise.resolve({ rows: [], model: 'stub' }),
       });
       const u32 = (v: number): number[] => [
-        (v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff,
+        (v >>> 24) & 0xff,
+        (v >>> 16) & 0xff,
+        (v >>> 8) & 0xff,
+        v & 0xff,
       ];
       const bomb = new Uint8Array([
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
-        ...u32(13), 0x49, 0x48, 0x44, 0x52,
-        ...u32(50000), ...u32(50000), 8, 6, 0, 0, 0, 0, 0, 0, 0,
+        0x89,
+        0x50,
+        0x4e,
+        0x47,
+        0x0d,
+        0x0a,
+        0x1a,
+        0x0a,
+        ...u32(13),
+        0x49,
+        0x48,
+        0x44,
+        0x52,
+        ...u32(50000),
+        ...u32(50000),
+        8,
+        6,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
       ]);
       const captured = await router.handle(
         post(
@@ -1357,7 +1465,7 @@ describe('rows ingress', () => {
     expect(after.provenance['0']?.name).toBe('proposed');
   });
 
-  it('prices in the SELLER\'s currency, never the row\'s', async () => {
+  it("prices in the SELLER's currency, never the row's", async () => {
     writeSettings({ tradingCurrency: 'INR' });
     const resp = await router.handle(
       post(
@@ -1491,7 +1599,11 @@ describe('rows ingress', () => {
       .map(([field]) => `0.${field}`);
     expect(waiting.length).toBeGreaterThan(0);
     const accepted = await router.handle(
-      post('/v1/commerce/catalog/drafts/accept', { draft_id: draft.draftId, fields: waiting }, 'owner'),
+      post(
+        '/v1/commerce/catalog/drafts/accept',
+        { draft_id: draft.draftId, fields: waiting },
+        'owner',
+      ),
     );
     expect(accepted.status).toBe(200);
 
@@ -1699,7 +1811,11 @@ describe('rows ingress', () => {
 
     // A name is required, so emptying it is not a repair.
     const empty = await router.handle(
-      post('/v1/commerce/catalog/drafts/edit', { draft_id: draftId, field: '0.name', value: '' }, 'owner'),
+      post(
+        '/v1/commerce/catalog/drafts/edit',
+        { draft_id: draftId, field: '0.name', value: '' },
+        'owner',
+      ),
     );
     expect(empty.status).toBe(409);
     expect((empty.body as { error: string }).error).toBe('item_rejected');
@@ -1708,7 +1824,11 @@ describe('rows ingress', () => {
     const badUnit = await router.handle(
       post(
         '/v1/commerce/catalog/drafts/edit',
-        { draft_id: draftId, field: '0.pack', value: { sell_unit: { value: '1', unit_code: 'furlong' } } },
+        {
+          draft_id: draftId,
+          field: '0.pack',
+          value: { sell_unit: { value: '1', unit_code: 'furlong' } },
+        },
         'owner',
       ),
     );
@@ -1736,7 +1856,11 @@ describe('rows ingress', () => {
     expect(draft.items[0]?.description).toBe('call 555-0100 for a quote');
 
     const cleared = await router.handle(
-      post('/v1/commerce/catalog/drafts/edit', { draft_id: draft.draftId, field: '0.description' }, 'owner'),
+      post(
+        '/v1/commerce/catalog/drafts/edit',
+        { draft_id: draft.draftId, field: '0.description' },
+        'owner',
+      ),
     );
     const after = (cleared.body as { draft: CatalogDraft }).draft;
     expect(after.items[0]?.description).toBeUndefined();
@@ -1827,7 +1951,11 @@ describe('rows ingress', () => {
         {
           draft_id: draftId,
           field: '0.product',
-          value: { scheme: 'manufacturer_sku', value: 'CHAIR-1', issuer_did: 'did:plc:someone-else' },
+          value: {
+            scheme: 'manufacturer_sku',
+            value: 'CHAIR-1',
+            issuer_did: 'did:plc:someone-else',
+          },
         },
         'owner',
       ),
@@ -1892,172 +2020,185 @@ describe('rows ingress', () => {
     expect((confirmed.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
   });
 
-/**
- * §10 item 9, at the route — the gap a live run found.
- *
- * Every other test in this file supplies presence from the inside. None asked
- * what the SHIPPED ROUTES supply, and the answer was a hard-coded `false`, so
- * the whole lane was unreachable on a real server.
- */
-describe('proving a person is here', () => {
-  const PASSPHRASE = 'correct horse battery staple';
+  /**
+   * §10 item 9, at the route — the gap a live run found.
+   *
+   * Every other test in this file supplies presence from the inside. None asked
+   * what the SHIPPED ROUTES supply, and the answer was a hard-coded `false`, so
+   * the whole lane was unreachable on a real server.
+   */
+  describe('proving a person is here', () => {
+    const PASSPHRASE = 'correct horse battery staple';
 
-  afterEach(() => {
-    installOwnerPresenceVerifier(null);
-    clearOwnerPresence();
-  });
-
-  it('is owner-only, like every other draft route', async () => {
-    installOwnerPresenceVerifier(async () => true);
-    for (const caller of NON_OWNER) {
-      const resp = await router.handle(
-        post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, caller),
-      );
-      expect(resp.status).not.toBe(200);
-    }
-    // An owner presenting the wrong capability is no owner.
-    const forged = await router.handle(
-      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner', 'not-the-secret'),
-    );
-    expect(forged.status).toBe(403);
-  });
-
-  it('answers, to the owner only, whether this node can check a passphrase at all', async () => {
-    const ask = (caller: string | undefined): CoreRequest => ({
-      ...post('/v1/commerce/catalog/drafts/presence', {}, caller),
-      method: 'GET',
+    afterEach(() => {
+      installOwnerPresenceVerifier(null);
+      clearOwnerPresence();
     });
-    installOwnerPresenceVerifier(async () => true);
-    expect(await router.handle(ask('owner'))).toEqual({ status: 200, body: { available: true } });
-    for (const caller of NON_OWNER) expect((await router.handle(ask(caller))).status).not.toBe(200);
-    expect(
-      (await router.handle({ ...ask('owner'), ownerCapability: 'not-the-secret' })).status,
-    ).toBe(403);
-    installOwnerPresenceVerifier(null);
-    expect(await router.handle(ask('owner'))).toEqual({ status: 200, body: { available: false } });
+
+    it('is owner-only, like every other draft route', async () => {
+      installOwnerPresenceVerifier(async () => true);
+      for (const caller of NON_OWNER) {
+        const resp = await router.handle(
+          post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, caller),
+        );
+        expect(resp.status).not.toBe(200);
+      }
+      // An owner presenting the wrong capability is no owner.
+      const forged = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/presence',
+          { passphrase: PASSPHRASE },
+          'owner',
+          'not-the-secret',
+        ),
+      );
+      expect(forged.status).toBe(403);
+    });
+
+    it('answers, to the owner only, whether this node can check a passphrase at all', async () => {
+      const ask = (caller: string | undefined): CoreRequest => ({
+        ...post('/v1/commerce/catalog/drafts/presence', {}, caller),
+        method: 'GET',
+      });
+      installOwnerPresenceVerifier(async () => true);
+      expect(await router.handle(ask('owner'))).toEqual({ status: 200, body: { available: true } });
+      for (const caller of NON_OWNER)
+        expect((await router.handle(ask(caller))).status).not.toBe(200);
+      expect(
+        (await router.handle({ ...ask('owner'), ownerCapability: 'not-the-secret' })).status,
+      ).toBe(403);
+      installOwnerPresenceVerifier(null);
+      expect(await router.handle(ask('owner'))).toEqual({
+        status: 200,
+        body: { available: false },
+      });
+    });
+
+    it('says so plainly when this node cannot check a passphrase', async () => {
+      installOwnerPresenceVerifier(null);
+      const resp = await router.handle(
+        post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+      );
+      expect(resp.status).toBe(409);
+      expect((resp.body as { error: string }).error).toBe('presence_unavailable');
+    });
+
+    it('refuses a wrong passphrase without saying why', async () => {
+      // A wrong passphrase and a broken verifier are the same answer. The
+      // difference is only useful to somebody guessing.
+      installOwnerPresenceVerifier(async (p) => p === PASSPHRASE);
+      const resp = await router.handle(
+        post('/v1/commerce/catalog/drafts/presence', { passphrase: 'hunter2' }, 'owner'),
+      );
+      expect(resp.status).toBe(401);
+      expect(resp.body).toEqual({ error: 'not_proven' });
+    });
+
+    it('never echoes the passphrase back', async () => {
+      installOwnerPresenceVerifier(async () => true);
+      const resp = await router.handle(
+        post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+      );
+      expect(JSON.stringify(resp.body)).not.toContain(PASSPHRASE);
+    });
+
+    it('UNBLOCKS the lane: confirm refuses, then succeeds once a person proves it', async () => {
+      // The whole finding, in one test. Before: `no_user_presence` for ever.
+      writeSettings({ tradingCurrency: 'INR' });
+      const created = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/from_extraction',
+          { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
+          'owner',
+        ),
+      );
+      const draftId = (created.body as { draft: CatalogDraft }).draft.draftId;
+      const fields = Object.entries(
+        (created.body as { draft: CatalogDraft }).draft.provenance['0'] ?? {},
+      )
+        .filter(([, state]) => state === 'proposed')
+        .map(([field]) => `0.${field}`);
+      await router.handle(
+        post('/v1/commerce/catalog/drafts/accept', { draft_id: draftId, fields }, 'owner'),
+      );
+
+      installOwnerPresenceVerifier(async (p) => p === PASSPHRASE);
+      const before = await router.handle(
+        post('/v1/commerce/catalog/drafts/confirm', { draft_id: draftId }, 'owner'),
+      );
+      expect((before.body as { error: string }).error).toBe('no_user_presence');
+
+      const proved = await router.handle(
+        post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+      );
+      expect(proved.status).toBe(200);
+
+      const after = await router.handle(
+        post('/v1/commerce/catalog/drafts/confirm', { draft_id: draftId }, 'owner'),
+      );
+      expect(after.status).toBe(200);
+      expect((after.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
+      expect((after.body as { draft: CatalogDraft }).draft.receipt).not.toBeNull();
+    });
+
+    it('a model-derived draft REACHES PREPARE on its own minted fields', async () => {
+      // The second gap the live run found. Model-derived drafts scan every
+      // field (§4.2, no identifier-column suppression), and the route minted
+      // `item_revision` as decimal epoch millis — 13 digits, inside which the
+      // phone scanner finds a valid 10-digit span. Every photo-lane publish
+      // refused on a value the KERNEL wrote. The mint is now shaped like the
+      // `P-` assignment mint: no digit run long enough for any identifier
+      // pattern. Every fixture that hand-stamps `itemRevision: 'rev-1'` would
+      // never have caught it; only the route's real mint can.
+      writeSettings({ tradingCurrency: 'INR' });
+      const created = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/from_extraction',
+          { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
+          'owner',
+        ),
+      );
+      const draft = (created.body as { draft: CatalogDraft }).draft;
+      expect(draft.itemRevision).not.toMatch(/\d{9}/);
+      const fields = Object.entries(draft.provenance['0'] ?? {})
+        .filter(([, state]) => state === 'proposed')
+        .map(([field]) => `0.${field}`);
+      await router.handle(
+        post('/v1/commerce/catalog/drafts/accept', { draft_id: draft.draftId, fields }, 'owner'),
+      );
+      installOwnerPresenceVerifier(async () => true);
+      await router.handle(
+        post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
+      );
+      await router.handle(
+        post('/v1/commerce/catalog/drafts/confirm', { draft_id: draft.draftId }, 'owner'),
+      );
+
+      const prepared = await router.handle(
+        post(
+          '/v1/commerce/catalog/drafts/prepare',
+          {
+            draft_id: draft.draftId,
+            published_at: '2026-08-13T09:00:00.000Z',
+          },
+          'owner',
+        ),
+      );
+      expect(prepared.status).toBe(200);
+      expect((prepared.body as { draft: CatalogDraft }).draft.state).toBe('prepared');
+    });
+
+    it('and the retired item-list body closes the moment presence is possible', async () => {
+      // The retirement was conditional on the draft lane being unusable. It has
+      // to stop being a bypass on the day the lane works, without anybody
+      // remembering to go and remove it.
+      writeSettings({ tradingCurrency: 'INR' });
+      installOwnerPresenceVerifier(async () => true);
+      const resp = await router.handle(
+        post('/v1/commerce/catalog/publish', { catalog_id: CATALOG, items: [] }, 'owner'),
+      );
+      expect(resp.status).toBe(409);
+      expect((resp.body as { error: string }).error).toBe('item_list_retired');
+    });
   });
-
-  it('says so plainly when this node cannot check a passphrase', async () => {
-    installOwnerPresenceVerifier(null);
-    const resp = await router.handle(
-      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
-    );
-    expect(resp.status).toBe(409);
-    expect((resp.body as { error: string }).error).toBe('presence_unavailable');
-  });
-
-  it('refuses a wrong passphrase without saying why', async () => {
-    // A wrong passphrase and a broken verifier are the same answer. The
-    // difference is only useful to somebody guessing.
-    installOwnerPresenceVerifier(async (p) => p === PASSPHRASE);
-    const resp = await router.handle(
-      post('/v1/commerce/catalog/drafts/presence', { passphrase: 'hunter2' }, 'owner'),
-    );
-    expect(resp.status).toBe(401);
-    expect(resp.body).toEqual({ error: 'not_proven' });
-  });
-
-  it('never echoes the passphrase back', async () => {
-    installOwnerPresenceVerifier(async () => true);
-    const resp = await router.handle(
-      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
-    );
-    expect(JSON.stringify(resp.body)).not.toContain(PASSPHRASE);
-  });
-
-  it('UNBLOCKS the lane: confirm refuses, then succeeds once a person proves it', async () => {
-    // The whole finding, in one test. Before: `no_user_presence` for ever.
-    writeSettings({ tradingCurrency: 'INR' });
-    const created = await router.handle(
-      post(
-        '/v1/commerce/catalog/drafts/from_extraction',
-        { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
-        'owner',
-      ),
-    );
-    const draftId = (created.body as { draft: CatalogDraft }).draft.draftId;
-    const fields = Object.entries(
-      (created.body as { draft: CatalogDraft }).draft.provenance['0'] ?? {},
-    )
-      .filter(([, state]) => state === 'proposed')
-      .map(([field]) => `0.${field}`);
-    await router.handle(
-      post('/v1/commerce/catalog/drafts/accept', { draft_id: draftId, fields }, 'owner'),
-    );
-
-    installOwnerPresenceVerifier(async (p) => p === PASSPHRASE);
-    const before = await router.handle(
-      post('/v1/commerce/catalog/drafts/confirm', { draft_id: draftId }, 'owner'),
-    );
-    expect((before.body as { error: string }).error).toBe('no_user_presence');
-
-    const proved = await router.handle(
-      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
-    );
-    expect(proved.status).toBe(200);
-
-    const after = await router.handle(
-      post('/v1/commerce/catalog/drafts/confirm', { draft_id: draftId }, 'owner'),
-    );
-    expect(after.status).toBe(200);
-    expect((after.body as { draft: CatalogDraft }).draft.state).toBe('confirmed');
-    expect((after.body as { draft: CatalogDraft }).draft.receipt).not.toBeNull();
-  });
-
-  it('a model-derived draft REACHES PREPARE on its own minted fields', async () => {
-    // The second gap the live run found. Model-derived drafts scan every
-    // field (§4.2, no identifier-column suppression), and the route minted
-    // `item_revision` as decimal epoch millis — 13 digits, inside which the
-    // phone scanner finds a valid 10-digit span. Every photo-lane publish
-    // refused on a value the KERNEL wrote. The mint is now shaped like the
-    // `P-` assignment mint: no digit run long enough for any identifier
-    // pattern. Every fixture that hand-stamps `itemRevision: 'rev-1'` would
-    // never have caught it; only the route's real mint can.
-    writeSettings({ tradingCurrency: 'INR' });
-    const created = await router.handle(
-      post(
-        '/v1/commerce/catalog/drafts/from_extraction',
-        { catalog_id: CATALOG, default_scheme: 'sku', rows: [ROW], ...EXTRACTION },
-        'owner',
-      ),
-    );
-    const draft = (created.body as { draft: CatalogDraft }).draft;
-    expect(draft.itemRevision).not.toMatch(/\d{9}/);
-    const fields = Object.entries(draft.provenance['0'] ?? {})
-      .filter(([, state]) => state === 'proposed')
-      .map(([field]) => `0.${field}`);
-    await router.handle(
-      post('/v1/commerce/catalog/drafts/accept', { draft_id: draft.draftId, fields }, 'owner'),
-    );
-    installOwnerPresenceVerifier(async () => true);
-    await router.handle(
-      post('/v1/commerce/catalog/drafts/presence', { passphrase: PASSPHRASE }, 'owner'),
-    );
-    await router.handle(
-      post('/v1/commerce/catalog/drafts/confirm', { draft_id: draft.draftId }, 'owner'),
-    );
-
-    const prepared = await router.handle(
-      post('/v1/commerce/catalog/drafts/prepare', {
-        draft_id: draft.draftId,
-        published_at: '2026-08-13T09:00:00.000Z',
-      }, 'owner'),
-    );
-    expect(prepared.status).toBe(200);
-    expect((prepared.body as { draft: CatalogDraft }).draft.state).toBe('prepared');
-  });
-
-  it('and the retired item-list body closes the moment presence is possible', async () => {
-    // The retirement was conditional on the draft lane being unusable. It has
-    // to stop being a bypass on the day the lane works, without anybody
-    // remembering to go and remove it.
-    writeSettings({ tradingCurrency: 'INR' });
-    installOwnerPresenceVerifier(async () => true);
-    const resp = await router.handle(
-      post('/v1/commerce/catalog/publish', { catalog_id: CATALOG, items: [] }, 'owner'),
-    );
-    expect(resp.status).toBe(409);
-    expect((resp.body as { error: string }).error).toBe('item_list_retired');
-  });
-});
 });

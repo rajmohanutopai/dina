@@ -225,7 +225,7 @@ export class ProcessSupervisor {
   private async attemptRestart(name: string): Promise<void> {
     const proc = this.getProcess(name);
 
-    if (proc.restartCount >= proc.config.maxRestartAttempts!) {
+    if (proc.restartCount >= proc.config.maxRestartAttempts) {
       proc.state = 'given_up';
       this.callbacks.onGiveUp?.(name, proc.restartCount);
       return;
@@ -235,8 +235,8 @@ export class ProcessSupervisor {
     proc.restartCount++;
 
     const backoff = Math.min(
-      proc.config.initialBackoffMs! * Math.pow(2, proc.restartCount - 1),
-      proc.config.maxBackoffMs!,
+      proc.config.initialBackoffMs * Math.pow(2, proc.restartCount - 1),
+      proc.config.maxBackoffMs,
     );
 
     this.callbacks.onRestart?.(name, proc.restartCount);
@@ -258,7 +258,7 @@ export class ProcessSupervisor {
       if (!healthy) {
         await this.handleUnhealthy(name);
       }
-    }, proc.config.healthCheckIntervalMs!);
+    }, proc.config.healthCheckIntervalMs);
   }
 
   private stopHealthChecks(name: string): void {

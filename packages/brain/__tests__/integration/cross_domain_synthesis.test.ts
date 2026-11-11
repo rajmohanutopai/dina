@@ -76,7 +76,6 @@ import {
   setAccessiblePersonas,
 } from '../../src/vault_context/assembly';
 
-
 import {
   closeSQLiteVault,
   openSQLiteVault,
@@ -296,216 +295,209 @@ const SCENARIOS: Scenario[] = [
 
 const describeReal = GEMINI_API_KEY !== '' ? describe : describe.skip;
 
-describeReal(
-  'cross-domain synthesis — REAL Gemini, LIVE prompts (tuning oracle)',
-  () => {
-    const openHandles: SQLiteVaultHandle[] = [];
+describeReal('cross-domain synthesis — REAL Gemini, LIVE prompts (tuning oracle)', () => {
+  const openHandles: SQLiteVaultHandle[] = [];
 
-    beforeAll(() => {
-      clearVaults();
-      resetPersonaState();
-      resetReasoningProvider();
-      configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
+  beforeAll(() => {
+    clearVaults();
+    resetPersonaState();
+    resetReasoningProvider();
+    configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
 
-      for (const persona of FIXTURE_PERSONAS) {
-        openHandles.push(openSQLiteVault(persona));
-      }
-      setAccessiblePersonas(FIXTURE_PERSONAS);
+    for (const persona of FIXTURE_PERSONAS) {
+      openHandles.push(openSQLiteVault(persona));
+    }
+    setAccessiblePersonas(FIXTURE_PERSONAS);
 
-      // Wire the people graph so find_person resolves Emma to a
-      // canonical record with relationshipHint='daughter'.
-      setPeopleRepository(new FixturePeopleRepository());
+    // Wire the people graph so find_person resolves Emma to a
+    // canonical record with relationshipHint='daughter'.
+    setPeopleRepository(new FixturePeopleRepository());
 
-      // Production composition — same path the lite brain-server's
-      // boot wires for `/ask`. Uses VAULT_CONTEXT (the live prompt)
-      // because `makeAgenticAskHandler` defaults to it.
-      const rawProvider = new GeminiGenaiAdapter({
-        apiKey: GEMINI_API_KEY,
-        defaultModel: GEMINI_MODEL,
-      });
-      const router = new LLMRouter({
-        providers: { gemini: rawProvider },
-        config: {
-          localAvailable: false,
-          cloudProviders: ['gemini'],
-          sensitivePersonas: ['health', 'finance'],
-          cloudConsentGranted: true,
-        },
-      });
-      const provider = new RoutedLLMProvider({
-        router,
-        taskType: 'reason',
-        label: 'routed:reason:cross-domain-test',
-      });
-
-      // Full pipeline — vault_search, find_person, list_personas,
-      // browse_vault, get_full_content, search_peerlens,
-      // geocode, search_provider_services, query_service,
-      // schedule_reminder, draft_review, classify_intent,
-      // find_preferred_provider. We need this richness so the LLM
-      // genuinely has the option to do cross-domain searches.
-      // AppView is needed for `search_peerlens`. The fetch is
-      // stubbed to return an empty body fast so PeerLens calls don't
-      // hang or hit the network during prompt-tuning runs.
-      const stubAppView = new AppViewClient({
-        appViewURL: 'http://localhost:0',
-        fetch: async () =>
-          new Response(JSON.stringify({ results: [] }), {
-            status: 200,
-            headers: { 'content-type': 'application/json' },
-          }),
-      });
-      const pipeline = buildAgenticAskPipeline({
-        llm: provider,
-        providerName: 'gemini',
-        appViewClient: stubAppView,
-        orchestratorHandle: undefined as never, // service_query not exercised
-        coreClient: undefined as never, // schedule_reminder not exercised
+    // Production composition — same path the lite brain-server's
+    // boot wires for `/ask`. Uses VAULT_CONTEXT (the live prompt)
+    // because `makeAgenticAskHandler` defaults to it.
+    const rawProvider = new GeminiGenaiAdapter({
+      apiKey: GEMINI_API_KEY,
+      defaultModel: GEMINI_MODEL,
+    });
+    const router = new LLMRouter({
+      providers: { gemini: rawProvider },
+      config: {
+        localAvailable: false,
+        cloudProviders: ['gemini'],
+        sensitivePersonas: ['health', 'finance'],
         cloudConsentGranted: true,
-      });
-
-      // Pre-flight retrieval planner — turns the question into a
-      // structured plan and pre-fetches cross-domain context before
-      // the agentic loop runs. The whole point of this test set is
-      // to validate the planner's bridging effect; we wire the same
-      // router the loop uses so the planner shares the cloud-consent
-      // gate + PII scrub policy.
-      const installedPersonas: InstalledPersona[] = [
-        {
-          name: 'general',
-          description:
-            "Everyday notes — anything that doesn't clearly fit a more specific vault. Family, friends, preferences, hobbies, social facts.",
-        },
-        {
-          name: 'work',
-          description:
-            'Job, projects, colleagues, work calendar items, professional context, weekly commitments and meetings.',
-        },
-        {
-          name: 'health',
-          description:
-            'Medical, fitness, symptoms, medications, doctors, allergies, supplements and dietary restrictions.',
-        },
-        {
-          name: 'finance',
-          description:
-            'Money, budgets, spending, income, bills, debt, investments, taxes — anything that constrains a purchase.',
-        },
-      ];
-      const plannerLlmCall = buildAskRetrievalPlannerCall(router);
-      const preFlight = async (question: string) => {
-        const plan = await planAskRetrieval(question, {
-          llmCall: plannerLlmCall,
-          personas: installedPersonas,
-        });
-        const result = await runAskPreFlightRetrieval(plan, {
-          vaultSearch: async (persona, query) => {
-            const items = await executeToolSearch(persona, query, 5);
-            return items.map((i) => ({
-              id: i.id,
-              content_l0: i.content_l0,
-              body: i.body,
-              persona,
-            }));
-          },
-          findPerson: async (name) => {
-            const repo = getPeopleRepository();
-            if (repo === null) return [];
-            const needle = name.trim().toLowerCase();
-            return repo
-              .listPeople()
-              .filter((p) =>
-                (p.surfaces ?? []).some(
-                  (s) =>
-                    s.status !== 'rejected' &&
-                    s.normalizedSurface === needle,
-                ),
-              )
-              .map((p) => ({
-                canonicalName: p.canonicalName,
-                relationshipHint: p.relationshipHint,
-                surfaceSummary: (p.surfaces ?? [])
-                  .filter((s) => s.status !== 'rejected')
-                  .map((s) => s.surface)
-                  .slice(0, 3)
-                  .join(', '),
-              }));
-          },
-        });
-        // Trace line every operator iterating on the prompt cares
-        // about: what plan came out, how many hits per persona, did
-        // the planner produce a non-empty block? Kept terse so it
-        // doesn't drown out the answer print below.
-         
-        console.warn(
-          `[planner] hits=${JSON.stringify(result.hits)} blockLen=${result.block.length} intent="${result.plan.intent}"`,
-        );
-        return result;
-      };
-
-      const askHandler = makeAgenticAskHandler({
-        provider,
-        tools: pipeline.tools,
-        preFlight,
-      });
-      setAskCommandHandler(askHandler);
-    });
-
-    // The brain's global `beforeEach` (in `__tests__/setup.ts`) runs
-    // `clearVaults(DEFAULT_TEST_PERSONAS)` before every test, which
-    // wipes out our SQLite-backed repos and replaces them with empty
-    // InMemory ones. Re-register the SQLite repos and re-seed the
-    // fixture data before each scenario so the planner sees real
-    // FTS5-indexed rows. The handles opened in `beforeAll` stay
-    // alive — we just rebind the registry.
-    beforeEach(() => {
-      for (const handle of openHandles) {
-        setVaultRepository(handle.persona, handle.repo);
-      }
-      setAccessiblePersonas(FIXTURE_PERSONAS);
-      setPeopleRepository(new FixturePeopleRepository());
-
-      for (const item of FIXTURE_VAULT_ITEMS) {
-        storeItem(item.persona, {
-          type: item.type ?? 'user_memory',
-          summary: item.summary,
-          body: item.body,
-        });
-      }
-    });
-
-    afterAll(() => {
-      resetAskCommandHandler();
-      resetReasoningProvider();
-      setPeopleRepository(null);
-      while (openHandles.length > 0) {
-        closeSQLiteVault(openHandles.pop()!);
-      }
-    });
-
-    it.each(SCENARIOS)(
-      '$label',
-      async (scenario: Scenario) => {
-        const resp = await handleChat(`/ask ${scenario.ask}`);
-        const answer = (resp.response ?? '').toLowerCase();
-
-        // Loose substring assertion — at least one of the expected
-        // cross-domain terms must appear. The LLM has flexibility in
-        // wording but the fact must surface.
-        const matched = scenario.mustContainAny.find((s) =>
-          answer.includes(s.toLowerCase()),
-        );
-
-        // Always print the answer so an operator iterating on the
-        // prompt can see what shifted. Compact one-liner — full
-        // answer + the keywords we looked for + pass/fail.
-         
-        console.warn(
-          `\n[cross-domain ${matched !== undefined ? 'PASS' : 'MISS'}] ${scenario.label}\n  ask: ${scenario.ask}\n  needed one of: ${JSON.stringify(scenario.mustContainAny)}\n  answer:\n    ${(resp.response ?? '').split('\n').join('\n    ')}\n`,
-        );
-        expect(matched).toBeDefined();
       },
-      60_000,
-    );
-  },
-);
+    });
+    const provider = new RoutedLLMProvider({
+      router,
+      taskType: 'reason',
+      label: 'routed:reason:cross-domain-test',
+    });
+
+    // Full pipeline — vault_search, find_person, list_personas,
+    // browse_vault, get_full_content, search_peerlens,
+    // geocode, search_provider_services, query_service,
+    // schedule_reminder, draft_review, classify_intent,
+    // find_preferred_provider. We need this richness so the LLM
+    // genuinely has the option to do cross-domain searches.
+    // AppView is needed for `search_peerlens`. The fetch is
+    // stubbed to return an empty body fast so PeerLens calls don't
+    // hang or hit the network during prompt-tuning runs.
+    const stubAppView = new AppViewClient({
+      appViewURL: 'http://localhost:0',
+      fetch: async () =>
+        new Response(JSON.stringify({ results: [] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+    });
+    const pipeline = buildAgenticAskPipeline({
+      llm: provider,
+      providerName: 'gemini',
+      appViewClient: stubAppView,
+      orchestratorHandle: undefined as never, // service_query not exercised
+      coreClient: undefined as never, // schedule_reminder not exercised
+      cloudConsentGranted: true,
+    });
+
+    // Pre-flight retrieval planner — turns the question into a
+    // structured plan and pre-fetches cross-domain context before
+    // the agentic loop runs. The whole point of this test set is
+    // to validate the planner's bridging effect; we wire the same
+    // router the loop uses so the planner shares the cloud-consent
+    // gate + PII scrub policy.
+    const installedPersonas: InstalledPersona[] = [
+      {
+        name: 'general',
+        description:
+          "Everyday notes — anything that doesn't clearly fit a more specific vault. Family, friends, preferences, hobbies, social facts.",
+      },
+      {
+        name: 'work',
+        description:
+          'Job, projects, colleagues, work calendar items, professional context, weekly commitments and meetings.',
+      },
+      {
+        name: 'health',
+        description:
+          'Medical, fitness, symptoms, medications, doctors, allergies, supplements and dietary restrictions.',
+      },
+      {
+        name: 'finance',
+        description:
+          'Money, budgets, spending, income, bills, debt, investments, taxes — anything that constrains a purchase.',
+      },
+    ];
+    const plannerLlmCall = buildAskRetrievalPlannerCall(router);
+    const preFlight = async (question: string) => {
+      const plan = await planAskRetrieval(question, {
+        llmCall: plannerLlmCall,
+        personas: installedPersonas,
+      });
+      const result = await runAskPreFlightRetrieval(plan, {
+        vaultSearch: async (persona, query) => {
+          const items = await executeToolSearch(persona, query, 5);
+          return items.map((i) => ({
+            id: i.id,
+            content_l0: i.content_l0,
+            body: i.body,
+            persona,
+          }));
+        },
+        findPerson: async (name) => {
+          const repo = getPeopleRepository();
+          if (repo === null) return [];
+          const needle = name.trim().toLowerCase();
+          return repo
+            .listPeople()
+            .filter((p) =>
+              (p.surfaces ?? []).some(
+                (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
+              ),
+            )
+            .map((p) => ({
+              canonicalName: p.canonicalName,
+              relationshipHint: p.relationshipHint,
+              surfaceSummary: (p.surfaces ?? [])
+                .filter((s) => s.status !== 'rejected')
+                .map((s) => s.surface)
+                .slice(0, 3)
+                .join(', '),
+            }));
+        },
+      });
+      // Trace line every operator iterating on the prompt cares
+      // about: what plan came out, how many hits per persona, did
+      // the planner produce a non-empty block? Kept terse so it
+      // doesn't drown out the answer print below.
+
+      console.warn(
+        `[planner] hits=${JSON.stringify(result.hits)} blockLen=${result.block.length} intent="${result.plan.intent}"`,
+      );
+      return result;
+    };
+
+    const askHandler = makeAgenticAskHandler({
+      provider,
+      tools: pipeline.tools,
+      preFlight,
+    });
+    setAskCommandHandler(askHandler);
+  });
+
+  // The brain's global `beforeEach` (in `__tests__/setup.ts`) runs
+  // `clearVaults(DEFAULT_TEST_PERSONAS)` before every test, which
+  // wipes out our SQLite-backed repos and replaces them with empty
+  // InMemory ones. Re-register the SQLite repos and re-seed the
+  // fixture data before each scenario so the planner sees real
+  // FTS5-indexed rows. The handles opened in `beforeAll` stay
+  // alive — we just rebind the registry.
+  beforeEach(() => {
+    for (const handle of openHandles) {
+      setVaultRepository(handle.persona, handle.repo);
+    }
+    setAccessiblePersonas(FIXTURE_PERSONAS);
+    setPeopleRepository(new FixturePeopleRepository());
+
+    for (const item of FIXTURE_VAULT_ITEMS) {
+      storeItem(item.persona, {
+        type: item.type ?? 'user_memory',
+        summary: item.summary,
+        body: item.body,
+      });
+    }
+  });
+
+  afterAll(() => {
+    resetAskCommandHandler();
+    resetReasoningProvider();
+    setPeopleRepository(null);
+    while (openHandles.length > 0) {
+      closeSQLiteVault(openHandles.pop()!);
+    }
+  });
+
+  it.each(SCENARIOS)(
+    '$label',
+    async (scenario: Scenario) => {
+      const resp = await handleChat(`/ask ${scenario.ask}`);
+      const answer = (resp.response ?? '').toLowerCase();
+
+      // Loose substring assertion — at least one of the expected
+      // cross-domain terms must appear. The LLM has flexibility in
+      // wording but the fact must surface.
+      const matched = scenario.mustContainAny.find((s) => answer.includes(s.toLowerCase()));
+
+      // Always print the answer so an operator iterating on the
+      // prompt can see what shifted. Compact one-liner — full
+      // answer + the keywords we looked for + pass/fail.
+
+      console.warn(
+        `\n[cross-domain ${matched !== undefined ? 'PASS' : 'MISS'}] ${scenario.label}\n  ask: ${scenario.ask}\n  needed one of: ${JSON.stringify(scenario.mustContainAny)}\n  answer:\n    ${(resp.response ?? '').split('\n').join('\n    ')}\n`,
+      );
+      expect(matched).toBeDefined();
+    },
+    60_000,
+  );
+});

@@ -155,7 +155,9 @@ describe('the tender screen', () => {
         exit_if_run_fails: true as const,
       },
     };
-    setTenderBackendForTest(backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner] })) }));
+    setTenderBackendForTest(
+      backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner] })) }),
+    );
     const view = render(<TenderScreen />);
     await waitFor(() => expect(view.getByText(/partner's delivery run/)).toBeTruthy());
     expect(view.getByText(/cancel without charge/)).toBeTruthy();
@@ -175,7 +177,9 @@ describe('the tender screen', () => {
         fallback_delivery_at: '2026-08-20T09:00:00Z',
       },
     };
-    const b = backend({ tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner, own] })) });
+    const b = backend({
+      tenderRanking: jest.fn(async () => ({ ...RANKING, ranked: [partner, own] })),
+    });
     setTenderBackendForTest(b);
     const view = render(<TenderScreen />);
     await waitFor(() => expect(view.getByTestId(AWARD(B, 'partner_00112233'))).toBeTruthy());

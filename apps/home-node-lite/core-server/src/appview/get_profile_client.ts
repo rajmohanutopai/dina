@@ -37,10 +37,7 @@
  */
 
 import type { XrpcFetchResult } from './peerlens_resolve_client';
-import type {
-  ResponsePolicy,
-  ServiceAreaInput,
-} from './profile_builder';
+import type { ResponsePolicy, ServiceAreaInput } from './profile_builder';
 
 /** Profile record with the full capability set — matches 6.17's ProfileBuilder output. */
 export interface ServiceProfileView {
@@ -91,9 +88,7 @@ export type GetProfileOutcome =
   | { ok: false; reason: 'network_error'; error: string }
   | { ok: false; reason: 'rejected_by_appview'; status: number; error: string };
 
-export type GetProfileFetchFn = (
-  input: GetProfileRequest,
-) => Promise<XrpcFetchResult>;
+export type GetProfileFetchFn = (input: GetProfileRequest) => Promise<XrpcFetchResult>;
 
 export interface GetProfileClientOptions {
   fetchFn: GetProfileFetchFn;
@@ -107,11 +102,7 @@ export type GetProfileEvent =
 const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.:-]+)$/;
 const SCHEMA_HASH_RE = /^[0-9a-f]{64}$/;
 const CAPABILITY_RE = /^[a-z][a-z0-9_]{0,63}$/;
-const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set([
-  'auto',
-  'review',
-  'manual',
-]);
+const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set(['auto', 'review', 'manual']);
 
 /**
  * Create the `service.getProfile` xRPC client. Returns a function
@@ -127,9 +118,7 @@ export function createGetProfileClient(
   const fetchFn = opts.fetchFn;
   const onEvent = opts.onEvent;
 
-  return async function getProfile(
-    input: GetProfileRequest,
-  ): Promise<GetProfileOutcome> {
+  return async function getProfile(input: GetProfileRequest): Promise<GetProfileOutcome> {
     const did = typeof input?.operatorDid === 'string' ? input.operatorDid.trim() : '';
     if (did === '' || !DID_RE.test(did)) {
       onEvent?.({
@@ -158,9 +147,10 @@ export function createGetProfileClient(
       return { ok: false, reason: 'not_found' };
     }
     if (result.status < 200 || result.status >= 300) {
-      const msg = typeof (result.body as { error?: unknown })?.error === 'string'
-        ? ((result.body as { error: string }).error)
-        : `status ${result.status}`;
+      const msg =
+        typeof (result.body as { error?: unknown })?.error === 'string'
+          ? (result.body as { error: string }).error
+          : `status ${result.status}`;
       onEvent?.({
         kind: 'rejected',
         operatorDid: did,
@@ -194,13 +184,17 @@ export function createGetProfileClient(
 
 // ── Internals ──────────────────────────────────────────────────────────
 
-interface ParseOk { ok: true; response: GetProfileResponse }
-interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
+interface ParseOk {
+  ok: true;
+  response: GetProfileResponse;
+}
+interface ParseFail {
+  ok: false;
+  reason: 'malformed_response';
+  detail: string;
+}
 
-function parseResponse(
-  body: Record<string, unknown>,
-  requestedDid: string,
-): ParseOk | ParseFail {
+function parseResponse(body: Record<string, unknown>, requestedDid: string): ParseOk | ParseFail {
   const operatorDid = body.operatorDid;
   if (typeof operatorDid !== 'string' || operatorDid !== requestedDid) {
     return {
@@ -246,11 +240,11 @@ function parseResponse(
   };
 }
 
-interface ProfileParseOk { ok: true; value: ServiceProfileView }
-function parseProfile(
-  raw: unknown,
-  operatorDid: string,
-): ProfileParseOk | ParseFail {
+interface ProfileParseOk {
+  ok: true;
+  value: ServiceProfileView;
+}
+function parseProfile(raw: unknown, operatorDid: string): ProfileParseOk | ParseFail {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
     return {
       ok: false,
@@ -293,7 +287,11 @@ function parseProfile(
       capabilities.push(c);
     }
   }
-  if (p.capabilitySchemas === null || typeof p.capabilitySchemas !== 'object' || Array.isArray(p.capabilitySchemas)) {
+  if (
+    p.capabilitySchemas === null ||
+    typeof p.capabilitySchemas !== 'object' ||
+    Array.isArray(p.capabilitySchemas)
+  ) {
     return {
       ok: false,
       reason: 'malformed_response',
@@ -319,7 +317,11 @@ function parseProfile(
       };
     }
   }
-  if (p.responsePolicy === null || typeof p.responsePolicy !== 'object' || Array.isArray(p.responsePolicy)) {
+  if (
+    p.responsePolicy === null ||
+    typeof p.responsePolicy !== 'object' ||
+    Array.isArray(p.responsePolicy)
+  ) {
     return {
       ok: false,
       reason: 'malformed_response',
@@ -328,10 +330,7 @@ function parseProfile(
   }
   const responsePolicy: Record<string, ResponsePolicy> = {};
   for (const [cap, policy] of Object.entries(p.responsePolicy as Record<string, unknown>)) {
-    if (
-      typeof policy !== 'string' ||
-      !VALID_POLICIES.has(policy as ResponsePolicy)
-    ) {
+    if (typeof policy !== 'string' || !VALID_POLICIES.has(policy as ResponsePolicy)) {
       continue;
     }
     responsePolicy[cap] = policy as ResponsePolicy;
@@ -385,11 +384,7 @@ function parseServiceArea(raw: unknown): ServiceAreaInput | null {
   if (typeof a.lng !== 'number' || !Number.isFinite(a.lng) || a.lng < -180 || a.lng > 180) {
     return null;
   }
-  if (
-    typeof a.radiusKm !== 'number' ||
-    !Number.isFinite(a.radiusKm) ||
-    a.radiusKm <= 0
-  ) {
+  if (typeof a.radiusKm !== 'number' || !Number.isFinite(a.radiusKm) || a.radiusKm <= 0) {
     return null;
   }
   return { lat: a.lat, lng: a.lng, radiusKm: a.radiusKm };

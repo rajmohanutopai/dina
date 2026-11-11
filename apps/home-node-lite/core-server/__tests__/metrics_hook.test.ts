@@ -105,8 +105,7 @@ describe('installMetricsHook (tasks 4.88 + 4.89)', () => {
     expect(h.sum).toBeGreaterThanOrEqual(0);
     expect(h.sum).toBeLessThan(10); // well within the largest default bucket
     // Exactly one bucket OR overflow received the observation.
-    const placed =
-      h.buckets.reduce((n, b) => n + b.count, 0) + h.overflow;
+    const placed = h.buckets.reduce((n, b) => n + b.count, 0) + h.overflow;
     expect(placed).toBe(1);
     await app.close();
   });

@@ -87,10 +87,7 @@ function okBody(services: ServiceMatch[] = [match()], total?: number): Record<st
  * tests pass raw `ServiceMatch` arrays to the stub without manually
  * wrapping each entry.
  */
-function stubFetchMatches(
-  matches: unknown[],
-  total?: number,
-): ServiceSearchFetchFn {
+function stubFetchMatches(matches: unknown[], total?: number): ServiceSearchFetchFn {
   const services = matches.map((m) =>
     m === null || typeof m !== 'object'
       ? m
@@ -133,9 +130,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
       >;
       expect(out.ok).toBe(true);
       expect(out.response.services).toHaveLength(1);
-      expect(out.response.services[0]!.operatorDid).toBe(
-        'did:plc:abcdefghijklmnopqrstuvwx',
-      );
+      expect(out.response.services[0]!.operatorDid).toBe('did:plc:abcdefghijklmnopqrstuvwx');
       expect(out.response.total).toBe(1);
     });
 
@@ -252,8 +247,7 @@ describe('createServiceSearchClient (task 6.12)', () => {
       });
 
       it('PRESERVES a non-self rkey (multi-listing per DID)', async () => {
-        const uri =
-          'at://did:plc:abcdefghijklmnopqrstuvwx/com.dinakernel.service.profile/route-42';
+        const uri = 'at://did:plc:abcdefghijklmnopqrstuvwx/com.dinakernel.service.profile/route-42';
         const row = { ...toAppviewServiceRow(match()), uri };
         const out = (await createServiceSearchClient({
           fetchFn: stubFetchMatches([row]),
@@ -264,7 +258,11 @@ describe('createServiceSearchClient (task 6.12)', () => {
     });
 
     it('fires searched event with result count', async () => {
-      interface Ev { kind: 'searched'; capability: string | undefined; resultCount: number }
+      interface Ev {
+        kind: 'searched';
+        capability: string | undefined;
+        resultCount: number;
+      }
       const events: Ev[] = [];
       const search = createServiceSearchClient({
         fetchFn: stubFetch(okBody([match(), match({ name: 'X' })])),
@@ -285,7 +283,10 @@ describe('createServiceSearchClient (task 6.12)', () => {
       ['capability with leading digit', { capability: '1cap' }],
       ['non-string query', { query: 42 as unknown as string }],
       ['query too long', { query: 'x'.repeat(1001) }],
-      ['location missing fields', { location: { lat: 1 } as unknown as { lat: number; lng: number } }],
+      [
+        'location missing fields',
+        { location: { lat: 1 } as unknown as { lat: number; lng: number } },
+      ],
       ['lat out of range', { location: { lat: 100, lng: 0 } }],
       ['lng out of range', { location: { lat: 0, lng: 200 } }],
       ['NaN lat', { location: { lat: NaN, lng: 0 } }],

@@ -222,7 +222,9 @@ describe('CORS with the caller check on, in boot’s order', () => {
     registerHostAllowlistGuard(app);
     registerOriginGuard(app, [ORIGIN]);
     await registerWebOriginCors(app, [ORIGIN]);
-    registerCallerAuth(app, { directory: new CallerDirectory(async () => ({ core: null, ownerDevices: [] })) });
+    registerCallerAuth(app, {
+      directory: new CallerDirectory(async () => ({ core: null, ownerDevices: [] })),
+    });
     app.get('/api/v1/contacts', async () => ({ contacts: [] }));
     await app.ready();
   });
@@ -245,7 +247,11 @@ describe('CORS with the caller check on, in boot’s order', () => {
   });
 
   it('an unsigned call from the page is refused, in a way the page can read', async () => {
-    const res = await app.inject({ method: 'GET', url: '/api/v1/contacts', headers: { origin: ORIGIN } });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/v1/contacts',
+      headers: { origin: ORIGIN },
+    });
     expect(res.statusCode).toBe(401);
     expect(res.headers['access-control-allow-origin']).toBe(ORIGIN);
   });

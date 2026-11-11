@@ -2,6 +2,8 @@
  * Task 6.17 — service profile builder tests.
  */
 
+import { capabilitySchemaHash } from '@dina/core';
+
 import {
   SERVICE_PROFILE_TYPE,
   buildServiceProfile,
@@ -9,7 +11,6 @@ import {
   type BuildProfileInput,
   type CapabilitySchemaInput,
 } from '../src/appview/profile_builder';
-import { capabilitySchemaHash } from '@dina/core';
 
 function etaSchema(): CapabilitySchemaInput {
   return {
@@ -57,9 +58,7 @@ describe('buildServiceProfile (task 6.17)', () => {
       expect(profile.name).toBe('SF Transit Authority');
       expect(profile.isPublic).toBe(true);
       expect(profile.capabilities).toEqual(['eta_query']);
-      expect(profile.capabilitySchemas.eta_query!.schema_hash).toMatch(
-        /^[0-9a-f]{64}$/,
-      );
+      expect(profile.capabilitySchemas.eta_query!.schema_hash).toMatch(/^[0-9a-f]{64}$/);
       expect(profile.capabilitySchemas.eta_query!.description).toBe(
         'Query estimated bus arrival time',
       );
@@ -143,16 +142,13 @@ describe('buildServiceProfile (task 6.17)', () => {
     });
 
     it('hash is stable across rebuilds (deterministic)', () => {
-      const h1 = buildServiceProfile(baseConfig())
-        .capabilitySchemas.eta_query!.schema_hash;
-      const h2 = buildServiceProfile(baseConfig())
-        .capabilitySchemas.eta_query!.schema_hash;
+      const h1 = buildServiceProfile(baseConfig()).capabilitySchemas.eta_query!.schema_hash;
+      const h2 = buildServiceProfile(baseConfig()).capabilitySchemas.eta_query!.schema_hash;
       expect(h1).toBe(h2);
     });
 
     it('different params → different hash', () => {
-      const a = buildServiceProfile(baseConfig()).capabilitySchemas.eta_query!
-        .schema_hash;
+      const a = buildServiceProfile(baseConfig()).capabilitySchemas.eta_query!.schema_hash;
       const cfg = baseConfig();
       cfg.capabilitySchemas.eta_query!.params = { type: 'object' };
       const b = buildServiceProfile(cfg).capabilitySchemas.eta_query!.schema_hash;
@@ -160,8 +156,7 @@ describe('buildServiceProfile (task 6.17)', () => {
     });
 
     it('key-order change in params does NOT change the hash', () => {
-      const a = buildServiceProfile(baseConfig()).capabilitySchemas.eta_query!
-        .schema_hash;
+      const a = buildServiceProfile(baseConfig()).capabilitySchemas.eta_query!.schema_hash;
       const cfg = baseConfig();
       // Re-order the location properties.
       cfg.capabilitySchemas.eta_query!.params = {
@@ -210,19 +205,27 @@ describe('buildServiceProfile (task 6.17)', () => {
       const cfg = baseConfig();
       const profile = buildServiceProfile(cfg);
       // Reach 3 levels deep into the JSON Schema params.
-      const props = (cfg.capabilitySchemas.eta_query!.params as { properties: Record<string, unknown> }).properties;
+      const props = (
+        cfg.capabilitySchemas.eta_query!.params as { properties: Record<string, unknown> }
+      ).properties;
       (props.route_id as { type: string }).type = 'MUTATED';
       // Profile's params is the sibling deep-clone — unchanged.
-      const profileProps = (profile.capabilitySchemas.eta_query!.params as { properties: Record<string, unknown> }).properties;
+      const profileProps = (
+        profile.capabilitySchemas.eta_query!.params as { properties: Record<string, unknown> }
+      ).properties;
       expect((profileProps.route_id as { type: string }).type).toBe('string');
     });
 
     it('mutating result (deep nested object) does NOT corrupt the profile', () => {
       const cfg = baseConfig();
       const profile = buildServiceProfile(cfg);
-      const resultProps = (cfg.capabilitySchemas.eta_query!.result as { properties: Record<string, unknown> }).properties;
+      const resultProps = (
+        cfg.capabilitySchemas.eta_query!.result as { properties: Record<string, unknown> }
+      ).properties;
       (resultProps.eta_minutes as { type: string }).type = 'MUTATED';
-      const profileResultProps = (profile.capabilitySchemas.eta_query!.result as { properties: Record<string, unknown> }).properties;
+      const profileResultProps = (
+        profile.capabilitySchemas.eta_query!.result as { properties: Record<string, unknown> }
+      ).properties;
       expect((profileResultProps.eta_minutes as { type: string }).type).toBe('integer');
     });
 
@@ -275,7 +278,8 @@ describe('buildServiceProfile (task 6.17)', () => {
       const cfg = baseConfig();
       const sourceArea = cfg.serviceArea;
       const sourceSchema = cfg.capabilitySchemas.eta_query;
-      if (!sourceArea || !sourceSchema) throw new Error('expected serviceArea + schema in baseConfig');
+      if (!sourceArea || !sourceSchema)
+        throw new Error('expected serviceArea + schema in baseConfig');
       const originalRadius = sourceArea.radiusKm;
       const profile = buildServiceProfile(cfg);
       const builtArea = profile.serviceArea;
@@ -560,7 +564,8 @@ describe('buildServiceProfile (task 6.17)', () => {
       ['boolean description', true],
     ])('rejects capability with %s', (_label, description) => {
       const cfg = baseConfig();
-      (cfg.capabilitySchemas.eta_query as unknown as { description: unknown }).description = description;
+      (cfg.capabilitySchemas.eta_query as unknown as { description: unknown }).description =
+        description;
       expect(() => buildServiceProfile(cfg)).toThrow(/description/);
     });
 

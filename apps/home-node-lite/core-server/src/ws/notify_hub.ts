@@ -90,10 +90,7 @@ export class NotifyHub {
     const existing = this.clients.get(deviceId);
     if (existing !== undefined) {
       try {
-        existing.socket.close(
-          REPLACED_BY_NEW_SESSION_CODE,
-          'replaced by new session',
-        );
+        existing.socket.close(REPLACED_BY_NEW_SESSION_CODE, 'replaced by new session');
       } catch {
         // Already-dead socket; ignore.
       }
@@ -148,10 +145,7 @@ export class NotifyHub {
    * SUCCESSFULLY delivered to (failed sends are excluded from the
    * count + reaped from the hub).
    */
-  broadcast(
-    message: unknown,
-    predicate?: (deviceId: string) => boolean,
-  ): number {
+  broadcast(message: unknown, predicate?: (deviceId: string) => boolean): number {
     const payload = JSON.stringify(message);
     let delivered = 0;
     // Snapshot keys so reaping during iteration is safe.

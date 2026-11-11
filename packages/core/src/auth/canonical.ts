@@ -151,10 +151,18 @@ export function verifyRequest(
   signatureHex: string,
   publicKey: Uint8Array,
 ): boolean {
-  return verifySignedText(buildCanonicalPayload(method, path, query, timestamp, nonce, body), signatureHex, publicKey);
+  return verifySignedText(
+    buildCanonicalPayload(method, path, query, timestamp, nonce, body),
+    signatureHex,
+    publicKey,
+  );
 }
 
 /** Verify a hex Ed25519 signature over `text`'s UTF-8 bytes. */
-export function verifySignedText(text: string, signatureHex: string, publicKey: Uint8Array): boolean {
+export function verifySignedText(
+  text: string,
+  signatureHex: string,
+  publicKey: Uint8Array,
+): boolean {
   return verify(publicKey, new TextEncoder().encode(text), nobleHexToBytes(signatureHex));
 }

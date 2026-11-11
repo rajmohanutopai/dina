@@ -48,9 +48,7 @@ export type ClientTokenValidationResult =
  * Extract the raw Bearer token from an `Authorization` header value.
  * Tolerates case-insensitive scheme and surrounding whitespace.
  */
-export function extractBearerToken(
-  authHeader: string | undefined | null,
-): BearerExtractionResult {
+export function extractBearerToken(authHeader: string | undefined | null): BearerExtractionResult {
   if (authHeader === undefined || authHeader === null || authHeader === '') {
     return { ok: false, reason: 'missing' };
   }
@@ -146,9 +144,7 @@ export async function authenticateBearer(
 
 function bytesToHexLower(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i];
-    if (b === undefined) continue;
+  for (const b of bytes) {
     out += b.toString(16).padStart(2, '0');
   }
   return out;

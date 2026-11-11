@@ -36,7 +36,6 @@ import { runAgenticTurn, type AgenticLoopResult } from '../reasoning/agentic_loo
 import { ToolRegistry, type AgentTool } from '../reasoning/tool_registry';
 import { createVaultSearchTool } from '../reasoning/vault_tool';
 
-
 import type { VaultFactBuilder } from './capabilities/vault_facts';
 import type { LLMProvider } from '../llm/adapters/provider';
 
@@ -347,7 +346,7 @@ function createVaultWriteTool(opts: {
   return {
     name: 'record_to_vault',
     description:
-      "Record the outcome of THIS request to your own service vault so future answers reflect it (e.g. mark the booked slot as taken). Call it when your instruction tells you to record or update something. You do NOT pass any text — the booking details are recorded automatically from the confirmed result. The record is saved only if you then return a successful result. Append-only.",
+      'Record the outcome of THIS request to your own service vault so future answers reflect it (e.g. mark the booked slot as taken). Call it when your instruction tells you to record or update something. You do NOT pass any text — the booking details are recorded automatically from the confirmed result. The record is saved only if you then return a successful result. Append-only.',
     parameters: {
       type: 'object',
       properties: {},

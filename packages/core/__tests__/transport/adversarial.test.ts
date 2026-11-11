@@ -152,7 +152,12 @@ describe('Transport Adversarial', () => {
       const dbPath = path.join(dir, 'identity.sqlite');
       const passphraseHex = randomBytes(32).toString('hex');
       const open = (): NodeSQLiteAdapter => {
-        const db = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+        const db = new NodeSQLiteAdapter({
+          path: dbPath,
+          passphraseHex,
+          journalMode: 'WAL',
+          synchronous: 'NORMAL',
+        });
         applyMigrations(db, IDENTITY_MIGRATIONS);
         return db;
       };

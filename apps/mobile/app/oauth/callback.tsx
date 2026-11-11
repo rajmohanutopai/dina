@@ -47,8 +47,7 @@ export default function OAuthCallback(): React.ReactElement {
         /* nothing to pop */
       }
     })();
-    // Run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Run once on mount: the dependency list stays empty on purpose.
   }, []);
 
   return (

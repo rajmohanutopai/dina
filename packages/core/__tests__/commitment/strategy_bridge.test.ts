@@ -6,7 +6,6 @@
 import { createNegotiationSubmitter } from '../../src/commitment/strategy_submit';
 import { createReasoningCommitBridge } from '../../src/reasoning/commit_bridge';
 
-
 import type { ReasoningBackendRepository } from '../../src/reasoning/backend_repository';
 import type { CoreReasoningBroker, ReasoningValidatedProposal } from '../../src/reasoning/broker';
 import type { ReasoningBackendBinding } from '../../src/reasoning/domain';

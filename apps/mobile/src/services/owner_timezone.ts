@@ -21,7 +21,11 @@ export async function syncOwnerTimeZone(): Promise<void> {
   const timezone = deviceTimeZone();
   if (dispatcher === null || timezone === null) return;
   try {
-    await dispatcher.dispatch({ method: 'PUT', path: '/v1/settings/owner-timezone', body: { timezone } });
+    await dispatcher.dispatch({
+      method: 'PUT',
+      path: '/v1/settings/owner-timezone',
+      body: { timezone },
+    });
   } catch {
     /* Core keeps the host's zone */
   }

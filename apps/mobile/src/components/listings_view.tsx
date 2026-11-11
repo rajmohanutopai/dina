@@ -78,7 +78,9 @@ export function ListingsView(props: ListingsViewProps): React.ReactElement {
               >
                 <Text style={styles.rowTitle} numberOfLines={1}>
                   {row.name}
-                  {row.rkey === 'self' ? <Text style={styles.defaultTag}>{'  · Default'}</Text> : null}
+                  {row.rkey === 'self' ? (
+                    <Text style={styles.defaultTag}>{'  · Default'}</Text>
+                  ) : null}
                 </Text>
                 <Text style={styles.rowSubtitle} numberOfLines={1}>
                   {listingSubtitle(row)}
@@ -92,7 +94,12 @@ export function ListingsView(props: ListingsViewProps): React.ReactElement {
                 accessibilityState={{ checked: active }}
                 accessibilityLabel={`${row.name} is ${statusLabel.toLowerCase()}. Tap to ${active ? 'pause' : 'activate'}.`}
               >
-                <Text style={[styles.statusText, active ? styles.statusTextActive : styles.statusTextPaused]}>
+                <Text
+                  style={[
+                    styles.statusText,
+                    active ? styles.statusTextActive : styles.statusTextPaused,
+                  ]}
+                >
                   {statusLabel}
                 </Text>
               </Pressable>

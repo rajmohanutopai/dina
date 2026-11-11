@@ -7,11 +7,9 @@ Android, iPhone, and server Home Node Lite are the same product shape: a full
 Home Node built from shared TypeScript Core, Brain, protocol, and runtime
 modules, with only platform adapters changing per form factor.
 
-Go and Python are behavior references while the TypeScript runtime is being
-completed. They are not target runtime surfaces for the mobile or server apps.
-This is greenfield: no old-runtime compatibility layer and no migration plan are
-required for the TS target. The legacy source trees live under
-`legacy/go-core/` and `legacy/python-brain/`.
+The first Go Core and Python Brain served as behavior references while the
+TypeScript runtime was built. They have been removed from the tree and remain in
+git history. There is no old-runtime compatibility layer or migration plan.
 
 Related docs:
 

@@ -18,7 +18,6 @@
 import {
   addContact,
   getContact,
-  listContacts,
   setPreferredFor,
   getPreferredFor,
   findByPreferredFor,

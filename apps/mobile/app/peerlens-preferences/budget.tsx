@@ -23,7 +23,7 @@
  */
 
 import { Stack } from 'expo-router';
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
@@ -73,8 +73,8 @@ export default function BudgetScreen(): React.ReactElement {
       <Stack.Screen options={{ title: 'Budget' }} />
       <ScrollView contentContainerStyle={styles.content} testID="budget-screen">
         <Text style={styles.description}>
-          Set a budget tier per category. We'll boost subjects in your range and demote
-          ones outside it. Skipped categories aren't filtered.
+          Set a budget tier per category. We'll boost subjects in your range and demote ones outside
+          it. Skipped categories aren't filtered.
         </Text>
         <View style={styles.list}>
           {BUDGET_CATEGORIES.map((cat) => (
@@ -105,15 +105,9 @@ function CategoryRow(props: CategoryRowProps): React.ReactElement {
     <View style={styles.row}>
       <View style={styles.rowMain}>
         <Text style={styles.rowLabel}>{category.label}</Text>
-        {category.description && (
-          <Text style={styles.rowDescription}>{category.description}</Text>
-        )}
+        {category.description && <Text style={styles.rowDescription}>{category.description}</Text>}
       </View>
-      <SegmentControl
-        categoryKey={category.key}
-        selected={selected}
-        onSelect={onSelect}
-      />
+      <SegmentControl categoryKey={category.key} selected={selected} onSelect={onSelect} />
     </View>
   );
 }

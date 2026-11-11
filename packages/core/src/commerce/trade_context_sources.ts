@@ -27,12 +27,12 @@
  * always the one that drifts.
  */
 
+import { getContact, getContactChannels, getPaperIdentity } from '../contacts/directory';
 import {
-  getContact,
-  getContactChannels,
-  getPaperIdentity,
-} from '../contacts/directory';
-import { setContextSource, type ContextCandidate, type ContextSourceRequest } from '../plugins/context_sources';
+  setContextSource,
+  type ContextCandidate,
+  type ContextSourceRequest,
+} from '../plugins/context_sources';
 
 import type { CommerceSettingsRepository } from './settings_store';
 import type { PostalAddress, TaxRegistration } from './trade_identity';
@@ -102,7 +102,10 @@ function registrationCandidate(
 }
 
 /** Both parties' registered address — the owner's place of business, the counterparty's billing address. */
-function addressCandidates(settings: CommerceSettingsRepository, request: ContextSourceRequest): ContextCandidate[] {
+function addressCandidates(
+  settings: CommerceSettingsRepository,
+  request: ContextSourceRequest,
+): ContextCandidate[] {
   const out: ContextCandidate[] = [];
   const own = settings.readBusiness();
   if (own.ok && own.settings.address !== undefined) {
@@ -156,7 +159,8 @@ function contactCandidates(request: ContextSourceRequest): ContextCandidate[] {
       fields: {
         role: 'counterparty',
         display_name: contact.displayName,
-        channel_kind: hasPhone && hasEmail ? 'both' : hasPhone ? 'phone' : hasEmail ? 'email' : 'none',
+        channel_kind:
+          hasPhone && hasEmail ? 'both' : hasPhone ? 'phone' : hasEmail ? 'email' : 'none',
         trust_level: contact.trustLevel,
         known_since_class: contact.createdAt,
       },

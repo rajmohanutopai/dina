@@ -1,6 +1,5 @@
-# Build context is the REPO ROOT now (appview consumes @dina/commerce-protocol
-# from the workspace), so the context must be trimmed deliberately — otherwise
-# every node_modules tree and every sibling app is shipped to the daemon.
+# Shared by every image built from the repo root. AppView keeps its own,
+# narrower list in appview/Dockerfile.dockerignore.
 **/node_modules
 **/dist
 **/.git
@@ -8,18 +7,13 @@
 **/*.log
 **/.DS_Store
 
-# Sibling components appview does not build against.
-apps/
-cli/
-legacy/
-msgbox/
-services/
+# Local state and secrets: never send them to the Docker daemon.
+**/.env
+**/.env.*
+!**/.env.example
+secrets/
+instances/
 dina-nodes/
-packages/adapter-conformance/
-packages/brain/
-packages/core/
-packages/home-node/
-packages/protocol/
-packages/managed-runtime/
-packages/*-expo/
-packages/*-node/
+.claude/
+.test-stack.json
+.test-stack-keys/

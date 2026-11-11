@@ -12,7 +12,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **Local server:** `apps/home-node-lite` (two Fastify processes — Core `:8100`, Brain `:8200`).
 - **External agents / CLI:** the Python `dina-agent` (`cli/`, published on PyPI) pairs with a Home Node.
 
-**Legacy Go/Python stack (`legacy/`) is a reference oracle, not the product.** `legacy/go-core/` (Go Core) and `legacy/python-brain/` (Python Brain) are the mature original implementation, kept as a behavior oracle and runnable reference. **Do not add new product behavior to `legacy/`** unless explicitly maintaining the reference stack or a parity test. When this doc describes Go/Python specifics, they apply to the legacy stack only.
+Dina began as a Go Core and a Python Brain. That stack has been removed from the tree and remains in git history; when this doc mentions Go or Python specifics, they describe that history.
 
 ## Project Overview
 
@@ -79,7 +79,6 @@ msgbox/              Go relay — zero-knowledge sealed-box mailbox for NAT'd no
 cli/                 Python dina-agent — paired external agent/device (signing, MsgBox transport,
                      pairing, MCP server, agent-daemon).
 services/plc/        Local did:plc directory helper (dev stub).
-legacy/              Reference oracle: go-core/, python-brain/, admin-cli/, bin/, compose/.
 ```
 
 ### The Sidecar Pattern (both stacks)
@@ -88,7 +87,7 @@ legacy/              Reference oracle: go-core/, python-brain/, admin-cli/, bin/
 - **Brain is the analyst** — thinks, classifies, reasons, routes to LLMs, delegates via MCP. Never holds keys, never touches SQLite.
 - **Brain is an untrusted tenant.** A compromised Brain can only reach open personas.
 - **The boundary is enforced by runtime:** on a **server**, Core and Brain are two OS processes with separately bind-mounted keys, and every Brain→Core call carries an Ed25519 signed header. On **mobile**, both halves share one JS VM — the boundary is a typed import graph (`CoreClient` interface; `InProcessTransport` dispatches into `CoreRouter`), and no signing is used (it adds nothing when both halves run in the same VM). The handler-level gatekeeper (sensitive-persona unlock, audit log) runs regardless of transport.
-- **The Core↔Brain contract** is the hand-written routes in `packages/core/src/server/routes/*` (validated by `__tests__/server/routes/*`), reached via the `CoreClient` interface (`packages/core/src/client/core-client.ts`) — NOT the legacy OpenAPI spec (see below).
+- **The Core↔Brain contract** is the hand-written routes in `packages/core/src/server/routes/*` (validated by `__tests__/server/routes/*`), reached via the `CoreClient` interface (`packages/core/src/client/core-client.ts`) — not the OpenAPI spec (see below).
 
 ### Key Data Flows
 
@@ -212,13 +211,9 @@ npm run audit:prod    # npm audit --omit=dev --audit-level=high
 
 Dina-language ports (Go / Rust / Swift / Kotlin / Python) target this package. Wire-format changes go through `packages/protocol/docs/conformance.md` §changelog and bump the protocol major.
 
-### Legacy build (reference stack only)
+### OpenAPI contract (not the source of truth)
 
-The Go/Python reference stack lives under `legacy/` and builds via `legacy/bin/install.sh` (Docker Compose: `dina-core` Go, `dina-brain` Python + FastAPI, optional `llama`). Build Go Core from `legacy/go-core/` with `go build -tags fts5 ./cmd/dina-core/` (CGO + FTS5 required). Do not add new product behavior here.
-
-### OpenAPI Contract — LEGACY (deprecated Go/Python stack only)
-
-> ⚠️ `api/core-api.yaml` is **no longer the source of truth**. The live Core↔Brain contract for the TS product is the hand-written routes in `packages/core/src/server/routes/*` (validated by the `__tests__/server/routes/*` contract tests). The OpenAPI files + their `make generate` / `make check-generate` codegen exist only to keep the deprecated-stack types internally consistent; `@dina/protocol`'s generated `CoreAPI*` types are a legacy schema-conformance **test fixture**, not a runtime contract.
+> ⚠️ `api/core-api.yaml` is **no longer the source of truth**. The live Core↔Brain contract for the TS product is the hand-written routes in `packages/core/src/server/routes/*` (validated by the `__tests__/server/routes/*` contract tests). The OpenAPI files feed `npm run generate` (checked in CI by `npm run generate:check`); `@dina/protocol`'s generated `CoreAPI*` types are a schema-conformance **test fixture**, not a runtime contract.
 
 **Wire format:** all JSON uses `snake_case`.
 
@@ -227,19 +222,7 @@ The Go/Python reference stack lives under `legacy/` and builds via `legacy/bin/i
 **Primary (TS product):** `npm test` runs jest across every package + app. Notable suites: `packages/*/__tests__` (core/brain/protocol domain + route contracts), `packages/adapter-conformance` (node vs expo parity), and the Home Node Lite web E2E — Playwright + Gemini-judge human-perspective runs under `apps/home-node-lite/web/__e2e__/` (see `docs/E2E_TESTING.md`, `docs/E2E_TEST_PLAN.md`). MRS ("full-status") runners live under `scripts/test/`.
 
 - **Rate limit:** default 60/min; tests need `DINA_RATE_LIMIT=100000`.
-- **`scripts/test/run_all_tests.sh`** — `--unit-only` runs TS + legacy unit tests without Docker; bare form adds the Docker suites.
-
-**Legacy (reference-stack Docker suites, Go+Python).** Still present for oracle validation:
-
-| Tier | Location | Env Var | What it validates |
-|------|----------|---------|-------------------|
-| Integration | `tests/integration/` | `DINA_INTEGRATION=docker` | Core↔Brain contract, vault ops, persona isolation (dual-mode mock/docker) |
-| E2E | `tests/e2e/` | `DINA_E2E=docker` | Multi-node: Don Alonso, Sancho, ChairMaker, Albert |
-| System | `tests/system/` | via `run_user_story_tests.sh` | 10 user stories, full stack + AppView + PLC + Jetstream |
-| Release | `tests/release/` | `DINA_RELEASE=docker` | REL-001..023, CLI via dummy-agent |
-| Sanity | `tests/sanity/` | — | Real Telegram, OpenClaw (MCP), Gmail |
-
-The 10 user stories (`run_user_story_tests.sh`): 01 Purchase Journey, 02 Sancho Moment (Anti-Her), 03 Dead Internet Filter, 04 Persona Wall, 05 Agent Gateway, 06 License Renewal, 07 Daily Briefing, 08 Move to New Machine, 09 Connector Expiry, 10 Operator Journey. Dual-mode fixtures (`tests/integration/conftest.py`) run against mocks (fast) or real Docker Go Core. `scripts/test_status.py` orchestrates the legacy local/docker/main-stack modes.
+- **Run Jest one package at a time** (`--runInBand`); full parallel runs have run the machine out of memory.
 
 ## Storage Architecture
 
@@ -292,17 +275,7 @@ config.json          gatekeeper tiers, settings
 - **`WITHOUT ROWID` + FTS5** are incompatible — FTS5 content tables need a rowid.
 - **`unixepoch()` unavailable** on bundled older SQLite; use `CAST(strftime('%s','now') AS INTEGER)`.
 
-### Legacy stack only (`legacy/`)
-
-- **FTS5 build tag:** `go-sqlcipher` needs `-tags fts5`; build from `legacy/go-core/`.
-- **Brain starts via:** `cd legacy/python-brain && python -m uvicorn src.main:app --port 18200`.
-- **Go context keys:** use typed `contextKey("agent_did")`, not a bare string.
-- **Service keys load-only:** `EnsureExistingKey()` only — no generate-capable path.
-- **`plc_probe` fails startup on DID drift** in test/dev — re-seed via `scripts/seed_test_identities.py`.
-- **Provider-side Brain reloads `service_config` on a 60s poll** with backoff; don't wire single-shot config loads.
-
 ## Rules
 
 - **No git writes — ever, unless explicitly asked in the moment.** Do not run `git commit`, `git push`, or any git write (branch, tag, reset, discarding checkout) unless the user explicitly requests it *in that turn*. This is the user's personal work; they control exactly when commits/pushes happen. A prior approval does not carry over — re-confirm each time. Read-only git (status, log, diff, fetch, pull) is fine.
-- **Stay inside the project.** Never read, write, or modify files outside the project root (`/Users/rajmohan/OpenSource/dina2/dina/`).
-- **Don't add new product behavior to `legacy/`.** It's a reference oracle; new work goes in `packages/` + `apps/`.
+- **Stay inside the project.** Never read, write, or modify files outside the project root.

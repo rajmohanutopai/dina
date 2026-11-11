@@ -68,9 +68,7 @@ export interface AwaitAuthSuccessOptions {
  * Disposes its listener + timer on ALL outcomes so the caller
  * doesn't need a try/finally around the await.
  */
-export function awaitAuthSuccess(
-  opts: AwaitAuthSuccessOptions,
-): Promise<AuthSuccessWaitResult> {
+export function awaitAuthSuccess(opts: AwaitAuthSuccessOptions): Promise<AuthSuccessWaitResult> {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_AUTH_SUCCESS_TIMEOUT_MS;
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     throw new Error(`awaitAuthSuccess: timeoutMs must be > 0 (got ${timeoutMs})`);

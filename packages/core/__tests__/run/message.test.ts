@@ -127,17 +127,42 @@ function runSuite(makeRepo: () => MessageRepository): void {
     repo.create(msg({ message_id: 'i2', run_id: 'idle-2', dedup_key: 'k2', state: 'dispatched' }));
     // Three runs with actionable messages, oldest-actionable determines order.
     repo.create(
-      msg({ message_id: 'a1', run_id: 'run-c', dedup_key: 'k3', state: 'approved', created_at: NOW + 30 }),
+      msg({
+        message_id: 'a1',
+        run_id: 'run-c',
+        dedup_key: 'k3',
+        state: 'approved',
+        created_at: NOW + 30,
+      }),
     );
     repo.create(
-      msg({ message_id: 'a2', run_id: 'run-a', dedup_key: 'k4', state: 'risk_authorized', created_at: NOW + 10 }),
+      msg({
+        message_id: 'a2',
+        run_id: 'run-a',
+        dedup_key: 'k4',
+        state: 'risk_authorized',
+        created_at: NOW + 10,
+      }),
     );
     repo.create(
-      msg({ message_id: 'a3', run_id: 'run-b', dedup_key: 'k5', state: 'sending', created_at: NOW + 20 }),
+      msg({
+        message_id: 'a3',
+        run_id: 'run-b',
+        dedup_key: 'k5',
+        state: 'sending',
+        created_at: NOW + 20,
+      }),
     );
     // A second, newer actionable message on run-a must not demote it.
     repo.create(
-      msg({ message_id: 'a4', run_id: 'run-a', dedup_key: 'k6', sequence: 2, state: 'approved', created_at: NOW + 99 }),
+      msg({
+        message_id: 'a4',
+        run_id: 'run-a',
+        dedup_key: 'k6',
+        sequence: 2,
+        state: 'approved',
+        created_at: NOW + 99,
+      }),
     );
 
     expect(repo.listRunIdsWithActionableMessages(10)).toEqual(['run-a', 'run-b', 'run-c']);
@@ -160,14 +185,36 @@ function runSuite(makeRepo: () => MessageRepository): void {
     // the dispatch guard refuses them forever while the engine rescans them
     // every tick — zombies that also never crypto-shred.
     repo.create(
-      msg({ message_id: 'auth', state: 'risk_authorized', kind: 'action', action_type: 'send', expires_at: NOW - 1 }),
+      msg({
+        message_id: 'auth',
+        state: 'risk_authorized',
+        kind: 'action',
+        action_type: 'send',
+        expires_at: NOW - 1,
+      }),
     );
     repo.create(
-      msg({ message_id: 'appr', dedup_key: 'k2', sequence: 2, state: 'approved', kind: 'action', action_type: 'send', expires_at: NOW - 1 }),
+      msg({
+        message_id: 'appr',
+        dedup_key: 'k2',
+        sequence: 2,
+        state: 'approved',
+        kind: 'action',
+        action_type: 'send',
+        expires_at: NOW - 1,
+      }),
     );
     // A CLAIMED effect survives expiry (reconciled by the drain deadline).
     repo.create(
-      msg({ message_id: 'sent', dedup_key: 'k3', sequence: 3, state: 'sending', kind: 'action', action_type: 'send', expires_at: NOW - 1 }),
+      msg({
+        message_id: 'sent',
+        dedup_key: 'k3',
+        sequence: 3,
+        state: 'sending',
+        kind: 'action',
+        action_type: 'send',
+        expires_at: NOW - 1,
+      }),
     );
     const expired = repo.expireDecidable('r1', NOW, NOW + 60_000);
     expect(new Set(expired)).toEqual(new Set(['auth', 'appr']));
@@ -216,13 +263,35 @@ function runSuite(makeRepo: () => MessageRepository): void {
   it('CA-9: listClassifiedAfter returns only classified rows, keyset-ordered + paged', () => {
     const repo = makeRepo();
     repo.create(msg({ message_id: 'c2', state: 'classified', created_at: NOW + 200 }));
-    repo.create(msg({ message_id: 'c1', dedup_key: 'k2', sequence: 2, state: 'classified', created_at: NOW + 100 }));
-    repo.create(msg({ message_id: 'c3', dedup_key: 'k5', sequence: 5, state: 'classified', created_at: NOW + 300 }));
+    repo.create(
+      msg({
+        message_id: 'c1',
+        dedup_key: 'k2',
+        sequence: 2,
+        state: 'classified',
+        created_at: NOW + 100,
+      }),
+    );
+    repo.create(
+      msg({
+        message_id: 'c3',
+        dedup_key: 'k5',
+        sequence: 5,
+        state: 'classified',
+        created_at: NOW + 300,
+      }),
+    );
     repo.create(msg({ message_id: 'done', dedup_key: 'k3', sequence: 3, state: 'acknowledged' }));
-    repo.create(msg({ message_id: 'pend', dedup_key: 'k4', sequence: 4, state: 'classification_pending' }));
+    repo.create(
+      msg({ message_id: 'pend', dedup_key: 'k4', sequence: 4, state: 'classification_pending' }),
+    );
 
     // Only classified, ascending by (created_at, message_id).
-    expect(repo.listClassifiedAfter(0, '', 10).map((m) => m.message_id)).toEqual(['c1', 'c2', 'c3']);
+    expect(repo.listClassifiedAfter(0, '', 10).map((m) => m.message_id)).toEqual([
+      'c1',
+      'c2',
+      'c3',
+    ]);
     // Keyset paging: page 1 (size 2), then resume after the last row → exhaustion.
     const page1 = repo.listClassifiedAfter(0, '', 2);
     expect(page1.map((m) => m.message_id)).toEqual(['c1', 'c2']);
@@ -238,7 +307,15 @@ function runSuite(makeRepo: () => MessageRepository): void {
     // tie, so this exercises the `created_at = ? AND message_id > ?` branch that
     // a distinct-timestamp fixture never reaches.
     for (const id of ['m4', 'm1', 'm3', 'm2']) {
-      repo.create(msg({ message_id: id, dedup_key: `k-${id}`, sequence: 1, state: 'classified', created_at: T }));
+      repo.create(
+        msg({
+          message_id: id,
+          dedup_key: `k-${id}`,
+          sequence: 1,
+          state: 'classified',
+          created_at: T,
+        }),
+      );
     }
     // Page size 2 straddling the equal-timestamp boundary → exact concatenation.
     const p1 = repo.listClassifiedAfter(0, '', 2);

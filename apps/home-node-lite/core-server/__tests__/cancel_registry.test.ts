@@ -88,7 +88,7 @@ describe('CancelRegistry (task 4.48)', () => {
       expect(r.size()).toBe(1);
     });
 
-    it('unregister of the REPLACED controller is a no-op (doesn\'t clobber the replacement)', () => {
+    it("unregister of the REPLACED controller is a no-op (doesn't clobber the replacement)", () => {
       const r = new CancelRegistry();
       const first = r.register(SENDER_A, 'req-1');
       const second = r.register(SENDER_A, 'req-1');

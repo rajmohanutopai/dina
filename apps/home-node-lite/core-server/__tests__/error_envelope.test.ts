@@ -122,7 +122,10 @@ describe('error envelope (task 4.8)', () => {
 
     const errorLogs = logged.filter(
       (l): l is { msg: string; err?: { message: string } } =>
-        typeof l === 'object' && l !== null && 'msg' in l && (l as { msg: string }).msg === 'request failed (5xx)',
+        typeof l === 'object' &&
+        l !== null &&
+        'msg' in l &&
+        (l as { msg: string }).msg === 'request failed (5xx)',
     );
     expect(errorLogs.length).toBe(1);
     expect(errorLogs[0]?.err?.message).toBe('db connection lost');

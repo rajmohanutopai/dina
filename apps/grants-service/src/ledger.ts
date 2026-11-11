@@ -32,9 +32,7 @@ export class SqliteGrantLedger implements GrantLedger {
 
   insert(row: { grantId: string; orKeyId: string; platform: string; grantedAt: number }): void {
     this.db
-      .prepare(
-        'INSERT INTO grants (grant_id, or_key_id, platform, granted_at) VALUES (?, ?, ?, ?)',
-      )
+      .prepare('INSERT INTO grants (grant_id, or_key_id, platform, granted_at) VALUES (?, ?, ?, ?)')
       .run(row.grantId, row.orKeyId, row.platform, row.grantedAt);
   }
 

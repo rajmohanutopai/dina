@@ -33,7 +33,9 @@ function fixtureDidDoc(): DidDoc {
   const { did, signingKey, pds } = REPO_PROOF_FIXTURE;
   return {
     id: did,
-    verificationMethod: [{ id: `${did}#atproto`, type: 'Multikey', controller: did, publicKeyMultibase: signingKey }],
+    verificationMethod: [
+      { id: `${did}#atproto`, type: 'Multikey', controller: did, publicKeyMultibase: signingKey },
+    ],
     service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: pds }],
   };
 }

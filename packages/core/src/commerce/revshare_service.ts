@@ -28,9 +28,7 @@ import {
   type SettlementNote,
 } from '@dina/commerce-protocol';
 
-import {
-  rehydrateRevshareDocument,
-} from './money_rehydrate';
+import { rehydrateRevshareDocument } from './money_rehydrate';
 import {
   agreementStatus,
   checkSettlementNote,
@@ -101,7 +99,11 @@ export class RevshareService {
     const shapeError = validateAgreementProposal(proposal, hash);
     if (shapeError !== null) return refuse(shapeError);
     if (args.replacesProposalDigest !== undefined) {
-      const replaced = agreementStatus(this.deps.documents, args.replacesProposalDigest, this.deps.now());
+      const replaced = agreementStatus(
+        this.deps.documents,
+        args.replacesProposalDigest,
+        this.deps.now(),
+      );
       if (replaced.state !== 'active') {
         return refuse('a re-proposal supersedes an ACTIVE agreement or nothing');
       }
@@ -218,12 +220,18 @@ export class RevshareService {
   }): RevshareAuthorOutcome<SettlementNote> {
     const now = this.deps.now();
     const status = agreementStatus(this.deps.documents, args.proposalDigest, now);
-    if (status.state !== 'active' && status.state !== 'terminated' && status.state !== 'superseded') {
+    if (
+      status.state !== 'active' &&
+      status.state !== 'terminated' &&
+      status.state !== 'superseded'
+    ) {
       return refuse(`settlement under a ${status.state} agreement`);
     }
     const self = this.deps.nodeDid();
     const handlerDid =
-      status.proposal.cash_handler === 'host' ? status.proposal.host_did : status.proposal.vendor_did;
+      status.proposal.cash_handler === 'host'
+        ? status.proposal.host_did
+        : status.proposal.vendor_did;
     if (self !== handlerDid) return refuse('only the cash handler issues settlements');
     let gross: bigint;
     try {

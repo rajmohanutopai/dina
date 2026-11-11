@@ -1018,11 +1018,7 @@ export {
   renderMintedValue,
   SQLiteSkuLedgerRepository,
 } from './commerce/sku_ledger';
-export type {
-  SkuClaimInput,
-  SkuClaimOutcome,
-  SkuLedgerRepository,
-} from './commerce/sku_ledger';
+export type { SkuClaimInput, SkuClaimOutcome, SkuLedgerRepository } from './commerce/sku_ledger';
 export { applySkuMint } from './commerce/sku_mint';
 export type { SkuMintResult } from './commerce/sku_mint';
 export type { UnlockInput, UnlockResult } from './lifecycle/unlock';
@@ -1577,10 +1573,7 @@ export { HttpCoreTransport, CoreHttpError } from './client/http-transport';
 // dispatcher. Only the classes are public, and building an owner dispatcher
 // needs the raw router and the owner capability (phone) or the owner device's
 // key (browser) — WEB_OWNER_SURFACE_PLAN §3.6.
-export {
-  HttpOwnerDispatcher,
-  inProcessOwnerDispatcher,
-} from './client/owner-dispatch';
+export { HttpOwnerDispatcher, inProcessOwnerDispatcher } from './client/owner-dispatch';
 export type {
   HttpOwnerDispatcherOptions,
   OwnerDispatcher,
@@ -1779,7 +1772,11 @@ export type {
 } from './server/router';
 export { createCoreRouter, HEALTHZ_PATH } from './server/core_server';
 export { A2A_CARD_ROUTE, isA2AGatewayRoute } from './server/routes/a2a_ingress';
-export { BRAIN_CALLERS_ROUTE, getCoreServiceDid, installCoreServiceDid } from './server/routes/brain_callers';
+export {
+  BRAIN_CALLERS_ROUTE,
+  getCoreServiceDid,
+  installCoreServiceDid,
+} from './server/routes/brain_callers';
 export type { CoreRouterOptions } from './server/core_server';
 export type { AskRouteHandler, AskSubmitInput } from './server/routes/ask';
 export type { CodingGateFn, CodingGateInput, CodingGateResult } from './server/routes/coding_gate';

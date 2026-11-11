@@ -17,7 +17,6 @@ import { addMessage } from './thread';
 
 import type { Reminder } from '@dina/core/reminders';
 
-
 export function postReminderCard(
   threadId: string,
   reminder: Reminder,
@@ -27,7 +26,9 @@ export function postReminderCard(
   // message is written for when it fires ("… is tomorrow"), and a reader
   // without the card's date field would otherwise be misled.
   const content =
-    opts.scheduled === true ? `${formatReminderDue(reminder.due_at, opts.timeZone)} · ${reminder.message}` : reminder.message;
+    opts.scheduled === true
+      ? `${formatReminderDue(reminder.due_at, opts.timeZone)} · ${reminder.message}`
+      : reminder.message;
   addMessage(threadId, 'reminder', content, {
     metadata: {
       kind: 'reminder',
@@ -49,8 +50,16 @@ export function postReminderCard(
 export function formatReminderDue(ms: number, timeZone?: string): string {
   try {
     const d = new Date(ms);
-    const day = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', ...(timeZone !== undefined ? { timeZone } : {}) });
-    const time = d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', ...(timeZone !== undefined ? { timeZone } : {}) });
+    const day = d.toLocaleDateString('en-GB', {
+      day: 'numeric',
+      month: 'short',
+      ...(timeZone !== undefined ? { timeZone } : {}),
+    });
+    const time = d.toLocaleTimeString('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      ...(timeZone !== undefined ? { timeZone } : {}),
+    });
     return `${day}, ${time}`;
   } catch {
     return new Date(ms).toISOString().slice(0, 16).replace('T', ' ');

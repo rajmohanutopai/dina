@@ -12,12 +12,18 @@ describe('verdict words', () => {
       nowMs: NOW,
       whoDecides: 'Dr Okafor',
     });
-    expect(out.text).toBe('Your fasting glucose was 5.9.\n\nFor what this means for you, ask Dr Okafor.');
+    expect(out.text).toBe(
+      'Your fasting glucose was 5.9.\n\nFor what this means for you, ask Dr Okafor.',
+    );
     expect(out.removed).toBe(1);
   });
 
   it('a verdict with no number is still removed', () => {
-    const out = checkRegulated('Good news: you are no longer pre-diabetic.', { question: 'how is my sugar', evidence: ['HbA1c 5.8 in July'], nowMs: NOW });
+    const out = checkRegulated('Good news: you are no longer pre-diabetic.', {
+      question: 'how is my sugar',
+      evidence: ['HbA1c 5.8 in July'],
+      nowMs: NOW,
+    });
     expect(out.removed).toBe(1);
   });
 
@@ -35,7 +41,13 @@ describe('verdict words', () => {
 describe('figures', () => {
   it('a trend from stored numbers stays', () => {
     const reply = 'Your HbA1c fell from 6.4 to 5.8, a drop of 0.6.';
-    expect(checkRegulated(reply, { question: 'is my HbA1c better?', evidence: ['HbA1c 6.4 in January', 'HbA1c 5.8 in July'], nowMs: NOW }).text).toBe(reply);
+    expect(
+      checkRegulated(reply, {
+        question: 'is my HbA1c better?',
+        evidence: ['HbA1c 6.4 in January', 'HbA1c 5.8 in July'],
+        nowMs: NOW,
+      }).text,
+    ).toBe(reply);
   });
 
   it('a deadline the evidence does not give is removed', () => {
@@ -50,16 +62,26 @@ describe('figures', () => {
 
   it('days overdue computed from a stored date and today stay', () => {
     const reply = 'The refund is overdue by 4 days.';
-    const out = checkRegulated(reply, { question: 'did my refund come?', evidence: ['on 30 September the shop said the refund comes in 5 days'], nowMs: NOW });
+    const out = checkRegulated(reply, {
+      question: 'did my refund come?',
+      evidence: ['on 30 September the shop said the refund comes in 5 days'],
+      nowMs: NOW,
+    });
     expect(out.text).toBe(reply);
   });
 
   it('a non-regulated turn is untouched', () => {
     const reply = 'The bus takes 25 minutes and costs ₹40.';
-    expect(checkRegulated(reply, { question: 'how long is the bus?', evidence: [], nowMs: NOW }).text).toBe(reply);
+    expect(
+      checkRegulated(reply, { question: 'how long is the bus?', evidence: [], nowMs: NOW }).text,
+    ).toBe(reply);
   });
 });
 
 it('evidence items are the separate string values of tool results', () => {
-  expect(evidenceFromToolResults([{ items: [{ body: 'a' }, { body: 'b', n: 3 }] }, 'c'])).toEqual(['a', 'b', 'c']);
+  expect(evidenceFromToolResults([{ items: [{ body: 'a' }, { body: 'b', n: 3 }] }, 'c'])).toEqual([
+    'a',
+    'b',
+    'c',
+  ]);
 });

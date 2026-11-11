@@ -135,7 +135,12 @@ export class StreamHub {
     if (this.open_ >= this.options.maxStreams) return null;
     // A credential that ended after the call was authenticated: the stream never opens.
     if (this.fenced(start.client, start.credentialGen)) return null;
-    const stream: Stream = { sink, lastSeq: start.afterSeq, client: start.client, credentialGen: start.credentialGen };
+    const stream: Stream = {
+      sink,
+      lastSeq: start.afterSeq,
+      client: start.client,
+      credentialGen: start.credentialGen,
+    };
     let set = this.streams.get(taskId);
     if (set === undefined) {
       set = new Set();
@@ -252,7 +257,10 @@ export class StreamHub {
       if ((kept[kept.length - 1]?.at ?? 0) >= cutoff) break;
       this.forget(taskId);
     }
-    while (this.recent.size > this.options.bufferTasks || this.recentBytes > this.options.bufferBytes) {
+    while (
+      this.recent.size > this.options.bufferTasks ||
+      this.recentBytes > this.options.bufferBytes
+    ) {
       const oldest = this.recent.keys().next().value;
       if (oldest === undefined) break;
       this.forget(oldest);

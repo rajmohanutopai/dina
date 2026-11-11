@@ -474,9 +474,7 @@ export function updateContact(
     if (relError) throw new Error(`contacts: ${relError}`);
     next.relationship = updates.relationship;
     if (updates.dataResponsibility === undefined) {
-      next.dataResponsibility = defaultResponsibility(
-        updates.relationship,
-      ) as DataResponsibility;
+      next.dataResponsibility = defaultResponsibility(updates.relationship) as DataResponsibility;
     }
   }
 
@@ -769,8 +767,7 @@ export function mergeContactPersons(keepPersonId: string, mergePersonId: string)
   const merge = contactsByPerson.get(mergePersonId);
   if (merge !== undefined) {
     const now = Date.now();
-    const primaryDid =
-      peopleRepo.getPerson(keepPersonId)?.contactDid || keep?.did || merge.did;
+    const primaryDid = peopleRepo.getPerson(keepPersonId)?.contactDid || keep?.did || merge.did;
     const mergedPreferred = [
       ...new Set([...(keep?.preferredFor ?? []), ...(merge.preferredFor ?? [])]),
     ];
@@ -857,7 +854,10 @@ export interface PaperIdentityInput {
  * whole save to be all-or-nothing checks both halves first and commits only
  * when neither objects.
  */
-export function checkPaperIdentity(did: string, identity: PaperIdentityInput): TradeIdentityFinding[] {
+export function checkPaperIdentity(
+  did: string,
+  identity: PaperIdentityInput,
+): TradeIdentityFinding[] {
   return judgePaperIdentity(did, identity).findings;
 }
 
@@ -892,7 +892,10 @@ function judgePaperIdentity(
   return { findings, next, contact };
 }
 
-export function setPaperIdentity(did: string, identity: PaperIdentityInput): TradeIdentityFinding[] {
+export function setPaperIdentity(
+  did: string,
+  identity: PaperIdentityInput,
+): TradeIdentityFinding[] {
   const { findings, next, contact } = judgePaperIdentity(did, identity);
   if (findings.length > 0) return findings;
 
@@ -929,7 +932,10 @@ export interface ContactChannelsInput {
 }
 
 /** Judge the channels WITHOUT writing them — the all-or-nothing companion. */
-export function checkContactChannels(did: string, channels: ContactChannelsInput): TradeIdentityFinding[] {
+export function checkContactChannels(
+  did: string,
+  channels: ContactChannelsInput,
+): TradeIdentityFinding[] {
   return judgeContactChannels(did, channels).findings;
 }
 
@@ -942,7 +948,11 @@ export function checkContactChannels(did: string, channels: ContactChannelsInput
 function judgeContactChannels(
   did: string,
   channels: ContactChannelsInput,
-): { findings: TradeIdentityFinding[]; writes: { type: 'phone' | 'email'; value: string | null }[]; personId: string } {
+): {
+  findings: TradeIdentityFinding[];
+  writes: { type: 'phone' | 'email'; value: string | null }[];
+  personId: string;
+} {
   const contact = getContact(did);
   if (!contact) throw new Error(`contacts: "${did}" not found`);
   const peopleRepo = requirePeopleRepo();
@@ -960,7 +970,9 @@ function judgeContactChannels(
     // strips every non-digit from a phone, so "call me on 98450 12345 later"
     // would otherwise survive as a number a rail could dial.
     const malformed =
-      type === 'phone' ? !isDiallableInput(raw) : !isEmailAddress(canonicalizeIdentityValue(type, raw));
+      type === 'phone'
+        ? !isDiallableInput(raw)
+        : !isEmailAddress(canonicalizeIdentityValue(type, raw));
     if (malformed) {
       findings.push({
         refusal: 'malformed_channel',
@@ -994,7 +1006,10 @@ function judgeContactChannels(
   return { findings, writes, personId: contact.personId };
 }
 
-export function setContactChannels(did: string, channels: ContactChannelsInput): TradeIdentityFinding[] {
+export function setContactChannels(
+  did: string,
+  channels: ContactChannelsInput,
+): TradeIdentityFinding[] {
   const { findings, writes, personId } = judgeContactChannels(did, channels);
   // ONE exit: a refusal writes nothing at all, the same contract the paper
   // identity keeps.

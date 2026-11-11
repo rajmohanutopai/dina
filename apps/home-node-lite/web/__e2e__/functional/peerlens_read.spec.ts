@@ -22,9 +22,7 @@ test.describe('MRS-09 — PeerLens search (read)', () => {
 
     // Human: open the Network tab → the PeerLens landing (trust feed).
     await page.getByRole('tab', { name: 'Network tab' }).click();
-    await page
-      .getByTestId('trust-feed-screen')
-      .waitFor({ state: 'visible', timeout: 30_000 });
+    await page.getByTestId('trust-feed-screen').waitFor({ state: 'visible', timeout: 30_000 });
 
     // Reach the search screen: the landing's "Browse reviews" row opens the
     // browse surface, whose search box navigates on to the dedicated search

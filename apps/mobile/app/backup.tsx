@@ -8,14 +8,7 @@
  */
 
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 
 import {
   backupStatus,
@@ -145,9 +138,8 @@ export default function BackupScreen(): React.ReactElement {
           />
         </View>
         <Text style={styles.sub}>
-          Get your Dina back on a new phone with your 24-word recovery phrase. The copy is
-          locked with a key from those words, so we can't read it. Anyone with the words can
-          restore it.
+          Get your Dina back on a new phone with your 24-word recovery phrase. The copy is locked
+          with a key from those words, so we can't read it. Anyone with the words can restore it.
         </Text>
         <Text style={styles.body} testID="backup-last">
           {describeLast(status.lastAt)}
@@ -205,8 +197,8 @@ export default function BackupScreen(): React.ReactElement {
 
       <View style={styles.card}>
         <Text style={styles.sub}>
-          Deleting removes every copy from the store and turns backup off. Our own server
-          backups may still hold a sealed copy until they age out; we can't open those either.
+          Deleting removes every copy from the store and turns backup off. Our own server backups
+          may still hold a sealed copy until they age out; we can't open those either.
         </Text>
         <Pressable
           style={[styles.danger, busy !== 'idle' && styles.disabled]}

@@ -85,7 +85,10 @@ export function sweepOrderDraftLifecycle(
       }
 
       if (conversation.state === 'quoted' || conversation.state === 'approved') {
-        if (conversation.quoteValidUntil !== null && isoBefore(conversation.quoteValidUntil, nowMs)) {
+        if (
+          conversation.quoteValidUntil !== null &&
+          isoBefore(conversation.quoteValidUntil, nowMs)
+        ) {
           invalidateApproval(conversation);
           conversation.state = 'quote_expired';
           conversation.outcome = 'quote_lapsed';
@@ -121,7 +124,8 @@ export function sweepOrderDraftLifecycle(
         } else if (record.state === 'rejected' || record.state === 'never_received') {
           invalidateApproval(conversation);
           conversation.state = 'rejected';
-          conversation.outcome = record.state === 'rejected' ? 'supplier_rejected' : 'never_received';
+          conversation.outcome =
+            record.state === 'rejected' ? 'supplier_rejected' : 'never_received';
           touched = true;
           events.push({
             draftId: draft.draftId,

@@ -477,8 +477,7 @@ function buildSearchQueryString(params: AttestationSearchParams): string {
   // wire URL (matters for HTTP caching + test assertions).
   entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
   return (
-    '?' +
-    entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
+    '?' + entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join('&')
   );
 }
 
@@ -492,7 +491,8 @@ function parseSearchResponse(data: Record<string, unknown>): SearchResult {
   const results: AttestationSearchHit[] = rawResults
     .filter((row): row is Record<string, unknown> => isPlainObject(row))
     .map((row) => row as AttestationSearchHit);
-  const cursor = typeof data.cursor === 'string' && data.cursor.length > 0 ? data.cursor : undefined;
+  const cursor =
+    typeof data.cursor === 'string' && data.cursor.length > 0 ? data.cursor : undefined;
   const totalEstimate =
     typeof data.totalEstimate === 'number' && Number.isFinite(data.totalEstimate)
       ? Math.max(0, Math.floor(data.totalEstimate))

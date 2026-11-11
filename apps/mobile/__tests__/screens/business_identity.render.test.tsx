@@ -27,7 +27,9 @@ jest.mock('../../src/services/owner_commerce_client', () => ({
 const clientMock = getOwnerCommerceClient as jest.MockedFunction<typeof getOwnerCommerceClient>;
 const GSTIN = '27AAPFU0939F1ZV';
 
-function wireClient(over: Partial<{ businessIdentity: jest.Mock; saveBusinessIdentity: jest.Mock }> = {}) {
+function wireClient(
+  over: Partial<{ businessIdentity: jest.Mock; saveBusinessIdentity: jest.Mock }> = {},
+) {
   const businessIdentity = over.businessIdentity ?? jest.fn(async () => ({ configured: false }));
   const saveBusinessIdentity = over.saveBusinessIdentity ?? jest.fn(async () => ({ ok: true }));
   clientMock.mockReturnValue({ businessIdentity, saveBusinessIdentity } as never);
@@ -54,12 +56,21 @@ describe('the business-identity screen', () => {
         settings: {
           legalName: 'Utopai Furniture LLP',
           registrations: [{ scheme: 'gstin', value: GSTIN }],
-          address: { line1: '12 Nehru Road', city: 'Bengaluru', postalCode: '560001', country: 'IN' },
+          address: {
+            line1: '12 Nehru Road',
+            city: 'Bengaluru',
+            postalCode: '560001',
+            country: 'IN',
+          },
         },
       })),
     });
     const view = render(<BusinessIdentityScreen />);
-    await waitFor(() => expect(view.getByTestId('business-identity-legalName').props.value).toBe('Utopai Furniture LLP'));
+    await waitFor(() =>
+      expect(view.getByTestId('business-identity-legalName').props.value).toBe(
+        'Utopai Furniture LLP',
+      ),
+    );
     expect(view.getByTestId('business-identity-gstin').props.value).toBe(GSTIN);
     expect(view.getByTestId('business-identity-city').props.value).toBe('Bengaluru');
   });
@@ -102,8 +113,16 @@ describe('the business-identity screen', () => {
       saveBusinessIdentity: jest.fn(async () => ({
         ok: false,
         findings: [
-          { refusal: 'malformed_registration', field: 'registrations[0]', detail: 'the gstin does not pass its own format check' },
-          { refusal: 'malformed_address', field: 'address.country', detail: 'country must be an ISO-3166-1 alpha-2 code' },
+          {
+            refusal: 'malformed_registration',
+            field: 'registrations[0]',
+            detail: 'the gstin does not pass its own format check',
+          },
+          {
+            refusal: 'malformed_address',
+            field: 'address.country',
+            detail: 'country must be an ISO-3166-1 alpha-2 code',
+          },
         ],
       })),
     });
@@ -123,7 +142,9 @@ describe('the business-identity screen', () => {
       businessIdentity: jest.fn(async () => ({
         configured: true,
         error: 'settings_invalid',
-        findings: [{ refusal: 'empty_legal_name', field: 'legalName', detail: 'a filing prints a name' }],
+        findings: [
+          { refusal: 'empty_legal_name', field: 'legalName', detail: 'a filing prints a name' },
+        ],
       })),
     });
     const view = render(<BusinessIdentityScreen />);

@@ -1,9 +1,6 @@
 export { PreferenceExtractor } from './src/enrichment/preference_extractor';
 export type { PreferenceCandidate } from './src/enrichment/preference_extractor';
-export {
-  TOPIC_EXTRACTOR_SYSTEM_PROMPT,
-  TopicExtractor,
-} from './src/enrichment/topic_extractor';
+export { TOPIC_EXTRACTOR_SYSTEM_PROMPT, TopicExtractor } from './src/enrichment/topic_extractor';
 export type {
   TopicExtractorInput,
   TopicExtractionResult,

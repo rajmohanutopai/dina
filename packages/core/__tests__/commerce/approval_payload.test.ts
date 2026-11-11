@@ -475,12 +475,13 @@ describe('an order on an alternative (COMMITMENT_KERNEL §6, §9)', () => {
       fallbackTotal: { currency: 'INR', minor_units: '62000' },
       fallbackDeliveryAt: '2026-08-12T10:00:00Z',
     };
-    expect(built(onTuesday, context({ estimatedDeliveryAt: '2026-08-11T10:00:00Z', partnerRun }))).toMatchObject({
+    expect(
+      built(onTuesday, context({ estimatedDeliveryAt: '2026-08-11T10:00:00Z', partnerRun })),
+    ).toMatchObject({
       partnerRun,
     });
-    expect(built(onTuesday, context({ estimatedDeliveryAt: '2026-08-11T10:00:00Z' }))).not.toHaveProperty(
-      'partnerRun',
-    );
+    expect(
+      built(onTuesday, context({ estimatedDeliveryAt: '2026-08-11T10:00:00Z' })),
+    ).not.toHaveProperty('partnerRun');
   });
 });
-

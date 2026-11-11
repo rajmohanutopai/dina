@@ -37,7 +37,9 @@ function fakeCore(allowed: string[]) {
   const core: CoreAccessClient & Parameters<typeof vaultReadBackendForAuthority>[0] = {
     async agentPersonaAccessCheck(_a, personas) {
       calls.check.push(personas);
-      return Object.fromEntries(personas.map((p) => [p, allowed.includes(p) ? 'allowed' : 'gated']));
+      return Object.fromEntries(
+        personas.map((p) => [p, allowed.includes(p) ? 'allowed' : 'gated']),
+      );
     },
     async agentPersonaAccessRequest(_a, persona) {
       calls.request.push(persona);
@@ -46,15 +48,24 @@ function fakeCore(allowed: string[]) {
         : { decision: 'approval_required' as const, taskId: `card-${persona}` };
     },
     async vaultQuery(persona, query) {
-      calls.reads.push({ persona, ...(query.askAuthority ? { askAuthority: query.askAuthority } : {}) });
+      calls.reads.push({
+        persona,
+        ...(query.askAuthority ? { askAuthority: query.askAuthority } : {}),
+      });
       return { items: [{ id: `${persona}-1`, summary: `${persona} note` }], count: 1 } as never;
     },
     async vaultGet() {
       return null;
     },
     async vaultList(persona, opts) {
-      calls.reads.push({ persona, ...(opts?.askAuthority ? { askAuthority: opts.askAuthority } : {}) });
-      return { items: [{ id: `${persona}-1`, summary: `${persona} note`, type: 'note' }], count: 1 };
+      calls.reads.push({
+        persona,
+        ...(opts?.askAuthority ? { askAuthority: opts.askAuthority } : {}),
+      });
+      return {
+        items: [{ id: `${persona}-1`, summary: `${persona} note`, type: 'note' }],
+        count: 1,
+      };
     },
     async vaultItemsForPerson() {
       return { items: [], count: 0 } as never;
@@ -120,7 +131,9 @@ describe('vault_search for an agent ask (§3.4)', () => {
     const tool = agentVaultSearch(core);
     await tool.execute({ query: 'LDL', persona: 'health' });
     const readsAfterOpen = [...calls.reads];
-    await expect(tool.execute({ query: 'LDL', persona: 'health' })).rejects.toMatchObject({ approvalId: 'card-health' });
+    await expect(tool.execute({ query: 'LDL', persona: 'health' })).rejects.toMatchObject({
+      approvalId: 'card-health',
+    });
     expect(calls.request).toEqual(['health']);
     expect(calls.reads).toEqual(readsAfterOpen);
   });
@@ -225,7 +238,12 @@ describe('both resume paths keep the session and authority (§3.4)', () => {
       registry,
       resumeFromPausedFn: async (_state, ctx) => {
         seen.push(ctx);
-        return { finishReason: 'completed', answer: 'ok', toolCalls: [], usage: { inputTokens: 0, outputTokens: 0 } } as never;
+        return {
+          finishReason: 'completed',
+          answer: 'ok',
+          toolCalls: [],
+          usage: { inputTokens: 0, outputTokens: 0 },
+        } as never;
       },
     });
     await registry.enqueue({
@@ -235,7 +253,12 @@ describe('both resume paths keep the session and authority (§3.4)', () => {
       sessionId: 'sess-2',
       askAuthority: AUTH,
     });
-    const paused = JSON.stringify({ transcript: [], iteration: 1, toolCallsUsed: 1, pendingToolCall: { id: 't', name: 'vault_search', arguments: {} } });
+    const paused = JSON.stringify({
+      transcript: [],
+      iteration: 1,
+      toolCallsUsed: 1,
+      pendingToolCall: { id: 't', name: 'vault_search', arguments: {} },
+    });
     await registry.markPendingApproval('ask-a', 'card-health', paused);
     await registry.resumeAfterApproval('ask-a');
     await new Promise((r) => setImmediate(r));
@@ -257,7 +280,13 @@ describe('owner chat turns carry the conversation (REAL_LIFE_FIXES §1)', () => 
         name: 'fake',
         chat: async (messages: { role: string; content: string }[]) => {
           seen.push(messages);
-          return { content: 'Booking 17:30.', toolCalls: [], model: 'fake', usage: { inputTokens: 0, outputTokens: 0 }, finishReason: 'stop' };
+          return {
+            content: 'Booking 17:30.',
+            toolCalls: [],
+            model: 'fake',
+            usage: { inputTokens: 0, outputTokens: 0 },
+            finishReason: 'stop',
+          };
         },
       } as never,
       tools: new ToolRegistry(),
@@ -268,7 +297,12 @@ describe('owner chat turns carry the conversation (REAL_LIFE_FIXES §1)', () => 
     } as AgenticAskPipeline;
 
     const exec = buildAgenticExecuteFn({ pipeline: pipe, systemPrompt: 'x' });
-    await exec({ id: 'o1', question: 'Book the second one', requesterDid: 'did:plc:owner', conversation: 'main' });
+    await exec({
+      id: 'o1',
+      question: 'Book the second one',
+      requesterDid: 'did:plc:owner',
+      conversation: 'main',
+    });
     const sent = seen[0]!.map((m) => `${m.role}:${m.content}`);
     expect(sent).toEqual([
       'user:Any dentist slots tomorrow?',

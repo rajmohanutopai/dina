@@ -72,11 +72,19 @@ export const AppointmentAvailabilityResultSchema = {
 } as const;
 
 export function validateAppointmentAvailabilityParams(params: unknown): string | null {
-  return serviceSchemaError(params, AppointmentAvailabilityParamsSchema, 'appointment_availability params');
+  return serviceSchemaError(
+    params,
+    AppointmentAvailabilityParamsSchema,
+    'appointment_availability params',
+  );
 }
 
 export function validateAppointmentAvailabilityResult(result: unknown): string | null {
-  return serviceSchemaError(result, AppointmentAvailabilityResultSchema, 'appointment_availability result');
+  return serviceSchemaError(
+    result,
+    AppointmentAvailabilityResultSchema,
+    'appointment_availability result',
+  );
 }
 
 // ---------------------------------------------------------------------------

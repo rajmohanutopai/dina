@@ -12,7 +12,10 @@ import { getCurrentOwnerTurn, proveOwnerWords } from '../chat/owner_turns';
 import type { AgentTool } from './tool_registry';
 import type { CoreClient } from '@dina/core';
 
-export function createForgetTool(opts: { thread: string; core: Pick<CoreClient, 'forgetPropose'> }): AgentTool {
+export function createForgetTool(opts: {
+  thread: string;
+  core: Pick<CoreClient, 'forgetPropose'>;
+}): AgentTool {
   return {
     name: 'forget',
     description:
@@ -20,18 +23,33 @@ export function createForgetTool(opts: { thread: string; core: Pick<CoreClient, 
     parameters: {
       type: 'object',
       properties: {
-        person: { type: 'string', description: 'Forget everything about this person, as the user named them.' },
+        person: {
+          type: 'string',
+          description: 'Forget everything about this person, as the user named them.',
+        },
         persona: { type: 'string', description: 'Forget the items in this vault.' },
-        keep_item_ids: { type: 'array', items: { type: 'string' }, description: 'With persona: items to keep.' },
-        item_ids: { type: 'array', items: { type: 'string' }, description: 'Specific items to forget.' },
+        keep_item_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'With persona: items to keep.',
+        },
+        item_ids: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Specific items to forget.',
+        },
       },
       required: [],
     },
     async execute(args) {
       const person = typeof args.person === 'string' ? args.person.trim() : '';
       const persona = typeof args.persona === 'string' ? args.persona.trim() : '';
-      const ids = Array.isArray(args.item_ids) ? args.item_ids.filter((x): x is string => typeof x === 'string') : [];
-      const keep = Array.isArray(args.keep_item_ids) ? args.keep_item_ids.filter((x): x is string => typeof x === 'string') : [];
+      const ids = Array.isArray(args.item_ids)
+        ? args.item_ids.filter((x): x is string => typeof x === 'string')
+        : [];
+      const keep = Array.isArray(args.keep_item_ids)
+        ? args.keep_item_ids.filter((x): x is string => typeof x === 'string')
+        : [];
       const given = [person !== '', persona !== '', ids.length > 0].filter(Boolean).length;
       if (given !== 1) return { error: 'give exactly one of person, persona or item_ids' };
       const turn = getCurrentOwnerTurn(opts.thread);
@@ -39,7 +57,11 @@ export function createForgetTool(opts: { thread: string; core: Pick<CoreClient, 
       const proven = proveOwnerWords(opts.thread, turn.text);
       if (!proven.ok) return { error: proven.error };
       const request =
-        person !== '' ? { person } : persona !== '' ? { persona, ...(keep.length > 0 ? { keep_item_ids: keep } : {}) } : { item_ids: ids };
+        person !== ''
+          ? { person }
+          : persona !== ''
+            ? { persona, ...(keep.length > 0 ? { keep_item_ids: keep } : {}) }
+            : { item_ids: ids };
       return opts.core.forgetPropose({ proof: proven.proof, request });
     },
   };

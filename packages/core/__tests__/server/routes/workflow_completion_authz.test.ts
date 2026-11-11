@@ -416,7 +416,10 @@ describe('§16.2 counterparty epoch watermark on a buyer tool result', () => {
       actionReq(
         'wm-ok',
         'complete',
-        { result: JSON.stringify({ status: { supplier_did: SUPPLIER, supplier_epoch: '7' } }), claim_id: claimId },
+        {
+          result: JSON.stringify({ status: { supplier_did: SUPPLIER, supplier_epoch: '7' } }),
+          claim_id: claimId,
+        },
         { type: 'plugin', did: 'did:key:plugin' },
       ),
     );
@@ -436,7 +439,10 @@ describe('§16.2 counterparty epoch watermark on a buyer tool result', () => {
       actionReq(
         'wm-stale',
         'complete',
-        { result: JSON.stringify({ status: { supplier_did: SUPPLIER, supplier_epoch: '4' } }), claim_id: claimId },
+        {
+          result: JSON.stringify({ status: { supplier_did: SUPPLIER, supplier_epoch: '4' } }),
+          claim_id: claimId,
+        },
         { type: 'plugin', did: 'did:key:plugin' },
       ),
     );
@@ -455,7 +461,10 @@ describe('§16.2 counterparty epoch watermark on a buyer tool result', () => {
       actionReq(
         'wm-effect',
         'complete',
-        { result: JSON.stringify({ ack: { supplier_did: SUPPLIER, supplier_epoch: '2' } }), claim_id: claimId },
+        {
+          result: JSON.stringify({ ack: { supplier_did: SUPPLIER, supplier_epoch: '2' } }),
+          claim_id: claimId,
+        },
         { type: 'plugin', did: 'did:key:plugin' },
       ),
     );

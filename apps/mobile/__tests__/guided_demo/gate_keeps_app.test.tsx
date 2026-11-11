@@ -5,9 +5,9 @@
  * "Starting Dina…", and four seconds later the app is back on Chat.
  */
 
+import { render, screen } from '@testing-library/react-native';
 import React, { useEffect } from 'react';
 import { Text } from 'react-native';
-import { render, screen } from '@testing-library/react-native';
 
 import { GuidedDemoGate } from '../../src/components/guided_demo/GuidedDemoGate';
 import { useGuidedDemoGate } from '../../src/guided_demo/useGuidedDemoGate';

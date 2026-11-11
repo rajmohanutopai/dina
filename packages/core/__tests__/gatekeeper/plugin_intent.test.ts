@@ -130,7 +130,6 @@ describe('ordering claims', () => {
     // undefined; n >= undefined is always false), so a HIGH floor could
     // be "lowered" to an invalid level and run silent.
     const d = evaluatePluginIntent(
-       
       input({
         actionClass: 'read',
         capabilityKind: 'canonical',

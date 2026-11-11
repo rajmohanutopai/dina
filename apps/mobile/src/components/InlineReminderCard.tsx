@@ -17,7 +17,6 @@ import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 
-
 import { addSystemMessage } from '@dina/brain/chat';
 
 import { transportComplete, transportSnooze } from '../hooks/reminder_transport';
@@ -30,7 +29,6 @@ import type { ChatMessage } from '@dina/brain/chat';
 type IoniconName = React.ComponentProps<typeof Ionicons>['name'];
 
 const SNOOZE_MS = 60 * 60 * 1000; // 1h
-
 
 export interface InlineReminderCardProps {
   message: ChatMessage;
@@ -133,8 +131,7 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
 
   if (meta === null) return null;
 
-  const iconName: IoniconName =
-    KIND_ICON[meta.reminderKind] ?? 'notifications-outline';
+  const iconName: IoniconName = KIND_ICON[meta.reminderKind] ?? 'notifications-outline';
   const headerLabel = meta.scheduled
     ? `REMINDER · ${formatDueShort(meta.dueAt)}`
     : `REMINDER · ${formatRelative(meta.dueAt).toUpperCase()}`;
@@ -143,10 +140,14 @@ export function InlineReminderCard({ message }: InlineReminderCardProps): React.
     <View style={styles.card}>
       <View style={styles.header}>
         <Ionicons name={iconName} size={16} color={colors.textMuted} />
-        <Text testID={`reminder-card-header-${meta.reminderId}`} style={styles.label}>{headerLabel}</Text>
+        <Text testID={`reminder-card-header-${meta.reminderId}`} style={styles.label}>
+          {headerLabel}
+        </Text>
       </View>
       <Text testID={`reminder-card-body-${meta.reminderId}`} style={styles.body}>
-        {typeof message.metadata?.reminderMessage === 'string' ? message.metadata.reminderMessage : message.content}
+        {typeof message.metadata?.reminderMessage === 'string'
+          ? message.metadata.reminderMessage
+          : message.content}
       </Text>
       {meta.persona !== '' && meta.persona !== 'general' && (
         <Text style={styles.personaLine}>/{meta.persona}</Text>

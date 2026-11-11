@@ -63,6 +63,6 @@ describe('Network home — review-activity count from the authored runner', () =
     const { getByText, queryByText } = render(<TrustFeedScreen />);
     await act(async () => {});
     expect(queryByText('0 reviews written')).toBeNull();
-    expect(getByText("Reviews you’ve written")).toBeTruthy();
+    expect(getByText('Reviews you’ve written')).toBeTruthy();
   });
 });

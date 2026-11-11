@@ -8,11 +8,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import {
-  getStagingRepository,
-  ingest,
-  stagingGetItem,
-} from '@dina/core';
+import { getStagingRepository, ingest, stagingGetItem } from '@dina/core';
 
 import { bootServer } from '../src/boot';
 
@@ -27,7 +23,9 @@ class FakeWS {
     queueMicrotask(() => {
       this.readyState = 1;
       this.onopen?.();
-      this.onmessage?.({ data: JSON.stringify({ type: 'auth_challenge', nonce: 'n', ts: 1700000000 }) });
+      this.onmessage?.({
+        data: JSON.stringify({ type: 'auth_challenge', nonce: 'n', ts: 1700000000 }),
+      });
     });
   }
   send(d: string | Uint8Array): void {

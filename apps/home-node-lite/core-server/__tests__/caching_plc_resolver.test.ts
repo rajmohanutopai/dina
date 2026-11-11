@@ -7,7 +7,6 @@ import {
   DEFAULT_NOT_FOUND_TTL_MS,
   type CachingResolveOutcome,
   type FetchWithHeadersFn,
-  type FetchWithHeadersResult,
 } from '../src/appview/caching_plc_resolver';
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
@@ -70,10 +69,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
   describe('resolve happy path', () => {
     it('first call → network → returns doc', async () => {
       const r = new CachingPlcResolver({ fetchFn: fetchOk() });
-      const out = (await r.resolve(DID)) as Extract<
-        CachingResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await r.resolve(DID)) as Extract<CachingResolveOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
       expect(out.doc.did).toBe(DID);
       expect(out.source).toBe('network');
@@ -89,10 +85,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
       const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
       await r.resolve(DID);
       clock.advance(100); // well within 1h default
-      const r2 = (await r.resolve(DID)) as Extract<
-        CachingResolveOutcome,
-        { ok: true }
-      >;
+      const r2 = (await r.resolve(DID)) as Extract<CachingResolveOutcome, { ok: true }>;
       expect(r2.source).toBe('fresh');
       expect(calls).toBe(1);
     });
@@ -112,10 +105,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
       expect(calls).toBe(1);
       // At 2 min past TTL but < stale window (5× TTL = 5min) → SWR.
       clock.advance(90_000);
-      const r3 = (await r.resolve(DID)) as Extract<
-        CachingResolveOutcome,
-        { ok: true }
-      >;
+      const r3 = (await r.resolve(DID)) as Extract<CachingResolveOutcome, { ok: true }>;
       expect(r3.source).toBe('stale-while-revalidate');
     });
 
@@ -160,9 +150,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
     });
 
     it('custom notFoundTtlMs honoured', async () => {
-      let calls = 0;
       const fetchFn: FetchWithHeadersFn = async () => {
-        calls++;
         return { body: null, cacheControl: null };
       };
       const clock = fakeClock();
@@ -237,10 +225,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
       const r = new CachingPlcResolver({ fetchFn, nowMsFn: clock.nowMsFn });
       await r.resolve(DID);
       clock.advance(90_000); // past TTL, inside stale window
-      const stale = (await r.resolve(DID)) as Extract<
-        CachingResolveOutcome,
-        { ok: true }
-      >;
+      const stale = (await r.resolve(DID)) as Extract<CachingResolveOutcome, { ok: true }>;
       expect(stale.source).toBe('stale-while-revalidate');
     });
 
@@ -257,10 +242,7 @@ describe('CachingPlcResolver (task 6.10)', () => {
       // Past TTL + max stale window (5× TTL = 5 min), so this is a
       // blocking refetch which fails but has stale entry.
       clock.advance(60 * 60 * 1000); // way past everything
-      const out = (await r.resolve(DID)) as Extract<
-        CachingResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await r.resolve(DID)) as Extract<CachingResolveOutcome, { ok: true }>;
       expect(out.source).toBe('error-fallback');
       expect(out.doc.did).toBe(DID);
     });
@@ -308,7 +290,10 @@ describe('CachingPlcResolver (task 6.10)', () => {
 
   describe('events', () => {
     it('fires resolved event with outcome kind', async () => {
-      interface Ev { kind: 'resolved'; outcome: string }
+      interface Ev {
+        kind: 'resolved';
+        outcome: string;
+      }
       const events: Ev[] = [];
       const r = new CachingPlcResolver({
         fetchFn: fetchOk(),
@@ -321,7 +306,10 @@ describe('CachingPlcResolver (task 6.10)', () => {
     });
 
     it('fires resolved with outcome=invalid_did for bad input', async () => {
-      interface Ev { kind: 'resolved'; outcome: string }
+      interface Ev {
+        kind: 'resolved';
+        outcome: string;
+      }
       const events: Ev[] = [];
       const r = new CachingPlcResolver({
         fetchFn: fetchOk(),

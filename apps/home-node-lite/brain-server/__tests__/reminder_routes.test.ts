@@ -111,7 +111,10 @@ describe('Brain server — /api/v1/reminders HTTP wiring', () => {
         url: '/api/v1/reminders',
         payload: { message: 'due', due_at: now - 1000, persona: 'general' },
       });
-      const pending = await app.inject({ method: 'GET', url: `/api/v1/reminders/pending?now=${now}` });
+      const pending = await app.inject({
+        method: 'GET',
+        url: `/api/v1/reminders/pending?now=${now}`,
+      });
       expect(pending.statusCode).toBe(200);
       expect((pending.json() as { reminders: unknown[] }).reminders).toHaveLength(1);
     } finally {

@@ -453,10 +453,7 @@ describe('createAskStatusHandler (task 5.18)', () => {
       question: 'q',
       requesterDid: 'did:plc:u',
     });
-    await registry.markComplete(
-      record.id,
-      JSON.stringify({ serviceQueries: [{ taskId: 't1' }] }),
-    );
+    await registry.markComplete(record.id, JSON.stringify({ serviceQueries: [{ taskId: 't1' }] }));
     const handler = createAskStatusHandler({ registry });
     const res = await handler(record.id);
     if (res.kind === 'found') {

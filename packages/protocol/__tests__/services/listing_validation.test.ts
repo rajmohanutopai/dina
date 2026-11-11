@@ -43,7 +43,9 @@ const codes = (r: ReturnType<typeof validateServiceListing>): string[] =>
 
 describe('effectiveDiscoverability — back-compat (spec §5.2)', () => {
   it('explicit discoverability wins', () => {
-    expect(effectiveDiscoverability(mkConfig({}, { discoverability: 'unlisted' }))).toBe('unlisted');
+    expect(effectiveDiscoverability(mkConfig({}, { discoverability: 'unlisted' }))).toBe(
+      'unlisted',
+    );
   });
   it('derives from isDiscoverable when not explicit', () => {
     expect(effectiveDiscoverability(mkConfig({}, { isDiscoverable: true }))).toBe('public');
@@ -67,9 +69,9 @@ describe('effectiveSurface — listing surface axis (Contact Services §5.3)', (
       effectiveSurface(mkConfig({}, { discoverability: 'known_only', surface: 'services' })),
     ).toBe('services');
     // surface does NOT alter discoverability, and vice versa
-    expect(effectiveDiscoverability(mkConfig({}, { surface: 'talk', discoverability: 'public' }))).toBe(
-      'public',
-    );
+    expect(
+      effectiveDiscoverability(mkConfig({}, { surface: 'talk', discoverability: 'public' })),
+    ).toBe('public');
   });
 });
 
@@ -86,25 +88,39 @@ describe('effectiveDefaultOfferable — Contact Services default-grant flow (§5
 describe('talk surface enforcement — talk ⇒ known_only (§5.3/§10)', () => {
   it('a talk listing is NEVER publishable or generically reachable, whatever its discoverability', () => {
     for (const d of ['public', 'unlisted', 'known_only'] as const) {
-      expect(isListingPublishable(mkConfig({}, { surface: 'talk', discoverability: d, status: 'active' }))).toBe(false);
-      expect(isListingPublic(mkConfig({}, { surface: 'talk', discoverability: d, status: 'active' }))).toBe(false);
+      expect(
+        isListingPublishable(
+          mkConfig({}, { surface: 'talk', discoverability: d, status: 'active' }),
+        ),
+      ).toBe(false);
+      expect(
+        isListingPublic(mkConfig({}, { surface: 'talk', discoverability: d, status: 'active' })),
+      ).toBe(false);
     }
     // a services listing is unaffected (sanity)
-    expect(isListingPublic(mkConfig({}, { surface: 'services', discoverability: 'public', status: 'active' }))).toBe(true);
+    expect(
+      isListingPublic(
+        mkConfig({}, { surface: 'services', discoverability: 'public', status: 'active' }),
+      ),
+    ).toBe(true);
   });
   it('validateServiceListing rejects a talk + non-known_only listing at save', () => {
-    expect(codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'public' })))).toContain(
-      'talk_must_be_known_only',
-    );
-    expect(codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'unlisted' })))).toContain(
-      'talk_must_be_known_only',
-    );
     expect(
-      codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'known_only' }))),
+      codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'public' }))),
+    ).toContain('talk_must_be_known_only');
+    expect(
+      codes(validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'unlisted' }))),
+    ).toContain('talk_must_be_known_only');
+    expect(
+      codes(
+        validateServiceListing(mkConfig({}, { surface: 'talk', discoverability: 'known_only' })),
+      ),
     ).not.toContain('talk_must_be_known_only');
     // services surface is never constrained by this rule
     expect(
-      codes(validateServiceListing(mkConfig({}, { surface: 'services', discoverability: 'public' }))),
+      codes(
+        validateServiceListing(mkConfig({}, { surface: 'services', discoverability: 'public' })),
+      ),
     ).not.toContain('talk_must_be_known_only');
   });
 });
@@ -118,13 +134,23 @@ describe('effectiveListingStatus + isListingPublishable (availability axis)', ()
 
   it('publishable iff active AND not known_only — status is an orthogonal AND', () => {
     // active + public/unlisted → live
-    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'active' }))).toBe(true);
-    expect(isListingPublishable(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(true);
+    expect(
+      isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'active' })),
+    ).toBe(true);
+    expect(
+      isListingPublishable(mkConfig({}, { discoverability: 'unlisted', status: 'active' })),
+    ).toBe(true);
     // active + known_only → not live (local/pairing-bound)
-    expect(isListingPublishable(mkConfig({}, { discoverability: 'known_only', status: 'active' }))).toBe(false);
+    expect(
+      isListingPublishable(mkConfig({}, { discoverability: 'known_only', status: 'active' })),
+    ).toBe(false);
     // paused/draft → never live, even when public (the OFF switch)
-    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'paused' }))).toBe(false);
-    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'draft' }))).toBe(false);
+    expect(
+      isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'paused' })),
+    ).toBe(false);
+    expect(isListingPublishable(mkConfig({}, { discoverability: 'public', status: 'draft' }))).toBe(
+      false,
+    );
     // back-compat: no status → active; no discoverability → derived
     expect(isListingPublishable(mkConfig({}, { isDiscoverable: true }))).toBe(true);
     expect(isListingPublishable(mkConfig({}, { isDiscoverable: false }))).toBe(false);
@@ -132,13 +158,23 @@ describe('effectiveListingStatus + isListingPublishable (availability axis)', ()
 
   it('isListingPublic is STRICTER — only active+public (unlisted is NOT public)', () => {
     // Reachable by a generic no-URI query iff active + public.
-    expect(isListingPublic(mkConfig({}, { discoverability: 'public', status: 'active' }))).toBe(true);
+    expect(isListingPublic(mkConfig({}, { discoverability: 'public', status: 'active' }))).toBe(
+      true,
+    );
     // unlisted is publishable (URI-resolvable) but NOT public (link-only).
-    expect(isListingPublic(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(false);
-    expect(isListingPublishable(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(true);
+    expect(isListingPublic(mkConfig({}, { discoverability: 'unlisted', status: 'active' }))).toBe(
+      false,
+    );
+    expect(
+      isListingPublishable(mkConfig({}, { discoverability: 'unlisted', status: 'active' })),
+    ).toBe(true);
     // paused/known_only never public.
-    expect(isListingPublic(mkConfig({}, { discoverability: 'public', status: 'paused' }))).toBe(false);
-    expect(isListingPublic(mkConfig({}, { discoverability: 'known_only', status: 'active' }))).toBe(false);
+    expect(isListingPublic(mkConfig({}, { discoverability: 'public', status: 'paused' }))).toBe(
+      false,
+    );
+    expect(isListingPublic(mkConfig({}, { discoverability: 'known_only', status: 'active' }))).toBe(
+      false,
+    );
   });
 });
 
@@ -150,7 +186,9 @@ describe('no_capabilities — a LIVE listing must advertise a capability (Codex 
   });
 
   it('rejects an active UNLISTED listing with zero capabilities (still live)', () => {
-    const r = validateServiceListing(mkConfig({}, { discoverability: 'unlisted', status: 'active' }));
+    const r = validateServiceListing(
+      mkConfig({}, { discoverability: 'unlisted', status: 'active' }),
+    );
     expect(codes(r)).toContain('no_capabilities');
   });
 
@@ -160,7 +198,9 @@ describe('no_capabilities — a LIVE listing must advertise a capability (Codex 
   });
 
   it('ALLOWS an empty known_only listing (not published)', () => {
-    const r = validateServiceListing(mkConfig({}, { discoverability: 'known_only', status: 'active' }));
+    const r = validateServiceListing(
+      mkConfig({}, { discoverability: 'known_only', status: 'active' }),
+    );
     expect(codes(r)).not.toContain('no_capabilities');
   });
 });
@@ -170,7 +210,12 @@ describe('validateServiceListing', () => {
     const r = validateServiceListing(mkConfig({ eta_query: cap('transit') }));
     expect(r.ok).toBe(true);
     expect(r.errors).toEqual([]);
-    expect(r.capabilities[0]).toMatchObject({ raw: 'eta_query', kind: 'official', canonical: 'eta_query', category: 'transit' });
+    expect(r.capabilities[0]).toMatchObject({
+      raw: 'eta_query',
+      kind: 'official',
+      canonical: 'eta_query',
+      category: 'transit',
+    });
   });
 
   it('accepts an official capability published under an alias (folds to canonical)', () => {
@@ -198,8 +243,12 @@ describe('validateServiceListing', () => {
 
   it('accepts a cross-category official capability in any allowed category', () => {
     // appointment_availability allows appointments/healthcare/professional/home_local.
-    expect(validateServiceListing(mkConfig({ appointment_availability: cap('healthcare') })).ok).toBe(true);
-    expect(validateServiceListing(mkConfig({ appointment_availability: cap('home_local') })).ok).toBe(true);
+    expect(
+      validateServiceListing(mkConfig({ appointment_availability: cap('healthcare') })).ok,
+    ).toBe(true);
+    expect(
+      validateServiceListing(mkConfig({ appointment_availability: cap('home_local') })).ok,
+    ).toBe(true);
   });
 
   it('requires explicit discoverability only when asked (mobile publish path)', () => {
@@ -209,7 +258,9 @@ describe('validateServiceListing', () => {
     expect(codes(strict)).toContain('missing_discoverability');
     // Explicit value satisfies the strict check.
     const explicit = mkConfig({ eta_query: cap('transit') }, { discoverability: 'public' });
-    expect(validateServiceListing(explicit, { requireExplicitDiscoverability: true }).ok).toBe(true);
+    expect(validateServiceListing(explicit, { requireExplicitDiscoverability: true }).ok).toBe(
+      true,
+    );
   });
 
   it('gates a booking/write official capability behind review, not auto (spec §6)', () => {
@@ -228,7 +279,10 @@ describe('validateServiceListing', () => {
       mkConfig({ 'com.rajschool.homework_status': cap('school') }, { discoverability: 'unlisted' }),
     );
     expect(r.ok).toBe(true);
-    expect(r.capabilities[0]).toMatchObject({ kind: 'custom', canonical: 'com.rajschool.homework_status' });
+    expect(r.capabilities[0]).toMatchObject({
+      kind: 'custom',
+      canonical: 'com.rajschool.homework_status',
+    });
   });
 
   it('requires schemas for a PUBLIC custom capability (spec §8.1)', () => {
@@ -341,7 +395,10 @@ describe('subject_auth_needs_review — stranger-reachable subject-scoped caps m
 
   it('ALLOWS auto on a KNOWN_ONLY listing (access is explicitly grant-gated per grantee)', () => {
     const r = validateServiceListing(
-      mkConfig({ school_homework_status: cap('school', 'auto') }, { discoverability: 'known_only' }),
+      mkConfig(
+        { school_homework_status: cap('school', 'auto') },
+        { discoverability: 'known_only' },
+      ),
     );
     expect(r.ok).toBe(true);
   });

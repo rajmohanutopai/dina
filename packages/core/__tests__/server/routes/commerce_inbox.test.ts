@@ -229,9 +229,9 @@ describe('a cancellation parked for a human (§12.5)', () => {
   };
 
   /** A runtime whose finalization records what it was asked. */
-  function withFinalize(
-    answer: unknown = TERMINAL,
-  ): { asked: { cancellationId: string; result: string }[] } {
+  function withFinalize(answer: unknown = TERMINAL): {
+    asked: { cancellationId: string; result: string }[];
+  } {
     const asked: { cancellationId: string; result: string }[] = [];
     installCommerceRuntime({
       orders: { listReserved: () => reserved },
@@ -257,7 +257,8 @@ describe('a cancellation parked for a human (§12.5)', () => {
     reserved = [orderRef({ purchaseOrderId: 'po-parked', effectPhase: 'effect_started' })];
     pendingReview.set('po-parked', [{ cancellation_id: 'c-1', result: 'pending_review' }]);
     const parked = await router.handle(get());
-    const parkedItem = (parked.body as { items: { subject: string; actions: string[] }[] }).items[0];
+    const parkedItem = (parked.body as { items: { subject: string; actions: string[] }[] })
+      .items[0];
     expect(parkedItem?.subject).toBe('po-parked');
     expect(parkedItem?.actions).toEqual(['finalize_cancellation']);
 

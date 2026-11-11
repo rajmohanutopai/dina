@@ -55,11 +55,7 @@ import { canonicalJson } from '@dina/protocol';
 import { getPersona } from '../persona/service';
 
 import { getContextSource, type ContextCandidate, type InvocationSubject } from './context_sources';
-import {
-  convertField,
-  templateFieldsFor,
-  type ContextTemplateField,
-} from './context_templates';
+import { convertField, templateFieldsFor, type ContextTemplateField } from './context_templates';
 import { regulatedContentIn } from './dispatch';
 
 import type { PluginCapabilityDecl, PluginDataScope } from '@dina/protocol';

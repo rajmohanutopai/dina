@@ -64,9 +64,7 @@ export function createGeminiEmbeddingProvider(
       (response as { embedding?: { values?: number[] } }).embedding?.values ??
       [];
     if (!Array.isArray(values) || values.length === 0) {
-      throw new Error(
-        `gemini-embedding: empty response from ${model} — check API key + quota`,
-      );
+      throw new Error(`gemini-embedding: empty response from ${model} — check API key + quota`);
     }
     return {
       vector: new Float32Array(values),

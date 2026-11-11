@@ -14,12 +14,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '../src/adapter';
-import {
-  MigrationError,
-  getSchemaVersion,
-  runMigrations,
-  type Migration,
-} from '../src/migration';
+import { MigrationError, getSchemaVersion, runMigrations, type Migration } from '../src/migration';
 
 const KEY = '0'.repeat(64);
 
@@ -31,7 +26,11 @@ function tempPath(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   }
 });
 
@@ -41,8 +40,12 @@ function openAdapter(): NodeSQLiteAdapter {
 
 describe('runMigrations — happy path', () => {
   let a: NodeSQLiteAdapter;
-  beforeEach(() => { a = openAdapter(); });
-  afterEach(() => { a.close(); });
+  beforeEach(() => {
+    a = openAdapter();
+  });
+  afterEach(() => {
+    a.close();
+  });
 
   it('creates schema_version table on first run', () => {
     runMigrations(a, []);
@@ -57,11 +60,13 @@ describe('runMigrations — happy path', () => {
     const nowMs = 1_700_000_000_000;
     const final = runMigrations(
       a,
-      [{
-        id: 1,
-        description: 'init',
-        up: ['CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)'],
-      }],
+      [
+        {
+          id: 1,
+          description: 'init',
+          up: ['CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT)'],
+        },
+      ],
       () => nowMs,
     );
     expect(final).toBe(1);
@@ -79,12 +84,24 @@ describe('runMigrations — happy path', () => {
   it('applies multiple migrations in id order', () => {
     const migrations: Migration[] = [
       { id: 1, description: 'users', up: ['CREATE TABLE users (id INTEGER PRIMARY KEY)'] },
-      { id: 2, description: 'posts', up: ['CREATE TABLE posts (id INTEGER PRIMARY KEY, user INTEGER)'] },
-      { id: 3, description: 'comments', up: ['CREATE TABLE comments (id INTEGER PRIMARY KEY, post INTEGER)'] },
+      {
+        id: 2,
+        description: 'posts',
+        up: ['CREATE TABLE posts (id INTEGER PRIMARY KEY, user INTEGER)'],
+      },
+      {
+        id: 3,
+        description: 'comments',
+        up: ['CREATE TABLE comments (id INTEGER PRIMARY KEY, post INTEGER)'],
+      },
     ];
     expect(runMigrations(a, migrations)).toBe(3);
     expect(getSchemaVersion(a)).toBe(3);
-    expect(a.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','posts','comments')")).toHaveLength(3);
+    expect(
+      a.query(
+        "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('users','posts','comments')",
+      ),
+    ).toHaveLength(3);
   });
 
   it('input order does not matter — sorts by id', () => {
@@ -95,27 +112,34 @@ describe('runMigrations — happy path', () => {
     ];
     runMigrations(a, unsorted);
 
-    const rows = a.query<{ version: number }>('SELECT version FROM schema_version ORDER BY version');
+    const rows = a.query<{ version: number }>(
+      'SELECT version FROM schema_version ORDER BY version',
+    );
     expect(rows.map((r) => r.version)).toEqual([1, 2, 3]);
   });
 
   it('multi-statement up applies all statements in one transaction', () => {
-    runMigrations(a, [{
-      id: 1,
-      description: 'two tables',
-      up: [
-        'CREATE TABLE a (id INTEGER)',
-        'CREATE TABLE b (id INTEGER)',
-      ],
-    }]);
-    expect(a.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('a','b')")).toHaveLength(2);
+    runMigrations(a, [
+      {
+        id: 1,
+        description: 'two tables',
+        up: ['CREATE TABLE a (id INTEGER)', 'CREATE TABLE b (id INTEGER)'],
+      },
+    ]);
+    expect(
+      a.query("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('a','b')"),
+    ).toHaveLength(2);
   });
 });
 
 describe('runMigrations — idempotency', () => {
   let a: NodeSQLiteAdapter;
-  beforeEach(() => { a = openAdapter(); });
-  afterEach(() => { a.close(); });
+  beforeEach(() => {
+    a = openAdapter();
+  });
+  afterEach(() => {
+    a.close();
+  });
 
   it('second call with the same list is a no-op', () => {
     const migrations: Migration[] = [
@@ -171,18 +195,24 @@ describe('runMigrations — idempotency', () => {
 
 describe('runMigrations — failure semantics', () => {
   let a: NodeSQLiteAdapter;
-  beforeEach(() => { a = openAdapter(); });
-  afterEach(() => { a.close(); });
+  beforeEach(() => {
+    a = openAdapter();
+  });
+  afterEach(() => {
+    a.close();
+  });
 
   it('failed migration rolls back its transaction', () => {
-    const migrations: Migration[] = [{
-      id: 1,
-      description: 'bad',
-      up: [
-        'CREATE TABLE half (id INTEGER)',
-        'NOT VALID SQL STATEMENT', // will error
-      ],
-    }];
+    const migrations: Migration[] = [
+      {
+        id: 1,
+        description: 'bad',
+        up: [
+          'CREATE TABLE half (id INTEGER)',
+          'NOT VALID SQL STATEMENT', // will error
+        ],
+      },
+    ];
     expect(() => runMigrations(a, migrations)).toThrow(/migration_failed/);
 
     // schema_version should not mark migration 1 as applied.
@@ -201,20 +231,26 @@ describe('runMigrations — failure semantics', () => {
     ];
     expect(() => runMigrations(a, migrations)).toThrow(/migration_failed/);
     expect(getSchemaVersion(a)).toBe(1);
-    expect(a.query("SELECT name FROM sqlite_master WHERE type='table' AND name='ok'")).toHaveLength(1);
-    expect(a.query("SELECT name FROM sqlite_master WHERE type='table' AND name='later'")).toHaveLength(0);
+    expect(a.query("SELECT name FROM sqlite_master WHERE type='table' AND name='ok'")).toHaveLength(
+      1,
+    );
+    expect(
+      a.query("SELECT name FROM sqlite_master WHERE type='table' AND name='later'"),
+    ).toHaveLength(0);
   });
 });
 
 describe('runMigrations — input validation', () => {
   let a: NodeSQLiteAdapter;
-  beforeEach(() => { a = openAdapter(); });
-  afterEach(() => { a.close(); });
+  beforeEach(() => {
+    a = openAdapter();
+  });
+  afterEach(() => {
+    a.close();
+  });
 
   it('rejects non-array migrations', () => {
-    expect(() =>
-      runMigrations(a, 'hi' as unknown as Migration[]),
-    ).toThrow(/invalid_input/);
+    expect(() => runMigrations(a, 'hi' as unknown as Migration[])).toThrow(/invalid_input/);
   });
 
   it.each([
@@ -234,9 +270,9 @@ describe('runMigrations — input validation', () => {
   });
 
   it('rejects empty up', () => {
-    expect(() =>
-      runMigrations(a, [{ id: 1, description: 'x', up: [] }]),
-    ).toThrow(/invalid_migration/);
+    expect(() => runMigrations(a, [{ id: 1, description: 'x', up: [] }])).toThrow(
+      /invalid_migration/,
+    );
   });
 
   it('rejects non-string statement in up', () => {
@@ -246,9 +282,9 @@ describe('runMigrations — input validation', () => {
   });
 
   it('rejects empty-string statement in up', () => {
-    expect(() =>
-      runMigrations(a, [{ id: 1, description: 'x', up: ['   '] }]),
-    ).toThrow(/invalid_migration/);
+    expect(() => runMigrations(a, [{ id: 1, description: 'x', up: ['   '] }])).toThrow(
+      /invalid_migration/,
+    );
   });
 
   it('MigrationError carries code', () => {
@@ -264,8 +300,12 @@ describe('runMigrations — input validation', () => {
 
 describe('getSchemaVersion', () => {
   let a: NodeSQLiteAdapter;
-  beforeEach(() => { a = openAdapter(); });
-  afterEach(() => { a.close(); });
+  beforeEach(() => {
+    a = openAdapter();
+  });
+  afterEach(() => {
+    a.close();
+  });
 
   it('returns 0 on a fresh DB (creates table as a side effect)', () => {
     expect(getSchemaVersion(a)).toBe(0);

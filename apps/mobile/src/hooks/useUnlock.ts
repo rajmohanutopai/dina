@@ -31,10 +31,10 @@ import {
 import { openAllPersonasForInAppUser } from '@dina/home-node';
 
 import { seedDefaultPersonas } from '../onboarding/default_personas';
+import { installBackupIdentity } from '../services/cloud_backup';
 import { loadPersistedDid } from '../services/identity_record';
 import { loadIdentitySeeds, saveIdentitySeeds } from '../services/identity_store';
 import { setAsideUnreadableVaultFiles } from '../services/install_marker';
-import { installBackupIdentity } from '../services/cloud_backup';
 import { stopUcp } from '../services/net_socket_wiring';
 import { emitRuntimeWarning } from '../services/runtime_warnings';
 import { ensureVaultSalt } from '../services/vault_salt_store';

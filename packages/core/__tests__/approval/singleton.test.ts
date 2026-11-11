@@ -3,11 +3,7 @@
  * share the same instance (fixing the dual-instance bug from §A48).
  */
 
-import {
-  ApprovalManager,
-  getApprovalManager,
-  resetApprovalManager,
-} from '../../src/approval/manager';
+import { getApprovalManager, resetApprovalManager } from '../../src/approval/manager';
 
 describe('ApprovalManager Singleton', () => {
   beforeEach(() => resetApprovalManager());

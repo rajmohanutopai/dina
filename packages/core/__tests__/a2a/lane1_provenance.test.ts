@@ -39,12 +39,23 @@ afterEach(() => {
   world.close();
 });
 
-const read = (persona: string, id: string, session = SESSION) => getItem(persona, id, { sessionId: session, audience: 'brain' });
-const vault = (quote: string, persona: string, id: string) => ({ quote, from: 'vault', persona, item_id: id });
+const read = (persona: string, id: string, session = SESSION) =>
+  getItem(persona, id, { sessionId: session, audience: 'brain' });
+const vault = (quote: string, persona: string, id: string) => ({
+  quote,
+  from: 'vault',
+  persona,
+  item_id: id,
+});
 const owner = (quote: string) => ({ quote, from: 'owner' });
 
 function propose(over: Partial<ProposalInput>, session = SESSION) {
-  return proposeDelegation(world.runtime, { agentId, skill: 'summarize', releaseSession: session, ...over });
+  return proposeDelegation(world.runtime, {
+    agentId,
+    skill: 'summarize',
+    releaseSession: session,
+    ...over,
+  });
 }
 
 /** Store an item whose write stamp is `atMs` (Core stamps every write with the clock). */
@@ -65,7 +76,10 @@ describe('the 24-hour log of the owner’s words (design §4.2 (a), §6.2 step 2
     world.clock = START + 2 * 60 * 60_000;
     world.turn(LATER); // the oldest turn left once the first ones go
     const fresh = writtenAt('general', NOTE, START + 3 * 60 * 60_000);
-    expect([getItem('general', old.id)?.updated_at, getItem('general', fresh.id)?.updated_at]).toEqual([START - 60_000, START + 3 * 60 * 60_000]);
+    expect([
+      getItem('general', old.id)?.updated_at,
+      getItem('general', fresh.id)?.updated_at,
+    ]).toEqual([START - 60_000, START + 3 * 60 * 60_000]);
 
     world.clock = START + RELEASE_LOG_TTL_MS + 60 * 60_000;
     world.turn('Send the clinic note to the agent, please.');
@@ -73,12 +87,20 @@ describe('the 24-hour log of the owner’s words (design §4.2 (a), §6.2 step 2
     read('general', fresh.id);
 
     // The log kept the first turns for 24 hours and no longer.
-    expect(propose({ text: FIRST, sources: [owner(FIRST)] })).toEqual({ ok: false, reason: 'source_unproven' });
+    expect(propose({ text: FIRST, sources: [owner(FIRST)] })).toEqual({
+      ok: false,
+      reason: 'source_unproven',
+    });
     expect(propose({ text: LATER, sources: [owner(LATER)] }).ok).toBe(true);
     // Read and logged the same way, the older item proves: so the refusal below comes from the write time alone.
-    expect(propose({ text: OLD_NOTE, sources: [vault(OLD_NOTE, 'general', old.id)] }).ok).toBe(true);
+    expect(propose({ text: OLD_NOTE, sources: [vault(OLD_NOTE, 'general', old.id)] }).ok).toBe(
+      true,
+    );
     // The item was written during the part of the conversation Core still holds.
-    expect(propose({ text: NOTE, sources: [vault(NOTE, 'general', fresh.id)] })).toEqual({ ok: false, reason: 'source_unproven' });
+    expect(propose({ text: NOTE, sources: [vault(NOTE, 'general', fresh.id)] })).toEqual({
+      ok: false,
+      reason: 'source_unproven',
+    });
   });
 });
 
@@ -99,18 +121,32 @@ describe('an item carried from one thread to another (A2A-I12, §10 laundering r
     const proven = propose({ text: NOTE, sources: [vault(NOTE, 'general', copied.id)] }, THREAD_B);
     if (!proven.ok) throw new Error(proven.reason);
     expect(proven.labels).toEqual([]);
-    const card = parseDelegationConsentCard(world.repo.getById(proven.approvalTaskId)?.payload ?? '');
-    expect(card?.display.sources).toEqual([`“${NOTE}” is the full text of an item in your general vault, saved before this conversation.`]);
+    const card = parseDelegationConsentCard(
+      world.repo.getById(proven.approvalTaskId)?.payload ?? '',
+    );
+    expect(card?.display.sources).toEqual([
+      `“${NOTE}” is the full text of an item in your general vault, saved before this conversation.`,
+    ]);
 
     // Thread A read the health vault; thread B has not yet, so its derived text carries no taint.
     const derivedText = `${NOTE} Please summarize it.`;
-    const before = propose({ text: derivedText, sources: [vault(NOTE, 'general', copied.id)] }, THREAD_B);
+    const before = propose(
+      { text: derivedText, sources: [vault(NOTE, 'general', copied.id)] },
+      THREAD_B,
+    );
     expect(before.ok && before.labels).toEqual(['may_contain_sensitive', 'unverified']);
 
     // Thread B reads the health vault too: its derived text now carries the taint.
     read('health', lab.id, THREAD_B);
-    const derived = propose({ text: derivedText, sources: [vault(NOTE, 'general', copied.id)] }, THREAD_B);
-    expect(derived.ok && derived.labels).toEqual(['may_contain_sensitive', 'restricted_source', 'unverified']);
+    const derived = propose(
+      { text: derivedText, sources: [vault(NOTE, 'general', copied.id)] },
+      THREAD_B,
+    );
+    expect(derived.ok && derived.labels).toEqual([
+      'may_contain_sensitive',
+      'restricted_source',
+      'unverified',
+    ]);
   });
 });
 
@@ -120,15 +156,26 @@ describe('releases belong to Brain alone (design §9 a2a_disclosures)', () => {
     world.turn(FIRST);
     const item = writtenAt('general', NOTE, START - 60_000);
     expect(() =>
-      world.log.recordDisclosures({ sessionId: SESSION, audience: 'agent' as never }, 'general', [item]),
+      world.log.recordDisclosures({ sessionId: SESSION, audience: 'agent' as never }, 'general', [
+        item,
+      ]),
     ).toThrow(/CHECK constraint failed/);
-    expect(() => getItem('general', item.id, { sessionId: SESSION, audience: 'agent' as never })).toThrow(/CHECK constraint failed/);
+    expect(() =>
+      getItem('general', item.id, { sessionId: SESSION, audience: 'agent' as never }),
+    ).toThrow(/CHECK constraint failed/);
     expect(world.db.query(`SELECT audience FROM a2a_disclosures`)).toEqual([]);
 
     // Control, in another conversation: the same item released to Brain writes one row.
-    world.log.recordDisclosures({ sessionId: 'chat:control', audience: 'brain' }, 'general', [item]);
-    expect(world.db.query(`SELECT session_id, audience FROM a2a_disclosures`)).toEqual([{ session_id: 'chat:control', audience: 'brain' }]);
+    world.log.recordDisclosures({ sessionId: 'chat:control', audience: 'brain' }, 'general', [
+      item,
+    ]);
+    expect(world.db.query(`SELECT session_id, audience FROM a2a_disclosures`)).toEqual([
+      { session_id: 'chat:control', audience: 'brain' },
+    ]);
     // This conversation logged no release, so the item proves nothing here.
-    expect(propose({ text: NOTE, sources: [vault(NOTE, 'general', item.id)] })).toEqual({ ok: false, reason: 'source_unproven' });
+    expect(propose({ text: NOTE, sources: [vault(NOTE, 'general', item.id)] })).toEqual({
+      ok: false,
+      reason: 'source_unproven',
+    });
   });
 });

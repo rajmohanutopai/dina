@@ -16,11 +16,7 @@
  * Source: ARCHITECTURE.md Task 9.14
  */
 
-import {
-  isProviderAvailable,
-  getBestProvider,
-  type ProviderName,
-} from '@dina/brain/llm';
+import { getBestProvider } from '@dina/brain/llm';
 import { listPersonas, isPersonaOpen } from '@dina/core';
 
 export type CheckStatus = 'pass' | 'fail' | 'warn' | 'skip';

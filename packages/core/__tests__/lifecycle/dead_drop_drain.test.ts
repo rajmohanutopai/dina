@@ -10,7 +10,7 @@ import {
   registerSpoolProvider,
   resetDrainState,
 } from '../../src/lifecycle/dead_drop_drain';
-import { getItem, inboxSize, resetStagingState } from '../../src/staging/service';
+import { inboxSize, resetStagingState } from '../../src/staging/service';
 import { DeadDropSpool } from '../../src/storage/spool_node';
 
 describe('Dead Drop Drain', () => {

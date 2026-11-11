@@ -136,7 +136,9 @@ describe('grant_prompt — idempotent post', () => {
 
     const prompts = getThread(PEER).filter((m) => readGrantPromptLifecycle(m) !== null);
     expect(prompts).toHaveLength(2);
-    expect(prompts.map((m) => readGrantPromptLifecycle(m)?.rkey).sort()).toEqual([RKEY, 'avail-2'].sort());
+    expect(prompts.map((m) => readGrantPromptLifecycle(m)?.rkey).sort()).toEqual(
+      [RKEY, 'avail-2'].sort(),
+    );
   });
 
   it('rejects degenerate inputs (empty did/capability/rkey)', async () => {

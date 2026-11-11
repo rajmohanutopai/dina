@@ -13,6 +13,7 @@
  * Source: ARCHITECTURE.md Task 5.4
  */
 
+import { DEFAULT_BRIEFING_HOUR } from '../constants';
 import { listPendingRemindersRouted } from '../reminders/backend';
 
 export interface BriefingItem {
@@ -33,8 +34,6 @@ export interface Briefing {
   };
   totalItems: number;
 }
-
-import { DEFAULT_BRIEFING_HOUR } from '../constants';
 
 /** Default briefing hour (8 AM). */
 let briefingHour = DEFAULT_BRIEFING_HOUR;

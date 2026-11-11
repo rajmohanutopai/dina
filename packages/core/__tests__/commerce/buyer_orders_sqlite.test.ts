@@ -294,7 +294,6 @@ describe('record-before-send, against real SQL', () => {
     },
   });
 
-
   function approval() {
     const built = buildBuyerApprovalPayload(ORDER, contextOf());
     if (!built.ok) throw new Error(`fixture is missing ${built.missing.join(', ')}`);
@@ -304,7 +303,7 @@ describe('record-before-send, against real SQL', () => {
   beforeEach(() => {
     buyerPack = installActiveBuyerPack(Date.now());
     installCommerceRuntime({
-    receipts: new InMemoryCommerceReceiptRepository(),
+      receipts: new InMemoryCommerceReceiptRepository(),
       buyerOrders: repo,
       // §12.4 step 6 — the executor revalidates the held quote before
       // dispatch. Empty stores mean "no quote held", which is the documented
@@ -330,7 +329,7 @@ describe('record-before-send, against real SQL', () => {
       serviceRkey: 'self',
       send: async () => ({ kind: 'ambiguous', reason: 'sent' }),
       nowMs: 1_700_000_000_000,
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({
@@ -379,7 +378,7 @@ describe('record-before-send, against real SQL', () => {
       },
       nowMs: 1_700_000_000_000,
       resend: true,
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({
@@ -404,7 +403,7 @@ describe('record-before-send, against real SQL', () => {
       serviceRkey: 'self',
       send: async () => ({ kind: 'ambiguous', reason: 'sent' }),
       nowMs: 1_700_000_000_000,
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({
@@ -425,7 +424,7 @@ describe('record-before-send, against real SQL', () => {
         return { kind: 'ambiguous', reason: 'sent' };
       },
       nowMs: 1_700_000_000_001,
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({

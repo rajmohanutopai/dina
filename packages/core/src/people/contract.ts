@@ -49,11 +49,7 @@
 
 import { computeExtractionFingerprint, type PeopleRepository } from './repository';
 
-import type {
-  ExtractionPersonLink,
-  ExtractionResult,
-  ExtractionSurfaceEntry,
-} from './domain';
+import type { ExtractionPersonLink, ExtractionResult, ExtractionSurfaceEntry } from './domain';
 
 /** Factory returning a fresh, empty repo for each test case. */
 export interface PersonStoreContractHarness {
@@ -121,27 +117,17 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: fingerprint is order-independent across surfaces in a link', () => {
       const a = makeExtraction('i', 'v1', [
-        link('X', [
-          surface('X', 'name', 'high'),
-          surface('Xx', 'nickname', 'medium'),
-        ]),
+        link('X', [surface('X', 'name', 'high'), surface('Xx', 'nickname', 'medium')]),
       ]);
       const b = makeExtraction('i', 'v1', [
-        link('X', [
-          surface('Xx', 'nickname', 'medium'),
-          surface('X', 'name', 'high'),
-        ]),
+        link('X', [surface('Xx', 'nickname', 'medium'), surface('X', 'name', 'high')]),
       ]);
       expect(computeExtractionFingerprint(a)).toBe(computeExtractionFingerprint(b));
     });
 
     it('PARITY: fingerprint changes when any surface text changes', () => {
-      const a = makeExtraction('i', 'v1', [
-        link('X', [surface('X', 'name', 'high')]),
-      ]);
-      const b = makeExtraction('i', 'v1', [
-        link('X', [surface('Xy', 'name', 'high')]),
-      ]);
+      const a = makeExtraction('i', 'v1', [link('X', [surface('X', 'name', 'high')])]);
+      const b = makeExtraction('i', 'v1', [link('X', [surface('Xy', 'name', 'high')])]);
       expect(computeExtractionFingerprint(a)).not.toBe(computeExtractionFingerprint(b));
     });
   });
@@ -150,9 +136,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
   describe('promotion + upsert contract', () => {
     it('PARITY: a single high-confidence surface promotes the person to confirmed', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Sancho', [surface('Sancho', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Sancho', [surface('Sancho', 'name', 'high')])]),
       );
       const sancho = repo.listPeople()[0];
       expect(sancho.status).toBe('confirmed');
@@ -161,9 +145,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: low/medium confidence keeps the person suggested', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Maybe', [surface('Maybe', 'name', 'medium')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Maybe', [surface('Maybe', 'name', 'medium')])]),
       );
       const m = repo.listPeople()[0];
       expect(m.status).toBe('suggested');
@@ -174,17 +156,13 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
       // First apply — confirmed surface so the second apply can route
       // to the same person via the name match in findOrAssignPersonId.
       repo.applyExtraction(
-        makeExtraction('item-1', 'v1', [
-          link('Eve', [surface('Eve', 'name', 'high')]),
-        ]),
+        makeExtraction('item-1', 'v1', [link('Eve', [surface('Eve', 'name', 'high')])]),
       );
       // Second apply with a different sourceItemId — the surface
       // upsert lane must update the existing row's source stamps,
       // not insert.
       const second = repo.applyExtraction(
-        makeExtraction('item-2', 'v2', [
-          link('Eve', [surface('Eve', 'name', 'high')]),
-        ]),
+        makeExtraction('item-2', 'v2', [link('Eve', [surface('Eve', 'name', 'high')])]),
       );
       expect(second.created).toBe(0);
       expect(second.updated).toBe(1);
@@ -269,9 +247,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
       // confirms one alias by hand. Go's query uses
       // `p.status != 'rejected'`, so the surface still resolves.
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Pending', [surface('Pending', 'name', 'medium')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Pending', [surface('Pending', 'name', 'medium')])]),
       );
       const person = repo.listPeople()[0];
       const surfaceId = person.surfaces?.[0].id;
@@ -284,9 +260,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: hides surfaces whose owner is rejected', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Goneville', [surface('Goneville', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Goneville', [surface('Goneville', 'name', 'high')])]),
       );
       const person = repo.listPeople()[0];
       repo.rejectPerson(person.personId);
@@ -297,10 +271,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
     it('PARITY: hides suggested surfaces even when the owner is confirmed', () => {
       repo.applyExtraction(
         makeExtraction('i1', 'v1', [
-          link('Mixed', [
-            surface('Mixed', 'name', 'high'),
-            surface('Mxd', 'nickname', 'medium'),
-          ]),
+          link('Mixed', [surface('Mixed', 'name', 'high'), surface('Mxd', 'nickname', 'medium')]),
         ]),
       );
       const map = repo.resolveConfirmedSurfaces();
@@ -324,9 +295,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: drops suggested + stale + zero-confirmed-surfaces people', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Stale', [surface('Stale', 'name', 'medium')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Stale', [surface('Stale', 'name', 'medium')])]),
       );
       const dropped = repo.garbageCollect(0, futureCutoff());
       expect(dropped).toBe(1);
@@ -335,9 +304,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: spares confirmed people regardless of age', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Solid', [surface('Solid', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Solid', [surface('Solid', 'name', 'high')])]),
       );
       expect(repo.garbageCollect(0, futureCutoff())).toBe(0);
       expect(repo.listPeople()).toHaveLength(1);
@@ -345,9 +312,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: spares suggested people whose surface was manually confirmed', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Touched', [surface('Touched', 'name', 'medium')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Touched', [surface('Touched', 'name', 'medium')])]),
       );
       const person = repo.listPeople()[0];
       const surfaceId = person.surfaces?.[0].id;
@@ -362,14 +327,10 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
   describe('mergePeople contract', () => {
     it('PARITY: surfaces move to keepId; mergeId is rejected', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Alice', [surface('Alice', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Alice', [surface('Alice', 'name', 'high')])]),
       );
       repo.applyExtraction(
-        makeExtraction('i2', 'v1', [
-          link('Ali', [surface('Ali', 'nickname', 'high')]),
-        ]),
+        makeExtraction('i2', 'v1', [link('Ali', [surface('Ali', 'nickname', 'high')])]),
       );
       const all = repo.listPeople();
       const keep = all.find((p) => p.canonicalName === 'Alice');
@@ -384,9 +345,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: merge into self is a no-op', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Solo', [surface('Solo', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Solo', [surface('Solo', 'name', 'high')])]),
       );
       const solo = repo.listPeople()[0];
       repo.mergePeople(solo.personId, solo.personId);
@@ -398,9 +357,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
   describe('lifecycle filter contract', () => {
     it('PARITY: listPeople hides rejected', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Bye', [surface('Bye', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Bye', [surface('Bye', 'name', 'high')])]),
       );
       const person = repo.listPeople()[0];
       repo.rejectPerson(person.personId);
@@ -409,9 +366,7 @@ export function runPersonStoreContract(harness: PersonStoreContractHarness): voi
 
     it('PARITY: findByContactDid hides rejected', () => {
       repo.applyExtraction(
-        makeExtraction('i1', 'v1', [
-          link('Mute', [surface('Mute', 'name', 'high')]),
-        ]),
+        makeExtraction('i1', 'v1', [link('Mute', [surface('Mute', 'name', 'high')])]),
       );
       const person = repo.listPeople()[0];
       repo.linkContact(person.personId, 'did:plc:mute');

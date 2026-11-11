@@ -57,10 +57,7 @@ export function shortHandle(handle: string): string {
  * Defensive type-narrowing so callers can pass `string | null |
  * undefined` straight from a wire shape.
  */
-export function displayName(
-  handle: string | null | undefined,
-  did: string,
-): string {
+export function displayName(handle: string | null | undefined, did: string): string {
   if (typeof handle === 'string' && handle.length > 0) {
     return shortHandle(handle);
   }
@@ -85,12 +82,7 @@ export function displayNameWithOverride(
   selfDid: string | null,
   override: string | null,
 ): string {
-  if (
-    selfDid !== null &&
-    selfDid === did &&
-    typeof override === 'string' &&
-    override.length > 0
-  ) {
+  if (selfDid !== null && selfDid === did && typeof override === 'string' && override.length > 0) {
     return override;
   }
   return displayName(handle, did);

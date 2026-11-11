@@ -62,9 +62,16 @@ beforeAll(async () => {
       const url = new URL(req.url ?? '/', 'http://x');
       const headers: Record<string, string> = {};
       for (const [k, v] of Object.entries(req.headers)) if (typeof v === 'string') headers[k] = v;
-      seen.push({ method: req.method ?? '', path: url.pathname, query: url.search.slice(1), headers, body: Buffer.concat(chunks).toString('utf8') });
+      seen.push({
+        method: req.method ?? '',
+        path: url.pathname,
+        query: url.search.slice(1),
+        headers,
+        body: Buffer.concat(chunks).toString('utf8'),
+      });
       res.writeHead(200, { 'content-type': 'application/json' });
-      if (url.pathname === '/api/v1/internal/service/search') res.end('{"matches":[],"capability_candidates":[]}');
+      if (url.pathname === '/api/v1/internal/service/search')
+        res.end('{"matches":[],"capability_candidates":[]}');
       else if (url.pathname === '/api/v1/capability/run') res.end('{"result":{"eta_minutes":1}}');
       else if (url.pathname.startsWith('/xrpc/')) res.end('{"results":[]}');
       else res.end('{"status":"complete","request_id":"r-1"}');
@@ -103,30 +110,54 @@ describe('Core’s Brain calls carry Core’s signature (notes M2 preconditions)
 
   // Extra X-9 (the ask bridge, service search, the Tier 1 runner)
   it('given the signed fetch, the ask bridge, service search and the Tier 1 runner each send a request Brain’s check accepts', async () => {
-    await makeHttpAskHandler({ brainUrl: base, fetchImpl: signed }).handleAsk({ question: 'When is the next bus?', requesterDid: 'did:plc:owner' });
+    await makeHttpAskHandler({ brainUrl: base, fetchImpl: signed }).handleAsk({
+      question: 'When is the next bus?',
+      requesterDid: 'did:plc:owner',
+    });
     const facades = createAgentFacades({ brainUrl: base, brainFetch: signed, appViewUrl: base });
-    await facades.findService?.({ agentDid: 'did:key:z6MkAgent', sessionId: '', body: { capability: 'eta_query' } });
+    await facades.findService?.({
+      agentDid: 'did:key:z6MkAgent',
+      sessionId: '',
+      body: { capability: 'eta_query' },
+    });
     const task = { id: 'svc-exec-1', payload: '{}' } as unknown as WorkflowTask;
-    await makeHttpTier1Runner({ brainUrl: base, logger: pino({ level: 'silent' }) as never, fetchImpl: signed })('eta_query', { route_id: '1' }, task);
+    await makeHttpTier1Runner({
+      brainUrl: base,
+      logger: pino({ level: 'silent' }) as never,
+      fetchImpl: signed,
+    })('eta_query', { route_id: '1' }, task);
     const brainBound = seen.filter((r) => r.path.startsWith('/api/v1/'));
-    expect(brainBound.map((r) => r.path).sort()).toEqual(['/api/v1/ask', '/api/v1/capability/run', '/api/v1/internal/service/search']);
-    for (const request of brainBound) expect([request.path, brainAccepts(request)]).toEqual([request.path, true]);
+    expect(brainBound.map((r) => r.path).sort()).toEqual([
+      '/api/v1/ask',
+      '/api/v1/capability/run',
+      '/api/v1/internal/service/search',
+    ]);
+    for (const request of brainBound)
+      expect([request.path, brainAccepts(request)]).toEqual([request.path, true]);
   });
 
   // Extra X-9 (AppView)
   it('the AppView client beside them carries no signature header', async () => {
     const facades = createAgentFacades({ brainUrl: base, brainFetch: signed, appViewUrl: base });
-    await facades.peerlensSearch?.({ agentDid: 'did:key:z6MkAgent', sessionId: '', body: { q: 'plumber' } });
+    await facades.peerlensSearch?.({
+      agentDid: 'did:key:z6MkAgent',
+      sessionId: '',
+      body: { q: 'plumber' },
+    });
     const appView = seen.filter((r) => r.path.startsWith('/xrpc/'));
     expect(appView.length).toBeGreaterThan(0);
     for (const request of appView) {
-      for (const header of ['x-did', 'x-timestamp', 'x-nonce', 'x-signature']) expect(request.headers[header]).toBeUndefined();
+      for (const header of ['x-did', 'x-timestamp', 'x-nonce', 'x-signature'])
+        expect(request.headers[header]).toBeUndefined();
     }
   });
 
   // Extra X-9 (the A2A result notice, the service result, the plane's Tier 1 runner)
   it('the A2A result notice, the service result and the Tier 1 runner go to Brain through the signed fetch boot hands the workflow plane', () => {
-    const plane = readFileSync(path.join(__dirname, '..', 'src', 'workflow', 'wire_workflow_plane.ts'), 'utf8');
+    const plane = readFileSync(
+      path.join(__dirname, '..', 'src', 'workflow', 'wire_workflow_plane.ts'),
+      'utf8',
+    );
     const boot = readFileSync(path.join(__dirname, '..', 'src', 'boot.ts'), 'utf8');
     for (const route of ['/api/v1/chat/a2a-result', '/api/v1/chat/service-result']) {
       const at = plane.indexOf(`\${brainUrl}${route}`);
@@ -137,7 +168,9 @@ describe('Core’s Brain calls carry Core’s signature (notes M2 preconditions)
     // No Brain URL is fetched any other way in the plane.
     expect(plane).not.toMatch(/[^A-Za-z]fetch\(\s*`\$\{brainUrl\}/);
     // The plane's Tier 1 runner gets the same signed fetch.
-    expect(plane).toMatch(/makeHttpTier1Runner\(\{\s*brainUrl,\s*logger,\s*fetchImpl:\s*brainFetch\s*\}\)/);
+    expect(plane).toMatch(
+      /makeHttpTier1Runner\(\{\s*brainUrl,\s*logger,\s*fetchImpl:\s*brainFetch\s*\}\)/,
+    );
     // Boot hands the plane the signed fetch it built from Core's service key.
     expect(boot).toMatch(/brainFetch = createSignedBrainFetch\(/);
     const wire = boot.slice(boot.indexOf('wiredWorkflow = wireWorkflowPlane({'));
@@ -148,7 +181,11 @@ describe('Core’s Brain calls carry Core’s signature (notes M2 preconditions)
   it('in the booted server, the ask bridge and service search reach Brain signed by the DID Core names to Brain', async () => {
     const originalEnv = { ...process.env };
     const dir = mkdtempSync(path.join(tmpdir(), 'lane2-brain-boot-'));
-    const quiet = [jest.spyOn(console, 'log'), jest.spyOn(console, 'warn'), jest.spyOn(console, 'error')];
+    const quiet = [
+      jest.spyOn(console, 'log'),
+      jest.spyOn(console, 'warn'),
+      jest.spyOn(console, 'error'),
+    ];
     for (const spy of quiet) spy.mockImplementation(() => undefined);
     Object.assign(process.env, {
       DINA_VAULT_DIR: dir,
@@ -175,27 +212,48 @@ describe('Core’s Brain calls carry Core’s signature (notes M2 preconditions)
       const post = (url: string, body: unknown, seed: Uint8Array, did: string) => {
         const raw = JSON.stringify(body);
         const headers = signRequest('POST', url, '', new TextEncoder().encode(raw), seed, did);
-        return booted.app.inject({ method: 'POST', url, headers: { ...headers, 'content-type': 'application/json' }, payload: raw });
+        return booted.app.inject({
+          method: 'POST',
+          url,
+          headers: { ...headers, 'content-type': 'application/json' },
+          payload: raw,
+        });
       };
-      const asked = await post('/api/v1/ask', { question: 'When is the next bus?' }, cliSeed, cliDid);
+      const asked = await post(
+        '/api/v1/ask',
+        { question: 'When is the next bus?' },
+        cliSeed,
+        cliDid,
+      );
       expect(asked.statusCode).toBeLessThan(300);
-      const searched = await post('/v1/agent/service/search', { session_id: session.sessionId, capability: 'eta_query' }, agentSeed, agentDid);
+      const searched = await post(
+        '/v1/agent/service/search',
+        { session_id: session.sessionId, capability: 'eta_query' },
+        agentSeed,
+        agentDid,
+      );
       expect(searched.statusCode).toBeLessThan(300);
       const end = Date.now() + 5_000;
       const paths = () => seen.map((r) => r.path);
-      while (!(paths().includes('/api/v1/ask') && paths().includes('/api/v1/internal/service/search'))) {
+      while (
+        !(paths().includes('/api/v1/ask') && paths().includes('/api/v1/internal/service/search'))
+      ) {
         if (Date.now() > end) throw new Error(`Brain saw only ${JSON.stringify(paths())}`);
         await new Promise((resolve) => setTimeout(resolve, 10));
       }
-      const brainBound = seen.filter((r) => r.path === '/api/v1/ask' || r.path === '/api/v1/internal/service/search');
-      for (const request of brainBound) expect([request.path, brainAccepts(request, coreDid ?? '')]).toEqual([request.path, true]);
+      const brainBound = seen.filter(
+        (r) => r.path === '/api/v1/ask' || r.path === '/api/v1/internal/service/search',
+      );
+      for (const request of brainBound)
+        expect([request.path, brainAccepts(request, coreDid ?? '')]).toEqual([request.path, true]);
       // Control: the same request, checked against another DID, is refused.
       expect(brainAccepts(brainBound[0] as Seen, CORE_DID)).toBe(false);
     } finally {
       await booted.app.close();
       rmSync(dir, { recursive: true, force: true });
       for (const k of Object.keys(process.env)) Reflect.deleteProperty(process.env, k);
-      for (const [k, v] of Object.entries(originalEnv)) if (typeof v === 'string') process.env[k] = v;
+      for (const [k, v] of Object.entries(originalEnv))
+        if (typeof v === 'string') process.env[k] = v;
       resetMiddlewareState();
       resetCallerTypeState();
       for (const spy of quiet) spy.mockRestore();

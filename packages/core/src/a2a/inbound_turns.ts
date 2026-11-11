@@ -32,12 +32,7 @@
  * `input_not_received`.
  */
 
-import {
-  canonicalize,
-  isPlainObject,
-  type JsonRpcId,
-  type JsonValue,
-} from '@dina/a2a';
+import { canonicalize, isPlainObject, type JsonRpcId, type JsonValue } from '@dina/a2a';
 import {
   parseServiceQueryExecutionPayload,
   pinnedSchemaProblems,
@@ -58,7 +53,13 @@ import {
   type InboundQuestion,
   type InputRequest,
 } from './inbound_view';
-import { ownedOperation, rpcError, slowDown, type GatewayAnswer, type InboundRuntime } from './ingress_common';
+import {
+  ownedOperation,
+  rpcError,
+  slowDown,
+  type GatewayAnswer,
+  type InboundRuntime,
+} from './ingress_common';
 import { addPushConfig, MAX_PUSH_CONFIGS_PER_TASK, type PushConfigInput } from './push_configs';
 import { checkReceipt, insertReceipt } from './receipts';
 import { getA2ARuntime, getA2AStore } from './runtime';
@@ -95,7 +96,8 @@ export function parseInputRequest(raw: unknown): InputRequest | null {
   if (!isPlainObject(raw)) return null;
   if (Object.keys(raw).sort().join(',') !== 'input_schema,prompt') return null;
   const { prompt, input_schema: schema } = raw;
-  if (typeof prompt !== 'string' || prompt.trim() === '' || prompt.length > MAX_INPUT_PROMPT_CHARS) return null;
+  if (typeof prompt !== 'string' || prompt.trim() === '' || prompt.length > MAX_INPUT_PROMPT_CHARS)
+    return null;
   if (CONTROL_RE.test(prompt)) return null;
   if (!isPlainObject(schema) || schema.type !== 'object') return null;
   // A constraint Core's validator would skip cannot be what stands between
@@ -112,9 +114,14 @@ export function parseInputRequest(raw: unknown): InputRequest | null {
 }
 
 /** The answers a round's child runs with, read off its payload. */
-function continuationOfChild(rt: InboundCore, childId: string): ServiceExecutionContinuation | undefined {
+function continuationOfChild(
+  rt: InboundCore,
+  childId: string,
+): ServiceExecutionContinuation | undefined {
   const child = rt.a2a.workflow.store().getById(childId);
-  return child === null ? undefined : parseServiceQueryExecutionPayload(child.payload)?.continuation;
+  return child === null
+    ? undefined
+    : parseServiceQueryExecutionPayload(child.payload)?.continuation;
 }
 
 // ---------------------------------------------------------------- asking
@@ -135,29 +142,50 @@ export function requestInboundInputWith(
   const request = parseInputRequest(args.request);
   if (request === null) return { kind: 'refused', reason: 'request_malformed' };
   return core.a2a.store.transaction((): InputRequestVerdict => {
-    const refuse = (reason: InputRequestRefusal): InputRequestVerdict => ({ kind: 'refused', reason });
+    const refuse = (reason: InputRequestRefusal): InputRequestVerdict => ({
+      kind: 'refused',
+      reason,
+    });
     const fresh = core.a2a.store.getTask(op.id);
-    if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== args.taskId) return refuse('operation_settled');
+    if (fresh === null || fresh.state !== 'open' || fresh.internal_id !== args.taskId)
+      return refuse('operation_settled');
     if (link.pep_did !== null && link.pep_did !== undefined && link.pep_did !== args.claimantDid) {
       return refuse('not_the_pinned_runner');
     }
     const snapshot = readInboundSnapshot(fresh);
-    if (snapshot === null || snapshot.executor.kind === 'plugin') return refuse('executor_cannot_ask');
-    const permits = core.a2a.store.permitsOf(fresh.id).filter((p) => p.execution_child_id === args.taskId);
+    if (snapshot === null || snapshot.executor.kind === 'plugin')
+      return refuse('executor_cannot_ask');
+    const permits = core.a2a.store
+      .permitsOf(fresh.id)
+      .filter((p) => p.execution_child_id === args.taskId);
     if (fresh.effect_phase === 'effect_started' || permits.some((p) => p.state === 'consumed')) {
       return refuse('effect_started');
     }
     if (link.generation >= MAX_INBOUND_ROUNDS - 1) return refuse('too_many_rounds');
     const now = core.a2a.nowMs();
     const expiresAtSec = Math.floor(now / 1000) + INBOUND_INPUT_DEADLINE_SECONDS;
-    if (!core.a2a.workflow.store().parkForInput(args.taskId, args.claimantDid, args.claimId, now, expiresAtSec)) {
+    if (
+      !core.a2a.workflow
+        .store()
+        .parkForInput(args.taskId, args.claimantDid, args.claimId, now, expiresAtSec)
+    ) {
       return refuse('claim_lost');
     }
     for (const permit of permits) {
       if (permit.state === 'minted') core.a2a.store.voidPermit(permit.permit_id, 'input_required');
     }
-    const question: InboundQuestion = { ...request, round: link.generation, asked_at: now, expires_at: expiresAtSec * 1000 };
-    core.a2a.store.updateTask(fresh.id, ['open'], { input_required_json: JSON.stringify(question) }, now);
+    const question: InboundQuestion = {
+      ...request,
+      round: link.generation,
+      asked_at: now,
+      expires_at: expiresAtSec * 1000,
+    };
+    core.a2a.store.updateTask(
+      fresh.id,
+      ['open'],
+      { input_required_json: JSON.stringify(question) },
+      now,
+    );
     recordInboundChange(core, fresh.id);
     return { kind: 'parked', question };
   });
@@ -183,7 +211,9 @@ export function requestInboundInput(args: {
 
 // ---------------------------------------------------------------- answering
 
-export type ContinuationOutcome = { kind: 'answer'; answer: GatewayAnswer } | { kind: 'continued'; op: A2ATaskRow };
+export type ContinuationOutcome =
+  | { kind: 'answer'; answer: GatewayAnswer }
+  | { kind: 'continued'; op: A2ATaskRow };
 
 /**
  * A SendMessage that names a task: the caller's answer to its question
@@ -215,17 +245,29 @@ export function continueInboundCall(
   // The receipt decides before anything else may: the same answer again
   // gets the task back, whatever it is doing now.
   const now = rt.a2a.nowMs();
-  const receipt = checkReceipt(rt.a2a.store, { principal, operation: 'SendMessage', messageId }, preHash);
-  if (receipt.kind === 'conflict') return answer(rpcError(id, 'invalidParams', 'message_id_reused'));
+  const receipt = checkReceipt(
+    rt.a2a.store,
+    { principal, operation: 'SendMessage', messageId },
+    preHash,
+  );
+  if (receipt.kind === 'conflict')
+    return answer(rpcError(id, 'invalidParams', 'message_id_reused'));
   if (receipt.kind === 'replay') {
     if (!rt.budgets.chargeReplay(principal, now)) return answer(slowDown());
-    const replayed = rt.a2a.store.getTaskByExternal('inbound', principal, receipt.receipt.mapped_external_id);
-    return replayed === null ? answer(rpcError(id, 'internalError')) : { kind: 'continued', op: replayed };
+    const replayed = rt.a2a.store.getTaskByExternal(
+      'inbound',
+      principal,
+      receipt.receipt.mapped_external_id,
+    );
+    return replayed === null
+      ? answer(rpcError(id, 'internalError'))
+      : { kind: 'continued', op: replayed };
   }
   // An answer reads the call, so it ends one that lost its authority (notes
   // M4 step 2: the first read, claim or sweep that finds it), before any
   // budget is spent: the caller hears it is no longer asking, never WORKING.
-  if (endLostEgress(rt, op) !== null) return answer(rpcError(id, 'unsupportedOperation', 'task_not_awaiting_input'));
+  if (endLostEgress(rt, op) !== null)
+    return answer(rpcError(id, 'unsupportedOperation', 'task_not_awaiting_input'));
   const question = inboundQuestionOf(op);
   if (op.state !== 'open' || question === null || !childAwaiting(rt, op)) {
     return answer(rpcError(id, 'unsupportedOperation', 'task_not_awaiting_input'));
@@ -237,8 +279,12 @@ export function continueInboundCall(
   // a `__proto__` member, so the answer canonicalizes.
   const input = singleDataPart(message.parts);
   if (input === null) return answer(rpcError(id, 'invalidParams', 'input_not_one_data_part'));
-  if (!validateAgainstSchema(input, question.input_schema).ok) return answer(rpcError(id, 'invalidParams', 'input_invalid'));
-  if (args.pushConfig !== undefined && rt.a2a.store.pushConfigsOf(op.id).length >= MAX_PUSH_CONFIGS_PER_TASK) {
+  if (!validateAgainstSchema(input, question.input_schema).ok)
+    return answer(rpcError(id, 'invalidParams', 'input_invalid'));
+  if (
+    args.pushConfig !== undefined &&
+    rt.a2a.store.pushConfigsOf(op.id).length >= MAX_PUSH_CONFIGS_PER_TASK
+  ) {
     return answer(rpcError(id, 'invalidParams', 'too_many_push_configs'));
   }
   // A new round is new work: it spends the principal's budget.
@@ -247,7 +293,8 @@ export function continueInboundCall(
   const continued = rt.a2a.store.transaction((): A2ATaskRow | null => {
     const fresh = rt.a2a.store.getTask(op.id);
     const asked = fresh === null ? null : inboundQuestionOf(fresh);
-    if (fresh === null || fresh.state !== 'open' || asked === null || fresh.internal_id === null) return null;
+    if (fresh === null || fresh.state !== 'open' || asked === null || fresh.internal_id === null)
+      return null;
     const waiting = fresh.internal_id;
     if (!childAwaiting(rt, fresh)) return null;
     const snapshot = readInboundSnapshot(fresh);
@@ -258,7 +305,12 @@ export function continueInboundCall(
     // moves it wins, and any other finds the task no longer asking.
     if (fresh.continuation_generation !== asked.round) return null;
     const round = asked.round + 1;
-    rt.a2a.store.updateTask(fresh.id, ['open'], { continuation_generation: round, input_required_json: null }, now);
+    rt.a2a.store.updateTask(
+      fresh.id,
+      ['open'],
+      { continuation_generation: round, input_required_json: null },
+      now,
+    );
     const earlier = continuationOfChild(rt, waiting)?.turns ?? [];
     const turns = [...earlier, { prompt: asked.prompt, input_schema: asked.input_schema, input }];
     // The call's child becomes the next round in this commit, so a later
@@ -287,11 +339,13 @@ export function continueInboundCall(
       created_at: now,
     });
     // An ended call has nothing more to deliver.
-    if (args.pushConfig !== undefined && !ended) addPushConfig(rt.a2a.store, fresh.id, args.pushConfig, now);
+    if (args.pushConfig !== undefined && !ended)
+      addPushConfig(rt.a2a.store, fresh.id, args.pushConfig, now);
     recordInboundChange(rt, fresh.id);
     return rt.a2a.store.getTask(fresh.id);
   });
-  if (continued === null) return answer(rpcError(id, 'unsupportedOperation', 'task_not_awaiting_input'));
+  if (continued === null)
+    return answer(rpcError(id, 'unsupportedOperation', 'task_not_awaiting_input'));
   return { kind: 'continued', op: continued };
 }
 

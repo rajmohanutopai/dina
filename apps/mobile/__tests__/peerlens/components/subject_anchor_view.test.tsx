@@ -38,11 +38,7 @@ describe('SubjectAnchorView', () => {
 
   it('a11y label combines title and subtitle when both present', () => {
     const { getByLabelText } = render(
-      <SubjectAnchorView
-        title="The Bistro"
-        kind="place"
-        category="place/restaurant"
-      />,
+      <SubjectAnchorView title="The Bistro" kind="place" category="place/restaurant" />,
     );
     // `deriveCardSubtitle` humanises the first segment ('place' →
     // 'Place') because 'place' isn't in the generic-prefix set
@@ -67,12 +63,7 @@ describe('SubjectAnchorView', () => {
 
   it('respects a custom testID', () => {
     const { getByTestId } = render(
-      <SubjectAnchorView
-        title="Custom"
-        kind="product"
-        category={null}
-        testID="my-anchor"
-      />,
+      <SubjectAnchorView title="Custom" kind="product" category={null} testID="my-anchor" />,
     );
     expect(getByTestId('my-anchor')).toBeTruthy();
   });

@@ -3,9 +3,7 @@
  * the demo plan through real-shaped side effects without a running app / LLM.
  */
 
-import {
-  resetKVStore,
-} from '../../../core/src/kv/store';
+import { resetKVStore } from '../../../core/src/kv/store';
 import { DEMO_STEPS, DEMO_SALON, DEMO_TASK, type DemoStep } from '../../src/guided_demo/content';
 import {
   D2D_MESSAGE_STEP,
@@ -164,9 +162,7 @@ describe('buildDemoPlan', () => {
     expect(plan[plan.length - 2]).toMatchObject({ kind: 'salon_booking', id: SALON_BOOKING_STEP });
     expect(plan[plan.length - 1]).toMatchObject({ kind: 'salon_reply', id: SALON_REPLY_STEP });
     // content step ids mirror 1:1
-    expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.id)).toEqual(
-      DEMO_STEPS.map((s) => s.id),
-    );
+    expect(plan.slice(0, DEMO_STEPS.length).map((a) => a.id)).toEqual(DEMO_STEPS.map((s) => s.id));
     // exactly one recommend step (chair pick); the chair-availability service
     // step was removed in favour of the salon finale.
     expect(RECOMMEND_STEPS).toHaveLength(1);

@@ -131,10 +131,7 @@ describe('submitPlcOperation — 4xx classification', () => {
   it('throws PLCSubmitError(client) on HTTP 400 — does NOT retry', async () => {
     const { fetch, calls } = makeFakeFetch([{ status: 400, body: 'bad sig' }]);
     await expect(
-      submitPlcOperation(
-        { did: DID, signedOperation: SIGNED_OP },
-        { fetch, sleep: noopSleep },
-      ),
+      submitPlcOperation({ did: DID, signedOperation: SIGNED_OP }, { fetch, sleep: noopSleep }),
     ).rejects.toMatchObject({
       kind: 'client',
       status: 400,
@@ -175,10 +172,7 @@ describe('submitPlcOperation — 5xx + network retry', () => {
   });
 
   it('retries on network error (fetch throws)', async () => {
-    const { fetch, calls } = makeFakeFetch([
-      new Error('ECONNREFUSED'),
-      { status: 200 },
-    ]);
+    const { fetch, calls } = makeFakeFetch([new Error('ECONNREFUSED'), { status: 200 }]);
     const result = await submitPlcOperation(
       { did: DID, signedOperation: SIGNED_OP },
       { fetch, sleep: noopSleep },
@@ -189,10 +183,7 @@ describe('submitPlcOperation — 5xx + network retry', () => {
   });
 
   it('retries on unexpected non-2xx-non-4xx-non-5xx (e.g. 3xx)', async () => {
-    const { fetch } = makeFakeFetch([
-      { status: 302, body: 'see other' },
-      { status: 200 },
-    ]);
+    const { fetch } = makeFakeFetch([{ status: 302, body: 'see other' }, { status: 200 }]);
     const result = await submitPlcOperation(
       { did: DID, signedOperation: SIGNED_OP },
       { fetch, sleep: noopSleep },
@@ -223,11 +214,7 @@ describe('submitPlcOperation — 5xx + network retry', () => {
   });
 
   it('respects custom maxAttempts', async () => {
-    const { fetch, calls } = makeFakeFetch([
-      { status: 503 },
-      { status: 503 },
-      { status: 503 },
-    ]);
+    const { fetch, calls } = makeFakeFetch([{ status: 503 }, { status: 503 }, { status: 503 }]);
     const err = await submitPlcOperation(
       { did: DID, signedOperation: SIGNED_OP },
       { fetch, sleep: noopSleep, maxAttempts: 3 },
@@ -238,10 +225,7 @@ describe('submitPlcOperation — 5xx + network retry', () => {
   });
 
   it('respects custom backoffBaseMs', async () => {
-    const { fetch } = makeFakeFetch([
-      { status: 503 },
-      { status: 200 },
-    ]);
+    const { fetch } = makeFakeFetch([{ status: 503 }, { status: 200 }]);
     await submitPlcOperation(
       { did: DID, signedOperation: SIGNED_OP },
       { fetch, sleep: noopSleep, backoffBaseMs: 10 },
@@ -276,10 +260,7 @@ describe('submitPlcOperation — input validation', () => {
     const { fetch } = makeFakeFetch([{ status: 200 }]);
     for (const bad of ['', undefined as unknown as string, 123 as unknown as string]) {
       await expect(
-        submitPlcOperation(
-          { did: bad, signedOperation: SIGNED_OP },
-          { fetch, sleep: noopSleep },
-        ),
+        submitPlcOperation({ did: bad, signedOperation: SIGNED_OP }, { fetch, sleep: noopSleep }),
       ).rejects.toMatchObject({ kind: 'invalid_input' });
     }
   });
@@ -303,10 +284,7 @@ describe('submitPlcOperation — input validation', () => {
       'did:plc:abc def',
     ]) {
       await expect(
-        submitPlcOperation(
-          { did: bad, signedOperation: SIGNED_OP },
-          { fetch, sleep: noopSleep },
-        ),
+        submitPlcOperation({ did: bad, signedOperation: SIGNED_OP }, { fetch, sleep: noopSleep }),
       ).rejects.toMatchObject({ kind: 'invalid_input' });
     }
   });

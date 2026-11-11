@@ -142,7 +142,11 @@ function compose(
     },
     emitDelegation: async () => undefined,
     verifyReceipt: () => true,
-    buildClassificationView: (m) => ({ title: `run:${m.run_id}`, body: '', content_digest: m.dedup_key }),
+    buildClassificationView: (m) => ({
+      title: `run:${m.run_id}`,
+      body: '',
+      content_digest: m.dedup_key,
+    }),
     runSpool: spool,
     deviceSealer: new NaclDeviceSealer(getPublicKey(seed), seed),
     onResponseLost: (run: RunRecord, res: ReservationRecord, reason: string) => {
@@ -154,13 +158,23 @@ function compose(
     ...(opts.messageShredWindowMs !== undefined
       ? { messageShredWindowMs: opts.messageShredWindowMs }
       : {}),
-    ...(opts.reconcilePageSize !== undefined
-      ? { reconcilePageSize: opts.reconcilePageSize }
-      : {}),
+    ...(opts.reconcilePageSize !== undefined ? { reconcilePageSize: opts.reconcilePageSize } : {}),
     nowMsFn: () => NOW,
   });
 
-  return { plane, cipher, runs, reservations, messages, receipts, spool, erasure, lostEvents, queries, now: () => NOW };
+  return {
+    plane,
+    cipher,
+    runs,
+    reservations,
+    messages,
+    receipts,
+    spool,
+    erasure,
+    lostEvents,
+    queries,
+    now: () => NOW,
+  };
 }
 
 afterEach(() => {
@@ -229,7 +243,10 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     const meta = parseHeldMessageMeta(res.held_message_json);
     expect(meta?.message_id).toBe(msg.message_id);
     // Durably staged: spool blob present + staging leaf key live.
-    const ref = JSON.parse(res.sealed_response_ref ?? '') as { spool_id: string; staged_key_id: string };
+    const ref = JSON.parse(res.sealed_response_ref ?? '') as {
+      spool_id: string;
+      staged_key_id: string;
+    };
     expect(c.spool.peek(ref.spool_id)).not.toBeNull();
     expect(ref.staged_key_id.startsWith(`staged:${msg.message_id}:`)).toBe(true);
     expect(c.erasure.has(ref.staged_key_id)).toBe(true);
@@ -330,7 +347,10 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     const storedRun = c.runs.getById(run.run_id);
     if (meta === null || storedRun === null) throw new Error('held meta / run missing');
     c.messages.create(buildEnqueuedMessageRow(meta, storedRun, res, 'content-x', NOW));
-    const heldRef = JSON.parse(res.sealed_response_ref ?? '') as { spool_id: string; staged_key_id: string };
+    const heldRef = JSON.parse(res.sealed_response_ref ?? '') as {
+      spool_id: string;
+      staged_key_id: string;
+    };
 
     c.cipher.open('general');
     const report = c.plane.replayHeldForPersona('general');
@@ -394,7 +414,11 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
     expect(
       c.reservations.commit(
         held.reservation_id,
-        { message_id: meta.message_id, dedup_key: meta.dedup_key, content_digest: meta.content_digest },
+        {
+          message_id: meta.message_id,
+          dedup_key: meta.dedup_key,
+          content_digest: meta.content_digest,
+        },
         NOW,
         'held_by_lock',
       ),
@@ -598,9 +622,7 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
 
     const report = await c.plane.engine.pacerTick();
     expect(report.reserved).toBe(1);
-    const fresh = c.reservations
-      .listByRun(run.run_id)
-      .filter((r) => r.state === 'reserved');
+    const fresh = c.reservations.listByRun(run.run_id).filter((r) => r.state === 'reserved');
     expect(fresh).toHaveLength(1);
     // The new slot targets the NEXT position — never the skipped cursor 0.
     expect(fresh[0].cursor).toBe(held.cursor + 1);
@@ -665,7 +687,9 @@ describe('R5-01 — held_by_lock end-to-end (§7)', () => {
       updated_at: NOW,
     });
     // First-writer: the receipt still points at card A; A's key survives.
-    expect(c.receipts.getByDelegationId('dupe')?.result_card_staged_ref).toBe(JSON.stringify(cardA));
+    expect(c.receipts.getByDelegationId('dupe')?.result_card_staged_ref).toBe(
+      JSON.stringify(cardA),
+    );
     expect(c.erasure.has(cardA.staged_key_id ?? '')).toBe(true);
   });
 
@@ -829,7 +853,10 @@ describe('CA-9 — classified→Activity notification reconciliation on boot', (
     // Page size 2 with 3 classified messages: a fixed oldest-N window would
     // re-fire only the first page every boot and never reach the 3rd. The
     // keyset loop must re-fire all three in ONE recoverOnBoot.
-    const c = compose({ onMessageClassified: (m) => fired.push(m.message_id), reconcilePageSize: 2 });
+    const c = compose({
+      onMessageClassified: (m) => fired.push(m.message_id),
+      reconcilePageSize: 2,
+    });
     const run = c.plane.runService.create(pullRun());
     seedMessageWithPayload(c, run.run_id, 'a', { state: 'classified', created_at: NOW + 1 });
     seedMessageWithPayload(c, run.run_id, 'b', { state: 'classified', created_at: NOW + 2 });

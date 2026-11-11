@@ -14,7 +14,6 @@ import {
   allTasksHealthy,
   configureNativeTaskManager,
   resetBackgroundTasks,
-  type TaskRegistration,
 } from '../../src/hooks/useBackgroundTasks';
 
 describe('Background Tasks Hook (9.8 + 9.9)', () => {

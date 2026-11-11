@@ -28,7 +28,6 @@ import {
 } from '../../src/chat/response_types';
 import { resetThreads } from '../../src/chat/thread';
 
-
 describe('Typed response constructors', () => {
   it('plainResponse carries kind + text + plain format', () => {
     const r = plainResponse('hello');

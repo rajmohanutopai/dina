@@ -73,7 +73,9 @@ function scan(fileName: string, source: string): Findings {
         options !== undefined &&
         ts.isObjectLiteralExpression(options) &&
         options.properties.some(
-          (p) => (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) && p.name.getText() === 'fetch',
+          (p) =>
+            (ts.isPropertyAssignment(p) || ts.isShorthandPropertyAssignment(p)) &&
+            p.name.getText() === 'fetch',
         );
       if (!passesFetch) found.appViewClientWithoutFetch = true;
     }
@@ -124,9 +126,12 @@ describe('the web page reaches Brain only through the runtime-config helpers', (
     expect(offenders).toEqual([]);
     const shape = (code: string): Findings => scan('x.ts', code);
     expect(shape('const u = await appViewBase();\nawait fetch(u);').callsRaw).toBe(true);
-    expect(shape('new AppViewClient({ appViewURL: await appViewBase() });').appViewClientWithoutFetch).toBe(true);
     expect(
-      shape('new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });').appViewClientWithoutFetch,
+      shape('new AppViewClient({ appViewURL: await appViewBase() });').appViewClientWithoutFetch,
+    ).toBe(true);
+    expect(
+      shape('new AppViewClient({ appViewURL: await appViewBase(), fetch: appViewFetch });')
+        .appViewClientWithoutFetch,
     ).toBe(false);
   });
 

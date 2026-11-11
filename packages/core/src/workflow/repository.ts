@@ -30,7 +30,6 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 import { isA2ALane } from '@dina/a2a';
 import { LOCAL_RUNNER_NAME, isPluginLane, parseServiceQueryExecutionPayload } from '@dina/protocol';
 
-
 import { recordDecisionSafe } from '../plugins/decisions';
 import {
   parseReasoningEnvelope,
@@ -351,7 +350,13 @@ export interface WorkflowRepository {
    * expiry set to `expiresAtSec`, after which the expiry sweep fails it.
    * Returns whether the task moved.
    */
-  parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean;
+  parkForInput(
+    id: string,
+    agentDID: string,
+    claimId: string | undefined,
+    nowMs: number,
+    expiresAtSec: number,
+  ): boolean;
   /**
    * REAL_LIFE_FIXES §9: point a running service query at the next provider
    * (new payload, new deadline) instead of letting it expire. The task, and
@@ -1448,7 +1453,13 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
     );
   }
 
-  parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean {
+  parkForInput(
+    id: string,
+    agentDID: string,
+    claimId: string | undefined,
+    nowMs: number,
+    expiresAtSec: number,
+  ): boolean {
     const claimClause = claimId !== undefined ? ' AND claim_id = ?' : '';
     const params: unknown[] = [expiresAtSec, nowMs, id, agentDID];
     if (claimId !== undefined) params.push(claimId);
@@ -1625,7 +1636,14 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         claimId !== undefined
           ? `state = 'running' AND claim_id = ?`
           : `state NOT IN ${TERMINAL_STATES_SQL}`;
-      const params: unknown[] = [resultJSON, resultSummary, agentDID, nowMs, bridgeStash ?? null, id];
+      const params: unknown[] = [
+        resultJSON,
+        resultSummary,
+        agentDID,
+        nowMs,
+        bridgeStash ?? null,
+        id,
+      ];
       if (claimId !== undefined) params.push(claimId);
       const affected = this.db.run(
         `UPDATE workflow_tasks
@@ -1924,7 +1942,9 @@ export class SQLiteWorkflowRepository implements WorkflowRepository {
         // has an unknown outcome, never "no response".
         const toUnknown =
           (envelope !== null && isDeclaredEffectful(envelope)) ||
-          (t.kind === 'service_query' && t.status === 'running' && serviceQueryMayHaveActed(t.payload));
+          (t.kind === 'service_query' &&
+            t.status === 'running' &&
+            serviceQueryMayHaveActed(t.payload));
         const affected = this.db.run(
           toUnknown
             ? `UPDATE workflow_tasks
@@ -2362,7 +2382,11 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
         // by the one rule the SQL store uses.
         return requested === undefined || !isReservedLane(requested);
       }
-      if (runnerFilter === LOCAL_RUNNER_NAME || isPluginLane(runnerFilter) || isA2ALane(runnerFilter)) {
+      if (
+        runnerFilter === LOCAL_RUNNER_NAME ||
+        isPluginLane(runnerFilter) ||
+        isA2ALane(runnerFilter)
+      ) {
         return requested === runnerFilter; // exact only — no untagged convenience
       }
       return requested === undefined || requested === '' || requested === runnerFilter;
@@ -2594,7 +2618,13 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
     return true;
   }
 
-  parkForInput(id: string, agentDID: string, claimId: string | undefined, nowMs: number, expiresAtSec: number): boolean {
+  parkForInput(
+    id: string,
+    agentDID: string,
+    claimId: string | undefined,
+    nowMs: number,
+    expiresAtSec: number,
+  ): boolean {
     const t = this.tasks.get(id);
     if (t === undefined) return false;
     if (t.status !== 'running' || t.agent_did !== agentDID) return false;
@@ -2906,7 +2936,9 @@ export class InMemoryWorkflowRepository implements WorkflowRepository {
         // has an unknown outcome, never "no response".
         const toUnknown =
           (envelope !== null && isDeclaredEffectful(envelope)) ||
-          (t.kind === 'service_query' && t.status === 'running' && serviceQueryMayHaveActed(t.payload));
+          (t.kind === 'service_query' &&
+            t.status === 'running' &&
+            serviceQueryMayHaveActed(t.payload));
         t.status = toUnknown ? 'outcome_unknown' : 'failed';
         t.error = toUnknown ? 'expired mid-run — external outcome unknown' : 'expired';
         t.updated_at = nowMs;
@@ -3139,7 +3171,9 @@ function optionalStr(v: string | undefined): string | null {
  * the phone's approval inbox; a plugin card that only appeared on a manual
  * pull-to-refresh could expire unseen.
  */
-export function isOwnerDecisionTask(task: Pick<WorkflowTask, 'kind' | 'status' | 'payload'>): boolean {
+export function isOwnerDecisionTask(
+  task: Pick<WorkflowTask, 'kind' | 'status' | 'payload'>,
+): boolean {
   if (task.kind === 'approval') return true;
   if (task.kind !== 'delegation' || task.status !== 'pending_approval') return false;
   try {

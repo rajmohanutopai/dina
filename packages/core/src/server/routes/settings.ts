@@ -20,7 +20,10 @@ import { ownerDidForRequest } from './owner_guard';
 import type { CoreRouter } from '../router';
 
 export function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): void {
-  router.get('/v1/settings/guard-modes', async () => ({ status: 200, body: await getGuardModes() }));
+  router.get('/v1/settings/guard-modes', async () => ({
+    status: 200,
+    body: await getGuardModes(),
+  }));
 
   router.put('/v1/settings/guard-modes', async (req) => {
     const owner = ownerDidForRequest(req, ownerCapability);
@@ -34,7 +37,10 @@ export function registerSettingsRoutes(router: CoreRouter, ownerCapability?: str
     return { status: 200, body: out };
   });
 
-  router.get('/v1/settings/owner-timezone', async () => ({ status: 200, body: await getOwnerTimeZone() }));
+  router.get('/v1/settings/owner-timezone', async () => ({
+    status: 200,
+    body: await getOwnerTimeZone(),
+  }));
 
   router.put('/v1/settings/owner-timezone', async (req) => {
     const owner = ownerDidForRequest(req, ownerCapability);

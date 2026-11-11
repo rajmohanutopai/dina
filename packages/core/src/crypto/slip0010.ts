@@ -22,7 +22,6 @@ import { HARDENED_OFFSET as HARDENED } from '../constants';
 
 import { getPublicKey } from './ed25519';
 
-
 export interface DerivedKey {
   privateKey: Uint8Array; // 32 bytes
   publicKey: Uint8Array; // 32 bytes (Ed25519) or 33 bytes (secp256k1 compressed)
@@ -64,7 +63,9 @@ function parsePath(path: string): number[] {
     // hardened offset into a different key.
     const numStr = seg.slice(0, -1);
     if (!/^(?:0|[1-9][0-9]{0,9})$/.test(numStr) || Number(numStr) >= HARDENED_OFFSET) {
-      throw new Error(`slip0010: invalid index "${seg}" — must be a non-negative integer below 2^31`);
+      throw new Error(
+        `slip0010: invalid index "${seg}" — must be a non-negative integer below 2^31`,
+      );
     }
     const num = Number(numStr);
 
@@ -241,7 +242,12 @@ export function derivePathSecp256k1(seed: Uint8Array, path: string): DerivedKey 
 // ---------------------------------------------------------------
 
 function serIndex(index: number): Uint8Array {
-  return new Uint8Array([(index >>> 24) & 0xff, (index >>> 16) & 0xff, (index >>> 8) & 0xff, index & 0xff]);
+  return new Uint8Array([
+    (index >>> 24) & 0xff,
+    (index >>> 16) & 0xff,
+    (index >>> 8) & 0xff,
+    index & 0xff,
+  ]);
 }
 
 function parse256(bytes: Uint8Array): bigint {

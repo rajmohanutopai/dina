@@ -22,12 +22,12 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { buildPluginEnvelope } from '../../../src/plugins/dispatch';
 import { ExtensionOperationBroker } from '../../../src/plugins/extension_broker';
+import { ExtensionOperationRegistry } from '../../../src/plugins/extension_ops';
 import {
   createPluginHostRuntime,
   installPluginHostRuntime,
   type HostOperationDispatcher,
 } from '../../../src/plugins/host_operations';
-import { ExtensionOperationRegistry } from '../../../src/plugins/extension_ops';
 import {
   SQLitePluginInstallRepository,
   setPluginInstallRepository,
@@ -379,7 +379,12 @@ describe('only the owner may answer', () => {
     const asAgent = { callerType: 'agent', callerDID: 'did:key:agent' } as Partial<CoreRequest>;
 
     const list = await router.handle(
-      ownerReq({ method: 'GET', path: '/v1/plugins/host-operations', ...asAgent, ownerCapability: undefined }),
+      ownerReq({
+        method: 'GET',
+        path: '/v1/plugins/host-operations',
+        ...asAgent,
+        ownerCapability: undefined,
+      }),
     );
     expect(list.status).toBe(403);
 

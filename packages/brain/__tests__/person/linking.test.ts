@@ -169,9 +169,7 @@ describe('Person Identity Linking', () => {
 
   describe('parseLLMOutput', () => {
     it('parses valid JSON', () => {
-      const result = parseLLMOutput(
-        '{"identity_links":[{"name":"Alice","confidence":"high"}]}',
-      );
+      const result = parseLLMOutput('{"identity_links":[{"name":"Alice","confidence":"high"}]}');
       expect(result.length).toBe(1);
       expect(result[0].name).toBe('Alice');
       expect(result[0].confidence).toBe('high');
@@ -275,9 +273,7 @@ describe('Person Identity Linking', () => {
     });
 
     it('returns [] when no person mentioned', () => {
-      const people: ResolvedPerson[] = [
-        { personId: 'p1', name: 'Sarah', surfaces: ['spouse'] },
-      ];
+      const people: ResolvedPerson[] = [{ personId: 'p1', name: 'Sarah', surfaces: ['spouse'] }];
       expect(expandSearchTermsFromText('random unrelated query', people)).toEqual([]);
     });
   });

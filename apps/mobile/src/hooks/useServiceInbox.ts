@@ -372,19 +372,29 @@ const MAX_RESULT_KEY_CHARS = 40;
 function moneyLine(value: unknown): string {
   if (value === null || typeof value !== 'object') return '';
   const m = value as { currency?: unknown; minor_units?: unknown };
-  if (typeof m.currency !== 'string' || typeof m.minor_units !== 'string' || !/^\d+$/.test(m.minor_units)) return '';
+  if (
+    typeof m.currency !== 'string' ||
+    typeof m.minor_units !== 'string' ||
+    !/^\d+$/.test(m.minor_units)
+  )
+    return '';
   const padded = m.minor_units.padStart(3, '0');
   return `${m.currency} ${padded.slice(0, -2)}.${padded.slice(-2)}`;
 }
 
 function oneLine(text: string, max: number): string {
-  // eslint-disable-next-line no-control-regex
-  const flat = text.replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const flat = text
+    // eslint-disable-next-line no-control-regex -- strips control characters on purpose
+    .replace(/[\u0000-\u001f\u007f\u200b-\u200f\u2028-\u202e\u2066-\u2069]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 /** The validated result of a completed plugin invocation, flattened to bounded lines. */
-export function pluginResultLines(task: Pick<WorkflowTask, 'status' | 'result' | 'payload'>): string[] | undefined {
+export function pluginResultLines(
+  task: Pick<WorkflowTask, 'status' | 'result' | 'payload'>,
+): string[] | undefined {
   if (task.status !== 'completed' || !isPluginInvocation(task)) return undefined;
   const parsed = safeParse(task.result ?? '');
   const lines: string[] = [];
@@ -395,7 +405,8 @@ export function pluginResultLines(task: Pick<WorkflowTask, 'status' | 'result' |
     }
     let shown: string;
     if (value === null || value === undefined) shown = '—';
-    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') shown = String(value);
+    else if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+      shown = String(value);
     else if (Array.isArray(value)) shown = `${value.length} item${value.length === 1 ? '' : 's'}`;
     else shown = 'details';
     // Key and value are both the runner's bytes: one clean, bounded line each.
@@ -414,16 +425,17 @@ export function pluginResultLines(task: Pick<WorkflowTask, 'status' | 'result' |
  * across two clients is policy that diverges. The lines are kept either way,
  * so a template that renders to nothing still leaves the owner an answer.
  */
-function pluginAnswer(
-  task: WorkflowTask,
-): { resultLines?: string[]; resultCard?: CardSpec } {
+function pluginAnswer(task: WorkflowTask): { resultLines?: string[]; resultCard?: CardSpec } {
   if (!isPluginInvocation(task) || task.status !== 'completed') return {};
   const card = buildPluginResultCard({
     status: task.status,
     payload: task.payload,
     ...(task.result !== undefined ? { result: task.result } : {}),
   });
-  return { resultLines: pluginResultLines(task) ?? [], ...(card !== null ? { resultCard: card } : {}) };
+  return {
+    resultLines: pluginResultLines(task) ?? [],
+    ...(card !== null ? { resultCard: card } : {}),
+  };
 }
 
 /**
@@ -479,7 +491,9 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
     { kind: 'delegation' as const, state },
   ]);
   const settled = await Promise.allSettled(
-    queries.map((q) => c.listWorkflowTasks({ kind: q.kind, state: q.state as WorkflowTask['status'], limit })),
+    queries.map((q) =>
+      c.listWorkflowTasks({ kind: q.kind, state: q.state as WorkflowTask['status'], limit }),
+    ),
   );
   const failedStates = [
     ...new Set(queries.filter((_, i) => settled[i]?.status === 'rejected').map((q) => q.state)),
@@ -496,7 +510,11 @@ export async function listResolvedApprovals(limit = 50): Promise<ResolvedInboxEn
     );
   }
   const batches = settled.map((s, i) =>
-    s.status !== 'fulfilled' ? [] : queries[i]?.kind === 'delegation' ? s.value.filter(isPluginInvocation) : s.value,
+    s.status !== 'fulfilled'
+      ? []
+      : queries[i]?.kind === 'delegation'
+        ? s.value.filter(isPluginInvocation)
+        : s.value,
   );
   const merged: ResolvedInboxEntry[] = [];
   for (const tasks of batches) {
@@ -862,9 +880,15 @@ function toEntry(task: WorkflowTask): InboxEntry {
       description: card?.reasons.join('; ') ?? '',
       requesterDID: '',
       paramsPreview: 'params' in parsed ? JSON.stringify(parsed.params, null, 2) : '',
-      ...(card !== null ? { riskLevel: card.riskLevel, grantCanSilence: card.grantCanSilence } : {}),
+      ...(card !== null
+        ? { riskLevel: card.riskLevel, grantCanSilence: card.grantCanSilence }
+        : {}),
       ...(card?.contextSummary !== undefined ? { contextSummary: card.contextSummary } : {}),
-      effect: { actionClass, retryIdempotent: parsed.effects_idempotency === 'supported', installId },
+      effect: {
+        actionClass,
+        retryIdempotent: parsed.effects_idempotency === 'supported',
+        installId,
+      },
       createdAt: task.created_at,
       ...(task.expires_at !== undefined ? { expiresAt: task.expires_at } : {}),
     };
@@ -1193,7 +1217,9 @@ function toEntry(task: WorkflowTask): InboxEntry {
     const lines: string[] = [];
     if (controls !== null && typeof controls === 'object' && !Array.isArray(controls)) {
       for (const [key, value] of Object.entries(controls as Record<string, unknown>)) {
-        lines.push(`${oneLine(key, 40)}: ${oneLine(JSON.stringify(value), MAX_RESULT_VALUE_CHARS)}`);
+        lines.push(
+          `${oneLine(key, 40)}: ${oneLine(JSON.stringify(value), MAX_RESULT_VALUE_CHARS)}`,
+        );
       }
     }
     const proposedBy = typeof parsed.proposed_by === 'string' ? parsed.proposed_by : '';
@@ -1223,7 +1249,8 @@ function toEntry(task: WorkflowTask): InboxEntry {
     // checks; the purchase-order id is Dina's own key and means nothing to
     // them. The card's description already names the supplier.
     const lines = [moneyLine(parsed.amount)];
-    if (!isLink && typeof parsed.provider_ref === 'string') lines.push(`ref ${oneLine(parsed.provider_ref, 60)}`);
+    if (!isLink && typeof parsed.provider_ref === 'string')
+      lines.push(`ref ${oneLine(parsed.provider_ref, 60)}`);
     return {
       id: task.id,
       kind: isLink ? 'order_checkout_link' : 'payment_evidence_record',
@@ -1282,7 +1309,10 @@ function toEntry(task: WorkflowTask): InboxEntry {
       serviceName: 'Tender ready',
       description: task.description ?? '',
       requesterDID: '',
-      paramsPreview: best === '' ? 'no offer within budget' : `${String(offers)} offer(s) within budget, best ${best}`,
+      paramsPreview:
+        best === ''
+          ? 'no offer within budget'
+          : `${String(offers)} offer(s) within budget, best ${best}`,
       ...(typeof parsed.tender_id === 'string' && parsed.tender_id !== ''
         ? { tenderId: oneLine(parsed.tender_id, 120) }
         : {}),
@@ -1402,7 +1432,9 @@ function readCardPolicy(raw: string): {
   const parsed = safeParse(raw);
   if (parsed.type !== 'plugin_invocation_card') return null;
   const riskLevel = normaliseRiskLevel(parsed.risk_level);
-  const reasons = Array.isArray(parsed.reasons) ? parsed.reasons.filter((r): r is string => typeof r === 'string') : [];
+  const reasons = Array.isArray(parsed.reasons)
+    ? parsed.reasons.filter((r): r is string => typeof r === 'string')
+    : [];
   if (riskLevel === undefined) return null;
   const context = readContextSummary(parsed.context);
   return {
@@ -1421,8 +1453,13 @@ function readCardPolicy(raw: string): {
 function readContextSummary(raw: unknown): { categories: string[]; itemCount: number } | null {
   if (raw === null || typeof raw !== 'object') return null;
   const value = raw as { categories?: unknown; item_count?: unknown };
-  if (!Array.isArray(value.categories) || !value.categories.every((c) => typeof c === 'string')) return null;
-  if (typeof value.item_count !== 'number' || !Number.isInteger(value.item_count) || value.item_count < 0) {
+  if (!Array.isArray(value.categories) || !value.categories.every((c) => typeof c === 'string'))
+    return null;
+  if (
+    typeof value.item_count !== 'number' ||
+    !Number.isInteger(value.item_count) ||
+    value.item_count < 0
+  ) {
     return null;
   }
   return { categories: value.categories as string[], itemCount: value.item_count };
@@ -1727,7 +1764,8 @@ function termCardEntry(
       return {
         ...base,
         capability: 'shelf space',
-        serviceName: parsed.why === 'refused' ? 'Refused by the other side' : 'Message not delivered',
+        serviceName:
+          parsed.why === 'refused' ? 'Refused by the other side' : 'Message not delivered',
         requesterDID: str(parsed.counterparty_did),
         paramsPreview:
           parsed.why === 'refused'
@@ -1758,5 +1796,11 @@ function legibleLines(parsed: Record<string, unknown>): string {
   const risks = Array.isArray(legibility.risks) ? legibility.risks.map(String) : [];
   const changed = Array.isArray(legibility.changed) ? legibility.changed.map(String) : [];
   const worth = typeof legibility.worth === 'string' ? [legibility.worth] : [];
-  return ['', `binds: ${binds}`, ...worth, ...risks, ...(changed.length > 0 ? [`changed: ${changed.join('; ')}`] : [])].join('\n');
+  return [
+    '',
+    `binds: ${binds}`,
+    ...worth,
+    ...risks,
+    ...(changed.length > 0 ? [`changed: ${changed.join('; ')}`] : []),
+  ].join('\n');
 }

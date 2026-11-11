@@ -14,11 +14,7 @@
 
 import { useEffect, useState } from 'react';
 
-import {
-  subjectGet,
-  type SubjectGetReviewer,
-  type SubjectGetResponse,
-} from '../appview_runtime';
+import { subjectGet, type SubjectGetReviewer, type SubjectGetResponse } from '../appview_runtime';
 import { displayName } from '../handle_display';
 
 import type { SubjectReview } from '../subject_card';
@@ -37,9 +33,7 @@ export interface UseSubjectDetailOptions {
   retryNonce?: number;
 }
 
-export function useSubjectDetail(
-  opts: UseSubjectDetailOptions,
-): SubjectDetailState {
+export function useSubjectDetail(opts: UseSubjectDetailOptions): SubjectDetailState {
   const { subjectId, viewerDid, enabled, retryNonce = 0 } = opts;
   const [state, setState] = useState<SubjectDetailState>({
     data: null,
@@ -60,10 +54,7 @@ export function useSubjectDetail(
       })
       .catch((err: unknown) => {
         if (cancelled) return;
-        const msg =
-          err instanceof Error
-            ? err.message
-            : "Couldn't load this subject.";
+        const msg = err instanceof Error ? err.message : "Couldn't load this subject.";
         setState({ data: null, error: msg, isLoading: false });
       });
     return () => {
@@ -132,10 +123,7 @@ function readIdentifierField(raw: unknown): string | undefined {
   return undefined;
 }
 
-function toReview(
-  r: SubjectGetReviewer,
-  ring: SubjectReview['ring'],
-): SubjectReview {
+function toReview(r: SubjectGetReviewer, ring: SubjectReview['ring']): SubjectReview {
   return {
     ring,
     // Self rows don't drill (the user is on their own profile a
@@ -154,8 +142,7 @@ function toReview(
     // the right call (showing your own trust band next to your review
     // is noise, not signal).
     reviewerTrustScore: ring === 'self' ? null : r.trustScore,
-    reviewerName:
-      ring === 'self' ? 'You' : displayName(r.handle, r.did),
+    reviewerName: ring === 'self' ? 'You' : displayName(r.handle, r.did),
     headline: splitWireText(r.attestation.text).headline,
     createdAtMs: Date.parse(r.attestation.createdAt) || Date.now(),
     attestationUri: r.attestation.uri,

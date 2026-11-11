@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 10.7
  */
 
-import { WebSocketHub, type AuthChecker, type HubConfig } from '../../src/relay/ws_hub';
+import { WebSocketHub, type HubConfig } from '../../src/relay/ws_hub';
 
 function createHub(overrides?: Partial<HubConfig>): WebSocketHub {
   const sentMessages: { clientId: string; message: string }[] = [];
@@ -76,8 +76,8 @@ describe('WebSocket Hub (10.7)', () => {
         },
       });
 
-      const c1 = hub.connect({ deviceId: 'dev-1' })!;
-      const c2 = hub.connect({ deviceId: 'dev-2' })!;
+      const _c1 = hub.connect({ deviceId: 'dev-1' })!;
+      const _c2 = hub.connect({ deviceId: 'dev-2' })!;
 
       const event = hub.broadcast('vault_updated', { persona: 'general', itemId: 'vi-1' });
 

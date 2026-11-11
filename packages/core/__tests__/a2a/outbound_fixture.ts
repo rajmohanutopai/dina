@@ -30,7 +30,11 @@ import {
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { SQLiteWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, setWorkflowService, type WorkflowServiceOptions } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  setWorkflowService,
+  type WorkflowServiceOptions,
+} from '../../src/workflow/service';
 
 import type { WorkflowTask } from '../../src/workflow/domain';
 
@@ -45,7 +49,9 @@ export function agentCard(over: Record<string, unknown> = {}): JsonObject {
   return {
     name: 'Summarizer',
     description: 'Summarizes and extracts.',
-    supportedInterfaces: [{ url: 'https://agent.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+    supportedInterfaces: [
+      { url: 'https://agent.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+    ],
     version: '1.0.0',
     capabilities: {},
     defaultInputModes: ['text/plain'],
@@ -77,7 +83,9 @@ export class LaneWorld {
   cards = new Map<string, JsonObject>();
   requests: A2AHttpRequest[] = [];
 
-  constructor(options: { withHandler?: boolean; serviceOptions?: Partial<WorkflowServiceOptions> } = {}) {
+  constructor(
+    options: { withHandler?: boolean; serviceOptions?: Partial<WorkflowServiceOptions> } = {},
+  ) {
     this.dir = mkdtempSync(path.join(tmpdir(), 'a2a-lane-'));
     this.db = this.open();
     this.store = new A2AStore(this.db);
@@ -154,7 +162,11 @@ export class LaneWorld {
       complete(id, resultJSON, summary, agentDID, claimOf(id, claimId), ...rest);
     service.fail = (id, reason, agentDID, claimId, ...rest) =>
       fail(id, reason, agentDID, claimOf(id, claimId), ...rest);
-    this.runtime = createA2ARuntime({ store: this.store, workflow: this.workflow, nowMs: () => this.clock });
+    this.runtime = createA2ARuntime({
+      store: this.store,
+      workflow: this.workflow,
+      nowMs: () => this.clock,
+    });
     setWorkflowService(this.workflow);
   }
 
@@ -167,8 +179,17 @@ export class LaneWorld {
     if (!cred.ok) throw new Error(`credential: ${cred.reason}`);
     const credentialRef = cred.credential.credential_ref;
     const d = { store: this.store, nowMs: () => this.clock };
-    const a = bindRemoteSkill(d, agentId, { skill: 'summarize', actionClass: 'read', credentialRef });
-    const b = bindRemoteSkill(d, agentId, { skill: 'extract', actionClass: 'write', credentialRef, resultSchema: EXTRACT_SCHEMA });
+    const a = bindRemoteSkill(d, agentId, {
+      skill: 'summarize',
+      actionClass: 'read',
+      credentialRef,
+    });
+    const b = bindRemoteSkill(d, agentId, {
+      skill: 'extract',
+      actionClass: 'write',
+      credentialRef,
+      resultSchema: EXTRACT_SCHEMA,
+    });
     if (!a.ok || !b.ok) throw new Error('bind');
     const act = activateRemoteAgent(d, agentId);
     if (!act.ok) throw new Error(`activate: ${act.reason}`);

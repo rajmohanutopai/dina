@@ -83,10 +83,9 @@ export class SQLiteStaffPinRepository implements StaffPinRepository {
   }
 
   get(deviceDid: string): StaffPinRecord | null {
-    const rows = this.db.query<DBRow>(
-      `SELECT * FROM commerce_staff_pins WHERE device_did = ?`,
-      [deviceDid],
-    );
+    const rows = this.db.query<DBRow>(`SELECT * FROM commerce_staff_pins WHERE device_did = ?`, [
+      deviceDid,
+    ]);
     const row = rows[0];
     if (row === undefined) return null;
     return {

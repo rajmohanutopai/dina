@@ -13,6 +13,10 @@
  * Source: ARCHITECTURE.md Task 3.3
  */
 
+import { DEFAULT_CLAUDE_MODEL, DEFAULT_MAX_TOKENS as MAX_TOKENS } from '../../constants';
+
+import { safeCall } from './safety';
+
 import type {
   LLMProvider,
   ChatMessage,
@@ -21,7 +25,6 @@ import type {
   ChatOptions,
   EmbedOptions,
   EmbedResponse,
-  ToolDefinition,
   ToolCall,
 } from './provider';
 
@@ -52,15 +55,14 @@ export interface AnthropicCreateParams {
 export interface AnthropicMessageResponse {
   id: string;
   model: string;
-  content: (| { type: 'text'; text: string }
-    | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> })[];
+  content: (
+    | { type: 'text'; text: string }
+    | { type: 'tool_use'; id: string; name: string; input: Record<string, unknown> }
+  )[];
   stop_reason: 'end_turn' | 'tool_use' | 'max_tokens' | null;
   usage: { input_tokens: number; output_tokens: number };
 }
 
-import { DEFAULT_CLAUDE_MODEL, DEFAULT_MAX_TOKENS as MAX_TOKENS } from '../../constants';
-
-import { safeCall } from './safety';
 const DEFAULT_MODEL = DEFAULT_CLAUDE_MODEL;
 const DEFAULT_MAX_TOKENS = MAX_TOKENS;
 
@@ -196,7 +198,7 @@ function mapResponse(response: AnthropicMessageResponse): ChatResponse {
  */
 export function createClaudeAdapter(apiKey: string, model?: string): ClaudeAdapter {
   // Lazy import to avoid requiring the SDK at module load time.
-   
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional SDK, not a brain dependency; load only when this adapter is built
   const { default: Anthropic } = require('@anthropic-ai/sdk');
   const client = new Anthropic({ apiKey });
   return new ClaudeAdapter(client, model);

@@ -20,7 +20,14 @@ import { InMemoryRevshareDocumentRepository } from '../../src/commerce/revshare_
 import { collectTallyVouchers, renderTallyXml } from '../../src/commerce/tally_export';
 import { InMemoryTradeDocumentRepository } from '../../src/commerce/trade_ledger';
 
-import { BUYER_DID, SUPPLIER_DID, makeOrder, makeQuoteRequest, makeSignedQuote, moneyOpen } from './helpers';
+import {
+  BUYER_DID,
+  SUPPLIER_DID,
+  makeOrder,
+  makeQuoteRequest,
+  makeSignedQuote,
+  moneyOpen,
+} from './helpers';
 
 import type { CommerceMoneyStores, CommerceRuntime } from '../../src/commerce/runtime';
 
@@ -44,7 +51,11 @@ function runtimeAs(self: string): CommerceRuntime {
 
 /** The money stores the route resolves before it calls the export. */
 function stores(): CommerceMoneyStores {
-  return { tradeDocuments: tradeDocs, revshareDocuments: new InMemoryRevshareDocumentRepository(), orderAttachments: new InMemoryOrderAttachmentRepository() };
+  return {
+    tradeDocuments: tradeDocs,
+    revshareDocuments: new InMemoryRevshareDocumentRepository(),
+    orderAttachments: new InMemoryOrderAttachmentRepository(),
+  };
 }
 
 function retainOrder(): void {
@@ -103,7 +114,12 @@ describe('side mapping', () => {
   it('the SAME accepted order books as Sales on the supplier and Purchase on the buyer', () => {
     retainOrder();
     retainAck('accepted');
-    const asSupplier = collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash);
+    const asSupplier = collectTallyVouchers(
+      runtimeAs(SUPPLIER_DID),
+      stores(),
+      { currency: 'INR' },
+      hash,
+    );
     const asBuyer = collectTallyVouchers(runtimeAs(BUYER_DID), stores(), { currency: 'INR' }, hash);
     expect(asSupplier).toEqual([
       expect.objectContaining({ vchType: 'Sales', partyLedger: BUYER_DID, amount: '500.00' }),
@@ -135,7 +151,12 @@ describe('side mapping', () => {
       evidenceJson: '{}',
       createdAt: T0,
     });
-    const vouchers = collectTallyVouchers(runtimeAs(BUYER_DID), stores(), { currency: 'INR' }, hash);
+    const vouchers = collectTallyVouchers(
+      runtimeAs(BUYER_DID),
+      stores(),
+      { currency: 'INR' },
+      hash,
+    );
     expect(vouchers).toEqual([
       expect.objectContaining({ vchType: 'Payment', partyLedger: SUPPLIER_DID, amount: '200.00' }),
     ]);
@@ -146,13 +167,17 @@ describe('side mapping', () => {
 describe('settled facts only', () => {
   it('an order with NO acknowledgement books nothing', () => {
     retainOrder();
-    expect(collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash)).toEqual([]);
+    expect(
+      collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash),
+    ).toEqual([]);
   });
 
   it('a REJECTED order books nothing', () => {
     retainOrder();
     retainAck('rejected');
-    expect(collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash)).toEqual([]);
+    expect(
+      collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash),
+    ).toEqual([]);
   });
 });
 
@@ -160,8 +185,12 @@ describe('the rendered envelope', () => {
   it('is byte-deterministic: the same facts render the same XML twice', () => {
     retainOrder();
     retainAck('accepted');
-    const first = renderTallyXml(collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash));
-    const second = renderTallyXml(collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash));
+    const first = renderTallyXml(
+      collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash),
+    );
+    const second = renderTallyXml(
+      collectTallyVouchers(runtimeAs(SUPPLIER_DID), stores(), { currency: 'INR' }, hash),
+    );
     expect(first).toBe(second);
   });
 
@@ -203,7 +232,12 @@ describe('the rendered envelope', () => {
       evidenceJson: '{}',
       createdAt: T0,
     });
-    const vouchers = collectTallyVouchers(runtimeAs(BUYER_DID), stores(), { currency: 'JPY' }, hash);
+    const vouchers = collectTallyVouchers(
+      runtimeAs(BUYER_DID),
+      stores(),
+      { currency: 'JPY' },
+      hash,
+    );
     expect(vouchers).toEqual([expect.objectContaining({ amount: '500', currency: 'JPY' })]);
   });
 

@@ -82,16 +82,20 @@ describe('initializeStorage starts the abandoned-install sweeper with the durabl
     setNodeDID('did:key:z6MkServerNode');
     const privateKey = new Uint8Array(32).fill(21);
     const publicKey = ed25519.getPublicKey(privateKey);
-    const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
+    const { code } = generatePairingCode({
+      role: 'plugin',
+      scope: 'runner',
+      pluginInstallId: installId,
+    });
     completePairing(code, 'runner', publicKeyToMultibase(publicKey), 'plugin', 'runner');
     const runnerDid = `did:key:${publicKeyToMultibase(publicKey)}`;
     expect(installs.getById(installId)?.deviceDid).toBe(runnerDid);
     expect(getDeviceByDID(runnerDid)?.revoked).toBe(false);
     // … whose 15-minute window then passes with no consent (the owner walked away).
-    first.identityDB.execute('UPDATE plugin_installs SET pending_expires_at = ? WHERE install_id = ?', [
-      Math.floor(nowMs / 1000) - 60,
-      installId,
-    ]);
+    first.identityDB.execute(
+      'UPDATE plugin_installs SET pending_expires_at = ? WHERE install_id = ?',
+      [Math.floor(nowMs / 1000) - 60, installId],
+    );
     first.identityDB.close();
 
     // The next boot's sweeper runs its first tick immediately.
@@ -100,7 +104,9 @@ describe('initializeStorage starts the abandoned-install sweeper with the durabl
       await settle(() => getPluginInstallRepository()?.getById(installId) === null);
       expect(getPluginInstallRepository()?.getById(installId)).toBeNull();
       expect(getDeviceByDID(runnerDid)?.revoked).toBe(true);
-      const rows = second.identityDB.query('SELECT revoked FROM paired_devices WHERE did = ?', [runnerDid]);
+      const rows = second.identityDB.query('SELECT revoked FROM paired_devices WHERE did = ?', [
+        runnerDid,
+      ]);
       expect(rows.map((r) => Number(r.revoked))).toEqual([1]);
     } finally {
       second.identityDB.close();

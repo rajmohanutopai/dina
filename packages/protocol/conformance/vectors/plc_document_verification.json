@@ -8,10 +8,7 @@
     "frozen_at": "2026-04-22"
   },
   "document": {
-    "@context": [
-      "https://www.w3.org/ns/did/v1",
-      "https://w3id.org/security/multikey/v1"
-    ],
+    "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/multikey/v1"],
     "id": "did:plc:example7alonso7alice012345ab",
     "verificationMethod": [
       {
@@ -21,9 +18,7 @@
         "publicKeyMultibase": "z6MkjYDx4Wr3pPd3HuxM6qQHyNvaNN5Y7RSk9xNoTr8Anhdx"
       }
     ],
-    "authentication": [
-      "did:plc:example7alonso7alice012345ab#dina_signing"
-    ],
+    "authentication": ["did:plc:example7alonso7alice012345ab#dina_signing"],
     "service": [
       {
         "id": "did:plc:example7alonso7alice012345ab#dina_messaging",

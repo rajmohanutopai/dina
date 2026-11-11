@@ -15,7 +15,11 @@ export interface CopyAge {
   storedAt: number;
 }
 
-function newestPerBucket(copies: CopyAge[], bucket: (c: CopyAge) => number, keep: number): number[] {
+function newestPerBucket(
+  copies: CopyAge[],
+  bucket: (c: CopyAge) => number,
+  keep: number,
+): number[] {
   const best = new Map<number, CopyAge>();
   for (const c of copies) {
     const b = bucket(c);

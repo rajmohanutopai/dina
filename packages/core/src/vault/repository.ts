@@ -131,7 +131,9 @@ export interface VaultRepository {
  *
  * Jest + Node-side tests are unaffected (single module instance).
  */
-interface VaultRepoGlobals { repos: Map<string, VaultRepository> }
+interface VaultRepoGlobals {
+  repos: Map<string, VaultRepository>;
+}
 const globalWithVaultRepos = globalThis as unknown as {
   __dinaVaultRepos?: VaultRepoGlobals;
 };
@@ -239,7 +241,8 @@ export class SQLiteVaultRepository implements VaultRepository {
         ORDER BY created_at ASC LIMIT 1`,
       [key, exceptId, ...scopedParams()],
     );
-    if (keyed.length > 0) return rowToVaultItem(keyed[0]!);
+    const firstKeyed = keyed[0];
+    if (firstKeyed !== undefined) return rowToVaultItem(firstKeyed);
     // Owner memories from before keys existed: check the rows that share the
     // summary, and fill in their key so later checks use the index.
     const legacy = this.db.query(
@@ -574,7 +577,10 @@ export class InMemoryVaultRepository implements VaultRepository {
       .filter((t) => t.length > 0 && !/^(and|or|not|near)$/i.test(t));
     if (terms.length === 0) return [];
 
-    interface Scored { item: VaultItem; score: number }
+    interface Scored {
+      item: VaultItem;
+      score: number;
+    }
     const scored: Scored[] = [];
     for (const item of this.items.values()) {
       if (item.deleted) continue;
@@ -773,6 +779,8 @@ function rowToVaultItem(row: DBRow): VaultItem {
     enrichment_version: String(row.enrichment_version ?? ''),
     ...(embedding ? { embedding } : {}),
     ...(typeof row.owner_memory_key === 'string' ? { owner_memory_key: row.owner_memory_key } : {}),
-    ...(typeof row.last_confirmed_at === 'number' ? { last_confirmed_at: row.last_confirmed_at } : {}),
+    ...(typeof row.last_confirmed_at === 'number'
+      ? { last_confirmed_at: row.last_confirmed_at }
+      : {}),
   };
 }

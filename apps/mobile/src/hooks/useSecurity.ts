@@ -131,7 +131,7 @@ export async function doChangePassphrase(
     const newWrapped = await changePassphrase(oldPassphrase, newPassphrase, currentWrappedSeed);
     currentWrappedSeed = newWrapped;
     return { success: true };
-  } catch (err) {
+  } catch (_err) {
     return { success: false, error: 'Wrong old passphrase' };
   }
 }

@@ -64,16 +64,12 @@ export function renderPrometheusText(
   lines.push(`# TYPE ${prefix}_requests_total_all counter`);
   lines.push(`${prefix}_requests_total_all ${snapshot.totalRequests}`);
 
-  lines.push(
-    `# HELP ${prefix}_requests_error_total HTTP requests served with status >= 400.`,
-  );
+  lines.push(`# HELP ${prefix}_requests_error_total HTTP requests served with status >= 400.`);
   lines.push(`# TYPE ${prefix}_requests_error_total counter`);
   lines.push(`${prefix}_requests_error_total ${snapshot.totalErrors}`);
 
   // ── Per-status request counter ─────────────────────────────────────
-  lines.push(
-    `# HELP ${prefix}_requests_total HTTP requests by route, method, and status.`,
-  );
+  lines.push(`# HELP ${prefix}_requests_total HTTP requests by route, method, and status.`);
   lines.push(`# TYPE ${prefix}_requests_total counter`);
   for (const c of snapshot.counters) {
     lines.push(
@@ -82,9 +78,7 @@ export function renderPrometheusText(
   }
 
   // ── Per-route duration histogram ───────────────────────────────────
-  lines.push(
-    `# HELP ${prefix}_request_duration_seconds HTTP request latency by route + method.`,
-  );
+  lines.push(`# HELP ${prefix}_request_duration_seconds HTTP request latency by route + method.`);
   lines.push(`# TYPE ${prefix}_request_duration_seconds histogram`);
 
   for (const h of snapshot.histograms) {
@@ -131,8 +125,7 @@ export function renderPrometheusText(
  */
 function quote(value: string): string {
   let out = '"';
-  for (let i = 0; i < value.length; i++) {
-    const ch = value[i];
+  for (const ch of value) {
     if (ch === '\\') out += '\\\\';
     else if (ch === '"') out += '\\"';
     else if (ch === '\n') out += '\\n';

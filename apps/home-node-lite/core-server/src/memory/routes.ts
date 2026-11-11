@@ -32,11 +32,7 @@
 
 import { isTopicKind } from '@dina/core';
 
-import type {
-  MemoryService,
-  TopicKind,
-  TopicRepositoryResolver,
-} from '@dina/core';
+import type { MemoryService, TopicKind, TopicRepositoryResolver } from '@dina/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
 /** Default limit when the client omits it. */
@@ -63,10 +59,7 @@ export interface MemoryRoutesOptions {
   nowSecFn?: () => number;
 }
 
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   get(path: string, handler: RouteHandler): unknown;
@@ -81,10 +74,7 @@ interface TouchBody {
   sample_item_id?: unknown;
 }
 
-export function registerMemoryRoutes(
-  app: FastifyAppShape,
-  opts: MemoryRoutesOptions,
-): void {
+export function registerMemoryRoutes(app: FastifyAppShape, opts: MemoryRoutesOptions): void {
   const { memoryService } = opts;
   if (memoryService === undefined || memoryService === null) {
     throw new Error('registerMemoryRoutes: memoryService is required');
@@ -126,15 +116,11 @@ export function registerMemoryRoutes(
       const raw = typeof q.limit === 'string' ? q.limit : String(q.limit);
       const parsed = Number(raw);
       if (!Number.isInteger(parsed) || parsed <= 0) {
-        await reply
-          .code(400)
-          .send({ error: 'limit must be a positive integer' });
+        await reply.code(400).send({ error: 'limit must be a positive integer' });
         return;
       }
       if (parsed > maxLimit) {
-        await reply
-          .code(400)
-          .send({ error: `limit exceeds ${maxLimit} cap` });
+        await reply.code(400).send({ error: `limit exceeds ${maxLimit} cap` });
         return;
       }
       limit = parsed;
@@ -198,18 +184,11 @@ export function registerMemoryRoutes(
       return;
     }
     if (typeof body.kind !== 'string' || !isTopicKind(body.kind)) {
-      await reply
-        .code(400)
-        .send({ error: 'kind must be "entity" or "theme"' });
+      await reply.code(400).send({ error: 'kind must be "entity" or "theme"' });
       return;
     }
-    if (
-      body.sample_item_id !== undefined &&
-      typeof body.sample_item_id !== 'string'
-    ) {
-      await reply
-        .code(400)
-        .send({ error: 'sample_item_id must be a string when provided' });
+    if (body.sample_item_id !== undefined && typeof body.sample_item_id !== 'string') {
+      await reply.code(400).send({ error: 'sample_item_id must be a string when provided' });
       return;
     }
 

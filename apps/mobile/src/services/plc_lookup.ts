@@ -68,8 +68,10 @@ export async function lookupPlc(
   options?: { fetchFn?: typeof globalThis.fetch; plcDirectory?: string },
 ): Promise<PlcLookupResult> {
   const fetchFn = options?.fetchFn ?? defaultFetch();
-  const directory = (options?.plcDirectory ?? mobileHostedEndpoints().plcDirectoryUrl)
-    .replace(/\/$/, '');
+  const directory = (options?.plcDirectory ?? mobileHostedEndpoints().plcDirectoryUrl).replace(
+    /\/$/,
+    '',
+  );
 
   const cached = cache.get(did);
   if (cached !== undefined && cached.expiresAt > Date.now()) {
@@ -114,18 +116,17 @@ function projectDoc(did: string, doc: Record<string, unknown>): PlcLookupResult 
   }
 
   const vmsRaw = doc.verificationMethod;
-  const verificationMethods: PlcLookupResult['verificationMethods'] =
-    Array.isArray(vmsRaw)
-      ? vmsRaw
-          .filter((v): v is Record<string, unknown> => v !== null && typeof v === 'object')
-          .map((v) => ({
-            id: typeof v.id === 'string' ? v.id : '',
-            type: typeof v.type === 'string' ? v.type : '',
-            controller: typeof v.controller === 'string' ? v.controller : '',
-            publicKeyMultibase:
-              typeof v.publicKeyMultibase === 'string' ? v.publicKeyMultibase : undefined,
-          }))
-      : [];
+  const verificationMethods: PlcLookupResult['verificationMethods'] = Array.isArray(vmsRaw)
+    ? vmsRaw
+        .filter((v): v is Record<string, unknown> => v !== null && typeof v === 'object')
+        .map((v) => ({
+          id: typeof v.id === 'string' ? v.id : '',
+          type: typeof v.type === 'string' ? v.type : '',
+          controller: typeof v.controller === 'string' ? v.controller : '',
+          publicKeyMultibase:
+            typeof v.publicKeyMultibase === 'string' ? v.publicKeyMultibase : undefined,
+        }))
+    : [];
 
   const svcRaw = doc.service;
   const services: PlcLookupResult['services'] = Array.isArray(svcRaw)

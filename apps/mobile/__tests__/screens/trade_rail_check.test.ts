@@ -13,12 +13,20 @@ type Check = NonNullable<TradeInboxItemDto['rail_check']>;
 describe('railCheckLabel', () => {
   it('names every state, and every answer of an answered check', () => {
     const t = (check: Check): string => railCheckLabel(check);
-    expect(t({ state: 'awaiting_owner', task_id: 't' })).toBe('Rail check waiting for your approval in Activity');
+    expect(t({ state: 'awaiting_owner', task_id: 't' })).toBe(
+      'Rail check waiting for your approval in Activity',
+    );
     expect(t({ state: 'asked', task_id: 't' })).toBe('Rail check asked — awaiting the runner');
     expect(t({ state: 'answered', task_id: 't', answer: 'settled' })).toBe('Rail says: settled');
-    expect(t({ state: 'answered', task_id: 't', answer: 'pending' })).toBe('Rail says: not yet settled');
-    expect(t({ state: 'answered', task_id: 't', answer: 'failed' })).toBe('Rail says: payment failed');
-    expect(t({ state: 'answered', task_id: 't', answer: 'unknown' })).toBe('Rail could not confirm this payment');
+    expect(t({ state: 'answered', task_id: 't', answer: 'pending' })).toBe(
+      'Rail says: not yet settled',
+    );
+    expect(t({ state: 'answered', task_id: 't', answer: 'failed' })).toBe(
+      'Rail says: payment failed',
+    );
+    expect(t({ state: 'answered', task_id: 't', answer: 'unknown' })).toBe(
+      'Rail could not confirm this payment',
+    );
     // An answered check with no answer key reads as unconfirmed, never as settled.
     expect(t({ state: 'answered', task_id: 't' })).toBe('Rail could not confirm this payment');
     expect(t({ state: 'closed', task_id: 't' })).toBe('Rail check did not complete');

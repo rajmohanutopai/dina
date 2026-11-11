@@ -31,7 +31,6 @@ import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wi
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 import { readPiiNamesResult, type PiiNamesResult } from '../pii/names';
 
-
 import {
   a2aDelegateBody,
   a2aGuardVerdictBody,
@@ -47,7 +46,9 @@ import {
   parseOpenGroupPlanResponse,
   updateContactBody,
   WorkflowConflictError,
- readAccessDecision, readAccessDecisions } from './core-client';
+  readAccessDecision,
+  readAccessDecisions,
+} from './core-client';
 import {
   parseUcpFetchResponse,
   parseUcpGuardVerdictResponse,
@@ -322,7 +323,11 @@ export class HttpCoreTransport implements CoreClient {
     );
   }
 
-  async vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null> {
+  async vaultGet(
+    persona: string,
+    itemId: string,
+    opts?: VaultReleaseOptions,
+  ): Promise<VaultQueryItem | null> {
     try {
       return await this.call<VaultQueryItem>(
         'GET',
@@ -523,7 +528,11 @@ export class HttpCoreTransport implements CoreClient {
       undefined,
       'serviceProviderStanding',
     );
-    return new Set(Object.entries(raw.standing ?? {}).filter(([, s]) => s.ejected).map(([d]) => d));
+    return new Set(
+      Object.entries(raw.standing ?? {})
+        .filter(([, s]) => s.ejected)
+        .map(([d]) => d),
+    );
   }
 
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
@@ -585,8 +594,16 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async chatThreadIds(): Promise<string[]> {
-    const raw = await this.call<{ threads?: unknown }>('GET', '/v1/chat/threads', undefined, undefined, 'chatThreadIds');
-    return Array.isArray(raw.threads) ? raw.threads.filter((t): t is string => typeof t === 'string') : [];
+    const raw = await this.call<{ threads?: unknown }>(
+      'GET',
+      '/v1/chat/threads',
+      undefined,
+      undefined,
+      'chatThreadIds',
+    );
+    return Array.isArray(raw.threads)
+      ? raw.threads.filter((t): t is string => typeof t === 'string')
+      : [];
   }
 
   async chatDeleteThread(threadId: string): Promise<boolean> {
@@ -635,12 +652,21 @@ export class HttpCoreTransport implements CoreClient {
     return readAccessDecision(raw);
   }
 
-  async getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }> {
+  async getGuardModes(): Promise<{
+    action_claims: 'report' | 'enforce';
+    regulated: 'report' | 'enforce';
+  }> {
     return this.call('GET', '/v1/settings/guard-modes', undefined, undefined, 'getGuardModes');
   }
 
   async getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
-    return this.call('GET', '/v1/settings/owner-timezone', undefined, undefined, 'getOwnerTimeZone');
+    return this.call(
+      'GET',
+      '/v1/settings/owner-timezone',
+      undefined,
+      undefined,
+      'getOwnerTimeZone',
+    );
   }
 
   async memoryToC(opts?: MemoryToCOptions): Promise<MemoryToCResult> {
@@ -668,30 +694,51 @@ export class HttpCoreTransport implements CoreClient {
     contact: string;
     proposedText: string;
   }): Promise<TalkSendResult> {
-    return this.call<TalkSendResult>('POST', '/v1/talk/send', undefined, {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      contact: input.contact,
-      proposed_text: input.proposedText,
-    }, 'talkSend');
+    return this.call<TalkSendResult>(
+      'POST',
+      '/v1/talk/send',
+      undefined,
+      {
+        release_session: input.proof.releaseSession,
+        turn_id: input.proof.turnId,
+        turn_text: input.proof.turnText,
+        start: input.proof.start,
+        end: input.proof.end,
+        contact: input.contact,
+        proposed_text: input.proposedText,
+      },
+      'talkSend',
+    );
   }
 
-  async forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult> {
-    return this.call<ForgetProposeResult>('POST', '/v1/forget/propose', undefined, {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      request: input.request,
-    }, 'forgetPropose');
+  async forgetPropose(input: {
+    proof: OwnerWordsProof;
+    request: ForgetRequestBody;
+  }): Promise<ForgetProposeResult> {
+    return this.call<ForgetProposeResult>(
+      'POST',
+      '/v1/forget/propose',
+      undefined,
+      {
+        release_session: input.proof.releaseSession,
+        turn_id: input.proof.turnId,
+        turn_text: input.proof.turnText,
+        start: input.proof.start,
+        end: input.proof.end,
+        request: input.request,
+      },
+      'forgetPropose',
+    );
   }
 
   async commitmentBrainView(kind: string): Promise<CommitmentBrainView> {
-    return this.call('GET', `/v1/commitment/brain/${encodeURIComponent(kind)}`, undefined, undefined, 'commitmentBrainView');
+    return this.call(
+      'GET',
+      `/v1/commitment/brain/${encodeURIComponent(kind)}`,
+      undefined,
+      undefined,
+      'commitmentBrainView',
+    );
   }
 
   async commitmentProposeChanges(input: {
@@ -726,53 +773,94 @@ export class HttpCoreTransport implements CoreClient {
     );
   }
 
-
   async ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }> {
     return this.call('POST', '/v1/owner-export/prepare', undefined, {}, 'ownerExportPrepare');
   }
 
-  async standingReplyPropose(input: { proof: OwnerWordsProof; contacts: string[]; replyText: string; until: string }): Promise<Record<string, unknown>> {
-    return this.call('POST', '/v1/standing-replies/propose', undefined, {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      contacts: input.contacts,
-      reply_text: input.replyText,
-      until: input.until,
-    }, 'standingReplyPropose');
+  async standingReplyPropose(input: {
+    proof: OwnerWordsProof;
+    contacts: string[];
+    replyText: string;
+    until: string;
+  }): Promise<Record<string, unknown>> {
+    return this.call(
+      'POST',
+      '/v1/standing-replies/propose',
+      undefined,
+      {
+        release_session: input.proof.releaseSession,
+        turn_id: input.proof.turnId,
+        turn_text: input.proof.turnText,
+        start: input.proof.start,
+        end: input.proof.end,
+        contacts: input.contacts,
+        reply_text: input.replyText,
+        until: input.until,
+      },
+      'standingReplyPropose',
+    );
   }
 
-  async standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }> {
+  async standingReplyList(): Promise<{
+    rules: {
+      id: string;
+      state: string;
+      reply_text: string;
+      contacts: string[];
+      expires_at: string;
+    }[];
+  }> {
     return this.call('GET', '/v1/standing-replies', undefined, undefined, 'standingReplyList');
   }
 
   async standingReplyRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
-    return this.call('POST', `/v1/standing-replies/${encodeURIComponent(id)}/revoke`, undefined, {
-      release_session: proof.releaseSession,
-      turn_id: proof.turnId,
-      turn_text: proof.turnText,
-      start: proof.start,
-      end: proof.end,
-    }, 'standingReplyRevoke');
+    return this.call(
+      'POST',
+      `/v1/standing-replies/${encodeURIComponent(id)}/revoke`,
+      undefined,
+      {
+        release_session: proof.releaseSession,
+        turn_id: proof.turnId,
+        turn_text: proof.turnText,
+        start: proof.start,
+        end: proof.end,
+      },
+      'standingReplyRevoke',
+    );
   }
 
-  async spendAllowancePropose(input: { proof: OwnerWordsProof; agent: string; amountMinor: number; currency: string; period: string; category: string; perItemCapMinor?: number; until?: string }): Promise<Record<string, unknown>> {
-    return this.call('POST', '/v1/spend-allowances/propose', undefined, {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      agent: input.agent,
-      amount_minor: input.amountMinor,
-      currency: input.currency,
-      period: input.period,
-      category: input.category,
-      ...(input.perItemCapMinor !== undefined ? { per_item_cap_minor: input.perItemCapMinor } : {}),
-      ...(input.until !== undefined ? { until: input.until } : {}),
-    }, 'spendAllowancePropose');
+  async spendAllowancePropose(input: {
+    proof: OwnerWordsProof;
+    agent: string;
+    amountMinor: number;
+    currency: string;
+    period: string;
+    category: string;
+    perItemCapMinor?: number;
+    until?: string;
+  }): Promise<Record<string, unknown>> {
+    return this.call(
+      'POST',
+      '/v1/spend-allowances/propose',
+      undefined,
+      {
+        release_session: input.proof.releaseSession,
+        turn_id: input.proof.turnId,
+        turn_text: input.proof.turnText,
+        start: input.proof.start,
+        end: input.proof.end,
+        agent: input.agent,
+        amount_minor: input.amountMinor,
+        currency: input.currency,
+        period: input.period,
+        category: input.category,
+        ...(input.perItemCapMinor !== undefined
+          ? { per_item_cap_minor: input.perItemCapMinor }
+          : {}),
+        ...(input.until !== undefined ? { until: input.until } : {}),
+      },
+      'spendAllowancePropose',
+    );
   }
 
   async spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[] }> {
@@ -780,17 +868,31 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async spendAllowanceRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
-    return this.call('POST', `/v1/spend-allowances/${encodeURIComponent(id)}/revoke`, undefined, {
-      release_session: proof.releaseSession,
-      turn_id: proof.turnId,
-      turn_text: proof.turnText,
-      start: proof.start,
-      end: proof.end,
-    }, 'spendAllowanceRevoke');
+    return this.call(
+      'POST',
+      `/v1/spend-allowances/${encodeURIComponent(id)}/revoke`,
+      undefined,
+      {
+        release_session: proof.releaseSession,
+        turn_id: proof.turnId,
+        turn_text: proof.turnText,
+        start: proof.start,
+        end: proof.end,
+      },
+      'spendAllowanceRevoke',
+    );
   }
 
   async forgetEpoch(): Promise<number> {
-    return (await this.call<{ epoch: number }>('GET', '/v1/forget/epoch', undefined, undefined, 'forgetEpoch')).epoch;
+    return (
+      await this.call<{ epoch: number }>(
+        'GET',
+        '/v1/forget/epoch',
+        undefined,
+        undefined,
+        'forgetEpoch',
+      )
+    ).epoch;
   }
 
   async stagingIngestOwnerWords(
@@ -1170,21 +1272,41 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async getA2AOperation(operationId: string): Promise<A2AOperationStatus | null> {
-    const res = await this.callRaw('GET', `/v1/a2a/operations/${encodeURIComponent(operationId)}`, undefined, undefined);
+    const res = await this.callRaw(
+      'GET',
+      `/v1/a2a/operations/${encodeURIComponent(operationId)}`,
+      undefined,
+      undefined,
+    );
     if (res.status === 404) return null;
-    if (res.status !== 200) throw new CoreHttpError(`getA2AOperation() failed ${res.status}`, res.status, decodeJson(res.body));
+    if (res.status !== 200)
+      throw new CoreHttpError(
+        `getA2AOperation() failed ${res.status}`,
+        res.status,
+        decodeJson(res.body),
+      );
     return decodeJson(res.body) as A2AOperationStatus;
   }
 
   async claimA2AGuardJob(): Promise<A2AGuardWork | null> {
     const res = await this.callRaw('POST', '/v1/a2a/guard/next', undefined, {});
     if (res.status === 204) return null;
-    if (res.status !== 200) throw new CoreHttpError(`claimA2AGuardJob() failed ${res.status}`, res.status, decodeJson(res.body));
+    if (res.status !== 200)
+      throw new CoreHttpError(
+        `claimA2AGuardJob() failed ${res.status}`,
+        res.status,
+        decodeJson(res.body),
+      );
     return decodeJson(res.body) as A2AGuardWork;
   }
 
   async submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult> {
-    const res = await this.callRaw('POST', '/v1/a2a/guard/verdict', undefined, a2aGuardVerdictBody(input));
+    const res = await this.callRaw(
+      'POST',
+      '/v1/a2a/guard/verdict',
+      undefined,
+      a2aGuardVerdictBody(input),
+    );
     return parseA2AGuardVerdictResponse(res.status, decodeJson(res.body));
   }
 
@@ -1194,9 +1316,19 @@ export class HttpCoreTransport implements CoreClient {
   }
 
   async getUcpSearch(searchId: string, releaseSession: string): Promise<UcpSearchView | null> {
-    const res = await this.callRaw('GET', `/v1/ucp/search/${encodeURIComponent(searchId)}`, { release_session: releaseSession }, undefined);
+    const res = await this.callRaw(
+      'GET',
+      `/v1/ucp/search/${encodeURIComponent(searchId)}`,
+      { release_session: releaseSession },
+      undefined,
+    );
     if (res.status === 404) return null;
-    if (res.status !== 200) throw new CoreHttpError(`getUcpSearch() failed ${res.status}`, res.status, decodeJson(res.body));
+    if (res.status !== 200)
+      throw new CoreHttpError(
+        `getUcpSearch() failed ${res.status}`,
+        res.status,
+        decodeJson(res.body),
+      );
     return decodeJson(res.body) as UcpSearchView;
   }
 
@@ -1205,8 +1337,15 @@ export class HttpCoreTransport implements CoreClient {
     return parseUcpFetchResponse(res.status, decodeJson(res.body));
   }
 
-  async raiseUcpSearchReview(input: Omit<UcpSearchInput, 'reviewId'>): Promise<UcpSearchReviewResult> {
-    const res = await this.callRaw('POST', '/v1/ucp/search/review', undefined, ucpSearchBody(input));
+  async raiseUcpSearchReview(
+    input: Omit<UcpSearchInput, 'reviewId'>,
+  ): Promise<UcpSearchReviewResult> {
+    const res = await this.callRaw(
+      'POST',
+      '/v1/ucp/search/review',
+      undefined,
+      ucpSearchBody(input),
+    );
     return parseUcpSearchReviewResponse(res.status, decodeJson(res.body));
   }
 
@@ -1223,12 +1362,22 @@ export class HttpCoreTransport implements CoreClient {
   async claimUcpGuardJob(): Promise<UcpGuardWork | null> {
     const res = await this.callRaw('POST', '/v1/ucp/guard/next', undefined, {});
     if (res.status === 204) return null;
-    if (res.status !== 200) throw new CoreHttpError(`claimUcpGuardJob() failed ${res.status}`, res.status, decodeJson(res.body));
+    if (res.status !== 200)
+      throw new CoreHttpError(
+        `claimUcpGuardJob() failed ${res.status}`,
+        res.status,
+        decodeJson(res.body),
+      );
     return decodeJson(res.body) as UcpGuardWork;
   }
 
   async submitUcpGuardVerdict(input: UcpGuardVerdictInput): Promise<UcpGuardVerdictResult> {
-    const res = await this.callRaw('POST', '/v1/ucp/guard/verdict', undefined, ucpGuardVerdictBody(input));
+    const res = await this.callRaw(
+      'POST',
+      '/v1/ucp/guard/verdict',
+      undefined,
+      ucpGuardVerdictBody(input),
+    );
     return parseUcpGuardVerdictResponse(res.status, decodeJson(res.body));
   }
 
@@ -1286,7 +1435,12 @@ export class HttpCoreTransport implements CoreClient {
     const body: Record<string, unknown> = {
       ...(opts?.scope !== undefined ? { scope: opts.scope } : {}),
       ...(opts?.pluginGrant !== undefined
-        ? { plugin_grant: { type: opts.pluginGrant.type, ...(opts.pluginGrant.hours !== undefined ? { hours: opts.pluginGrant.hours } : {}) } }
+        ? {
+            plugin_grant: {
+              type: opts.pluginGrant.type,
+              ...(opts.pluginGrant.hours !== undefined ? { hours: opts.pluginGrant.hours } : {}),
+            },
+          }
         : {}),
     };
     return this.workflowAction(id, 'approve', Object.keys(body).length > 0 ? body : undefined);

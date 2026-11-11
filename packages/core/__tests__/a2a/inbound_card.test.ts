@@ -57,8 +57,15 @@ import { kvDelete, kvGet } from '../../src/kv/store';
 import { clearPairingState, setNodeDID } from '../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerA2AIngressRoutes } from '../../src/server/routes/a2a_ingress';
-import { resetServiceConfigState, setServiceConfigDurable, validateServiceConfigForSave } from '../../src/service/service_config';
-import { SQLiteServiceConfigRepository, setServiceConfigRepository } from '../../src/service/service_config_repository';
+import {
+  resetServiceConfigState,
+  setServiceConfigDurable,
+  validateServiceConfigForSave,
+} from '../../src/service/service_config';
+import {
+  SQLiteServiceConfigRepository,
+  setServiceConfigRepository,
+} from '../../src/service/service_config_repository';
 import { SQLiteServiceGrantRepository } from '../../src/service/service_grant_repository';
 
 import { LaneWorld } from './outbound_fixture';
@@ -68,11 +75,26 @@ import type { ServiceConfig } from '@dina/protocol';
 const NODE_DID = 'did:plc:ewvi7nxzyoun6zhxrhs64oiz';
 const ORIGIN = 'https://dina.example.org';
 const SEED = new Uint8Array(32).map((_, i) => i + 1);
-const CONFIG: A2ACardConfig = { key: { privateKey: deriveP256SigningKey(SEED, 0).privateKey, generation: 0 }, publicOrigin: ORIGIN };
+const CONFIG: A2ACardConfig = {
+  key: { privateKey: deriveP256SigningKey(SEED, 0).privateKey, generation: 0 },
+  publicOrigin: ORIGIN,
+};
 
-const ETA_PARAMS = { type: 'object', required: ['route_id'], properties: { route_id: { type: 'string', minLength: 1 } } };
-const ETA_RESULT = { type: 'object', required: ['eta_minutes'], properties: { eta_minutes: { type: 'integer' } } };
-const PRICE_PARAMS = { type: 'object', required: ['item'], properties: { item: { type: 'string' } } };
+const ETA_PARAMS = {
+  type: 'object',
+  required: ['route_id'],
+  properties: { route_id: { type: 'string', minLength: 1 } },
+};
+const ETA_RESULT = {
+  type: 'object',
+  required: ['eta_minutes'],
+  properties: { eta_minutes: { type: 'integer' } },
+};
+const PRICE_PARAMS = {
+  type: 'object',
+  required: ['item'],
+  properties: { item: { type: 'string' } },
+};
 const PRICE_RESULT = { type: 'object', properties: { price: { type: 'number' } } };
 
 let world: LaneWorld;
@@ -86,8 +108,17 @@ function listing(over: Partial<ServiceConfig>): ServiceConfig {
     name: 'Bus 42',
     description: 'Arrival times for route 42.',
     capabilities: {
-      eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' },
-      price_check: { responsePolicy: 'auto', instruction: 'Quote from the fare table.', category: 'commerce' },
+      eta_query: {
+        mcpServer: 'transit',
+        mcpTool: 'get_eta',
+        responsePolicy: 'auto',
+        category: 'transit',
+      },
+      price_check: {
+        responsePolicy: 'auto',
+        instruction: 'Quote from the fare table.',
+        category: 'commerce',
+      },
     },
     capabilitySchemas: {
       eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h-eta' },
@@ -146,8 +177,17 @@ describe('projection: what a call can reach, and nothing else', () => {
       { url: `${ORIGIN}${A2A_REST_PATH}`, protocolBinding: 'HTTP+JSON', protocolVersion: '1.0' },
     ]);
     // M3: streams, webhooks and the extended card are served.
-    expect(c.capabilities).toEqual(expect.objectContaining({ streaming: true, pushNotifications: true, extendedAgentCard: true }));
-    const ext = c.capabilities.extensions?.[0]?.params as { did: string; skills: Record<string, unknown> };
+    expect(c.capabilities).toEqual(
+      expect.objectContaining({
+        streaming: true,
+        pushNotifications: true,
+        extendedAgentCard: true,
+      }),
+    );
+    const ext = c.capabilities.extensions?.[0]?.params as {
+      did: string;
+      skills: Record<string, unknown>;
+    };
     expect(ext.did).toBe(NODE_DID);
   });
 
@@ -182,7 +222,10 @@ describe('projection: what a call can reach, and nothing else', () => {
       await setServiceConfigDurable(
         listing({
           capabilities: { eta_query: listing({}).capabilities.eta_query, [key]: entry },
-          capabilitySchemas: { eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h' }, [key]: PAIR },
+          capabilitySchemas: {
+            eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h' },
+            [key]: PAIR,
+          },
         }),
         'self',
       );
@@ -196,10 +239,34 @@ describe('projection: what a call can reach, and nothing else', () => {
 
     it.each([
       // [what, key, entry, the rule, the same capability with that rule met]
-      ['a capability on an unbound lane', 'price_check', { mcpServer: 'nobody', mcpTool: 'x', responsePolicy: 'auto', category: 'transit' }, 'no_executor', { executor: 'mcp_server' }],
-      ['a capability on the reserved lane', 'price_check', { mcpServer: 'dina.local', mcpTool: 'x', responsePolicy: 'auto', category: 'transit' }, 'no_executor', { executor: 'mcp_server' }],
-      ['a non-public capability', 'appointment_status', { responsePolicy: 'review', instruction: 'x', category: 'appointments' }, 'not_public_exposable', { publicExposureAllowed: true }],
-      ['a commerce capability', 'com.dinakernel.commerce.order_status', { responsePolicy: 'auto', instruction: 'x', category: 'commerce' }, 'commerce_capability', null],
+      [
+        'a capability on an unbound lane',
+        'price_check',
+        { mcpServer: 'nobody', mcpTool: 'x', responsePolicy: 'auto', category: 'transit' },
+        'no_executor',
+        { executor: 'mcp_server' },
+      ],
+      [
+        'a capability on the reserved lane',
+        'price_check',
+        { mcpServer: 'dina.local', mcpTool: 'x', responsePolicy: 'auto', category: 'transit' },
+        'no_executor',
+        { executor: 'mcp_server' },
+      ],
+      [
+        'a non-public capability',
+        'appointment_status',
+        { responsePolicy: 'review', instruction: 'x', category: 'appointments' },
+        'not_public_exposable',
+        { publicExposureAllowed: true },
+      ],
+      [
+        'a commerce capability',
+        'com.dinakernel.commerce.order_status',
+        { responsePolicy: 'auto', instruction: 'x', category: 'commerce' },
+        'commerce_capability',
+        null,
+      ],
     ] as const)('%s', async (_what, key, entry, rule, met) => {
       await writeWith(key, entry as Entry);
       expect(skillIds(await card())).toEqual(['eta_query@self']);
@@ -212,19 +279,35 @@ describe('projection: what a call can reach, and nothing else', () => {
     });
 
     it('control: the unbound lane, once bound, puts the skill on the card', async () => {
-      await writeWith('price_check', { mcpServer: 'nobody', mcpTool: 'x', responsePolicy: 'auto', category: 'transit' });
+      await writeWith('price_check', {
+        mcpServer: 'nobody',
+        mcpTool: 'x',
+        responsePolicy: 'auto',
+        category: 'transit',
+      });
       expect(skillIds(await card())).toEqual(['eta_query@self']);
       bindRunner(world.store, { lane: 'nobody', device_did: runnerDid }, world.clock);
       expect(skillIds(await card())).toEqual(['eta_query@self', 'price_check@self']);
     });
 
     it('control: the commerce entry’s shape under a plain capability is projected', async () => {
-      await writeWith('price_check', { responsePolicy: 'auto', instruction: 'x', category: 'commerce' });
+      await writeWith('price_check', {
+        responsePolicy: 'auto',
+        instruction: 'x',
+        category: 'commerce',
+      });
       expect(skillIds(await card())).toEqual(['eta_query@self', 'price_check@self']);
     });
 
     it('and a capability with no schema pair, by that rule', async () => {
-      await setServiceConfigDurable(listing({ capabilitySchemas: { eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h' } } }), 'self');
+      await setServiceConfigDurable(
+        listing({
+          capabilitySchemas: {
+            eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h' },
+          },
+        }),
+        'self',
+      );
       expect(skillIds(await card())).toEqual(['eta_query@self']);
       const { l, cap } = projected('price_check');
       expect(exclusionReason(l, cap)).toBe('no_schema_pair');
@@ -241,10 +324,19 @@ describe('signature', () => {
     expect(JSON.stringify(jwk)).not.toContain('"d"');
     const parsed = parsePublicJwk(jwk);
     if (parsed === null) throw new Error('jwk');
-    const report = await verifyAgentCardSignatures(built.card as unknown as Record<string, unknown>, ({ header, signingInputs, signature }) => {
-      expect(header).toEqual(expect.objectContaining({ alg: 'ES256', kid: jwk?.kid, jku: `${ORIGIN}${A2A_JWKS_PATH}` }));
-      return signingInputs.some((input) => verifyWithJwk(parsed, header.alg, input, signature));
-    });
+    const report = await verifyAgentCardSignatures(
+      built.card as unknown as Record<string, unknown>,
+      ({ header, signingInputs, signature }) => {
+        expect(header).toEqual(
+          expect.objectContaining({
+            alg: 'ES256',
+            kid: jwk?.kid,
+            jku: `${ORIGIN}${A2A_JWKS_PATH}`,
+          }),
+        );
+        return signingInputs.some((input) => verifyWithJwk(parsed, header.alg, input, signature));
+      },
+    );
     expect(report.state).toBe('verified');
   });
 
@@ -252,8 +344,10 @@ describe('signature', () => {
     const c = { ...(await card()), name: 'Someone else' };
     const jwk = parsePublicJwk(cardPublicJwk(CONFIG.key));
     if (jwk === null) throw new Error('jwk');
-    const report = await verifyAgentCardSignatures(c as unknown as Record<string, unknown>, ({ header, signingInputs, signature }) =>
-      signingInputs.some((input) => verifyWithJwk(jwk, header.alg, input, signature)),
+    const report = await verifyAgentCardSignatures(
+      c as unknown as Record<string, unknown>,
+      ({ header, signingInputs, signature }) =>
+        signingInputs.some((input) => verifyWithJwk(jwk, header.alg, input, signature)),
     );
     expect(report.state).toBe('invalid');
   });
@@ -261,7 +355,9 @@ describe('signature', () => {
   it('the key is the frozen ES256 card key of the seed', () => {
     const jwk = cardPublicJwk(CONFIG.key);
     expect(base64urlDecode(jwk.x as string)?.length).toBe(32);
-    expect(cardPublicJwk({ privateKey: deriveP256SigningKey(SEED, 1).privateKey, generation: 1 }).kid).not.toBe(jwk.kid);
+    expect(
+      cardPublicJwk({ privateKey: deriveP256SigningKey(SEED, 1).privateKey, generation: 1 }).kid,
+    ).not.toBe(jwk.kid);
   });
 });
 
@@ -270,7 +366,11 @@ describe('usable with the extension ignored (§7.6)', () => {
     const c = await card();
     const created = createA2AClient(world.store, { display_name: 'Plain client' }, world.clock);
     if (!created.ok) throw new Error(created.reason);
-    const rt: InboundRuntime = { a2a: world.runtime, grants: new SQLiteServiceGrantRepository(world.store.db), budgets: new PrincipalBudgets() };
+    const rt: InboundRuntime = {
+      a2a: world.runtime,
+      grants: new SQLiteServiceGrantRepository(world.store.db),
+      budgets: new PrincipalBudgets(),
+    };
     let n = 0;
     for (const skill of c.skills) {
       const example = skill.examples?.[0];
@@ -284,14 +384,23 @@ describe('usable with the extension ignored (§7.6)', () => {
           path: A2A_RPC_PATH,
           query: '',
           version: '1.0',
-          body: JSON.stringify({ jsonrpc: '2.0', id: n, method: 'SendMessage', params: { message: { messageId: `ex-${n}`, role: 'ROLE_USER', parts: [{ data }] } } }),
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            id: n,
+            method: 'SendMessage',
+            params: { message: { messageId: `ex-${n}`, role: 'ROLE_USER', parts: [{ data }] } },
+          }),
         },
         client_auth: { authorization: `Bearer ${created.token}` },
       });
       // A2A v1.0 answers SendMessage with `{task}`: Dina's own Lane 1 parser must read it.
       const parsed = parseSendMessageResult((answer.body as { result: unknown }).result);
-      if (!('kind' in parsed) || parsed.kind !== 'task') throw new Error(`${skill.id}: ${JSON.stringify(parsed)}`);
-      expect([skill.id, (parsed.task.status as { state: string }).state]).toEqual([skill.id, 'TASK_STATE_SUBMITTED']);
+      if (!('kind' in parsed) || parsed.kind !== 'task')
+        throw new Error(`${skill.id}: ${JSON.stringify(parsed)}`);
+      expect([skill.id, (parsed.task.status as { state: string }).state]).toEqual([
+        skill.id,
+        'TASK_STATE_SUBMITTED',
+      ]);
     }
     expect(n).toBe(2);
   });
@@ -301,10 +410,21 @@ describe('one listing can never break the card', () => {
   it('a schema asking for a huge string drops only that example; the rest of the card is built', async () => {
     await save(
       listing({
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['q'], properties: { q: { type: 'string', minLength: 1_073_741_824 } } },
+            params: {
+              type: 'object',
+              required: ['q'],
+              properties: { q: { type: 'string', minLength: 1_073_741_824 } },
+            },
             result: ETA_RESULT,
             schemaHash: 'h-big',
           },
@@ -321,10 +441,21 @@ describe('one listing can never break the card', () => {
   it('a saveable listing whose skill is too large for its share of a card leaves only that skill off; the card is built', async () => {
     await save(
       listing({
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['n'], properties: { n: { type: 'array', const: Array(200_000).fill(0) } } },
+            params: {
+              type: 'object',
+              required: ['n'],
+              properties: { n: { type: 'array', const: Array(200_000).fill(0) } },
+            },
             result: ETA_RESULT,
             schemaHash: 'h-big-const',
           },
@@ -343,17 +474,29 @@ describe('one listing can never break the card', () => {
       listing({
         name: '😀'.repeat(5_000),
         description: '😀'.repeat(20_000),
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['n'], properties: { n: { type: 'string', const: 'c'.repeat(n) } } },
+            params: {
+              type: 'object',
+              required: ['n'],
+              properties: { n: { type: 'string', const: 'c'.repeat(n) } },
+            },
             result: ETA_RESULT,
             schemaHash: `h-${rkey}`,
           },
         },
       });
     // The largest const that still fits one skill's share, found against the rule itself.
-    const fits = (n: number) => skillShareFits('r1', projectionCapability(world.store, etaOnly('r1', n), 'eta_query'));
+    const fits = (n: number) =>
+      skillShareFits('r1', projectionCapability(world.store, etaOnly('r1', n), 'eta_query'));
     let lo = 0;
     let hi = A2A_LIMITS.maxSkillShareBytes;
     while (lo < hi) {
@@ -367,19 +510,35 @@ describe('one listing can never break the card', () => {
     const built = await buildInboundCard(world.store, { nodeDid: NODE_DID, config: CONFIG });
     expect(built.ok && built.card.skills).toHaveLength(7);
     expect(built.ok && [...built.card.description]).toHaveLength(MAX_TEXT_CODE_POINTS);
-    expect(built.ok && utf8Bytes(canonicalize(built.card as unknown as JsonValue)).length).toBeLessThanOrEqual(A2A_LIMITS.maxCardBytes);
+    expect(
+      built.ok && utf8Bytes(canonicalize(built.card as unknown as JsonValue)).length,
+    ).toBeLessThanOrEqual(A2A_LIMITS.maxCardBytes);
     // The share is measured in its largest form, so seven is the floor; enough skills at the bound fill the card, and the owner is told.
     for (let i = 8; i <= 9; i += 1) await save(etaOnly(`r${i}`, lo), `r${i}`);
-    expect(await buildInboundCard(world.store, { nodeDid: NODE_DID, config: CONFIG })).toEqual({ ok: false, reason: 'card_too_large' });
+    expect(await buildInboundCard(world.store, { nodeDid: NODE_DID, config: CONFIG })).toEqual({
+      ok: false,
+      reason: 'card_too_large',
+    });
   });
 
   it('a skill whose const is past the sample budget keeps its place, without an example', async () => {
     await save(
       listing({
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['n'], properties: { n: { type: 'array', const: Array(1_000).fill(0) } } },
+            params: {
+              type: 'object',
+              required: ['n'],
+              properties: { n: { type: 'array', const: Array(1_000).fill(0) } },
+            },
             result: ETA_RESULT,
             schemaHash: 'h-mid-const',
           },
@@ -395,10 +554,21 @@ describe('one listing can never break the card', () => {
   it('an enum member of the wrong type never becomes an example Core would refuse', async () => {
     await save(
       listing({
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['n'], properties: { n: { type: 'string', enum: [5, 'five'] } } },
+            params: {
+              type: 'object',
+              required: ['n'],
+              properties: { n: { type: 'string', enum: [5, 'five'] } },
+            },
             result: ETA_RESULT,
             schemaHash: 'h-enum',
           },
@@ -414,10 +584,21 @@ describe('one listing can never break the card', () => {
     // The sampler takes the first enum member of the type; it does not weigh maxLength. Core does.
     await save(
       listing({
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['n'], properties: { n: { type: 'string', enum: ['toolong', 'ok'], maxLength: 2 } } },
+            params: {
+              type: 'object',
+              required: ['n'],
+              properties: { n: { type: 'string', enum: ['toolong', 'ok'], maxLength: 2 } },
+            },
             result: ETA_RESULT,
             schemaHash: 'h-enum-len',
           },
@@ -431,7 +612,10 @@ describe('one listing can never break the card', () => {
   });
 
   it('the card’s name and description are bounded as a remote’s words are: one long listing never refuses the card', async () => {
-    await save(listing({ name: `Bus\u202e ${'n'.repeat(500)}`, description: 'x'.repeat(140 * 1024) }), 'self');
+    await save(
+      listing({ name: `Bus\u202e ${'n'.repeat(500)}`, description: 'x'.repeat(140 * 1024) }),
+      'self',
+    );
     const c = await card();
     expect([...c.name]).toHaveLength(A2A_NAME_MAX_CODE_POINTS);
     expect(c.name.startsWith('Bus n')).toBe(true);
@@ -448,7 +632,13 @@ describe('one listing can never break the card', () => {
 
 describe('configuration and the gateway route', () => {
   it('refuses an origin with a path, credentials, or plain http off loopback', () => {
-    for (const bad of ['https://x.example/a2a', 'https://u:p@x.example', 'http://x.example', 'not a url', 'https://x.example/?q=1']) {
+    for (const bad of [
+      'https://x.example/a2a',
+      'https://u:p@x.example',
+      'http://x.example',
+      'not a url',
+      'https://x.example/?q=1',
+    ]) {
       expect(() => installA2ACardConfig({ ...CONFIG, publicOrigin: bad })).toThrow();
     }
     installA2ACardConfig({ ...CONFIG, publicOrigin: 'http://127.0.0.1:8400' });
@@ -500,7 +690,10 @@ describe('card key rotation (UCP plan §4.8, U7)', () => {
     return r;
   };
   let now = 1_759_000_000_000;
-  const keyAt = (g: number) => ({ privateKey: deriveP256SigningKey(SEED, g).privateKey, generation: g });
+  const keyAt = (g: number) => ({
+    privateKey: deriveP256SigningKey(SEED, g).privateKey,
+    generation: g,
+  });
   const kidOf = (g: number) => cardPublicJwk(keyAt(g)).kid as string;
   const compressed = (g: number) => deriveP256SigningKey(SEED, g).publicKey;
   /** The DID document's #a2a_card key: 'down' when it cannot be read or written. */
@@ -551,11 +744,17 @@ describe('card key rotation (UCP plan §4.8, U7)', () => {
       if (this.set === null || now >= this.set.until)
         this.set = { keys: jwks.keys, until: now + A2A_JWKS_MAX_AGE_SECONDS * 1000 };
       const keys = this.set.keys;
-      const report = await verifyAgentCardSignatures(card as unknown as Record<string, unknown>, ({ header, signingInputs, signature }) => {
-        const jwk = keys.find((k) => k.kid === header.kid);
-        const parsed = jwk === undefined ? null : parsePublicJwk(jwk);
-        return parsed !== null && signingInputs.some((input) => verifyWithJwk(parsed, header.alg, input, signature));
-      });
+      const report = await verifyAgentCardSignatures(
+        card as unknown as Record<string, unknown>,
+        ({ header, signingInputs, signature }) => {
+          const jwk = keys.find((k) => k.kid === header.kid);
+          const parsed = jwk === undefined ? null : parsePublicJwk(jwk);
+          return (
+            parsed !== null &&
+            signingInputs.some((input) => verifyWithJwk(parsed, header.alg, input, signature))
+          );
+        },
+      );
       return report.state === 'verified';
     }
   }
@@ -603,7 +802,11 @@ describe('card key rotation (UCP plan §4.8, U7)', () => {
     }
     now = served + CARD_KEY_SWITCH_WAIT_MS;
     await r.step();
-    expect(r.view()).toMatchObject({ generation: 1, next: null, retiring: [{ generation: 0, until: now + CARD_KEY_OVERLAP_MS }] });
+    expect(r.view()).toMatchObject({
+      generation: 1,
+      next: null,
+      retiring: [{ generation: 0, until: now + CARD_KEY_OVERLAP_MS }],
+    });
     for (let t = 0; t < 120_000; t += 5_000) {
       now += 5_000;
       expect(await client.verifies()).toBe(true);

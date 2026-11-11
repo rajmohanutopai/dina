@@ -13,13 +13,17 @@ import { syncQuarantineCards } from '../../src/hooks/quarantine_sync.web';
 import { BRAIN, installCoreServedPage } from '../setup/web_brain';
 
 function lifecycleOf(m: ChatMessage): { kind?: string; quarantineId?: string; senderDID?: string } {
-  return (m.metadata?.lifecycle as { kind?: string; quarantineId?: string; senderDID?: string }) ?? {};
+  return (
+    (m.metadata?.lifecycle as { kind?: string; quarantineId?: string; senderDID?: string }) ?? {}
+  );
 }
 
 let brain: jest.Mock;
 
 function mockQuarantine(messages: unknown[]): void {
-  brain = jest.fn().mockResolvedValue({ ok: true, text: async () => '', json: async () => ({ messages }) });
+  brain = jest
+    .fn()
+    .mockResolvedValue({ ok: true, text: async () => '', json: async () => ({ messages }) });
   installCoreServedPage(brain);
 }
 
@@ -36,7 +40,13 @@ describe('quarantine_sync.web', () => {
 
   it('injects a quarantine_request card for each pending message', async () => {
     mockQuarantine([
-      { id: 'q1', senderDID: 'did:plc:x', messageType: 'coordination.request', body: 'hi', receivedAt: 1 },
+      {
+        id: 'q1',
+        senderDID: 'did:plc:x',
+        messageType: 'coordination.request',
+        body: 'hi',
+        receivedAt: 1,
+      },
       { id: 'q2', senderDID: 'did:plc:y', messageType: 'social.update', body: 'yo', receivedAt: 2 },
     ]);
     syncQuarantineCards('main');
@@ -69,7 +79,13 @@ describe('quarantine_sync.web', () => {
       },
     });
     mockQuarantine([
-      { id: 'q1', senderDID: 'did:plc:x', messageType: 'coordination.request', body: 'hi', receivedAt: 1 },
+      {
+        id: 'q1',
+        senderDID: 'did:plc:x',
+        messageType: 'coordination.request',
+        body: 'hi',
+        receivedAt: 1,
+      },
       { id: 'q2', senderDID: 'did:plc:y', messageType: 'social.update', body: 'yo', receivedAt: 2 },
     ]);
     syncQuarantineCards('main');

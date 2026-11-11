@@ -25,7 +25,12 @@
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { drawsOnlyFrom, parseSendInstruction, verifySpanProof, type SpanProof } from '../a2a/span_proof';
+import {
+  drawsOnlyFrom,
+  parseSendInstruction,
+  verifySpanProof,
+  type SpanProof,
+} from '../a2a/span_proof';
 import { getContact, listContacts, type Contact } from '../contacts/directory';
 import { normalizeAlias } from '../contacts/validation';
 import { getD2DSender } from '../server/routes/d2d_msg';
@@ -38,7 +43,13 @@ const CONFIRM_TTL_SEC = 30 * 60;
 
 export type OwnerSendResult =
   | { status: 'sent'; recipient_did: string; recipient_name: string; text: string }
-  | { status: 'confirm_pending'; task_id: string; recipient_did: string; recipient_name: string; text: string }
+  | {
+      status: 'confirm_pending';
+      task_id: string;
+      recipient_did: string;
+      recipient_name: string;
+      text: string;
+    }
   | { status: 'ambiguous'; candidates: string[] }
   | { status: 'not_a_contact' }
   | { status: 'no_owner_turn'; reason: string }
@@ -54,17 +65,27 @@ export function resolveContactRef(
     const c = getContact(r);
     return c !== null ? { kind: 'one', contact: c } : { kind: 'none' };
   }
-  const want = normalizeAlias(r).split(' ').filter((t) => t !== '');
+  const want = normalizeAlias(r)
+    .split(' ')
+    .filter((t) => t !== '');
   if (want.length === 0) return { kind: 'none' };
   const matches = listContacts().filter((c) => {
     const forms = [c.displayName, ...(c.aliases ?? [])];
     return forms.some((f) => {
-      const tokens = new Set(normalizeAlias(f).split(' ').filter((t) => t !== ''));
+      const tokens = new Set(
+        normalizeAlias(f)
+          .split(' ')
+          .filter((t) => t !== ''),
+      );
       // "Sancho" finds "Sancho Panza"; "Sancho Panza" finds "Sancho Panza".
       return want.every((t) => tokens.has(t));
     });
   });
-  if (matches.length === 1) return { kind: 'one', contact: matches[0]! };
+  if (matches.length === 1) {
+    const onlyMatch = matches[0];
+    if (onlyMatch === undefined) throw new Error('resolveContactRef: one match expected');
+    return { kind: 'one', contact: onlyMatch };
+  }
   if (matches.length > 1) return { kind: 'ambiguous', names: matches.map((c) => c.displayName) };
   return { kind: 'none' };
 }
@@ -114,7 +135,8 @@ export async function ownerSendToContact(input: {
   proposedText: string;
 }): Promise<OwnerSendResult> {
   const text = input.proposedText.trim();
-  if (text === '' || text.length > 4_000) return { status: 'failed', reason: 'message text is required' };
+  if (text === '' || text.length > 4_000)
+    return { status: 'failed', reason: 'message text is required' };
   const chosen = resolveContactRef(input.contact);
   if (chosen.kind === 'ambiguous') return { status: 'ambiguous', candidates: chosen.names };
   if (chosen.kind === 'none') return { status: 'not_a_contact' };
@@ -160,21 +182,31 @@ function recipientByContacts(
   // right after the first word ("tell Sancho: …", "tell Sancho that …").
   // Whitespace collapsed first, so the check sees the word after the first
   // one and cannot be stepped around with extra spaces.
-  const head = turnText.trim().replace(/\s+/g, ' ').replace(/^(?:please[, ] ?)?/i, '');
+  const head = turnText
+    .trim()
+    .replace(/\s+/g, ' ')
+    .replace(/^(?:please[, ] ?)?/i, '');
   const open = /^(?:tell|message|text) (\S+) (?![:,-]|that )/i.exec(head);
   if (open === null || /[:,-]$/.test(open[1] ?? '')) return parsed;
   const words = `${parsed.recipient} ${parsed.payload}`.split(/\s+/).filter((w) => w !== '');
   let best: { recipient: string; payload: string } | null = null;
   let did: string | null = null;
   for (let k = Math.min(4, words.length - 1); k >= 1; k -= 1) {
-    const recipient = words.slice(0, k).join(' ').replace(/[:,-]+$/, '');
+    const recipient = words
+      .slice(0, k)
+      .join(' ')
+      .replace(/[:,-]+$/, '');
     const found = resolveContactRef(recipient);
     // A run naming several contacts ("Alex" with Alex and Alex Smith) means
     // the owner's words do not settle who is meant.
     if (found.kind === 'ambiguous') return null;
     if (found.kind !== 'one') continue;
     if (did !== null && found.contact.did !== did) return null;
-    const payload = words.slice(k).join(' ').replace(/^(?:[:,-]\s*)?(?:that\s+)?/i, '').trim();
+    const payload = words
+      .slice(k)
+      .join(' ')
+      .replace(/^(?:[:,-]\s*)?(?:that\s+)?/i, '')
+      .trim();
     if (payload === '') continue;
     did = found.contact.did;
     best ??= { recipient, payload };
@@ -189,7 +221,8 @@ export function parseOwnerTalkSendPayload(
   try {
     const p = JSON.parse(raw) as Record<string, unknown>;
     if (p.type !== OWNER_TALK_SEND_APPROVAL_TYPE) return null;
-    if (typeof p.recipient_did !== 'string' || typeof p.text !== 'string' || p.text === '') return null;
+    if (typeof p.recipient_did !== 'string' || typeof p.text !== 'string' || p.text === '')
+      return null;
     return {
       recipient_did: p.recipient_did,
       recipient_name: typeof p.recipient_name === 'string' ? p.recipient_name : '',

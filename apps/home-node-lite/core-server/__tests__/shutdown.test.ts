@@ -8,11 +8,7 @@
 
 import { pino } from 'pino';
 
-import {
-  registerSignalHandlers,
-  runShutdown,
-  type ShutdownStep,
-} from '../src/shutdown';
+import { registerSignalHandlers, runShutdown, type ShutdownStep } from '../src/shutdown';
 
 function silentLogger() {
   return pino({ level: 'silent' });
@@ -124,9 +120,7 @@ describe('graceful shutdown (task 4.9)', () => {
     it('wires SIGINT/SIGTERM and runs the sequence on signal', async () => {
       const exitCodes: number[] = [];
       const closed: string[] = [];
-      const steps: ShutdownStep[] = [
-        { name: 'fastify', close: () => void closed.push('fastify') },
-      ];
+      const steps: ShutdownStep[] = [{ name: 'fastify', close: () => void closed.push('fastify') }];
       const dereg = registerSignalHandlers({
         logger: silentLogger(),
         steps,

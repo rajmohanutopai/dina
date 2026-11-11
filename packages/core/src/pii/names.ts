@@ -18,7 +18,6 @@ const NAMING_SURFACE_TYPES: ReadonlySet<string> = new Set(['name', 'nickname', '
 
 // Relationship words are read by the shared helper (people/relationship_words.ts).
 
-
 /** One person's names: the strings Brain hides, under one group number. */
 export interface PiiNameGroup {
   group: number;

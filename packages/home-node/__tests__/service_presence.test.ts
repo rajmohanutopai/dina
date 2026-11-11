@@ -2,7 +2,11 @@
  * REAL_LIFE_FIXES §14.4 A — the node's presence writer.
  */
 
-import { SERVICE_PRESENCE_COLLECTION, SERVICE_PROFILE_COLLECTION, validateServicePresenceRecord } from '@dina/protocol';
+import {
+  SERVICE_PRESENCE_COLLECTION,
+  SERVICE_PROFILE_COLLECTION,
+  validateServicePresenceRecord,
+} from '@dina/protocol';
 
 import { ServicePresenceWriter, type PresenceState } from '../src/service_presence';
 
@@ -21,14 +25,21 @@ class FakeRepo {
     expect(collection).toBe(SERVICE_PRESENCE_COLLECTION);
     return this.presence === null ? null : { cid: this.presence.cid };
   }
-  async putRecord(_c: string, _r: string, value: Record<string, unknown>, opts: { swapRecord: string | null }) {
-    if ((this.presence?.cid ?? null) !== opts.swapRecord) throw Object.assign(new Error('swap'), { casLost: true });
+  async putRecord(
+    _c: string,
+    _r: string,
+    value: Record<string, unknown>,
+    opts: { swapRecord: string | null },
+  ) {
+    if ((this.presence?.cid ?? null) !== opts.swapRecord)
+      throw Object.assign(new Error('swap'), { casLost: true });
     this.writes += 1;
     this.presence = { cid: CID(++this.seq), value };
     return { cid: this.presence.cid };
   }
   async deleteRecord(_c: string, _r: string, opts: { swapRecord: string }) {
-    if (this.presence?.cid !== opts.swapRecord) throw Object.assign(new Error('swap'), { xrpcError: 'InvalidSwap' });
+    if (this.presence?.cid !== opts.swapRecord)
+      throw Object.assign(new Error('swap'), { xrpcError: 'InvalidSwap' });
     this.presence = null;
   }
 }
@@ -57,7 +68,10 @@ function setup(opts: { inbound?: boolean; state?: PresenceState | null } = {}) {
 describe('the presence writer', () => {
   it('writes a valid record naming every published listing', async () => {
     const t = setup();
-    t.repo.profiles = [{ rkey: 'self', cid: CID(1) }, { rkey: 'dentist', cid: CID(2) }];
+    t.repo.profiles = [
+      { rkey: 'self', cid: CID(1) },
+      { rkey: 'dentist', cid: CID(2) },
+    ];
     const out = await t.writer.nudge();
     expect(out).toMatchObject({ status: 'written', listings: 2, complete: true });
     expect(validateServicePresenceRecord(t.repo.presence?.value)).toBeNull();
@@ -78,7 +92,10 @@ describe('the presence writer', () => {
     t.repo.profiles = [{ rkey: 'a', cid: CID(1) }];
     await t.writer.nudge();
     t.setInbound(false);
-    t.repo.profiles = [{ rkey: 'a', cid: CID(1) }, { rkey: 'b', cid: CID(2) }];
+    t.repo.profiles = [
+      { rkey: 'a', cid: CID(1) },
+      { rkey: 'b', cid: CID(2) },
+    ];
     expect((await t.writer.nudge()).status).toBe('waiting_inbound');
     t.setInbound(true);
     expect((await t.writer.onInboundUp())?.status).toBe('written');
@@ -102,7 +119,10 @@ describe('the presence writer', () => {
     const t = setup();
     t.repo.profiles = [{ rkey: 'a', cid: CID(1) }];
     const first = t.writer.nudge();
-    t.repo.profiles = [{ rkey: 'a', cid: CID(1) }, { rkey: 'b', cid: CID(2) }];
+    t.repo.profiles = [
+      { rkey: 'a', cid: CID(1) },
+      { rkey: 'b', cid: CID(2) },
+    ];
     void t.writer.nudge();
     await first;
     expect((t.repo.presence?.value.listings as unknown[]).length).toBe(2);
@@ -135,7 +155,11 @@ describe('the presence writer', () => {
   it('over the listing limit it writes an incomplete, empty set', async () => {
     const t = setup();
     t.repo.profiles = Array.from({ length: 101 }, (_, i) => ({ rkey: `l${i}`, cid: CID(i) }));
-    expect(await t.writer.nudge()).toMatchObject({ status: 'written', listings: 0, complete: false });
+    expect(await t.writer.nudge()).toMatchObject({
+      status: 'written',
+      listings: 0,
+      complete: false,
+    });
     expect(validateServicePresenceRecord(t.repo.presence?.value)).toBeNull();
   });
 

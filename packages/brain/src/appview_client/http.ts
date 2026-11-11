@@ -271,7 +271,10 @@ function parseA2ADirectoryCard(did: string, value: unknown): A2ADirectoryCard | 
   const rpc = Array.isArray(interfaces)
     ? (interfaces as unknown[]).find(
         (i): i is { url: string } =>
-          i !== null && typeof i === 'object' && (i as Record<string, unknown>).protocolBinding === PROTOCOL_BINDING_JSONRPC && typeof (i as Record<string, unknown>).url === 'string',
+          i !== null &&
+          typeof i === 'object' &&
+          (i as Record<string, unknown>).protocolBinding === PROTOCOL_BINDING_JSONRPC &&
+          typeof (i as Record<string, unknown>).url === 'string',
       )
     : undefined;
   if (rpc === undefined || !checkOutboundUrl(rpc.url).ok) return null;
@@ -285,7 +288,6 @@ function parseA2ADirectoryCard(did: string, value: unknown): A2ADirectoryCard | 
     recommendation: trust.recommendation as A2ADirectoryCard['recommendation'],
   };
 }
-
 
 /**
  * A directory result of exactly the published shape, cleaned for the model,
@@ -796,7 +798,9 @@ export class AppViewClient {
     }
     const body = await this.get('/xrpc/com.dinakernel.commerce.searchTermListings', query);
     const rows = (body as { listings?: unknown }).listings;
-    return Array.isArray(rows) ? rows.map(coerceTermListingCandidate).filter((c): c is TermListingCandidate => c !== null) : [];
+    return Array.isArray(rows)
+      ? rows.map(coerceTermListingCandidate).filter((c): c is TermListingCandidate => c !== null)
+      : [];
   }
 
   /** One term listing by its URI — the deep link from a directory's app (§6.3). Null when not indexed. */
@@ -846,7 +850,8 @@ export class AppViewClient {
       raw.suppressed_below_trust_floor > 0
         ? raw.suppressed_below_trust_floor
         : 0;
-    if (!Array.isArray(raw.candidates)) return { candidates: [], suppressedBelowTrustFloor: suppressed };
+    if (!Array.isArray(raw.candidates))
+      return { candidates: [], suppressedBelowTrustFloor: suppressed };
     return {
       candidates: raw.candidates
         .map(coerceCatalogCandidate)
@@ -896,10 +901,7 @@ export class AppViewClient {
   // Internals
   // -------------------------------------------------------------------------
 
-  private async get(
-    path: string,
-    query: Record<string, string | string[]>,
-  ): Promise<unknown> {
+  private async get(path: string, query: Record<string, string | string[]>): Promise<unknown> {
     // A value may be an ARRAY (a repeated query param, e.g. `?identifier=a&
     // identifier=b`, which the AppView `queryList` contract expects) or a
     // single string. `append` builds the repeated form; a single string keeps
@@ -1037,7 +1039,11 @@ const LIVENESS = new Set(['fresh', 'stale', 'expired', 'unknown']);
 function normalizeLiveness(p: ServiceProfile): ServiceProfile {
   const out = { ...p };
   if (out.liveness !== undefined && !LIVENESS.has(out.liveness)) delete out.liveness;
-  if (out.lastSeenAt !== undefined && out.lastSeenAt !== null && !(typeof out.lastSeenAt === 'string' && Number.isFinite(Date.parse(out.lastSeenAt)))) {
+  if (
+    out.lastSeenAt !== undefined &&
+    out.lastSeenAt !== null &&
+    !(typeof out.lastSeenAt === 'string' && Number.isFinite(Date.parse(out.lastSeenAt)))
+  ) {
     delete out.lastSeenAt;
   }
   return out;

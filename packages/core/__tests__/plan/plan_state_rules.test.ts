@@ -91,7 +91,13 @@ describe('PLAN-2: a held item its agent closes leaves nothing behind', () => {
       IDENTITY_MIGRATIONS.filter((m) => m.version < (migration?.version ?? 0)),
     );
     const oldStore = new PlanStore(old);
-    const seed = (origin: string, ref: string, status: string, openedAt: number, doneAt: number | null) =>
+    const seed = (
+      origin: string,
+      ref: string,
+      status: string,
+      openedAt: number,
+      doneAt: number | null,
+    ) =>
       old.execute(
         `INSERT INTO plan_tasks (id, persona, title, origin, source_ref, status, opened_at, done_at, created_at, updated_at, observed_at)
          VALUES (?, 'general', ?, ?, ?, ?, ?, ?, 1, 1, 1)`,
@@ -116,17 +122,20 @@ describe('PLAN-2: a held item its agent closes leaves nothing behind', () => {
 describe('PLAN-3: a revoked device holds no permission to add tasks', () => {
   const item = (ref: string) => ({ source_ref: ref, title: ref, observed_at: T0 });
 
-  it.each(['rich', 'cli', 'agent'] as const)('%s device: revoke forgets its feed and held tasks', (role) => {
-    const dev = registerDevice('CLI', `z6MkKeyFor${role}`, role);
-    push(dev.did, 'b1', [item('r1')], T0);
-    decideFeed(store, dev.did, 'general', true, T0);
-    push(dev.did, 'b2', [item('r2')], T0);
-    push(dev.did, 'b3', [{ ...item('h'), persona: 'work' }], T0);
-    revokeDevice(dev.deviceId);
-    expect(store.getFeed(dev.did, 'general')).toBeNull();
-    // What the owner already took on stays.
-    expect(store.listTasks({ origin: dev.did }).every((t) => t.status === 'open')).toBe(true);
-  });
+  it.each(['rich', 'cli', 'agent'] as const)(
+    '%s device: revoke forgets its feed and held tasks',
+    (role) => {
+      const dev = registerDevice('CLI', `z6MkKeyFor${role}`, role);
+      push(dev.did, 'b1', [item('r1')], T0);
+      decideFeed(store, dev.did, 'general', true, T0);
+      push(dev.did, 'b2', [item('r2')], T0);
+      push(dev.did, 'b3', [{ ...item('h'), persona: 'work' }], T0);
+      revokeDevice(dev.deviceId);
+      expect(store.getFeed(dev.did, 'general')).toBeNull();
+      // What the owner already took on stays.
+      expect(store.listTasks({ origin: dev.did }).every((t) => t.status === 'open')).toBe(true);
+    },
+  );
 
   it('the same key paired again starts over: its next batch waits for the owner', () => {
     const dev = registerDevice('CLI', 'z6MkRepairKey', 'rich');
@@ -161,7 +170,10 @@ describe('PLAN-3: a revoked device holds no permission to add tasks', () => {
 });
 
 describe('PLAN-6: a draft only lands on a goal with no phases', () => {
-  const draft = { phases: [{ title: 'Model', notes: '', targetAt: null, tasks: [] }], by: 'model' as const };
+  const draft = {
+    phases: [{ title: 'Model', notes: '', targetAt: null, tasks: [] }],
+    by: 'model' as const,
+  };
 
   it('refuses to save a draft once the goal has a phase', () => {
     const g = store.addGoal('House', '', T0);

@@ -43,19 +43,13 @@ export interface MetricsRoutesOptions {
   namePrefix?: string;
 }
 
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   get(path: string, handler: RouteHandler): unknown;
 }
 
-export function registerMetricsRoutes(
-  app: FastifyAppShape,
-  opts: MetricsRoutesOptions,
-): void {
+export function registerMetricsRoutes(app: FastifyAppShape, opts: MetricsRoutesOptions): void {
   const { registry } = opts;
   if (!registry) {
     throw new Error('registerMetricsRoutes: registry is required');
@@ -69,9 +63,6 @@ export function registerMetricsRoutes(
 
   app.get(path, async (_req, reply) => {
     const body = renderPrometheusText(registry.snapshot(), renderOpts);
-    reply
-      .code(200)
-      .header('content-type', PROMETHEUS_CONTENT_TYPE)
-      .send(body);
+    reply.code(200).header('content-type', PROMETHEUS_CONTENT_TYPE).send(body);
   });
 }

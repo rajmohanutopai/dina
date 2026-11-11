@@ -52,7 +52,8 @@ async function restart(): Promise<void> {
   await hydrateRemindersFromRepo();
 }
 
-const sqlRows = (): number => Number(db.query<{ c: number }>('SELECT COUNT(*) c FROM reminders')[0]?.c);
+const sqlRows = (): number =>
+  Number(db.query<{ c: number }>('SELECT COUNT(*) c FROM reminders')[0]?.c);
 
 beforeEach(() => {
   db = openDB();
@@ -62,7 +63,11 @@ beforeEach(() => {
 
 describe('REQ-02: a deleted reminder stays deleted', () => {
   it('through the route: gone from SQL, absent and unfired after a restart', async () => {
-    const r = await createReminderDurable({ message: 'p', due_at: Date.now() - 1000, persona: 'general' });
+    const r = await createReminderDurable({
+      message: 'p',
+      due_at: Date.now() - 1000,
+      persona: 'general',
+    });
     const res = await makeReminderHandlers().remove(req({ params: { id: r.id } }));
     expect((res as { body: unknown }).body).toEqual({ deleted: true });
     expect(sqlRows()).toBe(0);
@@ -82,7 +87,11 @@ describe('REQ-02: a deleted reminder stays deleted', () => {
   });
 
   it('removes a row the cache has lost, which is how a forget meets one', async () => {
-    const r = await createReminderDurable({ message: 'p', due_at: Date.now() + 1, persona: 'general' });
+    const r = await createReminderDurable({
+      message: 'p',
+      due_at: Date.now() + 1,
+      persona: 'general',
+    });
     resetReminderCaches();
     expect(await deleteReminderDurable(r.id)).toBe(false);
     expect(sqlRows()).toBe(0);
@@ -92,7 +101,12 @@ describe('REQ-02: a deleted reminder stays deleted', () => {
 describe('REQ-08: recurring reminders keep going', () => {
   it('firing a daily reminder makes the next one, due after now', async () => {
     const now = Date.now();
-    await createReminderDurable({ message: 'daily', due_at: now - 3 * MS_DAY, persona: 'general', recurring: 'daily' });
+    await createReminderDurable({
+      message: 'daily',
+      due_at: now - 3 * MS_DAY,
+      persona: 'general',
+      recurring: 'daily',
+    });
 
     expect(fireMissedReminders(now)).toHaveLength(1);
 
@@ -105,7 +119,12 @@ describe('REQ-08: recurring reminders keep going', () => {
 
   it('fires again a day later, once per day, not once per day missed', async () => {
     const now = Date.now();
-    await createReminderDurable({ message: 'daily', due_at: now - 3 * MS_DAY, persona: 'general', recurring: 'daily' });
+    await createReminderDurable({
+      message: 'daily',
+      due_at: now - 3 * MS_DAY,
+      persona: 'general',
+      recurring: 'daily',
+    });
     fireMissedReminders(now);
     expect(fireMissedReminders(now + 10)).toEqual([]);
     expect(fireMissedReminders(now + MS_DAY + 1)).toHaveLength(1);
@@ -113,7 +132,12 @@ describe('REQ-08: recurring reminders keep going', () => {
 
   it('survives a restart: the next occurrence is on disk', async () => {
     const now = Date.now();
-    await createReminderDurable({ message: 'daily', due_at: now - 1000, persona: 'general', recurring: 'daily' });
+    await createReminderDurable({
+      message: 'daily',
+      due_at: now - 1000,
+      persona: 'general',
+      recurring: 'daily',
+    });
     fireMissedReminders(now);
     await new Promise((r) => setTimeout(r, 5));
     await restart();
@@ -122,16 +146,28 @@ describe('REQ-08: recurring reminders keep going', () => {
 
   it('a late Done on a fired occurrence does not start a second chain', async () => {
     const now = Date.now();
-    const r = await createReminderDurable({ message: 'daily', due_at: now - 1000, persona: 'general', recurring: 'daily' });
+    const r = await createReminderDurable({
+      message: 'daily',
+      due_at: now - 1000,
+      persona: 'general',
+      recurring: 'daily',
+    });
     fireMissedReminders(now);
     completeReminder(r.id);
-    expect(listByPersona('general').filter((x) => x.completed === 0 && x.status === 'pending')).toHaveLength(1);
+    expect(
+      listByPersona('general').filter((x) => x.completed === 0 && x.status === 'pending'),
+    ).toHaveLength(1);
     expect(listPending(now)).toEqual([]);
   });
 
   it('Done on an unfired recurring reminder skips forward past now', async () => {
     const now = Date.now();
-    const r = await createReminderDurable({ message: 'daily', due_at: now - 5 * MS_DAY, persona: 'general', recurring: 'daily' });
+    const r = await createReminderDurable({
+      message: 'daily',
+      due_at: now - 5 * MS_DAY,
+      persona: 'general',
+      recurring: 'daily',
+    });
     const next = completeReminder(r.id);
     expect(next?.due_at).toBeGreaterThan(Date.now() - 1000);
     expect(listPending(now)).toEqual([]);
@@ -154,7 +190,11 @@ describe('REQ-11: a throwing fire callback', () => {
 
 describe('REQ-14: acting on a finished reminder', () => {
   it('snooze answers 409 and changes nothing', async () => {
-    const r = await createReminderDurable({ message: 'x', due_at: Date.now() + 1000, persona: 'general' });
+    const r = await createReminderDurable({
+      message: 'x',
+      due_at: Date.now() + 1000,
+      persona: 'general',
+    });
     completeReminder(r.id);
     const res = await makeReminderHandlers().snooze(
       req({ params: { id: r.id }, body: { snooze_ms: 60_000 } }),
@@ -164,7 +204,12 @@ describe('REQ-14: acting on a finished reminder', () => {
   });
 
   it('a second Done makes no second occurrence', async () => {
-    const r = await createReminderDurable({ message: 'x', due_at: Date.now() + 1000, persona: 'general', recurring: 'daily' });
+    const r = await createReminderDurable({
+      message: 'x',
+      due_at: Date.now() + 1000,
+      persona: 'general',
+      recurring: 'daily',
+    });
     expect(completeReminder(r.id)).not.toBeNull();
     expect(completeReminder(r.id)).toBeNull();
     expect(listByPersona('general')).toHaveLength(2);

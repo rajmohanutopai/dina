@@ -93,7 +93,7 @@ export async function kvList(namespace?: string): Promise<KVEntry[]> {
 
   const entries: KVEntry[] = [];
   for (const entry of store.values()) {
-    if (!namespace || entry.key.startsWith(prefix!)) {
+    if (prefix === undefined || entry.key.startsWith(prefix)) {
       entries.push(entry);
     }
   }
@@ -107,10 +107,10 @@ export async function kvCount(namespace?: string): Promise<number> {
   const prefix = namespace ? `${namespace}:` : undefined;
   if (repo) return repo.count(prefix);
 
-  if (!namespace) return store.size;
+  if (prefix === undefined) return store.size;
   let count = 0;
   for (const entry of store.values()) {
-    if (entry.key.startsWith(prefix!)) count++;
+    if (entry.key.startsWith(prefix)) count++;
   }
   return count;
 }

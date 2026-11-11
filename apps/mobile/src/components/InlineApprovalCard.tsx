@@ -59,7 +59,10 @@ function readMetadata(m: ChatMessage): AskApprovalMetadata | null {
   return meta;
 }
 
-export function InlineApprovalCard({ message, approverDID }: InlineApprovalCardProps): React.JSX.Element | null {
+export function InlineApprovalCard({
+  message,
+  approverDID,
+}: InlineApprovalCardProps): React.JSX.Element | null {
   const meta = readMetadata(message);
   const [pending, setPending] = useState(false);
   const [tapped, setResolved] = useState<'approved' | 'denied' | null>(null);

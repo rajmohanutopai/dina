@@ -12,15 +12,16 @@
  * node become if it imports anyway.
  */
 
+import { sha256 } from '@noble/hashes/sha2.js';
+
+import { commerceRecordDigest, type Sha256Fn } from '@dina/commerce-protocol';
+
 import {
   describePreflightRefusal,
   preflightCommerceArchive,
   REQUIRED_COMMERCE_TABLES,
   type CommerceArchiveTables,
 } from '../../src/commerce/archive_preflight';
-
-import { commerceRecordDigest, type Sha256Fn } from '@dina/commerce-protocol';
-import { sha256 } from '@noble/hashes/sha2.js';
 
 const hash: Sha256Fn = (data) => sha256(data);
 
@@ -357,10 +358,7 @@ describe('row shapes', () => {
     // asserted "extra columns are ignored" against a row that would now be
     // refused for a different and correct reason — the assertion would have
     // gone on passing for the wrong one.
-    tables.commerce_receipts = [
-      { ...STATUS_RECEIPT, something_else: 1 } as never,
-      ORDER_RECEIPT,
-    ];
+    tables.commerce_receipts = [{ ...STATUS_RECEIPT, something_else: 1 } as never, ORDER_RECEIPT];
     expect(preflightCommerceArchive(tables).ok).toBe(true);
   });
 });
@@ -398,15 +396,10 @@ describe('forged receipts (§16.2 — the archive is attacker-influenced)', () =
     // Cannot-derive is a refusal. Admitting it would make "verified" mean
     // "verified, or filed under a domain someone invented".
     const tables = coherent();
-    tables.commerce_receipts = [
-      { ...STATUS_RECEIPT, domain: 'order_status' },
-      ORDER_RECEIPT,
-    ];
+    tables.commerce_receipts = [{ ...STATUS_RECEIPT, domain: 'order_status' }, ORDER_RECEIPT];
     const verdict = preflightCommerceArchive(tables);
     expect(verdict.ok).toBe(false);
-    expect(verdict.findings).toContainEqual(
-      expect.objectContaining({ refusal: 'forged_receipt' }),
-    );
+    expect(verdict.findings).toContainEqual(expect.objectContaining({ refusal: 'forged_receipt' }));
   });
 
   it('refuses a receipt carrying no record at all', () => {
@@ -417,9 +410,7 @@ describe('forged receipts (§16.2 — the archive is attacker-influenced)', () =
     ];
     const verdict = preflightCommerceArchive(tables);
     expect(verdict.ok).toBe(false);
-    expect(verdict.findings).toContainEqual(
-      expect.objectContaining({ refusal: 'forged_receipt' }),
-    );
+    expect(verdict.findings).toContainEqual(expect.objectContaining({ refusal: 'forged_receipt' }));
   });
 
   it('refuses a record_json that is not JSON', () => {

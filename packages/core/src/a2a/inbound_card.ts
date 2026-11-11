@@ -113,7 +113,10 @@ export function installA2ACardConfig(config: A2ACardConfig | null): void {
   }
   const origin = parseA2APublicOrigin(config.publicOrigin);
   if (origin === null) throw new Error('A2A public origin must be a bare https origin');
-  const copy = (k: A2ACardKey): A2ACardKey => ({ privateKey: k.privateKey.slice(), generation: k.generation });
+  const copy = (k: A2ACardKey): A2ACardKey => ({
+    privateKey: k.privateKey.slice(),
+    generation: k.generation,
+  });
   cardConfig = {
     key: copy(config.key),
     ...(config.also !== undefined && config.also.length > 0 ? { also: config.also.map(copy) } : {}),
@@ -136,7 +139,15 @@ export function cardPublicJwk(key: A2ACardKey): JsonObject {
   const x = point.slice(1, 33);
   const y = point.slice(33);
   const kid = jwkThumbprint({ kty: 'EC', crv: 'P-256', x, y });
-  return { kty: 'EC', crv: 'P-256', x: base64urlEncode(x), y: base64urlEncode(y), kid, use: 'sig', alg: 'ES256' };
+  return {
+    kty: 'EC',
+    crv: 'P-256',
+    x: base64urlEncode(x),
+    y: base64urlEncode(y),
+    kid,
+    use: 'sig',
+    alg: 'ES256',
+  };
 }
 
 export type InboundCardResult =
@@ -152,7 +163,11 @@ export const INBOUND_CARD_FAILURES = ['skill_id_too_long', 'skill_too_large'] as
 export type InboundCardFailure = (typeof INBOUND_CARD_FAILURES)[number];
 
 /** One listing capability, classified exactly as invocation would classify it. */
-export function projectionCapability(store: A2AStore, config: ServiceConfig, configuredKey: string): ProjectionCapability {
+export function projectionCapability(
+  store: A2AStore,
+  config: ServiceConfig,
+  configuredKey: string,
+): ProjectionCapability {
   const cap = config.capabilities[configuredKey];
   const cls = classifyInboundCapability(configuredKey);
   const canonical = cls.ok ? cls.canonical : null;
@@ -172,9 +187,14 @@ export function projectionCapability(store: A2AStore, config: ServiceConfig, con
     canonical,
     actionClass: cls.ok ? cls.actionClass : null,
     publicExposureAllowed: cls.ok && cls.publicExposureAllowed,
-    ...(schemas === null || schemaHash === undefined ? {} : { paramsSchema: schemas.params as JsonObject, schemaHash }),
+    ...(schemas === null || schemaHash === undefined
+      ? {}
+      : { paramsSchema: schemas.params as JsonObject, schemaHash }),
     schemasEnforceable: schemas !== null && schemaPairEnforceable(schemas),
-    executor: cap === undefined ? null : (selectA2AExecutor(store, cap, cls.ok ? cls.actionClass : null)?.kind ?? null),
+    executor:
+      cap === undefined
+        ? null
+        : (selectA2AExecutor(store, cap, cls.ok ? cls.actionClass : null)?.kind ?? null),
     displayName: def?.display_name ?? configuredKey,
     description: schemas?.description ?? def?.short_description ?? '',
     tags: def === null ? [] : [...def.category_ids],
@@ -200,7 +220,9 @@ export function inboundProjectionListings(store: A2AStore): ProjectionListing[] 
  * An extended card may also take them from a listing the client's own
  * grants open (`alsoRkeys`), never from one it cannot see.
  */
-function cardIdentity(alsoRkeys: ReadonlySet<string> = new Set()): { name: string; description: string } | null {
+function cardIdentity(
+  alsoRkeys: ReadonlySet<string> = new Set(),
+): { name: string; description: string } | null {
   const live = listServiceConfigs().filter(
     ({ rkey, config }) =>
       effectiveListingStatus(config) === 'active' &&
@@ -209,7 +231,8 @@ function cardIdentity(alsoRkeys: ReadonlySet<string> = new Set()): { name: strin
   );
   // A public listing names the card before a granted one does.
   const pub = live.filter(({ config }) => effectiveDiscoverability(config) === 'public');
-  const chosen = pub.find((l) => l.rkey === 'self') ?? pub[0] ?? live.find((l) => l.rkey === 'self') ?? live[0];
+  const chosen =
+    pub.find((l) => l.rkey === 'self') ?? pub[0] ?? live.find((l) => l.rkey === 'self') ?? live[0];
   if (chosen === undefined) return null;
   // Bounded as the words of a remote are: the listing validator bounds neither
   // field, and one long description must not push the whole card past its cap.
@@ -233,10 +256,19 @@ export function parseA2APublicOrigin(raw: string): string | null {
   } catch {
     return null;
   }
-  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost'))) {
+  if (
+    url.protocol !== 'https:' &&
+    !(url.protocol === 'http:' && (url.hostname === '127.0.0.1' || url.hostname === 'localhost'))
+  ) {
     return null;
   }
-  if (url.username !== '' || url.password !== '' || (url.pathname !== '/' && url.pathname !== '') || url.search !== '' || url.hash !== '') {
+  if (
+    url.username !== '' ||
+    url.password !== '' ||
+    (url.pathname !== '/' && url.pathname !== '') ||
+    url.search !== '' ||
+    url.hash !== ''
+  ) {
     return null;
   }
   return url.origin;
@@ -292,10 +324,17 @@ export async function buildInboundCard(
   const signed: AgentCard = { ...card, signatures };
   // A card larger than any A2A client or the directory accepts (design §6.6,
   // §8.3) is no card: the owner sees why, rather than a card nobody can read.
-  if (new TextEncoder().encode(canonicalize(signed as unknown as JsonValue)).length > A2A_LIMITS.maxCardBytes) {
+  if (
+    new TextEncoder().encode(canonicalize(signed as unknown as JsonValue)).length >
+    A2A_LIMITS.maxCardBytes
+  ) {
     return { ok: false, reason: 'card_too_large' };
   }
-  return { ok: true, card: signed, jwks: { keys: [jwk, ...(args.config.also ?? []).map(cardPublicJwk)] } };
+  return {
+    ok: true,
+    card: signed,
+    jwks: { keys: [jwk, ...(args.config.also ?? []).map(cardPublicJwk)] },
+  };
 }
 
 /** A client's live grants, as the extended card's audience reads them: checked now, at build time. */
@@ -326,7 +365,10 @@ export async function ingressGetExtendedAgentCard(
   envelope: GatewayEnvelope,
   card: { nodeDid: string; config: A2ACardConfig } | null,
 ): Promise<GatewayAnswer> {
-  const admitted = admitIngress(rt, envelope, { template: ingressRouteOf('GetExtendedAgentCard'), params: {} });
+  const admitted = admitIngress(rt, envelope, {
+    template: ingressRouteOf('GetExtendedAgentCard'),
+    params: {},
+  });
   if (!admitted.ok) return admitted.answer;
   const now = rt.a2a.nowMs();
   if (!rt.budgets.chargeRead(admitted.principal, now)) return slowDown();
@@ -336,7 +378,11 @@ export async function ingressGetExtendedAgentCard(
     audience: { scope: admitted.scope, grants: liveGrantsOf(rt.grants, admitted.principal, now) },
   });
   if (!built.ok) {
-    return rpcError(admitted.id, 'extendedAgentCardNotConfigured', built.reason === 'no_projectable_skills' ? 'no_skills_for_client' : built.reason);
+    return rpcError(
+      admitted.id,
+      'extendedAgentCardNotConfigured',
+      built.reason === 'no_projectable_skills' ? 'no_skills_for_client' : built.reason,
+    );
   }
   return { status: 200, body: jsonRpcResult(admitted.id, built.card as unknown as JsonValue) };
 }

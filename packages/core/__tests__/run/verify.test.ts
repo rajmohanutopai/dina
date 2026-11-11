@@ -119,7 +119,11 @@ describe('verifyRunMessage — trust boundary (§6.2)', () => {
   });
 
   it('rejects a cross-run substitution (wrong run_id / provider / service_uri)', () => {
-    for (const bad of [{ run_id: 'run-2' }, { provider_did: 'did:plc:evil' }, { service_uri: 'at://x' }]) {
+    for (const bad of [
+      { run_id: 'run-2' },
+      { provider_did: 'did:plc:evil' },
+      { service_uri: 'at://x' },
+    ]) {
       const res = verifyRunMessage(signedWire(bad), EXPECTED, resolveOk, NOW);
       expect(res.ok).toBe(false);
       if (!res.ok) expect(res.reason).toBe('cross_run');
@@ -238,11 +242,19 @@ function signedExhausted(over: Partial<SignedRunExhaustedWire> = {}): SignedRunE
     runtime_key_id: 'key-1',
     ...over,
   };
-  return { ...base, signature: bytesToHex(sign(providerPriv, enc.encode(buildRunExhaustedProjection(base)))) };
+  return {
+    ...base,
+    signature: bytesToHex(sign(providerPriv, enc.encode(buildRunExhaustedProjection(base)))),
+  };
 }
 
 describe('verifyRunExhausted — trust boundary (§6.2/§7.1)', () => {
-  const EXP = { run_id: EXPECTED.run_id, provider_did: EXPECTED.provider_did, service_uri: EXPECTED.service_uri, expected_cursor: 0 };
+  const EXP = {
+    run_id: EXPECTED.run_id,
+    provider_did: EXPECTED.provider_did,
+    service_uri: EXPECTED.service_uri,
+    expected_cursor: 0,
+  };
 
   it('accepts a correctly-signed exhausted marker for the reserved cursor', () => {
     expect(verifyRunExhausted(signedExhausted(), EXP, resolveOk, NOW).ok).toBe(true);
@@ -267,7 +279,12 @@ describe('verifyRunExhausted — trust boundary (§6.2/§7.1)', () => {
 
   it('rejects a tampered exhausted marker (signature over a different cursor)', () => {
     const wire = signedExhausted({ cursor: 0 });
-    const res = verifyRunExhausted({ ...wire, cursor: 1 }, { ...EXP, expected_cursor: 1 }, resolveOk, NOW);
+    const res = verifyRunExhausted(
+      { ...wire, cursor: 1 },
+      { ...EXP, expected_cursor: 1 },
+      resolveOk,
+      NOW,
+    );
     expect(res.ok).toBe(false);
     if (!res.ok) expect(res.reason).toBe('bad_signature');
   });
@@ -289,11 +306,19 @@ function signedResult(over: Partial<SignedRunResultWire> = {}): SignedRunResultW
     runtime_key_id: 'key-1',
     ...over,
   };
-  return { ...base, signature: bytesToHex(sign(providerPriv, enc.encode(buildRunResultProjection(base)))) };
+  return {
+    ...base,
+    signature: bytesToHex(sign(providerPriv, enc.encode(buildRunResultProjection(base)))),
+  };
 }
 
 describe('verifyRunResult — trust boundary (§6.2/§6.3)', () => {
-  const EXP = { run_id: EXPECTED.run_id, provider_did: EXPECTED.provider_did, service_uri: EXPECTED.service_uri, delegation_id: 'deleg-1' };
+  const EXP = {
+    run_id: EXPECTED.run_id,
+    provider_did: EXPECTED.provider_did,
+    service_uri: EXPECTED.service_uri,
+    delegation_id: 'deleg-1',
+  };
 
   it('accepts a correctly-signed completion for the dispatched delegation', () => {
     const res = verifyRunResult(signedResult(), EXP, resolveOk, NOW);

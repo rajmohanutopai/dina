@@ -34,7 +34,7 @@ import {
 import { startUcp, stopUcp } from '../services/net_socket_wiring';
 
 import type { ProviderType } from '../ai/provider';
-import type { DinaNode , NodeRole } from '../services/bootstrap';
+import type { DinaNode, NodeRole } from '../services/bootstrap';
 
 export interface NodeBootstrapOptions {
   /**

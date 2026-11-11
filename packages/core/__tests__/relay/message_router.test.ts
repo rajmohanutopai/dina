@@ -17,7 +17,6 @@ import {
   resetMessageRouter,
 } from '../../src/relay/message_router';
 
-
 const recipientPriv = TEST_ED25519_SEED;
 const recipientPub = getPublicKey(recipientPriv);
 
@@ -80,10 +79,7 @@ describe('MsgBox Incoming Message Handler', () => {
     });
 
     it('routes D2D payload to D2D handler', async () => {
-      let received: Record<string, unknown> | null = null;
-      registerD2DHandler(async (payload) => {
-        received = payload;
-      });
+      registerD2DHandler(async () => {});
 
       const sealed = sealJSON({ c: 'encrypted', s: 'signature' });
       const result = await handleIncomingMessage(sealed, recipientPub, recipientPriv);

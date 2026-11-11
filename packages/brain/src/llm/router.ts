@@ -170,7 +170,7 @@ export function isLightweightTask(taskType: TaskType): boolean {
 export function requiresScrubbing(
   persona: string,
   provider: ProviderName | string,
-  sensitivePersonas?: string[],
+  _sensitivePersonas?: string[],
 ): boolean {
   if (provider === 'local' || provider === 'none') {
     return false;

@@ -27,7 +27,11 @@ function tempPath(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   }
 });
 
@@ -37,7 +41,9 @@ describe('adapter → blob round-trip', () => {
     a = new NodeSQLiteAdapter({ path: tempPath(), passphraseHex: KEY });
     a.execute('CREATE TABLE b (id INTEGER PRIMARY KEY, payload BLOB)');
   });
-  afterEach(() => { a.close(); });
+  afterEach(() => {
+    a.close();
+  });
 
   it('Uint8Array in, Uint8Array-compatible bytes out', () => {
     const written = new Uint8Array([0xde, 0xad, 0xbe, 0xef, 0x00, 0xff]);
@@ -89,7 +95,10 @@ describe('adapter → blob round-trip', () => {
 
   it('NULL BLOB column surfaces as null, not empty bytes', () => {
     a.run('INSERT INTO b (id, payload) VALUES (?, ?)', [42, null]);
-    const row = a.query<{ payload: Uint8Array | null }>('SELECT payload FROM b WHERE id = ?', [42])[0]!;
+    const row = a.query<{ payload: Uint8Array | null }>(
+      'SELECT payload FROM b WHERE id = ?',
+      [42],
+    )[0]!;
     expect(row.payload).toBeNull();
   });
 

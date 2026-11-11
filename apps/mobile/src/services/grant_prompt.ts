@@ -55,7 +55,13 @@ export interface GrantRequestPromptLifecycle {
  */
 export function readGrantPromptLifecycle(m: ChatMessage): GrantRequestPromptLifecycle | null {
   const lc = m.metadata?.lifecycle as
-    | { kind?: unknown; requesterDID?: unknown; capability?: unknown; rkey?: unknown; status?: unknown }
+    | {
+        kind?: unknown;
+        requesterDID?: unknown;
+        capability?: unknown;
+        rkey?: unknown;
+        status?: unknown;
+      }
     | undefined;
   if (!lc || lc.kind !== 'grant_request_prompt') return null;
   if (typeof lc.requesterDID !== 'string' || lc.requesterDID.length === 0) return null;

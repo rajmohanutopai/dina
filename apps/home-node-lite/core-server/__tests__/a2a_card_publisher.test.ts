@@ -44,7 +44,12 @@ import {
 } from '@dina/core';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { A2ACardPublisher, PUBLISH_RETRY_DELAYS_MS, cardKeyCheck, type CardRepoClient } from '../src/appview/a2a_card_publisher';
+import {
+  A2ACardPublisher,
+  PUBLISH_RETRY_DELAYS_MS,
+  cardKeyCheck,
+  type CardRepoClient,
+} from '../src/appview/a2a_card_publisher';
 
 const NODE = 'did:plc:nodeaaaaaaaaaaaaaaaaaaaa';
 
@@ -92,7 +97,10 @@ class FakeRepo implements CardRepoClient {
   /** Another writer: lands with no precondition, moving the head. */
   writeDirect(col: string, value: Record<string, unknown>): void {
     this.move();
-    this.records.set(this.key(col, 'self'), { cid: `r${this.seq}`, value: { $type: col, ...value } });
+    this.records.set(this.key(col, 'self'), {
+      cid: `r${this.seq}`,
+      value: { $type: col, ...value },
+    });
   }
   async sessionDid(): Promise<string> {
     this.check();
@@ -107,14 +115,22 @@ class FakeRepo implements CardRepoClient {
     this.check();
     this.reads += 1;
     const r = this.records.get(this.key(col, rkey));
-    return r === undefined ? null : { uri: `at://${NODE}/${col}/${rkey}`, cid: r.cid, value: structuredClone(r.value) };
+    return r === undefined
+      ? null
+      : { uri: `at://${NODE}/${col}/${rkey}`, cid: r.cid, value: structuredClone(r.value) };
   }
-  async putRecord(col: string, rkey: string, record: Record<string, unknown>, options: { swapCommit: string; swapRecord?: string | null }) {
+  async putRecord(
+    col: string,
+    rkey: string,
+    record: Record<string, unknown>,
+    options: { swapCommit: string; swapRecord?: string | null },
+  ) {
     this.check();
     await this.before();
     if (options.swapCommit !== this.head) throw new LostSwap('head moved');
     const current = this.records.get(this.key(col, rkey))?.cid ?? null;
-    if ('swapRecord' in options && options.swapRecord !== current) throw new LostSwap('record moved');
+    if ('swapRecord' in options && options.swapRecord !== current)
+      throw new LostSwap('record moved');
     this.move();
     const cid = `r${this.seq}`;
     this.records.set(this.key(col, rkey), { cid, value: structuredClone(record) });
@@ -147,10 +163,15 @@ const CARD = (name = 'Bus 42', skills = ['eta_query']): AgentCard =>
   ({
     name,
     description: 'Arrival times.',
-    supportedInterfaces: [{ url: 'https://dina.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+    supportedInterfaces: [
+      { url: 'https://dina.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+    ],
     version: '1.0.0',
     // A card the directory would take: the Dina extension names the node's own DID.
-    capabilities: { streaming: true, extensions: [{ uri: DINA_A2A_EXTENSION_URI, params: { did: NODE } }] },
+    capabilities: {
+      streaming: true,
+      extensions: [{ uri: DINA_A2A_EXTENSION_URI, params: { did: NODE } }],
+    },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
     skills: skills.map(SKILL),
@@ -258,19 +279,30 @@ const newId = () => `00000000-0000-4000-8000-${String(++instances).padStart(12, 
 const listOn = (n: Node) => setDirectoryListing(n.store, true, clock, newId);
 const listOff = (n: Node) => setDirectoryListing(n.store, false, clock, newId);
 /** A real listing write: the projection triggers bump the revision in its own transaction. */
-const touchListing = async (n: Node, rkey = 'svc') => new SQLiteServiceConfigRepository(n.db).put(rkey, '{}', clock);
+const touchListing = async (n: Node, rkey = 'svc') =>
+  new SQLiteServiceConfigRepository(n.db).put(rkey, '{}', clock);
 const nameInRepo = () => {
   const card = repo.card();
   return card === null ? null : (JSON.parse(card.card as string) as { name: string }).name;
 };
 const skillsInRepo = () => repo.card()?.skills as string[] | undefined;
-const envelopeInRepo = () => repo.card()?.directory_envelope as Record<string, unknown> & { freshness_epoch: number; publisher_epoch: number; publisher_instance: string };
+const envelopeInRepo = () =>
+  repo.card()?.directory_envelope as Record<string, unknown> & {
+    freshness_epoch: number;
+    publisher_epoch: number;
+    publisher_instance: string;
+  };
 const envelopeVerifiesUnder = (key: Uint8Array) => {
   const record = repo.card();
   if (record === null) return false;
   return verifyDirectoryEnvelope(
     record.directory_envelope,
-    { repoDid: NODE, collection: A2A_CARD_COLLECTION, rkey: 'self', cardText: record.card as string },
+    {
+      repoDid: NODE,
+      collection: A2A_CARD_COLLECTION,
+      rkey: 'self',
+      cardText: record.card as string,
+    },
     (b) => sha256(b),
     (m, s) => verify(getPublicKey(key), m, s),
   ).ok;
@@ -315,7 +347,10 @@ describe('activation: the fencing ceremony', () => {
   it('a node with no gateway: not_configured, with nothing read or written and nothing active', async () => {
     const n = node();
     n.gateway = false;
-    expect(await n.publisher.activate({ refence: false })).toEqual({ ok: false, reason: 'not_configured' });
+    expect(await n.publisher.activate({ refence: false })).toEqual({
+      ok: false,
+      reason: 'not_configured',
+    });
     expect([repo.reads, repo.writes]).toEqual([0, []]);
     expect(repo.fence()).toBeNull();
     expect(readPublication(n.store)?.publication_active ?? 0).toBe(0);
@@ -324,9 +359,21 @@ describe('activation: the fencing ceremony', () => {
   it('a fresh repository: epoch 1, a fence this node signed, publication active', async () => {
     const n = node();
     expect(await n.publisher.activate({ refence: false })).toEqual({ ok: true, epoch: 1 });
-    expect(repo.fence()).toEqual(expect.objectContaining({ did: NODE, publisher_epoch: 1, publisher_instance: rowOf(n).publisher_instance }));
+    expect(repo.fence()).toEqual(
+      expect.objectContaining({
+        did: NODE,
+        publisher_epoch: 1,
+        publisher_instance: rowOf(n).publisher_instance,
+      }),
+    );
     expect(fenceVerifiesUnder(n.key)).toBe(true);
-    expect(rowOf(n)).toEqual(expect.objectContaining({ publication_active: 1, publisher_epoch: 1, fence_key_id: keyIdOf(n.key) }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({
+        publication_active: 1,
+        publisher_epoch: 1,
+        fence_key_id: keyIdOf(n.key),
+      }),
+    );
   });
 
   it('overlapping servers: the new one claims a greater epoch and publishes; the old one stands down when it next writes', async () => {
@@ -335,21 +382,38 @@ describe('activation: the fencing ceremony', () => {
     listOn(b);
     expect(await b.publisher.activate({ refence: false })).toEqual({ ok: true, epoch: 2 });
     await b.publisher.flush();
-    expect(envelopeInRepo()).toEqual(expect.objectContaining({ publisher_epoch: 2, publisher_instance: rowOf(b).publisher_instance }));
+    expect(envelopeInRepo()).toEqual(
+      expect.objectContaining({
+        publisher_epoch: 2,
+        publisher_instance: rowOf(b).publisher_instance,
+      }),
+    );
     a.card = CARD('Bus 99');
     await touchListing(a);
     await step(a);
-    expect(rowOf(a)).toEqual(expect.objectContaining({ state: 'stood_down', publication_active: 0, notice: 'another_server_publishing' }));
+    expect(rowOf(a)).toEqual(
+      expect.objectContaining({
+        state: 'stood_down',
+        publication_active: 0,
+        notice: 'another_server_publishing',
+      }),
+    );
     expect(nameInRepo()).toBe('Bus 42');
     expect(envelopeInRepo().publisher_instance).toBe(rowOf(b).publisher_instance);
   });
 
   it('a fence it cannot verify is replaced only on the owner’s word, above the epoch it claims', async () => {
     const stranger = new Uint8Array(32).fill(99);
-    const fence = await signFence({ did: NODE, publisher_epoch: 9, publisher_instance: '00000000-0000-4000-8000-999999999999' }, (m) => sign(stranger, m));
+    const fence = await signFence(
+      { did: NODE, publisher_epoch: 9, publisher_instance: '00000000-0000-4000-8000-999999999999' },
+      (m) => sign(stranger, m),
+    );
     repo.writeDirect(A2A_FENCE_COLLECTION, fence as unknown as Record<string, unknown>);
     const n = node();
-    expect(await n.publisher.activate({ refence: false })).toEqual({ ok: false, reason: 'fence_unverifiable' });
+    expect(await n.publisher.activate({ refence: false })).toEqual({
+      ok: false,
+      reason: 'fence_unverifiable',
+    });
     expect(await n.publisher.activate({ refence: true })).toEqual({ ok: true, epoch: 10 });
   });
 
@@ -359,7 +423,10 @@ describe('activation: the fencing ceremony', () => {
     expect(await n.publisher.activate({ refence: false })).toEqual({ ok: true, epoch: 1 });
     const m = node();
     repo.beforeWrite = () => repo.writeDirect(A2A_FENCE_COLLECTION, { stolen: true });
-    expect(await m.publisher.activate({ refence: false })).toEqual({ ok: false, reason: 'lost_race' });
+    expect(await m.publisher.activate({ refence: false })).toEqual({
+      ok: false,
+      reason: 'lost_race',
+    });
     expect(rowOf(m).publication_active).toBe(0);
   });
 
@@ -420,7 +487,13 @@ describe('the predicate: each input, and restoring it', () => {
     n.gateway = false;
     await step(n);
     expect(repo.card()).toBeNull();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', card_maybe_present: 0, last_published_cid: null }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'not_published',
+        card_maybe_present: 0,
+        last_published_cid: null,
+      }),
+    );
     n.gateway = true;
     await step(n);
     expect(nameInRepo()).toBe('Bus 42');
@@ -486,8 +559,15 @@ describe('the predicate: each input, and restoring it', () => {
 
   it('the endpoint is the JSON-RPC interface’s wherever it is listed; a card with none is not publishable', async () => {
     const n = node();
-    const rest = { url: 'https://dina.example/a2a/rest', protocolBinding: 'HTTP+JSON', protocolVersion: '1.0' };
-    n.card = { ...CARD(), supportedInterfaces: [rest, ...CARD().supportedInterfaces] } as unknown as AgentCard;
+    const rest = {
+      url: 'https://dina.example/a2a/rest',
+      protocolBinding: 'HTTP+JSON',
+      protocolVersion: '1.0',
+    };
+    n.card = {
+      ...CARD(),
+      supportedInterfaces: [rest, ...CARD().supportedInterfaces],
+    } as unknown as AgentCard;
     listOn(n);
     await n.publisher.activate({ refence: false });
     await n.publisher.flush();
@@ -500,7 +580,10 @@ describe('the predicate: each input, and restoring it', () => {
   it('a card over the directory’s cap is not publishable: none goes out, and one already there is taken down', async () => {
     const n = await activeNode();
     expect(nameInRepo()).toBe('Bus 42');
-    n.card = { ...CARD(), description: 'x'.repeat(A2A_LIMITS.maxCardBytes) } as unknown as AgentCard;
+    n.card = {
+      ...CARD(),
+      description: 'x'.repeat(A2A_LIMITS.maxCardBytes),
+    } as unknown as AgentCard;
     await touchListing(n);
     await step(n);
     expect(repo.card()).toBeNull();
@@ -529,7 +612,9 @@ describe('the predicate: each input, and restoring it', () => {
     const published = rowOf(n).last_published_card_hash;
     await step(n);
     expect(nameInRepo()).toBe('Bus 61');
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'stood_down', last_published_card_hash: published }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'stood_down', last_published_card_hash: published }),
+    );
     const writes = repo.writes.length;
     n.card = CARD('Bus 62');
     await touchListing(n);
@@ -549,8 +634,17 @@ describe('the predicate: each input, and restoring it', () => {
     await step(n);
     await n.publisher.flush();
     expect(repo.card()).toBeNull();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', publication_active: 0, card_maybe_present: 0 }));
-    expect(repo.writes.slice(-2)).toEqual([`put ${A2A_CARD_COLLECTION}`, `delete ${A2A_CARD_COLLECTION}`]);
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'not_published',
+        publication_active: 0,
+        card_maybe_present: 0,
+      }),
+    );
+    expect(repo.writes.slice(-2)).toEqual([
+      `put ${A2A_CARD_COLLECTION}`,
+      `delete ${A2A_CARD_COLLECTION}`,
+    ]);
   });
 });
 
@@ -561,7 +655,9 @@ describe('handoffs', () => {
     expect(await b.publisher.activate({ refence: false })).toEqual({ ok: true, epoch: 2 });
     await b.publisher.flush();
     expect(repo.card()).toBeNull();
-    expect(rowOf(b)).toEqual(expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }));
+    expect(rowOf(b)).toEqual(
+      expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }),
+    );
     clock += DIRECTORY_FRESHNESS_CADENCE_MS;
     await step(a);
     expect(rowOf(a).state).toBe('stood_down');
@@ -630,7 +726,12 @@ describe('handoffs', () => {
     expect(await a.publisher.activate({ refence: false })).toEqual({ ok: true, epoch: 3 });
     await a.publisher.flush();
     expect(nameInRepo()).toBe('Bus 42');
-    expect(envelopeInRepo()).toEqual(expect.objectContaining({ publisher_epoch: 3, publisher_instance: rowOf(a).publisher_instance }));
+    expect(envelopeInRepo()).toEqual(
+      expect.objectContaining({
+        publisher_epoch: 3,
+        publisher_instance: rowOf(a).publisher_instance,
+      }),
+    );
     b.card = CARD('Bus B2');
     await touchListing(b);
     await step(b);
@@ -683,7 +784,9 @@ describe('handoffs', () => {
     clock += PUBLISH_RETRY_DELAYS_MS[1];
     await step(n);
     expect(repo.card()).toBeNull();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }),
+    );
   });
 });
 
@@ -719,7 +822,13 @@ describe('a fence landing between the reads and the write', () => {
     await n.publisher.activate({ refence: false });
     repo.beforeWrite = () => repo.writeDirect('com.example.other', { y: 1 });
     await n.publisher.flush();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', attempts: 1, next_retry_at: clock + PUBLISH_RETRY_DELAYS_MS[0] }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        attempts: 1,
+        next_retry_at: clock + PUBLISH_RETRY_DELAYS_MS[0],
+      }),
+    );
     clock += PUBLISH_RETRY_DELAYS_MS[0];
     await step(n);
     expect(rowOf(n).state).toBe('published');
@@ -733,7 +842,9 @@ describe('a fence landing between the reads and the write', () => {
     await touchListing(n);
     repo.beforeWrite = () => repo.writeDirect('com.example.other', { z: 1 });
     await step(n);
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', last_published_card_hash: older }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'failed', last_published_card_hash: older }),
+    );
     expect(nameInRepo()).toBe('Bus 42');
     clock += PUBLISH_RETRY_DELAYS_MS[0];
     await step(n);
@@ -754,7 +865,12 @@ describe('the durable attempt', () => {
     expect(nameInRepo()).toBe('Bus 42');
     await step(n);
     expect(nameInRepo()).toBe('Bus 80');
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'published', published_revision: rowOf(n).card_projection_revision }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'published',
+        published_revision: rowOf(n).card_projection_revision,
+      }),
+    );
   });
 
   it('cadence against the switch turned off: the refresh lands, then the card goes', async () => {
@@ -766,7 +882,9 @@ describe('the durable attempt', () => {
     await step(n);
     await step(n);
     expect(repo.card()).toBeNull();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }),
+    );
   });
 
   it('a late success (a restart while an answer was held) writes nothing over the newer publish', async () => {
@@ -792,7 +910,10 @@ describe('the durable attempt', () => {
       expect.objectContaining({
         state: 'published',
         published_revision: rowOf(n).card_projection_revision,
-        last_published_card_hash: cardStringHash(canonicalize(CARD('Bus 82') as unknown as JsonValue), (b) => sha256(b)),
+        last_published_card_hash: cardStringHash(
+          canonicalize(CARD('Bus 82') as unknown as JsonValue),
+          (b) => sha256(b),
+        ),
       }),
     );
   });
@@ -816,7 +937,9 @@ describe('the durable attempt', () => {
     request.release();
     await old.flush();
     expect(old).not.toBe(n.publisher);
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'published', attempts: 0, next_retry_at: null }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'published', attempts: 0, next_retry_at: null }),
+    );
     expect(nameInRepo()).toBe('Bus 84');
   });
 
@@ -830,7 +953,9 @@ describe('the durable attempt', () => {
     };
     await n.publisher.flush();
     expect(nameInRepo()).toBe('Bus 42');
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', last_published_cid: null, card_maybe_present: 1 }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'failed', last_published_cid: null, card_maybe_present: 1 }),
+    );
     repo.reachable = true;
     restart(n);
     listOff(n);
@@ -851,7 +976,9 @@ describe('the durable attempt', () => {
     };
     await step(n);
     expect(nameInRepo()).toBe('Bus 42');
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', last_published_cid: null, card_maybe_present: 1 }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'failed', last_published_cid: null, card_maybe_present: 1 }),
+    );
     repo.reachable = true;
     listOff(n);
     await step(n);
@@ -874,7 +1001,9 @@ describe('the durable attempt', () => {
     restart(n);
     await step(n);
     expect(nameInRepo()).toBe('Bus 42');
-    expect(rowOf(n)).toEqual(expect.objectContaining({ state: 'published', attempt_tuple_json: null }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'published', attempt_tuple_json: null }),
+    );
     expect(rowOf(n).last_published_cid).toBe(repo.records.get(`${A2A_CARD_COLLECTION}/self`)?.cid);
   });
 });
@@ -887,11 +1016,22 @@ describe('keys', () => {
     n.key = new Uint8Array(32).fill(8);
     await step(n);
     const after = repo.fence();
-    expect(after).toEqual(expect.objectContaining({ publisher_epoch: before?.publisher_epoch, publisher_instance: before?.publisher_instance }));
+    expect(after).toEqual(
+      expect.objectContaining({
+        publisher_epoch: before?.publisher_epoch,
+        publisher_instance: before?.publisher_instance,
+      }),
+    );
     expect(fenceVerifiesUnder(n.key)).toBe(true);
     expect(envelopeVerifiesUnder(n.key)).toBe(true);
     expect(envelopeInRepo().freshness_epoch).toBe(freshness);
-    expect(rowOf(n)).toEqual(expect.objectContaining({ fence_key_id: keyIdOf(n.key), published_key_id: keyIdOf(n.key), state: 'published' }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({
+        fence_key_id: keyIdOf(n.key),
+        published_key_id: keyIdOf(n.key),
+        state: 'published',
+      }),
+    );
   });
 
   it('a rotation on an active node with nothing published still re-signs its fence at once, and writes no card', async () => {
@@ -921,7 +1061,10 @@ describe('keys', () => {
     const rotated = new Uint8Array(32).fill(8);
     const b = node(rotated);
     listOn(b);
-    expect(await b.publisher.activate({ refence: false })).toEqual({ ok: false, reason: 'fence_unverifiable' });
+    expect(await b.publisher.activate({ refence: false })).toEqual({
+      ok: false,
+      reason: 'fence_unverifiable',
+    });
     expect(await b.publisher.activate({ refence: true })).toEqual({ ok: true, epoch: 2 });
     await b.publisher.flush();
     a.key = rotated;
@@ -971,7 +1114,9 @@ describe('keys', () => {
     reads.release();
     expect(await activation).toEqual({ ok: true, epoch: 2 });
     await n.publisher.flush();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ publication_active: 1, publisher_epoch: 2, notice: null }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ publication_active: 1, publisher_epoch: 2, notice: null }),
+    );
     expect(rowOf(n).state).not.toBe('stood_down');
     expect(envelopeInRepo()).toEqual(expect.objectContaining({ publisher_epoch: 2 }));
     expect(nameInRepo()).toBe('Bus 78');
@@ -1004,7 +1149,9 @@ describe('keys', () => {
     answer.release();
     expect(await activation).toEqual({ ok: true, epoch: 2 });
     await n.publisher.flush();
-    expect(rowOf(n)).toEqual(expect.objectContaining({ publication_active: 1, publisher_epoch: 2, notice: null }));
+    expect(rowOf(n)).toEqual(
+      expect.objectContaining({ publication_active: 1, publisher_epoch: 2, notice: null }),
+    );
     expect(rowOf(n).state).not.toBe('stood_down');
     expect(envelopeInRepo()).toEqual(expect.objectContaining({ publisher_epoch: 2 }));
   });
@@ -1013,7 +1160,10 @@ describe('keys', () => {
     const n = node();
     listOn(n);
     repo.sessionAs = 'did:plc:someoneelse0000000000000';
-    expect(await n.publisher.activate({ refence: false })).toEqual({ ok: false, reason: 'repo_unreachable' });
+    expect(await n.publisher.activate({ refence: false })).toEqual({
+      ok: false,
+      reason: 'repo_unreachable',
+    });
     expect(repo.writes).toEqual([]);
   });
 });
@@ -1077,13 +1227,20 @@ describe('consent', () => {
     expect(base64Decode((envelopeInRepo() as unknown as { sig: string }).sig)?.length).toBe(64);
     expect(repo.card()?.card).toBe(canonicalize(CARD() as unknown as JsonValue));
     expect(repo.card()).toEqual(
-      expect.objectContaining({ $type: A2A_CARD_COLLECTION, endpoint: 'https://dina.example/a2a/v1', protocol_version: '1.0', skills: ['eta_query'] }),
+      expect.objectContaining({
+        $type: A2A_CARD_COLLECTION,
+        endpoint: 'https://dina.example/a2a/v1',
+        protocol_version: '1.0',
+        skills: ['eta_query'],
+      }),
     );
     expect(envelopeVerifiesUnder(n.key)).toBe(true);
     // Cold audit C4-9: the record is one the directory takes, by the rules it holds (shared in @dina/a2a).
     const text = readCardRecordText(repo.card());
     if (!text.ok) throw new Error(`record refused: ${text.reason}`);
-    expect(readCardRecordFacts(text.card, text.record, NODE)).toEqual(expect.objectContaining({ ok: true }));
+    expect(readCardRecordFacts(text.card, text.record, NODE)).toEqual(
+      expect.objectContaining({ ok: true }),
+    );
   });
 });
 

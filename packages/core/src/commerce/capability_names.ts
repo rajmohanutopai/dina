@@ -22,9 +22,7 @@ const COMMERCE_NSID_PREFIX = 'com.dinakernel.commerce.';
 
 /** Strip the commerce NSID prefix and normalise hyphens to underscores. */
 function canonical(raw: string): string {
-  const bare = raw.startsWith(COMMERCE_NSID_PREFIX)
-    ? raw.slice(COMMERCE_NSID_PREFIX.length)
-    : raw;
+  const bare = raw.startsWith(COMMERCE_NSID_PREFIX) ? raw.slice(COMMERCE_NSID_PREFIX.length) : raw;
   return bare.replace(/-/g, '_');
 }
 

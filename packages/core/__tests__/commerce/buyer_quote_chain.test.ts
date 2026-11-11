@@ -28,19 +28,25 @@ import {
   verifyInboundQuote,
   type BuyerQuoteIngest,
 } from '../../src/commerce/buyer_quotes';
+import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
 import {
   applyInboundBuyerResponse,
   REQUEST_QUOTE_CAPABILITY,
 } from '../../src/commerce/buyer_response';
+import { InMemoryOrderDraftRepository } from '../../src/commerce/order_draft_store';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { InMemoryTenderRepository } from '../../src/commerce/tender';
-import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
-import { InMemoryOrderDraftRepository } from '../../src/commerce/order_draft_store';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-import { BUYER_DID, SUPPLIER_DID, makeQuoteRequest, makeRevision, makeSignedQuote } from './helpers';
+import {
+  BUYER_DID,
+  SUPPLIER_DID,
+  makeQuoteRequest,
+  makeRevision,
+  makeSignedQuote,
+} from './helpers';
 
 import type { SignedQuote } from '@dina/commerce-protocol';
 
@@ -86,7 +92,10 @@ afterEach(() => {
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
-function ingest(candidate: unknown, over: { supplierDid?: string; buyerDid?: string } = {}): BuyerQuoteIngest {
+function ingest(
+  candidate: unknown,
+  over: { supplierDid?: string; buyerDid?: string } = {},
+): BuyerQuoteIngest {
   return verifyInboundQuote({
     supplierDid: over.supplierDid ?? SUPPLIER_DID,
     buyerDid: over.buyerDid ?? BUYER_DID,
@@ -261,9 +270,9 @@ describe('the production entry point (§9.8 wiring)', () => {
           },
           nowMs: NOW,
         }),
-      // NOT `stale_epoch`. A supplier that restored and a supplier that named
-      // a third party are opposite facts about the counterparty, and the
-      // owner's decision log has to be able to tell them apart.
+        // NOT `stale_epoch`. A supplier that restored and a supplier that named
+        // a third party are opposite facts about the counterparty, and the
+        // owner's decision log has to be able to tell them apart.
       ).toBe('foreign_supplier');
 
       // The victim's fence never moved, so their real records still arrive.

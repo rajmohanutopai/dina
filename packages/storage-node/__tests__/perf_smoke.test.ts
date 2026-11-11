@@ -46,12 +46,50 @@ const WARMUP_QUERIES = 50;
 const MEASURED_QUERIES = 100;
 
 const WORDS = [
-  'alpha', 'bravo', 'charlie', 'delta', 'echo', 'foxtrot', 'golf', 'hotel',
-  'india', 'juliet', 'kilo', 'lima', 'mike', 'november', 'oscar', 'papa',
-  'quebec', 'romeo', 'sierra', 'tango', 'uniform', 'victor', 'whiskey',
-  'xray', 'yankee', 'zulu', 'apple', 'banana', 'cherry', 'date', 'elder',
-  'fig', 'grape', 'huckleberry', 'kiwi', 'lemon', 'melon', 'orange',
-  'peach', 'plum', 'quince', 'raspberry', 'strawberry', 'tangerine',
+  'alpha',
+  'bravo',
+  'charlie',
+  'delta',
+  'echo',
+  'foxtrot',
+  'golf',
+  'hotel',
+  'india',
+  'juliet',
+  'kilo',
+  'lima',
+  'mike',
+  'november',
+  'oscar',
+  'papa',
+  'quebec',
+  'romeo',
+  'sierra',
+  'tango',
+  'uniform',
+  'victor',
+  'whiskey',
+  'xray',
+  'yankee',
+  'zulu',
+  'apple',
+  'banana',
+  'cherry',
+  'date',
+  'elder',
+  'fig',
+  'grape',
+  'huckleberry',
+  'kiwi',
+  'lemon',
+  'melon',
+  'orange',
+  'peach',
+  'plum',
+  'quince',
+  'raspberry',
+  'strawberry',
+  'tangerine',
 ];
 
 /** Seeded LCG — stable across runs. */
@@ -102,7 +140,7 @@ describeMaybe('perf smoke — 10K items, FTS5 p95 < 50ms (tasks 3.18 + 11.4)', (
 
     // Seed the corpus in one explicit transaction — >100x faster than
     // autocommit-per-insert and exercises task 3.9's form too.
-    const rng = seededRng(0x51EED);
+    const rng = seededRng(0x51eed);
     a.beginTransaction();
     try {
       for (let i = 0; i < ROW_COUNT; i += 1) {
@@ -116,8 +154,16 @@ describeMaybe('perf smoke — 10K items, FTS5 p95 < 50ms (tasks 3.18 + 11.4)', (
   });
 
   afterAll(() => {
-    try { a.close(); } catch { /* swallow */ }
-    try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      a.close();
+    } catch {
+      /* swallow */
+    }
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   });
 
   it(`row count matches seed (${ROW_COUNT})`, () => {
@@ -126,23 +172,19 @@ describeMaybe('perf smoke — 10K items, FTS5 p95 < 50ms (tasks 3.18 + 11.4)', (
   });
 
   it(`FTS5 query p95 under ${P95_BUDGET_MS}ms`, () => {
-    const rngQueries = seededRng(0xDECAF);
+    const rngQueries = seededRng(0xdecaf);
     // Warm up — SQLite's prepared-statement cache + page cache settle.
     for (let i = 0; i < WARMUP_QUERIES; i += 1) {
-      a.query(
-        'SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT 10',
-        [pickWord(rngQueries)],
-      );
+      a.query('SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT 10', [
+        pickWord(rngQueries),
+      ]);
     }
 
     const latencies: number[] = [];
     for (let i = 0; i < MEASURED_QUERIES; i += 1) {
       const term = pickWord(rngQueries);
       const t0 = performance.now();
-      a.query(
-        'SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT 10',
-        [term],
-      );
+      a.query('SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank LIMIT 10', [term]);
       const t1 = performance.now();
       latencies.push(t1 - t0);
     }
@@ -152,8 +194,10 @@ describeMaybe('perf smoke — 10K items, FTS5 p95 < 50ms (tasks 3.18 + 11.4)', (
     const p99 = percentile(latencies, 0.99);
     // Emit a summary line so CI logs show the measured numbers on
     // both pass and fail — helps triage when the budget tightens.
-     
-    console.log(`[perf_smoke] queries=${MEASURED_QUERIES} p50=${p50.toFixed(2)}ms p95=${p95.toFixed(2)}ms p99=${p99.toFixed(2)}ms budget=${P95_BUDGET_MS}ms`);
+
+    console.log(
+      `[perf_smoke] queries=${MEASURED_QUERIES} p50=${p50.toFixed(2)}ms p95=${p95.toFixed(2)}ms p99=${p99.toFixed(2)}ms budget=${P95_BUDGET_MS}ms`,
+    );
     expect(p95).toBeLessThan(P95_BUDGET_MS);
   }, 60_000); // long timeout — 10K-insert + 150 queries fit easily, but avoid flakes on cold CI
 });

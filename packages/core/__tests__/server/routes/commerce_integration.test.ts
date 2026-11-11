@@ -397,7 +397,7 @@ describe('the orders export door', () => {
     expect(line).toMatchObject({ line_id: 'l1', name: 'Birthday cake' });
   });
 
-  it('an order on the supplier\'s other offer reaches the connector with its version: date and charges', async () => {
+  it("an order on the supplier's other offer reaches the connector with its version: date and charges", async () => {
     const request = makeQuoteRequest({ protocol_version: '1.3' });
     const base = makeSignedQuote(request);
     const alternatives = priceQuoteAlternatives(base, [

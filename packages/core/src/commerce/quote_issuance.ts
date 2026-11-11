@@ -128,9 +128,7 @@ const MAX_EVIDENCE_ENTRIES = 5;
 const MAX_EVIDENCE_LENGTH = 200;
 
 /** The runner's terms, as far as this module is willing to believe them. */
-function readRunnerTerms(
-  json: string,
-): {
+function readRunnerTerms(json: string): {
   canSupply: boolean;
   lines: RunnerLine[];
   /** The runner's stated reason when it declines (free text, bounded on seal). */
@@ -166,7 +164,10 @@ function readRunnerTerms(
   // Fields the runner states must be well formed: one that is present and
   // malformed refuses the terms, never silently drops (COMMITMENT_KERNEL §6).
   if (record.charges !== undefined && !Array.isArray(record.charges)) return null;
-  if (record.estimated_delivery_at !== undefined && typeof record.estimated_delivery_at !== 'string')
+  if (
+    record.estimated_delivery_at !== undefined &&
+    typeof record.estimated_delivery_at !== 'string'
+  )
     return null;
   if (record.alternatives !== undefined) {
     if (!Array.isArray(record.alternatives)) return null;
@@ -257,7 +258,9 @@ export function priceQuoteAlternatives(
   if (alternatives.length === 0 || !Number.isFinite(minor) || minor < 3) return [];
   const subtotals = draft.lines.map((l) => l.line_subtotal);
   const out: QuoteAlternative[] = [];
-  for (const alt of [...alternatives].sort((a, b) => (a.alternative_id < b.alternative_id ? -1 : 1))) {
+  for (const alt of [...alternatives].sort((a, b) =>
+    a.alternative_id < b.alternative_id ? -1 : 1,
+  )) {
     const total = computeTotal(draft.total.currency, subtotals, alt.charges);
     if (total.error || !total.value) return null;
     out.push({
@@ -285,8 +288,14 @@ export function priceQuoteAlternatives(
 }
 
 /** A version's exit right stands only on a partner-run version (§15 step 12). */
-function exitRight(alt: { partner_run?: true; offer_ends_at?: string; exit_if_run_fails?: true }): boolean {
-  return alt.exit_if_run_fails === true && alt.partner_run === true && alt.offer_ends_at !== undefined;
+function exitRight(alt: {
+  partner_run?: true;
+  offer_ends_at?: string;
+  exit_if_run_fails?: true;
+}): boolean {
+  return (
+    alt.exit_if_run_fails === true && alt.partner_run === true && alt.offer_ends_at !== undefined
+  );
 }
 
 /**
@@ -429,11 +438,13 @@ export function settleInboundQuote(args: {
     lines.map((l) => l.line_subtotal),
     charges,
   );
-  if (withCharges.error || !withCharges.value) return { kind: 'withhold', refusal: 'terms_unusable' };
+  if (withCharges.error || !withCharges.value)
+    return { kind: 'withhold', refusal: 'terms_unusable' };
   const total = withCharges.value;
 
   const issuedAt = new Date(args.nowMs).toISOString();
-  const validUntil = terms.validUntil ?? new Date(args.nowMs + DEFAULT_QUOTE_VALIDITY_MS).toISOString();
+  const validUntil =
+    terms.validUntil ?? new Date(args.nowMs + DEFAULT_QUOTE_VALIDITY_MS).toISOString();
   const draft = {
     // §9.13 — answered in the language the buyer asked in.
     protocol_version: request.protocol_version,
@@ -542,7 +553,11 @@ export function settleInboundQuote(args: {
     };
     const assembled: SignedQuote = {
       ...withTerms,
-      quote_digest: commerceRecordDigest('quote', withTerms as unknown as Record<string, unknown>, hash),
+      quote_digest: commerceRecordDigest(
+        'quote',
+        withTerms as unknown as Record<string, unknown>,
+        hash,
+      ),
     };
     return assembled;
   };

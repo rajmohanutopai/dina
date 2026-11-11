@@ -226,15 +226,11 @@ describe('resolveTtl (task 6.9)', () => {
     });
 
     it('negative defaultTtlMs throws RangeError', () => {
-      expect(() =>
-        resolveTtl({ defaultTtlMs: -1 }),
-      ).toThrow(/defaultTtlMs/);
+      expect(() => resolveTtl({ defaultTtlMs: -1 })).toThrow(/defaultTtlMs/);
     });
 
     it('negative maxTtlMs throws RangeError', () => {
-      expect(() =>
-        resolveTtl({ defaultTtlMs: 0, maxTtlMs: -1 }),
-      ).toThrow(/maxTtlMs/);
+      expect(() => resolveTtl({ defaultTtlMs: 0, maxTtlMs: -1 })).toThrow(/maxTtlMs/);
     });
 
     it('NaN defaultTtlMs throws RangeError', () => {

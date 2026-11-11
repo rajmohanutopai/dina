@@ -100,20 +100,15 @@ export class DeadDropSpool {
       throw new Error('DeadDropSpool: dir is required');
     }
     if (!Number.isInteger(opts.maxBlobs) || opts.maxBlobs <= 0) {
-      throw new Error(
-        `DeadDropSpool: maxBlobs must be a positive integer (got ${opts.maxBlobs})`,
-      );
+      throw new Error(`DeadDropSpool: maxBlobs must be a positive integer (got ${opts.maxBlobs})`);
     }
     if (!Number.isInteger(opts.maxBytes) || opts.maxBytes <= 0) {
-      throw new Error(
-        `DeadDropSpool: maxBytes must be a positive integer (got ${opts.maxBytes})`,
-      );
+      throw new Error(`DeadDropSpool: maxBytes must be a positive integer (got ${opts.maxBytes})`);
     }
     this.dir = dir;
     this.maxBlobs = opts.maxBlobs;
     this.maxBytes = opts.maxBytes;
-    this.randomBytesFn =
-      opts.randomBytesFn ?? ((n: number) => new Uint8Array(randomBytes(n)));
+    this.randomBytesFn = opts.randomBytesFn ?? ((n: number) => new Uint8Array(randomBytes(n)));
   }
 
   /**
@@ -269,10 +264,7 @@ export class DeadDropSpool {
       return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
     } catch (err) {
       if ((err as NodeJS.ErrnoException).code === 'ENOENT') {
-        throw new DeadDropError(
-          'not_found',
-          `DeadDropSpool: blob ${JSON.stringify(id)} not found`,
-        );
+        throw new DeadDropError('not_found', `DeadDropSpool: blob ${JSON.stringify(id)} not found`);
       }
       throw err;
     }
@@ -286,8 +278,8 @@ export class DeadDropSpool {
       );
     }
     let out = '';
-    for (let i = 0; i < bytes.length; i++) {
-      out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+    for (const b of bytes) {
+      out += b.toString(16).padStart(2, '0');
     }
     return out;
   }

@@ -14,12 +14,7 @@
 
 /** Lifecycle states. `published`/`discarded` are terminal (the row is then
  *  pruned/deleted — see the design §7). `publishing` carries a worker lease. */
-export type PublishJobStatus =
-  | 'queued'
-  | 'publishing'
-  | 'published'
-  | 'failed'
-  | 'discarded';
+export type PublishJobStatus = 'queued' | 'publishing' | 'published' | 'failed' | 'discarded';
 
 /**
  * The stored error-code vocabulary. The classifier (mobile) emits the
@@ -99,14 +94,15 @@ export interface NewPublishJob {
  * method is a CAS on the `from` status). Exported so the test suite can assert
  * every allowed transition succeeds and every disallowed one is rejected.
  */
-export const ALLOWED_TRANSITIONS: Readonly<Record<PublishJobStatus, ReadonlySet<PublishJobStatus>>> =
-  {
-    queued: new Set<PublishJobStatus>(['publishing', 'discarded']),
-    publishing: new Set<PublishJobStatus>(['published', 'queued', 'failed']),
-    published: new Set<PublishJobStatus>([]), // terminal — pruned
-    failed: new Set<PublishJobStatus>(['queued', 'discarded']),
-    discarded: new Set<PublishJobStatus>([]), // terminal — deleted
-  };
+export const ALLOWED_TRANSITIONS: Readonly<
+  Record<PublishJobStatus, ReadonlySet<PublishJobStatus>>
+> = {
+  queued: new Set<PublishJobStatus>(['publishing', 'discarded']),
+  publishing: new Set<PublishJobStatus>(['published', 'queued', 'failed']),
+  published: new Set<PublishJobStatus>([]), // terminal — pruned
+  failed: new Set<PublishJobStatus>(['queued', 'discarded']),
+  discarded: new Set<PublishJobStatus>([]), // terminal — deleted
+};
 
 /** True iff `from → to` is a legal lifecycle transition. */
 export function canTransition(from: PublishJobStatus, to: PublishJobStatus): boolean {

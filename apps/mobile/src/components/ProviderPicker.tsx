@@ -69,7 +69,9 @@ export function ProviderPicker({ rows, variant }: ProviderPickerProps): React.JS
         return (
           <View
             key={row.type}
-            style={isCard ? styles.card : [styles.compactRow, row.selected && styles.compactRowSelected]}
+            style={
+              isCard ? styles.card : [styles.compactRow, row.selected && styles.compactRowSelected]
+            }
           >
             <Header style={styles.header} {...headerProps}>
               <View style={styles.info}>
@@ -88,7 +90,9 @@ export function ProviderPicker({ rows, variant }: ProviderPickerProps): React.JS
                     </View>
                   ) : null}
                 </View>
-                {row.subtitle !== undefined ? <View style={styles.subtitle}>{row.subtitle}</View> : null}
+                {row.subtitle !== undefined ? (
+                  <View style={styles.subtitle}>{row.subtitle}</View>
+                ) : null}
               </View>
               {row.trailing !== undefined ? <View>{row.trailing}</View> : null}
             </Header>

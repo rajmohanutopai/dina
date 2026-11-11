@@ -20,7 +20,18 @@
  * This asserts both paths.
  */
 
-import { createCoreRouter, InProcessTransport, stagingIngest, resetStagingState , clearVaults, storeItem , configureRateLimiter, registerPublicKeyResolver , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
+import {
+  createCoreRouter,
+  InProcessTransport,
+  stagingIngest,
+  resetStagingState,
+  clearVaults,
+  storeItem,
+  configureRateLimiter,
+  addContact,
+  resetContactDirectory,
+  setPeopleRepository,
+} from '@dina/core';
 import { resetReminderState } from '@dina/core/reminders';
 import { makeFakePeopleRepo, makeStubRememberRuntime } from '@dina/test-harness';
 
@@ -35,11 +46,7 @@ import {
   type SQLiteVaultHandle,
 } from './helpers/sqlite_vault_harness';
 
-import type {
-  StagingDrainCoreClient,
-  D2DReceivedNotification,
-  D2DInboundMessage,
-} from '../../src/staging/drain';
+import type { D2DReceivedNotification, D2DInboundMessage } from '../../src/staging/drain';
 
 describe('D2D arrival → nudge notification (Sancho Moment)', () => {
   const openHandles: SQLiteVaultHandle[] = [];

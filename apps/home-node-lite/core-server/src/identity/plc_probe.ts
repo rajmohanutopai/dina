@@ -26,6 +26,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4g task 4.59.
  */
 
+import { base58 } from '@scure/base';
+
 import { publicKeyToMultibase } from '@dina/core';
 
 export type PlcProbeRejection =
@@ -118,9 +120,7 @@ export async function plcProbe(input: PlcProbeInput): Promise<PlcProbeResult> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     // Distinguish "DID doesn't exist" (404) from real network problems.
-    const reason: PlcProbeRejection = /404|not ?found/i.test(msg)
-      ? 'not_found'
-      : 'network_error';
+    const reason: PlcProbeRejection = /404|not ?found/i.test(msg) ? 'not_found' : 'network_error';
     return {
       ok: false,
       detail: {
@@ -244,11 +244,9 @@ function extractVerificationMethodPublicKey(
  */
 function multibaseToPublicKey(mb: string): Uint8Array | null {
   if (!mb || mb[0] !== 'z') return null;
-  // We don't have a base58 decoder imported — use the one in @dina/core's
-  // transitive deps. `@scure/base` is already pulled in by directory.ts.
+  // base58 comes from `@scure/base`, a transitive dep of @dina/core
+  // (directory.ts already pulls it in).
   try {
-     
-    const { base58 } = require('@scure/base') as typeof import('@scure/base');
     const decoded = base58.decode(mb.slice(1));
     // Ed25519 multicodec prefix: 0xed 0x01
     if (decoded.length !== 34 || decoded[0] !== 0xed || decoded[1] !== 0x01) {

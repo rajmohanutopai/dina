@@ -28,7 +28,6 @@ import {
 
 import type { WorkflowRepository } from '../workflow/repository';
 
-
 export interface CreatePollWatchInput {
   subscription_id: string;
   persona: string;

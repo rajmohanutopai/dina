@@ -412,9 +412,7 @@ if (SCENARIOS.length !== 100) {
   throw new Error(`Expected 100 scenarios, got ${SCENARIOS.length}`);
 }
 if (RELATIONSHIP_SCENARIOS.length !== 10) {
-  throw new Error(
-    `Expected 10 relationship scenarios, got ${RELATIONSHIP_SCENARIOS.length}`,
-  );
+  throw new Error(`Expected 10 relationship scenarios, got ${RELATIONSHIP_SCENARIOS.length}`);
 }
 
 /** 15-scenario smoke set — 2 per category + 5 relationship. Matches the
@@ -529,7 +527,6 @@ describeReal(
         };
         const result = await classifier(input, AVAILABLE_PERSONAS);
         if (result.persona !== scenario.expected) {
-           
           console.log(
             `[scenario] text=${JSON.stringify(scenario.text)} expected=${scenario.expected} got=${result.persona} reason=${result.reason}`,
           );

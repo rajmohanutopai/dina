@@ -12,7 +12,7 @@ import {
   type AnthropicMessageResponse,
 } from '../../../src/llm/adapters/claude';
 
-import type { ChatMessage, StreamChunk, ToolDefinition } from '../../../src/llm/adapters/provider';
+import type { StreamChunk, ToolDefinition } from '../../../src/llm/adapters/provider';
 
 function createMockClient(response: AnthropicMessageResponse): AnthropicClient {
   return {

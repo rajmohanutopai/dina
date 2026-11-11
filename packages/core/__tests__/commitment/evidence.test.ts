@@ -198,7 +198,9 @@ describe('evidence', () => {
     expect(store.consent(BRAND)).toEqual({ self: false, peer: true });
     // A change is numbered by its own time: one made after a restore from an
     // older backup is still newer than any the other side kept.
-    db.execute(`UPDATE commitment_evidence_consent SET self_rev = 2 WHERE counterparty_did = ?`, [BRAND]);
+    db.execute(`UPDATE commitment_evidence_consent SET self_rev = 2 WHERE counterparty_did = ?`, [
+      BRAND,
+    ]);
     store.setOwnConsent(BRAND, true, START + 9 * D);
     expect(store.untold()[0]?.rev).toBe(START + 9 * D);
   });

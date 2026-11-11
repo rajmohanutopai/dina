@@ -8,7 +8,11 @@
  * a large attack surface.
  */
 
-import { cardTemplateSlot, cardTemplateSlots, fillCardTemplate } from '../../src/plugins/card_template';
+import {
+  cardTemplateSlot,
+  cardTemplateSlots,
+  fillCardTemplate,
+} from '../../src/plugins/card_template';
 
 describe('what counts as a slot', () => {
   it('a whole string of one identifier in braces', () => {
@@ -55,7 +59,9 @@ describe('the slots a template names', () => {
   });
 
   it('a template with no slots names none', () => {
-    expect(cardTemplateSlots({ version: 1, blocks: [{ kind: 'body', text: 'nothing here' }] })).toEqual([]);
+    expect(
+      cardTemplateSlots({ version: 1, blocks: [{ kind: 'body', text: 'nothing here' }] }),
+    ).toEqual([]);
   });
 });
 
@@ -117,7 +123,9 @@ describe('filling a template', () => {
 
   it('a result that is not an object fills nothing rather than throwing', () => {
     for (const result of [null, 7, 'settled', ['settled']]) {
-      const filled = fillCardTemplate(template, result) as { blocks: (Record<string, unknown> | undefined)[] };
+      const filled = fillCardTemplate(template, result) as {
+        blocks: (Record<string, unknown> | undefined)[];
+      };
       expect(filled.blocks[1]?.value).toBeNull();
     }
   });

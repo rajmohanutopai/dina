@@ -9,11 +9,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-import {
-  isCoreBootSeedLine,
-  scanForLeaks,
-  type HygieneViolation,
-} from './log_hygiene';
+import { isCoreBootSeedLine, scanForLeaks, type HygieneViolation } from './log_hygiene';
 
 export default async function globalTeardown(): Promise<void> {
   const stackDir = process.env.DINA_E2E_STACK_DIR;
@@ -50,13 +46,11 @@ export default async function globalTeardown(): Promise<void> {
   }
 
   if (violations.length > 0) {
-    const report = violations
-      .map((v) => `  [${v.source}] ${v.kind} :: ${v.excerpt}`)
-      .join('\n');
+    const report = violations.map((v) => `  [${v.source}] ${v.kind} :: ${v.excerpt}`).join('\n');
     throw new Error(
       `MRS-14 log-hygiene FAILED — vault content / secrets leaked into server logs:\n${report}`,
     );
   }
-   
+
   console.log('[MRS-14] server-log hygiene clean.');
 }

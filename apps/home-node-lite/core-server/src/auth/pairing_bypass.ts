@@ -38,9 +38,7 @@
  * module's role is ONLY to tell the middleware "don't verify" — the
  * route handler itself decides what IS required (the pairing code).
  */
-export const PAIRING_BYPASS_PREFIXES: readonly string[] = Object.freeze([
-  '/v1/pair/',
-]);
+export const PAIRING_BYPASS_PREFIXES: readonly string[] = Object.freeze(['/v1/pair/']);
 
 /**
  * Does this path bypass the signed-request check?

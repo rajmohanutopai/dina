@@ -40,11 +40,15 @@ const SEED = TEST_MNEMONIC_SEED.slice(0, 32);
 describe('backup keys (frozen vectors, checked against Node crypto)', () => {
   it('derive from the seed alone', () => {
     const id = deriveBackupIdentity(SEED);
-    expect(bytesToHex(SEED)).toBe('408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70');
+    expect(bytesToHex(SEED)).toBe(
+      '408b285c123836004f4b8842c89324c1f01382450c0d439af345ba7fc49acf70',
+    );
     expect(bytesToHex(BACKUP_SALT)).toBe(
       '814b4756d5a7ee7ceb206f28a8a72aba92d6d496420245751a6bff6b85e6955f',
     );
-    expect(bytesToHex(id.key)).toBe('df8aac1c7f0d85ba7e9586a47597a38e210d13a6e12561f9fbfd4fec5f00f6d9');
+    expect(bytesToHex(id.key)).toBe(
+      'df8aac1c7f0d85ba7e9586a47597a38e210d13a6e12561f9fbfd4fec5f00f6d9',
+    );
     expect(bytesToHex(id.signSeed)).toBe(
       '6e593ec2ae25434cc01a1fa459d94f6dc2dd011cf57b71900b16dbff536f0dad',
     );
@@ -288,11 +292,16 @@ describe('backing up and restoring through the store', () => {
     expect(await backUpIfDue(d, { everyMs: DAY })).toEqual({ ran: false, reason: 'not_due' });
     seedNote(src, 'v-2', 'Order 240 croissants for Saturday');
     clock += DAY;
-    expect(await backUpIfDue(d, { everyMs: DAY })).toMatchObject({ ran: true, result: { counter: 2 } });
+    expect(await backUpIfDue(d, { everyMs: DAY })).toMatchObject({
+      ran: true,
+      result: { counter: 2 },
+    });
   });
 
   it('the backup bookkeeping in kv_store stays out of the copy', async () => {
-    src.id.execute(`INSERT INTO kv_store (key, value, updated_at) VALUES ('backup:last_at', '5', 1)`);
+    src.id.execute(
+      `INSERT INTO kv_store (key, value, updated_at) VALUES ('backup:last_at', '5', 1)`,
+    );
     src.id.execute(`INSERT INTO kv_store (key, value, updated_at) VALUES ('theme', 'dark', 1)`);
     const payload = await buildArchivePayload(dataSourceFor(src));
     expect(payload.identity.tables.kv_store?.map((r) => r.key)).toEqual(['theme']);

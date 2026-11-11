@@ -11,11 +11,7 @@
  * said it, from which snapshot, and whether two indexes disagreed.
  */
 
-import {
-  combineIndexAnswers,
-  needsLiveVerification,
-  type IndexAnswer,
-} from '../src/cross_index';
+import { combineIndexAnswers, needsLiveVerification, type IndexAnswer } from '../src/cross_index';
 
 import type { CommerceSearchCandidate } from '../src/search';
 
@@ -129,7 +125,7 @@ describe('disagreement is surfaced, never resolved', () => {
       [SNAP_A, SNAP_B].sort(),
     );
   });
-})
+});
 
 describe('scores are evidence, not arithmetic', () => {
   it('takes the STRONGEST sighting, never a sum', () => {
@@ -231,10 +227,7 @@ describe('verify live before commitment (§10.6)', () => {
   it('the same index listed twice is still ONE opinion', () => {
     // A buyer who accidentally configured one AppView under two names has not
     // gained corroboration, and the combiner must not pretend they have.
-    const out = combineIndexAnswers([
-      answer('one', [candidate()]),
-      answer('one', [candidate()]),
-    ]);
+    const out = combineIndexAnswers([answer('one', [candidate()]), answer('one', [candidate()])]);
     expect(needsLiveVerification(out.candidates[0]!)).toBe(true);
   });
 });

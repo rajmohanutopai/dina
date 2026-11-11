@@ -40,11 +40,7 @@ export type PairingBindingResult =
   | { ok: true; did: string }
   | {
       ok: false;
-      reason:
-        | 'missing_from_did'
-        | 'missing_public_key'
-        | 'malformed_public_key'
-        | 'did_mismatch';
+      reason: 'missing_from_did' | 'missing_public_key' | 'malformed_public_key' | 'did_mismatch';
       detail?: string;
     };
 
@@ -52,9 +48,7 @@ export type PairingBindingResult =
  * Verify the self-referential binding. Returns the derived DID on
  * success so downstream handlers have a single canonical form.
  */
-export function verifyPairingIdentityBinding(
-  input: PairingBindingInput,
-): PairingBindingResult {
+export function verifyPairingIdentityBinding(input: PairingBindingInput): PairingBindingResult {
   if (!input.envelopeFromDid || input.envelopeFromDid.length === 0) {
     return { ok: false, reason: 'missing_from_did' };
   }

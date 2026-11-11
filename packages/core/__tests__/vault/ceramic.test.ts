@@ -33,7 +33,7 @@ class CeramicVault {
     return true;
   }
 
-  async publish(content: unknown): Promise<string | null> {
+  async publish(_content: unknown): Promise<string | null> {
     if (!this.enabled || !this._connected) return null;
     this._syncedCount++;
     return `ceramic://${Date.now()}`;

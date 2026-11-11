@@ -6,7 +6,6 @@ import {
   createTrustResolveClient,
   type TrustResolveFetchFn,
   type TrustResolveOutcome,
-  type XrpcFetchResult,
 } from '../src/appview/peerlens_resolve_client';
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
@@ -133,7 +132,11 @@ describe('createTrustResolveClient (task 6.11)', () => {
     });
 
     it('fires resolved event', async () => {
-      interface Ev { kind: 'resolved'; did: string; hasScores: boolean }
+      interface Ev {
+        kind: 'resolved';
+        did: string;
+        hasScores: boolean;
+      }
       const events: Ev[] = [];
       const resolve = createTrustResolveClient({
         fetchFn: stubFetch(okBody()),
@@ -408,7 +411,9 @@ describe('createTrustResolveClient (task 6.11)', () => {
   // brick every resolve call that hits that branch — pin the contract.
 
   describe('parseFlags — entry-level guards (TN-API-003 wire safety)', () => {
-    async function resolveFlags(flags: unknown): Promise<readonly { flagType: string; severity: string }[]> {
+    async function resolveFlags(
+      flags: unknown,
+    ): Promise<readonly { flagType: string; severity: string }[]> {
       const resolve = createTrustResolveClient({
         fetchFn: stubFetch({ ...okBody(), flags }),
       });
@@ -509,12 +514,7 @@ describe('createTrustResolveClient (task 6.11)', () => {
         { flagType: 'd', severity: 'info' },
       ]);
       expect(flags).toHaveLength(4);
-      expect(flags.map((f) => f.severity)).toEqual([
-        'critical',
-        'serious',
-        'warning',
-        'info',
-      ]);
+      expect(flags.map((f) => f.severity)).toEqual(['critical', 'serious', 'warning', 'info']);
     });
   });
 
@@ -560,9 +560,13 @@ describe('createTrustResolveClient (task 6.11)', () => {
       // Wire contract: `predominantAssessment` is a string label
       // (e.g. "human", "ai-generated"). A number/boolean/null leaking
       // through would confuse the UI which renders the label as text.
-      expect(await resolveAuth({ predominantAssessment: 42 as unknown, confidence: 0.5 })).toBeNull();
+      expect(
+        await resolveAuth({ predominantAssessment: 42 as unknown, confidence: 0.5 }),
+      ).toBeNull();
       expect(await resolveAuth({ predominantAssessment: null, confidence: 0.5 })).toBeNull();
-      expect(await resolveAuth({ predominantAssessment: true as unknown, confidence: 0.5 })).toBeNull();
+      expect(
+        await resolveAuth({ predominantAssessment: true as unknown, confidence: 0.5 }),
+      ).toBeNull();
     });
 
     it('valid assessment with non-numeric confidence → confidence becomes null (not record-null)', async () => {

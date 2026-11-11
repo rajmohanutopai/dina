@@ -18,7 +18,11 @@ import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_re
 import { applyInboundBuyerResponse } from '../../src/commerce/buyer_response';
 import { InMemoryDeclineDocumentRepository } from '../../src/commerce/decline_documents';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
-import { createCommerceRuntime, installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
+import {
+  createCommerceRuntime,
+  installCommerceRuntime,
+  type CommerceRuntime,
+} from '../../src/commerce/runtime';
 import { InMemoryTenderRepository } from '../../src/commerce/tender';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
 import { applyMigrations } from '../../src/storage/migration';
@@ -133,7 +137,12 @@ describe('the supplier’s sealed decline reaches the buyer (§3.4, no money plu
     });
     applyMigrations(adapter, IDENTITY_MIGRATIONS);
     installCommerceRuntime(
-      createCommerceRuntime({ adapter, supplierDid: () => SUPPLIER, currentEpoch: () => '1', now: () => T0 }),
+      createCommerceRuntime({
+        adapter,
+        supplierDid: () => SUPPLIER,
+        currentEpoch: () => '1',
+        now: () => T0,
+      }),
     );
     let wireJson: string;
     try {

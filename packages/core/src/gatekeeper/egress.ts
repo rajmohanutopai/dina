@@ -13,7 +13,7 @@
 
 import { scrubPII } from '../pii/patterns';
 
-import { checkSharingPolicy, filterByTier, type SharingTier } from './sharing';
+import { checkSharingPolicy, type SharingTier } from './sharing';
 
 export interface EgressData {
   text: string;

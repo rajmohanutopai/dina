@@ -15,7 +15,6 @@ import {
   type TradeIdentityRefusal,
 } from './trade_identity';
 
-
 import type { RegionRef } from '@dina/commerce-protocol';
 
 /**
@@ -279,7 +278,6 @@ export type SettingsVerdict = { ok: true } | { ok: false; findings: SettingsFind
 /** Keys that would mean a secret reached a settings record. */
 const CREDENTIAL_SHAPED = /^(api[_-]?key|secret|token|password|passphrase|private[_-]?key)$/i;
 
-
 /**
  * Structural pre-pass: the wire hands these validators whatever JSON the
  * owner surface sent, and a partial body used to THROW here (an
@@ -294,14 +292,16 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
 
 function structuralFindings(
   settings: Record<string, unknown>,
-  spec: readonly { field: string; kind: 'string' | 'number' | 'boolean' | 'array' | 'record'; optional?: boolean }[],
+  spec: readonly {
+    field: string;
+    kind: 'string' | 'number' | 'boolean' | 'array' | 'record';
+    optional?: boolean;
+  }[],
 ): SettingsFinding[] {
   // A stored row hand-edited to `null` or a scalar reaches here: refuse it as
   // the wrong shape rather than reading fields off it and throwing.
   if (settings === null || typeof settings !== 'object' || Array.isArray(settings)) {
-    return [
-      { refusal: 'wrong_field_shape', field: '', detail: 'settings must be a JSON object' },
-    ];
+    return [{ refusal: 'wrong_field_shape', field: '', detail: 'settings must be a JSON object' }];
   }
   const findings: SettingsFinding[] = [];
   for (const { field, kind, optional } of spec) {
@@ -323,9 +323,9 @@ function structuralFindings(
           ? typeof value === 'number'
           : kind === 'boolean'
             ? typeof value === 'boolean'
-          : kind === 'array'
-            ? Array.isArray(value)
-            : isPlainRecord(value);
+            : kind === 'array'
+              ? Array.isArray(value)
+              : isPlainRecord(value);
     if (!ok) {
       findings.push({
         refusal: 'wrong_field_shape',
@@ -342,7 +342,10 @@ function structuralFindings(
  * loop applies the same rule to each connector; this is the flat-record form,
  * used where a settings object has no sub-records of its own.
  */
-function credentialShapedFindings(record: Record<string, unknown>, prefix: string): SettingsFinding[] {
+function credentialShapedFindings(
+  record: Record<string, unknown>,
+  prefix: string,
+): SettingsFinding[] {
   const findings: SettingsFinding[] = [];
   for (const key of Object.keys(record)) {
     if (CREDENTIAL_SHAPED.test(key)) {
@@ -384,7 +387,9 @@ export function validateBusinessSettings(settings: BusinessSettings): SettingsVe
       detail: `a legal name is at most ${String(MAX_LEGAL_NAME_CHARS)} characters`,
     });
   }
-  findings.push(...validateTaxRegistrations(normaliseTaxRegistrations(settings.registrations), 'registrations'));
+  findings.push(
+    ...validateTaxRegistrations(normaliseTaxRegistrations(settings.registrations), 'registrations'),
+  );
   if (settings.address !== undefined) {
     findings.push(...validatePostalAddress(normalisePostalAddress(settings.address), 'address'));
   }
@@ -397,7 +402,9 @@ export function normaliseBusinessSettings(settings: BusinessSettings): BusinessS
   return {
     legalName: normaliseLegalName(settings.legalName),
     registrations: normaliseTaxRegistrations(settings.registrations),
-    ...(settings.address !== undefined ? { address: normalisePostalAddress(settings.address) } : {}),
+    ...(settings.address !== undefined
+      ? { address: normalisePostalAddress(settings.address) }
+      : {}),
   };
 }
 
@@ -469,7 +476,11 @@ export function validateBuyerSettings(settings: BuyerSettings): SettingsVerdict 
   // the protocol's own test, the one every Money on the wire passes
   // (`isCurrencyCode`, three uppercase letters) — the same as the supplier's
   // trading currency; this node keeps no list of every ISO 4217 code.
-  if (typeof settings.currency === 'string' && settings.currency !== '' && !isCurrencyCode(settings.currency)) {
+  if (
+    typeof settings.currency === 'string' &&
+    settings.currency !== '' &&
+    !isCurrencyCode(settings.currency)
+  ) {
     findings.push({
       refusal: 'unknown_buyer_currency',
       field: 'currency',
@@ -546,7 +557,11 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
   for (const [index, region] of settings.publicRegions.entries()) {
     const invalid = validateRegionRef(region);
     if (invalid !== null) {
-      findings.push({ refusal: 'invalid_region', field: `publicRegions[${index}]`, detail: invalid });
+      findings.push({
+        refusal: 'invalid_region',
+        field: `publicRegions[${index}]`,
+        detail: invalid,
+      });
     }
   }
 
@@ -584,7 +599,11 @@ export function validateSupplierSettings(settings: SupplierSettings): SettingsVe
   // own validation turns a row that predates this check into
   // `{ok:false, absent:false}` — which the order path already treats as
   // "cannot read your policy, do not accept automatically".
-  if (settings.listingState !== 'live' && settings.listingState !== 'paused' && settings.listingState !== 'withdrawn') {
+  if (
+    settings.listingState !== 'live' &&
+    settings.listingState !== 'paused' &&
+    settings.listingState !== 'withdrawn'
+  ) {
     findings.push({
       refusal: 'unknown_listing_state',
       field: 'listingState',

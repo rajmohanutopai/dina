@@ -208,7 +208,8 @@ async function handleToc(
     gated = listPersonas()
       .filter((p) => candidates.includes(p.name) && !readable.has(p.name))
       .map((p) => ({ name: p.name, description: p.description }));
-    if (personas.length === 0) return { status: 200, body: { entries: [], limit, gated_personas: gated } };
+    if (personas.length === 0)
+      return { status: 200, body: { entries: [], limit, gated_personas: gated } };
   }
 
   // Owner conversation (REAL_LIFE_FIXES §3.5): record the topics released
@@ -216,7 +217,8 @@ async function handleToc(
   let release: ReleaseContext | undefined;
   const rawRelease = req.query.release_session;
   if (rawRelease !== undefined && rawRelease !== '') {
-    const brain = req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+    const brain =
+      req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
     if (!brain) return jsonError(403, 'release_session_brain_only');
     const sessionId = parseReleaseSession(rawRelease);
     if (sessionId === null) return jsonError(400, 'release_session_invalid');

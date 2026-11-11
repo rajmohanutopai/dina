@@ -28,7 +28,11 @@ describe('quarantine_actions.web', () => {
     expect(ok).toBe(true);
     expect(m).toHaveBeenCalledWith(
       `${BRAIN}/api/v1/d2d/quarantine/accept`,
-      expect.objectContaining({ method: 'POST', credentials: 'omit', body: JSON.stringify({ sender_did: 'did:plc:x' }) }),
+      expect.objectContaining({
+        method: 'POST',
+        credentials: 'omit',
+        body: JSON.stringify({ sender_did: 'did:plc:x' }),
+      }),
     );
   });
 

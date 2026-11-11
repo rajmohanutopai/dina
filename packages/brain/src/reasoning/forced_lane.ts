@@ -125,9 +125,7 @@ export function isForcedLane(forcedSources?: readonly IntentSource[]): boolean {
  * Keeps a forced Services/Reviews turn from ever dead-ending on the generic
  * "Try a simpler query" text (release bug: the budget bail skipped the lane gate).
  */
-export function forcedLaneIncompleteAnswer(
-  forcedSources?: readonly IntentSource[],
-): string | null {
+export function forcedLaneIncompleteAnswer(forcedSources?: readonly IntentSource[]): string | null {
   if (isServicesLane(forcedSources)) return SERVICES_INCOMPLETE_ANSWER;
   if (isReviewsLane(forcedSources)) return REVIEWS_INCOMPLETE_ANSWER;
   return null;
@@ -230,7 +228,9 @@ export function isPeerlensBacked(result: unknown): boolean {
 }
 
 /** Aggregate Reviews-lane evidence across all `search_peerlens` calls. */
-function aggregateReviewsEvidence(toolCalls: readonly LaneToolCallView[]): PeerlensEvidence | 'none' {
+function aggregateReviewsEvidence(
+  toolCalls: readonly LaneToolCallView[],
+): PeerlensEvidence | 'none' {
   let sawOutage = false;
   let sawEmpty = false;
   for (const c of toolCalls) {
@@ -268,8 +268,7 @@ function isServiceAbsenceError(error: string): boolean {
  */
 function serviceLaneHadOutage(toolCalls: readonly LaneToolCallView[]): boolean {
   for (const c of toolCalls) {
-    const isDiscovery =
-      c.name === 'search_capabilities' || c.name === 'search_provider_services';
+    const isDiscovery = c.name === 'search_capabilities' || c.name === 'search_provider_services';
     const isDispatch = c.name === 'query_service';
     if (!isDiscovery && !isDispatch) continue;
     if (c.outcome.success) continue;

@@ -76,7 +76,10 @@ const source = (node: Node): ArchiveDataSource => ({
   hasExistingUserData: async () => false,
 });
 
-function seat(node: Node, self: string): { runtime: CommerceRuntime; service: TradeLedgerService; docs: SQLiteTradeDocumentRepository } {
+function seat(
+  node: Node,
+  self: string,
+): { runtime: CommerceRuntime; service: TradeLedgerService; docs: SQLiteTradeDocumentRepository } {
   const docs = new SQLiteTradeDocumentRepository(node.db);
   const runtime = createCommerceRuntime({
     adapter: node.db,
@@ -191,7 +194,10 @@ describe('COM-3: the books travel', () => {
           lines: [{ line_id: 'l1', accepted_quantity: qty(n) }],
           received_at: new Date().toISOString(),
         };
-        return { ...draft, receipt_digest: tradeRecordDigest('delivery_receipt', draft as never, hash) };
+        return {
+          ...draft,
+          receipt_digest: tradeRecordDigest('delivery_receipt', draft as never, hash),
+        };
       };
       const readers = tradeRelationshipReaders(a.runtime);
       expect(
@@ -214,7 +220,10 @@ describe('COM-3: the books travel', () => {
         method: 'upi',
         paid_at: new Date().toISOString(),
       };
-      const pay = { ...payDraft, note_digest: tradeRecordDigest('payment_note', payDraft as never, hash) };
+      const pay = {
+        ...payDraft,
+        note_digest: tradeRecordDigest('payment_note', payDraft as never, hash),
+      };
       expect(
         verifyInboundPaymentNote({
           senderDid: BUYER,
@@ -232,14 +241,22 @@ describe('COM-3: the books travel', () => {
           amountReceived: { currency: 'INR', minor_units: '10000' },
         }).ok,
       ).toBe(true);
-      const before = a.service.statement({ counterpartyDid: BUYER, currency: 'INR', role: 'supplier' });
+      const before = a.service.statement({
+        counterpartyDid: BUYER,
+        currency: 'INR',
+        role: 'supplier',
+      });
       if (!before.ok) throw new Error(before.error);
       expect(before.balance).toMatchObject({ direction: 'buyer_owes', minor_units: '20000' });
 
       await roundTrip(src, dest);
 
       const b = seat(dest, SUPPLIER);
-      const after = b.service.statement({ counterpartyDid: BUYER, currency: 'INR', role: 'supplier' });
+      const after = b.service.statement({
+        counterpartyDid: BUYER,
+        currency: 'INR',
+        role: 'supplier',
+      });
       if (!after.ok) throw new Error(after.error);
       expect(after.balance).toEqual(before.balance);
 
@@ -349,7 +366,9 @@ describe('COM-3: the books travel', () => {
       await roundTrip(src, dest);
 
       expect(
-        dest.db.query('SELECT nonce, state FROM commerce_invites ORDER BY nonce').map((r) => [r.nonce, r.state]),
+        dest.db
+          .query('SELECT nonce, state FROM commerce_invites ORDER BY nonce')
+          .map((r) => [r.nonce, r.state]),
       ).toEqual([
         ['n-active', 'active'],
         ['n-held', 'revoked'],
@@ -436,7 +455,9 @@ describe('COM-3: the books travel', () => {
     expect(
       preflightCommerceArchive({
         ...empty,
-        commerce_trade_documents: [{ record_digest: 'x', kind: 'quote_decline', record_json: '{}' }],
+        commerce_trade_documents: [
+          { record_digest: 'x', kind: 'quote_decline', record_json: '{}' },
+        ],
       } as never).ok,
     ).toBe(true);
   });

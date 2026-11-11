@@ -26,7 +26,6 @@ import {
   validateServiceListing,
 } from '@dina/protocol';
 
-
 import { getPluginInstallRepository } from '../plugins/registry';
 
 import { capabilitySchemaHash } from './capability_schema_hash';
@@ -34,7 +33,11 @@ import { configEventChannel } from './config_event_channel';
 import { namesReservedLane } from './reserved_lanes';
 import { getServiceConfigRepository } from './service_config_repository';
 
-import type { ListingValidationError, ServiceCapabilityConfig, ServiceConfig } from '@dina/protocol';
+import type {
+  ListingValidationError,
+  ServiceCapabilityConfig,
+  ServiceConfig,
+} from '@dina/protocol';
 // Layer 5 (SERVICES_LAUNCH_ARCHITECTURE.md Part 1) — canonicalize the
 // inbound capability so an alias-configured provider accepts the
 // canonical query. Pure/sync from the shared registry; keeps
@@ -207,10 +210,7 @@ export async function drainListingUnpublishes(
  * Throws if the config fails structural validation — the write is atomic,
  * so the previous value is preserved on error.
  */
-export function setServiceConfig(
-  config: ServiceConfig,
-  rkey: string = DEFAULT_LISTING_RKEY,
-): void {
+export function setServiceConfig(config: ServiceConfig, rkey: string = DEFAULT_LISTING_RKEY): void {
   validateServiceConfig(config);
   const repo = getServiceConfigRepository();
   const json = JSON.stringify(config);
@@ -288,9 +288,7 @@ export type ServiceConfigForSaveValidation =
  * Structural validation and catalog policy must not drift between the owner
  * HTTP route and narrow agent facade.
  */
-export function validateServiceConfigForSave(
-  value: unknown,
-): ServiceConfigForSaveValidation {
+export function validateServiceConfigForSave(value: unknown): ServiceConfigForSaveValidation {
   try {
     validateServiceConfig(value);
   } catch (error) {
@@ -678,11 +676,21 @@ export function validateServiceConfig(value: unknown): asserts value is ServiceC
     // rule "a capability needs at least one execution plane" is
     // status-aware and lives in `validateServiceListing`
     // (`missing_execution_plane`) — same split as `no_capabilities`.
-    if (entry.mcpServer !== undefined && (typeof entry.mcpServer !== 'string' || entry.mcpServer === '')) {
-      throw new Error(`service_config: capabilities.${name}.mcpServer must be a non-empty string when present`);
+    if (
+      entry.mcpServer !== undefined &&
+      (typeof entry.mcpServer !== 'string' || entry.mcpServer === '')
+    ) {
+      throw new Error(
+        `service_config: capabilities.${name}.mcpServer must be a non-empty string when present`,
+      );
     }
-    if (entry.mcpTool !== undefined && (typeof entry.mcpTool !== 'string' || entry.mcpTool === '')) {
-      throw new Error(`service_config: capabilities.${name}.mcpTool must be a non-empty string when present`);
+    if (
+      entry.mcpTool !== undefined &&
+      (typeof entry.mcpTool !== 'string' || entry.mcpTool === '')
+    ) {
+      throw new Error(
+        `service_config: capabilities.${name}.mcpTool must be a non-empty string when present`,
+      );
     }
     if ((entry.mcpServer === undefined) !== (entry.mcpTool === undefined)) {
       throw new Error(

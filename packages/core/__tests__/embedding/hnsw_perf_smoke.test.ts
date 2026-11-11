@@ -66,7 +66,7 @@ describeMaybe(`HNSW perf smoke — ${ROW_COUNT} items, p95 < ${P95_BUDGET_MS} ms
 
   beforeAll(() => {
     index = new HNSWIndex({ dimensions: DIMENSIONS });
-    const rng = seededRng(0x11_5CAFE);
+    const rng = seededRng(0x11_5cafe);
     for (let i = 0; i < ROW_COUNT; i += 1) {
       index.insert(`v-${i}`, makeVector(rng));
     }
@@ -77,7 +77,7 @@ describeMaybe(`HNSW perf smoke — ${ROW_COUNT} items, p95 < ${P95_BUDGET_MS} ms
   });
 
   it(`query p95 < ${P95_BUDGET_MS} ms`, () => {
-    const rngQueries = seededRng(0xDE_CAFE);
+    const rngQueries = seededRng(0xde_cafe);
     // Warm up — JIT + CPU cache settle.
     for (let i = 0; i < WARMUP_QUERIES; i += 1) {
       index.search(makeVector(rngQueries), 10);
@@ -98,7 +98,7 @@ describeMaybe(`HNSW perf smoke — ${ROW_COUNT} items, p95 < ${P95_BUDGET_MS} ms
     // Summary on stdout so CI dashboards surface the numbers on both
     // pass and fail. Format matches storage-node's FTS5 perf smoke for
     // grep'able consistency.
-     
+
     console.log(
       `[hnsw_perf] queries=${MEASURED_QUERIES} p50=${p50.toFixed(2)}ms p95=${p95.toFixed(2)}ms p99=${p99.toFixed(2)}ms budget=${P95_BUDGET_MS}ms`,
     );

@@ -154,7 +154,10 @@ describe('PairingCodeRegistry.generate (task 4.62)', () => {
     // Pre-populate with a code, then feed the same secret as every retry.
     const reg = new PairingCodeRegistry({
       nowMsFn: clock.nowMsFn,
-      randomBytesFn: scriptedRandom([seed(0x33), ...Array.from({ length: CODE_COLLISION_RETRIES }, () => seed(0x33))]),
+      randomBytesFn: scriptedRandom([
+        seed(0x33),
+        ...Array.from({ length: CODE_COLLISION_RETRIES }, () => seed(0x33)),
+      ]),
     });
     reg.generate();
     const err = catchErr(() => reg.generate());

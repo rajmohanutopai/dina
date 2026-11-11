@@ -364,4 +364,3 @@ export function extractOriginChannel(payload: string): string {
     return '';
   }
 }
-

@@ -22,11 +22,7 @@
  */
 
 export { NodeSQLiteAdapter, NodeSQLiteAdapterError } from './adapter';
-export type {
-  JournalMode,
-  NodeSQLiteAdapterOptions,
-  Synchronous,
-} from './adapter';
+export type { JournalMode, NodeSQLiteAdapterOptions, Synchronous } from './adapter';
 
 export { NodeDBProvider, NodeDBProviderError } from './provider';
 export type { NodeDBProviderOptions } from './provider';

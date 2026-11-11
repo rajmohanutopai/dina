@@ -135,9 +135,14 @@ export default function BusinessIdentityScreen(): React.JSX.Element {
     setError('');
     // Any address field the owner typed means they meant to state an address;
     // Core says what is missing rather than the screen dropping their typing.
-    const hasAddress = [form.line1, form.line2, form.city, form.region, form.postalCode, form.country].some(
-      (value) => value.trim() !== '',
-    );
+    const hasAddress = [
+      form.line1,
+      form.line2,
+      form.city,
+      form.region,
+      form.postalCode,
+      form.country,
+    ].some((value) => value.trim() !== '');
     try {
       const result = await client.saveBusinessIdentity({
         legalName: form.legalName,
@@ -249,9 +254,17 @@ export default function BusinessIdentityScreen(): React.JSX.Element {
             accessibilityRole="button"
             onPress={() => void save()}
             disabled={busy}
-            style={({ pressed }) => [styles.save, pressed && styles.pressed, busy && styles.disabled]}
+            style={({ pressed }) => [
+              styles.save,
+              pressed && styles.pressed,
+              busy && styles.disabled,
+            ]}
           >
-            {busy ? <ActivityIndicator color={colors.white} /> : <Text style={styles.saveText}>Save</Text>}
+            {busy ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.saveText}>Save</Text>
+            )}
           </Pressable>
         </View>
       </ScrollView>
@@ -264,7 +277,12 @@ const styles = StyleSheet.create({
   centered: { alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.sm },
   sub: { ...textStyles.body, color: colors.textSecondary, marginBottom: spacing.sm },
-  section: { ...textStyles.body, color: colors.textPrimary, fontWeight: '600', marginTop: spacing.md },
+  section: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    marginTop: spacing.md,
+  },
   label: { ...textStyles.caption, color: colors.textSecondary, marginBottom: spacing.xs },
   input: {
     ...textStyles.body,

@@ -238,7 +238,9 @@ export class ServicePublisher {
   async sync(
     config: ServicePublisherConfig,
     rkey: string = SERVICE_PROFILE_RKEY,
-  ): Promise<{ published: true; result: PutRecordResult & { unchanged?: true } } | { published: false }> {
+  ): Promise<
+    { published: true; result: PutRecordResult & { unchanged?: true } } | { published: false }
+  > {
     if (shouldPublishProfile(config)) {
       const result = await this.publish(config, rkey);
       return { published: true, result };
@@ -359,7 +361,9 @@ function serialiseSchemas(
     try {
       canonical = capabilitySchemaHash(s);
     } catch {
-      throw new PublisherConfigError(`capability ${cap}: schema has no canonical JSON form, so no schema_hash`);
+      throw new PublisherConfigError(
+        `capability ${cap}: schema has no canonical JSON form, so no schema_hash`,
+      );
     }
     if (s.schemaHash !== '' && s.schemaHash !== canonical) {
       log({
@@ -420,11 +424,13 @@ function stableJson(value: unknown): string {
 }
 
 /** True when two profile records differ in nothing but `updatedAt`. */
-export function sameListingContent(a: Record<string, unknown>, b: Record<string, unknown>): boolean {
+export function sameListingContent(
+  a: Record<string, unknown>,
+  b: Record<string, unknown>,
+): boolean {
   const strip = (r: Record<string, unknown>) => {
     const { updatedAt: _u, ...rest } = r;
     return rest;
   };
   return stableJson(strip(a)) === stableJson(strip(b));
 }
-

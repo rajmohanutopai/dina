@@ -36,10 +36,10 @@ export class LRUDedupSet {
    * If not seen → returns false (caller should add after processing).
    */
   has(key: string): boolean {
-    if (!this.items.has(key)) return false;
+    const ts = this.items.get(key);
+    if (ts === undefined) return false;
 
     // Promote to most-recent (delete + re-set)
-    const ts = this.items.get(key)!;
     this.items.delete(key);
     this.items.set(key, ts);
     return true;

@@ -10,8 +10,9 @@
 
 import fs from 'node:fs';
 
-import { createArchive, importArchive, verifyArchive } from '@dina/core';
 import { pino } from 'pino';
+
+import { createArchive, importArchive, verifyArchive } from '@dina/core';
 
 import { initializeStorage } from './init';
 

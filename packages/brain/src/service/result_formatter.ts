@@ -112,10 +112,16 @@ function formatAvailability(details: ServiceQueryEventDetails, name: string): st
   const r = parseResultObject(details.result) as Record<string, unknown>;
   const slots = Array.isArray(r.slots) ? (r.slots as Record<string, unknown>[]) : [];
   const times = slots
-    .map((s) => `${stringOrEmpty(s.date) !== '' && stringOrEmpty(s.date) !== stringOrEmpty(r.date) ? `${stringOrEmpty(s.date)} ` : ''}${stringOrEmpty(s.time)}`.trim())
+    .map((s) =>
+      `${stringOrEmpty(s.date) !== '' && stringOrEmpty(s.date) !== stringOrEmpty(r.date) ? `${stringOrEmpty(s.date)} ` : ''}${stringOrEmpty(s.time)}`.trim(),
+    )
     .filter((t) => t !== '');
-  if (times.length === 0) return `${name} — no free slots${stringOrEmpty(r.date) !== '' ? ` on ${stringOrEmpty(r.date)}` : ''}.`;
-  const list = times.length === 1 ? times[0] : `${times.slice(0, -1).join(', ')} and ${times[times.length - 1]}`;
+  if (times.length === 0)
+    return `${name} — no free slots${stringOrEmpty(r.date) !== '' ? ` on ${stringOrEmpty(r.date)}` : ''}.`;
+  const list =
+    times.length === 1
+      ? times[0]
+      : `${times.slice(0, -1).join(', ')} and ${times[times.length - 1]}`;
   return `${name} — free${stringOrEmpty(r.date) !== '' ? ` on ${stringOrEmpty(r.date)}` : ''} at ${list}.`;
 }
 
@@ -267,7 +273,11 @@ function formatGeneric(details: ServiceQueryEventDetails, name: string): string 
   const plain = (v: unknown): string => {
     if (v === null || v === undefined) return '';
     if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean') return String(v);
-    if (Array.isArray(v)) return v.map(plain).filter((x) => x !== '').join(', ');
+    if (Array.isArray(v))
+      return v
+        .map(plain)
+        .filter((x) => x !== '')
+        .join(', ');
     if (typeof v === 'object')
       return Object.entries(v as Record<string, unknown>)
         .map(([k, x]) => (plain(x) === '' ? '' : `${label(k)} ${plain(x)}`))

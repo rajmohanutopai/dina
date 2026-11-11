@@ -448,7 +448,9 @@ describe('bindCoreRouter (task 4.13)', () => {
     bindCoreRouter({ coreRouter, app, ownerCapability: 'owner-secret' });
     const headers = { 'x-dina-owner-capability': 'owner-secret' };
     const caller = async (method: 'GET' | 'POST', url: string): Promise<string | null> =>
-      (await app.inject({ method, url, headers, payload: method === 'POST' ? {} : undefined })).json().caller;
+      (
+        await app.inject({ method, url, headers, payload: method === 'POST' ? {} : undefined })
+      ).json().caller;
 
     // GROUP_COORDINATION §6: an owner console must be able to settle a card
     // Core refuses Brain — the disclosure review — and only that.

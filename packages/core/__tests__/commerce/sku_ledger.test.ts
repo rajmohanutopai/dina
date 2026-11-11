@@ -75,29 +75,35 @@ forEachRepo('a fresh value claims; the same assignment re-claims idempotently', 
   expect(repo.claim(claimArgs({ draftId: 'draft-2' }))).toEqual({ outcome: 'already_owned' });
 });
 
-forEachRepo('EDIT COLLISION: a claim held by another assignment refuses, naming its owner', (repo) => {
-  repo.claim(claimArgs());
-  expect(repo.claim(claimArgs({ assignmentId: 'asg_two', draftId: 'draft-2' }))).toEqual({
-    outcome: 'refused',
-    owningCatalogId: 'pickles-main',
-    owningAssignmentId: 'asg_one',
-  });
-});
+forEachRepo(
+  'EDIT COLLISION: a claim held by another assignment refuses, naming its owner',
+  (repo) => {
+    repo.claim(claimArgs());
+    expect(repo.claim(claimArgs({ assignmentId: 'asg_two', draftId: 'draft-2' }))).toEqual({
+      outcome: 'refused',
+      owningCatalogId: 'pickles-main',
+      owningAssignmentId: 'asg_one',
+    });
+  },
+);
 
-forEachRepo('SECOND CATALOG: v1 one-catalog rule — the refusal names the owning catalog', (repo) => {
-  repo.claim(claimArgs());
-  const second = repo.claim(
-    claimArgs({ assignmentId: 'asg_other', catalogId: 'pickles-secondary', draftId: 'draft-9' }),
-  );
-  // The same printed SKU in a second catalog's draft is a DIFFERENT
-  // assignment (equality cannot be derived from editable values), so the
-  // claim refuses and the finding can say which catalog owns it.
-  expect(second).toEqual({
-    outcome: 'refused',
-    owningCatalogId: 'pickles-main',
-    owningAssignmentId: 'asg_one',
-  });
-});
+forEachRepo(
+  'SECOND CATALOG: v1 one-catalog rule — the refusal names the owning catalog',
+  (repo) => {
+    repo.claim(claimArgs());
+    const second = repo.claim(
+      claimArgs({ assignmentId: 'asg_other', catalogId: 'pickles-secondary', draftId: 'draft-9' }),
+    );
+    // The same printed SKU in a second catalog's draft is a DIFFERENT
+    // assignment (equality cannot be derived from editable values), so the
+    // claim refuses and the finding can say which catalog owns it.
+    expect(second).toEqual({
+      outcome: 'refused',
+      owningCatalogId: 'pickles-main',
+      owningAssignmentId: 'asg_one',
+    });
+  },
+);
 
 forEachRepo('TWO CONCURRENT EDITS claiming one value: exactly one wins', (repo) => {
   const a = repo.claim(claimArgs({ assignmentId: 'asg_a', draftId: 'draft-a' }));
@@ -131,15 +137,18 @@ forEachRepo('INHERITED HIGH-WATER: inherit P-0003, mint next -> P-0004', (repo) 
   );
 });
 
-forEachRepo('DELETED-PRODUCT VALUE never re-issued: the high-water mark does not rewind', (repo) => {
-  const value = repo.mintNextValue(ISSUER, 'manufacturer_sku');
-  repo.claim(claimArgs({ value }));
-  // The product is removed and its unpublished draft erased — the claim
-  // releases, the number does not come back.
-  repo.releaseUnpublished('draft-1');
-  expect(repo.holder(ISSUER, 'manufacturer_sku', value)).toBeNull();
-  expect(repo.mintNextValue(ISSUER, 'manufacturer_sku')).toBe(renderMintedValue(2));
-});
+forEachRepo(
+  'DELETED-PRODUCT VALUE never re-issued: the high-water mark does not rewind',
+  (repo) => {
+    const value = repo.mintNextValue(ISSUER, 'manufacturer_sku');
+    repo.claim(claimArgs({ value }));
+    // The product is removed and its unpublished draft erased — the claim
+    // releases, the number does not come back.
+    repo.releaseUnpublished('draft-1');
+    expect(repo.holder(ISSUER, 'manufacturer_sku', value)).toBeNull();
+    expect(repo.mintNextValue(ISSUER, 'manufacturer_sku')).toBe(renderMintedValue(2));
+  },
+);
 
 forEachRepo('ERASE-UNPUBLISHED-THEN-REPHOTOGRAPH: every claim succeeds afterwards', (repo) => {
   // The seller's most ordinary recovery: give up on a half-repaired draft,
@@ -157,7 +166,7 @@ forEachRepo('ERASE-UNPUBLISHED-THEN-REPHOTOGRAPH: every claim succeeds afterward
   ).toEqual({ outcome: 'claimed' });
 });
 
-forEachRepo('a PUBLISHED claim survives its draft\'s erasure for ever', (repo) => {
+forEachRepo("a PUBLISHED claim survives its draft's erasure for ever", (repo) => {
   repo.claim(claimArgs());
   repo.markPublished('draft-1');
   repo.releaseUnpublished('draft-1');
@@ -172,18 +181,21 @@ forEachRepo('a PUBLISHED claim survives its draft\'s erasure for ever', (repo) =
   );
 });
 
-forEachRepo('SAME-ASSIGNMENT SKU EDIT: the new value claims cleanly, the old stays reserved', (repo) => {
-  repo.claim(claimArgs({ value: 'P-0001' }));
-  // The seller edits the cell — same product, new value.
-  expect(repo.claim(claimArgs({ value: 'PICKLE-RED' }))).toEqual({ outcome: 'claimed' });
-  // The superseded value remains reserved to the same assignment; a rival
-  // product cannot squat on it and fork history.
-  expect(
-    repo.claim(claimArgs({ value: 'P-0001', assignmentId: 'asg_rival', draftId: 'draft-9' })),
-  ).toMatchObject({ outcome: 'refused' });
-});
+forEachRepo(
+  'SAME-ASSIGNMENT SKU EDIT: the new value claims cleanly, the old stays reserved',
+  (repo) => {
+    repo.claim(claimArgs({ value: 'P-0001' }));
+    // The seller edits the cell — same product, new value.
+    expect(repo.claim(claimArgs({ value: 'PICKLE-RED' }))).toEqual({ outcome: 'claimed' });
+    // The superseded value remains reserved to the same assignment; a rival
+    // product cannot squat on it and fork history.
+    expect(
+      repo.claim(claimArgs({ value: 'P-0001', assignmentId: 'asg_rival', draftId: 'draft-9' })),
+    ).toMatchObject({ outcome: 'refused' });
+  },
+);
 
-forEachRepo('two issuers never see each other\'s ledgers', (repo) => {
+forEachRepo("two issuers never see each other's ledgers", (repo) => {
   repo.claim(claimArgs());
   expect(
     repo.claim(claimArgs({ issuerDid: 'did:plc:chairmaker', assignmentId: 'asg_theirs' })),

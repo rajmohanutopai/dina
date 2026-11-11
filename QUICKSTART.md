@@ -1,64 +1,50 @@
 # Quick Start
 
-## Install
+## On your phone
+
+Dina for iOS is on the [App Store](https://apps.apple.com/app/id6781713799).
+The whole Home Node runs on the phone: identity, vault, Core and Brain. Android
+is in progress.
+
+## On a server (Home Node Lite)
+
+Needs Docker with Docker Compose, bash and curl.
 
 ```bash
 git clone https://github.com/rajmohanutopai/dina.git
 cd dina
-legacy/bin/install.sh # --quick to avoid repeating the backup phrases
+./apps/home-node-lite/install-lite.sh            # install, or re-run safely
+./apps/home-node-lite/install-lite.sh --web-ui   # also serve the web app from Core at /app/
+./apps/home-node-lite/install-lite.sh --uninstall
 ```
 
-The installer asks your name, picks a messaging channel (Telegram or Bluesky), and sets up your AI provider (Gemini, OpenAI, or Claude). Everything else is automatic — keys, containers, identity, PeerLens account.
+The installer starts Core and Brain, creates your identity, and prints your DID
+and recovery phrase. Write the phrase down; it is the only way to restore your
+Dina.
 
-## See Dina in Action
+To run from source without Docker, see
+[`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md).
 
-Seeing how Dina works will give a really good picture of what Dina is.
+## See Dina in action
 
- [`📖 Read the Full Capabilities & Usage Guide`](./CAPABILITIES.md)
+[Capabilities and usage guide](./CAPABILITIES.md)
 
-## Verify
+## Connect an agent
 
-```bash
-legacy/bin/dina-admin status
-```
+From any machine, pair the `dina-agent` CLI with your Home Node using a setup
+code from the app (Settings → Agents):
 
-## Talk to your Dina
-
-**Telegram/Bluesky** — open your bot and chat:
-```
-/remember My daughter Emma turns 7 on March 15
-/ask when is Emma's birthday?
-/send Sancho: arriving in 10 minutes
-/review Aeron Chair: fixed my back pain
-/status
-```
-
-**Bluesky** — DM your Dina's Bluesky account which you have setup during install
-
-**CLI** — from any machine (used for connecting to agents like openclaw):
 ```bash
 pip install dina-agent
 dina configure
 dina ask "what kind of tea do I like?"
 ```
 
-**Admin** — on the Home Node:
-```bash
-legacy/bin/dina-admin ask "what do I know about Sancho?"
-legacy/bin/dina-admin inbox
-legacy/bin/dina-admin trace <request_id>
-```
-
-## Manage
+## For developers
 
 ```bash
-legacy/bin/run.sh --start     # start (rebuilds from latest code)
-legacy/bin/run.sh --stop      # stop
-legacy/bin/run.sh --status    # health check
-legacy/bin/run.sh --logs      # tail logs
-legacy/bin/dina-admin export  # decrypted backup
+npm install          # at the repo root, Node 22 or later
+npm test             # Jest across every package and app
+npm run typecheck
+npm run lint
 ```
-
-## Requirements
-
-Docker & Docker Compose. 2 GB RAM, 2 cores, 10 GB storage. Runs on a VPS, Raspberry Pi, or any always-on machine.

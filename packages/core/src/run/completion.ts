@@ -67,7 +67,9 @@ function rowToReceipt(row: DBRow): CompletionReceiptRecord {
     run_id: String(row.run_id),
     status: String(row.status) as CompletionStatus,
     result_card_ref:
-      row.result_card_ref === null || row.result_card_ref === undefined ? null : String(row.result_card_ref),
+      row.result_card_ref === null || row.result_card_ref === undefined
+        ? null
+        : String(row.result_card_ref),
     result_card_digest:
       row.result_card_digest === null || row.result_card_digest === undefined
         ? null
@@ -124,9 +126,10 @@ export class SQLiteCompletionReceiptRepository implements CompletionReceiptRepos
   }
 
   getByDelegationId(delegationId: string): CompletionReceiptRecord | null {
-    const rows = this.db.query('SELECT * FROM run_completion_receipts WHERE delegation_id = ? LIMIT 1', [
-      delegationId,
-    ]);
+    const rows = this.db.query(
+      'SELECT * FROM run_completion_receipts WHERE delegation_id = ? LIMIT 1',
+      [delegationId],
+    );
     return rows.length > 0 ? rowToReceipt(rows[0]) : null;
   }
 
@@ -188,8 +191,7 @@ export class InMemoryCompletionReceiptRepository implements CompletionReceiptRep
       // so a duplicate can't clobber the staged pointer or regress an attached
       // card ref to null; a null→non-null upgrade still works (existing null).
       existing.result_card_ref = existing.result_card_ref ?? r.result_card_ref;
-      existing.result_card_staged_ref =
-        existing.result_card_staged_ref ?? r.result_card_staged_ref;
+      existing.result_card_staged_ref = existing.result_card_staged_ref ?? r.result_card_staged_ref;
       existing.updated_at = r.updated_at;
     } else {
       this.receipts.set(r.delegation_id, { ...r });
@@ -354,11 +356,7 @@ export class CompletionService {
     // Mismatched delegation_id / run_id / unknown message → reject (never
     // advance). The run_id binding stops a completion signed for one run from
     // advancing a message that belongs to another run (§6.2 delegation binding).
-    if (
-      msg === null ||
-      msg.delegation_id !== input.delegation_id ||
-      msg.run_id !== input.run_id
-    ) {
+    if (msg === null || msg.delegation_id !== input.delegation_id || msg.run_id !== input.run_id) {
       return 'rejected';
     }
 
@@ -379,7 +377,7 @@ export class CompletionService {
       result_card_staged_ref:
         existing?.result_card_ref != null || existing?.result_card_staged_ref != null
           ? null
-          : input.result_card_staged_ref ?? null,
+          : (input.result_card_staged_ref ?? null),
       receipt_state: 'verified_pending',
       issued_at: input.issued_at,
       received_at: nowMs,
@@ -402,7 +400,12 @@ export class CompletionService {
       if (pastDeadline) {
         this.messages.appendReconciliation(
           input.message_id,
-          JSON.stringify({ delegation_id: input.delegation_id, status: input.status, at: nowMs, late: true }),
+          JSON.stringify({
+            delegation_id: input.delegation_id,
+            status: input.status,
+            at: nowMs,
+            late: true,
+          }),
           nowMs,
         );
         this.messages.transition(input.message_id, msg.state, 'outcome_unknown', nowMs);
@@ -455,8 +458,10 @@ export class CompletionService {
         // A completion that arrived before the deadline is never mis-recorded
         // (§6.2). If the message is still `sending` (claimed, send unconfirmed),
         // move it to `dispatched` first so the CAS advance can fire (VERIF #4).
-        if (msg.state === 'sending') this.messages.transition(messageId, 'sending', 'dispatched', nowMs);
-        if (this.tryAdvance(receipt.delegation_id, messageId, receipt.status, nowMs)) return 'advanced';
+        if (msg.state === 'sending')
+          this.messages.transition(messageId, 'sending', 'dispatched', nowMs);
+        if (this.tryAdvance(receipt.delegation_id, messageId, receipt.status, nowMs))
+          return 'advanced';
       }
     }
     // no completion → outcome_unknown (already-claimed, unknown external outcome).
@@ -468,7 +473,12 @@ export class CompletionService {
     return 'outcome_unknown';
   }
 
-  private tryAdvance(delegationId: string, messageId: string, status: CompletionStatus, nowMs: number): boolean {
+  private tryAdvance(
+    delegationId: string,
+    messageId: string,
+    status: CompletionStatus,
+    nowMs: number,
+  ): boolean {
     const to = status === 'completed' ? 'completed' : 'failed';
     // Idempotent crash-recovery (§6.2, F13): the two-step advance is a lifecycle
     // transition FOLLOWED BY `markAdvanced`. A crash between them leaves the
@@ -501,7 +511,11 @@ export class CompletionService {
     if (this.runs !== null) {
       const receipt = this.receipts.getByDelegationId(delegationId);
       const msg = this.messages.getById(messageId);
-      if (receipt !== null && msg !== null && (msg.state === 'dispatched' || msg.state === 'sending')) {
+      if (
+        receipt !== null &&
+        msg !== null &&
+        (msg.state === 'dispatched' || msg.state === 'sending')
+      ) {
         const run = this.runs.getById(msg.run_id);
         const late =
           run !== null &&

@@ -36,15 +36,13 @@ const PROFILE_SCHEMA: LexiconSchema = {
 describe('LexiconValidator (task 6.5)', () => {
   describe('construction', () => {
     it('throws when schemas is not an object', () => {
-      expect(
-        () => new LexiconValidator(null as unknown as Record<string, LexiconSchema>),
-      ).toThrow(/schemas/);
+      expect(() => new LexiconValidator(null as unknown as Record<string, LexiconSchema>)).toThrow(
+        /schemas/,
+      );
     });
 
     it('throws on empty collection name', () => {
-      expect(
-        () => new LexiconValidator({ '': PROFILE_SCHEMA }),
-      ).toThrow(/non-empty/);
+      expect(() => new LexiconValidator({ '': PROFILE_SCHEMA })).toThrow(/non-empty/);
     });
 
     it('DEFAULT_MAX_ERRORS is 10', () => {
@@ -80,14 +78,14 @@ describe('LexiconValidator (task 6.5)', () => {
     });
 
     it('returns unknown_collection when $type missing + no argument', () => {
-      const v = new LexiconValidator({ 'x': { type: 'object' } });
+      const v = new LexiconValidator({ x: { type: 'object' } });
       const r = v.validate({ foo: 'bar' });
       if (r.ok) throw new Error('expected ok:false');
       expect(r.errors[0]?.kind).toBe('unknown_collection');
     });
 
     it('returns unknown_collection for unregistered collection', () => {
-      const v = new LexiconValidator({ 'x': { type: 'object' } });
+      const v = new LexiconValidator({ x: { type: 'object' } });
       const r = v.validate({}, 'not-registered');
       if (r.ok) throw new Error('expected ok:false');
       expect(r.errors[0]?.kind).toBe('unknown_collection');
@@ -558,20 +556,14 @@ describe('LexiconValidator (task 6.5)', () => {
     it('throws when schemas is undefined', () => {
       // Pre-existing test covers null; pin undefined too.
       expect(
-        () =>
-          new LexiconValidator(
-            undefined as unknown as Record<string, LexiconSchema>,
-          ),
+        () => new LexiconValidator(undefined as unknown as Record<string, LexiconSchema>),
       ).toThrow(/schemas/);
     });
 
     it('throws when schemas is a primitive (number)', () => {
-      expect(
-        () =>
-          new LexiconValidator(
-            42 as unknown as Record<string, LexiconSchema>,
-          ),
-      ).toThrow(/schemas/);
+      expect(() => new LexiconValidator(42 as unknown as Record<string, LexiconSchema>)).toThrow(
+        /schemas/,
+      );
     });
 
     it('empty schemas object → constructs successfully', () => {
@@ -606,9 +598,7 @@ describe('LexiconValidator (task 6.5)', () => {
       // — does NOT call Array.isArray. So an array schema slips through
       // construction. The validator would behave oddly later but it's
       // documented permissive. A future tighten would surface here.
-      expect(
-        () => new LexiconValidator({ x: [] as unknown as LexiconSchema }),
-      ).not.toThrow();
+      expect(() => new LexiconValidator({ x: [] as unknown as LexiconSchema })).not.toThrow();
     });
   });
 

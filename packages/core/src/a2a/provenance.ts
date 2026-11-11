@@ -53,7 +53,9 @@ const RESTRICTED_TIERS: ReadonlySet<string> = new Set(['sensitive', 'locked']);
 const WORD_CHAR = /[\p{L}\p{N}]/u;
 const WORD = /[\p{L}\p{N}]+/gu;
 
-export type SpanSource = { kind: 'owner' } | { kind: 'vault'; persona: string; itemId: string; restricted: boolean };
+export type SpanSource =
+  | { kind: 'owner' }
+  | { kind: 'vault'; persona: string; itemId: string; restricted: boolean };
 
 /** A proven stretch of the cleaned outgoing text, `[start, end)`. */
 export interface ProvenSpan {
@@ -83,8 +85,9 @@ export interface ProvenanceResult {
   restrictedReads: string[];
 }
 
-
-type Claim = { quote: string; from: 'owner' } | { quote: string; from: 'vault'; persona: string; itemId: string };
+type Claim =
+  | { quote: string; from: 'owner' }
+  | { quote: string; from: 'vault'; persona: string; itemId: string };
 
 function parseClaims(raw: unknown): Claim[] | ProvenanceRefusal {
   if (raw === undefined) return [];
@@ -95,9 +98,14 @@ function parseClaims(raw: unknown): Claim[] | ProvenanceRefusal {
     if (!isPlainObject(entry) || typeof entry.quote !== 'string') return 'sources_malformed';
     const quote = cleanForProvenance(entry.quote);
     if (quote !== quote.trim()) return 'sources_malformed';
-    if (quote.length < MIN_QUOTE_CHARS || (quote.match(WORD) ?? []).length < MIN_QUOTE_WORDS) return 'source_too_short';
+    if (quote.length < MIN_QUOTE_CHARS || (quote.match(WORD) ?? []).length < MIN_QUOTE_WORDS)
+      return 'source_too_short';
     if (entry.from === 'owner') claims.push({ quote, from: 'owner' });
-    else if (entry.from === 'vault' && typeof entry.persona === 'string' && typeof entry.item_id === 'string') {
+    else if (
+      entry.from === 'vault' &&
+      typeof entry.persona === 'string' &&
+      typeof entry.item_id === 'string'
+    ) {
       claims.push({ quote, from: 'vault', persona: entry.persona, itemId: entry.item_id });
     } else return 'sources_malformed';
   }
@@ -158,7 +166,9 @@ function proveVault(
     persona: claim.persona,
     itemId: claim.itemId,
     // The read-set rule (`restrictedReads`): private if its persona was private when read OR is now.
-    restricted: releases.some((r) => RESTRICTED_TIERS.has(r.persona_tier)) || RESTRICTED_TIERS.has(currentTier(claim.persona)),
+    restricted:
+      releases.some((r) => RESTRICTED_TIERS.has(r.persona_tier)) ||
+      RESTRICTED_TIERS.has(currentTier(claim.persona)),
   };
 }
 
@@ -266,7 +276,11 @@ export function sameSource(a: SpanSource, b: SpanSource): boolean {
 export function singleSourceOf(result: ProvenanceResult, value: string): SpanSource | null {
   if (value === '') return null;
   let found: SpanSource | null = null;
-  for (let at = result.text.indexOf(value); at !== -1; at = result.text.indexOf(value, at + value.length)) {
+  for (
+    let at = result.text.indexOf(value);
+    at !== -1;
+    at = result.text.indexOf(value, at + value.length)
+  ) {
     const span = result.spans.find((s) => s.start <= at && s.end >= at + value.length);
     if (span === undefined) return null;
     if (found === null) found = span.source;

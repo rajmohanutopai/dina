@@ -309,9 +309,14 @@ export function ed25519SecToX25519(ed25519Sec: Uint8Array): Uint8Array {
 
   // Clamp (RFC 7748 / X25519 scalar format). `scalar` is a 32-byte
   // slice of the sha512 digest — indices 0 and 31 are always present;
-  // assertions are required under noUncheckedIndexedAccess.
-  scalar[0] = (scalar[0]! & 248);
-  scalar[31] = (scalar[31]! & 127) | 64;
+  // the check satisfies noUncheckedIndexedAccess.
+  const first = scalar[0];
+  const last = scalar[31];
+  if (first === undefined || last === undefined) {
+    throw new Error('nacl: sha512 digest shorter than 32 bytes');
+  }
+  scalar[0] = first & 248;
+  scalar[31] = (last & 127) | 64;
 
   return scalar;
 }

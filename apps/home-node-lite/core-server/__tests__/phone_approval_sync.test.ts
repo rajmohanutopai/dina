@@ -24,7 +24,6 @@ import {
 
 import type { UcpCheckoutRuntime } from '@dina/core';
 
-
 const NOW = 2_000_000_000_000;
 const PHONE_CLIENT_DID = 'did:key:z6MkLaptopApprovalClient';
 
@@ -1130,20 +1129,33 @@ describe('linked-account callbacks the phone caught (UCP plan §3.17)', () => {
   it('pulls by the states its links wait on, finishes each, then acknowledges them', async () => {
     pullAnswer = {
       status: 200,
-      body: { callbacks: [{ state: S1, params: { code: 'c', state: S1, iss: 'https://shop.example' } }] },
+      body: {
+        callbacks: [{ state: S1, params: { code: 'c', state: S1, iss: 'https://shop.example' } }],
+      },
     };
     expect(await pullUcpLinkCallbacks(client)).toBe(1);
     expect(finished).toEqual([{ code: 'c', state: S1, iss: 'https://shop.example' }]);
     expect(sent).toEqual([
-      { method: 'POST', path: '/v1/agent/approval-sync/v1/oauth-callbacks/pull', body: { states: [S1] } },
-      { method: 'POST', path: '/v1/agent/approval-sync/v1/oauth-callbacks/ack', body: { states: [S1] } },
+      {
+        method: 'POST',
+        path: '/v1/agent/approval-sync/v1/oauth-callbacks/pull',
+        body: { states: [S1] },
+      },
+      {
+        method: 'POST',
+        path: '/v1/agent/approval-sync/v1/oauth-callbacks/ack',
+        body: { states: [S1] },
+      },
     ]);
     // Acknowledged: nothing more is owed for it.
     expect(relayed).toEqual([[S1]]);
   });
 
   it('an acknowledgement the phone did not take leaves the state owed: the next pull asks again', async () => {
-    pullAnswer = { status: 200, body: { callbacks: [{ state: S1, params: { code: 'c', state: S1 } }] } };
+    pullAnswer = {
+      status: 200,
+      body: { callbacks: [{ state: S1, params: { code: 'c', state: S1 } }] },
+    };
     const failing: PhoneApprovalClient = {
       did: client.did,
       async request(method, path, body) {
@@ -1216,7 +1228,10 @@ describe('linked-account callbacks the phone caught (UCP plan §3.17)', () => {
   });
 
   it('the sync worker pulls on its tick, before the cards', async () => {
-    pullAnswer = { status: 200, body: { callbacks: [{ state: S1, params: { code: 'c', state: S1 } }] } };
+    pullAnswer = {
+      status: 200,
+      body: { callbacks: [{ state: S1, params: { code: 'c', state: S1 } }] },
+    };
     await new PhoneApprovalSyncWorker(client).tick();
     expect(finished).toHaveLength(1);
     expect(sent[0]?.path).toBe('/v1/agent/approval-sync/v1/oauth-callbacks/pull');

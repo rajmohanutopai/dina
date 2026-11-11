@@ -29,7 +29,11 @@ export async function loadTradeDetails(did: string): Promise<TradeDetails> {
     throw new Error(`contacts: lookup answered ${String(res.status)}`);
   }
   const body = (await res.json().catch(() => ({}))) as {
-    contact?: { legalName?: string; registrations?: TaxRegistration[]; billingAddress?: PostalAddress };
+    contact?: {
+      legalName?: string;
+      registrations?: TaxRegistration[];
+      billingAddress?: PostalAddress;
+    };
   };
   const contact = body.contact ?? {};
   return {
@@ -65,7 +69,10 @@ export async function saveTradeDetails(
     ),
   });
   if (res.ok) return [];
-  const body = (await res.json().catch(() => ({}))) as { findings?: TradeIdentityFinding[]; error?: string };
+  const body = (await res.json().catch(() => ({}))) as {
+    findings?: TradeIdentityFinding[];
+    error?: string;
+  };
   if (body.findings !== undefined) return body.findings;
   // No findings to place beside a field: throw, so the screen shows it in its
   // own error slot rather than looking like nothing happened.

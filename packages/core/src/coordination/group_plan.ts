@@ -158,10 +158,15 @@ export type PlanResult = { ok: true; plan: GroupPlan } | PlanRefused;
 const refuse = (refusal: GroupPlanRefusal, detail?: string): PlanRefused =>
   detail === undefined ? { ok: false, refusal } : { ok: false, refusal, detail };
 
-function validateCandidates(raw: readonly unknown[]): { ok: true; slots: MeetingSlot[] } | PlanRefused {
+function validateCandidates(
+  raw: readonly unknown[],
+): { ok: true; slots: MeetingSlot[] } | PlanRefused {
   if (raw.length === 0) return refuse('no_candidates');
   if (raw.length > MAX_PLAN_CANDIDATES) {
-    return refuse('too_many_candidates', `${raw.length} candidates; the ceiling is ${MAX_PLAN_CANDIDATES}`);
+    return refuse(
+      'too_many_candidates',
+      `${raw.length} candidates; the ceiling is ${MAX_PLAN_CANDIDATES}`,
+    );
   }
   const slots: MeetingSlot[] = [];
   const seen = new Set<string>();
@@ -174,10 +179,12 @@ function validateCandidates(raw: readonly unknown[]): { ok: true; slots: Meeting
     // the organizer that peer's availability.)
     const start = oneLine(value.start, MAX_SLOT_CHARS + 1);
     const end = value.end === undefined ? undefined : oneLine(value.end, MAX_SLOT_CHARS + 1);
-    const note = value.note === undefined ? undefined : oneLine(value.note, MAX_DISCLOSURE_CHARS + 1);
+    const note =
+      value.note === undefined ? undefined : oneLine(value.note, MAX_DISCLOSURE_CHARS + 1);
     if (start === '' || start.length > MAX_SLOT_CHARS) return refuse('malformed_slot', 'start');
     if (end !== undefined && end.length > MAX_SLOT_CHARS) return refuse('malformed_slot', 'end');
-    if (note !== undefined && note.length > MAX_DISCLOSURE_CHARS) return refuse('malformed_slot', 'note');
+    if (note !== undefined && note.length > MAX_DISCLOSURE_CHARS)
+      return refuse('malformed_slot', 'note');
     const slot: MeetingSlot = {
       start,
       ...(end !== undefined && end !== '' ? { end } : {}),
@@ -218,12 +225,19 @@ export function createGroupPlan(args: {
   if (args.intent.trim().length > MAX_INTENT_CHARS) return refuse('intent_too_long');
   if (args.guests.length === 0) return refuse('no_guests');
   if (args.guests.length > MAX_GROUP_GUESTS) {
-    return refuse('too_many_guests', `${args.guests.length} guests; the ceiling is ${MAX_GROUP_GUESTS}`);
+    return refuse(
+      'too_many_guests',
+      `${args.guests.length} guests; the ceiling is ${MAX_GROUP_GUESTS}`,
+    );
   }
   const seen = new Set<string>();
   const guests: GuestRecord[] = [];
   for (const guest of args.guests) {
-    if (typeof guest.contactDid !== 'string' || guest.contactDid.trim() === '' || typeof guest.required !== 'boolean') {
+    if (
+      typeof guest.contactDid !== 'string' ||
+      guest.contactDid.trim() === '' ||
+      typeof guest.required !== 'boolean'
+    ) {
       return refuse('malformed_guest');
     }
     if (seen.has(guest.contactDid)) return refuse('duplicate_guest', guest.contactDid);
@@ -273,7 +287,8 @@ function guestIndex(plan: GroupPlan, contactDid: string): number {
  * a fourth round is never on the wire.
  */
 export function openRound(plan: GroupPlan, nowMs: number): PlanResult {
-  if (plan.state !== 'proposing' && plan.state !== 'confirming') return refuse('wrong_state', plan.state);
+  if (plan.state !== 'proposing' && plan.state !== 'confirming')
+    return refuse('wrong_state', plan.state);
   if (plan.round >= MAX_PLAN_ROUNDS) return refuse('rounds_exhausted');
   return {
     ok: true,
@@ -330,12 +345,12 @@ export function recordSpoke(
   return { ok: true, plan: touch(plan, nowMs, { guests }) };
 }
 
-
 /** A well-formed disclosure, bounded and one-lined; anything else is refused. */
 export function normaliseDisclosure(value: unknown): Disclosure | null {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return null;
   const d = value as Record<string, unknown>;
-  if (typeof d.kind !== 'string' || !(DISCLOSURE_KINDS as readonly string[]).includes(d.kind)) return null;
+  if (typeof d.kind !== 'string' || !(DISCLOSURE_KINDS as readonly string[]).includes(d.kind))
+    return null;
   if (d.about !== 'household') return null;
   if (typeof d.text !== 'string') return null;
   const text = oneLine(d.text, MAX_DISCLOSURE_CHARS);
@@ -393,7 +408,11 @@ export function foldPlan(plan: GroupPlan, nowMs: number): PlanResult {
   }
   const fold = foldGroupPlan({
     candidates: plan.candidates,
-    guests: plan.guests.map((g) => ({ contactDid: g.contactDid, required: g.required, reply: g.reply })),
+    guests: plan.guests.map((g) => ({
+      contactDid: g.contactDid,
+      required: g.required,
+      reply: g.reply,
+    })),
   });
   const stillWaiting = plan.guests.some((g) => g.required && g.outcome === 'waiting');
   const settledConfirm =
@@ -402,7 +421,13 @@ export function foldPlan(plan: GroupPlan, nowMs: number): PlanResult {
     ok: true,
     plan: touch(plan, nowMs, {
       fold,
-      state: stillWaiting ? plan.state : settledConfirm ? 'settled' : plan.state === 'confirming' ? 'confirming' : 'folded',
+      state: stillWaiting
+        ? plan.state
+        : settledConfirm
+          ? 'settled'
+          : plan.state === 'confirming'
+            ? 'confirming'
+            : 'folded',
     }),
   };
 }
@@ -425,7 +450,10 @@ export function choose(plan: GroupPlan, slot: MeetingSlot, nowMs: number): PlanR
   const agreed = plan.fold.agreed;
   const match = agreed.find((s) => slotKey(s) === slotKey(slot));
   if (match === undefined) return refuse('slot_not_agreed', slot.start);
-  const opened = openRound(touch(plan, nowMs, { state: 'confirming', chosen: match, candidates: [match] }), nowMs);
+  const opened = openRound(
+    touch(plan, nowMs, { state: 'confirming', chosen: match, candidates: [match] }),
+    nowMs,
+  );
   return opened;
 }
 
@@ -442,7 +470,12 @@ export function widen(plan: GroupPlan, candidates: readonly unknown[], nowMs: nu
   const validated = validateCandidates(candidates);
   if (!validated.ok) return validated;
   return openRound(
-    touch(plan, nowMs, { state: 'proposing', chosen: null, fold: null, candidates: validated.slots }),
+    touch(plan, nowMs, {
+      state: 'proposing',
+      chosen: null,
+      fold: null,
+      candidates: validated.slots,
+    }),
     nowMs,
   );
 }
@@ -455,7 +488,8 @@ export function widen(plan: GroupPlan, candidates: readonly unknown[], nowMs: nu
  * and the rest settle). Never after the plan settled or was abandoned.
  */
 export function makeOptional(plan: GroupPlan, contactDid: string, nowMs: number): PlanResult {
-  if (plan.state === 'settled' || plan.state === 'abandoned') return refuse('wrong_state', plan.state);
+  if (plan.state === 'settled' || plan.state === 'abandoned')
+    return refuse('wrong_state', plan.state);
   const i = guestIndex(plan, contactDid);
   if (i < 0) return refuse('unknown_guest', contactDid);
   const guests = plan.guests.slice();

@@ -23,7 +23,6 @@ import {
   importArchive,
   setImportHandler,
   resetImportHandler,
-  type ArchiveManifest,
 } from '../../src/export/archive';
 
 const PASSPHRASE = 'test-passphrase-for-compat';

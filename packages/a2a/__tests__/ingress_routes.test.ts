@@ -107,18 +107,27 @@ describe('ingressPathFor', () => {
 
 describe('dot-segment ids: no task has one, and no forward could keep one', () => {
   it.each(['.', '..'])('ingressPathFor refuses the id %p as unroutable', (id) => {
-    expect(ingressPathFor(request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'GetTask', params: { id } })))).toEqual({
+    expect(
+      ingressPathFor(
+        request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'GetTask', params: { id } })),
+      ),
+    ).toEqual({
       ok: false,
       reason: 'id_unroutable',
     });
-    expect(ingressPathFor(request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'CancelTask', params: { id } }))).ok).toBe(false);
+    expect(
+      ingressPathFor(
+        request(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'CancelTask', params: { id } })),
+      ).ok,
+    ).toBe(false);
   });
 
   it('an id with dots that is not a dot segment routes as any other', () => {
-    expect(ingressPathFor(request('{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"..."}}'))).toEqual({
+    expect(
+      ingressPathFor(request('{"jsonrpc":"2.0","id":1,"method":"GetTask","params":{"id":"..."}}')),
+    ).toEqual({
       ok: true,
       path: '/v1/a2a/ingress/tasks/.../get',
     });
   });
 });
-

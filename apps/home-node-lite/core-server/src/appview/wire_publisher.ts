@@ -42,6 +42,7 @@ import {
   type ServiceConfig,
   type SetServicePublicationStatusInput,
 } from '@dina/core';
+import { capabilitySchemaHash } from '@dina/core';
 import {
   effectiveDiscoverability,
   isListingPublishable,
@@ -49,7 +50,6 @@ import {
 } from '@dina/protocol';
 
 import { type ServiceProfileRecord } from './profile_builder';
-import { capabilitySchemaHash } from '@dina/core';
 import {
   ServiceProfilePublisher,
   type PutRecordFn,
@@ -134,7 +134,10 @@ export function wireServiceProfilePublisher(
     // An unchanged listing is not written again (REAL_LIFE_FIXES §14.4 A): a
     // boot then makes no public commit. `updatedAt` alone is no change.
     const existing = await pdsPublisher.getRecord(input.collection, input.rkey).catch(() => null);
-    if (existing !== null && sameListingContent(existing.value, input.record as unknown as Record<string, unknown>)) {
+    if (
+      existing !== null &&
+      sameListingContent(existing.value, input.record as unknown as Record<string, unknown>)
+    ) {
       return { uri: existing.uri, cid: existing.cid };
     }
     writtenRkeys.add(input.rkey);
@@ -201,7 +204,9 @@ export function wireServiceProfilePublisher(
 
     const publishing = desired !== null && shouldPublishListing(desired);
     writtenRkeys.delete(rkey);
-    let outcome: Awaited<ReturnType<typeof publishOnce>> | Awaited<ReturnType<typeof unpublishOnce>>;
+    let outcome:
+      | Awaited<ReturnType<typeof publishOnce>>
+      | Awaited<ReturnType<typeof unpublishOnce>>;
     try {
       outcome = publishing
         ? await publishOnce(publisher, pdsIdentity, desired, logger, rkey)
@@ -407,8 +412,7 @@ export async function publishOnce(
   // directly (same call path the publisher uses internally) with the
   // wire-shape record. Once profile_builder is updated to the new
   // lexicon we can route through publisher.publish again.
-  const putRecord = (publisher as unknown as { putRecordFn: PutRecordFn })
-    .putRecordFn;
+  const putRecord = (publisher as unknown as { putRecordFn: PutRecordFn }).putRecordFn;
   try {
     const result = await putRecord({
       collection: 'com.dinakernel.service.profile',
@@ -429,13 +433,7 @@ export async function publishOnce(
         ? (err as { status: number }).status
         : undefined;
     logger.warn({ error: message }, 'service profile publish rejected');
-    if (
-      status !== undefined &&
-      status >= 400 &&
-      status < 500 &&
-      status !== 408 &&
-      status !== 429
-    ) {
+    if (status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429) {
       return { ok: false, reason: 'rejected_by_pds', status, error: message };
     }
     return { ok: false, reason: 'network_error', error: message };
@@ -473,11 +471,7 @@ export async function unpublishOnce(
     return {
       ok: false,
       reason:
-        status !== undefined &&
-        status >= 400 &&
-        status < 500 &&
-        status !== 408 &&
-        status !== 429
+        status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429
           ? 'rejected_by_pds'
           : 'network_error',
       error: message,
@@ -493,9 +487,7 @@ export async function unpublishOnce(
  * Returns the record on success, or an error string on validation
  * failure (caller turns it into a `malformed_profile` outcome).
  */
-export function buildWireServiceProfile(
-  config: ServiceConfig,
-): Record<string, unknown> | string {
+export function buildWireServiceProfile(config: ServiceConfig): Record<string, unknown> | string {
   if (typeof config.name !== 'string' || config.name.trim() === '') {
     return 'service profile name is required';
   }

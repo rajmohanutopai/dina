@@ -367,7 +367,9 @@ describe('Shelf space', () => {
 describe('Shelf space — a listing whose public record still stands', () => {
   it('a record that may still stand in the directory: it says so and offers to remove it', async () => {
     mockClient.termListings.mockResolvedValue({
-      listings: [{ listing: LISTING, state: 'withdrawn', recordPublic: true, access: 'contacts_or_card' }],
+      listings: [
+        { listing: LISTING, state: 'withdrawn', recordPublic: true, access: 'contacts_or_card' },
+      ],
     });
     mockClient.withdrawTermListing.mockResolvedValue({ ok: true, record_removed: true });
     const view = render(<ShelfSpaceScreen />);
@@ -383,7 +385,9 @@ describe('Shelf space — a listing whose public record still stands', () => {
 
   it('a listing withdrawn and removed everywhere shows nothing', async () => {
     mockClient.termListings.mockResolvedValue({
-      listings: [{ listing: LISTING, state: 'withdrawn', recordPublic: false, access: 'contacts_or_card' }],
+      listings: [
+        { listing: LISTING, state: 'withdrawn', recordPublic: false, access: 'contacts_or_card' },
+      ],
     });
     const view = render(<ShelfSpaceScreen />);
     await waitFor(() => expect(view.getByTestId('shelf-space-screen')).toBeTruthy());
@@ -560,7 +564,12 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: 'c'.repeat(64),
-          figures: { grossSalesMinor: '2000000', computedShareMinor: '160000', feeDueMinor: '195000', periodEnd: '2027-03-01T00:00:00.000Z' },
+          figures: {
+            grossSalesMinor: '2000000',
+            computedShareMinor: '160000',
+            feeDueMinor: '195000',
+            periodEnd: '2027-03-01T00:00:00.000Z',
+          },
         },
         {
           start: '2027-03-01T00:00:00.000Z',
@@ -665,7 +674,12 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: 'd'.repeat(64),
-          figures: { grossSalesMinor: '1500000', computedShareMinor: '120000', feeDueMinor: '195000', periodEnd: '2027-03-01T00:00:00.000Z' },
+          figures: {
+            grossSalesMinor: '1500000',
+            computedShareMinor: '120000',
+            feeDueMinor: '195000',
+            periodEnd: '2027-03-01T00:00:00.000Z',
+          },
           answer: 'disputed',
         },
       ],
@@ -700,7 +714,12 @@ describe('Slot agreement', () => {
           kind: 'regular',
           feeDueMinor: '195000',
           settlementDigest: 'd'.repeat(64),
-          figures: { grossSalesMinor: '1500000', computedShareMinor: '120000', feeDueMinor: '195000', periodEnd: '2027-03-01T00:00:00.000Z' },
+          figures: {
+            grossSalesMinor: '1500000',
+            computedShareMinor: '120000',
+            feeDueMinor: '195000',
+            periodEnd: '2027-03-01T00:00:00.000Z',
+          },
           answer: 'disputed',
         },
       ],

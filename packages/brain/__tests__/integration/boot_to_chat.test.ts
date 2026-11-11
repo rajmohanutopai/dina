@@ -15,14 +15,31 @@
  * This test proves the entire Dina mobile architecture works end-to-end.
  */
 
-import { runOnboarding , fullUnlock , deserializeWrappedSeed ,
-  createPersona,
+import {
+  runOnboarding,
+  fullUnlock,
+  deserializeWrappedSeed,
   listPersonas,
   isPersonaOpen,
   resetPersonaState,
- storeItem, queryVault, clearVaults , DEFAULT_TEST_PERSONAS , ingest, claim, stagingResolve as resolve, resetStagingState , runHealthCheck , resetRotationState, getCurrentGeneration , resetLifecycleState, areSecretsZeroed } from '@dina/core';
-import { classifyItem, enrichItem } from '../../src/staging/processor';
-import { reason, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
+  storeItem,
+  queryVault,
+  clearVaults,
+  DEFAULT_TEST_PERSONAS,
+  ingest,
+  claim,
+  stagingResolve as resolve,
+  resetStagingState,
+  runHealthCheck,
+  resetRotationState,
+  getCurrentGeneration,
+  resetLifecycleState,
+  areSecretsZeroed,
+} from '@dina/core';
+import { resetAuditState } from '@dina/core/audit';
+import { resetReminderState } from '@dina/core/reminders';
+import { makeEvent, TEST_PASSPHRASE, resetFactoryCounters } from '@dina/test-harness';
+
 import {
   classifyPriority,
   resetDNDState,
@@ -31,10 +48,8 @@ import {
   resetQuietHoursState,
   resetBatchingState,
 } from '../../src/guardian/silence';
-import { resetAuditState, auditCount } from '@dina/core/audit';
-import { resetReminderState } from '@dina/core/reminders';
-
-import { makeEvent, TEST_PASSPHRASE, resetFactoryCounters } from '@dina/test-harness';
+import { reason, resetReasoningLLM } from '../../src/pipeline/chat_reasoning';
+import { classifyItem, enrichItem } from '../../src/staging/processor';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 
 describe('Boot-to-Chat Integration (Capstone)', () => {

@@ -12,8 +12,8 @@
  * simply never arrives unless both sides have the other in contacts.
  */
 
-import { useHeaderHeight } from 'expo-router/react-navigation';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import {
   View,

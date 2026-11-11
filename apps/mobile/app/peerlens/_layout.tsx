@@ -136,9 +136,7 @@ export default function PeerlensStackLayout(): React.ReactElement {
         // `PeerlensStackBack` above for why the auto-chevron isn't
         // sufficient on rehydrated stacks. `canGoBack` is the
         // Stack's own value, not the parent navigator's.
-        headerLeft: ({ canGoBack }) => (
-          <PeerlensStackBack canGoBack={canGoBack ?? false} />
-        ),
+        headerLeft: ({ canGoBack }) => <PeerlensStackBack canGoBack={canGoBack ?? false} />,
       }}
     >
       <Stack.Screen

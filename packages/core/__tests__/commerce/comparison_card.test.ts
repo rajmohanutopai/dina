@@ -128,7 +128,7 @@ describe('explaining the ranking rather than re-deciding it', () => {
     expect(built.incomparable.some((line) => line.startsWith('trust:'))).toBe(true);
   });
 
-  it('echoes the ranking\'s recorded reason VERBATIM (a recompute could not produce it)', () => {
+  it("echoes the ranking's recorded reason VERBATIM (a recompute could not produce it)", () => {
     // Inject a sentinel reason the card has no way to derive itself, then assert
     // it appears verbatim — so a regression that recomputes the incomparable
     // notes instead of reading `ranking.missing` is caught.
@@ -254,7 +254,9 @@ describe('hand-off mode (§5.A5) — the money-free where-to-buy card', () => {
       [{ supplierDid: 'did:plc:chairmaker99', serviceUri: 'at://x/svc' }],
     );
     expect(built.primaryAction).toBe('where_to_buy');
-    expect(built.handoff).toEqual([{ supplierDid: 'did:plc:chairmaker99', serviceUri: 'at://x/svc' }]);
+    expect(built.handoff).toEqual([
+      { supplierDid: 'did:plc:chairmaker99', serviceUri: 'at://x/svc' },
+    ]);
   });
 
   it('labels the price as indicative and the window as a listing, not a quote', () => {
@@ -296,9 +298,24 @@ describe('hand-off mode (§5.A5) — the money-free where-to-buy card', () => {
 });
 
 describe('the owner’s choice over the ranking (§5.A6)', () => {
-  const CHEAP = offer({ supplierDid: 'did:plc:cheap', quoteId: 'q-cheap', totalMinorUnits: '40000', trustBp: 2800 });
-  const STEADY = offer({ supplierDid: 'did:plc:steady', quoteId: 'q-steady', totalMinorUnits: '50000', trustBp: 9400 });
-  const SWORN = offer({ supplierDid: 'did:plc:sworn', quoteId: 'q-sworn', totalMinorUnits: '45000', trustBp: 8300 });
+  const CHEAP = offer({
+    supplierDid: 'did:plc:cheap',
+    quoteId: 'q-cheap',
+    totalMinorUnits: '40000',
+    trustBp: 2800,
+  });
+  const STEADY = offer({
+    supplierDid: 'did:plc:steady',
+    quoteId: 'q-steady',
+    totalMinorUnits: '50000',
+    trustBp: 9400,
+  });
+  const SWORN = offer({
+    supplierDid: 'did:plc:sworn',
+    quoteId: 'q-sworn',
+    totalMinorUnits: '45000',
+    trustBp: 8300,
+  });
   const LINKS = [
     { supplierDid: 'did:plc:cheap', serviceUri: 'at://cheap' },
     { supplierDid: 'did:plc:steady', serviceUri: 'at://steady', sellerName: 'Steady Seats' },
@@ -322,7 +339,10 @@ describe('the owner’s choice over the ranking (§5.A6)', () => {
     expect(valueOf(built.fields, 'Recommended')).toBe('did:plc:cheap');
     expect(valueOf(built.fields, 'Chosen for')).toBeUndefined();
     expect(valueOf(built.fields, 'Set aside')).toBeUndefined();
-    expect(built.alternatives.map((a) => a.seller)).toEqual(['ChairMaker (did:plc:sworn)', 'Steady Seats (did:plc:steady)']);
+    expect(built.alternatives.map((a) => a.seller)).toEqual([
+      'ChairMaker (did:plc:sworn)',
+      'Steady Seats (did:plc:steady)',
+    ]);
     // Against the same card built with NO names and NO choice: every field
     // the old card had, in the old order, the same alternatives and links —
     // only the display labels differ, and only where a name is known.
@@ -336,39 +356,68 @@ describe('the owner’s choice over the ranking (§5.A6)', () => {
     expect(built.primaryAction).toBe(plain.primaryAction);
     expect(built.handoff).toEqual(plain.handoff);
     expect(built.incomparable).toEqual(plain.incomparable);
-    expect(built.alternatives.map(({ seller: _s, ...rest }) => rest)).toEqual(plain.alternatives.map(({ seller: _s, ...rest }) => rest));
+    expect(built.alternatives.map(({ seller: _s, ...rest }) => rest)).toEqual(
+      plain.alternatives.map(({ seller: _s, ...rest }) => rest),
+    );
     expect(plain.alternatives.map((a) => a.seller)).toEqual(['did:plc:sworn', 'did:plc:steady']);
   });
 
   it('names a seller the owner knows on the Excluded lines too', () => {
     const built = buildComparisonCard({
       request: REQUEST,
-      ranking: rankOffers([CHEAP, offer({ supplierDid: 'did:plc:sworn', quoteId: 'q-x', currency: 'USD' })], REQUIREMENTS, AT),
+      ranking: rankOffers(
+        [CHEAP, offer({ supplierDid: 'did:plc:sworn', quoteId: 'q-x', currency: 'USD' })],
+        REQUIREMENTS,
+        AT,
+      ),
       sellerNames: NAMES,
     });
-    expect(valueOf(built.fields, 'Excluded')).toMatch(/^ChairMaker \(did:plc:sworn\): currency_mismatch/);
+    expect(valueOf(built.fields, 'Excluded')).toMatch(
+      /^ChairMaker \(did:plc:sworn\): currency_mismatch/,
+    );
   });
 
   it('a supplier with two ranked offers cannot be chosen by DID — refused, never a coin toss', () => {
-    const twice = rankOffers([CHEAP, STEADY, offer({ supplierDid: 'did:plc:steady', quoteId: 'q-steady-2', totalMinorUnits: '52000' })], REQUIREMENTS, AT);
+    const twice = rankOffers(
+      [
+        CHEAP,
+        STEADY,
+        offer({ supplierDid: 'did:plc:steady', quoteId: 'q-steady-2', totalMinorUnits: '52000' }),
+      ],
+      REQUIREMENTS,
+      AT,
+    );
     expect(() =>
-      buildComparisonCard({ request: REQUEST, ranking: twice, choice: { supplierDid: 'did:plc:steady', reason: 'x' } }),
+      buildComparisonCard({
+        request: REQUEST,
+        ranking: twice,
+        choice: { supplierDid: 'did:plc:steady', reason: 'x' },
+      }),
     ).toThrow(/has 2 ranked offers/);
     // Without a choice the order path still lists BOTH of that supplier's offers.
     const plain = buildComparisonCard({ request: REQUEST, ranking: twice });
-    expect(plain.alternatives.map((a) => a.supplierDid)).toEqual(['did:plc:steady', 'did:plc:steady']);
+    expect(plain.alternatives.map((a) => a.supplierDid)).toEqual([
+      'did:plc:steady',
+      'did:plc:steady',
+    ]);
   });
 
   it('renders the chosen offer as the recommendation, says whose decision it was, and keeps the ranking’s #1 as an alternative', () => {
     const built = chosen({
       supplierDid: 'did:plc:steady',
       reason: 'your rule — a proven seller over the cheapest',
-      setAside: [{ supplierDid: 'did:plc:sworn', reason: 'you swore off ChairMaker after a cracked base' }],
+      setAside: [
+        { supplierDid: 'did:plc:sworn', reason: 'you swore off ChairMaker after a cracked base' },
+      ],
     });
     const labels = built.fields.map((f) => f.label);
     expect(valueOf(built.fields, 'Recommended')).toBe('Steady Seats (did:plc:steady)');
-    expect(valueOf(built.fields, 'Chosen for')).toBe('your rule — a proven seller over the cheapest');
-    expect(valueOf(built.fields, 'Set aside')).toBe('ChairMaker (did:plc:sworn): you swore off ChairMaker after a cracked base');
+    expect(valueOf(built.fields, 'Chosen for')).toBe(
+      'your rule — a proven seller over the cheapest',
+    );
+    expect(valueOf(built.fields, 'Set aside')).toBe(
+      'ChairMaker (did:plc:sworn): you swore off ChairMaker after a cracked base',
+    );
     // The decision reads before the price; the ranking's own "Why" lines stay beneath.
     expect(labels.indexOf('Chosen for')).toBeLessThan(labels.indexOf('Indicative price'));
     expect(labels.indexOf('Set aside')).toBeLessThan(labels.indexOf('Why'));
@@ -379,7 +428,9 @@ describe('the owner’s choice over the ranking (§5.A6)', () => {
     const steady = ranking.ranked.find((r) => r.offer.supplierDid === 'did:plc:steady');
     expect(valueOf(built.fields, 'Confidence')).toBe(`${String(steady?.scoreBp)} of 10000`);
     expect(built.fields.filter((f) => f.label === 'Why').map((f) => f.value)).toEqual(
-      steady?.components.map((c) => `${c.factor}: ${String(c.contributionBp)} of ${String(c.weightBp)}`),
+      steady?.components.map(
+        (c) => `${c.factor}: ${String(c.contributionBp)} of ${String(c.weightBp)}`,
+      ),
     );
     // The passed-over #1 is still on the table; the set-aside seller is not.
     expect(built.alternatives.map((a) => a.supplierDid)).toEqual(['did:plc:cheap']);
@@ -392,13 +443,20 @@ describe('the owner’s choice over the ranking (§5.A6)', () => {
       reason: 'nothing on the network fits your ₹4,000 cap',
       setAside: [{ supplierDid: 'did:plc:sworn', reason: 'sworn off' }],
     });
-    expect(valueOf(built.fields, 'Recommended')).toBe('none — nothing on the network fits your ₹4,000 cap');
+    expect(valueOf(built.fields, 'Recommended')).toBe(
+      'none — nothing on the network fits your ₹4,000 cap',
+    );
     expect(valueOf(built.fields, 'Set aside')).toBe('ChairMaker (did:plc:sworn): sworn off');
-    expect(built.alternatives.map((a) => a.supplierDid)).toEqual(['did:plc:cheap', 'did:plc:steady']);
+    expect(built.alternatives.map((a) => a.supplierDid)).toEqual([
+      'did:plc:cheap',
+      'did:plc:steady',
+    ]);
     expect(built.handoff?.some((h) => h.supplierDid === 'did:plc:sworn')).toBe(false);
   });
 
   it('refuses a choice that names an offer the ranking does not hold — never a silent fallback to #1', () => {
-    expect(() => chosen({ supplierDid: 'did:plc:nobody', reason: 'x' })).toThrow(/not among the ranked offers/);
+    expect(() => chosen({ supplierDid: 'did:plc:nobody', reason: 'x' })).toThrow(
+      /not among the ranked offers/,
+    );
   });
 });

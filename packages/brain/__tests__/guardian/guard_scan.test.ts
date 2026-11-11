@@ -17,7 +17,6 @@ import {
 } from '../../src/guardian/guard_scan';
 
 describe('Guard Scan', () => {
-
   describe('clean responses', () => {
     it('factual response → safe', async () => {
       const result = await scanResponse('Your next meeting is at 3pm tomorrow.');
@@ -419,10 +418,9 @@ describe('Guard Scan', () => {
           safe: false,
           violations: [{ type: 'therapy_simulation', text: 'subtle therapy' }],
         });
-      const result = await scanResponse(
-        'Let me explore your feelings about that situation.',
-        { llmFn },
-      );
+      const result = await scanResponse('Let me explore your feelings about that situation.', {
+        llmFn,
+      });
       expect(result.violations.length).toBeGreaterThanOrEqual(1);
     });
 

@@ -38,10 +38,7 @@ export {
   routedProvider,
 } from './src/llm/router_dispatch';
 export type { LLMRouterOptions, RouterChatArgs } from './src/llm/router_dispatch';
-export {
-  registerReasoningLLM,
-  resetReasoningLLM,
-} from './src/pipeline/chat_reasoning';
+export { registerReasoningLLM, resetReasoningLLM } from './src/pipeline/chat_reasoning';
 export type {
   ReasoningLLM,
   ReasoningRequest,

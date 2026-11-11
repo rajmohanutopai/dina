@@ -119,8 +119,9 @@ describe('term negotiation, end to end', () => {
     expect(brand.store.getNegotiation(requestId)?.state).toBe('agreed');
 
     // Both sides read the same accepted agreement.
-    const proposalDigest = must(brand.store.listByRequest(requestId, 'term_agreement_proposal')[0])
-      .recordDigest;
+    const proposalDigest = must(
+      brand.store.listByRequest(requestId, 'term_agreement_proposal')[0],
+    ).recordDigest;
     expect(brand.engine.agreement(proposalDigest).status).toBe('accepted');
     expect(store.engine.agreement(proposalDigest).status).toBe('accepted');
 

@@ -55,10 +55,22 @@ describe('the sentences', () => {
     ['failed', 'remote_failed', /could not do it/],
     ['failed', 'remote_rejected', /turned the request down/],
     ['failed', 'remote_error', /turned the request down/],
-    ['failed', 'remote_unreachable:connect_failed', /could not reach Summarizer\. Nothing was sent/],
-    ['failed', 'credential_unusable', /could not use the credential you set up for Summarizer, so nothing was sent/],
+    [
+      'failed',
+      'remote_unreachable:connect_failed',
+      /could not reach Summarizer\. Nothing was sent/,
+    ],
+    [
+      'failed',
+      'credential_unusable',
+      /could not use the credential you set up for Summarizer, so nothing was sent/,
+    ],
     // Cold audit C4-2: an outage at the sign-in service is no fault of the credential.
-    ['failed', 'token_unavailable', /could not reach the sign-in service for Summarizer, so nothing was sent\. Try again later/],
+    [
+      'failed',
+      'token_unavailable',
+      /could not reach the sign-in service for Summarizer, so nothing was sent\. Try again later/,
+    ],
     ['failed', 'result_refused:result_schema_mismatch', /could not accept/],
     ['failed', 'approval_missing', /did not finish/],
     ['stale_authority', 'binding_changed', /was not sent: something changed after you approved it/],
@@ -72,13 +84,21 @@ describe('the sentences', () => {
     ['outcome_unknown', 'remote_error_after_send', /cannot tell whether it was done/],
     ['outcome_unknown', 'dispatch_ended_unreported', /cannot tell whether it was done/],
     // A write, booking or agentic call the remote reported done, whose answer Dina refused.
-    ['outcome_unknown', 'result_refused:result_schema_mismatch', /reported the request done, .*could not accept.* may have been carried out\. Check with the agent before asking again/],
+    [
+      'outcome_unknown',
+      'result_refused:result_schema_mismatch',
+      /reported the request done, .*could not accept.* may have been carried out\. Check with the agent before asking again/,
+    ],
   ])('an ending in %s (%s) in Dina’s words', (state, reason, sentence) => {
-    expect(a2aDeliveryText('a2a_operation_ended', op({ state, reason, result: null }))).toMatch(sentence);
+    expect(a2aDeliveryText('a2a_operation_ended', op({ state, reason, result: null }))).toMatch(
+      sentence,
+    );
   });
 
   it('says nothing for an ending event whose operation has not ended', () => {
-    expect(a2aDeliveryText('a2a_operation_ended', op({ state: 'running', reason: null, result: null }))).toBeNull();
+    expect(
+      a2aDeliveryText('a2a_operation_ended', op({ state: 'running', reason: null, result: null })),
+    ).toBeNull();
     expect(a2aDeliveryText('a2a_operation_ended', null)).toBeNull();
   });
 
@@ -87,15 +107,23 @@ describe('the sentences', () => {
     ['guard_blocked:model_block', /trying to give Dina instructions/],
     ['guard_blocked:guard_unparseable', /did not give a clear answer/],
     ['quarantine_unreadable', /could not be read back/],
-  ])('says why an answer was held back (%s), and never that it can be read later', (reason, sentence) => {
-    const text = a2aDeliveryText('a2a_result_blocked', op({ state: 'blocked', reason, result: null }));
-    expect(text).toMatch(sentence);
-    expect(text).toMatch(/will not be shown/);
-    expect(text).not.toMatch(/console/);
-  });
+  ])(
+    'says why an answer was held back (%s), and never that it can be read later',
+    (reason, sentence) => {
+      const text = a2aDeliveryText(
+        'a2a_result_blocked',
+        op({ state: 'blocked', reason, result: null }),
+      );
+      expect(text).toMatch(sentence);
+      expect(text).toMatch(/will not be shown/);
+      expect(text).not.toMatch(/console/);
+    },
+  );
 
   it('describes a held answer without claiming nothing looked at it', () => {
-    expect(a2aDeliveryText('a2a_result_held', op())).toMatch(/has not been able to check this one yet/);
+    expect(a2aDeliveryText('a2a_result_held', op())).toMatch(
+      /has not been able to check this one yet/,
+    );
   });
 
   it('clips a long result for the bubble', () => {
@@ -106,7 +134,9 @@ describe('the sentences', () => {
 
   it('recognizes A2A tasks by their Core-minted payloads only', () => {
     expect(a2aOperationIdOf('{"type":"a2a_dispatch","operation_id":"op-1"}')).toBe('op-1');
-    expect(a2aOperationIdOf('{"type":"a2a_delegation_consent","operation_id":"op-2"}')).toBe('op-2');
+    expect(a2aOperationIdOf('{"type":"a2a_delegation_consent","operation_id":"op-2"}')).toBe(
+      'op-2',
+    );
     expect(a2aOperationIdOf('{"type":"free_form_task","operation_id":"op-3"}')).toBeNull();
     expect(a2aOperationIdOf('not json')).toBeNull();
   });
@@ -187,7 +217,11 @@ describe('the consumer’s A2A branch', () => {
   it.each(['completed', 'failed', 'cancelled', 'outcome_unknown'])(
     'skips the workflow’s own %s event on the dispatch child: no generic bubble, no second message',
     async (kind) => {
-      const h = harness([event(1, kind)], [dispatchTask], op({ state: 'failed', reason: 'remote_failed', result: null }));
+      const h = harness(
+        [event(1, kind)],
+        [dispatchTask],
+        op({ state: 'failed', reason: 'remote_failed', result: null }),
+      );
       await h.consumer.runTick();
       expect(h.delivered).toEqual([]);
       expect(h.acked).toEqual([1]);
@@ -195,7 +229,11 @@ describe('the consumer’s A2A branch', () => {
   );
 
   it('delivers an ending in Dina’s words', async () => {
-    const h = harness([event(1, 'a2a_operation_ended')], [{ ...dispatchTask, status: 'failed', error: 'a2a: remote_failed' }], op({ state: 'failed', reason: 'remote_failed', result: null }));
+    const h = harness(
+      [event(1, 'a2a_operation_ended')],
+      [{ ...dispatchTask, status: 'failed', error: 'a2a: remote_failed' }],
+      op({ state: 'failed', reason: 'remote_failed', result: null }),
+    );
     await h.consumer.runTick();
     expect(h.delivered.map((d) => d.text)).toEqual(['Summarizer could not do it.']);
   });
@@ -215,7 +253,10 @@ describe('the consumer’s A2A branch', () => {
     );
     await h.consumer.runTick();
     expect(h.delivered).toEqual([
-      { text: 'You declined the request to Summarizer. Nothing was sent.', details: { a2a: { operation_id: 'op-1', reply_to: 'main' } } },
+      {
+        text: 'You declined the request to Summarizer. Nothing was sent.',
+        details: { a2a: { operation_id: 'op-1', reply_to: 'main' } },
+      },
     ]);
     expect(h.acked).toEqual([1, 2]);
   });
@@ -229,7 +270,12 @@ describe('the consumer’s A2A branch', () => {
       payload: JSON.stringify({ type: 'a2a_delegation_consent', operation_id: 'op-1' }),
     };
     const onApproved = jest.fn();
-    const h = harness([event(1, 'approved', card.id)], [card], op({ state: 'queued', result: null }), { onApproved });
+    const h = harness(
+      [event(1, 'approved', card.id)],
+      [card],
+      op({ state: 'queued', result: null }),
+      { onApproved },
+    );
     await h.consumer.runTick();
     expect(onApproved).not.toHaveBeenCalled();
     expect(h.delivered).toEqual([]);

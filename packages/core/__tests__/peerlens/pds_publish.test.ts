@@ -154,9 +154,7 @@ describe('PDS Attestation Publishing', () => {
       ];
       for (const t of types) {
         const ref =
-          t === 'did'
-            ? { type: t, did: 'did:plc:abc' }
-            : { type: t, identifier: 'sample-id' };
+          t === 'did' ? { type: t, did: 'did:plc:abc' } : { type: t, identifier: 'sample-id' };
         const rec = makeRecord({ subject: ref });
         expect(validateLexicon(rec)).toEqual([]);
       }
@@ -240,9 +238,7 @@ describe('PDS Attestation Publishing', () => {
         uri: 'https://example.com',
       }));
       const bad = makeRecord({ evidence });
-      expect(validateLexicon(bad).some((e) => e.includes('evidence must have at most'))).toBe(
-        true,
-      );
+      expect(validateLexicon(bad).some((e) => e.includes('evidence must have at most'))).toBe(true);
     });
 
     it('rejects evidence with type longer than 100 chars', () => {

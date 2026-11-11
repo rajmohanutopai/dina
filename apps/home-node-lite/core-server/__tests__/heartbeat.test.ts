@@ -5,10 +5,7 @@
  * so tests are deterministic.
  */
 
-import {
-  installHeartbeat,
-  DEFAULT_HEARTBEAT_INTERVAL_MS,
-} from '../src/ws/heartbeat';
+import { installHeartbeat, DEFAULT_HEARTBEAT_INTERVAL_MS } from '../src/ws/heartbeat';
 
 /**
  * Mock scheduler: captures the callback + interval; tests advance time

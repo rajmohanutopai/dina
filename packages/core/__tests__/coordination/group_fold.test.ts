@@ -7,7 +7,12 @@
  * date as the organizer's candidate.
  */
 
-import { foldGroupPlan, slotKey, type FoldGuest, type MeetingSlot } from '../../src/coordination/group_fold';
+import {
+  foldGroupPlan,
+  slotKey,
+  type FoldGuest,
+  type MeetingSlot,
+} from '../../src/coordination/group_fold';
 
 const SAT_12: MeetingSlot = { start: 'Sat 12' };
 const SAT_19: MeetingSlot = { start: 'Sat 19' };
@@ -52,7 +57,10 @@ describe('the intersection', () => {
     ];
     const forward = foldGroupPlan({ candidates: CANDIDATES, guests });
     const reversed = foldGroupPlan({ candidates: CANDIDATES, guests: [...guests].reverse() });
-    const shuffled = foldGroupPlan({ candidates: CANDIDATES, guests: [guests[1], guests[2], guests[0]] });
+    const shuffled = foldGroupPlan({
+      candidates: CANDIDATES,
+      guests: [guests[1], guests[2], guests[0]],
+    });
     // The guest lists differ in order, so per-guest maps are compared by content.
     expect(reversed.agreed).toEqual(forward.agreed);
     expect(shuffled.agreed).toEqual(forward.agreed);
@@ -105,7 +113,11 @@ describe('who emptied it', () => {
   it('names the required guest whose acceptance shares nothing with what the others agree on', () => {
     const fold = foldGroupPlan({
       candidates: CANDIDATES,
-      guests: [accepted(GARCIA, [SAT_26, SAT_19]), accepted(MILLER, [SAT_19, SAT_26]), accepted(JOHNSON, [SAT_12])],
+      guests: [
+        accepted(GARCIA, [SAT_26, SAT_19]),
+        accepted(MILLER, [SAT_19, SAT_26]),
+        accepted(JOHNSON, [SAT_12]),
+      ],
     });
     expect(fold.state).toBe('empty');
     expect(fold.agreed).toEqual([]);
@@ -134,7 +146,10 @@ describe('acceptance is echoing a candidate', () => {
     expect(slotKey({ start: 'Saturday the 26th' })).not.toBe(slotKey({ start: 'Sat 26' }));
     const fold = foldGroupPlan({
       candidates: CANDIDATES,
-      guests: [accepted(GARCIA, [{ start: 'SAT 26', note: 'parking is easy' }]), accepted(MILLER, [SAT_26])],
+      guests: [
+        accepted(GARCIA, [{ start: 'SAT 26', note: 'parking is easy' }]),
+        accepted(MILLER, [SAT_26]),
+      ],
     });
     expect(fold.agreed).toEqual([SAT_26]);
   });
@@ -164,7 +179,11 @@ describe('acceptance is echoing a candidate', () => {
       candidates: CANDIDATES,
       guests: [
         accepted(GARCIA, [SAT_26]),
-        { contactDid: MILLER, required: true, reply: { status: 'needs_more_info', message: 'which weekend?' } },
+        {
+          contactDid: MILLER,
+          required: true,
+          reply: { status: 'needs_more_info', message: 'which weekend?' },
+        },
       ],
     });
     expect(fold.state).toBe('empty');
@@ -176,7 +195,10 @@ describe('acceptance is echoing a candidate', () => {
   it('an `accepted` with no slots is an honest reply that accepts nothing', () => {
     const fold = foldGroupPlan({
       candidates: CANDIDATES,
-      guests: [accepted(GARCIA, [SAT_26]), { contactDid: MILLER, required: true, reply: { status: 'accepted' } }],
+      guests: [
+        accepted(GARCIA, [SAT_26]),
+        { contactDid: MILLER, required: true, reply: { status: 'accepted' } },
+      ],
     });
     expect(fold.state).toBe('empty');
     expect(fold.emptiedBy).toEqual([MILLER]);

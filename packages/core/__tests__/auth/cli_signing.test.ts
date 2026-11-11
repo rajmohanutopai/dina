@@ -7,12 +7,7 @@
  * Source: cli/tests/test_signing.py
  */
 
-import {
-  TEST_ED25519_SEED,
-  TEST_DID_KEY_PREFIX,
-  stringToBytes,
-  bytesToHex,
-} from '@dina/test-harness';
+import { TEST_ED25519_SEED, stringToBytes, bytesToHex } from '@dina/test-harness';
 
 import { generateCLIKeypair, signCLIRequest, verifyCLIRequest } from '../../src/auth/cli_signing';
 import { getPublicKey } from '../../src/crypto/ed25519';

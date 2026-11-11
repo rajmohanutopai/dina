@@ -65,9 +65,7 @@ it('SOURCE SKU VS MINT: a printed P-0001 is claimed first and the mint skips it'
 it('IDEMPOTENT REPUBLICATION: re-running the same rows under a new draft changes nothing', () => {
   const ledger = new InMemorySkuLedgerRepository();
   const first = applySkuMint(mintArgs([{ row: 2, cells: { name: 'Jar' } }], { ledger }));
-  const republished = applySkuMint(
-    mintArgs(first.rows, { ledger, draftId: 'draft-2' }),
-  );
+  const republished = applySkuMint(mintArgs(first.rows, { ledger, draftId: 'draft-2' }));
   expect(republished.findings).toEqual([]);
   expect(republished.changed).toBe(false);
   expect(republished.rows).toEqual(first.rows);
@@ -77,7 +75,10 @@ it('SAME-ASSIGNMENT EDIT: an edited value re-claims cleanly under the same ident
   const ledger = new InMemorySkuLedgerRepository();
   const first = applySkuMint(mintArgs([{ row: 2, cells: { name: 'Jar' } }], { ledger }));
   const edited: DraftRow[] = [
-    { ...(first.rows[0] as DraftRow), cells: { ...(first.rows[0] as DraftRow).cells, sku: 'PICKLE-RED' } },
+    {
+      ...(first.rows[0] as DraftRow),
+      cells: { ...(first.rows[0] as DraftRow).cells, sku: 'PICKLE-RED' },
+    },
   ];
   const result = applySkuMint(mintArgs(edited, { ledger }));
   expect(result.findings).toEqual([]);
@@ -104,7 +105,7 @@ it('ROW REORDER leaves assignments untouched', () => {
   expect(result.rows[1]?.assignmentId).toBe(first.rows[0]?.assignmentId);
 });
 
-it('EDIT COLLISION: taking another product\'s value is a finding, not a merge', () => {
+it("EDIT COLLISION: taking another product's value is a finding, not a merge", () => {
   const ledger = new InMemorySkuLedgerRepository();
   const first = applySkuMint(
     mintArgs(
@@ -150,7 +151,7 @@ it('SECOND CATALOG: the refusal names the owning catalog', () => {
   });
 });
 
-it('GTIN rows never mint and never claim — the namespace is not this supplier\'s', () => {
+it("GTIN rows never mint and never claim — the namespace is not this supplier's", () => {
   const ledger = new InMemorySkuLedgerRepository();
   const result = applySkuMint(
     mintArgs(
@@ -182,7 +183,9 @@ it('an EXPLICIT identifier column claims under it, and a mint fills the sku cell
 
 it('never replaces an existing assignment id — replacing would fork the product', () => {
   const ledger = new InMemorySkuLedgerRepository();
-  const rows: DraftRow[] = [{ row: 2, cells: { sku: 'P-9999', name: 'Jar' }, assignmentId: 'asg_prior' }];
+  const rows: DraftRow[] = [
+    { row: 2, cells: { sku: 'P-9999', name: 'Jar' }, assignmentId: 'asg_prior' },
+  ];
   const result = applySkuMint(mintArgs(rows, { ledger }));
   expect(result.rows[0]?.assignmentId).toBe('asg_prior');
 });

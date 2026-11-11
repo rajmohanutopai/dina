@@ -132,7 +132,11 @@ describe('reserve — eligibility gates (§7)', () => {
     // first reserve + commit advances next_fetch_at = now + 10s
     const r1 = h.admission.reserve(run.run_id);
     if (!r1.ok) throw new Error('reserve failed');
-    h.admission.commit(r1.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' });
+    h.admission.commit(r1.reservation_id, {
+      message_id: 'm1',
+      dedup_key: 'd1',
+      content_digest: 'c1',
+    });
     // still within the interval → cadence_not_elapsed
     expect(h.admission.reserve(run.run_id)).toEqual({ ok: false, reason: 'cadence_not_elapsed' });
     h.setNow(NOW + 10_000);
@@ -148,7 +152,9 @@ describe('reserve — eligibility gates (§7)', () => {
 
   it('rejects when the produced-basis count budget is exhausted', () => {
     const h = setup();
-    const run = h.runService.create(runParams({ queue_cap: 5, max_count: 2, max_count_basis: 'produced' }));
+    const run = h.runService.create(
+      runParams({ queue_cap: 5, max_count: 2, max_count_basis: 'produced' }),
+    );
     // The budget gate counts open reservations (uncommitted_produced_reservations):
     // two open slots fill the produced budget before any commit sets the barrier.
     expect(h.admission.reserve(run.run_id).ok).toBe(true);
@@ -158,10 +164,16 @@ describe('reserve — eligibility gates (§7)', () => {
 
   it('the commit taking produced_count to max_count sets the count barrier (§5.1)', () => {
     const h = setup();
-    const run = h.runService.create(runParams({ queue_cap: 5, max_count: 1, max_count_basis: 'produced' }));
+    const run = h.runService.create(
+      runParams({ queue_cap: 5, max_count: 1, max_count_basis: 'produced' }),
+    );
     const r = h.admission.reserve(run.run_id);
     if (!r.ok) throw new Error('reserve failed');
-    h.admission.commit(r.reservation_id, { message_id: 'm0', dedup_key: 'd0', content_digest: 'c0' });
+    h.admission.commit(r.reservation_id, {
+      message_id: 'm0',
+      dedup_key: 'd0',
+      content_digest: 'c0',
+    });
     // produced_count reached max_count → run drains; a further reserve is not_active
     expect(h.runRepo.getById(run.run_id)?.state).toBe('draining');
     expect(h.admission.reserve(run.run_id)).toEqual({ ok: false, reason: 'not_active' });
@@ -180,10 +192,13 @@ describe('reserve — eligibility gates (§7)', () => {
       nowMsFn: h.now,
       leaseMs: 60_000,
       onBarrier: (run) => {
-        for (const r of h.resRepo.invalidateOpen(run.run_id, h.now())) invalidated.push(r.reservation_id);
+        for (const r of h.resRepo.invalidateOpen(run.run_id, h.now()))
+          invalidated.push(r.reservation_id);
       },
     });
-    const run = h.runService.create(runParams({ queue_cap: 5, max_count: 1, max_count_basis: 'produced' }));
+    const run = h.runService.create(
+      runParams({ queue_cap: 5, max_count: 1, max_count_basis: 'produced' }),
+    );
     const r0 = admission.reserve(run.run_id);
     if (!r0.ok) throw new Error('reserve failed');
 
@@ -202,7 +217,8 @@ describe('reserve — eligibility gates (§7)', () => {
       message_id: null,
       dedup_key: null,
       content_digest: null,
-      sealed_response_ref: null, held_message_json: null,
+      sealed_response_ref: null,
+      held_message_json: null,
       error_reason: null,
       error_at: null,
       lease_expires_at: h.now() + 60_000,
@@ -214,7 +230,11 @@ describe('reserve — eligibility gates (§7)', () => {
     // Committing r0 takes produced_count to max_count → the count barrier is set →
     // onBarrier fires in the SAME tx and invalidates the stray open slot.
     expect(
-      admission.commit(r0.reservation_id, { message_id: 'm0', dedup_key: 'd0', content_digest: 'c0' }).committed,
+      admission.commit(r0.reservation_id, {
+        message_id: 'm0',
+        dedup_key: 'd0',
+        content_digest: 'c0',
+      }).committed,
     ).toBe(true);
     expect(h.runRepo.getById(run.run_id)?.state).toBe('draining');
     // The committed slot is untouched; the stray open slot is invalidated.
@@ -237,15 +257,21 @@ describe('reserve — eligibility gates (§7)', () => {
     // Out-of-order commit (position 1 while the run cursor is at 0) fails the
     // in-order CAS and releases the slot — no double/skip advance.
     expect(
-      h.admission.commit(r2.reservation_id, { message_id: 'm2', dedup_key: 'd2', content_digest: 'c2' })
-        .committed,
+      h.admission.commit(r2.reservation_id, {
+        message_id: 'm2',
+        dedup_key: 'd2',
+        content_digest: 'c2',
+      }).committed,
     ).toBe(false);
     expect(h.runRepo.getById(run.run_id)?.fetch_cursor).toBe(0);
 
     // In-order commit advances the run cursor exactly once.
     expect(
-      h.admission.commit(r1.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' })
-        .committed,
+      h.admission.commit(r1.reservation_id, {
+        message_id: 'm1',
+        dedup_key: 'd1',
+        content_digest: 'c1',
+      }).committed,
     ).toBe(true);
     expect(h.runRepo.getById(run.run_id)?.fetch_cursor).toBe(1);
   });
@@ -262,8 +288,11 @@ describe('reserve — eligibility gates (§7)', () => {
     // Release the MIDDLE reservation (out-of-order commit fails + releases it):
     // open cursors are now {0, 2}, fetch_cursor still 0.
     expect(
-      h.admission.commit(r1.reservation_id, { message_id: 'x', dedup_key: 'x', content_digest: 'x' })
-        .committed,
+      h.admission.commit(r1.reservation_id, {
+        message_id: 'x',
+        dedup_key: 'x',
+        content_digest: 'x',
+      }).committed,
     ).toBe(false);
 
     // The next reserve must FILL the hole (cursor 1), not re-hand cursor 2 (the
@@ -275,7 +304,9 @@ describe('reserve — eligibility gates (§7)', () => {
 
   it('rejects when the decided-basis budget is exhausted (via outstanding)', () => {
     const h = setup();
-    const run = h.runService.create(runParams({ queue_cap: 5, max_count: 1, max_count_basis: 'decided' }));
+    const run = h.runService.create(
+      runParams({ queue_cap: 5, max_count: 1, max_count_basis: 'decided' }),
+    );
     expect(h.admission.reserve(run.run_id).ok).toBe(true); // outstanding 1
     expect(h.admission.reserve(run.run_id)).toEqual({ ok: false, reason: 'count_exhausted' });
   });
@@ -290,7 +321,10 @@ describe('reserve — eligibility gates (§7)', () => {
   it('rejects when a bound provider grant has expired (mid-run, §10)', () => {
     const h = setup();
     const run = h.runService.create(
-      runParams({ provider_grant_id: 'grant-1', provider_grant_expires_at_sec: Math.floor(NOW / 1000) - 10 }),
+      runParams({
+        provider_grant_id: 'grant-1',
+        provider_grant_expires_at_sec: Math.floor(NOW / 1000) - 10,
+      }),
     );
     expect(h.admission.reserve(run.run_id)).toEqual({ ok: false, reason: 'grant_unavailable' });
   });
@@ -302,7 +336,13 @@ describe('commit — barrier-guarded enqueue-commit CAS (§7/§8)', () => {
     const run = h.runService.create(runParams({ interval_ms: 5_000 }));
     const r = h.admission.reserve(run.run_id);
     if (!r.ok) throw new Error('reserve failed');
-    expect(h.admission.commit(r.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' })).toEqual({ committed: true });
+    expect(
+      h.admission.commit(r.reservation_id, {
+        message_id: 'm1',
+        dedup_key: 'd1',
+        content_digest: 'c1',
+      }),
+    ).toEqual({ committed: true });
     const after = need(h.runRepo.getById(run.run_id));
     expect(after.produced_count).toBe(1);
     expect(after.fetch_cursor).toBe(1);
@@ -320,7 +360,11 @@ describe('commit — barrier-guarded enqueue-commit CAS (§7/§8)', () => {
     const r = h.admission.reserve(run.run_id);
     if (!r.ok) throw new Error('reserve failed');
     h.runService.stop(run.run_id); // barrier → draining
-    const res = h.admission.commit(r.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' });
+    const res = h.admission.commit(r.reservation_id, {
+      message_id: 'm1',
+      dedup_key: 'd1',
+      content_digest: 'c1',
+    });
     expect(res).toEqual({ committed: false, reason: 'barrier_or_ttl_raced' });
     const after = need(h.runRepo.getById(run.run_id));
     expect(after.produced_count).toBe(0);
@@ -334,7 +378,11 @@ describe('commit — barrier-guarded enqueue-commit CAS (§7/§8)', () => {
     const r = h.admission.reserve(run.run_id);
     if (!r.ok) throw new Error('reserve failed');
     h.setNow(NOW + 2000); // now past the hard TTL
-    const res = h.admission.commit(r.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' });
+    const res = h.admission.commit(r.reservation_id, {
+      message_id: 'm1',
+      dedup_key: 'd1',
+      content_digest: 'c1',
+    });
     expect(res.committed).toBe(false);
     expect(need(h.runRepo.getById(run.run_id)).produced_count).toBe(0);
     expect(need(h.resRepo.getById(r.reservation_id)).state).toBe('released');
@@ -345,7 +393,13 @@ describe('commit — barrier-guarded enqueue-commit CAS (§7/§8)', () => {
     const run = h.runService.create(runParams());
     const r = h.admission.reserve(run.run_id);
     if (!r.ok) throw new Error('reserve failed');
-    expect(h.admission.commit(r.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' }).committed).toBe(true);
+    expect(
+      h.admission.commit(r.reservation_id, {
+        message_id: 'm1',
+        dedup_key: 'd1',
+        content_digest: 'c1',
+      }).committed,
+    ).toBe(true);
     h.runService.stop(run.run_id);
     expect(need(h.runRepo.getById(run.run_id)).produced_count).toBe(1); // the win stands
   });

@@ -84,10 +84,15 @@ import { buildBrainServerLLMRuntime } from '../src/llm_provider';
 /** The harness default when no provider is named: OpenRouter. */
 const DEFAULT_REAL_LLM_PROVIDER = 'openrouter';
 
-function realLLMConfig(env: NodeJS.ProcessEnv): Exclude<BrainServerConfig['llm'], { provider: 'none' | 'scripted' }> | null {
+function realLLMConfig(
+  env: NodeJS.ProcessEnv,
+): Exclude<BrainServerConfig['llm'], { provider: 'none' | 'scripted' }> | null {
   if (env.DINA_RUN_REAL_LLM !== '1') return null;
   const provider = env.DINA_BRAIN_LLM_PROVIDER?.trim() ?? '';
-  const llm = loadLLMConfig({ ...env, DINA_BRAIN_LLM_PROVIDER: provider === '' ? DEFAULT_REAL_LLM_PROVIDER : provider });
+  const llm = loadLLMConfig({
+    ...env,
+    DINA_BRAIN_LLM_PROVIDER: provider === '' ? DEFAULT_REAL_LLM_PROVIDER : provider,
+  });
   return llm.provider === 'none' || llm.provider === 'scripted' ? null : llm;
 }
 
@@ -105,10 +110,26 @@ const OWNER_DID = 'did:plc:a6owner00000000000000000';
 // descriptions are the planner menu both hosts feed (`PERSONA_DESCRIPTIONS`).
 // ---------------------------------------------------------------------------
 const PERSONAS: { name: string; tier: PersonaTier; description: string }[] = [
-  { name: 'general', tier: 'default', description: "Everyday notes — anything that doesn't clearly fit a more specific vault." },
-  { name: 'work', tier: 'standard', description: 'Job, projects, colleagues, work calendar items, professional context.' },
-  { name: 'health', tier: 'sensitive', description: 'Medical, fitness, symptoms, medications, doctors, allergies.' },
-  { name: 'finance', tier: 'sensitive', description: 'Money, budgets, spending, income, bills, debt, investments, taxes.' },
+  {
+    name: 'general',
+    tier: 'default',
+    description: "Everyday notes — anything that doesn't clearly fit a more specific vault.",
+  },
+  {
+    name: 'work',
+    tier: 'standard',
+    description: 'Job, projects, colleagues, work calendar items, professional context.',
+  },
+  {
+    name: 'health',
+    tier: 'sensitive',
+    description: 'Medical, fitness, symptoms, medications, doctors, allergies.',
+  },
+  {
+    name: 'finance',
+    tier: 'sensitive',
+    description: 'Money, budgets, spending, income, bills, debt, investments, taxes.',
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -185,7 +206,8 @@ interface Scenario {
 
 const SCENARIOS: Scenario[] = [
   {
-    label: 'reputation over price — ranker #1 is the cheapest seller, whose trust a model would accept on its own',
+    label:
+      'reputation over price — ranker #1 is the cheapest seller, whose trust a model would accept on its own',
     memories: [
       {
         persona: 'general',
@@ -198,40 +220,102 @@ const SCENARIOS: Scenario[] = [
     ask: 'best ergonomic office chair for me',
     mustReadVault: 'general',
     // The answer must tie the pick to the OWNER's statement, not to a trust score alone.
-    mustContainAny: ['your rule', 'you said', 'you prefer', 'you would rather', "you'd rather", 'rather pay', 'your home office', 'your note', 'your preference', 'track record'],
+    mustContainAny: [
+      'your rule',
+      'you said',
+      'you prefer',
+      'you would rather',
+      "you'd rather",
+      'rather pay',
+      'your home office',
+      'your note',
+      'your preference',
+      'track record',
+    ],
     // A trusted seller's price must be on the table, not only the cheapest.
     mustAlsoContainAny: [rupees(SUPPLIER.steadyTrusted.paise), rupees(SUPPLIER.premium.paise)],
     // Either trusted seller honours the stated rule; the cheapest breaks it.
-    card: { recommendedAny: [SUPPLIER.steadyTrusted.did, SUPPLIER.premium.did], notRecommended: SUPPLIER.cheapFair.did },
+    card: {
+      recommendedAny: [SUPPLIER.steadyTrusted.did, SUPPLIER.premium.did],
+      notRecommended: SUPPLIER.cheapFair.did,
+    },
   },
   {
     label: 'budget below every offer — the finance vault must reach a product answer',
-    memories: [{ persona: 'finance', text: 'My budget for the new office chair is 4000 rupees and I will not go over it.' }],
+    memories: [
+      {
+        persona: 'finance',
+        text: 'My budget for the new office chair is 4000 rupees and I will not go over it.',
+      },
+    ],
     catalog: [SUPPLIER.midUnknown, SUPPLIER.steadyTrusted, SUPPLIER.premium],
     ask: 'best ergonomic office chair for me',
     mustReadVault: 'finance',
     mustContainAny: ['budget', '4000'],
-    mustAlsoContainAny: ['over your', 'over budget', 'over the', 'exceed', 'above your', 'above the', 'more than your', 'beyond your', 'outside your', 'none of', 'no offer', 'nothing on the network', 'nothing fits', 'past your'],
+    mustAlsoContainAny: [
+      'over your',
+      'over budget',
+      'over the',
+      'exceed',
+      'above your',
+      'above the',
+      'more than your',
+      'beyond your',
+      'outside your',
+      'none of',
+      'no offer',
+      'nothing on the network',
+      'nothing fits',
+      'past your',
+    ],
     card: { recommendedAny: ['none'], notRecommended: SUPPLIER.midUnknown.did },
   },
   {
     label: 'avoid a seller the owner knows by name — ranker #1 is that seller',
     memories: [
-      { persona: 'general', text: 'Never buy from ChairMaker again. The last chair they sent arrived with a cracked base.' },
+      {
+        persona: 'general',
+        text: 'Never buy from ChairMaker again. The last chair they sent arrived with a cracked base.',
+      },
     ],
     contacts: [{ did: SUPPLIER.chairMaker.did, name: 'ChairMaker' }],
     catalog: [SUPPLIER.chairMaker, SUPPLIER.steadyTrusted, SUPPLIER.midUnknown],
     ask: 'best ergonomic office chair for me',
     mustReadVault: 'general',
     mustContainAny: ['chairmaker'],
-    mustAlsoContainAny: ['set aside', 'avoid', 'skip', 'exclud', 'rule', 'cracked', 'never again', 'never buy', 'sworn', 'swore', 'not recommend', "won't recommend", 'ruled out', 'non-starter', 'out of the running'],
+    mustAlsoContainAny: [
+      'set aside',
+      'avoid',
+      'skip',
+      'exclud',
+      'rule',
+      'cracked',
+      'never again',
+      'never buy',
+      'sworn',
+      'swore',
+      'not recommend',
+      "won't recommend",
+      'ruled out',
+      'non-starter',
+      'out of the running',
+    ],
     // Either remaining seller is defensible; the sworn-off one is not.
-    card: { recommendedAny: [SUPPLIER.steadyTrusted.did, SUPPLIER.midUnknown.did], notRecommended: SUPPLIER.chairMaker.did },
+    card: {
+      recommendedAny: [SUPPLIER.steadyTrusted.did, SUPPLIER.midUnknown.did],
+      notRecommended: SUPPLIER.chairMaker.did,
+    },
   },
   {
     label: 'preferred seller — a contact bound preferred_for office furniture, not ranker #1',
     memories: [],
-    contacts: [{ did: SUPPLIER.donAlonso.did, name: 'Don Alonso Furniture', preferredFor: ['office furniture', 'chairs'] }],
+    contacts: [
+      {
+        did: SUPPLIER.donAlonso.did,
+        name: 'Don Alonso Furniture',
+        preferredFor: ['office furniture', 'chairs'],
+      },
+    ],
     catalog: [SUPPLIER.cheapUnknown, SUPPLIER.donAlonso, SUPPLIER.steadyTrusted],
     ask: 'best ergonomic office chair for me',
     mustContainAny: ['alonso'],
@@ -241,7 +325,9 @@ const SCENARIOS: Scenario[] = [
 
 /** The card's "Recommended" line, read off the CardSpec the answer carries. */
 function recommendedOnCard(answer: Record<string, unknown> | undefined): string {
-  const spec = answer?.commerceCard as { blocks?: { kind: string; label?: string; value?: string }[] } | undefined;
+  const spec = answer?.commerceCard as
+    | { blocks?: { kind: string; label?: string; value?: string }[] }
+    | undefined;
   const line = spec?.blocks?.find((b) => b.kind === 'keyValue' && b.label === 'Recommended');
   return line?.value ?? '';
 }
@@ -270,7 +356,9 @@ function fixtureAppView(fixture: Fixture): AppViewClient {
   return new AppViewClient({
     appViewURL: 'http://appview.fixture.invalid',
     fetch: async (input) => {
-      const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
+      const url = new URL(
+        typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+      );
       const method = url.pathname.replace('/xrpc/', '');
       fixture.hits.push(method);
       if (method === 'com.dinakernel.commerce.searchCatalog') {
@@ -320,189 +408,206 @@ function openStore(dir: string, file: string): NodeSQLiteAdapter {
 
 const describeReal = LLM_CONFIG !== null ? describe : describe.skip;
 
-describeReal('A6 — offers weighed against the owner’s stated preferences (real model, production composition)', () => {
-  let dir = '';
-  const stores: NodeSQLiteAdapter[] = [];
-  const vaults: { persona: string; adapter: NodeSQLiteAdapter; repo: SQLiteVaultRepository }[] = [];
-  let identity: NodeSQLiteAdapter;
-  let core: InProcessTransport;
-  let runtime: HomeNodeAskRuntime;
-  const fixture: Fixture = { catalog: [], hits: [] };
-  const turns: string[][] = [];
-  /** Personas the planner's pre-flight fetch READ and got rows from — evidence the preference came from the owner. */
-  const fetched: string[] = [];
+describeReal(
+  'A6 — offers weighed against the owner’s stated preferences (real model, production composition)',
+  () => {
+    let dir = '';
+    const stores: NodeSQLiteAdapter[] = [];
+    const vaults: { persona: string; adapter: NodeSQLiteAdapter; repo: SQLiteVaultRepository }[] =
+      [];
+    let identity: NodeSQLiteAdapter;
+    let core: InProcessTransport;
+    let runtime: HomeNodeAskRuntime;
+    const fixture: Fixture = { catalog: [], hits: [] };
+    const turns: string[][] = [];
+    /** Personas the planner's pre-flight fetch READ and got rows from — evidence the preference came from the owner. */
+    const fetched: string[] = [];
 
-  beforeAll(() => {
-    clearVaults([]);
-    resetPersonaState();
-    configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-a6-'));
+    beforeAll(() => {
+      clearVaults([]);
+      resetPersonaState();
+      configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
+      dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-a6-'));
 
-    for (const p of PERSONAS) {
-      createPersona(p.name, p.tier, p.description);
-      const adapter = openStore(dir, `${p.name}.sqlite`);
-      applyMigrations(adapter, PERSONA_MIGRATIONS);
-      const repo = new SQLiteVaultRepository(adapter);
-      setVaultRepository(p.name, repo);
-      stores.push(adapter);
-      vaults.push({ persona: p.name, adapter, repo });
-    }
-    // As the server publishes them at boot (boot.ts): every persona Core lists
-    // is one Brain's own vault tools may read. Without this Brain's default
-    // (`general` only) would show three vaults as locked to the loop.
-    setAccessiblePersonas(PERSONAS.map((p) => p.name));
-
-    identity = openStore(dir, 'identity.sqlite');
-    applyMigrations(identity, IDENTITY_MIGRATIONS);
-    stores.push(identity);
-    setPeopleRepository(new SQLitePeopleRepository(identity));
-    setContactRepository(new SQLiteContactRepository(identity));
-    resetContactDirectory();
-
-    core = new InProcessTransport(createCoreRouter());
-
-    const llm = buildBrainServerLLMRuntime(llmConfig());
-    if (llm === undefined) throw new Error('A6: the LLM runtime did not build');
-
-    // The server's boot wiring (boot.ts): planner fetchers through the
-    // CoreClient, the persona menu with the shared descriptions, the owner
-    // shortcut, and a fast path long enough to hold the multi-turn loop
-    // inline (the SPA delivers overflow over SSE; a test has no stream).
-    runtime = buildHomeNodeAskRuntime({
-      llm: tapProvider(llm.llm, turns),
-      providerName: llm.providerName,
-      core,
-      appView: fixtureAppView(fixture),
-      sensitivePersonas: ['health', 'finance'],
-      cloudConsentGranted: true,
-      installedPersonas: () => PERSONAS.map((p) => ({ name: p.name, description: p.description })),
-      retrievalFetchers: {
-        async vaultSearch(persona, query) {
-          const result = await core.vaultQuery(persona, { mode: 'fts5', text: query, limit: 5 });
-          if (result.items.length > 0) fetched.push(persona);
-          return result.items.map((item) => ({
-            id: String(item.id ?? ''),
-            content_l0: String(item.content_l0 ?? item.summary ?? ''),
-            ...(typeof item.body === 'string' ? { body: item.body } : {}),
-            persona,
-          }));
-        },
-        async findPerson(name) {
-          const matches = await core.peopleFindByName(name);
-          return matches.map((p) => ({
-            canonicalName: p.canonicalName,
-            ...(p.relationshipHint !== '' ? { relationshipHint: p.relationshipHint } : {}),
-            surfaceSummary: (p.surfaces ?? [])
-              .filter((s) => s.status !== 'rejected')
-              .map((s) => s.surface)
-              .slice(0, 3)
-              .join(', '),
-          }));
-        },
-      },
-      ownerDid: OWNER_DID,
-      fastPathMs: 170_000,
-    });
-  });
-
-  beforeEach(() => {
-    for (const v of vaults) {
-      setVaultRepository(v.persona, v.repo);
-      v.adapter.execute('DELETE FROM vault_items');
-    }
-    resetContactDirectory();
-    for (const t of ['contact_aliases', 'contacts', 'person_surfaces', 'person_identities', 'person_extraction_log', 'people']) {
-      identity.execute(`DELETE FROM ${t}`);
-    }
-    fixture.hits.length = 0;
-    turns.length = 0;
-    fetched.length = 0;
-  });
-
-  afterAll(() => {
-    setAccessiblePersonas(['general']);
-    resetContactDirectory();
-    setContactRepository(null);
-    setPeopleRepository(null);
-    for (const v of vaults) setVaultRepository(v.persona, null);
-    for (const s of stores) {
-      try {
-        s.close();
-      } catch {
-        /* idempotent */
+      for (const p of PERSONAS) {
+        createPersona(p.name, p.tier, p.description);
+        const adapter = openStore(dir, `${p.name}.sqlite`);
+        applyMigrations(adapter, PERSONA_MIGRATIONS);
+        const repo = new SQLiteVaultRepository(adapter);
+        setVaultRepository(p.name, repo);
+        stores.push(adapter);
+        vaults.push({ persona: p.name, adapter, repo });
       }
-    }
-    if (dir !== '') fs.rmSync(dir, { recursive: true, force: true });
-    resetPersonaState();
-  });
+      // As the server publishes them at boot (boot.ts): every persona Core lists
+      // is one Brain's own vault tools may read. Without this Brain's default
+      // (`general` only) would show three vaults as locked to the loop.
+      setAccessiblePersonas(PERSONAS.map((p) => p.name));
 
-  it.each(SCENARIOS)(
-    '$label',
-    async (scenario: Scenario) => {
-      for (const m of scenario.memories) storeItem(m.persona, { type: 'user_memory', summary: m.text, body: m.text });
-      for (const c of scenario.contacts ?? []) {
-        addContact(c.did, c.name, 'verified');
-        if (c.preferredFor !== undefined) await core.updateContact(c.did, { preferredFor: c.preferredFor });
-      }
-      fixture.catalog = scenario.catalog;
+      identity = openStore(dir, 'identity.sqlite');
+      applyMigrations(identity, IDENTITY_MIGRATIONS);
+      stores.push(identity);
+      setPeopleRepository(new SQLitePeopleRepository(identity));
+      setContactRepository(new SQLiteContactRepository(identity));
+      resetContactDirectory();
 
-      const result = await runtime.coordinator.handleAsk({
-        question: scenario.ask,
-        requesterDid: OWNER_DID,
-        requestIdHeader: `a6-${String(SCENARIOS.indexOf(scenario))}`,
+      core = new InProcessTransport(createCoreRouter());
+
+      const llm = buildBrainServerLLMRuntime(llmConfig());
+      if (llm === undefined) throw new Error('A6: the LLM runtime did not build');
+
+      // The server's boot wiring (boot.ts): planner fetchers through the
+      // CoreClient, the persona menu with the shared descriptions, the owner
+      // shortcut, and a fast path long enough to hold the multi-turn loop
+      // inline (the SPA delivers overflow over SSE; a test has no stream).
+      runtime = buildHomeNodeAskRuntime({
+        llm: tapProvider(llm.llm, turns),
+        providerName: llm.providerName,
+        core,
+        appView: fixtureAppView(fixture),
+        sensitivePersonas: ['health', 'finance'],
+        cloudConsentGranted: true,
+        installedPersonas: () =>
+          PERSONAS.map((p) => ({ name: p.name, description: p.description })),
+        retrievalFetchers: {
+          async vaultSearch(persona, query) {
+            const result = await core.vaultQuery(persona, { mode: 'fts5', text: query, limit: 5 });
+            if (result.items.length > 0) fetched.push(persona);
+            return result.items.map((item) => ({
+              id: String(item.id ?? ''),
+              content_l0: String(item.content_l0 ?? item.summary ?? ''),
+              ...(typeof item.body === 'string' ? { body: item.body } : {}),
+              persona,
+            }));
+          },
+          async findPerson(name) {
+            const matches = await core.peopleFindByName(name);
+            return matches.map((p) => ({
+              canonicalName: p.canonicalName,
+              ...(p.relationshipHint !== '' ? { relationshipHint: p.relationshipHint } : {}),
+              surfaceSummary: (p.surfaces ?? [])
+                .filter((s) => s.status !== 'rejected')
+                .map((s) => s.surface)
+                .slice(0, 3)
+                .join(', '),
+            }));
+          },
+        },
+        ownerDid: OWNER_DID,
+        fastPathMs: 170_000,
       });
-      expect(result.kind).toBe('fast_path');
-      if (result.kind !== 'fast_path') return;
-      expect(result.body.status).toBe('complete');
-      const text = result.body.answer?.text;
-      const answer = typeof text === 'string' ? text : '';
-      // Drop thousands separators so "₹5,899" and "5899" match one needle.
-      const haystack = answer.toLowerCase().replace(/(\d),(\d)/g, '$1$2');
+    });
 
-      const primary = scenario.mustContainAny.find((n) => haystack.includes(n.toLowerCase()));
-      const secondary = scenario.mustAlsoContainAny?.find((n) => haystack.includes(n.toLowerCase()));
-      const recommended = recommendedOnCard(result.body.answer);
-      const cardAgrees =
-        scenario.card.recommendedAny.some((want) => cardMatches(recommended, want)) &&
-        (scenario.card.notRecommended === undefined || !recommended.includes(scenario.card.notRecommended));
-      // The preference reached the loop from the OWNER's vault: the planner
-      // fetched rows from that persona, or the loop's own vault_search ran.
-      const readVault =
-        scenario.mustReadVault === undefined ||
-        fetched.includes(scenario.mustReadVault) ||
-        turns.some((t) => t.includes('vault_search'));
-      const pass =
-        primary !== undefined &&
-        (scenario.mustAlsoContainAny === undefined || secondary !== undefined) &&
-        cardAgrees &&
-        readVault;
+    beforeEach(() => {
+      for (const v of vaults) {
+        setVaultRepository(v.persona, v.repo);
+        v.adapter.execute('DELETE FROM vault_items');
+      }
+      resetContactDirectory();
+      for (const t of [
+        'contact_aliases',
+        'contacts',
+        'person_surfaces',
+        'person_identities',
+        'person_extraction_log',
+        'people',
+      ]) {
+        identity.execute(`DELETE FROM ${t}`);
+      }
+      fixture.hits.length = 0;
+      turns.length = 0;
+      fetched.length = 0;
+    });
 
-      // Evidence for the notes: tool sequence per turn, AppView methods hit,
-      // the answer. Fixture data only.
-      console.warn(
-        `\n[A6 ${pass ? 'PASS' : 'MISS'}] ${scenario.label}` +
-          `\n  provider: ${llmConfig().provider}${llmConfig().model !== undefined ? ` ${llmConfig().model}` : ''}` +
-          `\n  ask: ${scenario.ask}` +
-          `\n  tools by turn: ${JSON.stringify(turns)}` +
-          `\n  appview: ${JSON.stringify(fixture.hits)}` +
-          `\n  needed: ${JSON.stringify(scenario.mustContainAny)}${scenario.mustAlsoContainAny !== undefined ? ` AND ${JSON.stringify(scenario.mustAlsoContainAny)}` : ''}` +
-          `\n  planner fetched from: ${JSON.stringify(fetched)}` +
-          `\n  card recommends: ${recommended === '' ? '(no card)' : recommended}` +
-          `\n  answer:\n    ${answer.split('\n').join('\n    ')}\n`,
-      );
+    afterAll(() => {
+      setAccessiblePersonas(['general']);
+      resetContactDirectory();
+      setContactRepository(null);
+      setPeopleRepository(null);
+      for (const v of vaults) setVaultRepository(v.persona, null);
+      for (const s of stores) {
+        try {
+          s.close();
+        } catch {
+          /* idempotent */
+        }
+      }
+      if (dir !== '') fs.rmSync(dir, { recursive: true, force: true });
+      resetPersonaState();
+    });
 
-      // The loop researched: the fixture catalog was asked.
-      expect(fixture.hits).toContain('com.dinakernel.commerce.searchCatalog');
-      expect(primary).toBeDefined();
-      if (scenario.mustAlsoContainAny !== undefined) expect(secondary).toBeDefined();
-      // The card posted beside the prose carries the same decision.
-      expect(cardAgrees).toBe(true);
-      // The preference came from the owner's vault, not the model's own bias.
-      expect(readVault).toBe(true);
-    },
-    180_000,
-  );
-});
+    it.each(SCENARIOS)(
+      '$label',
+      async (scenario: Scenario) => {
+        for (const m of scenario.memories)
+          storeItem(m.persona, { type: 'user_memory', summary: m.text, body: m.text });
+        for (const c of scenario.contacts ?? []) {
+          addContact(c.did, c.name, 'verified');
+          if (c.preferredFor !== undefined)
+            await core.updateContact(c.did, { preferredFor: c.preferredFor });
+        }
+        fixture.catalog = scenario.catalog;
+
+        const result = await runtime.coordinator.handleAsk({
+          question: scenario.ask,
+          requesterDid: OWNER_DID,
+          requestIdHeader: `a6-${String(SCENARIOS.indexOf(scenario))}`,
+        });
+        expect(result.kind).toBe('fast_path');
+        if (result.kind !== 'fast_path') return;
+        expect(result.body.status).toBe('complete');
+        const text = result.body.answer?.text;
+        const answer = typeof text === 'string' ? text : '';
+        // Drop thousands separators so "₹5,899" and "5899" match one needle.
+        const haystack = answer.toLowerCase().replace(/(\d),(\d)/g, '$1$2');
+
+        const primary = scenario.mustContainAny.find((n) => haystack.includes(n.toLowerCase()));
+        const secondary = scenario.mustAlsoContainAny?.find((n) =>
+          haystack.includes(n.toLowerCase()),
+        );
+        const recommended = recommendedOnCard(result.body.answer);
+        const cardAgrees =
+          scenario.card.recommendedAny.some((want) => cardMatches(recommended, want)) &&
+          (scenario.card.notRecommended === undefined ||
+            !recommended.includes(scenario.card.notRecommended));
+        // The preference reached the loop from the OWNER's vault: the planner
+        // fetched rows from that persona, or the loop's own vault_search ran.
+        const readVault =
+          scenario.mustReadVault === undefined ||
+          fetched.includes(scenario.mustReadVault) ||
+          turns.some((t) => t.includes('vault_search'));
+        const pass =
+          primary !== undefined &&
+          (scenario.mustAlsoContainAny === undefined || secondary !== undefined) &&
+          cardAgrees &&
+          readVault;
+
+        // Evidence for the notes: tool sequence per turn, AppView methods hit,
+        // the answer. Fixture data only.
+        console.warn(
+          `\n[A6 ${pass ? 'PASS' : 'MISS'}] ${scenario.label}` +
+            `\n  provider: ${llmConfig().provider}${llmConfig().model !== undefined ? ` ${llmConfig().model}` : ''}` +
+            `\n  ask: ${scenario.ask}` +
+            `\n  tools by turn: ${JSON.stringify(turns)}` +
+            `\n  appview: ${JSON.stringify(fixture.hits)}` +
+            `\n  needed: ${JSON.stringify(scenario.mustContainAny)}${scenario.mustAlsoContainAny !== undefined ? ` AND ${JSON.stringify(scenario.mustAlsoContainAny)}` : ''}` +
+            `\n  planner fetched from: ${JSON.stringify(fetched)}` +
+            `\n  card recommends: ${recommended === '' ? '(no card)' : recommended}` +
+            `\n  answer:\n    ${answer.split('\n').join('\n    ')}\n`,
+        );
+
+        // The loop researched: the fixture catalog was asked.
+        expect(fixture.hits).toContain('com.dinakernel.commerce.searchCatalog');
+        expect(primary).toBeDefined();
+        if (scenario.mustAlsoContainAny !== undefined) expect(secondary).toBeDefined();
+        // The card posted beside the prose carries the same decision.
+        expect(cardAgrees).toBe(true);
+        // The preference came from the owner's vault, not the model's own bias.
+        expect(readVault).toBe(true);
+      },
+      180_000,
+    );
+  },
+);
 
 if (LLM_CONFIG === null) {
   describe('A6 preference diligence (skipped)', () => {

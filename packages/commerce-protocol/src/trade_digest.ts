@@ -85,14 +85,16 @@ export function verifyTradeRecordDigest(
   return null;
 }
 
-
 /** `reason_code` bound shared by the decline and the receipt (§3.4, §4.2). */
 export const MAX_TRADE_REASON_CODE_LENGTH = 64;
 
 export function validateReasonCode(value: unknown, field: string): string | null {
-  if (typeof value !== 'string' || value.length === 0 || value.length > MAX_TRADE_REASON_CODE_LENGTH) {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > MAX_TRADE_REASON_CODE_LENGTH
+  ) {
     return `${field}: must be a non-empty string of at most ${MAX_TRADE_REASON_CODE_LENGTH} characters`;
   }
   return null;
 }
-

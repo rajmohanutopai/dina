@@ -49,10 +49,7 @@ export interface SyncStatusResponse {
   status: 'ok' | 'degraded';
 }
 
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   get(path: string, handler: RouteHandler): unknown;
@@ -72,10 +69,7 @@ export function registerSyncStatusRoute(
       try {
         connected = await probe();
       } catch (err) {
-        req.log.warn(
-          { err: (err as Error).message },
-          '/v1/admin/sync-status: brain probe threw',
-        );
+        req.log.warn({ err: (err as Error).message }, '/v1/admin/sync-status: brain probe threw');
         await reply.code(500).send({ error: 'brain probe failed' });
         return;
       }

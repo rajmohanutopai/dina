@@ -21,23 +21,23 @@ See the repo root's [`README.md`](../../README.md) for the vision
 (Dina, The Architecture of Agency) and
 [`ARCHITECTURE.md`](../../ARCHITECTURE.md) for the full engineering
 blueprint. This package is the subset of the blueprint that
-*external* implementations must reproduce exactly.
+_external_ implementations must reproduce exactly.
 
 ## What's in here
 
 Wire-format contracts, and nothing else:
 
-| Category | What it covers | File |
-| --- | --- | --- |
-| DID documents | `did:plc` document shape + verification-method / service-endpoint fields | `types/plc_document.ts` |
-| D2D envelopes | Peer-to-peer message payload, service query/response bodies, response-status enum | `types/d2d.ts` |
-| Auth frames | MsgBox WebSocket handshake frames (`auth_challenge` / `auth_response` / `auth_success`) | `types/auth_frames.ts` |
-| Core RPC | Envelope shape for Core API requests tunnelled through MsgBox | `types/core_rpc.ts` |
-| Capability schema | `com.dinakernel.service.profile` publish record + `schema_hash` contract | `types/capability.ts` |
-| Wire constants | DID-doc contexts, service-type literals, frame-type strings, port defaults, `MSG_TYPE_*` strings, size limits, notify-priority literals | `constants.ts` |
-| Canonical signing | Pure helper that builds the request-signing canonical string | `canonical_sign.ts` |
-| Envelope builders | Deterministic constructors for DinaMessage JSON + `CoreRPCRequest` | `envelope_builder.ts` |
-| Validators | Body-shape validators + future-skew guard + Ed25519 signature verifier (crypto via DI) | `validators.ts` |
+| Category          | What it covers                                                                                                                          | File                    |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ----------------------- |
+| DID documents     | `did:plc` document shape + verification-method / service-endpoint fields                                                                | `types/plc_document.ts` |
+| D2D envelopes     | Peer-to-peer message payload, service query/response bodies, response-status enum                                                       | `types/d2d.ts`          |
+| Auth frames       | MsgBox WebSocket handshake frames (`auth_challenge` / `auth_response` / `auth_success`)                                                 | `types/auth_frames.ts`  |
+| Core RPC          | Envelope shape for Core API requests tunnelled through MsgBox                                                                           | `types/core_rpc.ts`     |
+| Capability schema | `com.dinakernel.service.profile` publish record + `schema_hash` contract                                                                | `types/capability.ts`   |
+| Wire constants    | DID-doc contexts, service-type literals, frame-type strings, port defaults, `MSG_TYPE_*` strings, size limits, notify-priority literals | `constants.ts`          |
+| Canonical signing | Pure helper that builds the request-signing canonical string                                                                            | `canonical_sign.ts`     |
+| Envelope builders | Deterministic constructors for DinaMessage JSON + `CoreRPCRequest`                                                                      | `envelope_builder.ts`   |
+| Validators        | Body-shape validators + future-skew guard + Ed25519 signature verifier (crypto via DI)                                                  | `validators.ts`         |
 
 What's **not** here:
 
@@ -55,7 +55,7 @@ What's **not** here:
 
 ## Why this split matters
 
-Dina's security model is *enforced by math, not by a privacy policy*.
+Dina's security model is _enforced by math, not by a privacy policy_.
 That only works if every implementation emits and verifies the same
 bytes. A Go home node and a mobile TS home node must produce
 byte-identical Ed25519 signatures over the same logical message —
@@ -96,7 +96,7 @@ need a crypto primitive are split into "compose the shape" (pure,
 stays here) and "run the crypto" (callback or pre-hashed input).
 
 - **Canonical signing** — `buildCanonicalPayload(method, path, query,
-  timestamp, nonce, bodyHashHex)` takes a pre-hashed body. Your
+timestamp, nonce, bodyHashHex)` takes a pre-hashed body. Your
   runtime computes `SHA-256(body)` and passes the hex. The signing
   step that happens next is yours — protocol just gives you the
   canonical string to sign.

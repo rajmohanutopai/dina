@@ -83,8 +83,8 @@ Telemetry line `[LLM-USAGE] provider=… model=<resolved id> in= out= cached=
 tools=` lives in `packages/brain/src/llm/adapters/{aisdk,gemini_genai}.ts`
 (metadata only, never content — PII-safe; kept, #363 needs it). To re-run:
 set `DEFAULT_OPENROUTER_PRIMARY_MODEL` in `packages/brain/src/constants.ts`,
-cold-relaunch, drive the queries. OpenRouter key (test) lives in
-`tests/sanity/.env.sanity`; paste it via the in-app field (automated
+cold-relaunch, drive the queries. Keep the test OpenRouter key out of the
+repo; paste it via the in-app field (automated
 secure-field entry mangles it → 401).
 
 ---

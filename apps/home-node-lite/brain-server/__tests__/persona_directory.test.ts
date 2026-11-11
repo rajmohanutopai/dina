@@ -50,7 +50,12 @@ describe('persona directory (§2.3)', () => {
       },
     };
     const timers = manualTimers();
-    const dir = createPersonaDirectory({ core, logger: quietLogger, ...timers, initialBackoffMs: 100 });
+    const dir = createPersonaDirectory({
+      core,
+      logger: quietLogger,
+      ...timers,
+      initialBackoffMs: 100,
+    });
 
     const started = dir.start();
     await new Promise((r) => setImmediate(r));

@@ -36,10 +36,7 @@ import {
   type SettlementNote,
 } from '@dina/commerce-protocol';
 
-import {
-  rehydrateRevshareDocument,
-  type RehydratedRevshare,
-} from './money_rehydrate';
+import { rehydrateRevshareDocument, type RehydratedRevshare } from './money_rehydrate';
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
@@ -264,7 +261,10 @@ function replacementAcceptance(
   replacementRow: RevshareDocumentRow,
 ): string | null {
   if (replacementRow.kind !== 'agreement_proposal') return null;
-  for (const decisionRow of repository.answersTo(replacementRow.recordDigest, 'agreement_decision')) {
+  for (const decisionRow of repository.answersTo(
+    replacementRow.recordDigest,
+    'agreement_decision',
+  )) {
     if (decisionRow.direction === replacementRow.direction) continue; // proposer cannot accept
     const decision = readDecision(decisionRow);
     if (decision !== null && decision.kind === 'accepted') return decision.decided_at;
@@ -367,7 +367,11 @@ function ingest(
   detail?: string,
   recordDigest?: string,
 ): RevshareIngest {
-  return { outcome, ...(detail !== undefined ? { detail } : {}), ...(recordDigest !== undefined ? { recordDigest } : {}) };
+  return {
+    outcome,
+    ...(detail !== undefined ? { detail } : {}),
+    ...(recordDigest !== undefined ? { recordDigest } : {}),
+  };
 }
 
 export function verifyInboundAgreementProposal(args: {
@@ -395,7 +399,11 @@ export function verifyInboundAgreementProposal(args: {
   if (proposal.replaces_proposal_digest !== undefined) {
     // The authoring side's rule, mirrored: a re-proposal supersedes an
     // ACTIVE agreement or nothing.
-    const replaced = agreementStatus(args.repository, proposal.replaces_proposal_digest, args.nowMs);
+    const replaced = agreementStatus(
+      args.repository,
+      proposal.replaces_proposal_digest,
+      args.nowMs,
+    );
     if (replaced.state !== 'active') {
       return ingest('refused', 'a re-proposal supersedes an ACTIVE agreement or nothing');
     }
@@ -573,7 +581,11 @@ export function verifyInboundSettlementNote(args: {
   if (args.senderDid !== handlerDid) {
     return ingest('refused', 'only the cash handler issues settlements');
   }
-  const ruleError = checkSettlementNote({ note, proposal: status.proposal, repository: args.repository });
+  const ruleError = checkSettlementNote({
+    note,
+    proposal: status.proposal,
+    repository: args.repository,
+  });
   if (ruleError !== null) return ingest('refused', ruleError);
   args.repository.put({
     recordDigest: note.settlement_digest,
@@ -627,7 +639,10 @@ export function verifyInboundSettlementAck(args: {
     const first = existing[0] === undefined ? null : readAck(existing[0]);
     return first !== null && first.settlement_ack_digest === ack.settlement_ack_digest
       ? ingest('duplicate', undefined, ack.settlement_ack_digest)
-      : ingest('conflict', 'the settlement already has an acknowledgement — the first answer stands');
+      : ingest(
+          'conflict',
+          'the settlement already has an acknowledgement — the first answer stands',
+        );
   }
   args.repository.put({
     recordDigest: ack.settlement_ack_digest,

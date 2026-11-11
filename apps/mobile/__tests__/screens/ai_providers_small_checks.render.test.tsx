@@ -26,7 +26,10 @@ jest.mock('../../src/ai/active_provider', () => ({
 }));
 jest.mock('../../src/ai/agentic_swap', () => ({ swapAgenticActiveProvider: async () => true }));
 jest.mock('../../src/ai/brain_wiring', () => ({ wireBrainChatProvider: async () => undefined }));
-jest.mock('../../src/ai/model_overrides', () => ({ loadModelOverrides: async () => undefined, peekModelOverride: () => undefined }));
+jest.mock('../../src/ai/model_overrides', () => ({
+  loadModelOverrides: async () => undefined,
+  peekModelOverride: () => undefined,
+}));
 jest.mock('../../src/components/CreditsTile', () => ({ CreditsTile: () => null }));
 jest.mock('../../src/components/key_health_pill', () => ({ KeyHealthPill: () => null }));
 jest.mock('../../src/components/ModelPickerSheet', () => ({ ModelPickerSheet: () => null }));

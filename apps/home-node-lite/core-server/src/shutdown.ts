@@ -75,7 +75,10 @@ export async function runShutdown(opts: GracefulShutdownOptions): Promise<void> 
   for (const step of steps) {
     const elapsed = Date.now() - start;
     if (elapsed >= overallBudget) {
-      logger.warn({ step: step.name, elapsedMs: elapsed }, 'shutdown: overall budget exhausted, skipping');
+      logger.warn(
+        { step: step.name, elapsedMs: elapsed },
+        'shutdown: overall budget exhausted, skipping',
+      );
       continue;
     }
     const remaining = overallBudget - elapsed;
@@ -85,10 +88,7 @@ export async function runShutdown(opts: GracefulShutdownOptions): Promise<void> 
       logger.info({ step: step.name }, 'shutdown: step ok');
     } catch (err) {
       // Best-effort: log + continue so later steps still run.
-      logger.warn(
-        { step: step.name, err: (err as Error).message },
-        'shutdown: step failed',
-      );
+      logger.warn({ step: step.name, err: (err as Error).message }, 'shutdown: step failed');
     }
   }
   logger.info({ elapsedMs: Date.now() - start }, 'shutdown sequence complete');
@@ -141,11 +141,7 @@ export function registerSignalHandlers(opts: GracefulShutdownOptions): () => voi
 // Helpers
 // ---------------------------------------------------------------------------
 
-function withTimeout<T>(
-  work: Promise<T> | T,
-  timeoutMs: number,
-  context: string,
-): Promise<T> {
+function withTimeout<T>(work: Promise<T> | T, timeoutMs: number, context: string): Promise<T> {
   return new Promise<T>((resolve, reject) => {
     let settled = false;
     const timer = setTimeout(() => {

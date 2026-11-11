@@ -110,9 +110,7 @@ describe('deriveReviewerProfileDisplay — counts + domains passthrough', () => 
   });
 
   it('passes through vouch + endorsement counts', () => {
-    const d = deriveReviewerProfileDisplay(
-      makeProfile({ vouchCount: 12, endorsementCount: 7 }),
-    );
+    const d = deriveReviewerProfileDisplay(makeProfile({ vouchCount: 12, endorsementCount: 7 }));
     expect(d.vouchCount).toBe(12);
     expect(d.endorsementCount).toBe(7);
   });

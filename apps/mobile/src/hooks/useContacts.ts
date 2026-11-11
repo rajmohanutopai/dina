@@ -14,8 +14,6 @@
 import {
   listContacts,
   addContact,
-  getContact,
-  findByAlias,
   getContactsByTrust,
   deleteContact,
   resetContactDirectory,

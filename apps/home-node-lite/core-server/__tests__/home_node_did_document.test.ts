@@ -2,11 +2,7 @@
  * Task 4.57 — Home Node DID Document tests.
  */
 
-import {
-  mnemonicToSeed,
-  generateMnemonic,
-  publicKeyToMultibase,
-} from '@dina/core';
+import { mnemonicToSeed, generateMnemonic, publicKeyToMultibase } from '@dina/core';
 
 import { deriveIdentity, PERSONA_INDEX } from '../src/identity/derivations';
 import {
@@ -34,9 +30,7 @@ describe('buildHomeNodeDIDDocument (task 4.57)', () => {
     it('emits #dina_signing VM id under the DID', () => {
       const id = fixedIdentity();
       const doc = buildHomeNodeDIDDocument({ did: DID, signingKey: id.root });
-      expect(doc.verificationMethod.some((vm) => vm.id === `${DID}#dina_signing`)).toBe(
-        true,
-      );
+      expect(doc.verificationMethod.some((vm) => vm.id === `${DID}#dina_signing`)).toBe(true);
     });
   });
 
@@ -86,10 +80,7 @@ describe('buildHomeNodeDIDDocument (task 4.57)', () => {
         signingKey: id.root,
         messagingKey,
       });
-      expect(doc.authentication).toEqual([
-        `${DID}#dina_signing`,
-        `${DID}#dina_messaging`,
-      ]);
+      expect(doc.authentication).toEqual([`${DID}#dina_signing`, `${DID}#dina_messaging`]);
     });
 
     it('explicit messagingKey that happens to match signing → still just one VM', () => {
@@ -166,10 +157,7 @@ describe('buildHomeNodeDIDDocument (task 4.57)', () => {
     it('created uses the injected clock for reproducibility', () => {
       const id = fixedIdentity();
       const fixedNow = new Date('2026-04-21T22:00:00.000Z');
-      const doc = buildHomeNodeDIDDocument(
-        { did: DID, signingKey: id.root },
-        () => fixedNow,
-      );
+      const doc = buildHomeNodeDIDDocument({ did: DID, signingKey: id.root }, () => fixedNow);
       expect(doc.created).toBe('2026-04-21T22:00:00.000Z');
     });
 
@@ -183,16 +171,20 @@ describe('buildHomeNodeDIDDocument (task 4.57)', () => {
   describe('input validation', () => {
     it('rejects empty did', () => {
       const id = fixedIdentity();
-      expect(() =>
-        buildHomeNodeDIDDocument({ did: '', signingKey: id.root }),
-      ).toThrow(/did is required/);
+      expect(() => buildHomeNodeDIDDocument({ did: '', signingKey: id.root })).toThrow(
+        /did is required/,
+      );
     });
 
     it('rejects wrong-length signing public key', () => {
       expect(() =>
         buildHomeNodeDIDDocument({
           did: DID,
-          signingKey: { privateKey: new Uint8Array(32), publicKey: new Uint8Array(31), chainCode: new Uint8Array(32) },
+          signingKey: {
+            privateKey: new Uint8Array(32),
+            publicKey: new Uint8Array(31),
+            chainCode: new Uint8Array(32),
+          },
         }),
       ).toThrow(/32-byte Ed25519/);
     });

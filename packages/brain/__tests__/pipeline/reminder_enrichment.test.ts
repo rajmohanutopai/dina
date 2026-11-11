@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 5.3
  */
 
-import { storeItem, clearVaults , DEFAULT_TEST_PERSONAS } from '@dina/core';
+import { storeItem, clearVaults, DEFAULT_TEST_PERSONAS } from '@dina/core';
 import { createReminder, resetReminderState } from '@dina/core/reminders';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 

@@ -307,7 +307,10 @@ export interface ValidateCardSpecOptions {
  * dropped/ignored, not rejected. A card with zero surviving blocks returns
  * `null` so the caller can fall back to generic key-value rendering.
  */
-export function validateCardSpec(value: unknown, opts: ValidateCardSpecOptions = {}): CardSpec | null {
+export function validateCardSpec(
+  value: unknown,
+  opts: ValidateCardSpecOptions = {},
+): CardSpec | null {
   if (typeof value !== 'object' || value === null) return null;
   const obj = value as Record<string, unknown>;
   if (obj.version !== 1) return null;
@@ -341,7 +344,10 @@ function normalizeBlock(raw: unknown, trusted: boolean): CardBlock | null {
     case 'title': {
       const text = cleanText(b.text);
       if (text === null) return null;
-      return withOptional<TitleBlock>({ kind: 'title', text }, { icon: cleanIcon(b.icon), tone: cleanTone(b.tone) });
+      return withOptional<TitleBlock>(
+        { kind: 'title', text },
+        { icon: cleanIcon(b.icon), tone: cleanTone(b.tone) },
+      );
     }
     case 'section': {
       const label = cleanText(b.label);
@@ -355,14 +361,21 @@ function normalizeBlock(raw: unknown, trusted: boolean): CardBlock | null {
       if (valueStr === null) return null;
       return withOptional<StatBlock>(
         { kind: 'stat', value: valueStr },
-        { unit: cleanText(b.unit) ?? undefined, caption: cleanText(b.caption) ?? undefined, tone: cleanTone(b.tone) },
+        {
+          unit: cleanText(b.unit) ?? undefined,
+          caption: cleanText(b.caption) ?? undefined,
+          tone: cleanTone(b.tone),
+        },
       );
     }
     case 'keyValue': {
       const label = cleanText(b.label);
       const v = cleanText(b.value);
       if (label === null || v === null) return null;
-      return withOptional<KeyValueBlock>({ kind: 'keyValue', label, value: v }, { tone: cleanTone(b.tone) });
+      return withOptional<KeyValueBlock>(
+        { kind: 'keyValue', label, value: v },
+        { tone: cleanTone(b.tone) },
+      );
     }
     case 'body': {
       const text = cleanText(b.text);
@@ -381,7 +394,11 @@ function normalizeBlock(raw: unknown, trusted: boolean): CardBlock | null {
       if (ratio === null) return null;
       return withOptional<BarBlock>(
         { kind: 'bar', ratio },
-        { label: cleanText(b.label) ?? undefined, valueLabel: cleanText(b.valueLabel) ?? undefined, tone: cleanTone(b.tone) },
+        {
+          label: cleanText(b.label) ?? undefined,
+          valueLabel: cleanText(b.valueLabel) ?? undefined,
+          tone: cleanTone(b.tone),
+        },
       );
     }
     case 'rating': {
@@ -498,7 +515,10 @@ function normalizeBlock(raw: unknown, trusted: boolean): CardBlock | null {
  * typed as `T`. Casts via `unknown` because the concrete block interfaces
  * have no string index signature.
  */
-function withOptional<T extends CardBlock | ListRow>(base: T, optionals: Record<string, unknown>): T {
+function withOptional<T extends CardBlock | ListRow>(
+  base: T,
+  optionals: Record<string, unknown>,
+): T {
   const out = base as unknown as Record<string, unknown>;
   for (const [k, v] of Object.entries(optionals)) {
     if (v !== undefined) out[k] = v;
@@ -541,19 +561,27 @@ function cleanText(v: unknown): string | null {
 }
 
 function cleanIcon(v: unknown): CardIcon | undefined {
-  return typeof v === 'string' && (CARD_ICONS as readonly string[]).includes(v) ? (v as CardIcon) : undefined;
+  return typeof v === 'string' && (CARD_ICONS as readonly string[]).includes(v)
+    ? (v as CardIcon)
+    : undefined;
 }
 
 function cleanTone(v: unknown): CardTone | undefined {
-  return typeof v === 'string' && (CARD_TONES as readonly string[]).includes(v) ? (v as CardTone) : undefined;
+  return typeof v === 'string' && (CARD_TONES as readonly string[]).includes(v)
+    ? (v as CardTone)
+    : undefined;
 }
 
 function cleanTimelineState(v: unknown): TimelineState | null {
-  return typeof v === 'string' && (TIMELINE_STATES as readonly string[]).includes(v) ? (v as TimelineState) : null;
+  return typeof v === 'string' && (TIMELINE_STATES as readonly string[]).includes(v)
+    ? (v as TimelineState)
+    : null;
 }
 
 function cleanAspect(v: unknown): MediaAspect | undefined {
-  return typeof v === 'string' && (MEDIA_ASPECTS as readonly string[]).includes(v) ? (v as MediaAspect) : undefined;
+  return typeof v === 'string' && (MEDIA_ASPECTS as readonly string[]).includes(v)
+    ? (v as MediaAspect)
+    : undefined;
 }
 
 /** A finite number clamped to [0,1], or null if not a finite number. */

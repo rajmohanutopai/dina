@@ -97,9 +97,7 @@ async function lastWritten(kv: BackupKV): Promise<number> {
 
 /** The payload's content, without the time it was built: its table checksums. */
 function fingerprint(payload: ArchivePayloadV1): string {
-  return bytesToHex(
-    sha256(new TextEncoder().encode(canonicalJson(payload.header.checksums))),
-  );
+  return bytesToHex(sha256(new TextEncoder().encode(canonicalJson(payload.header.checksums))));
 }
 
 async function currentPayload(): Promise<ArchivePayloadV1> {

@@ -53,8 +53,8 @@ Produced 2026-04-21. Subsequent 1.17+ edits should be checked against this list;
 
 ### 1.16g — Service-endpoint type constants
 
-| File                                      | Lines | Key exports                                                |
-| ----------------------------------------- | ----: | ---------------------------------------------------------- |
+| File                                      | Lines | Key exports                                                    |
+| ----------------------------------------- | ----: | -------------------------------------------------------------- |
 | `packages/core/src/transport/delivery.ts` |   286 | (no longer exports a `ServiceType` — MsgBox is sole transport) |
 
 **Note**: The `SERVICE_TYPE_MSGBOX` constant lives in `@dina/protocol/constants.ts`. `ServiceType` was removed in 0.16 (along with `SERVICE_TYPE_DIRECT_HTTPS`) because the direct-HTTPS path was never produced by any identity-creation code and could not reach NAT'd Home Nodes. `DeliveryResult` / `WSDeliverFn` types + actual delivery machinery stay in `@dina/core`.

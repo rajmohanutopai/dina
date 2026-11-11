@@ -185,9 +185,17 @@ describe('a forbidden destination receives no connection', () => {
     const trap = (err: unknown) => uncaught.push(err);
     process.on('uncaughtException', trap);
     try {
-      const transport = createA2AHostTransport({ resolve: resolveTo('100::1'), isAllowedAddress: () => true, ca: CERT });
+      const transport = createA2AHostTransport({
+        resolve: resolveTo('100::1'),
+        isAllowedAddress: () => true,
+        ca: CERT,
+      });
       const out = await transport(call({ timeoutMs: 1_500 }));
-      expect(out).toEqual({ ok: false, error: expect.stringMatching(/^(connect_failed|timeout)$/), sent: false });
+      expect(out).toEqual({
+        ok: false,
+        error: expect.stringMatching(/^(connect_failed|timeout)$/),
+        sent: false,
+      });
       await new Promise((r) => setTimeout(r, 50));
       expect(uncaught).toEqual([]);
     } finally {
@@ -366,8 +374,14 @@ describe('TLS and connection failures report that nothing was sent', () => {
   });
 
   it('a header Node refuses (CR/LF in a value, as a remote token could carry) settles as a failure; nothing is sent', async () => {
-    const transport = createA2AHostTransport({ resolve: resolveTo('127.0.0.1'), isAllowedAddress: loopbackAllowed, ca: CERT });
-    const answer = await transport(call({ headers: { 'A2A-Version': '1.0', authorization: 'Bearer a\r\nX-Injected: 1' } }));
+    const transport = createA2AHostTransport({
+      resolve: resolveTo('127.0.0.1'),
+      isAllowedAddress: loopbackAllowed,
+      ca: CERT,
+    });
+    const answer = await transport(
+      call({ headers: { 'A2A-Version': '1.0', authorization: 'Bearer a\r\nX-Injected: 1' } }),
+    );
     expect(answer).toEqual({ ok: false, error: 'io_error', sent: false });
     expect(server.seen).toHaveLength(0);
   });

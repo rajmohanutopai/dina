@@ -79,9 +79,7 @@ export type ContactResolveOutcome =
   | { ok: false; reason: 'rejected_by_appview'; status: number; error: string }
   | { ok: false; reason: 'malformed_response'; detail: string };
 
-export type ContactResolveFetchFn = (
-  input: ContactResolveRequest,
-) => Promise<XrpcFetchResult>;
+export type ContactResolveFetchFn = (input: ContactResolveRequest) => Promise<XrpcFetchResult>;
 
 export interface ContactResolveClientOptions {
   fetchFn: ContactResolveFetchFn;
@@ -97,8 +95,14 @@ export const MAX_CONTACT_LIMIT = 20;
 export const DEFAULT_CONTACT_LIMIT = 10;
 
 const DID_RE = /^did:(plc:[a-z2-7]{24}|web:[a-zA-Z0-9.:-]+)$/;
-/** Matches ASCII control chars (0x00–0x08, 0x0B–0x0C, 0x0E–0x1F). Excludes tab, newline, CR. */
-const CONTROL_RE = /[\x00-\x08\x0B\x0C\x0E-\x1F]/;
+/** True when `s` holds an ASCII control char (0x00–0x08, 0x0B–0x0C, 0x0E–0x1F). Tab, newline, CR pass. */
+function hasControlChar(s: string): boolean {
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    if (c <= 0x08 || c === 0x0b || c === 0x0c || (c >= 0x0e && c <= 0x1f)) return true;
+  }
+  return false;
+}
 
 /**
  * Create the `contact.resolve` xRPC client. Returns a function that
@@ -113,9 +117,7 @@ export function createContactResolveClient(
   const fetchFn = opts.fetchFn;
   const onEvent = opts.onEvent;
 
-  return async function resolve(
-    input: ContactResolveRequest,
-  ): Promise<ContactResolveOutcome> {
+  return async function resolve(input: ContactResolveRequest): Promise<ContactResolveOutcome> {
     const validation = validateInput(input);
     if (validation !== null) {
       onEvent?.({
@@ -141,9 +143,10 @@ export function createContactResolveClient(
     }
 
     if (result.status < 200 || result.status >= 300) {
-      const msg = typeof (result.body as { error?: unknown })?.error === 'string'
-        ? ((result.body as { error: string }).error)
-        : `status ${result.status}`;
+      const msg =
+        typeof (result.body as { error?: unknown })?.error === 'string'
+          ? (result.body as { error: string }).error
+          : `status ${result.status}`;
       onEvent?.({
         kind: 'rejected',
         query: normalised.query,
@@ -198,7 +201,7 @@ function validateInput(input: ContactResolveRequest | null | undefined): string 
   if (trimmed.length > MAX_CONTACT_QUERY_LEN) {
     return `query must be <= ${MAX_CONTACT_QUERY_LEN} chars`;
   }
-  if (CONTROL_RE.test(trimmed)) {
+  if (hasControlChar(trimmed)) {
     return 'query contains control characters';
   }
   if (input.limit !== undefined) {
@@ -227,8 +230,15 @@ function normaliseInput(input: ContactResolveRequest): ContactResolveRequest {
   };
 }
 
-interface ParseOk { ok: true; response: ContactResolveResponse }
-interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
+interface ParseOk {
+  ok: true;
+  response: ContactResolveResponse;
+}
+interface ParseFail {
+  ok: false;
+  reason: 'malformed_response';
+  detail: string;
+}
 
 function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
   if (!Array.isArray(body.contacts)) {
@@ -250,14 +260,10 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
       handle: e.handle,
       displayName: e.displayName,
       trustScore:
-        typeof e.trustScore === 'number' && Number.isFinite(e.trustScore)
-          ? e.trustScore
-          : null,
+        typeof e.trustScore === 'number' && Number.isFinite(e.trustScore) ? e.trustScore : null,
       ring: e.ring === 1 || e.ring === 2 || e.ring === 3 ? (e.ring as 1 | 2 | 3) : null,
       lastSeenMs:
-        typeof e.lastSeenMs === 'number' &&
-        Number.isInteger(e.lastSeenMs) &&
-        e.lastSeenMs >= 0
+        typeof e.lastSeenMs === 'number' && Number.isInteger(e.lastSeenMs) && e.lastSeenMs >= 0
           ? e.lastSeenMs
           : null,
     });

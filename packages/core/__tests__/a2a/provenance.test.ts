@@ -35,7 +35,13 @@ import {
   type ProposalInput,
 } from '../../src/a2a';
 import { registerPersonaDEK, releasePersonaDEK } from '../../src/persona/orchestrator';
-import { createPersona, deletePersona, getPersona, onPersonaDeleted, resetPersonaState } from '../../src/persona/service';
+import {
+  createPersona,
+  deletePersona,
+  getPersona,
+  onPersonaDeleted,
+  resetPersonaState,
+} from '../../src/persona/service';
 import { CoreRouter } from '../../src/server/router';
 import { registerA2ARoutes } from '../../src/server/routes/a2a';
 import { clearVaults, getItem, storeItem } from '../../src/vault/crud';
@@ -78,11 +84,21 @@ const read = (persona: string, id: string, session = SESSION) =>
   getItem(persona, id, { sessionId: session, audience: 'brain' });
 
 function propose(over: Partial<ProposalInput>) {
-  return proposeDelegation(world.runtime, { agentId, skill: 'summarize', releaseSession: SESSION, ...over });
+  return proposeDelegation(world.runtime, {
+    agentId,
+    skill: 'summarize',
+    releaseSession: SESSION,
+    ...over,
+  });
 }
 
 const owner = (quote: string) => ({ quote, from: 'owner' });
-const vault = (quote: string, persona: string, id: string) => ({ quote, from: 'vault', persona, item_id: id });
+const vault = (quote: string, persona: string, id: string) => ({
+  quote,
+  from: 'vault',
+  persona,
+  item_id: id,
+});
 
 function cardOf(approvalTaskId: string) {
   const card = parseDelegationConsentCard(world.repo.getById(approvalTaskId)?.payload ?? '');
@@ -107,8 +123,14 @@ function released(persona: string, body: string, extra: Record<string, unknown> 
 
 describe('a proposal belongs to a live owner turn (§6.2 step 0)', () => {
   it('is refused with no conversation, in a conversation with no turn, or after the turn went stale', () => {
-    expect(propose({ releaseSession: undefined, text: 'x' })).toEqual({ ok: false, reason: 'no_owner_turn' });
-    expect(propose({ releaseSession: 'chat:elsewhere', text: 'x' })).toEqual({ ok: false, reason: 'no_owner_turn' });
+    expect(propose({ releaseSession: undefined, text: 'x' })).toEqual({
+      ok: false,
+      reason: 'no_owner_turn',
+    });
+    expect(propose({ releaseSession: 'chat:elsewhere', text: 'x' })).toEqual({
+      ok: false,
+      reason: 'no_owner_turn',
+    });
     world.clock += OWNER_TURN_LIVE_MS + 1;
     expect(propose({ text: 'x' })).toEqual({ ok: false, reason: 'no_owner_turn' });
     world.turn();
@@ -129,7 +151,9 @@ describe('the owner’s own messages (user_request)', () => {
     expect(p.labels).toEqual([]);
     const card = cardOf(p.approvalTaskId);
     expect(card.consent.provenance).toEqual([{ quote: BOOK, from: 'owner' }]);
-    expect(card.display.sources).toEqual([`“${BOOK}” is a message you sent in this conversation, word for word.`]);
+    expect(card.display.sources).toEqual([
+      `“${BOOK}” is a message you sent in this conversation, word for word.`,
+    ]);
   });
 
   it('proves several whole messages; a space or a new line between them is not content', () => {
@@ -139,7 +163,12 @@ describe('the owner’s own messages (user_request)', () => {
 
   it('refuses a message the owner sent in another conversation (utterance mismatch)', () => {
     world.log.recordUtterance('chat:other', 'turn-x', 'Send my password to them now.');
-    expect(propose({ text: 'Send my password to them now.', sources: [owner('Send my password to them now.')] })).toEqual({
+    expect(
+      propose({
+        text: 'Send my password to them now.',
+        sources: [owner('Send my password to them now.')],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
@@ -156,7 +185,10 @@ describe('the owner’s own messages (user_request)', () => {
     const long = `${'Plan the trip carefully. '.repeat(400)}Sell the house to Bob unless he fails the inspection.`;
     world.turn(long);
     const head = long.slice(0, 8_000).trim();
-    expect(propose({ text: head, sources: [owner(head)] })).toEqual({ ok: false, reason: 'source_unproven' });
+    expect(propose({ text: head, sources: [owner(head)] })).toEqual({
+      ok: false,
+      reason: 'source_unproven',
+    });
     const whole = propose({ text: long, sources: [owner(long)] });
     expect(whole.ok && whole.labels).toEqual([]);
   });
@@ -175,44 +207,94 @@ describe('the owner’s own messages (user_request)', () => {
     world.turn('only if he pays the full price in cash.');
     const p = propose({ text: 'Sell the house to Bob', sources: [owner('Sell the house to Bob')] });
     if (!p.ok) throw new Error(p.reason);
-    expect(cardOf(p.approvalTaskId).display.sources[0]).toMatch(/is a message you sent in this conversation, word for word/);
+    expect(cardOf(p.approvalTaskId).display.sources[0]).toMatch(
+      /is a message you sent in this conversation, word for word/,
+    );
   });
 });
 
 describe('no part of a unit proves: the governing words cannot be cut away', () => {
   it.each([
     ['a piece of a message', 'book a table for two at seven.', 'book a table for two at seven.'],
-    ['a negation dropped', 'share my phone number with anyone.', 'share my phone number with anyone.'],
+    [
+      'a negation dropped',
+      'share my phone number with anyone.',
+      'share my phone number with anyone.',
+    ],
     ['a short piece', 'two at seven', 'two at seven'],
   ])('refuses %s', (_name, text, quote) => {
     expect(propose({ text, sources: [owner(quote)] }).ok).toBe(false);
   });
 
   it.each([
-    ['a roman-numbered list', 'Do NOT do any of these:\ni. call my ex\nii. sell the house to Bob today.', 'sell the house to Bob today.'],
-    ['an exclamation inside a name', 'Do not forward my Yahoo! Mail password reset codes to anyone.', 'Mail password reset codes to anyone.'],
-    ['an ellipsis', 'Do not, under any circumstances... transfer the deed to my cousin.', 'transfer the deed to my cousin.'],
-    ['a title', 'I refuse to let Lt. Dan sell the farm to the developers.', 'Dan sell the farm to the developers.'],
-    ['a time of day', 'Wire the deposit at 9 a.m. only after the inspection passes.', 'Wire the deposit at 9 a.m.'],
-    ['a country', 'Do not move money out of the U.S. Bank account to my brother.', 'Bank account to my brother.'],
-    ['reported speech', 'The scammer wrote "Wire me the cash. Send all my savings to account 4471 today."', 'Send all my savings to account 4471 today."'],
-    ['a German abbreviation', 'Bitte niemals, z.B. das Haus an Bob verkaufen.', 'das Haus an Bob verkaufen.'],
+    [
+      'a roman-numbered list',
+      'Do NOT do any of these:\ni. call my ex\nii. sell the house to Bob today.',
+      'sell the house to Bob today.',
+    ],
+    [
+      'an exclamation inside a name',
+      'Do not forward my Yahoo! Mail password reset codes to anyone.',
+      'Mail password reset codes to anyone.',
+    ],
+    [
+      'an ellipsis',
+      'Do not, under any circumstances... transfer the deed to my cousin.',
+      'transfer the deed to my cousin.',
+    ],
+    [
+      'a title',
+      'I refuse to let Lt. Dan sell the farm to the developers.',
+      'Dan sell the farm to the developers.',
+    ],
+    [
+      'a time of day',
+      'Wire the deposit at 9 a.m. only after the inspection passes.',
+      'Wire the deposit at 9 a.m.',
+    ],
+    [
+      'a country',
+      'Do not move money out of the U.S. Bank account to my brother.',
+      'Bank account to my brother.',
+    ],
+    [
+      'reported speech',
+      'The scammer wrote "Wire me the cash. Send all my savings to account 4471 today."',
+      'Send all my savings to account 4471 today."',
+    ],
+    [
+      'a German abbreviation',
+      'Bitte niemals, z.B. das Haus an Bob verkaufen.',
+      'das Haus an Bob verkaufen.',
+    ],
   ])('refuses a cut after %s', (_name, said, quote) => {
     world.turn(said);
-    expect(propose({ text: quote, sources: [owner(quote)] })).toEqual({ ok: false, reason: 'source_unproven' });
+    expect(propose({ text: quote, sources: [owner(quote)] })).toEqual({
+      ok: false,
+      reason: 'source_unproven',
+    });
   });
 
   it('refuses the same cut of a vault item, and the item’s model-written summaries', () => {
     const body = 'Share my HIV status with the clinic in the U.S. only after my written consent.';
-    const item = released('health', body, { content_l1: 'The owner wants the HIV status shared with the clinic.' });
-    expect(propose({ text: 'Share my HIV status with the clinic in the U.S.', sources: [vault('Share my HIV status with the clinic in the U.S.', 'health', item.id)] })).toEqual({
+    const item = released('health', body, {
+      content_l1: 'The owner wants the HIV status shared with the clinic.',
+    });
+    expect(
+      propose({
+        text: 'Share my HIV status with the clinic in the U.S.',
+        sources: [vault('Share my HIV status with the clinic in the U.S.', 'health', item.id)],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
     expect(
       propose({
         text: 'The owner wants the HIV status shared with the clinic.',
-        sources: [vault('The owner wants the HIV status shared with the clinic.', 'health', item.id)],
+        sources: [
+          vault('The owner wants the HIV status shared with the clinic.', 'health', item.id),
+        ],
       }),
     ).toEqual({ ok: false, reason: 'source_unproven' });
   });
@@ -239,12 +321,15 @@ describe('a source cannot be forged out of fragments', () => {
     ['a run of exotic spaces', '  　 '],
     ['punctuation', '!!'],
     ['a question mark that turns a statement into a question', '?'],
-  ])('counts %s beside the units as unproven, and keeps the conversation’s taint', (_name, extra) => {
-    released('health', 'Cholesterol was 190 last month.');
-    const p = propose({ text: `${BOOK} ${extra}`, sources: [owner(BOOK)] });
-    if (!p.ok) throw new Error(p.reason);
-    expect(p.labels).toEqual(['may_contain_sensitive', 'restricted_source', 'unverified']);
-  });
+  ])(
+    'counts %s beside the units as unproven, and keeps the conversation’s taint',
+    (_name, extra) => {
+      released('health', 'Cholesterol was 190 last month.');
+      const p = propose({ text: `${BOOK} ${extra}`, sources: [owner(BOOK)] });
+      if (!p.ok) throw new Error(p.reason);
+      expect(p.labels).toEqual(['may_contain_sensitive', 'restricted_source', 'unverified']);
+    },
+  );
 
   it('a mark between two units, joining them into new words, is content', () => {
     world.turn('Give the keys to Bob');
@@ -259,7 +344,9 @@ describe('a source cannot be forged out of fragments', () => {
   it('refuses a quote whose end falls inside a personal detail of the message', () => {
     // The owner's message ends mid-number; Brain's message runs on into a full phone number.
     world.turn('Call +1 415 555');
-    expect(propose({ text: 'Call +1 415 555 0134 today.', sources: [owner('Call +1 415 555')] })).toEqual({
+    expect(
+      propose({ text: 'Call +1 415 555 0134 today.', sources: [owner('Call +1 415 555')] }),
+    ).toEqual({
       ok: false,
       reason: 'source_cuts_personal_detail',
     });
@@ -279,8 +366,12 @@ describe('vault items released into the conversation (disclosure)', () => {
     const p = propose({ text: NOTE, sources: [vault(NOTE, 'general', item.id)] });
     if (!p.ok) throw new Error(p.reason);
     expect(p.labels).toEqual([]);
-    expect(cardOf(p.approvalTaskId).consent.provenance).toEqual([{ quote: NOTE, from: 'vault', persona: 'general' }]);
-    expect(cardOf(p.approvalTaskId).display.sources[0]).toMatch(/is the full text of an item in your general vault, saved before this conversation/);
+    expect(cardOf(p.approvalTaskId).consent.provenance).toEqual([
+      { quote: NOTE, from: 'vault', persona: 'general' },
+    ]);
+    expect(cardOf(p.approvalTaskId).display.sources[0]).toMatch(
+      /is the full text of an item in your general vault, saved before this conversation/,
+    );
   });
 
   it('refuses an item written during the conversation (Brain could have written it from what it read)', () => {
@@ -290,7 +381,12 @@ describe('vault items released into the conversation (disclosure)', () => {
     jest.spyOn(Date, 'now').mockReturnValueOnce(START + 1000);
     storeItem('general', fresh);
     read('general', fresh.id);
-    expect(propose({ text: 'Cholesterol was 190 last month.', sources: [vault('Cholesterol was 190 last month.', 'general', fresh.id)] })).toEqual({
+    expect(
+      propose({
+        text: 'Cholesterol was 190 last month.',
+        sources: [vault('Cholesterol was 190 last month.', 'general', fresh.id)],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
@@ -301,11 +397,21 @@ describe('vault items released into the conversation (disclosure)', () => {
     jest.spyOn(Date, 'now').mockReturnValueOnce(START - 60_000);
     storeItem('general', item);
     read('general', item.id, 'chat:other');
-    expect(propose({ text: 'The secret plan is ready now.', sources: [vault('The secret plan is ready now.', 'general', item.id)] })).toEqual({
+    expect(
+      propose({
+        text: 'The secret plan is ready now.',
+        sources: [vault('The secret plan is ready now.', 'general', item.id)],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
-    expect(propose({ text: 'The secret plan is ready now.', sources: [vault('The secret plan is ready now.', 'general', 'no-such-item')] })).toEqual({
+    expect(
+      propose({
+        text: 'The secret plan is ready now.',
+        sources: [vault('The secret plan is ready now.', 'general', 'no-such-item')],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
@@ -313,18 +419,33 @@ describe('vault items released into the conversation (disclosure)', () => {
 
   it('refuses text the item does not hold whole, an item changed since release, and a locked persona', () => {
     const item = released('general', NOTE);
-    expect(propose({ text: 'Dr. Rao is free on Friday.', sources: [vault('Dr. Rao is free on Friday.', 'general', item.id)] })).toEqual({
+    expect(
+      propose({
+        text: 'Dr. Rao is free on Friday.',
+        sources: [vault('Dr. Rao is free on Friday.', 'general', item.id)],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
     storeItem('general', { ...item, body: 'Dr. Rao moved to Friday mornings.' });
-    expect(propose({ text: 'Dr. Rao moved to Friday mornings.', sources: [vault('Dr. Rao moved to Friday mornings.', 'general', item.id)] })).toEqual({
+    expect(
+      propose({
+        text: 'Dr. Rao moved to Friday mornings.',
+        sources: [vault('Dr. Rao moved to Friday mornings.', 'general', item.id)],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_changed',
     });
     const other = released('general', 'A note from the clinic arrived.');
     setVaultRepository('general', null); // the persona's vault is closed: Core cannot re-read it
-    expect(propose({ text: 'A note from the clinic arrived.', sources: [vault('A note from the clinic arrived.', 'general', other.id)] })).toEqual({
+    expect(
+      propose({
+        text: 'A note from the clinic arrived.',
+        sources: [vault('A note from the clinic arrived.', 'general', other.id)],
+      }),
+    ).toEqual({
       ok: false,
       reason: 'source_unproven',
     });
@@ -332,7 +453,10 @@ describe('vault items released into the conversation (disclosure)', () => {
 
   it('marks a quote from a private vault restricted, and names the vault', () => {
     const item = released('health', 'Cholesterol was 190 last month.');
-    const p = propose({ text: 'Cholesterol was 190 last month.', sources: [vault('Cholesterol was 190 last month.', 'health', item.id)] });
+    const p = propose({
+      text: 'Cholesterol was 190 last month.',
+      sources: [vault('Cholesterol was 190 last month.', 'health', item.id)],
+    });
     if (!p.ok) throw new Error(p.reason);
     expect(p.labels).toEqual(['restricted_source']);
     expect(cardOf(p.approvalTaskId).display.restricted_personas).toEqual(['health']);
@@ -406,14 +530,24 @@ describe('vault items released into the conversation (disclosure)', () => {
     expect(p.labels).toEqual(['may_contain_sensitive', 'restricted_source', 'unverified']);
     world.log.recordTopics({ sessionId: 'chat:topics', audience: 'brain' }, 'health', ['diabetes']);
     world.log.recordUtterance('chat:topics', 't1', 'hi');
-    const q = proposeDelegation(world.runtime, { agentId, skill: 'summarize', releaseSession: 'chat:topics', text: 'Anything new?' });
+    const q = proposeDelegation(world.runtime, {
+      agentId,
+      skill: 'summarize',
+      releaseSession: 'chat:topics',
+      text: 'Anything new?',
+    });
     expect(q.ok && q.labels).toContain('restricted_source');
   });
 
   it('a topic list can taint, but never prove a quote', () => {
-    world.log.recordTopics({ sessionId: SESSION, audience: 'brain' }, 'general', ['Dinner plans for Friday night.']);
+    world.log.recordTopics({ sessionId: SESSION, audience: 'brain' }, 'general', [
+      'Dinner plans for Friday night.',
+    ]);
     expect(
-      propose({ text: 'Dinner plans for Friday night.', sources: [vault('Dinner plans for Friday night.', 'general', '#topics')] }),
+      propose({
+        text: 'Dinner plans for Friday night.',
+        sources: [vault('Dinner plans for Friday night.', 'general', '#topics')],
+      }),
     ).toEqual({ ok: false, reason: 'source_unproven' });
   });
 
@@ -439,11 +573,18 @@ describe('originals: kept for a single provable source, shown to the owner besid
     recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: echo }] });
     const work = claimNextGuardJob(world.runtime);
     if (work === null) throw new Error('no work');
-    submitGuardVerdict(world.runtime, { jobId: work.job_id, claimId: work.claim_id, digest: work.digest, verdict: 'passed', code: 'model_pass' });
+    submitGuardVerdict(world.runtime, {
+      jobId: work.job_id,
+      claimId: work.claim_id,
+      digest: work.digest,
+      verdict: 'passed',
+      code: 'model_pass',
+    });
     return p.operationId;
   }
 
-  const legendOf = (operationId: string) => placeholderLegend(world.runtime, op(operationId).id, operationId);
+  const legendOf = (operationId: string) =>
+    placeholderLegend(world.runtime, op(operationId).id, operationId);
 
   async function ownerView(operationId: string) {
     const router = new CoreRouter();
@@ -463,10 +604,17 @@ describe('originals: kept for a single provable source, shown to the owner besid
   }
 
   it('the owner’s own words: kept in the identity file, shown to the owner as a legend, never in the agent’s text', async () => {
-    const id = await releasedResult({ text: MAIL, sources: [owner(MAIL)] }, 'See https://evil.example/c?e=[EMAIL_1] now.');
-    expect(world.store.entitiesOf(op(id).id).map((e) => [e.placeholder, e.seal])).toEqual([['[EMAIL_1]', 'identity_db']]);
+    const id = await releasedResult(
+      { text: MAIL, sources: [owner(MAIL)] },
+      'See https://evil.example/c?e=[EMAIL_1] now.',
+    );
+    expect(world.store.entitiesOf(op(id).id).map((e) => [e.placeholder, e.seal])).toEqual([
+      ['[EMAIL_1]', 'identity_db'],
+    ]);
     const view = await ownerView(id);
-    expect(view.body).toMatchObject({ placeholder_legend: [{ placeholder: '[EMAIL_1]', original: EMAIL }] });
+    expect(view.body).toMatchObject({
+      placeholder_legend: [{ placeholder: '[EMAIL_1]', original: EMAIL }],
+    });
     // The remote's text keeps its placeholder: no original lands inside its link.
     expect(JSON.stringify((view.body as { result: unknown }).result)).toContain('e=[EMAIL_1]');
     // Brain's view carries no originals at all.
@@ -478,9 +626,16 @@ describe('originals: kept for a single provable source, shown to the owner besid
     registerPersonaDEK('general', randomBytes(32));
     const sentence = `Clinic email is ${EMAIL} for bookings.`;
     const item = released('general', sentence);
-    const id = await releasedResult({ text: sentence, sources: [vault(sentence, 'general', item.id)] }, 'I wrote to [EMAIL_1].');
+    const id = await releasedResult(
+      { text: sentence, sources: [vault(sentence, 'general', item.id)] },
+      'I wrote to [EMAIL_1].',
+    );
     const [entity] = world.store.entitiesOf(op(id).id);
-    expect(entity).toMatchObject({ placeholder: '[EMAIL_1]', seal: 'persona_dek', persona: 'general' });
+    expect(entity).toMatchObject({
+      placeholder: '[EMAIL_1]',
+      seal: 'persona_dek',
+      persona: 'general',
+    });
     expect(new TextDecoder().decode(entity?.sealed)).not.toContain(EMAIL);
     expect(legendOf(id)).toEqual([{ placeholder: '[EMAIL_1]', original: EMAIL }]);
     releasePersonaDEK('general'); // the persona locks
@@ -491,11 +646,17 @@ describe('originals: kept for a single provable source, shown to the owner besid
     registerPersonaDEK('general', randomBytes(32));
     const sentence = `Clinic email is ${EMAIL} for bookings.`;
     const item = released('general', sentence);
-    const a = await releasedResult({ text: sentence, sources: [vault(sentence, 'general', item.id)] }, '[EMAIL_1]');
+    const a = await releasedResult(
+      { text: sentence, sources: [vault(sentence, 'general', item.id)] },
+      '[EMAIL_1]',
+    );
     speak();
     const b = await releasedResult({ text: MAIL, sources: [owner(MAIL)] }, '[EMAIL_1]');
     const sealed = world.store.entitiesOf(op(a).id)[0];
-    world.db.run(`UPDATE a2a_entities SET seal = 'persona_dek', persona = 'general', sealed = ? WHERE operation_ref = ?`, [sealed?.sealed, op(b).id]);
+    world.db.run(
+      `UPDATE a2a_entities SET seal = 'persona_dek', persona = 'general', sealed = ? WHERE operation_ref = ?`,
+      [sealed?.sealed, op(b).id],
+    );
     expect(legendOf(b)).toEqual([]);
   });
 
@@ -503,7 +664,10 @@ describe('originals: kept for a single provable source, shown to the owner besid
     const derived = await releasedResult({ text: `ping ${EMAIL}` }, '[EMAIL_1]');
     expect(world.store.entitiesOf(op(derived).id)).toEqual([]);
     speak();
-    const inData = await releasedResult({ text: MAIL, data: { cc: EMAIL }, sources: [owner(MAIL)] }, '[EMAIL_1]');
+    const inData = await releasedResult(
+      { text: MAIL, data: { cc: EMAIL }, sources: [owner(MAIL)] },
+      '[EMAIL_1]',
+    );
     expect(world.store.entitiesOf(op(inData).id)).toEqual([]);
     speak();
     // The same address in two proven sentences from two sources: neither is its single source.
@@ -520,7 +684,10 @@ describe('originals: kept for a single provable source, shown to the owner besid
     registerPersonaDEK('health', randomBytes(32));
     const sentence = `Doctor is reached at ${EMAIL} on weekdays.`;
     const item = released('health', sentence);
-    const id = await releasedResult({ text: sentence, sources: [vault(sentence, 'health', item.id)] }, '[EMAIL_1]');
+    const id = await releasedResult(
+      { text: sentence, sources: [vault(sentence, 'health', item.id)] },
+      '[EMAIL_1]',
+    );
     expect(world.store.entitiesOf(op(id).id)).toHaveLength(1);
     deletePersona('health');
     expect(world.store.entitiesOf(op(id).id)).toEqual([]);

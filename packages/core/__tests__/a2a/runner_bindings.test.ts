@@ -11,7 +11,12 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { bindRunner, liveRunnerBinding, listRunnerBindings, unbindRunner } from '../../src/a2a/runner_bindings';
+import {
+  bindRunner,
+  liveRunnerBinding,
+  listRunnerBindings,
+  unbindRunner,
+} from '../../src/a2a/runner_bindings';
 import { A2AStore } from '../../src/a2a/store';
 import { registerDevice, resetDeviceRegistry, revokeDevice } from '../../src/devices/registry';
 import { SQLiteServiceConfigRepository } from '../../src/service/service_config_repository';
@@ -26,7 +31,12 @@ let store: A2AStore;
 beforeEach(() => {
   resetDeviceRegistry();
   dir = mkdtempSync(path.join(tmpdir(), 'a2a-runner-bindings-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'aa'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: 'aa'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   store = new A2AStore(db);
 });
@@ -37,12 +47,18 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const revision = (rkey: string) => db.query<{ revision: number }>('SELECT revision FROM service_configs WHERE rkey = ?', [rkey])[0]?.revision;
+const revision = (rkey: string) =>
+  db.query<{ revision: number }>('SELECT revision FROM service_configs WHERE rkey = ?', [rkey])[0]
+    ?.revision;
 
 async function listings() {
   const repo = new SQLiteServiceConfigRepository(db);
   const listing = (mcpServer: string) =>
-    JSON.stringify({ isDiscoverable: true, name: 'S', capabilities: { eta_query: { mcpServer, mcpTool: 'get_eta', responsePolicy: 'auto' } } });
+    JSON.stringify({
+      isDiscoverable: true,
+      name: 'S',
+      capabilities: { eta_query: { mcpServer, mcpTool: 'get_eta', responsePolicy: 'auto' } },
+    });
   await repo.put('uses-transit', listing('transit'), 1);
   await repo.put('uses-other', listing('other'), 1);
 }
@@ -74,7 +90,10 @@ describe('runner bindings', () => {
     const phone = registerDevice('Phone', 'z6MkPhone', 'rich');
     const coder = registerDevice('Coder', 'z6MkCoder', 'agent', 'coding');
     for (const did of [phone.did, coder.did, 'did:key:z6MkNobody']) {
-      expect(bindRunner(store, { lane: 'transit', device_did: did }, NOW)).toEqual({ ok: false, reason: 'device_not_runner' });
+      expect(bindRunner(store, { lane: 'transit', device_did: did }, NOW)).toEqual({
+        ok: false,
+        reason: 'device_not_runner',
+      });
     }
   });
 

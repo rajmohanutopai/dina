@@ -31,7 +31,11 @@ import {
   type ModelChange,
 } from '../../commitment/model_changes';
 import { getValueModelStore } from '../../commitment/model_store';
-import { getStandingChoiceStore, SAVING_SHARE_BPS, shareBpsOf } from '../../commitment/standing_choices';
+import {
+  getStandingChoiceStore,
+  SAVING_SHARE_BPS,
+  shareBpsOf,
+} from '../../commitment/standing_choices';
 import { getStrategyStore } from '../../commitment/strategy_store';
 import { getWorkflowService } from '../../workflow/service';
 
@@ -128,7 +132,10 @@ export function registerCommitmentBrainRoutes(
     const models = await getValueModelStore();
     if (strategies === null || choices === null || models === null) return NO_STORE;
     if (strategies.settings('goods.seller').strategy !== 'brain')
-      return { status: 409, body: { error: 'not_brain', detail: 'the owner has not chosen Brain for selling goods' } };
+      return {
+        status: 409,
+        body: { error: 'not_brain', detail: 'the owner has not chosen Brain for selling goods' },
+      };
     const nowMs = now();
     const charged = strategies.charge({
       kind: 'goods.seller',

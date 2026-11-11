@@ -44,6 +44,7 @@ import {
   buildBuyerApprovalPayload,
   type BuyerApprovalContext,
 } from '../../src/commerce/approval_payload';
+import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 import { submitApprovedOrder } from '../../src/commerce/buyer_executor';
 import { describeOrderForOwner } from '../../src/commerce/buyer_reconciliation';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
@@ -80,7 +81,6 @@ import {
 
 import type { CommerceRuntime } from '../../src/commerce/runtime';
 import type { PurchaseOrderProposal } from '@dina/commerce-protocol';
-import { singleOwnerAuthority } from '../../src/commerce/buyer_authority';
 
 /** The owner this node acts for. §7.3: one grant, evaluated like any other. */
 const TEST_OWNER_DID = 'did:plc:testowner00000000';
@@ -286,7 +286,7 @@ function chairmakerQuotes(): ReturnType<typeof makeSignedQuote> {
  * A module const would capture `buyerPack` before `beforeEach` assigns it.
  */
 function buildContext(): BuyerApprovalContext {
-    return {
+  return {
     actingBusinessDid: BUYER_DID,
     principal: {
       principalDid: 'did:plc:sanchoowner',
@@ -410,7 +410,7 @@ async function sanchoOrders(
         // acknowledgement comes back separately, which is the whole point.
         return { kind: 'ambiguous', reason: 'sent; awaiting the supplier acknowledgement' };
       },
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({
@@ -437,7 +437,6 @@ function order(): PurchaseOrderProposal {
   return cachedOrder;
 }
 const poId = (): string => order().purchase_order_id;
-
 
 // The HYPHENATED id the reference pack actually publishes. The underscore
 // spelling is the wire capability; C7-03's canonicaliser is what makes the two

@@ -787,7 +787,9 @@ describe("the owner's supplier list (HOSTED_DINA §6)", () => {
 
   it('lets a new Dina with no orders or tenders draft against suppliers the owner added', async () => {
     expect((await draft()).body).toEqual({ error: 'no_known_suppliers' });
-    expect((await add({ supplier_did: SUPPLIER_A, service_rkey: 'self', label: 'Rosa' })).status).toBe(200);
+    expect(
+      (await add({ supplier_did: SUPPLIER_A, service_rkey: 'self', label: 'Rosa' })).status,
+    ).toBe(200);
 
     const res = await draft();
     expect(res.status).toBe(200);
@@ -837,7 +839,9 @@ describe("the owner's supplier list (HOSTED_DINA §6)", () => {
   it('checks what the owner typed, replaces an entry, and removes one', async () => {
     expect((await add({ supplier_did: 'rosa', service_rkey: 'self' })).status).toBe(400);
     expect((await add({ supplier_did: SUPPLIER_A, service_rkey: 'has space' })).status).toBe(400);
-    expect((await add({ supplier_did: SUPPLIER_A, service_rkey: 'self', label: 'x'.repeat(81) })).status).toBe(400);
+    expect(
+      (await add({ supplier_did: SUPPLIER_A, service_rkey: 'self', label: 'x'.repeat(81) })).status,
+    ).toBe(400);
     await add({ supplier_did: SUPPLIER_A, service_rkey: 'self' });
     await add({ supplier_did: SUPPLIER_A, service_rkey: 'shop' });
     expect(runtime.ownerSuppliers.list()).toEqual([
@@ -892,7 +896,9 @@ describe('opening a draft twice at once (code review round 1)', () => {
     await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const dismissDuring = (async () => {
       await Promise.resolve();
-      return router.handle(owner('POST', '/v1/commerce/trade/tender-drafts/dismiss', { draft_id: id }));
+      return router.handle(
+        owner('POST', '/v1/commerce/trade/tender-drafts/dismiss', { draft_id: id }),
+      );
     })();
     const [a, b, d] = await Promise.all([openDraft(id), openDraft(id), dismissDuring]);
     const statuses = [a.status, b.status].sort();
@@ -941,7 +947,10 @@ describe('a crash while a draft opens (COM-4)', () => {
     const second = await openDraft(id);
     expect(second.status).toBe(200);
     expect(second.body.tender_id).toBe(first?.tenderId);
-    expect(runtime.tenderDrafts.get(id)).toMatchObject({ state: 'opened', tenderId: first?.tenderId });
+    expect(runtime.tenderDrafts.get(id)).toMatchObject({
+      state: 'opened',
+      tenderId: first?.tenderId,
+    });
     expect(runtime.tenders.listTenders()).toHaveLength(tendersBefore + 1);
     expect(requests()).toEqual([SUPPLIER_A, SUPPLIER_B]);
   });
@@ -964,10 +973,12 @@ describe('a crash while a draft opens (COM-4)', () => {
     expect(second.status).toBe(200);
     expect(requests()).toEqual([SUPPLIER_A, SUPPLIER_B]);
     const tenderId = String(second.body.tender_id);
-    expect(runtime.tenders.listMembers(tenderId).map((m) => m.supplierDid).sort()).toEqual([
-      SUPPLIER_A,
-      SUPPLIER_B,
-    ]);
+    expect(
+      runtime.tenders
+        .listMembers(tenderId)
+        .map((m) => m.supplierDid)
+        .sort(),
+    ).toEqual([SUPPLIER_A, SUPPLIER_B]);
     // The tender closes when its first requests do, not from the second try.
     expect(runtime.tenders.getTender(tenderId)?.expiresAt).toBeGreaterThan(Date.now());
   });

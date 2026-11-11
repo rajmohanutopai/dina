@@ -30,7 +30,11 @@ function riskRank(v: string): number {
 }
 
 /** Stable delegation id (§6.3): H(run_id, message_id, decision_revision). */
-export function deriveDelegationId(runId: string, messageId: string, decisionRevision: number): string {
+export function deriveDelegationId(
+  runId: string,
+  messageId: string,
+  decisionRevision: number,
+): string {
   const bytes = new TextEncoder().encode(`${runId}\n${messageId}\n${decisionRevision}`);
   return `del-${bytesToHex(sha256(bytes)).slice(0, 32)}`;
 }
@@ -86,7 +90,8 @@ export class RunDispatchService {
    */
   evaluateRisk(messageId: string): RiskOutcome {
     const msg = this.messages.getById(messageId);
-    if (msg === null || msg.state !== 'approved') return { state: 'policy_refused', reason: 'not_approved' };
+    if (msg === null || msg.state !== 'approved')
+      return { state: 'policy_refused', reason: 'not_approved' };
     const run = this.runs.getById(msg.run_id);
     if (run === null) return { state: 'policy_refused', reason: 'not_approved' };
     const nowMs = this.now();
@@ -209,7 +214,9 @@ export class RunDispatchService {
       if (e !== CLAIM_ABORT) throw e;
       claimed = false;
     }
-    return claimed ? { claimed: true, delegation_id: delegationId } : { claimed: false, reason: 'guard_failed' };
+    return claimed
+      ? { claimed: true, delegation_id: delegationId }
+      : { claimed: false, reason: 'guard_failed' };
   }
 
   /** Mark a claimed delegation as physically sent (sending → dispatched). */

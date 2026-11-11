@@ -136,7 +136,11 @@ function compose(): Composed {
     // Test verifier: accept the completion so an action can advance to completed.
     verifyReceipt: () => true,
     // Minimal Core-owned classify-view builder (real boots decrypt the payload).
-    buildClassificationView: (m) => ({ title: `run:${m.run_id}`, body: '', content_digest: m.dedup_key }),
+    buildClassificationView: (m) => ({
+      title: `run:${m.run_id}`,
+      body: '',
+      content_digest: m.dedup_key,
+    }),
     nowMsFn: now,
   });
 
@@ -244,7 +248,12 @@ describe('wireRunPlane — live loop composition (ISVC-10)', () => {
 
     // Owner approves (classified → approved).
     expect(
-      c.messages.decide(msg.message_id, 'approve', (afterIngest?.decision_revision ?? 0) + 1, c.now()),
+      c.messages.decide(
+        msg.message_id,
+        'approve',
+        (afterIngest?.decision_revision ?? 0) + 1,
+        c.now(),
+      ),
     ).toBe(true);
 
     // First dispatch tick: the risk gate runs. The provider does NOT sign

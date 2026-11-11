@@ -18,10 +18,7 @@
  * log is advisory and must never break the prompt UX, so every write is guarded.
  */
 
-import {
-  getServiceDecisionRepository,
-  type ServiceDecisionOutcome,
-} from '@dina/core/storage';
+import { getServiceDecisionRepository, type ServiceDecisionOutcome } from '@dina/core/storage';
 
 function record(
   requesterDid: string,

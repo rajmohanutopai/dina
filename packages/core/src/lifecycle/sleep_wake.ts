@@ -14,9 +14,9 @@
 
 export type AppState = 'active' | 'background' | 'background_expired' | 'killed';
 
+import { clearOwnerPresence } from '../commerce/owner_presence';
 import { DEFAULT_BACKGROUND_TIMEOUT_S as BG_TIMEOUT_S } from '../constants';
 
-import { clearOwnerPresence } from '../commerce/owner_presence';
 const DEFAULT_BACKGROUND_TIMEOUT_S = BG_TIMEOUT_S;
 
 /** Module-level lifecycle state. */

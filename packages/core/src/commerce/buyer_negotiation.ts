@@ -33,7 +33,12 @@ import {
 } from '@dina/commerce-protocol';
 
 import { appendAudit } from '../audit/service';
-import { meetsHardLimits, type NeverCondition, type NumberPartSpec, type ValueModel } from '../commitment';
+import {
+  meetsHardLimits,
+  type NeverCondition,
+  type NumberPartSpec,
+  type ValueModel,
+} from '../commitment';
 import { getValueModelStore } from '../commitment/model_store';
 import { getOwnerTimeZone, ownerTimeZoneNow } from '../settings/owner_settings';
 import { WorkflowTaskKind, WorkflowTaskState } from '../workflow/domain';
@@ -519,7 +524,11 @@ export function rankTender(args: {
     // over the ceiling is not offered; the quote is excluded only when every
     // version is.
     const versions = [
-      { id: undefined as string | undefined, total: head.total, deliveryAt: head.estimated_delivery_at },
+      {
+        id: undefined as string | undefined,
+        total: head.total,
+        deliveryAt: head.estimated_delivery_at,
+      },
       ...(head.alternatives ?? []).map((alt) => ({
         id: alt.alternative_id as string | undefined,
         total: alt.total,
@@ -549,7 +558,12 @@ export function rankTender(args: {
       // hard limit on the total, checked by the kernel's own rule.
       if (
         ceiling !== null &&
-        !meetsHardLimits(BUYER_TOTAL_PART, 'buyer', { total }, { total: { hard: ceiling, auto: ceiling } })
+        !meetsHardLimits(
+          BUYER_TOTAL_PART,
+          'buyer',
+          { total },
+          { total: { hard: ceiling, auto: ceiling } },
+        )
       )
         continue;
       const creditDays = head.payment_terms?.credit_days ?? 0;
@@ -575,7 +589,9 @@ export function rankTender(args: {
                   ? { fallback_delivery_at: head.estimated_delivery_at }
                   : {}),
                 // §15 step 12: and the buyer may cancel without charge instead.
-                ...('exitRight' in version && version.exitRight ? { exit_if_run_fails: true as const } : {}),
+                ...('exitRight' in version && version.exitRight
+                  ? { exit_if_run_fails: true as const }
+                  : {}),
               },
             }
           : {}),
@@ -873,8 +889,7 @@ function markReady(
   const ranked = ranking.ok ? ranking.ranking.ranked : [];
   // Offers are counted by supplier: one supplier's several versions are one offer.
   const suppliers = new Set(ranked.map((r) => r.supplier_did)).size;
-  const ruledOut =
-    ranking.ok && ranking.ranking.excluded.some((e) => e.reason === 'ruled_out');
+  const ruledOut = ranking.ok && ranking.ranking.excluded.some((e) => e.reason === 'ruled_out');
   appendAudit(
     'negotiation',
     'tender_ready',
@@ -1133,7 +1148,8 @@ let goodsBuyerModel: ValueModel | null = null;
 export async function refreshGoodsBuyerModel(): Promise<void> {
   try {
     const store = await getValueModelStore();
-    goodsBuyerModel = store === null ? null : store.load('goods.buyer', ['delivery_day', 'total']).model;
+    goodsBuyerModel =
+      store === null ? null : store.load('goods.buyer', ['delivery_day', 'total']).model;
     await getOwnerTimeZone(); // refreshes the zone ownerTimeZoneNow() reads
   } catch {
     goodsBuyerModel = null;

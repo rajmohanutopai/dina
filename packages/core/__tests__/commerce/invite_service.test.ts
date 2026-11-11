@@ -175,7 +175,12 @@ describe('the four messages, end to end', () => {
     expect(h.redeemer.contacts.has(INVITER)).toBe(true);
     expect(h.inviter.grants).toHaveLength(0);
     expect(h.redeemer.grants).toEqual([
-      { granteeDid: INVITER, serviceRkeys: ['veg-stall'], capabilities: CAPS, inviteNonce: minted.value.offer.nonce },
+      {
+        granteeDid: INVITER,
+        serviceRkeys: ['veg-stall'],
+        capabilities: CAPS,
+        inviteNonce: minted.value.offer.nonce,
+      },
     ]);
   });
 
@@ -191,7 +196,12 @@ describe('the four messages, end to end', () => {
     await h.pump();
     expect(h.redeemer.grants).toHaveLength(0);
     expect(h.inviter.grants).toEqual([
-      { granteeDid: REDEEMER, serviceRkeys: RKEYS, capabilities: CAPS, inviteNonce: minted.value.offer.nonce },
+      {
+        granteeDid: REDEEMER,
+        serviceRkeys: RKEYS,
+        capabilities: CAPS,
+        inviteNonce: minted.value.offer.nonce,
+      },
     ]);
   });
 
@@ -278,7 +288,8 @@ describe('loss and replay', () => {
       const args = { senderDid: msg.from, body: (msg.body as { document: unknown }).document };
       if (msg.body.kind === 'redemption') await node.service.applyInboundRedemption(args);
       else if (msg.body.kind === 'confirmation') await node.service.applyInboundConfirmation(args);
-      else if (msg.body.kind === 'activation_ack') await node.service.applyInboundActivationAck(args);
+      else if (msg.body.kind === 'activation_ack')
+        await node.service.applyInboundActivationAck(args);
     }
     const row = h.redeemer.repo.get(minted.value.offer.nonce);
     expect(row?.state).toBe('active');
@@ -308,7 +319,8 @@ describe('loss and replay', () => {
       const args = { senderDid: msg.from, body: (msg.body as { document: unknown }).document };
       if (msg.body.kind === 'redemption') await node.service.applyInboundRedemption(args);
       else if (msg.body.kind === 'confirmation') await node.service.applyInboundConfirmation(args);
-      else if (msg.body.kind === 'activation_ack') await node.service.applyInboundActivationAck(args);
+      else if (msg.body.kind === 'activation_ack')
+        await node.service.applyInboundActivationAck(args);
     }
     h.clock.now = T0 + 5_000;
     h.redeemer.service.noteAuthenticatedInbound(INVITER);
@@ -462,7 +474,8 @@ describe('two-sided revocation', () => {
       const args = { senderDid: msg.from, body: (msg.body as { document: unknown }).document };
       if (msg.body.kind === 'redemption') await node.service.applyInboundRedemption(args);
       else if (msg.body.kind === 'confirmation') await node.service.applyInboundConfirmation(args);
-      else if (msg.body.kind === 'activation_ack') await node.service.applyInboundActivationAck(args);
+      else if (msg.body.kind === 'activation_ack')
+        await node.service.applyInboundActivationAck(args);
     }
     // Inside the window: re-send, never teardown.
     h.clock.now = T0 + ACTIVATION_PROOF_WINDOW_MS - 1;
@@ -627,7 +640,12 @@ describe('cold invites (§8 second half)', () => {
     });
     if (!first.ok || !second.ok) throw new Error('mint failed');
     expect(
-      (await h.redeemer.service.applyInboundColdOffer({ senderDid: INVITER, body: first.value.offer })).ok,
+      (
+        await h.redeemer.service.applyInboundColdOffer({
+          senderDid: INVITER,
+          body: first.value.offer,
+        })
+      ).ok,
     ).toBe(true);
     const throttled = await h.redeemer.service.applyInboundColdOffer({
       senderDid: INVITER,
@@ -718,7 +736,12 @@ describe('the pasted code meets its own cold offer (§8 both-lanes delivery)', (
     if (!minted.ok) throw new Error(minted.refusal);
     // The offer arrives COLD first (relay beat the WhatsApp paste).
     expect(
-      (await h.redeemer.service.applyInboundColdOffer({ senderDid: INVITER, body: minted.value.offer })).ok,
+      (
+        await h.redeemer.service.applyInboundColdOffer({
+          senderDid: INVITER,
+          body: minted.value.offer,
+        })
+      ).ok,
     ).toBe(true);
     expect(h.redeemer.repo.get(minted.value.offer.nonce)?.state).toBe('held');
     // The paste IS consent: the ceremony continues at step 2.
@@ -740,7 +763,12 @@ describe('the pasted code meets its own cold offer (§8 both-lanes delivery)', (
     });
     if (!minted.ok) throw new Error(minted.refusal);
     expect(
-      (await h.redeemer.service.applyInboundColdOffer({ senderDid: INVITER, body: minted.value.offer })).ok,
+      (
+        await h.redeemer.service.applyInboundColdOffer({
+          senderDid: INVITER,
+          body: minted.value.offer,
+        })
+      ).ok,
     ).toBe(true);
     // Same nonce, different grant, freshly re-signed WITH the inviter
     // key (the strongest forger): the held bytes still win.
@@ -750,7 +778,9 @@ describe('the pasted code meets its own cold offer (§8 both-lanes delivery)', (
     const forged = {
       ...widened,
       offer_digest: digest,
-      inviter_signature: Buffer.from(ed25519.sign(inviteOfferSigningBytes(digest), inviterPriv)).toString('hex'),
+      inviter_signature: Buffer.from(
+        ed25519.sign(inviteOfferSigningBytes(digest), inviterPriv),
+      ).toString('hex'),
     } as InviteOffer;
     const outcome = await h.redeemer.service.redeemCode({
       code: encodeInviteCode(forged),
@@ -789,7 +819,10 @@ describe('cold-invite guardrails the first pass left unpinned', () => {
       capabilities: CAPS,
     });
     if (!minted.ok) throw new Error(minted.refusal);
-    const refused = await service.applyInboundColdOffer({ senderDid: INVITER, body: minted.value.offer });
+    const refused = await service.applyInboundColdOffer({
+      senderDid: INVITER,
+      body: minted.value.offer,
+    });
     expect(refused.ok).toBe(false);
     expect(cards).toHaveLength(0);
     expect(repo.list()).toHaveLength(0);
@@ -844,7 +877,9 @@ describe('cold-invite guardrails the first pass left unpinned', () => {
     };
     for (let i = 0; i < 16; i += 1) {
       const sender = `did:plc:stranger${String(i).padStart(17, '0')}`;
-      expect((await service.applyInboundColdOffer({ senderDid: sender, body: offerFrom(sender) })).ok).toBe(true);
+      expect(
+        (await service.applyInboundColdOffer({ senderDid: sender, body: offerFrom(sender) })).ok,
+      ).toBe(true);
     }
     const seventeenth = 'did:plc:stranger00000000000000016';
     const overflow = await service.applyInboundColdOffer({

@@ -10,8 +10,8 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '../../../storage-node/src/index';
 import { queryAudit } from '../../src/audit/service';
-import { SQLiteContactRepository, setContactRepository } from '../../src/contacts/repository';
 import { deleteContact } from '../../src/contacts/directory';
+import { SQLiteContactRepository, setContactRepository } from '../../src/contacts/repository';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealDecryptWithScheme, sealEncrypt } from '../../src/crypto/nacl';
 import { sealMessage } from '../../src/d2d/envelope';
@@ -38,16 +38,16 @@ import { resetConnectionState, wakeRelay } from '../../src/relay/msgbox_ws';
 import { CoreRouter } from '../../src/server/router';
 import { registerD2DQuarantineRoutes } from '../../src/server/routes/d2d_quarantine';
 import { registerPairRoutes } from '../../src/server/routes/pair';
-import {
-  requesterWindow,
-  resetServiceWindows,
-  setProviderWindow,
-} from '../../src/service/windows';
+import { requesterWindow, resetServiceWindows, setProviderWindow } from '../../src/service/windows';
 import { SQLiteStagingRepository, setStagingRepository } from '../../src/staging/repository';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { clearReplayCache, isReplayedMessage } from '../../src/transport/adversarial';
-import { resetDeliveryDeps, setDeliveryFetchFn, setWSDeliverFn } from '../../src/transport/delivery';
+import {
+  resetDeliveryDeps,
+  setDeliveryFetchFn,
+  setWSDeliverFn,
+} from '../../src/transport/delivery';
 import {
   claimDue,
   enqueueD2D,
@@ -55,7 +55,10 @@ import {
   outboxCount,
   sweepTerminal,
 } from '../../src/transport/outbox';
-import { SQLiteD2DOutboxRepository, setD2DOutboxRepository } from '../../src/transport/outbox_repository';
+import {
+  SQLiteD2DOutboxRepository,
+  setD2DOutboxRepository,
+} from '../../src/transport/outbox_repository';
 import {
   drainOutbox,
   recoverOutboxOnBoot,
@@ -117,13 +120,24 @@ const senderKey = new Uint8Array(randomBytes(32));
 const nodePub = getPublicKey(nodeKey);
 const senderPub = getPublicKey(senderKey);
 
-function envelope(id: string, signingKey = senderKey, type = 'social.update', body = '{"text":"hello"}') {
+function envelope(
+  id: string,
+  signingKey = senderKey,
+  type = 'social.update',
+  body = '{"text":"hello"}',
+) {
   const payload = sealMessage(
     { id, type, from: SENDER_DID, to: NODE_DID, created_time: Date.now(), body },
     signingKey,
     nodePub,
   );
-  return { type: 'd2d', id, from_did: SENDER_DID, to_did: NODE_DID, ciphertext: JSON.stringify(payload) };
+  return {
+    type: 'd2d',
+    id,
+    from_did: SENDER_DID,
+    to_did: NODE_DID,
+    ciphertext: JSON.stringify(payload),
+  };
 }
 
 async function boot(
@@ -187,7 +201,9 @@ describe('TT-01: a sender we cannot check yet', () => {
     setStagingRepository(new SQLiteStagingRepository(db));
     let up = false;
     const s = await boot(async () =>
-      up ? { keys: [senderPub], trust: 'verified' } : { keys: [], trust: 'verified', unresolved: true },
+      up
+        ? { keys: [senderPub], trust: 'verified' }
+        : { keys: [], trust: 'verified', unresolved: true },
     );
     const env = envelope('d2d-1');
     send(s, env);
@@ -224,7 +240,9 @@ describe('TT-01: a sender we cannot check yet', () => {
     setStagingRepository(new SQLiteStagingRepository(db));
     let up = false;
     const s = await boot(async () =>
-      up ? { keys: [senderPub], trust: 'verified' } : { keys: [], trust: 'verified', unresolved: true },
+      up
+        ? { keys: [senderPub], trust: 'verified' }
+        : { keys: [], trust: 'verified', unresolved: true },
     );
     jest.useFakeTimers({ doNotFake: ['nextTick', 'queueMicrotask', 'setImmediate'] });
     send(s, envelope('d2d-4'));
@@ -274,7 +292,13 @@ describe('TT-01: a sender we cannot check yet', () => {
 
   it('a frame that can never parse is refused and acked', async () => {
     const s = await boot(async () => ({ keys: [senderPub], trust: 'verified' }));
-    send(s, { type: 'd2d', id: 'bad', from_did: SENDER_DID, to_did: NODE_DID, ciphertext: 'not json' });
+    send(s, {
+      type: 'd2d',
+      id: 'bad',
+      from_did: SENDER_DID,
+      to_did: NODE_DID,
+      ciphertext: 'not json',
+    });
     await sleep(30);
     expect(s.acks()).toHaveLength(1);
   });
@@ -346,7 +370,14 @@ describe('TT-03: a replay key only after the message has a home', () => {
     setQuarantineRepository(new SQLiteQuarantineRepository(db));
     const payload = () =>
       sealMessage(
-        { id: 'd2d-12', type: 'social.update', from: SENDER_DID, to: NODE_DID, created_time: Date.now(), body: '{"text":"x"}' },
+        {
+          id: 'd2d-12',
+          type: 'social.update',
+          from: SENDER_DID,
+          to: NODE_DID,
+          created_time: Date.now(),
+          body: '{"text":"x"}',
+        },
         senderKey,
         nodePub,
       );
@@ -365,7 +396,14 @@ describe('TT-03: a replay key only after the message has a home', () => {
     });
     const payload = () =>
       sealMessage(
-        { id: 'd2d-13', type: 'service.query', from: SENDER_DID, to: NODE_DID, created_time: Date.now(), body },
+        {
+          id: 'd2d-13',
+          type: 'service.query',
+          from: SENDER_DID,
+          to: NODE_DID,
+          created_time: Date.now(),
+          body,
+        },
         senderKey,
         nodePub,
       );
@@ -377,7 +415,9 @@ describe('TT-03: a replay key only after the message has a home', () => {
     expect(second.action).toBe('dropped');
     first.commitReplay!();
     expect(isReplayedMessage(`${SENDER_DID}|d2d-13`)).toBe(true);
-    expect(receiveD2D(payload(), nodePub, nodeKey, [senderPub], 'unknown', options).action).toBe('dropped');
+    expect(receiveD2D(payload(), nodePub, nodeKey, [senderPub], 'unknown', options).action).toBe(
+      'dropped',
+    );
   });
 });
 
@@ -408,7 +448,10 @@ describe('TT-13: quarantine ids', () => {
     const q2 = quarantineMessage(SENDER_DID, 'social.update', JSON.stringify({ text: 'second' }));
     await accept();
     expect(q2.id).not.toBe(q1.id);
-    const rows = db.query<{ data: string }>('SELECT data FROM staging_inbox WHERE producer_id = ?', [SENDER_DID]);
+    const rows = db.query<{ data: string }>(
+      'SELECT data FROM staging_inbox WHERE producer_id = ?',
+      [SENDER_DID],
+    );
     expect(rows.some((r) => r.data.includes('second'))).toBe(true);
   });
 
@@ -450,7 +493,8 @@ describe('TT-14: quarantine expiry', () => {
   });
 
   it('one sender cannot hold more than the cap, and loses its own oldest', () => {
-    for (let i = 0; i < 205; i++) quarantineMessage(SENDER_DID, 'social.update', String(i), Date.now() + i);
+    for (let i = 0; i < 205; i++)
+      quarantineMessage(SENDER_DID, 'social.update', String(i), Date.now() + i);
     quarantineMessage('did:plc:other', 'social.update', 'kept');
     const held = listBySender(SENDER_DID);
     expect(held).toHaveLength(200);
@@ -465,7 +509,13 @@ describe('outbox', () => {
   beforeEach(() => setD2DOutboxRepository(new SQLiteD2DOutboxRepository(db)));
 
   it('TT-06: a crash then a restart inside the lease: the next drain after the lease sends', async () => {
-    enqueueD2D({ id: 'a', targetDID: 'did:plc:x', messageType: 'social.update', bodyJson: '{}', now: T0 });
+    enqueueD2D({
+      id: 'a',
+      targetDID: 'did:plc:x',
+      messageType: 'social.update',
+      bodyJson: '{}',
+      now: T0,
+    });
     expect(claimDue(T0, 60_000, 25)).toHaveLength(1);
     expect(recoverOutboxOnBoot(T0 + 10_000)).toBe(0);
     const sent: string[] = [];
@@ -482,24 +532,50 @@ describe('outbox', () => {
 
   it('TT-07: an expired row dies, is audited, is swept, and frees its key', async () => {
     const body = JSON.stringify({ query_id: 'q1' });
-    const r = enqueueD2D({ id: 'b', targetDID: 'did:plc:x', messageType: 'service.query', bodyJson: body, now: T0 });
+    const r = enqueueD2D({
+      id: 'b',
+      targetDID: 'did:plc:x',
+      messageType: 'service.query',
+      bodyJson: body,
+      now: T0,
+    });
     const later = T0 + 25 * 3_600_000;
     const res = await drainOutbox(later); // no redeliver wired: still dies
     expect(res.dead).toBe(1);
     expect(getOutboxRow('b')?.state).toBe('dead');
-    expect(queryAudit({ action: 'd2d_outbox_dead' }).some((e) => e.detail.includes('id=b'))).toBe(true);
+    expect(queryAudit({ action: 'd2d_outbox_dead' }).some((e) => e.detail.includes('id=b'))).toBe(
+      true,
+    );
     expect(sweepTerminal(later + 2 * 86_400_000)).toBe(1);
 
-    const again = enqueueD2D({ id: 'c', targetDID: 'did:plc:x', messageType: 'service.query', bodyJson: body, now: later });
+    const again = enqueueD2D({
+      id: 'c',
+      targetDID: 'did:plc:x',
+      messageType: 'service.query',
+      bodyJson: body,
+      now: later,
+    });
     expect(again.id).not.toBe(r.id);
     expect(again.state).toBe('pending');
   });
 
   it('TT-07: an enqueue with no drain in between does not get the expired row back', () => {
     const body = JSON.stringify({ query_id: 'q2' });
-    enqueueD2D({ id: 'd', targetDID: 'did:plc:x', messageType: 'service.query', bodyJson: body, now: T0 });
+    enqueueD2D({
+      id: 'd',
+      targetDID: 'did:plc:x',
+      messageType: 'service.query',
+      bodyJson: body,
+      now: T0,
+    });
     const later = T0 + 25 * 3_600_000;
-    const again = enqueueD2D({ id: 'e', targetDID: 'did:plc:x', messageType: 'service.query', bodyJson: body, now: later });
+    const again = enqueueD2D({
+      id: 'e',
+      targetDID: 'did:plc:x',
+      messageType: 'service.query',
+      bodyJson: body,
+      now: later,
+    });
     expect(again.id).toBe('e');
     expect(getOutboxRow('d')?.state).toBe('dead');
     expect(outboxCount('pending')).toBe(1);
@@ -551,7 +627,12 @@ describe('service traffic and its TTL', () => {
   });
 
   const queryBody = (ttl: number) =>
-    JSON.stringify({ query_id: 'q2', capability: 'book_table', params: { party: 2 }, ttl_seconds: ttl });
+    JSON.stringify({
+      query_id: 'q2',
+      capability: 'book_table',
+      params: { party: 2 },
+      ttl_seconds: ttl,
+    });
 
   function firstSend(body: string) {
     return sendD2D({
@@ -629,7 +710,13 @@ describe('service traffic and its TTL', () => {
     await sendD2D({
       recipientDID: PEER,
       messageType: 'service.response',
-      body: JSON.stringify({ query_id: 'none', capability: 'c', status: 'success', ttl_seconds: 60, result: {} }),
+      body: JSON.stringify({
+        query_id: 'none',
+        capability: 'c',
+        status: 'success',
+        ttl_seconds: 60,
+        result: {},
+      }),
       senderDID: ME,
       senderPrivateKey: me,
       recipientPublicKey: peerPub,
@@ -648,16 +735,35 @@ describe('service traffic and its TTL', () => {
           from: SENDER_DID,
           to: NODE_DID,
           created_time: Date.now() - age,
-          body: JSON.stringify({ query_id: id, capability: 'eta_query', params: { location: { lat: 1, lng: 2 } }, ttl_seconds: 60 }),
+          body: JSON.stringify({
+            query_id: id,
+            capability: 'eta_query',
+            params: { location: { lat: 1, lng: 2 } },
+            ttl_seconds: 60,
+          }),
         },
         senderKey,
         nodePub,
       );
     const options = { isCapabilityConfigured: () => true };
-    const old = receiveD2D(query('old', 3 * 3_600_000), nodePub, nodeKey, [senderPub], 'unknown', options);
+    const old = receiveD2D(
+      query('old', 3 * 3_600_000),
+      nodePub,
+      nodeKey,
+      [senderPub],
+      'unknown',
+      options,
+    );
     expect(old.action).toBe('dropped');
     expect(old.reason).toMatch(/ttl/);
-    const fresh = receiveD2D(query('fresh', 30_000), nodePub, nodeKey, [senderPub], 'unknown', options);
+    const fresh = receiveD2D(
+      query('fresh', 30_000),
+      nodePub,
+      nodeKey,
+      [senderPub],
+      'unknown',
+      options,
+    );
     expect(fresh.action).toBe('bypassed');
   });
 
@@ -669,7 +775,14 @@ describe('service traffic and its TTL', () => {
     const row = getOutboxRow(r.messageId)!;
     expect(row.expiresAt! - row.createdAt).toBe(24 * 3_600_000);
     const sealed = sealMessage(
-      { id: 'late', type: 'service.query', from: SENDER_DID, to: NODE_DID, created_time: Date.now() - 3 * 3_600_000, body },
+      {
+        id: 'late',
+        type: 'service.query',
+        from: SENDER_DID,
+        to: NODE_DID,
+        created_time: Date.now() - 3 * 3_600_000,
+        body,
+      },
       senderKey,
       nodePub,
     );
@@ -684,7 +797,13 @@ describe('service traffic and its TTL', () => {
     const r = await sendD2D({
       recipientDID: PEER,
       messageType: 'service.response',
-      body: JSON.stringify({ query_id: 'q1', capability: 'eta', status: 'success', ttl_seconds: 300, result: { eta: 5 } }),
+      body: JSON.stringify({
+        query_id: 'q1',
+        capability: 'eta',
+        status: 'success',
+        ttl_seconds: 300,
+        result: { eta: 5 },
+      }),
       senderDID: ME,
       senderPrivateKey: me,
       recipientPublicKey: peerPub,
@@ -703,7 +822,13 @@ describe('service traffic and its TTL', () => {
     const r = await sendD2D({
       recipientDID: PEER,
       messageType: 'service.response',
-      body: JSON.stringify({ query_id: 'nope', capability: 'eta', status: 'success', ttl_seconds: 300, result: {} }),
+      body: JSON.stringify({
+        query_id: 'nope',
+        capability: 'eta',
+        status: 'success',
+        ttl_seconds: 300,
+        result: {},
+      }),
       senderDID: ME,
       senderPrivateKey: me,
       recipientPublicKey: peerPub,
@@ -761,7 +886,10 @@ describe('TT-11: a pairing answer lost with the socket', () => {
         agentPub,
         agentKey,
       );
-      return JSON.parse(new TextDecoder().decode(dec.plaintext)) as { status: number; body: string };
+      return JSON.parse(new TextDecoder().decode(dec.plaintext)) as {
+        status: number;
+        body: string;
+      };
     };
     return { router, env, decode, agentDid, code };
   }

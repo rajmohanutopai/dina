@@ -48,7 +48,7 @@ function scripted(script: Partial<ChatResponse>[]): {
         finishReason: (step.toolCalls?.length ?? 0) > 0 ? 'tool_use' : 'end',
       };
     },
-    async *stream() {
+    stream() {
       throw new Error('not used');
     },
     async embed() {
@@ -277,7 +277,7 @@ describe('buildRememberRuntime', () => {
           finishReason: 'end' as const,
         };
       },
-      async *stream() {
+      stream() {
         throw new Error('not used');
       },
       async embed() {
@@ -347,7 +347,7 @@ describe('buildRememberRuntime', () => {
           finishReason: 'end' as const,
         };
       },
-      async *stream() {
+      stream() {
         throw new Error('not used');
       },
       async embed() {
@@ -442,7 +442,7 @@ describe('buildRememberRuntime', () => {
           finishReason: 'end',
         };
       },
-      async *stream() {
+      stream() {
         throw new Error('not used');
       },
       async embed() {
@@ -487,7 +487,7 @@ describe('buildRememberRuntime', () => {
           finishReason: 'end' as const,
         };
       },
-      async *stream() {
+      stream() {
         throw new Error('not used');
       },
       async embed() {

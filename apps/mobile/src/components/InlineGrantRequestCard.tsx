@@ -60,8 +60,7 @@ export function InlineGrantRequestCard({
 
   // The persisted status is the source of truth across restarts; the local
   // override wins only while the tap is in-flight (before the patch lands).
-  const persisted =
-    meta?.status === 'allowed' || meta?.status === 'dismissed' ? meta.status : null;
+  const persisted = meta?.status === 'allowed' || meta?.status === 'dismissed' ? meta.status : null;
   const resolved = localResolved ?? persisted;
 
   const onAllow = useCallback(() => {
@@ -102,7 +101,8 @@ export function InlineGrantRequestCard({
 
   if (meta === null) return null;
 
-  const who = contactName !== undefined && contactName !== '' ? contactName : shortDID(meta.requesterDID);
+  const who =
+    contactName !== undefined && contactName !== '' ? contactName : shortDID(meta.requesterDID);
   const what = humanizeCapability(meta.capability);
   const disabled = pending || resolved !== null;
 

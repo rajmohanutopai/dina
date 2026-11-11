@@ -14,12 +14,12 @@ export interface WhisperContext {
 }
 
 /** Assemble whisper context for a conversation. Stub until Core HTTP ready. */
-export async function assembleWhisperContext(contactDID: string): Promise<WhisperContext> {
+export async function assembleWhisperContext(_contactDID: string): Promise<WhisperContext> {
   return { items: [], contactName: undefined, lastInteraction: undefined };
 }
 
 /** Assemble context for an upcoming meeting. Stub until Core HTTP ready. */
-export async function assembleMeetingContext(eventId: string): Promise<WhisperContext> {
+export async function assembleMeetingContext(_eventId: string): Promise<WhisperContext> {
   return { items: [] };
 }
 
@@ -29,11 +29,11 @@ export function respectsSilenceTier(tier: number): boolean {
 }
 
 /** Detect an interrupted conversation. Stub until Core HTTP ready. */
-export async function detectInterruptedConversation(contactDID: string): Promise<boolean> {
+export async function detectInterruptedConversation(_contactDID: string): Promise<boolean> {
   return false;
 }
 
 /** Pick up social cues from vault. Stub until Core HTTP ready. */
-export async function gatherSocialCues(contactDID: string): Promise<string[]> {
+export async function gatherSocialCues(_contactDID: string): Promise<string[]> {
   return [];
 }

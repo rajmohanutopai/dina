@@ -7,28 +7,40 @@
  * one staging-first path, one drain, one Core resolve contract.
  */
 
-import { signRequest ,
+import {
+  signRequest,
   configureRateLimiter,
   registerPublicKeyResolver,
   resetMiddlewareState,
- registerService, resetCallerTypeState , getPublicKey , deriveDIDKey , InProcessTransport , createCoreRouter ,
+  registerService,
+  resetCallerTypeState,
+  getPublicKey,
+  deriveDIDKey,
+  InProcessTransport,
+  createCoreRouter,
   InMemoryStagingRepository,
   setStagingRepository,
   stagingGetItem as getStagingItem,
   listByStatus,
-  resetStagingState, clearVaults, queryVault ,
+  resetStagingState,
+  clearVaults,
+  queryVault,
   InMemoryWorkflowRepository,
-  setWorkflowRepository, WorkflowService, setWorkflowService } from '@dina/core';
-import { HttpCoreTransport, type HttpClient } from '@dina/core';
-import type { CoreClient } from '@dina/core';
-import type { CoreRequest, CoreRouter } from '@dina/core';
+  setWorkflowRepository,
+  WorkflowService,
+  setWorkflowService,
+} from '@dina/core';
+import {
+  HttpCoreTransport,
+  type HttpClient,
+  CoreClient,
+  CoreRequest,
+  CoreRouter,
+} from '@dina/core';
 import { TEST_ED25519_SEED, makeStubRememberRuntime } from '@dina/test-harness';
 
 import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
-import {
-  registerEnrichmentLLM,
-  resetEnrichmentPipeline,
-} from '../../src/enrichment/pipeline';
+import { registerEnrichmentLLM, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
 import { runStagingDrainTick, type StagingDrainCoreClient } from '../../src/staging/drain';
 import { setAccessiblePersonas } from '../../src/vault_context/assembly';
 
@@ -221,8 +233,7 @@ describe.each<TransportCase>([
       has_embedding: false,
     });
     expect(
-      ((metadata.enrichment as { stages: { fallback_reasons: string[] } }).stages)
-        .fallback_reasons,
+      (metadata.enrichment as { stages: { fallback_reasons: string[] } }).stages.fallback_reasons,
     ).toEqual(expect.arrayContaining(['llm_unavailable', 'embedding_unavailable']));
   });
 

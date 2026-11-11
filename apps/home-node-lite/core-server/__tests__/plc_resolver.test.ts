@@ -126,9 +126,7 @@ describe('parsePlcDoc (task 6.6)', () => {
 
   it('rejects service missing serviceEndpoint', () => {
     const raw = validDoc();
-    raw.service = [
-      { id: '#atproto_pds', type: 'AtprotoPersonalDataServer' },
-    ];
+    raw.service = [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer' }];
     expect(parsePlcDoc(raw)).toBeNull();
   });
 
@@ -162,10 +160,7 @@ describe('parsePlcDoc (task 6.6)', () => {
 describe('resolveDid (task 6.6)', () => {
   it('returns ok:true on successful fetch + parse', async () => {
     const fetchFn: PlcFetchFn = async () => validDoc();
-    const out = (await resolveDid(GOOD_DID, fetchFn)) as Extract<
-      PlcResolveOutcome,
-      { ok: true }
-    >;
+    const out = (await resolveDid(GOOD_DID, fetchFn)) as Extract<PlcResolveOutcome, { ok: true }>;
     expect(out.ok).toBe(true);
     expect(out.doc.did).toBe(GOOD_DID);
   });
@@ -200,10 +195,7 @@ describe('resolveDid (task 6.6)', () => {
     // Use a structurally-valid but different DID so parse succeeds
     // + the mismatch check is what rejects (not the format check).
     const otherDid = 'did:plc:zyxwvutsrqponmlkjihgfedc';
-    const out = await resolveDid(
-      GOOD_DID,
-      async () => validDoc(otherDid),
-    );
+    const out = await resolveDid(GOOD_DID, async () => validDoc(otherDid));
     expect(out.ok).toBe(false);
     if (out.ok === false && out.kind === 'malformed_doc') {
       expect(out.detail).toMatch(/does not match requested/);
@@ -221,9 +213,9 @@ describe('resolveDid (task 6.6)', () => {
   });
 
   it('rejects when fetchFn is missing', async () => {
-    await expect(
-      resolveDid(GOOD_DID, undefined as unknown as PlcFetchFn),
-    ).rejects.toThrow(/fetchFn/);
+    await expect(resolveDid(GOOD_DID, undefined as unknown as PlcFetchFn)).rejects.toThrow(
+      /fetchFn/,
+    );
   });
 });
 
@@ -257,12 +249,9 @@ describe('validatePlcDid — exhaust forbidden base32 chars', () => {
     expect(() => validatePlcDid(`did:plc:${'a'.repeat(23)}${ch}`)).toThrow();
   });
 
-  it.each(['-', '_', '.', '/', '+', '='])(
-    'rejects forbidden symbol %s',
-    (ch) => {
-      expect(() => validatePlcDid(`did:plc:${'a'.repeat(23)}${ch}`)).toThrow();
-    },
-  );
+  it.each(['-', '_', '.', '/', '+', '='])('rejects forbidden symbol %s', (ch) => {
+    expect(() => validatePlcDid(`did:plc:${'a'.repeat(23)}${ch}`)).toThrow();
+  });
 
   it('rejects mixed-case (single uppercase mid-string)', () => {
     // Counter-pin to the all-uppercase test in the main describe —
@@ -299,9 +288,7 @@ describe('validatePlcDid — whitespace handling', () => {
 
   it('rejects internal whitespace (not stripped, just trimmed)', () => {
     // Counter-pin: trim is edge-only, not a strip-all-whitespace.
-    expect(() =>
-      validatePlcDid('did:plc:abcdef ghijklmnopqrstuvwx'),
-    ).toThrow();
+    expect(() => validatePlcDid('did:plc:abcdef ghijklmnopqrstuvwx')).toThrow();
   });
 });
 
@@ -457,9 +444,7 @@ describe('parseServices — per-field reject taxonomy', () => {
 
   it('rejects when type field is missing entirely', () => {
     const raw = validDoc();
-    raw.service = [
-      { id: '#atproto_pds', serviceEndpoint: 'https://bsky.social' },
-    ];
+    raw.service = [{ id: '#atproto_pds', serviceEndpoint: 'https://bsky.social' }];
     expect(parsePlcDoc(raw)).toBeNull();
   });
 });
@@ -537,18 +522,10 @@ describe('parseHandles — non-array + non-string filter', () => {
 
   it('preserves order from input (no sort)', () => {
     const raw = validDoc();
-    raw.alsoKnownAs = [
-      'at://zulu.example',
-      'at://alpha.example',
-      'at://mike.example',
-    ];
+    raw.alsoKnownAs = ['at://zulu.example', 'at://alpha.example', 'at://mike.example'];
     const doc = parsePlcDoc(raw);
     if (!doc) throw new Error('expected doc to parse');
-    expect(doc.handles).toEqual([
-      'at://zulu.example',
-      'at://alpha.example',
-      'at://mike.example',
-    ]);
+    expect(doc.handles).toEqual(['at://zulu.example', 'at://alpha.example', 'at://mike.example']);
   });
 });
 
@@ -574,8 +551,7 @@ describe('resolveDid — outcome shape pinning', () => {
   it('malformed_doc outcome has detail field describing reason', async () => {
     const out = await resolveDid(GOOD_DID, async () => ({ id: 'not-a-did' }));
     if (out.ok) throw new Error('expected ok:false');
-    if (out.kind !== 'malformed_doc')
-      throw new Error(`wrong kind: ${out.kind}`);
+    if (out.kind !== 'malformed_doc') throw new Error(`wrong kind: ${out.kind}`);
     expect(typeof out.detail).toBe('string');
     expect(out.detail.length).toBeGreaterThan(0);
   });
@@ -586,8 +562,7 @@ describe('resolveDid — outcome shape pinning', () => {
       throw new Error(original);
     });
     if (out.ok) throw new Error('expected ok:false');
-    if (out.kind !== 'network_error')
-      throw new Error(`wrong kind: ${out.kind}`);
+    if (out.kind !== 'network_error') throw new Error(`wrong kind: ${out.kind}`);
     expect(out.error).toBe(original);
   });
 
@@ -598,8 +573,7 @@ describe('resolveDid — outcome shape pinning', () => {
       throw 'raw-string-throw';
     });
     if (out.ok) throw new Error('expected ok:false');
-    if (out.kind !== 'network_error')
-      throw new Error(`wrong kind: ${out.kind}`);
+    if (out.kind !== 'network_error') throw new Error(`wrong kind: ${out.kind}`);
     expect(out.error).toBe('raw-string-throw');
   });
 

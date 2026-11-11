@@ -390,10 +390,7 @@ describe('the classes with no derivable boundary', () => {
   it('does not refuse an ordinary SKU that happens to be PAN-shaped', () => {
     // Measured, not assumed: `CHAIR2024B` is five letters, four digits, one
     // letter, which is the Indian tax-ID shape and also an unremarkable SKU.
-    const verdict = gateCatalogForPublication([
-      { sku: 'CHAIR2024B' },
-      { sku: 'CHAIR2024B-01' },
-    ]);
+    const verdict = gateCatalogForPublication([{ sku: 'CHAIR2024B' }, { sku: 'CHAIR2024B-01' }]);
 
     expect(verdict.clean).toBe(true);
   });
@@ -453,10 +450,9 @@ describe('§4.2 photo lanes: the identifier-column suppression is REMOVED', () =
   });
 
   it('a MINTED value never trips it — the P- shape carries no such digits', () => {
-    const verdict = gateCatalogForPublication(
-      [{ sku: 'P-0001' }, { sku: 'P-0417' }],
-      { scanIdentifierColumns: true },
-    );
+    const verdict = gateCatalogForPublication([{ sku: 'P-0001' }, { sku: 'P-0417' }], {
+      scanIdentifierColumns: true,
+    });
     expect(verdict.clean).toBe(true);
   });
 

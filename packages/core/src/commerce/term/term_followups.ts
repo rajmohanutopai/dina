@@ -221,10 +221,7 @@ export function admitTermSettlement(
     // A note cut at an end this node has not heard of yet waits for that
     // termination — whether or not another one is on record already — as long
     // as its end falls before the agreement's end as this node knows it.
-    if (
-      awaitsTermination(status, note) &&
-      Date.parse(note.period_end) < Date.parse(status.endsAt)
-    )
+    if (awaitsTermination(status, note) && Date.parse(note.period_end) < Date.parse(status.endsAt))
       return held(ctx, proposalRow.requestId, note.proposal_digest);
     return { outcome: 'refused', detail: rule };
   }

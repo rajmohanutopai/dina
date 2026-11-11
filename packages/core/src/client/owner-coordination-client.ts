@@ -42,7 +42,11 @@ function expectPlan(res: CoreResponse, ctx: string): GroupPlanWire {
   }
   const plan = readGroupPlanWire((res.body as { plan?: unknown } | undefined)?.plan);
   if (plan === null) {
-    throw new OwnerCoordinationHttpError(`OwnerCoordinationClient: ${ctx} answered no plan`, res.status, 'response_malformed');
+    throw new OwnerCoordinationHttpError(
+      `OwnerCoordinationClient: ${ctx} answered no plan`,
+      res.status,
+      'response_malformed',
+    );
   }
   return plan;
 }
@@ -50,7 +54,11 @@ function expectPlan(res: CoreResponse, ctx: string): GroupPlanWire {
 export class OwnerCoordinationClient {
   constructor(private readonly dispatcher: OwnerDispatcher) {}
 
-  private async post(path: string, body: Record<string, unknown>, ctx: string): Promise<GroupPlanWire> {
+  private async post(
+    path: string,
+    body: Record<string, unknown>,
+    ctx: string,
+  ): Promise<GroupPlanWire> {
     const res = await this.dispatcher.dispatch({ method: 'POST', path, body });
     return expectPlan(res, ctx);
   }
@@ -60,27 +68,50 @@ export class OwnerCoordinationClient {
     const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/coordination/plans' });
     if (res.status < 200 || res.status >= 300) {
       const key = (res.body as { error?: string } | undefined)?.error ?? 'error';
-      throw new OwnerCoordinationHttpError(`OwnerCoordinationClient: list failed ${String(res.status)} — ${key}`, res.status, key);
+      throw new OwnerCoordinationHttpError(
+        `OwnerCoordinationClient: list failed ${String(res.status)} — ${key}`,
+        res.status,
+        key,
+      );
     }
     const plans = (res.body as { plans?: unknown[] } | undefined)?.plans;
-    return Array.isArray(plans) ? plans.map(readGroupPlanWire).filter((p): p is GroupPlanWire => p !== null) : [];
+    return Array.isArray(plans)
+      ? plans.map(readGroupPlanWire).filter((p): p is GroupPlanWire => p !== null)
+      : [];
   }
 
   /** One plan, folded as of now; null when it does not exist. */
   async get(planId: string): Promise<GroupPlanWire | null> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: `/v1/coordination/plans/${encodeURIComponent(planId)}`,
+    });
     if (res.status === 404) return null;
     return expectPlan(res, `get(${planId})`);
   }
 
   /** The organizer picks an agreed slot; the confirm round goes out. */
-  async choose(planId: string, slot: { start: string; end?: string; note?: string }): Promise<GroupPlanWire> {
-    return this.post(`/v1/coordination/plans/${encodeURIComponent(planId)}/choose`, { slot }, `choose(${planId})`);
+  async choose(
+    planId: string,
+    slot: { start: string; end?: string; note?: string },
+  ): Promise<GroupPlanWire> {
+    return this.post(
+      `/v1/coordination/plans/${encodeURIComponent(planId)}/choose`,
+      { slot },
+      `choose(${planId})`,
+    );
   }
 
   /** New candidates; a new proposing round goes out. */
-  async widen(planId: string, candidates: { start: string; end?: string; note?: string }[]): Promise<GroupPlanWire> {
-    return this.post(`/v1/coordination/plans/${encodeURIComponent(planId)}/widen`, { candidates }, `widen(${planId})`);
+  async widen(
+    planId: string,
+    candidates: { start: string; end?: string; note?: string }[],
+  ): Promise<GroupPlanWire> {
+    return this.post(
+      `/v1/coordination/plans/${encodeURIComponent(planId)}/widen`,
+      { candidates },
+      `widen(${planId})`,
+    );
   }
 
   /** Drop a guest from required. Nothing is sent. */
@@ -94,16 +125,27 @@ export class OwnerCoordinationClient {
 
   /** Stop. Nothing is sent. */
   async abandon(planId: string): Promise<GroupPlanWire> {
-    return this.post(`/v1/coordination/plans/${encodeURIComponent(planId)}/abandon`, {}, `abandon(${planId})`);
+    return this.post(
+      `/v1/coordination/plans/${encodeURIComponent(planId)}/abandon`,
+      {},
+      `abandon(${planId})`,
+    );
   }
 
   /** Delete the plan and what guests disclosed for it. */
   async remove(planId: string): Promise<boolean> {
-    const res = await this.dispatcher.dispatch({ method: 'DELETE', path: `/v1/coordination/plans/${encodeURIComponent(planId)}` });
+    const res = await this.dispatcher.dispatch({
+      method: 'DELETE',
+      path: `/v1/coordination/plans/${encodeURIComponent(planId)}`,
+    });
     if (res.status === 404) return false;
     if (res.status < 200 || res.status >= 300) {
       const key = (res.body as { error?: string } | undefined)?.error ?? 'error';
-      throw new OwnerCoordinationHttpError(`OwnerCoordinationClient: remove failed ${String(res.status)} — ${key}`, res.status, key);
+      throw new OwnerCoordinationHttpError(
+        `OwnerCoordinationClient: remove failed ${String(res.status)} — ${key}`,
+        res.status,
+        key,
+      );
     }
     return true;
   }

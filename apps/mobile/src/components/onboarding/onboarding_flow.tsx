@@ -20,10 +20,7 @@ import {
   type Step,
   type StepLocation,
 } from '../../onboarding/state';
-import {
-  markVerificationPending,
-  markVerified,
-} from '../../services/verification_status';
+import { markVerificationPending, markVerified } from '../../services/verification_status';
 
 import { AiProviderSet } from './ai_provider_set';
 import { ExistingAtprotoIdentity } from './existing_atproto_identity';
@@ -82,7 +79,7 @@ export function OnboardingFlow(): React.ReactElement {
       mnemonic,
     };
     setStep({ kind: 'provisioning_create', draft });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Run once on mount: the dependency list stays empty on purpose.
   }, []);
 
   switch (step.kind) {
@@ -291,7 +288,13 @@ export function OnboardingFlow(): React.ReactElement {
           onContinue={(handle, didPlc, restoreBackup, replaceLocalData) =>
             setStep({
               kind: 'recover_passphrase',
-              draft: { ...step.draft, handle, expectedDid: didPlc, restoreBackup, replaceLocalData },
+              draft: {
+                ...step.draft,
+                handle,
+                expectedDid: didPlc,
+                restoreBackup,
+                replaceLocalData,
+              },
             })
           }
         />
@@ -422,9 +425,7 @@ export function OnboardingFlow(): React.ReactElement {
           step={{ kind: 'external_mnemonic_verify', draft: {} }}
           mnemonic={step.draft.mnemonic}
           onBack={goBack}
-          onViewPhrase={() =>
-            setStep({ kind: 'external_mnemonic_reveal', draft: step.draft })
-          }
+          onViewPhrase={() => setStep({ kind: 'external_mnemonic_reveal', draft: step.draft })}
           onVerified={() => {
             void markVerified();
             const complete: ExternalAtprotoDraft = {
@@ -516,7 +517,6 @@ function ErrorStep(props: { message: string; onRetry: () => void }): React.React
   // transient render of this component is invisible in practice.
   React.useEffect(() => {
     props.onRetry();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   return <></>;
 }

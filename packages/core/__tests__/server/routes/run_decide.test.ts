@@ -179,7 +179,10 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
   });
 
   it('a same-key /update with a DIFFERENT grant expiry conflicts, never silently replays (F9/§352)', async () => {
-    const runId = startRun({ provider_grant_id: 'g1', provider_grant_expires_at_sec: Math.floor(NOW / 1000) + 100 });
+    const runId = startRun({
+      provider_grant_id: 'g1',
+      provider_grant_expires_at_sec: Math.floor(NOW / 1000) + 100,
+    });
     const key = 'grant-rebind-key';
     const r1 = await router.handle(
       ownerReq(`/v1/run/${runId}/update`, {
@@ -223,13 +226,21 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
     messages.create(classifiedMessage({ message_id: 'm1', run_id: runId, kind: 'informational' }));
     // Missing decision_revision (helper default suppressed with undefined-safe override).
     const noRev = await router.handle(
-      ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge', decision_revision: undefined }),
+      ownerReq(`/v1/run/${runId}/decide`, {
+        message_id: 'm1',
+        decision: 'acknowledge',
+        decision_revision: undefined,
+      }),
     );
     expect(noRev.status).toBe(400);
     expect((noRev.body as { field: string }).field).toBe('decision_revision');
     // Missing idempotency_key.
     const noKey = await router.handle(
-      ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge', idempotency_key: '' }),
+      ownerReq(`/v1/run/${runId}/decide`, {
+        message_id: 'm1',
+        decision: 'acknowledge',
+        idempotency_key: '',
+      }),
     );
     expect(noKey.status).toBe(400);
     expect((noKey.body as { field: string }).field).toBe('idempotency_key');
@@ -269,7 +280,9 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
   it('#6 a replayed idempotency key with a DIFFERENT body is rejected', async () => {
     const runId = startRun();
     messages.create(classifiedMessage({ message_id: 'm1', run_id: runId, kind: 'action' }));
-    messages.create(classifiedMessage({ message_id: 'm2', run_id: runId, kind: 'action', sequence: 2 }));
+    messages.create(
+      classifiedMessage({ message_id: 'm2', run_id: runId, kind: 'action', sequence: 2 }),
+    );
 
     await router.handle(
       ownerReq(`/v1/run/${runId}/decide`, {
@@ -336,7 +349,9 @@ describe('POST /v1/run/:id/decide — VERIF regressions', () => {
   it('#10 a decided-basis count barrier opens when decided_count hits max_count', async () => {
     const runId = startRun({ max_count: 2, max_count_basis: 'decided' });
     messages.create(classifiedMessage({ message_id: 'm1', run_id: runId, kind: 'informational' }));
-    messages.create(classifiedMessage({ message_id: 'm2', run_id: runId, kind: 'informational', sequence: 2 }));
+    messages.create(
+      classifiedMessage({ message_id: 'm2', run_id: runId, kind: 'informational', sequence: 2 }),
+    );
 
     const first = await router.handle(
       ownerReq(`/v1/run/${runId}/decide`, { message_id: 'm1', decision: 'acknowledge' }),

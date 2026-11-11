@@ -75,7 +75,10 @@ export function rehydrateDeliveryReceipt(
 }
 
 /** An order attachment (plan §3.3) back through its validator — both nodes' rows. */
-export function rehydrateOrderAttachment(json: string, sha256: Sha256Fn): Rehydrated<OrderAttachment> {
+export function rehydrateOrderAttachment(
+  json: string,
+  sha256: Sha256Fn,
+): Rehydrated<OrderAttachment> {
   const parsed = parse(json);
   if (!parsed.ok) return parsed;
   const read = readOrderAttachment(parsed.value, sha256);
@@ -151,7 +154,9 @@ export function rehydrateRevshareDocument(row: {
   // The validator re-derived the record digest; the ROW key must agree,
   // or the row indexes a record it does not hold.
   if ((parsed as Record<string, unknown>)[REVSHARE_DIGEST_FIELDS[row.kind]] !== row.recordDigest) {
-    throw new RevshareIntegrityError(`stored ${row.kind}: row key does not match the record digest`);
+    throw new RevshareIntegrityError(
+      `stored ${row.kind}: row key does not match the record digest`,
+    );
   }
   return { kind: row.kind, document: parsed as never };
 }
@@ -169,7 +174,12 @@ export function rehydrateSpooledTradeBody(json: string): unknown {
 
 /** The four answers the country packs' status rails may give (`PAYMENT_STATUS_RESULT.status`, §5.D). */
 export type PaymentRailAnswer = 'settled' | 'pending' | 'failed' | 'unknown';
-const PAYMENT_RAIL_ANSWERS: ReadonlySet<string> = new Set(['settled', 'pending', 'failed', 'unknown']);
+const PAYMENT_RAIL_ANSWERS: ReadonlySet<string> = new Set([
+  'settled',
+  'pending',
+  'failed',
+  'unknown',
+]);
 
 /**
  * The rail's answer, read back off a completed invocation task's stored
@@ -184,7 +194,9 @@ export function rehydratePaymentRailAnswer(resultJson: string | undefined): Paym
   } catch {
     status = undefined;
   }
-  return typeof status === 'string' && PAYMENT_RAIL_ANSWERS.has(status) ? (status as PaymentRailAnswer) : 'unknown';
+  return typeof status === 'string' && PAYMENT_RAIL_ANSWERS.has(status)
+    ? (status as PaymentRailAnswer)
+    : 'unknown';
 }
 
 /** The pinned capability id off a stored plugin-invocation payload, or null when unreadable. */

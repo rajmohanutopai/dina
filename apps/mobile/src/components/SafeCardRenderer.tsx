@@ -199,9 +199,7 @@ export function SafeCardRenderer({
         <BlockView key={i} block={block} onAction={onAction} actionsDisabled={actionsDisabled} />
       ))}
       {expired ? (
-        <Text style={styles.expiredLabel}>
-          {stale !== null ? `Expired · ${stale}` : 'Expired'}
-        </Text>
+        <Text style={styles.expiredLabel}>{stale !== null ? `Expired · ${stale}` : 'Expired'}</Text>
       ) : (
         stale !== null && <Text style={styles.staleLabel}>{stale}</Text>
       )}
@@ -235,7 +233,9 @@ function BlockView({
               style={styles.titleIcon}
             />
           )}
-          <Text style={[styles.title, block.tone !== undefined && { color: toneColor(block.tone) }]}>
+          <Text
+            style={[styles.title, block.tone !== undefined && { color: toneColor(block.tone) }]}
+          >
             {block.text}
           </Text>
         </View>
@@ -260,7 +260,9 @@ function BlockView({
       return (
         <View style={styles.kvRow}>
           <Text style={styles.kvLabel}>{block.label}</Text>
-          <Text style={[styles.kvValue, block.tone !== undefined && { color: toneColor(block.tone) }]}>
+          <Text
+            style={[styles.kvValue, block.tone !== undefined && { color: toneColor(block.tone) }]}
+          >
             {block.value}
           </Text>
         </View>
@@ -285,7 +287,9 @@ function BlockView({
             <View style={styles.barHeader}>
               {block.label !== undefined && <Text style={styles.barLabel}>{block.label}</Text>}
               {block.valueLabel !== undefined && (
-                <Text style={[styles.barValue, { color: toneColor(block.tone) }]}>{block.valueLabel}</Text>
+                <Text style={[styles.barValue, { color: toneColor(block.tone) }]}>
+                  {block.valueLabel}
+                </Text>
               )}
             </View>
           )}
@@ -293,7 +297,10 @@ function BlockView({
             <View
               style={[
                 styles.barFill,
-                { width: `${Math.round(block.ratio * 100)}%`, backgroundColor: toneColor(block.tone) },
+                {
+                  width: `${Math.round(block.ratio * 100)}%`,
+                  backgroundColor: toneColor(block.tone),
+                },
               ]}
             />
           </View>
@@ -330,7 +337,12 @@ function BlockView({
                 {row.sub !== undefined && <Text style={styles.listSub}>{row.sub}</Text>}
               </View>
               {row.trailing !== undefined && (
-                <Text style={[styles.listTrailing, row.tone !== undefined && { color: toneColor(row.tone) }]}>
+                <Text
+                  style={[
+                    styles.listTrailing,
+                    row.tone !== undefined && { color: toneColor(row.tone) },
+                  ]}
+                >
                   {row.trailing}
                 </Text>
               )}

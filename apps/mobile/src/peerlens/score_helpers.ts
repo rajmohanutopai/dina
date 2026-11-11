@@ -26,14 +26,7 @@ import {
 
 // Re-export the protocol primitives so mobile screens have one
 // import surface for "everything trust-display".
-export {
-  BAND_HIGH,
-  BAND_LOW,
-  BAND_MODERATE,
-  trustBandFor,
-  trustScoreDisplay,
-  trustScoreLabel,
-};
+export { BAND_HIGH, BAND_LOW, BAND_MODERATE, trustBandFor, trustScoreDisplay, trustScoreLabel };
 export type { PeerlensBand };
 
 // TN-MOB-003: re-export the shared identifier parser so mobile

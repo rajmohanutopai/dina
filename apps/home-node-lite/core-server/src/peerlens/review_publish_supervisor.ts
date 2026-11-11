@@ -34,10 +34,7 @@ export class ReviewPublishSupervisor {
   start(): void {
     if (this.timer !== null) return;
     void this.tick();
-    this.timer = setInterval(
-      () => void this.tick(),
-      this.options.intervalMs ?? 30_000,
-    );
+    this.timer = setInterval(() => void this.tick(), this.options.intervalMs ?? 30_000);
     this.timer.unref?.();
   }
 

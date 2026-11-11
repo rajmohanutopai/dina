@@ -8,11 +8,11 @@
 
 ## Result: PASS (3/3)
 
-| Step | Input | Dina response | Pass |
-|---|---|---|---|
-| remember #1 | `My daughters name is Emma` | "Stored in General vault." | ✅ |
-| remember #2 | `My daughter loves dinosaurs` | "Stored in General vault." | ✅ |
-| ask | `What does Emma like?` | "Based on your notes, Emma loves dinosaurs." | ✅ |
+| Step        | Input                         | Dina response                                | Pass |
+| ----------- | ----------------------------- | -------------------------------------------- | ---- |
+| remember #1 | `My daughters name is Emma`   | "Stored in General vault."                   | ✅   |
+| remember #2 | `My daughter loves dinosaurs` | "Stored in General vault."                   | ✅   |
+| ask         | `What does Emma like?`        | "Based on your notes, Emma loves dinosaurs." | ✅   |
 
 The `/ask` answer confirms the full agentic path: vault recall of the two
 stored memories + LLM synthesis (dev Gemini key) — matches dina_details

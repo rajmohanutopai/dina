@@ -69,7 +69,9 @@ export interface AtprotoIdentityModule {
   getKey(doc: DidDoc): string | undefined;
   /** The `#atproto_pds` service of type AtprotoPersonalDataServer, or undefined. */
   getPds(doc: DidDoc): string | undefined;
-  IdResolver: new (opts?: { plcUrl?: string }) => { did: { resolve(did: string): Promise<DidDoc | null> } };
+  IdResolver: new (opts?: { plcUrl?: string }) => {
+    did: { resolve(did: string): Promise<DidDoc | null> };
+  };
 }
 
 // ── Public deps ──────────────────────────────────────────────────────────────
@@ -157,7 +159,8 @@ export function createRepoProofChain(deps: RepoProofChainDeps): RepoProofVerifie
     const { getKey, getPds } = await deps.libs.identity();
     const signingKey = getKey(doc);
     const pdsRaw = getPds(doc);
-    const pds = pdsRaw !== undefined && /^https:\/\//i.test(pdsRaw) ? pdsRaw.replace(/\/+$/, '') : null;
+    const pds =
+      pdsRaw !== undefined && /^https:\/\//i.test(pdsRaw) ? pdsRaw.replace(/\/+$/, '') : null;
     if (signingKey === undefined || pds === null) {
       return repoProofFailure(
         'did_resolution_failed',
@@ -170,7 +173,10 @@ export function createRepoProofChain(deps: RepoProofChainDeps): RepoProofVerifie
     //    body is refused without being buffered further.
     let carBytes: Uint8Array;
     const controller = new AbortController();
-    const deadline = setTimeout(() => controller.abort(), deps.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS);
+    const deadline = setTimeout(
+      () => controller.abort(),
+      deps.fetchTimeoutMs ?? DEFAULT_FETCH_TIMEOUT_MS,
+    );
     try {
       const url =
         `${pds}/xrpc/com.atproto.sync.getRecord` +
@@ -273,7 +279,10 @@ export function createRepoProofChain(deps: RepoProofChainDeps): RepoProofVerifie
  * read chunk by chunk and abandoned at the ceiling — nothing past it is
  * buffered; a body without a stream is read whole and then checked.
  */
-async function readBodyBounded(resp: FetchResponseLike, maxBytes: number): Promise<Uint8Array | null> {
+async function readBodyBounded(
+  resp: FetchResponseLike,
+  maxBytes: number,
+): Promise<Uint8Array | null> {
   const stream = resp.body;
   if (stream === undefined || stream === null) {
     const whole = await resp.arrayBuffer();

@@ -24,8 +24,8 @@ import {
   type PairedDevice,
 } from '../../devices/registry';
 import { generatePairingCode, getNodeDID, getNodeSigningPublicKey } from '../../pairing/ceremony';
-import { getPersona, listPersonas } from '../../persona/service';
 import { buildAgentSetupCode } from '../../pairing/setup_code';
+import { getPersona, listPersonas } from '../../persona/service';
 
 import { makeOwnerGuard } from './owner_guard';
 
@@ -178,9 +178,12 @@ export function registerOwnerSetupRoutes(
       if (!Array.isArray(raw) || raw.some((p) => typeof p !== 'string')) {
         return answer(400, { error: 'standard_personas must be an array of persona names' });
       }
-      standardPersonas = [...new Set((raw as string[]).map((p) => p.trim()).filter((p) => p !== ''))];
+      standardPersonas = [
+        ...new Set((raw as string[]).map((p) => p.trim()).filter((p) => p !== '')),
+      ];
       const bad = standardPersonas.filter((p) => getPersona(p)?.tier !== 'standard');
-      if (bad.length > 0) return answer(400, { error: `not a standard persona: ${bad.join(', ')}` });
+      if (bad.length > 0)
+        return answer(400, { error: `not a standard persona: ${bad.join(', ')}` });
     }
     try {
       const { code, expiresAt } = generatePairingCode({

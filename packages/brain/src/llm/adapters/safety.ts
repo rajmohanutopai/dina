@@ -32,7 +32,7 @@ export const GEMINI_TIMEOUT_MS = 180_000;
  * with a timeout error. Uses AbortController for clean cancellation.
  */
 export async function withTimeout<T>(promise: Promise<T>, ms: number = LLM_TIMEOUT_MS): Promise<T> {
-  let timeoutId: ReturnType<typeof setTimeout>;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   const timeoutPromise = new Promise<never>((_, reject) => {
     timeoutId = setTimeout(() => {
@@ -43,7 +43,7 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number = LLM_TIMEO
   try {
     return await Promise.race([promise, timeoutPromise]);
   } finally {
-    clearTimeout(timeoutId!);
+    clearTimeout(timeoutId);
   }
 }
 

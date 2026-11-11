@@ -39,7 +39,6 @@ import {
   type TermMessage,
 } from '@dina/commerce-protocol';
 
-
 import {
   overCapacity,
   projectModel,
@@ -263,7 +262,10 @@ export function admitTermOffer(
   // owner and Brain, through the table and through a message naming it.
   for (const alt of offer.alternatives ?? [])
     for (const [i, promise] of alt.promises.entries()) {
-      const problem = promiseProblem(promise, `alternatives.${alt.alternative_id}.promises[${String(i)}]`);
+      const problem = promiseProblem(
+        promise,
+        `alternatives.${alt.alternative_id}.promises[${String(i)}]`,
+      );
       if (problem !== null) return { outcome: 'refused', detail: problem };
     }
   const chain = offerChain(ctx, offer.request_id, 'inbound');
@@ -459,7 +461,15 @@ export function stepTermNegotiation(ctx: TermContext, requestId: string): void {
     return;
   }
   // COMMITMENT_KERNEL §11 — when the owner chose Brain, it takes the round.
-  if (handToStrategy(ctx, { requestId, head, policy, round: counters.length + 1, deadlineAt: negotiation.deadlineAt }))
+  if (
+    handToStrategy(ctx, {
+      requestId,
+      head,
+      policy,
+      round: counters.length + 1,
+      deadlineAt: negotiation.deadlineAt,
+    })
+  )
     return;
   sendCounter(ctx, {
     head,
@@ -485,7 +495,13 @@ export { TERM_STRATEGY_CARD } from './term_model';
  */
 function handToStrategy(
   ctx: TermContext,
-  args: { requestId: string; head: TermOffer; policy: TermBuyerPolicy; round: number; deadlineAt: number },
+  args: {
+    requestId: string;
+    head: TermOffer;
+    policy: TermBuyerPolicy;
+    round: number;
+    deadlineAt: number;
+  },
 ): boolean {
   const strategy = ctx.deps.strategy;
   if (strategy === undefined) return false;
@@ -495,15 +511,28 @@ function handToStrategy(
   const turn = ctx.store.getTurn(args.requestId, args.round);
   if (turn !== null) {
     if (turn.state !== 'pending') return false;
-    ctx.store.setNextAction(args.requestId, Math.min(turn.createdAt + STRATEGY_WAIT_MS, args.deadlineAt), nowMs);
+    ctx.store.setNextAction(
+      args.requestId,
+      Math.min(turn.createdAt + STRATEGY_WAIT_MS, args.deadlineAt),
+      nowMs,
+    );
     return true;
   }
   if (!strategyBudgetLeft(ctx, SHELF_VENDOR_KIND, args.requestId)) return false;
   const submitted = strategy.submit(vendorBrief(ctx, args, settings.valuesOn));
   if (submitted === null) return false;
   ctx.atomically('strategy_turn', () => {
-    ctx.store.putTurn({ requestId: args.requestId, turn: args.round, taskId: submitted.taskId, createdAt: nowMs });
-    ctx.store.setNextAction(args.requestId, Math.min(nowMs + STRATEGY_WAIT_MS, args.deadlineAt), nowMs);
+    ctx.store.putTurn({
+      requestId: args.requestId,
+      turn: args.round,
+      taskId: submitted.taskId,
+      createdAt: nowMs,
+    });
+    ctx.store.setNextAction(
+      args.requestId,
+      Math.min(nowMs + STRATEGY_WAIT_MS, args.deadlineAt),
+      nowMs,
+    );
   });
   return true;
 }
@@ -516,7 +545,13 @@ function handToStrategy(
  */
 function vendorBrief(
   ctx: TermContext,
-  args: { requestId: string; head: TermOffer; policy: TermBuyerPolicy; round: number; deadlineAt: number },
+  args: {
+    requestId: string;
+    head: TermOffer;
+    policy: TermBuyerPolicy;
+    round: number;
+    deadlineAt: number;
+  },
   valuesOn: boolean,
 ): NegotiationBrief {
   const chain = offerChain(ctx, args.requestId, 'inbound').map(({ offer }) => ({
@@ -551,7 +586,10 @@ function vendorBrief(
       },
     },
     history: [...chain, ...counters],
-    model: model === undefined ? { constrained: [] } : { ...projectModel(model, { valuesOn, firstOfferOut: true }) },
+    model:
+      model === undefined
+        ? { constrained: [] }
+        : { ...projectModel(model, { valuesOn, firstOfferOut: true }) },
     roundsLeft: Math.max(0, args.policy.max_rounds - counters.length),
     deadlineAt: iso(args.deadlineAt),
     rules: [
@@ -568,7 +606,11 @@ function vendorBrief(
  * negotiation as it stands (after the owner answered Brain's question). Null
  * when the negotiation has moved on.
  */
-export function buyerTurnBrief(ctx: TermContext, requestId: string, turn: number): NegotiationBrief | null {
+export function buyerTurnBrief(
+  ctx: TermContext,
+  requestId: string,
+  turn: number,
+): NegotiationBrief | null {
   const negotiation = ctx.store.getNegotiation(requestId);
   const policy = negotiation === null ? null : readTermBuyerPolicyJson(negotiation.policyJson);
   const head = offerChain(ctx, requestId, 'inbound').at(-1)?.offer;
@@ -582,7 +624,11 @@ export function buyerTurnBrief(ctx: TermContext, requestId: string, turn: number
     outboundCounters(ctx, requestId).length + 1 !== turn
   )
     return null;
-  return vendorBrief(ctx, { requestId, head, policy, round: turn, deadlineAt: negotiation.deadlineAt }, settings.valuesOn);
+  return vendorBrief(
+    ctx,
+    { requestId, head, policy, round: turn, deadlineAt: negotiation.deadlineAt },
+    settings.valuesOn,
+  );
 }
 
 const SHELF_PARTS_BRIEF = SLOT_PACK_PARTS.map((p) => ({ ...p }));
@@ -610,7 +656,12 @@ export function applyStrategyMove(
     });
     return { outcome };
   };
-  if (negotiation === null || negotiation.state !== 'negotiating' || policy === null || head === undefined) {
+  if (
+    negotiation === null ||
+    negotiation.state !== 'negotiating' ||
+    policy === null ||
+    head === undefined
+  ) {
     ctx.store.closeTurn(args.requestId, args.turn, 'applied');
     return { outcome: 'negotiation_moved_on' };
   }
@@ -654,7 +705,13 @@ export function applyStrategyMove(
     if (message === null) return fixed('fixed_style');
     ctx.atomically('strategy_message', () => {
       ctx.store.closeTurn(args.requestId, args.turn, 'applied');
-      sendCounter(ctx, { head, policy, round: args.turn, deadlineAt: negotiation.deadlineAt, message });
+      sendCounter(ctx, {
+        head,
+        policy,
+        round: args.turn,
+        deadlineAt: negotiation.deadlineAt,
+        message,
+      });
     });
     return { outcome: 'sent_with_message' };
   }
@@ -681,7 +738,8 @@ export function applyStrategyMove(
       wanted[part.name as TermName] = part.value;
   // A counter that asks for nothing the head does not already give is no move.
   const values = termValues(head.terms);
-  if (TERM_NAMES.every((name) => buyerAtLeast(name, values[name], wanted[name]))) return fixed('nothing_asked');
+  if (TERM_NAMES.every((name) => buyerAtLeast(name, values[name], wanted[name])))
+    return fixed('nothing_asked');
   // The hard checks, as for the fixed style's counter: a counter asks and
   // binds nothing. Whatever the store answers reaches the full envelope, and
   // the owner's card where it needs one, at the proposal step.
@@ -690,7 +748,13 @@ export function applyStrategyMove(
     return fixed(verdict.reason === 'never_rule' ? 'refused_never_rule' : 'refused_not_enough');
   ctx.atomically('strategy_counter', () => {
     ctx.store.closeTurn(args.requestId, args.turn, 'applied');
-    sendCounter(ctx, { head, policy, round: args.turn, deadlineAt: negotiation.deadlineAt, wanted });
+    sendCounter(ctx, {
+      head,
+      policy,
+      round: args.turn,
+      deadlineAt: negotiation.deadlineAt,
+      wanted,
+    });
   });
   return { outcome: 'sent' };
 }
@@ -710,7 +774,6 @@ export function fallBackStaleTurns(ctx: TermContext): number {
   }
   return n;
 }
-
 
 function sendCounter(
   ctx: TermContext,
@@ -732,8 +795,7 @@ function sendCounter(
   const targets: Partial<Record<TermName, string>> = {};
   for (const name of TERM_NAMES) {
     // Name only the terms the head does not already meet.
-    if (!buyerAtLeast(name, values[name], wanted[name]))
-      targets[name] = wanted[name].toString(10);
+    if (!buyerAtLeast(name, values[name], wanted[name])) targets[name] = wanted[name].toString(10);
   }
   const respondBy = Math.min(nowMs + TERM_TIMINGS.counterRespondByMs, args.deadlineAt);
   const draft = {
@@ -817,7 +879,12 @@ function toReady(
       });
       return;
     }
-    raisePersonaCard(ctx, { step: 'proposal', requestId, refDigest: head.offer_digest, personas: closed });
+    raisePersonaCard(ctx, {
+      step: 'proposal',
+      requestId,
+      refDigest: head.offer_digest,
+      personas: closed,
+    });
     ctx.store.setNextAction(
       requestId,
       Math.min(nowMs + HOUR_MS, negotiation?.deadlineAt ?? nowMs + HOUR_MS),
@@ -858,7 +925,8 @@ function toReady(
   const ranking = rankTermOffers(ctx).find((r) => r.requestId === requestId);
   const previous = previousOffer(ctx, head);
   for (const version of passing) {
-    const cardId = version.alternative_id === undefined ? setId : `${setId}~${version.alternative_id}`;
+    const cardId =
+      version.alternative_id === undefined ? setId : `${setId}~${version.alternative_id}`;
     const binding = buildTermProposalApprovalPayload({
       principal: PENDING_PRINCIPAL,
       offer: head,
@@ -895,7 +963,9 @@ function toReady(
           promises: version.promises,
           general: head.general,
         }),
-        ...(before !== undefined ? { previous: { terms: before.terms, promises: before.promises } } : {}),
+        ...(before !== undefined
+          ? { previous: { terms: before.terms, promises: before.promises } }
+          : {}),
       }),
       ...(ranking?.costPerPeriodMinor !== undefined && ranking.costPeriod !== undefined
         ? { cost_per_period_minor: ranking.costPerPeriodMinor, cost_period: ranking.costPeriod }
@@ -954,10 +1024,9 @@ function versionAllowed(
   if (!withinCeilings({ ...head, terms: version.terms }, policy)) return false;
   // A promise the pack's vocabulary does not declare, in full, never reaches a
   // binding card (§6): wrong name, wrong keeper, a missing or unknown dimension.
-  if (version.promises.some((p, i) => promiseProblem(p, `promises[${String(i)}]`) !== null)) return false;
-  return (
-    vendorVerdict(ctx, head, policy, version.terms, version.promises).outcome !== 'refused'
-  );
+  if (version.promises.some((p, i) => promiseProblem(p, `promises[${String(i)}]`) !== null))
+    return false;
+  return vendorVerdict(ctx, head, policy, version.terms, version.promises).outcome !== 'refused';
 }
 
 /** The envelope on one version for the brand, approved in person (hard checks only). */
@@ -1002,7 +1071,9 @@ function promisedPeak(
     const dealStart = Math.max(from, Date.parse(status.proposal.general.start));
     const dealEnd = Math.min(
       to,
-      status.state === 'accepted' ? Date.parse(status.heldUntil) : Date.parse(status.proposal.general.end),
+      status.state === 'accepted'
+        ? Date.parse(status.heldUntil)
+        : Date.parse(status.proposal.general.end),
     );
     if (dealStart >= dealEnd) continue;
     for (const promise of status.proposal.promises ?? []) {
@@ -1029,7 +1100,11 @@ function promisedPeak(
  * Only the promise kinds the version itself carries are checked: a version
  * that promises nothing new takes no room.
  */
-function withinCapacity(ctx: TermContext, head: TermOffer, promises: readonly TermPromise[]): boolean {
+function withinCapacity(
+  ctx: TermContext,
+  head: TermOffer,
+  promises: readonly TermPromise[],
+): boolean {
   const all = ctx.deps.valueModels?.(SHELF_VENDOR_KIND, [])?.model.capacities ?? {};
   const mine = new Set(promises.filter((p) => p.by === 'buyer').map((p) => p.name));
   const capacities = Object.fromEntries(Object.entries(all).filter(([name]) => mine.has(name)));
@@ -1197,7 +1272,12 @@ export function decideTermProposalCard(
         ctx.store.decideCard(sibling.cardId, 'lapsed', nowMs);
         ctx.closeCard(sibling.cardId, 'waiting for a persona');
       }
-      ctx.store.moveNegotiation({ requestId: card.requestId, from: ['ready'], to: 'negotiating', nowMs });
+      ctx.store.moveNegotiation({
+        requestId: card.requestId,
+        from: ['ready'],
+        to: 'negotiating',
+        nowMs,
+      });
       ctx.store.setNextAction(card.requestId, nowMs, nowMs);
       raisePersonaCard(ctx, {
         step: 'proposal',
@@ -1422,9 +1502,7 @@ export function rankTermOffers(ctx: TermContext): RankedTermOffer[] {
   const order = (a: bigint, b: bigint): number => (a < b ? -1 : a > b ? 1 : 0);
   costed.sort(
     (a, b) =>
-      order(a.cost, b.cost) ||
-      order(a.feeIn, b.feeIn) ||
-      a.sellerDid.localeCompare(b.sellerDid),
+      order(a.cost, b.cost) || order(a.feeIn, b.feeIn) || a.sellerDid.localeCompare(b.sellerDid),
   );
   return [...costed.map(({ cost: _c, feeIn: _f, ...entry }) => entry), ...rest];
 }
@@ -1457,7 +1535,9 @@ export function endProposalWait(ctx: TermContext, requestId: string): void {
 function siblingCards(ctx: TermContext, card: TermCardRow): TermCardRow[] {
   return ctx.store
     .cardsForRequest(card.requestId, TERM_PROPOSAL_CARD)
-    .filter((c) => c.cardId !== card.cardId && c.refDigest === card.refDigest && c.state === 'pending');
+    .filter(
+      (c) => c.cardId !== card.cardId && c.refDigest === card.refDigest && c.state === 'pending',
+    );
 }
 
 /** The brand's ceilings as hard limits, in the offer's period. */
@@ -1467,4 +1547,3 @@ function ceilingLimits(head: TermOffer, policy: TermBuyerPolicy): Record<TermNam
   for (const name of TERM_NAMES) limits[name] = { hard: ceilings[name], auto: ceilings[name] };
   return limits;
 }
-

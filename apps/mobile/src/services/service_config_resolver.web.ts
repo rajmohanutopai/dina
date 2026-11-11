@@ -14,7 +14,6 @@ import { brainFetch } from './web_runtime';
 import type { ServiceConfigCoreClient } from '../hooks/useServiceConfigForm';
 import type { ServiceConfig, ServiceListing } from '@dina/core';
 
-
 const BASE = '/api/v1/service';
 
 function configPath(rkey?: string): string {

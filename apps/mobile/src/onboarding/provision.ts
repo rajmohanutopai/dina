@@ -68,11 +68,11 @@ import { applyDinaPlcUpdate } from '@dina/home-node';
 
 import { closeVault, openPersistenceForIdentity, unlock } from '../hooks/useUnlock';
 import { resolveExistingAtprotoIdentity } from '../services/atproto_identity';
+import { findBackupForPhrase, restoreFoundBackup } from '../services/cloud_backup';
 import { setDisplayNameOverride } from '../services/display_name_override';
 import { savePersistedDid, loadPersistedDid } from '../services/identity_record';
 import { settleSignedOutIdentity } from '../services/identity_scope';
 import { saveIdentitySeeds } from '../services/identity_store';
-import { writeInstallMarker } from '../services/install_marker';
 import {
   DEFAULT_PDS_URL,
   loadInfraPreferences,
@@ -82,7 +82,7 @@ import {
   savePdsUrl,
   saveAppViewURL,
 } from '../services/infra_preferences';
-import { findBackupForPhrase, restoreFoundBackup } from '../services/cloud_backup';
+import { writeInstallMarker } from '../services/install_marker';
 import { saveLinkedAtprotoIdentity } from '../services/linked_identity_record';
 import { resolveMsgBoxURL } from '../services/msgbox_wiring';
 import { emitRuntimeWarning } from '../services/runtime_warnings';

@@ -237,7 +237,10 @@ describe('classifyFileToolCall', () => {
     const dirlink = path.join(projectDir, 'dirlink');
     fs.symlinkSync(vaultDir, dirlink);
     fs.symlinkSync('keyfile', path.join(vaultDir, 'rel')); // relative leaf
-    expect(call('Read', path.join('dirlink', 'rel'))).toEqual({ action: 'secret_read', risk: 'BLOCKED' });
+    expect(call('Read', path.join('dirlink', 'rel'))).toEqual({
+      action: 'secret_read',
+      risk: 'BLOCKED',
+    });
   });
 
   it('AUDIT2: a symlink CYCLE fails closed (BLOCKED), never open', () => {
@@ -259,11 +262,22 @@ describe('classifyFileToolCall', () => {
     // inbox to vault FIRST (kernel order), landing at /keyfile's real parent.
     fs.symlinkSync(vaultDir, path.join(projectDir, 'inbox'));
     // inbox/keyfile == vault/keyfile (exists) — reachable via the symlink
-    expect(call('Read', path.join('inbox', 'keyfile'))).toEqual({ action: 'secret_read', risk: 'BLOCKED' });
+    expect(call('Read', path.join('inbox', 'keyfile'))).toEqual({
+      action: 'secret_read',
+      risk: 'BLOCKED',
+    });
   });
 
   it('AUDIT3: broadened credential basenames are protected', () => {
-    for (const name of ['.netrc', '.pgpass', '.git-credentials', '.npmrc', 'key.jks', 'cert.der', 'authorized_keys']) {
+    for (const name of [
+      '.netrc',
+      '.pgpass',
+      '.git-credentials',
+      '.npmrc',
+      'key.jks',
+      'cert.der',
+      'authorized_keys',
+    ]) {
       expect(isProtectedPath(path.join(projectDir, name), { vaultDir })).toBe(true);
     }
   });
@@ -310,17 +324,32 @@ describe('CODEX AUDIT — tilde expansion', () => {
   const homeVault = path.join(os.homedir(), '.dina');
   it('~/.dina/keyfile expands to the home vault → secret_read BLOCKED', () => {
     expect(
-      classifyFileToolCall({ toolName: 'Read', rawPaths: ['~/.dina/keyfile'], vaultDir: homeVault, cwd: projectDir }),
+      classifyFileToolCall({
+        toolName: 'Read',
+        rawPaths: ['~/.dina/keyfile'],
+        vaultDir: homeVault,
+        cwd: projectDir,
+      }),
     ).toEqual({ action: 'secret_read', risk: 'BLOCKED' });
   });
   it('~otheruser path fails closed (unresolvable → protected)', () => {
     expect(
-      classifyFileToolCall({ toolName: 'Read', rawPaths: ['~root/.dina/keyfile'], vaultDir: homeVault, cwd: projectDir }).risk,
+      classifyFileToolCall({
+        toolName: 'Read',
+        rawPaths: ['~root/.dina/keyfile'],
+        vaultDir: homeVault,
+        cwd: projectDir,
+      }).risk,
     ).toBe('BLOCKED');
   });
   it('OVER-BLOCK guard — ~/ to a non-vault file stays SAFE', () => {
     expect(
-      classifyFileToolCall({ toolName: 'Read', rawPaths: ['~/notes.txt'], vaultDir: homeVault, cwd: projectDir }).risk,
+      classifyFileToolCall({
+        toolName: 'Read',
+        rawPaths: ['~/notes.txt'],
+        vaultDir: homeVault,
+        cwd: projectDir,
+      }).risk,
     ).toBe('SAFE');
   });
 });

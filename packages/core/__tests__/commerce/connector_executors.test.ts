@@ -396,9 +396,9 @@ describe('an RPC connector (§24)', () => {
       endpoints: () => ({ 'erp:read_catalog': ODOO_ENDPOINT }),
       transport,
     })();
-    const outcome = await (executors['erp:read_catalog'] as NonNullable<
-      (typeof executors)['erp:read_catalog']
-    >)({ secret: SECRET, params: undefined });
+    const outcome = await (
+      executors['erp:read_catalog'] as NonNullable<(typeof executors)['erp:read_catalog']>
+    )({ secret: SECRET, params: undefined });
 
     expect(outcome.ok).toBe(true);
     expect(calls).toHaveLength(1);
@@ -433,9 +433,9 @@ describe('an RPC connector (§24)', () => {
       endpoints: () => ({ 'erp:read_catalog': ODOO_ENDPOINT }),
       transport,
     })();
-    const outcome = await (executors['erp:read_catalog'] as NonNullable<
-      (typeof executors)['erp:read_catalog']
-    >)({ secret: SECRET, params: undefined });
+    const outcome = await (
+      executors['erp:read_catalog'] as NonNullable<(typeof executors)['erp:read_catalog']>
+    )({ secret: SECRET, params: undefined });
 
     expect(outcome.ok).toBe(false);
     if (!outcome.ok) expect(outcome.error).toMatch(/must not be redirected/);
@@ -454,9 +454,10 @@ describe('an RPC connector (§24)', () => {
       endpoints: () => ({ 'erp:read_catalog': JSON_ENDPOINT }),
       transport,
     })();
-    await (executors['erp:read_catalog'] as NonNullable<
-      (typeof executors)['erp:read_catalog']
-    >)({ secret: SECRET, params: undefined });
+    await (executors['erp:read_catalog'] as NonNullable<(typeof executors)['erp:read_catalog']>)({
+      secret: SECRET,
+      params: undefined,
+    });
     expect(calls[0]?.request).toBeUndefined();
   });
 });

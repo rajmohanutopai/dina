@@ -13,23 +13,23 @@ lands in docs/HOME_NODE_LITE_TASKS.md tasks 3.2–3.19.
 We evaluated three candidates against the requirements in task 3.1–3.4.
 Summary:
 
-| Library | Async? | Prebuilt arches | FTS5 | Maintenance | Verdict |
-|---|---|---|---|---|---|
-| **`better-sqlite3-multiple-ciphers`** | Sync (wrapped async at the port) | linux-x64, linux-arm64, darwin-x64, darwin-arm64, win32-x64 | ✅ | Active (m4heshd fork of WiseLibs better-sqlite3 + wxSQLite3 ciphers) | **Chosen** |
-| `@journeyapps/sqlcipher` | Native async (node-sqlite3-based) | linux-x64, darwin-x64, darwin-arm64 — **no prebuilt linux-arm64** | ✅ (inherited from node-sqlite3) | Maintained (Journey Apps' commercial sync product) | Rejected — binary matrix gap |
-| `node-sqlcipher` | Native async | Limited prebuild | ✅ | Sparse | Rejected — maintenance concern |
+| Library                               | Async?                            | Prebuilt arches                                                   | FTS5                             | Maintenance                                                          | Verdict                        |
+| ------------------------------------- | --------------------------------- | ----------------------------------------------------------------- | -------------------------------- | -------------------------------------------------------------------- | ------------------------------ |
+| **`better-sqlite3-multiple-ciphers`** | Sync (wrapped async at the port)  | linux-x64, linux-arm64, darwin-x64, darwin-arm64, win32-x64       | ✅                               | Active (m4heshd fork of WiseLibs better-sqlite3 + wxSQLite3 ciphers) | **Chosen**                     |
+| `@journeyapps/sqlcipher`              | Native async (node-sqlite3-based) | linux-x64, darwin-x64, darwin-arm64 — **no prebuilt linux-arm64** | ✅ (inherited from node-sqlite3) | Maintained (Journey Apps' commercial sync product)                   | Rejected — binary matrix gap   |
+| `node-sqlcipher`                      | Native async                      | Limited prebuild                                                  | ✅                               | Sparse                                                               | Rejected — maintenance concern |
 
 ### Why `better-sqlite3-multiple-ciphers`
 
 1. **Prebuilt binary coverage matches our deployment matrix** exactly
    (task 3.2 verified against v12.9.0 GitHub releases):
 
-   | Platform      | Arches                              | Node ABIs published |
-   |---------------|-------------------------------------|---------------------|
-   | **darwin**    | arm64, x64                          | 115 / 127 / 137     |
-   | **linux**     | arm64, x64, arm                     | 115 / 127 / 137     |
-   | **linuxmusl** | arm64, x64                          | 115 / 127 / 137     |
-   | **win32**     | arm64, x64                          | 115 / 127 / 137     |
+   | Platform      | Arches          | Node ABIs published |
+   | ------------- | --------------- | ------------------- |
+   | **darwin**    | arm64, x64      | 115 / 127 / 137     |
+   | **linux**     | arm64, x64, arm | 115 / 127 / 137     |
+   | **linuxmusl** | arm64, x64      | 115 / 127 / 137     |
+   | **win32**     | arm64, x64      | 115 / 127 / 137     |
 
    All 4 required targets (`linux-arm64`, `linux-x64`, `darwin-arm64`,
    `darwin-x64`) have prebuilds for Node 20 (ABI 115), Node 22 (ABI 127),
@@ -37,6 +37,7 @@ Summary:
    supported runtime lands on a prebuild without a native build toolchain.
    Bonus coverage: Alpine (linuxmusl), Raspberry Pi 32-bit (linux-arm),
    Windows.
+
 2. **Sync API matches our sync port contract** (task 3.4). Dina's
    `DatabaseAdapter` port in `packages/core/src/storage/db_adapter.ts`
    returns sync values (`void` / `T[]` / `number`) — not `Promise<T>`.
@@ -119,16 +120,16 @@ packages/storage-node/
 real `better-sqlite3-multiple-ciphers` native module — no mocking of
 the SQLite layer.
 
-| Suite | Tests | Purpose |
-|-------|-------|---------|
-| `bsmc_feature_verification.test.ts` | 4  | Library-level probes: FTS5 tokenizer + WAL round-trip (task 3.3). |
-| `adapter.test.ts`                   | 33 | `NodeSQLiteAdapter`: option validation, open/close lifecycle, encryption round-trip, pragma application, CRUD, callback transactions, explicit BEGIN/COMMIT forms (tasks 3.7 – 3.9, 3.14). |
-| `fts5.test.ts`                      | 5  | `CREATE VIRTUAL TABLE USING fts5(tokenize="unicode61 remove_diacritics 1")` via the adapter — diacritic strip, BM25 rank, phrase query, case-insensitivity, delete+re-insert (task 3.10). |
-| `blobs.test.ts`                     | 8  | Uint8Array ↔ Buffer round-trip, NULL BLOB, 1 MB payload, transaction commit+rollback with blobs (task 3.11). |
-| `provider.test.ts`                  | 36 | `NodeDBProvider`: identity DB at `identity.sqlite`, per-persona files at `vault/<persona>.sqlite`, path-safe persona validation, per-DB crash-safety pragmas, encrypted round-trip, wrong-DEK rejection (tasks 3.12 – 3.14). |
-| `migration.test.ts`                 | 21 | `runMigrations`: schema_version table, ordered transactional apply, idempotent re-run, rollback on failure, shape validation, across-reopen persistence (task 3.15). |
-| `perf_smoke.test.ts`                | 2  | 10K-item FTS5 benchmark — p95 budget 50 ms, gated via `PERF_SMOKE` / `PERF_P95_MS` envs (task 3.18). |
-| `concurrent_access.test.ts`         | 8  | Multi-connection on one file: commit visibility, WAL snapshot isolation, SQLITE_BUSY on contended BEGIN IMMEDIATE, multi-reader (task 3.19). |
+| Suite                               | Tests | Purpose                                                                                                                                                                                                                      |
+| ----------------------------------- | ----- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bsmc_feature_verification.test.ts` | 4     | Library-level probes: FTS5 tokenizer + WAL round-trip (task 3.3).                                                                                                                                                            |
+| `adapter.test.ts`                   | 33    | `NodeSQLiteAdapter`: option validation, open/close lifecycle, encryption round-trip, pragma application, CRUD, callback transactions, explicit BEGIN/COMMIT forms (tasks 3.7 – 3.9, 3.14).                                   |
+| `fts5.test.ts`                      | 5     | `CREATE VIRTUAL TABLE USING fts5(tokenize="unicode61 remove_diacritics 1")` via the adapter — diacritic strip, BM25 rank, phrase query, case-insensitivity, delete+re-insert (task 3.10).                                    |
+| `blobs.test.ts`                     | 8     | Uint8Array ↔ Buffer round-trip, NULL BLOB, 1 MB payload, transaction commit+rollback with blobs (task 3.11).                                                                                                                 |
+| `provider.test.ts`                  | 36    | `NodeDBProvider`: identity DB at `identity.sqlite`, per-persona files at `vault/<persona>.sqlite`, path-safe persona validation, per-DB crash-safety pragmas, encrypted round-trip, wrong-DEK rejection (tasks 3.12 – 3.14). |
+| `migration.test.ts`                 | 21    | `runMigrations`: schema_version table, ordered transactional apply, idempotent re-run, rollback on failure, shape validation, across-reopen persistence (task 3.15).                                                         |
+| `perf_smoke.test.ts`                | 2     | 10K-item FTS5 benchmark — p95 budget 50 ms, gated via `PERF_SMOKE` / `PERF_P95_MS` envs (task 3.18).                                                                                                                         |
+| `concurrent_access.test.ts`         | 8     | Multi-connection on one file: commit visibility, WAL snapshot isolation, SQLITE_BUSY on contended BEGIN IMMEDIATE, multi-reader (task 3.19).                                                                                 |
 
 Run in-package via `npm test`. No native build toolchain required on
 any of the 4 prebuilt target arches — `prebuild-install` fetches the

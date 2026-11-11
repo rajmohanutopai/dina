@@ -117,7 +117,10 @@ describe('routeNotificationResponse (PH-12)', () => {
     return {
       notification: {
         date,
-        request: { identifier, content: { data: { deepLink: 'dina://reminders/1', inboxId: 'x' } } },
+        request: {
+          identifier,
+          content: { data: { deepLink: 'dina://reminders/1', inboxId: 'x' } },
+        },
       },
     };
   }
@@ -156,7 +159,11 @@ describe('routeNotificationResponse (PH-12)', () => {
 
   it('no response does nothing', async () => {
     const routerPush = jest.fn();
-    await routeNotificationResponse(null, { routerPush, markRead: () => true }, async () => undefined);
+    await routeNotificationResponse(
+      null,
+      { routerPush, markRead: () => true },
+      async () => undefined,
+    );
     expect(routerPush).not.toHaveBeenCalled();
   });
 });

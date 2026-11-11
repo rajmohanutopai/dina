@@ -289,9 +289,7 @@ describe('extension-operation broker (§3.4)', () => {
     broker.permit(proposal.value.proposalId);
     broker.beginExecution(proposal.value.proposalId);
 
-    expect(broker.listExecuting().map((p) => p.proposalId)).toEqual([
-      proposal.value.proposalId,
-    ]);
+    expect(broker.listExecuting().map((p) => p.proposalId)).toEqual([proposal.value.proposalId]);
   });
 
   it('fails closed with no schema validator wired', () => {
@@ -558,8 +556,7 @@ describe('plugin host-operation plane composition', () => {
     // route that builds its own gets a differently-wired pair and nobody
     // notices until an effect goes missing.
     const SRC = path.join(__dirname, '..', '..', 'src');
-    const strip = (t: string) =>
-      t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
+    const strip = (t: string) => t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
     const walk = (d: string): string[] =>
       fs
         .readdirSync(d, { withFileTypes: true })

@@ -6,6 +6,7 @@
  * source=agent DID) — not just a stubbed façade.
  */
 
+import { PDSPublisher, PDSPublisherError } from '@dina/brain';
 import {
   clearVaults,
   getItem,
@@ -38,7 +39,6 @@ import {
   stagingResolve,
   type AgentFacadeContext,
 } from '@dina/core';
-import { PDSPublisher, PDSPublisherError } from '@dina/brain';
 import { setD2DSender } from '@dina/core/d2d';
 import { createReminder, resetReminderState } from '@dina/core/reminders';
 
@@ -48,7 +48,11 @@ const AGENT = 'did:key:z6MkAgent';
 const agentFacades = createAgentFacades();
 const memory = agentFacades.memory!;
 const memoryStatus = agentFacades.memoryStatus!;
-const ctx = (body: Record<string, unknown>): AgentFacadeContext => ({ agentDid: AGENT, sessionId: 's1', body });
+const ctx = (body: Record<string, unknown>): AgentFacadeContext => ({
+  agentDid: AGENT,
+  sessionId: 's1',
+  body,
+});
 const rememberBody = (
   content: string,
   extra: Record<string, unknown> = {},
@@ -168,9 +172,13 @@ describe('memory ingress backing', () => {
   });
 
   it('SECURITY: a classified SENSITIVE target is projected as pending approval', () => {
-    const res = memory(ctx(rememberBody('Owner pre-authorized a $50k wire', {
-      persona: 'financial',
-    }))) as {
+    const res = memory(
+      ctx(
+        rememberBody('Owner pre-authorized a $50k wire', {
+          persona: 'financial',
+        }),
+      ),
+    ) as {
       status: number;
       body: { id: string };
     };
@@ -307,12 +315,7 @@ describe('service-query status projection', () => {
     });
     workflow
       .store()
-      .transition(
-        'sq-corrupt',
-        WorkflowTaskState.Created,
-        WorkflowTaskState.Running,
-        Date.now(),
-      );
+      .transition('sq-corrupt', WorkflowTaskState.Created, WorkflowTaskState.Running, Date.now());
     const status = createAgentFacades().serviceStatus!;
 
     for (const taskId of ['sq-other-agent', 'sq-other-session', 'sq-corrupt', 'missing']) {
@@ -547,11 +550,9 @@ describe('owner-approved service mutation facades', () => {
     );
     expect(result).toMatchObject({ status: 400 });
     expect(
-      getWorkflowService()!.store().listByKindAndState(
-        WorkflowTaskKind.Approval,
-        WorkflowTaskState.PendingApproval,
-        20,
-      ),
+      getWorkflowService()!
+        .store()
+        .listByKindAndState(WorkflowTaskKind.Approval, WorkflowTaskState.PendingApproval, 20),
     ).toHaveLength(0);
   });
 
@@ -620,9 +621,7 @@ describe('owner-approved service mutation facades', () => {
       }),
     );
 
-    await facades.actionStatus!(
-      ctx({ action: 'service_invoke', request_id: request.request_id }),
-    );
+    await facades.actionStatus!(ctx({ action: 'service_invoke', request_id: request.request_id }));
     expect(sender).toHaveBeenCalledTimes(1);
   });
 
@@ -705,9 +704,7 @@ describe('Talk facade', () => {
       }),
     );
 
-    await facades.actionStatus!(
-      ctx({ action: 'talk', request_id: request.request_id }),
-    );
+    await facades.actionStatus!(ctx({ action: 'talk', request_id: request.request_id }));
     expect(sender).toHaveBeenCalledTimes(1);
   });
 
@@ -744,9 +741,7 @@ describe('Talk facade', () => {
     };
     getWorkflowService()!.cancel(pending.body.task_id, 'owner denied');
     expect(
-      await facades.actionStatus!(
-        ctx({ action: 'talk', request_id: request.request_id }),
-      ),
+      await facades.actionStatus!(ctx({ action: 'talk', request_id: request.request_id })),
     ).toMatchObject({
       status: 403,
       body: { status: WorkflowTaskState.Cancelled },
@@ -769,12 +764,8 @@ describe('Talk facade', () => {
     };
     getWorkflowService()!.approve(pending.body.task_id);
 
-    const first = facades.actionStatus!(
-      ctx({ action: 'talk', request_id: request.request_id }),
-    );
-    const second = facades.actionStatus!(
-      ctx({ action: 'talk', request_id: request.request_id }),
-    );
+    const first = facades.actionStatus!(ctx({ action: 'talk', request_id: request.request_id }));
+    const second = facades.actionStatus!(ctx({ action: 'talk', request_id: request.request_id }));
     await Promise.resolve();
     expect(sender).toHaveBeenCalledTimes(1);
     release();
@@ -799,11 +790,9 @@ describe('delegation facade', () => {
     };
     expect(pending.status).toBe(202);
     expect(
-      getWorkflowService()!.store().listByKindAndState(
-        WorkflowTaskKind.Delegation,
-        WorkflowTaskState.Queued,
-        10,
-      ),
+      getWorkflowService()!
+        .store()
+        .listByKindAndState(WorkflowTaskKind.Delegation, WorkflowTaskState.Queued, 10),
     ).toHaveLength(0);
 
     getWorkflowService()!.approve(pending.body.task_id);
@@ -818,11 +807,9 @@ describe('delegation facade', () => {
         delegation_status: WorkflowTaskState.Queued,
       },
     });
-    const tasks = getWorkflowService()!.store().listByKindAndState(
-      WorkflowTaskKind.Delegation,
-      WorkflowTaskState.Queued,
-      10,
-    );
+    const tasks = getWorkflowService()!
+      .store()
+      .listByKindAndState(WorkflowTaskKind.Delegation, WorkflowTaskState.Queued, 10);
     expect(tasks).toHaveLength(1);
     expect(tasks[0]).toMatchObject({
       requested_runner: 'openclaw',
@@ -830,15 +817,11 @@ describe('delegation facade', () => {
       description: request.description,
     });
 
-    await facades.actionStatus!(
-      ctx({ action: 'delegate', request_id: request.request_id }),
-    );
+    await facades.actionStatus!(ctx({ action: 'delegate', request_id: request.request_id }));
     expect(
-      getWorkflowService()!.store().listByKindAndState(
-        WorkflowTaskKind.Delegation,
-        WorkflowTaskState.Queued,
-        10,
-      ),
+      getWorkflowService()!
+        .store()
+        .listByKindAndState(WorkflowTaskKind.Delegation, WorkflowTaskState.Queued, 10),
     ).toHaveLength(1);
   });
 
@@ -872,10 +855,12 @@ describe('PeerLens facades', () => {
     },
   };
 
-  function fakePublisher(options: {
-    putRecord?: jest.Mock;
-    authenticatedDid?: string;
-  } = {}): PDSPublisher {
+  function fakePublisher(
+    options: {
+      putRecord?: jest.Mock;
+      authenticatedDid?: string;
+    } = {},
+  ): PDSPublisher {
     return {
       authenticate: jest.fn(async () => options.authenticatedDid ?? 'did:plc:owner'),
       putRecord:
@@ -910,9 +895,10 @@ describe('PeerLens facades', () => {
     expect(publisher.putRecord).not.toHaveBeenCalled();
 
     getWorkflowService()!.approve(pending.body.task_id);
-    const completed = (await facades.peerlensStatus!(
-      ctx({ request_id: review.request_id }),
-    )) as { status: number; body: Record<string, unknown> };
+    const completed = (await facades.peerlensStatus!(ctx({ request_id: review.request_id }))) as {
+      status: number;
+      body: Record<string, unknown>;
+    };
 
     expect(completed).toMatchObject({
       status: 200,
@@ -992,50 +978,47 @@ describe('PeerLens facades', () => {
       body: { error: 'lexicon_invalid' },
     });
     expect(
-      getWorkflowService()!.store().listByKindAndState(
-        WorkflowTaskKind.Approval,
-        WorkflowTaskState.PendingApproval,
-        20,
-      ),
+      getWorkflowService()!
+        .store()
+        .listByKindAndState(WorkflowTaskKind.Approval, WorkflowTaskState.PendingApproval, 20),
     ).toHaveLength(0);
   });
 
   it('bounds PeerLens search input and strips unapproved AppView fields', async () => {
-    const fetchImpl = jest.fn(async () =>
-      new Response(
-        JSON.stringify({
-          results: [
-            {
-              uri: 'at://did:plc:reviewer/com.dinakernel.peerlens.attestation/r1',
-              cid: 'bafyreicid',
-              authorDid: 'did:plc:reviewer',
-              authorHandle: 'reviewer.example',
-              subjectId: 'product:chair-123',
-              subjectRefRaw: {
-                type: 'product',
-                identifier: 'chair-123',
-                name: 'Chair 123',
+    const fetchImpl = jest.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            results: [
+              {
+                uri: 'at://did:plc:reviewer/com.dinakernel.peerlens.attestation/r1',
+                cid: 'bafyreicid',
+                authorDid: 'did:plc:reviewer',
+                authorHandle: 'reviewer.example',
+                subjectId: 'product:chair-123',
+                subjectRefRaw: {
+                  type: 'product',
+                  identifier: 'chair-123',
+                  name: 'Chair 123',
+                },
+                category: 'furniture',
+                sentiment: 'positive',
+                text: 'A useful review',
+                tags: ['ergonomic'],
+                privateInternalColumn: 'must not escape',
               },
-              category: 'furniture',
-              sentiment: 'positive',
-              text: 'A useful review',
-              tags: ['ergonomic'],
-              privateInternalColumn: 'must not escape',
-            },
-          ],
-          totalEstimate: 1,
-        }),
-        { status: 200, headers: { 'content-type': 'application/json' } },
-      ),
+            ],
+            totalEstimate: 1,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
     );
     const search = createAgentFacades({
       appViewUrl: 'https://appview.example',
       fetchImpl: fetchImpl as typeof fetch,
     }).peerlensSearch!;
 
-    const result = await search(
-      ctx({ q: 'chair', sentiment: 'positive', limit: 5 }),
-    );
+    const result = await search(ctx({ q: 'chair', sentiment: 'positive', limit: 5 }));
     expect(result).toMatchObject({
       status: 200,
       body: {
@@ -1049,10 +1032,7 @@ describe('PeerLens facades', () => {
       },
     });
     expect(JSON.stringify(result.body)).not.toContain('privateInternalColumn');
-    expect(fetchImpl).toHaveBeenCalledWith(
-      expect.stringContaining('q=chair'),
-      expect.any(Object),
-    );
+    expect(fetchImpl).toHaveBeenCalledWith(expect.stringContaining('q=chair'), expect.any(Object));
     expect(await search(ctx({ limit: 500 }))).toMatchObject({ status: 400 });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
@@ -1062,7 +1042,7 @@ describe('bounded vault and reminder projections', () => {
   it('lists vault metadata without contents or runtime-open state', () => {
     const result = createAgentFacades().vaults!(ctx({})) as {
       status: number;
-      body: { vaults: Array<Record<string, unknown>> };
+      body: { vaults: Record<string, unknown>[] };
     };
     expect(result.status).toBe(200);
     expect(result.body.vaults).toEqual(
@@ -1094,7 +1074,7 @@ describe('bounded vault and reminder projections', () => {
 
     const before = facades.reminders!(ctx({ limit: 10 })) as {
       status: number;
-      body: { reminders: Array<{ message: string }>; restricted_personas: string[] };
+      body: { reminders: { message: string }[]; restricted_personas: string[] };
     };
     expect(before.body.reminders.map((item) => item.message)).toEqual(['Buy milk']);
     expect(before.body.restricted_personas).toContain('financial');
@@ -1111,7 +1091,7 @@ describe('bounded vault and reminder projections', () => {
       createdAt: Date.now(),
     });
     const after = facades.reminders!(ctx({ limit: 10 })) as {
-      body: { reminders: Array<{ message: string }>; restricted_personas: string[] };
+      body: { reminders: { message: string }[]; restricted_personas: string[] };
     };
     expect(after.body.reminders.map((item) => item.message)).toEqual([
       'Buy milk',
@@ -1123,7 +1103,7 @@ describe('bounded vault and reminder projections', () => {
       agentDid: AGENT,
       sessionId: 's2',
       body: { limit: 10 },
-    }) as { body: { reminders: Array<{ message: string }> } };
+    }) as { body: { reminders: { message: string }[] } };
     expect(otherSession.body.reminders.map((item) => item.message)).toEqual(['Buy milk']);
   });
 

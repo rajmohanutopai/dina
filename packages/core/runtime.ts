@@ -62,8 +62,7 @@ export { getA2ARuntime, installA2A } from './src/a2a/runtime';
 export { ucpWorkflowHooks } from './src/commerce/ucp/runtime';
 export { getTopicRepository, listTopicRepositoryPersonas } from './src/memory/repository';
 export { MemoryService, setMemoryService } from './src/memory/service';
-export { getNodeDID, setNodeDID,
-  setNodeSigningPublicKey } from './src/pairing/ceremony';
+export { getNodeDID, setNodeDID, setNodeSigningPublicKey } from './src/pairing/ceremony';
 export { bootstrapMsgBox } from './src/relay/msgbox_boot';
 export type { MsgBoxBootConfig } from './src/relay/msgbox_boot';
 export {
@@ -279,9 +278,7 @@ export type {
 // §3.4 host-operation plane (WS-3.4/3.5): the durable proposal broker and the
 // dispatcher that executes permitted proposals. Both boots compose it through
 // `createPluginHostRuntime`.
-export {
-  ExtensionOperationBroker,
-} from './src/plugins/extension_broker';
+export { ExtensionOperationBroker } from './src/plugins/extension_broker';
 export type {
   ExtensionProposal,
   ExtensionProposalState,
@@ -322,10 +319,7 @@ export {
   HOST_OPERATION_PUBLICATION_CANDIDATE,
   registerCommerceHostOperations,
 } from './src/plugins/commerce_host_operations';
-export {
-  applyReconcileAnswer,
-  askReconcilePolls,
-} from './src/commerce/reconcile_poller';
+export { applyReconcileAnswer, askReconcilePolls } from './src/commerce/reconcile_poller';
 export {
   makeServiceQueryReconcileSend,
   ORDER_RECONCILE_CAPABILITY,

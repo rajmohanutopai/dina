@@ -128,11 +128,14 @@ function buildDpopProof(key: DpopKey, c: DpopClaims): string {
 }
 
 // ── HTTP with DPoP + one nonce retry ────────────────────────────────
-export type FetchLike = (url: string, init?: { method?: string; headers?: Record<string, string>; body?: string }) => Promise<{
-    status: number;
-    headers: { get(name: string): string | null };
-    text(): Promise<string>;
-  }>;
+export type FetchLike = (
+  url: string,
+  init?: { method?: string; headers?: Record<string, string>; body?: string },
+) => Promise<{
+  status: number;
+  headers: { get(name: string): string | null };
+  text(): Promise<string>;
+}>;
 
 async function dpopFetch(
   fetchFn: FetchLike,
@@ -222,7 +225,10 @@ export function oauthClientConfig(clientUrl?: string): { clientId: string; redir
   ).replace(/\/$/, '');
   const host = base.replace(/^https?:\/\//, '').split('/')[0];
   const scheme = host.split(':')[0].split('.').reverse().join('.');
-  return { clientId: `${base}/oauth/client-metadata.json`, redirectUri: `${scheme}:/oauth/callback` };
+  return {
+    clientId: `${base}/oauth/client-metadata.json`,
+    redirectUri: `${scheme}:/oauth/callback`,
+  };
 }
 
 // ── Start: discover + PKCE + DPoP + PAR → authorize URL ─────────────
@@ -298,7 +304,9 @@ export async function startOAuth(
   if (par.status !== 201 && par.status !== 200) {
     throw new Error(`PAR failed (${par.status}): ${par.bodyText.slice(0, 200)}`);
   }
-  const requestUri = String((JSON.parse(par.bodyText) as { request_uri?: string }).request_uri ?? '');
+  const requestUri = String(
+    (JSON.parse(par.bodyText) as { request_uri?: string }).request_uri ?? '',
+  );
   if (requestUri === '') throw new Error('PAR response missing request_uri');
 
   const authorizeUrl = `${info.authorizationEndpoint}?client_id=${encodeURIComponent(
@@ -341,7 +349,8 @@ export async function completeOAuth(
   opts: { fetchFn: FetchLike; nowSec: number },
 ): Promise<OAuthResult> {
   if (params.state !== session.state) throw new Error('OAuth state mismatch (possible CSRF)');
-  const nonceRef: { nonce?: string } = session.dpopNonce !== undefined ? { nonce: session.dpopNonce } : {};
+  const nonceRef: { nonce?: string } =
+    session.dpopNonce !== undefined ? { nonce: session.dpopNonce } : {};
   const form = new URLSearchParams({
     grant_type: 'authorization_code',
     code: params.code,

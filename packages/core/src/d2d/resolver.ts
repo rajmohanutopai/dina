@@ -17,7 +17,11 @@
 
 import { DEFAULT_PLC_DIRECTORY, DID_CACHE_TTL_MS } from '../constants';
 import { extractPublicKey, publicKeyToMultibase } from '../identity/did';
-import { validateDIDDocument, getMessagingService , buildDIDDocument } from '../identity/did_document';
+import {
+  validateDIDDocument,
+  getMessagingService,
+  buildDIDDocument,
+} from '../identity/did_document';
 import { defaultFetch } from '../runtime/fetch';
 
 import type { DIDDocument } from '../identity/did_document';
@@ -135,7 +139,10 @@ export class DIDResolver {
   async lookup(did: string): Promise<DIDLookup> {
     if (did.startsWith('did:key:')) {
       try {
-        return { kind: 'document', document: this.resolveDidKey(did).document as unknown as Record<string, unknown> };
+        return {
+          kind: 'document',
+          document: this.resolveDidKey(did).document as unknown as Record<string, unknown>,
+        };
       } catch {
         return { kind: 'unavailable' };
       }
@@ -153,7 +160,8 @@ export class DIDResolver {
       if (response.status === 404) return { kind: 'not_found' };
       if (!response.ok) return { kind: 'unavailable' };
       const document: unknown = await response.json();
-      if (document === null || typeof document !== 'object' || Array.isArray(document)) return { kind: 'unavailable' };
+      if (document === null || typeof document !== 'object' || Array.isArray(document))
+        return { kind: 'unavailable' };
       if ((document as { id?: unknown }).id !== did) return { kind: 'unavailable' };
       return { kind: 'document', document: document as Record<string, unknown> };
     } catch {

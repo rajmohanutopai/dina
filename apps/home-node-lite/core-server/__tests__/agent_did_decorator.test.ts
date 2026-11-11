@@ -6,10 +6,7 @@ import { Writable } from 'node:stream';
 
 import { pino } from 'pino';
 
-import {
-  setAgentContext,
-  requireAgentContext,
-} from '../src/auth/agent_did_decorator';
+import { setAgentContext, requireAgentContext } from '../src/auth/agent_did_decorator';
 import { createServer } from '../src/server';
 
 import type { CoreServerConfig } from '../src/config';

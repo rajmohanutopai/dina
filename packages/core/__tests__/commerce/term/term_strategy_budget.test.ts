@@ -247,4 +247,3 @@ describe('the verdict budget through the engine', () => {
     expect(observed * Math.log2(3)).toBeLessThanOrEqual(1.6 * (N + I));
   });
 });
-

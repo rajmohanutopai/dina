@@ -19,119 +19,8 @@
  * + starts the polling runners. `stop()` halts them in reverse order.
  */
 
-import type { HomeNodeLifecycle } from '@dina/home-node';
+import { randomBytes as presenceRandomBytes } from '@noble/hashes/utils.js';
 
-import {
-  BridgePendingSweeper,
-  LeaseExpirySweeper,
-  LocalDelegationRunner,
-  MsgTypeCoordinationRequest,
-  MsgTypeCoordinationResponse,
-  MsgTypeSafetyAlert,
-  MsgTypeSocialUpdate,
-  MsgTypeTrustVouchRequest,
-  MsgTypeTrustVouchResponse,
-  StagingSweeper,
-  TaskExpirySweeper,
-  WatchPollSweeper,
-  WatchService,
-  WorkflowService,
-  defaultPluginCompletionHandler,
-  getPluginHostRuntime,
-  getPluginInstallRepository,
-  transformInboundOrderResult,
-  bootstrapMsgBox,
-  buildWatchPollHandler,
-  getWatchService,
-  disconnectMsgBox,
-  getReviewPublishRepository,
-  getSessionRegistry,
-  getServiceConfig,
-  listServiceConfigs,
-  drainListingUnpublishes,
-  hydrateServiceConfig,
-  isMsgBoxAuthenticated,
-  onMsgBoxAuthenticated,
-  makeServiceResponseBridgeSender,
-  onGrantRequestPending,
-  onServiceOfferReceived,
-  onServiceConfigChanged,
-  a2aWorkflowHooks,
-  composeWorkflowHooks,
-  ucpWorkflowHooks,
-  coordinationWorkflowHooks,
-  getA2ARuntime,
-  integrationWorkflowHooks,
-  modelChangeWorkflowHooks,
-  optionWorkflowHooks,
-  evidenceWorkflowHooks,
-  earnedRoomWorkflowHooks,
-  ownerQuestionWorkflowHooks,
-  negotiationWorkflowHooks,
-  termWorkflowHooks,
-  orderAttachmentWorkflowHooks,
-  wireGroupCoordinationOfferReplay,
-  registerDevice as registerDeviceDID,
-  registerPublicKeyResolver,
-  registerService,
-  resetCallerTypeState,
-  resetMiddlewareState,
-  resetServiceConfigState,
-  sendOutcomeOf,
-  setD2DSender,
-  setDeviceRoleResolver,
-  setDeviceScopeResolver,
-  setNodeDID, setNodeSigningPublicKey,
-  setReviewPublishRepository,
-  setServiceConfig,
-  setServiceConfigRepository,
-  getServiceConfigRepository,
-  setServiceQuerySender,
-  setServiceRespondSender,
-  setWatchService,
-  setWorkflowRepository,
-  setWorkflowService,
-  getWorkflowService,
-  setWSDeliverFn,
-  type CoreClient,
-  type CoreRouter,
-  type DinaMessage,
-  type LocalCapabilityRunner,
-  type MsgBoxBootConfig,
-  type ServiceConfig,
-  type ReviewPublishRepository,
-  type ServiceConfigRepository,
-  type ServiceQueryBody,
-  type ServiceResponseBody,
-  type WorkflowRepository,
-  type WSFactory,
-} from '@dina/core/runtime';
-
-// Wire MsgBox WS authentication to clear any pending offline warning.
-// Fires on initial connect AND on every reconnect cycle, so a user
-// action that surfaced "relay offline" inline gets a silent
-// background recovery once the relay is reachable again — no
-// "everything is fine now" banner needed.
-onMsgBoxAuthenticated(() => {
-  clearRuntimeWarning('transport.msgbox.offline');
-});
-
-/**
- * App-layer D2D egress shape. Every outbound D2D route in bootstrap.ts
- * funnels through one of these, so the app gets a single place to
- * resolve recipients + push bytes onto the WebSocket.
- *
- * `messageType` is one of the V1 family members (see
- * core/d2d/families.ts) or the reserved `service.query` /
- * `service.response` sentinels. The app uses it to pick
- * `serviceType` + any per-type audit tags; it must not mutate
- * `body`.
- */
-export type AppD2DSender = (
-  to: string,
-  messageType: string,
-  body: Record<string, unknown>,
-) => Promise<unknown>;
 import {
   createCoordinatorAskHandler,
   classifyInternalBrainError,
@@ -218,10 +107,93 @@ import {
   resolveInstalledPersonaName as coreResolveInstalledPersonaName,
   recoverOwnerApprovals,
 } from '@dina/core';
-import { kvPresenceStateStore, makeResolveSender, ServicePresenceWriter } from '@dina/home-node';
-import { startForegroundMeter } from './foreground_meter';
 import { kvGet, kvSet } from '@dina/core/kv';
-import { randomBytes as presenceRandomBytes } from '@noble/hashes/utils.js';
+import {
+  BridgePendingSweeper,
+  LeaseExpirySweeper,
+  LocalDelegationRunner,
+  MsgTypeCoordinationRequest,
+  MsgTypeCoordinationResponse,
+  MsgTypeSafetyAlert,
+  MsgTypeSocialUpdate,
+  MsgTypeTrustVouchRequest,
+  MsgTypeTrustVouchResponse,
+  StagingSweeper,
+  TaskExpirySweeper,
+  WatchPollSweeper,
+  WatchService,
+  WorkflowService,
+  defaultPluginCompletionHandler,
+  getPluginHostRuntime,
+  getPluginInstallRepository,
+  transformInboundOrderResult,
+  bootstrapMsgBox,
+  buildWatchPollHandler,
+  getWatchService,
+  disconnectMsgBox,
+  getReviewPublishRepository,
+  getSessionRegistry,
+  getServiceConfig,
+  listServiceConfigs,
+  drainListingUnpublishes,
+  hydrateServiceConfig,
+  isMsgBoxAuthenticated,
+  onMsgBoxAuthenticated,
+  makeServiceResponseBridgeSender,
+  onGrantRequestPending,
+  onServiceOfferReceived,
+  onServiceConfigChanged,
+  a2aWorkflowHooks,
+  composeWorkflowHooks,
+  ucpWorkflowHooks,
+  coordinationWorkflowHooks,
+  getA2ARuntime,
+  integrationWorkflowHooks,
+  modelChangeWorkflowHooks,
+  optionWorkflowHooks,
+  evidenceWorkflowHooks,
+  earnedRoomWorkflowHooks,
+  ownerQuestionWorkflowHooks,
+  negotiationWorkflowHooks,
+  termWorkflowHooks,
+  orderAttachmentWorkflowHooks,
+  wireGroupCoordinationOfferReplay,
+  registerPublicKeyResolver,
+  registerService,
+  resetCallerTypeState,
+  resetMiddlewareState,
+  resetServiceConfigState,
+  sendOutcomeOf,
+  setD2DSender,
+  setDeviceRoleResolver,
+  setDeviceScopeResolver,
+  setNodeDID,
+  setNodeSigningPublicKey,
+  setReviewPublishRepository,
+  setServiceConfig,
+  setServiceConfigRepository,
+  getServiceConfigRepository,
+  setServiceQuerySender,
+  setServiceRespondSender,
+  setWatchService,
+  setWorkflowRepository,
+  setWorkflowService,
+  getWorkflowService,
+  setWSDeliverFn,
+  type CoreClient,
+  type CoreRouter,
+  type DinaMessage,
+  type LocalCapabilityRunner,
+  type MsgBoxBootConfig,
+  type ServiceConfig,
+  type ReviewPublishRepository,
+  type ServiceConfigRepository,
+  type ServiceQueryBody,
+  type ServiceResponseBody,
+  type WorkflowRepository,
+  type WSFactory,
+} from '@dina/core/runtime';
+import { kvPresenceStateStore, makeResolveSender, ServicePresenceWriter } from '@dina/home-node';
 import { wireChatRememberRuntime } from '@dina/home-node/chat-runtime';
 import {
   buildHomeNodeServiceRuntime,
@@ -239,6 +211,7 @@ import { setInboxCoreClient, resetInboxCoreClient } from '../hooks/useServiceInb
 import { openPersonaDB, isPersistenceReady } from '../storage/init';
 
 import { setServiceQueryDispatcher, sendServiceQuery, sendGrantRequest } from './chat_d2d';
+import { startForegroundMeter } from './foreground_meter';
 import { postGrantPromptOnce } from './grant_prompt';
 import { resolveInboxCoreClient } from './inbox_client_resolver';
 import {
@@ -251,6 +224,33 @@ import { clearRuntimeWarning, emitRuntimeWarning } from './runtime_warnings';
 import { installServerNotifications } from './server_notifications';
 import { resolveServiceConfigCoreClient } from './service_config_resolver';
 
+import type { HomeNodeLifecycle } from '@dina/home-node';
+
+// Wire MsgBox WS authentication to clear any pending offline warning.
+// Fires on initial connect AND on every reconnect cycle, so a user
+// action that surfaced "relay offline" inline gets a silent
+// background recovery once the relay is reachable again — no
+// "everything is fine now" banner needed.
+onMsgBoxAuthenticated(() => {
+  clearRuntimeWarning('transport.msgbox.offline');
+});
+
+/**
+ * App-layer D2D egress shape. Every outbound D2D route in bootstrap.ts
+ * funnels through one of these, so the app gets a single place to
+ * resolve recipients + push bytes onto the WebSocket.
+ *
+ * `messageType` is one of the V1 family members (see
+ * core/d2d/families.ts) or the reserved `service.query` /
+ * `service.response` sentinels. The app uses it to pick
+ * `serviceType` + any per-type audit tags; it must not mutate
+ * `body`.
+ */
+export type AppD2DSender = (
+  to: string,
+  messageType: string,
+  body: Record<string, unknown>,
+) => Promise<unknown>;
 
 export type NodeRole = 'requester' | 'provider' | 'both';
 
@@ -1398,7 +1398,11 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
         if (provider === null) return;
         reportKeyHealthIncident(provider, kind, message);
       };
-      const { handler, reconcile: reconcileAskRows, dispose } = createCoordinatorAskHandler(bridgeOpts);
+      const {
+        handler,
+        reconcile: reconcileAskRows,
+        dispose,
+      } = createCoordinatorAskHandler(bridgeOpts);
       setAskCommandHandler(handler);
       globalDisposers.push(whileOwner(resetAskCommandHandler));
       // A2A §4.2 (a): the owner's words are recorded in Core at turn start.
@@ -1417,7 +1421,9 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
       const _ciReconcile: (h: unknown) => void =
         options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
       const reconcileHandle = _siReconcile(() => {
-        void cfg.coordinator.gateway.reconcile().catch(() => {});
+        void cfg.coordinator.gateway.reconcile().catch(() => {
+          /* the next tick reconciles again */
+        });
         // The chat rows outlive the handler that posted them (PH-06).
         void reconcileAskRows();
         void cfg.coordinator.registry.sweepExpired().catch(() => {
@@ -1736,12 +1742,17 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           void syncPromise.then(
             (synced) => {
               // The owner changed a listing: the presence set follows at once.
-              const s = synced as { published?: boolean; result?: { unchanged?: true } } | undefined;
-              if (s === undefined || s.published !== true || s.result?.unchanged !== true) void presenceWriter?.nudge();
+              const s = synced as
+                | { published?: boolean; result?: { unchanged?: true } }
+                | undefined;
+              if (s === undefined || s.published !== true || s.result?.unchanged !== true)
+                void presenceWriter?.nudge();
               if (next === null) {
-                void getServiceConfigRepository()?.clearPendingUnpublish(rkey).catch(() => {
-                  /* still recorded; the next boot removes it again */
-                });
+                void getServiceConfigRepository()
+                  ?.clearPendingUnpublish(rkey)
+                  .catch(() => {
+                    /* still recorded; the next boot removes it again */
+                  });
               }
               log({
                 event: 'node.service_profile_synced',
@@ -1811,10 +1822,14 @@ export async function createNode(options: CreateNodeOptions): Promise<DinaNode> 
           globalDisposers.push(
             startForegroundMeter({
               isActive: options.isAppActive,
-              ...(options.subscribeAppActive !== undefined ? { subscribe: options.subscribeAppActive } : {}),
+              ...(options.subscribeAppActive !== undefined
+                ? { subscribe: options.subscribeAppActive }
+                : {}),
               onCredit: credit,
               ...(options.setInterval !== undefined ? { setInterval: options.setInterval } : {}),
-              ...(options.clearInterval !== undefined ? { clearInterval: options.clearInterval } : {}),
+              ...(options.clearInterval !== undefined
+                ? { clearInterval: options.clearInterval }
+                : {}),
             }),
           );
         }

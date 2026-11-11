@@ -48,7 +48,12 @@ afterEach(() => {
   world.close();
 });
 
-async function call(caller: 'brain' | 'owner', method: CoreRequest['method'], path: string, body: Record<string, unknown> = {}) {
+async function call(
+  caller: 'brain' | 'owner',
+  method: CoreRequest['method'],
+  path: string,
+  body: Record<string, unknown> = {},
+) {
   return router.handle({
     method,
     path,
@@ -58,7 +63,9 @@ async function call(caller: 'brain' | 'owner', method: CoreRequest['method'], pa
     rawBody: new Uint8Array(),
     params: {},
     trustedInProcess: true,
-    ...(caller === 'brain' ? { callerType: 'brain', callerDID: 'did:key:brain' } : { callerType: 'owner', ownerCapability: CAP }),
+    ...(caller === 'brain'
+      ? { callerType: 'brain', callerDID: 'did:key:brain' }
+      : { callerType: 'owner', ownerCapability: CAP }),
   });
 }
 
@@ -68,8 +75,12 @@ describe('Lane 1 routes print nothing they carry (design §10, §12)', () => {
     world.cards.set(
       KEYED_URL,
       agentCard({
-        supportedInterfaces: [{ url: 'https://keyed.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
-        securitySchemes: { key: { apiKeySecurityScheme: { location: 'header', name: 'X-Api-Key' } } },
+        supportedInterfaces: [
+          { url: 'https://keyed.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+        ],
+        securitySchemes: {
+          key: { apiKeySecurityScheme: { location: 'header', name: 'X-Api-Key' } },
+        },
         securityRequirements: [{ schemes: { key: { list: [] } } }],
       }),
     );
@@ -83,11 +94,34 @@ describe('Lane 1 routes print nothing they carry (design §10, §12)', () => {
     expect(cred.status).toBe(201);
     const ref = (cred.body as { credential_ref: string }).credential_ref;
     // A refused secret is a route answer, never an echo.
-    expect((await call('owner', 'POST', `/v1/owner/a2a/remote-agents/${agentId}/credentials/${ref}/rotate`, { secret: { value: `bad ${API_KEY}` } })).status).toBe(400);
-    await call('owner', 'POST', `/v1/owner/a2a/remote-agents/${agentId}/bindings`, { skill: 'summarize', action_class: 'read', credential_ref: ref });
-    expect((await call('owner', 'POST', `/v1/owner/a2a/remote-agents/${agentId}/activate`)).status).toBe(200);
+    expect(
+      (
+        await call(
+          'owner',
+          'POST',
+          `/v1/owner/a2a/remote-agents/${agentId}/credentials/${ref}/rotate`,
+          { secret: { value: `bad ${API_KEY}` } },
+        )
+      ).status,
+    ).toBe(400);
+    await call('owner', 'POST', `/v1/owner/a2a/remote-agents/${agentId}/bindings`, {
+      skill: 'summarize',
+      action_class: 'read',
+      credential_ref: ref,
+    });
+    expect(
+      (await call('owner', 'POST', `/v1/owner/a2a/remote-agents/${agentId}/activate`)).status,
+    ).toBe(200);
 
-    expect((await call('brain', 'POST', '/v1/a2a/turns', { release_session: SESSION, turn_id: 't-9', text: WORDS })).status).toBe(200);
+    expect(
+      (
+        await call('brain', 'POST', '/v1/a2a/turns', {
+          release_session: SESSION,
+          turn_id: 't-9',
+          text: WORDS,
+        })
+      ).status,
+    ).toBe(200);
     const proposed = await call('brain', 'POST', '/v1/a2a/delegate', {
       release_session: SESSION,
       agent_id: agentId,
@@ -97,18 +131,36 @@ describe('Lane 1 routes print nothing they carry (design §10, §12)', () => {
       reply_to: 'main',
     });
     expect(proposed.status).toBe(201);
-    const { operation_id, approval_task_id } = proposed.body as { operation_id: string; approval_task_id: string };
-    expect((await call('owner', 'POST', `/v1/workflow/tasks/${approval_task_id}/approve`)).status).toBe(200);
+    const { operation_id, approval_task_id } = proposed.body as {
+      operation_id: string;
+      approval_task_id: string;
+    };
+    expect(
+      (await call('owner', 'POST', `/v1/workflow/tasks/${approval_task_id}/approve`)).status,
+    ).toBe(200);
 
     const task = world.claim(agentId);
     if (task === null) throw new Error('claim');
     const claim = { childTaskId: task.id, claimId: task.claim_id as string, runnerDid: RUNNER_DID };
     beginOutboundDispatch(world.runtime, claim);
-    recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: `${REMOTE} for [EMAIL_1]` }] });
+    recordRemoteOutcome(world.runtime, claim, {
+      kind: 'result',
+      parts: [{ text: `${REMOTE} for [EMAIL_1]` }],
+    });
 
     const next = await call('brain', 'POST', '/v1/a2a/guard/next');
     const work = next.body as { job_id: string; claim_id: string; digest: string };
-    expect((await call('brain', 'POST', '/v1/a2a/guard/verdict', { job_id: work.job_id, claim_id: work.claim_id, digest: work.digest, verdict: 'passed', code: 'model_pass' })).status).toBe(200);
+    expect(
+      (
+        await call('brain', 'POST', '/v1/a2a/guard/verdict', {
+          job_id: work.job_id,
+          claim_id: work.claim_id,
+          digest: work.digest,
+          verdict: 'passed',
+          code: 'model_pass',
+        })
+      ).status,
+    ).toBe(200);
     expect((await call('brain', 'GET', `/v1/a2a/operations/${operation_id}`)).status).toBe(200);
     const ownerView = await call('owner', 'GET', `/v1/owner/a2a/operations/${operation_id}`);
     expect(JSON.stringify(ownerView.body)).toContain(EMAIL); // the owner's legend: the original exists, and still is not logged

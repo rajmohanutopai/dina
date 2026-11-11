@@ -28,13 +28,25 @@ afterEach(() => rmSync(dir, { recursive: true, force: true }));
 describe('service key', () => {
   it('loads a 32-byte seed and checks it against the registered DID', async () => {
     writeFileSync(path.join(dir, 'gateway.ed25519'), seed);
-    expect(await loadServiceKey(dir, 'gateway.ed25519', did)).toEqual({ ok: true, key: { seed, did } });
-    expect(await loadServiceKey(dir, 'gateway.ed25519', 'did:key:z6MkSomeoneElse')).toEqual({ ok: false, reason: 'did_mismatch' });
+    expect(await loadServiceKey(dir, 'gateway.ed25519', did)).toEqual({
+      ok: true,
+      key: { seed, did },
+    });
+    expect(await loadServiceKey(dir, 'gateway.ed25519', 'did:key:z6MkSomeoneElse')).toEqual({
+      ok: false,
+      reason: 'did_mismatch',
+    });
   });
 
   it('refuses a missing directory, a missing file, and a wrong size', async () => {
-    expect(await loadServiceKey('', 'gateway.ed25519')).toEqual({ ok: false, reason: 'key_missing' });
-    expect(await loadServiceKey(dir, 'gateway.ed25519')).toEqual({ ok: false, reason: 'key_missing' });
+    expect(await loadServiceKey('', 'gateway.ed25519')).toEqual({
+      ok: false,
+      reason: 'key_missing',
+    });
+    expect(await loadServiceKey(dir, 'gateway.ed25519')).toEqual({
+      ok: false,
+      reason: 'key_missing',
+    });
     writeFileSync(path.join(dir, 'short'), new Uint8Array(31));
     expect(await loadServiceKey(dir, 'short')).toEqual({ ok: false, reason: 'key_invalid' });
   });
@@ -136,7 +148,13 @@ describe('edge limiter (design §4.1; dual review CL-2)', () => {
 
 describe('stream slots (dual review CL-2)', () => {
   it('are counted per client: the addresses of one IPv6 /64 share them', () => {
-    const hub = new StreamHub({ maxStreams: 10, bufferMs: 1_000, bufferEvents: 4, bufferTasks: 4, bufferBytes: 1 << 20 });
+    const hub = new StreamHub({
+      maxStreams: 10,
+      bufferMs: 1_000,
+      bufferEvents: 4,
+      bufferTasks: 4,
+      bufferBytes: 1 << 20,
+    });
     const slots = new StreamSlots(hub, 2);
     expect(slots.take('2001:db8:1:2::1')).toBe(true);
     expect(slots.take('2001:db8:1:2::2')).toBe(true);
@@ -155,7 +173,10 @@ describe('keygen', () => {
     expect(first.created).toBe(true);
     expect(first.did.startsWith('did:key:z')).toBe(true);
     expect(statSync(path.join(keyDir, 'gateway.ed25519')).mode & 0o777).toBe(0o600);
-    expect(await ensureServiceKey(keyDir, 'gateway.ed25519')).toEqual({ did: first.did, created: false });
+    expect(await ensureServiceKey(keyDir, 'gateway.ed25519')).toEqual({
+      did: first.did,
+      created: false,
+    });
   });
 
   it('refuses to replace a key file that is not a key', async () => {

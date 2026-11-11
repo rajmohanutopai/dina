@@ -77,7 +77,11 @@ export function inboundQuestionOf(op: A2ATaskRow): InboundQuestion | null {
   if (op.input_required_json === null) return null;
   try {
     const q = JSON.parse(op.input_required_json) as InboundQuestion;
-    return typeof q.prompt === 'string' && isPlainObject(q.input_schema) && Number.isInteger(q.round) ? q : null;
+    return typeof q.prompt === 'string' &&
+      isPlainObject(q.input_schema) &&
+      Number.isInteger(q.round)
+      ? q
+      : null;
   } catch {
     return null;
   }
@@ -150,7 +154,9 @@ export function inboundEgressLoss(
       }) ?? false;
     if (!live) return 'authority_revoked';
   }
-  const row = rt.a2a.store.db.query('SELECT created_at FROM service_configs WHERE rkey = ?', [snapshot.rkey]) as {
+  const row = rt.a2a.store.db.query('SELECT created_at FROM service_configs WHERE rkey = ?', [
+    snapshot.rkey,
+  ]) as {
     created_at: number;
   }[];
   const listing = row[0];
@@ -213,7 +219,8 @@ export function projectInboundTask(rt: InboundCore, op: A2ATaskRow): Task {
       view = { state: 'TASK_STATE_FAILED', outcome: 'unknown' };
       break;
     default: {
-      const child = op.internal_id === null ? null : rt.a2a.workflow.store().getById(op.internal_id);
+      const child =
+        op.internal_id === null ? null : rt.a2a.workflow.store().getById(op.internal_id);
       view = child === null ? { state: 'TASK_STATE_SUBMITTED' } : inboundView(child.status);
       // A round waiting on the caller asks its question (§7.7), which is
       // egress like a result: shown only while the call's authority holds,
@@ -243,7 +250,9 @@ export function projectInboundTask(rt: InboundCore, op: A2ATaskRow): Task {
     },
   };
   if (result !== undefined) {
-    task.artifacts = [{ artifactId: 'result', parts: [{ data: result, mediaType: 'application/json' }] }];
+    task.artifacts = [
+      { artifactId: 'result', parts: [{ data: result, mediaType: 'application/json' }] },
+    ];
   }
   // Design §7.6: on a task's result the Dina extension carries outcome and
   // receiptId. The receipt id is the hash of the request as the client sent

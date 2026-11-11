@@ -69,7 +69,11 @@ describe('buildRunMessageProjection (§6.2)', () => {
   });
 
   it('an informational message carries an empty action_type field', () => {
-    const out = buildRunMessageProjection({ ...MESSAGE_INPUT, kind: 'informational', action_type: '' });
+    const out = buildRunMessageProjection({
+      ...MESSAGE_INPUT,
+      kind: 'informational',
+      action_type: '',
+    });
     // field 8 (0-indexed 7) is kind, field 9 is the empty action_type
     const parts = out.split('\n');
     expect(parts[7]).toBe('informational');

@@ -25,8 +25,6 @@ import { defaultFetch } from '../runtime/fetch';
 
 import { base32LowercaseNoPad } from './base32';
 import { deriveDIDKey, publicKeyToMultibase } from './did';
-import { buildDIDDocument } from './did_document';
-
 
 /** Multicodec varint prefix for secp256k1 public key: 0xe7 0x01. */
 const SECP256K1_MULTICODEC = new Uint8Array([0xe7, 0x01]);
@@ -253,7 +251,7 @@ function encodeHead(major: number, arg: number, out: number[]): void {
 /** base64url encoder (no padding) — used for PLC sig field. */
 function base64urlEncode(bytes: Uint8Array): string {
   let bin = '';
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  for (const byte of bytes) bin += String.fromCharCode(byte);
   const b64 =
     typeof btoa !== 'undefined' ? btoa(bin) : Buffer.from(bin, 'binary').toString('base64');
   return b64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');

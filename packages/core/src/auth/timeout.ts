@@ -60,7 +60,7 @@ export async function withTimeout<T>(
           });
         }
       },
-      (error) => {
+      (_error) => {
         if (!settled) {
           settled = true;
           clearTimeout(timer);
@@ -93,7 +93,9 @@ export async function withTimeoutThrow<T>(
     throw new Error('Handler failed');
   }
 
-  return result.result!;
+  // `completed` means fn resolved, so `result` holds its value — which may
+  // itself be undefined when T allows it, hence a cast and not a check.
+  return result.result as T;
 }
 
 /** Typed timeout error. */

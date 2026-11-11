@@ -5,8 +5,9 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 
-import { inviteRecordDigest } from '@dina/commerce-protocol';
 import { ed25519 } from '@noble/curves/ed25519.js';
+
+import { inviteRecordDigest } from '@dina/commerce-protocol';
 
 import {
   DEFAULT_INVITE_TTL_MS,
@@ -71,7 +72,10 @@ function makeNode(
 }
 
 /** Run one exchange up to the point the inviter holds the redeemer's ack. */
-async function toAck(inviter: TestNode, redeemer: TestNode): Promise<{ nonce: string; ack: unknown }> {
+async function toAck(
+  inviter: TestNode,
+  redeemer: TestNode,
+): Promise<{ nonce: string; ack: unknown }> {
   const minted = inviter.service.mintOffer({
     direction: 'i_supply_you',
     serviceRkeys: ['self'],
@@ -101,7 +105,10 @@ function revocationOf(nonce: string, now: number): Record<string, unknown> {
     reason: 'expired',
     revoked_at: new Date(now).toISOString(),
   };
-  return { ...draft, revocation_digest: inviteRecordDigest('invite_revocation', draft as never, sha) };
+  return {
+    ...draft,
+    revocation_digest: inviteRecordDigest('invite_revocation', draft as never, sha),
+  };
 }
 
 describe('COM-7: the sweep and a late ack', () => {
@@ -109,8 +116,7 @@ describe('COM-7: the sweep and a late ack', () => {
     const clock = { now: 1_800_000_000_000 };
     let release: (() => void) | null = null;
     let holding = false;
-    let inviter!: TestNode;
-    inviter = makeNode(INVITER, clock, async (_to, body) => {
+    const inviter: TestNode = makeNode(INVITER, clock, async (_to, body) => {
       if (holding && body.kind === 'revocation') {
         await new Promise<void>((resolve) => {
           release = resolve;
@@ -118,7 +124,12 @@ describe('COM-7: the sweep and a late ack', () => {
       }
       return true;
     });
-    const redeemer = makeNode(REDEEMER, clock, async () => true, () => inviter.pub);
+    const redeemer = makeNode(
+      REDEEMER,
+      clock,
+      async () => true,
+      () => inviter.pub,
+    );
     const { nonce, ack } = await toAck(inviter, redeemer);
 
     clock.now += DEFAULT_INVITE_TTL_MS + 1;
@@ -146,8 +157,7 @@ describe('COM-7: the sweep and a late ack', () => {
     const clock = { now: 1_800_000_000_000 };
     let release: (() => void) | null = null;
     let holding = false;
-    let inviter!: TestNode;
-    inviter = makeNode(INVITER, clock, async (_to, body) => {
+    const inviter: TestNode = makeNode(INVITER, clock, async (_to, body) => {
       if (holding && body.kind === 'revocation') {
         await new Promise<void>((resolve) => {
           release = resolve;
@@ -155,7 +165,12 @@ describe('COM-7: the sweep and a late ack', () => {
       }
       return true;
     });
-    const redeemer = makeNode(REDEEMER, clock, async () => true, () => inviter.pub);
+    const redeemer = makeNode(
+      REDEEMER,
+      clock,
+      async () => true,
+      () => inviter.pub,
+    );
     const { nonce } = await toAck(inviter, redeemer);
     clock.now += DEFAULT_INVITE_TTL_MS + 1;
     holding = true;
@@ -173,11 +188,20 @@ describe('COM-7: the sweep and a late ack', () => {
 });
 
 describe('COM-14: a second exchange with the same counterparty', () => {
-  async function twoActive(): Promise<{ inviter: TestNode; first: string; second: string; clock: { now: number } }> {
+  async function twoActive(): Promise<{
+    inviter: TestNode;
+    first: string;
+    second: string;
+    clock: { now: number };
+  }> {
     const clock = { now: 1_800_000_000_000 };
-    let inviter!: TestNode;
-    inviter = makeNode(INVITER, clock, async () => true);
-    const redeemer = makeNode(REDEEMER, clock, async () => true, () => inviter.pub);
+    const inviter: TestNode = makeNode(INVITER, clock, async () => true);
+    const redeemer = makeNode(
+      REDEEMER,
+      clock,
+      async () => true,
+      () => inviter.pub,
+    );
     const run = async (): Promise<string> => {
       const { nonce, ack } = await toAck(inviter, redeemer);
       await inviter.service.applyInboundActivationAck({ senderDid: REDEEMER, body: ack } as never);

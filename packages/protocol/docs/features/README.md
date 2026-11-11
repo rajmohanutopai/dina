@@ -8,15 +8,15 @@ Dina implementation must reproduce. Each doc points at:
 3. The frozen vector(s) covering it.
 4. The conformance level (L1-L4) per `../conformance.md` §3.
 
-| Feature            | File                                        | Level       |
-|--------------------|---------------------------------------------|-------------|
-| Canonical signing  | [canonical-signing.md](./canonical-signing.md) | L2          |
-| D2D envelope       | [d2d-envelope.md](./d2d-envelope.md)        | L2          |
-| Auth handshake     | [auth.md](./auth.md)                        | L3          |
-| Sealed-box         | [sealed-box.md](./sealed-box.md)            | L2 / L3     |
-| PLC DID document   | [plc-document.md](./plc-document.md)        | L1          |
-| Subject ID         | [subject-id.md](./subject-id.md)            | L1          |
-| Service search     | [service-search.md](./service-search.md)    | L1          |
+| Feature           | File                                           | Level   |
+| ----------------- | ---------------------------------------------- | ------- |
+| Canonical signing | [canonical-signing.md](./canonical-signing.md) | L2      |
+| D2D envelope      | [d2d-envelope.md](./d2d-envelope.md)           | L2      |
+| Auth handshake    | [auth.md](./auth.md)                           | L3      |
+| Sealed-box        | [sealed-box.md](./sealed-box.md)               | L2 / L3 |
+| PLC DID document  | [plc-document.md](./plc-document.md)           | L1      |
+| Subject ID        | [subject-id.md](./subject-id.md)               | L1      |
+| Service search    | [service-search.md](./service-search.md)       | L1      |
 
 Start with whichever feature you're implementing. Each doc is
 self-contained — you shouldn't need to cross-reference the others

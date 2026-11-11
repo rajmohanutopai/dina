@@ -175,13 +175,25 @@ function makeFakeCoreClient(): {
   };
   const client = {
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
-    async listPluginToolCapabilities() { return []; },
-    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    async listPluginToolCapabilities() {
+      return [];
+    },
+    async invokePluginTool() {
+      return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' };
+    },
     // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
-    async listContacts() { return []; },
-    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
-    async getGroupPlan() { return null; },
-    async listGroupPlanHandles() { return []; },
+    async listContacts() {
+      return [];
+    },
+    async openGroupPlan() {
+      return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' };
+    },
+    async getGroupPlan() {
+      return null;
+    },
+    async listGroupPlanHandles() {
+      return [];
+    },
     async findContactsByPreference() {
       return [];
     },
@@ -738,7 +750,10 @@ describe('createCoordinatorAskHandler — UCP comparison card', () => {
     toolCallResp({ id: 'tc-1', name: 'search_ucp_catalog', arguments: { query: 'sencha' } });
 
   it('offers search_ucp_merchants only with UCP on and an AppView that has the merchant index', async () => {
-    const offered = async (appView: BuildAgenticAskPipelineInput['appViewClient'], ucp: typeof withUcp) => {
+    const offered = async (
+      appView: BuildAgenticAskPipelineInput['appViewClient'],
+      ucp: typeof withUcp,
+    ) => {
       let names: string[] = [];
       const llm = makeScripted();
       llm.push(answerResp('ok'));
@@ -763,7 +778,9 @@ describe('createCoordinatorAskHandler — UCP comparison card', () => {
     const withIndex = { ...fakeAppView(), searchUcpMerchants: async () => [] };
     expect(await offered(withIndex, withUcp)).toContain('search_ucp_merchants');
     expect(await offered(fakeAppView(), withUcp)).not.toContain('search_ucp_merchants');
-    expect(await offered(withIndex, { ucpClient, ucpEnabled: () => false })).not.toContain('search_ucp_merchants');
+    expect(await offered(withIndex, { ucpClient, ucpEnabled: () => false })).not.toContain(
+      'search_ucp_merchants',
+    );
   });
 
   it('posts one card, carrying only the search id, on the fast path', async () => {
@@ -919,7 +936,6 @@ describe('createCoordinatorAskHandler — lifecycle', () => {
   it('rejects construction without coordinator', () => {
     expect(() =>
       createCoordinatorAskHandler({
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
         coordinator: undefined as any,
         requesterDid: REQUESTER,
       }),

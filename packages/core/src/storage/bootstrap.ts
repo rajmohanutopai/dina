@@ -12,10 +12,10 @@
 
 import { GOODS_BUYER, installGoodsCounterStrategy } from '../commerce/goods_counter_strategy';
 import { EarnedRoomStore, installEarnedRoomStore } from '../commitment/earned_room';
-import { installOwnerQuestions } from '../commitment/owner_questions';
 import { installEvidenceStore } from '../commitment/evidence_handler';
-import { setCommitmentPersonaDB , ValueModelStore } from '../commitment/model_store';
+import { setCommitmentPersonaDB, ValueModelStore } from '../commitment/model_store';
 import { installOptionStores, setShipperFeeSubmitter } from '../commitment/option_handler';
+import { installOwnerQuestions } from '../commitment/owner_questions';
 import { StrategyStore } from '../commitment/strategy_store';
 import { createNegotiationSubmitter } from '../commitment/strategy_submit';
 import { StrategyTurnStore } from '../commitment/strategy_turns';
@@ -66,7 +66,13 @@ export async function bootstrapPersistence(provider: DBProvider): Promise<Databa
     canSpend: (negotiationId, nowMs) =>
       strategies.canSpend({ kind: GROUP_ORGANIZER, negotiationId, nowMs, thresholdVersion: 0 }).ok,
     charge: (negotiationId, nowMs) =>
-      strategies.charge({ kind: GROUP_ORGANIZER, negotiationId, count: 1, nowMs, thresholdVersion: 0 }).ok,
+      strategies.charge({
+        kind: GROUP_ORGANIZER,
+        negotiationId,
+        count: 1,
+        nowMs,
+        thresholdVersion: 0,
+      }).ok,
     turns: new StrategyTurnStore(identityDB),
     submit: submitMove,
     atomically: (fn) => identityDB.transaction(fn),

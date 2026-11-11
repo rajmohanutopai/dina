@@ -35,30 +35,21 @@ import { addContact, resetContactDirectory } from '../../../core/src/contacts/di
 import { getPublicKey } from '../../../core/src/crypto/ed25519';
 import { createArchive, verifyArchive, readManifest } from '../../../core/src/export/archive';
 import { evaluateIntent } from '../../../core/src/gatekeeper/intent';
+import { runOnboarding } from '../../../core/src/onboarding/portable';
 import { recoverFromMnemonic } from '../../../core/src/onboarding/recovery';
-import {
-  signAttestation,
-  verifyAttestation,
-} from '../../../core/src/peerlens/pds_publish';
-import type { Attestation } from '../../../core/src/peerlens/pds_publish';
-import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
-import {
-  createPersona,
-  openPersona,
-  isPersonaOpen,
-  closePersona,
-  resetPersonaState,
-} from '../../../core/src/persona/service';
+import { signAttestation, verifyAttestation } from '../../../core/src/peerlens/pds_publish';
+import { setPeopleRepository } from '../../../core/src/people/repository';
+import { createPersona, openPersona, resetPersonaState } from '../../../core/src/persona/service';
+import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
 import {
   startSession,
   addGrant,
   checkGrant,
   endSession,
 } from '../../../core/src/session/lifecycle';
-import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
-import { runOnboarding } from '../../../core/src/onboarding/portable';
-import { setPeopleRepository } from '../../../core/src/people/repository';
+import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
 
+import type { Attestation } from '../../../core/src/peerlens/pds_publish';
 
 describe('User Stories', () => {
   beforeEach(() => {

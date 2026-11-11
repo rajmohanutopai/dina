@@ -19,7 +19,11 @@ import {
   installStaffPresenceVerifier,
 } from '../../../src/commerce/owner_presence';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
-import { getCommerceRuntime, installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import {
+  getCommerceRuntime,
+  installCommerceRuntime,
+  type CommerceRuntime,
+} from '../../../src/commerce/runtime';
 import { InMemoryStaffGrantRepository } from '../../../src/commerce/staff_grants';
 import { InMemoryStaffPinRepository } from '../../../src/commerce/staff_pins';
 import { InMemoryTenderRepository } from '../../../src/commerce/tender';
@@ -114,7 +118,13 @@ async function provePresence(): Promise<void> {
 
 const receiptBody = (accepted: string): Record<string, unknown> => ({
   delivery_note_digest: noteDigest,
-  lines: [{ line_id: 'l1', accepted_quantity: { value: accepted, unit_code: 'each' }, reason_code: 'short' }],
+  lines: [
+    {
+      line_id: 'l1',
+      accepted_quantity: { value: accepted, unit_code: 'each' },
+      reason_code: 'short',
+    },
+  ],
 });
 
 beforeEach(() => {
@@ -187,7 +197,9 @@ beforeEach(() => {
   expect(ingested.outcome).toBe('applied');
   noteDigest = note.note_digest;
 
-  installStaffPresenceVerifier(async (deviceDid, pin) => deviceDid === STAFF_DID && pin === STAFF_PIN);
+  installStaffPresenceVerifier(
+    async (deviceDid, pin) => deviceDid === STAFF_DID && pin === STAFF_PIN,
+  );
   router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
 });
@@ -343,7 +355,7 @@ describe('POST /v1/commerce/trade/delivery-receipt as staff (§6.5)', () => {
     expect(tradeDocs.answersTo(noteDigest, 'delivery_receipt')).toHaveLength(0);
   });
 
-  it("owner approval of the card lets the SAME receipt through; a DIFFERENT value raises its own card", async () => {
+  it('owner approval of the card lets the SAME receipt through; a DIFFERENT value raises its own card', async () => {
     const workflowRepo = new InMemoryWorkflowRepository();
     const workflow = new WorkflowService({ repository: workflowRepo });
     setWorkflowService(workflow);
@@ -625,7 +637,10 @@ describe('the §7 order inbox and the confirm/submit gates', () => {
     // The grant-existence check runs before the pending lookup, so an
     // ungranted device cannot probe which decisions exist.
     for (const [path, body] of [
-      ['/v1/commerce/orders/decide', { buyer_did: BUYER_DID, purchase_order_id: 'po-x', approve: true }],
+      [
+        '/v1/commerce/orders/decide',
+        { buyer_did: BUYER_DID, purchase_order_id: 'po-x', approve: true },
+      ],
       ['/v1/commerce/orders/drafts/approve', { draft_id: 'odr-none', conversation_id: 'c-none' }],
       ['/v1/commerce/orders/drafts/submit', { draft_id: 'odr-none', conversation_id: 'c-none' }],
     ] as const) {
@@ -687,7 +702,7 @@ describe('POST /v1/commerce/orders/decide as staff (§6.5 commerce_submit, suppl
     expect(cleared).toEqual([`${ORDER.buyer_did}:${ORDER.purchase_order_id}`]);
   });
 
-  it('over the cap: 202, and the owner card is keyed to (buyer, order) — buyer B cannot ride buyer A\'s approval', async () => {
+  it("over the cap: 202, and the owner card is keyed to (buyer, order) — buyer B cannot ride buyer A's approval", async () => {
     const workflowRepo = new InMemoryWorkflowRepository();
     const workflow = new WorkflowService({ repository: workflowRepo });
     setWorkflowService(workflow);

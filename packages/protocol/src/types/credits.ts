@@ -189,9 +189,7 @@ export function parseClaimGrantRefusal(raw: unknown): ClaimGrantRefusal | null {
   if (!isRecord(raw)) return null;
   const e = raw.error;
   if (typeof e !== 'string') return null;
-  return (REFUSAL_CODES as readonly string[]).includes(e)
-    ? { error: e as ClaimRefusalCode }
-    : null;
+  return (REFUSAL_CODES as readonly string[]).includes(e) ? { error: e as ClaimRefusalCode } : null;
 }
 
 /** Refusal codes that must STOP the client's claim-retry loop. */

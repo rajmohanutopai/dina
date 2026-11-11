@@ -37,7 +37,11 @@ function tempFile(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   }
 });
 
@@ -219,7 +223,7 @@ describe('concurrent access — write-lock contention', () => {
 });
 
 describe('concurrent access — multiple readers', () => {
-  it('three readers see each other\'s base state consistently after one writer commits', () => {
+  it("three readers see each other's base state consistently after one writer commits", () => {
     const p = tempFile();
     const writer = openShared(p);
     writer.execute('CREATE TABLE t (v INTEGER)');

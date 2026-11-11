@@ -42,8 +42,7 @@ function emptyInput(): ScoreV1Input {
 describe('SCORE_V1_CONSTANTS', () => {
   it('component weights sum to 1.0', () => {
     const C = SCORE_V1_CONSTANTS;
-    const sum =
-      C.SENTIMENT_WEIGHT + C.VOUCH_WEIGHT + C.REVIEWER_WEIGHT + C.NETWORK_WEIGHT;
+    const sum = C.SENTIMENT_WEIGHT + C.VOUCH_WEIGHT + C.REVIEWER_WEIGHT + C.NETWORK_WEIGHT;
     expect(sum).toBeCloseTo(1.0, 12);
   });
 
@@ -159,8 +158,7 @@ describe('computeVouchV1', () => {
     // vouchCount=0 short-circuits to 0.1, so use vouchCount=1 to exercise
     // the bonus path. log2(2)/log2(11) ≈ 0.289; bonus saturates at 0.2.
     const input = { ...emptyInput(), vouchCount: 1, highConfidenceVouches: 1000 };
-    const expected =
-      Math.log2(2) / Math.log2(11) + SCORE_V1_CONSTANTS.HIGH_CONF_BONUS_CAP;
+    const expected = Math.log2(2) / Math.log2(11) + SCORE_V1_CONSTANTS.HIGH_CONF_BONUS_CAP;
     expect(computeVouchV1(input)).toBeCloseTo(expected, 12);
   });
 });
@@ -225,17 +223,15 @@ describe('computeScoreV1', () => {
     // both = single * (0.6 / 1) — but damping changes the relationship; assert
     // the raw chain instead by working backwards from the damping formula.
     const C = SCORE_V1_CONSTANTS;
-    const rawSingle = (single.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
+    const rawSingle =
+      (single.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
     const rawBoth = (both.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
     expect(rawBoth).toBeCloseTo(rawSingle * C.FLAG_SERIOUS_FACTOR, 12);
   });
 
   it('info-severity flag is non-penalising (forward-compat with future severities)', () => {
     const baseline = computeScoreV1(emptyInput(), NOW_MS);
-    const withInfo = computeScoreV1(
-      { ...emptyInput(), flagSeverities: ['info'] },
-      NOW_MS,
-    );
+    const withInfo = computeScoreV1({ ...emptyInput(), flagSeverities: ['info'] }, NOW_MS);
     expect(withInfo.overallScore).toBe(baseline.overallScore);
   });
 
@@ -249,16 +245,15 @@ describe('computeScoreV1', () => {
       { ...emptyInput(), tombstoneCount: C.COORDINATION_TOMBSTONE_THRESHOLD },
       NOW_MS,
     );
-    const wayOver = computeScoreV1(
-      { ...emptyInput(), tombstoneCount: 100 },
-      NOW_MS,
-    );
+    const wayOver = computeScoreV1({ ...emptyInput(), tombstoneCount: 100 }, NOW_MS);
 
     // Below-threshold: no penalty applied.
     expect(justUnder.overallScore).toBeGreaterThan(atThreshold.overallScore);
     // Penalty applies once — count beyond threshold doesn't compound.
-    const rawAt = (atThreshold.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
-    const rawOver = (wayOver.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
+    const rawAt =
+      (atThreshold.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
+    const rawOver =
+      (wayOver.overallScore - (1 - C.DAMPING_FACTOR) * C.BASE_SCORE) / C.DAMPING_FACTOR;
     expect(rawAt).toBeCloseTo(rawOver, 12);
   });
 

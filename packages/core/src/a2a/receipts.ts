@@ -45,7 +45,12 @@ export interface ReceiptRow {
   created_at: number;
 }
 
-export function findReceipt(store: A2AStore, principal: string, operation: string, messageId: string): ReceiptRow | null {
+export function findReceipt(
+  store: A2AStore,
+  principal: string,
+  operation: string,
+  messageId: string,
+): ReceiptRow | null {
   const rows = store.db.query(
     'SELECT * FROM a2a_idempotency_receipts WHERE principal = ? AND operation = ? AND message_id = ?',
     [principal, operation, messageId],
@@ -85,7 +90,9 @@ export function checkReceipt(
 ): ReceiptCheck {
   const receipt = findReceipt(store, key.principal, key.operation, key.messageId);
   if (receipt === null) return { kind: 'miss' };
-  return receipt.request_hash_pre === requestHashPre ? { kind: 'replay', receipt } : { kind: 'conflict' };
+  return receipt.request_hash_pre === requestHashPre
+    ? { kind: 'replay', receipt }
+    : { kind: 'conflict' };
 }
 
 /** Sliding-minute budgets per principal, one for new calls and one for replays. */
@@ -95,7 +102,11 @@ export class PrincipalBudgets {
   private readonly reads = new Map<string, number[]>();
 
   constructor(
-    private readonly limits: { perMinute: number; replayPerMinute: number; readPerMinute: number } = {
+    private readonly limits: {
+      perMinute: number;
+      replayPerMinute: number;
+      readPerMinute: number;
+    } = {
       perMinute: A2A_PRINCIPAL_BUDGET_PER_MINUTE,
       replayPerMinute: A2A_REPLAY_CEILING_PER_MINUTE,
       readPerMinute: A2A_READ_BUDGET_PER_MINUTE,
@@ -117,7 +128,12 @@ export class PrincipalBudgets {
     return this.charge(this.reads, principal, this.limits.readPerMinute, nowMs);
   }
 
-  private charge(book: Map<string, number[]>, principal: string, limit: number, nowMs: number): boolean {
+  private charge(
+    book: Map<string, number[]>,
+    principal: string,
+    limit: number,
+    nowMs: number,
+  ): boolean {
     const recent = (book.get(principal) ?? []).filter((t) => nowMs - t < WINDOW_MS);
     if (recent.length >= limit) {
       book.set(principal, recent);

@@ -120,7 +120,6 @@ describe('the WBS is a document something checks', () => {
     expect(ROWS.map((r) => r.id)).toContain('5.9 / 7.1');
   });
 
-
   it('gives every work row exactly one status', () => {
     // REWRITTEN — the first version could not fail. It tested `body`, which is
     // the LONGEST cell and therefore never the 8-character status cell, with
@@ -160,9 +159,11 @@ describe('a row’s evidence can be followed', () => {
     // now names the one it means.
     const source = fs.readFileSync(WBS, 'utf8');
     const cited = new Set(
-      [...source.matchAll(/`((?:packages|appview|apps|docs|cli|scripts|msgbox|services)\/[A-Za-z0-9_./-]+\.[a-z]{2,4})`/g)].map(
-        (m) => m[1] as string,
-      ),
+      [
+        ...source.matchAll(
+          /`((?:packages|appview|apps|docs|cli|scripts|msgbox|services)\/[A-Za-z0-9_./-]+\.[a-z]{2,4})`/g,
+        ),
+      ].map((m) => m[1] as string),
     );
 
     expect(cited.size).toBeGreaterThan(0);

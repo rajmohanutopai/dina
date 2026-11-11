@@ -127,15 +127,21 @@ export class HNSWIndex {
 
       // Connect bidirectionally
       for (const neighborId of selected) {
-        node.neighbors.get(l)!.add(neighborId);
-        const neighborNode = this.nodes.get(neighborId)!;
-        if (!neighborNode.neighbors.has(l)) {
-          neighborNode.neighbors.set(l, new Set());
+        const ownLayer = node.neighbors.get(l);
+        if (ownLayer === undefined) throw new Error('hnsw: inserted node is missing a layer set');
+        ownLayer.add(neighborId);
+        const neighborNode = this.nodes.get(neighborId);
+        if (neighborNode === undefined)
+          throw new Error('hnsw: selected neighbor is not in the index');
+        let neighborLayer = neighborNode.neighbors.get(l);
+        if (neighborLayer === undefined) {
+          neighborLayer = new Set();
+          neighborNode.neighbors.set(l, neighborLayer);
         }
-        neighborNode.neighbors.get(l)!.add(id);
+        neighborLayer.add(id);
 
         // Prune if neighbor has too many connections
-        if (neighborNode.neighbors.get(l)!.size > this.M * 2) {
+        if (neighborLayer.size > this.M * 2) {
           this.pruneConnections(neighborNode, l);
         }
       }
@@ -178,7 +184,7 @@ export class HNSWIndex {
 
     // Return top-k sorted by distance (ascending = closest first)
     return candidates
-      .map((id) => ({ id, distance: this.cosineDistance(query, this.nodes.get(id)!.vector) }))
+      .map((id) => ({ id, distance: this.cosineDistance(query, this.vectorOf(id)) }))
       .sort((a, b) => a.distance - b.distance)
       .slice(0, k);
   }
@@ -192,9 +198,7 @@ export class HNSWIndex {
     for (const [layer, neighbors] of node.neighbors) {
       for (const neighborId of neighbors) {
         const neighbor = this.nodes.get(neighborId);
-        if (neighbor?.neighbors.has(layer)) {
-          neighbor.neighbors.get(layer)!.delete(id);
-        }
+        neighbor?.neighbors.get(layer)?.delete(id);
       }
     }
 
@@ -244,10 +248,17 @@ export class HNSWIndex {
   // Internal search helpers
   // ---------------------------------------------------------------
 
+  /** The stored vector for an indexed id; a missing id is an index bug. */
+  private vectorOf(id: string): Float32Array {
+    const node = this.nodes.get(id);
+    if (node === undefined) throw new Error('hnsw: id is not in the index');
+    return node.vector;
+  }
+
   /** Greedy search at a single layer — find closest single node. */
   private greedySearch(query: Float32Array, startId: string, layer: number): string {
     let currentId = startId;
-    let currentDist = this.cosineDistance(query, this.nodes.get(currentId)!.vector);
+    let currentDist = this.cosineDistance(query, this.vectorOf(currentId));
 
     let improved = true;
     while (improved) {
@@ -276,7 +287,7 @@ export class HNSWIndex {
     const candidates: { id: string; dist: number }[] = [
       {
         id: startId,
-        dist: this.cosineDistance(query, this.nodes.get(startId)!.vector),
+        dist: this.cosineDistance(query, this.vectorOf(startId)),
       },
     ];
     const results: { id: string; dist: number }[] = [...candidates];
@@ -284,7 +295,8 @@ export class HNSWIndex {
     while (candidates.length > 0) {
       // Get closest candidate
       candidates.sort((a, b) => a.dist - b.dist);
-      const closest = candidates.shift()!;
+      const closest = candidates.shift();
+      if (closest === undefined) throw new Error('hnsw: candidate queue emptied unexpectedly');
 
       // Get worst result
       results.sort((a, b) => a.dist - b.dist);
@@ -322,7 +334,7 @@ export class HNSWIndex {
   /** Select the M best neighbors from candidates. */
   private selectNeighbors(query: Float32Array, candidateIds: string[], M: number): string[] {
     const scored = candidateIds
-      .map((id) => ({ id, dist: this.cosineDistance(query, this.nodes.get(id)!.vector) }))
+      .map((id) => ({ id, dist: this.cosineDistance(query, this.vectorOf(id)) }))
       .sort((a, b) => a.dist - b.dist);
     return scored.slice(0, M).map((s) => s.id);
   }
@@ -333,7 +345,7 @@ export class HNSWIndex {
     if (!neighbors || neighbors.size <= this.M * 2) return;
 
     const scored = [...neighbors]
-      .map((id) => ({ id, dist: this.cosineDistance(node.vector, this.nodes.get(id)!.vector) }))
+      .map((id) => ({ id, dist: this.cosineDistance(node.vector, this.vectorOf(id)) }))
       .sort((a, b) => a.dist - b.dist);
 
     const keep = new Set(scored.slice(0, this.M).map((s) => s.id));

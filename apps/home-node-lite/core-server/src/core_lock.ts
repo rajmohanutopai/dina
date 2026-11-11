@@ -116,7 +116,9 @@ export function acquireLock(vaultDir: string, info: LockInfo): void {
       }
     }
   }
-  throw new Error(`core.lock: could not acquire the single-owner lock for ${vaultDir} (contended).`);
+  throw new Error(
+    `core.lock: could not acquire the single-owner lock for ${vaultDir} (contended).`,
+  );
 }
 
 /** Write/refresh the discovery lock atomically (temp → rename). */

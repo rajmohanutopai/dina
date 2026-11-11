@@ -9,7 +9,12 @@
 
 import { bytesToHex } from '@noble/hashes/utils.js';
 
-import { derivePersonaDEK, registerPersonaDEK, releasePersonaDEK, validatePersonaName } from '@dina/core';
+import {
+  derivePersonaDEK,
+  registerPersonaDEK,
+  releasePersonaDEK,
+  validatePersonaName,
+} from '@dina/core';
 
 import { OpSQLiteAdapter } from './op_sqlite_adapter';
 
@@ -19,7 +24,7 @@ interface ProviderConfig {
   dbDir: string;
   masterSeed: Uint8Array;
   userSalt: Uint8Array;
-  openFn: (options: { name: string; location?: string }) => any;
+  openFn: (options: { name: string; location?: string }) => unknown;
 }
 
 export class ProductionDBProvider implements DBProvider {

@@ -127,7 +127,10 @@ describe('catalog → Offer bridge (§5.A2)', () => {
       QTY,
     );
     const ranked = rankOffers(offers, { quantity: QTY, currency: 'INR' }, NOW);
-    expect(ranked.ranked.map((r) => r.offer.supplierDid)).toEqual(['did:plc:cheap', 'did:plc:dear']);
+    expect(ranked.ranked.map((r) => r.offer.supplierDid)).toEqual([
+      'did:plc:cheap',
+      'did:plc:dear',
+    ]);
   });
 
   describe('a stated price that is not Money is never an offer (the buyer re-validates, §10.5 / X3)', () => {
@@ -140,26 +143,41 @@ describe('catalog → Offer bridge (§5.A2)', () => {
       ['0x10', 'hex parses as a different number'],
       ['1e3', 'an exponent would throw inside the ranker'],
       ['007', 'a leading zero is not the canonical form'],
-    ])('minor_units %j → unpriced with the validator’s reason, and the ranker never sees it (%s)', (minorUnits) => {
-      const { offers, unpriced } = catalogCandidatesToOffers(
-        [
-          candidate({ supplierDid: 'did:plc:bad', indicativePrice: { currency: 'INR', minorUnits } }),
-          candidate({ supplierDid: 'did:plc:good', catalogSnapshotRef: 's2' }),
-        ],
-        QTY,
-      );
-      expect(offers.map((o) => o.supplierDid)).toEqual(['did:plc:good']);
-      expect(unpriced).toEqual([
-        { supplierDid: 'did:plc:bad', serviceUri: 'at://did:plc:bad/svc', malformedPrice: expect.stringMatching(/^money:/) },
-      ]);
-      // The good row still ranks; nothing threw.
-      const ranked = rankOffers(offers, { quantity: QTY, currency: 'INR' }, NOW);
-      expect(ranked.ranked.map((r) => r.offer.supplierDid)).toEqual(['did:plc:good']);
-    });
+    ])(
+      'minor_units %j → unpriced with the validator’s reason, and the ranker never sees it (%s)',
+      (minorUnits) => {
+        const { offers, unpriced } = catalogCandidatesToOffers(
+          [
+            candidate({
+              supplierDid: 'did:plc:bad',
+              indicativePrice: { currency: 'INR', minorUnits },
+            }),
+            candidate({ supplierDid: 'did:plc:good', catalogSnapshotRef: 's2' }),
+          ],
+          QTY,
+        );
+        expect(offers.map((o) => o.supplierDid)).toEqual(['did:plc:good']);
+        expect(unpriced).toEqual([
+          {
+            supplierDid: 'did:plc:bad',
+            serviceUri: 'at://did:plc:bad/svc',
+            malformedPrice: expect.stringMatching(/^money:/),
+          },
+        ]);
+        // The good row still ranks; nothing threw.
+        const ranked = rankOffers(offers, { quantity: QTY, currency: 'INR' }, NOW);
+        expect(ranked.ranked.map((r) => r.offer.supplierDid)).toEqual(['did:plc:good']);
+      },
+    );
 
     it('a currency that is not a code shape is refused the same way', () => {
       const { offers, unpriced } = catalogCandidatesToOffers(
-        [candidate({ supplierDid: 'did:plc:bad', indicativePrice: { currency: 'constructor', minorUnits: '100' } })],
+        [
+          candidate({
+            supplierDid: 'did:plc:bad',
+            indicativePrice: { currency: 'constructor', minorUnits: '100' },
+          }),
+        ],
         QTY,
       );
       expect(offers).toEqual([]);
@@ -167,8 +185,13 @@ describe('catalog → Offer bridge (§5.A2)', () => {
     });
 
     it('a row that states no price carries no reason — absence and malformation are different facts', () => {
-      const { unpriced } = catalogCandidatesToOffers([candidate({ supplierDid: 'did:plc:bare', indicativePrice: undefined })], QTY);
-      expect(unpriced).toEqual([{ supplierDid: 'did:plc:bare', serviceUri: 'at://did:plc:bare/svc' }]);
+      const { unpriced } = catalogCandidatesToOffers(
+        [candidate({ supplierDid: 'did:plc:bare', indicativePrice: undefined })],
+        QTY,
+      );
+      expect(unpriced).toEqual([
+        { supplierDid: 'did:plc:bare', serviceUri: 'at://did:plc:bare/svc' },
+      ]);
     });
   });
 });

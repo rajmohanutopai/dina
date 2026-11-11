@@ -15,12 +15,18 @@ import {
   sweep,
   stagingGetItem as getItem,
   resetStagingState,
- isDuplicate, markSeen, resetDedupState ,
+  isDuplicate,
+  markSeen,
+  resetDedupState,
   createPersona,
-  isPersonaOpen,
   openPersona,
-  resetPersonaState, clearVaults, queryVault, storeItem , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
-import { resetReminderState, listByPersona } from '@dina/core/reminders';
+  resetPersonaState,
+  clearVaults,
+  queryVault,
+  resetContactDirectory,
+  setPeopleRepository,
+} from '@dina/core';
+import { resetReminderState } from '@dina/core/reminders';
 import { resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 
 import { classifyItem, enrichItem, applyTrustScoring } from '../../src/staging/processor';

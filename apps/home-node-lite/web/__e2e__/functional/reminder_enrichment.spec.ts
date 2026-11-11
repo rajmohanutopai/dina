@@ -55,9 +55,8 @@ test.describe('MRS-03 — Reminder enrichment (with vs without)', () => {
     await thread.waitForNewAnswer(answersBefore, 45_000);
     // …then give any reminder a beat to render, and assert none did.
     await page.waitForTimeout(4000);
-    expect(
-      await thread.reminderCount(),
-      'a plain preference must NOT create a reminder card',
-    ).toBe(remindersBaseline);
+    expect(await thread.reminderCount(), 'a plain preference must NOT create a reminder card').toBe(
+      remindersBaseline,
+    );
   });
 });

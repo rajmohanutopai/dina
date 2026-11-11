@@ -382,7 +382,9 @@ describe('access, paused packs and lapsed cards', () => {
       fleet.advance(HOUR);
       brand.engine.sweep();
       fleet.pump();
-      expect(brand.store.listByRequest(request.request_id, 'term_counter').length).toBeGreaterThan(0);
+      expect(brand.store.listByRequest(request.request_id, 'term_counter').length).toBeGreaterThan(
+        0,
+      );
     });
 
     it('a yes while paused lapses the card with the reason; resumed, a fresh card asks again and its yes is sent', () => {
@@ -411,7 +413,9 @@ describe('access, paused packs and lapsed cards', () => {
       expect(fresh.cardId).not.toBe(first.cardId);
       expect(fresh.payload.terms).toEqual(first.payload.terms);
       expect(brand.engine.decideCard(fresh.cardId, true)).toEqual({ ok: true });
-      expect(brand.store.listByRequest(request.request_id, 'term_agreement_proposal')).toHaveLength(1);
+      expect(brand.store.listByRequest(request.request_id, 'term_agreement_proposal')).toHaveLength(
+        1,
+      );
     });
 
     it('a no while paused still closes the negotiation', () => {

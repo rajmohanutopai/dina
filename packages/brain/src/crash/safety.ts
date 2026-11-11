@@ -23,7 +23,7 @@ export interface CrashReport {
 
 /** PII patterns to strip from stdout. */
 const PII_STRIP_PATTERNS = [
-  /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g,
+  /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g,
   /(?:\+?1[\s\-.]?)?\(?\d{3}\)?[\s\-.]?\d{3}[\s\-.]?\d{4}/g,
   /\b\d{3}-\d{2}-\d{4}\b/g,
 ];

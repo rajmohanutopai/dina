@@ -687,6 +687,7 @@ export async function runStagingDrainTick(
       // populates summary/body/etc. The staging envelope's top-level
       // fields (source_id, status, lease_until, etc.) are dropped —
       // they're not vault concerns.
+      const firstChange = turn.sideEffects.changes?.[0];
       const enriched: Record<string, unknown> = {
         ...data,
         // Preserve top-level overrides where callers had them.
@@ -704,12 +705,16 @@ export async function runStagingDrainTick(
         ...(d2dContactDid !== '' ? { contact_did: d2dContactDid } : {}),
         ...(d2dAuthorPersonId !== '' ? { author_person_id: d2dAuthorPersonId } : {}),
         // PH-S13: the stored words name their author (see `attributed`).
-        ...(authorName !== '' && pickString('body') !== '' ? { body: attributed(pickString('body')) } : {}),
-        ...(authorName !== '' && pickString('summary') !== '' ? { summary: attributed(pickString('summary')) } : {}),
+        ...(authorName !== '' && pickString('body') !== ''
+          ? { body: attributed(pickString('body')) }
+          : {}),
+        ...(authorName !== '' && pickString('summary') !== ''
+          ? { summary: attributed(pickString('summary')) }
+          : {}),
         // REAL_LIFE_FIXES_2 §8.2: the earlier memory this one changes; Core
         // keeps the link only if that item exists in an open persona.
-        ...(turn.sideEffects.changes !== undefined && turn.sideEffects.changes.length > 0
-          ? { contradicts: `${turn.sideEffects.changes[0]!.relation}:${turn.sideEffects.changes[0]!.priorItemId}` }
+        ...(firstChange !== undefined
+          ? { contradicts: `${firstChange.relation}:${firstChange.priorItemId}` }
           : {}),
         // Preserved original event time.
         ...(originalTimestamp > 0 ? { timestamp: originalTimestamp } : {}),
@@ -771,9 +776,9 @@ export async function runStagingDrainTick(
       // nobody: no reminders, links or topics are applied for it again.
       const duplicateSet = new Set(resolveResult.duplicatePersonas ?? []);
       const storedPersonaSet = new Set(
-        (resolveResult.storedPersonas ?? (resolveResult.status === 'stored' ? personas : [])).filter(
-          (p) => !duplicateSet.has(p),
-        ),
+        (
+          resolveResult.storedPersonas ?? (resolveResult.status === 'stored' ? personas : [])
+        ).filter((p) => !duplicateSet.has(p)),
       );
 
       // `schedule_reminder` is plan-only inside the Remember runtime. Apply
@@ -864,7 +869,12 @@ export async function runStagingDrainTick(
         enriched: true,
         storedPersonas: storedInOrder.length > 0 ? storedInOrder : [personas[0] ?? 'general'],
         ...(turn.sideEffects.changes !== undefined && turn.sideEffects.changes.length > 0
-          ? { changes: turn.sideEffects.changes.map((c) => ({ priorSummary: c.priorSummary, relation: c.relation })) }
+          ? {
+              changes: turn.sideEffects.changes.map((c) => ({
+                priorSummary: c.priorSummary,
+                relation: c.relation,
+              })),
+            }
           : {}),
       };
 
@@ -1162,7 +1172,11 @@ export async function runStagingDrainTick(
         : err instanceof Error
           ? err.message
           : String(err);
-      log({ event: 'staging.drain.item_failed', item_id: itemId, error: modelDown ? MODEL_UNAVAILABLE : reason });
+      log({
+        event: 'staging.drain.item_failed',
+        item_id: itemId,
+        error: modelDown ? MODEL_UNAVAILABLE : reason,
+      });
       try {
         if (claimToken !== undefined) await core.stagingFail(itemId, reason, claimToken);
         else await core.stagingFail(itemId, reason);

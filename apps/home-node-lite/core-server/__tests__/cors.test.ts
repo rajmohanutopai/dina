@@ -91,7 +91,9 @@ describe('CORS (task 4.31)', () => {
       for (const m of ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS']) {
         expect(methods).toContain(m);
       }
-      const allowedHeaders = String(res.headers['access-control-allow-headers'] ?? '').toLowerCase();
+      const allowedHeaders = String(
+        res.headers['access-control-allow-headers'] ?? '',
+      ).toLowerCase();
       expect(allowedHeaders).toContain('authorization');
       expect(allowedHeaders).toContain('content-type');
       await app.close();
@@ -157,11 +159,7 @@ describe('CORS (task 4.31)', () => {
       const app = await createServer({ config: configWithCors(list), logger: silentLogger() });
       app.get('/x', async () => ({ ok: true }));
 
-      for (const origin of [
-        'https://a.example',
-        'https://b.example',
-        'https://c.example',
-      ]) {
+      for (const origin of ['https://a.example', 'https://b.example', 'https://c.example']) {
         const res = await app.inject({
           method: 'GET',
           url: '/x',

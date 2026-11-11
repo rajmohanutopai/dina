@@ -17,8 +17,8 @@ import {
   getAgentGrantRepository,
   setAgentGrantRepository,
 } from '../../src/agent/grant_repository';
-import { buildCanonicalPayload, signRequest } from '../../src/auth/canonical';
 import { isDevice, resetCallerTypeState, setDeviceRoleResolver } from '../../src/auth/caller_type';
+import { buildCanonicalPayload, signRequest } from '../../src/auth/canonical';
 import { getNonceCache } from '../../src/auth/middleware';
 import {
   SQLiteSignedNonceRepository,
@@ -58,7 +58,11 @@ import {
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { SQLiteWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, getWorkflowService, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 import type { DatabaseAdapter } from '../../src/storage/db_adapter';
 
@@ -227,13 +231,17 @@ describe('TT-04: signed request replay', () => {
           'X-Nonce': nonce,
           'X-Signature': bytesToHex(sign(key, new TextEncoder().encode(msg))),
         };
-        expect((await dispatch('GET', '/v1/personas', headers, new Uint8Array(0))).status).toBe(200);
+        expect((await dispatch('GET', '/v1/personas', headers, new Uint8Array(0))).status).toBe(
+          200,
+        );
         // Other traffic rotates the buffers along the way.
         jest.setSystemTime(T + 5 * 60_000 + 1000);
         getNonceCache().check('x1');
         jest.setSystemTime(T + 10 * 60_000 + 2000);
         getNonceCache().check('x2');
-        expect((await dispatch('GET', '/v1/personas', headers, new Uint8Array(0))).status).toBe(401);
+        expect((await dispatch('GET', '/v1/personas', headers, new Uint8Array(0))).status).toBe(
+          401,
+        );
       } finally {
         jest.useRealTimers();
       }
@@ -249,7 +257,9 @@ describe('TT-04: signed request replay', () => {
     const { key, did } = newKey();
     pair('cli', key);
     const h = signRequest('GET', '/v1/personas', '', new Uint8Array(0), key, did);
-    expect((await dispatcher()('GET', '/v1/personas', h as never, new Uint8Array(0))).status).toBe(401);
+    expect((await dispatcher()('GET', '/v1/personas', h as never, new Uint8Array(0))).status).toBe(
+      401,
+    );
   });
 
   it('a DID no caller holds writes nothing to the durable store', async () => {
@@ -280,13 +290,41 @@ describe('TT-05: a service grant dies with the contact', () => {
       const OTHER = 'did:a2a:client';
       addContact(X, 'Ex', 'verified');
       const grants = getServiceGrantRepository()!;
-      grants.create({ grantId: 'g1', granteeDid: X, serviceRkey: 'rk', capability: 'availability', grantType: 'standing', createdAt: 1 });
-      grants.create({ grantId: 'g2', granteeDid: OTHER, serviceRkey: 'rk', capability: 'availability', grantType: 'standing', createdAt: 1 });
+      grants.create({
+        grantId: 'g1',
+        granteeDid: X,
+        serviceRkey: 'rk',
+        capability: 'availability',
+        grantType: 'standing',
+        createdAt: 1,
+      });
+      grants.create({
+        grantId: 'g2',
+        granteeDid: OTHER,
+        serviceRkey: 'rk',
+        capability: 'availability',
+        grantType: 'standing',
+        createdAt: 1,
+      });
       expect(deleteContact(X)).toBe(true);
       const nowSec = Math.floor(Date.now() / 1000);
-      expect(grants.isAuthorized({ granteeDid: X, serviceRkey: 'rk', capability: 'availability', nowSec })).toBe(false);
+      expect(
+        grants.isAuthorized({
+          granteeDid: X,
+          serviceRkey: 'rk',
+          capability: 'availability',
+          nowSec,
+        }),
+      ).toBe(false);
       // Someone else's grant in the same table stays.
-      expect(grants.isAuthorized({ granteeDid: OTHER, serviceRkey: 'rk', capability: 'availability', nowSec })).toBe(true);
+      expect(
+        grants.isAuthorized({
+          granteeDid: OTHER,
+          serviceRkey: 'rk',
+          capability: 'availability',
+          nowSec,
+        }),
+      ).toBe(true);
     } finally {
       setServiceGrantRepository(null);
       setPeopleRepository(null);

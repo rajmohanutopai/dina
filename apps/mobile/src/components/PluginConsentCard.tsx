@@ -71,10 +71,7 @@ function formatDuration(seconds: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export function PluginConsentCard({
-  consent,
-  onDone,
-}: PluginConsentCardProps): React.JSX.Element {
+export function PluginConsentCard({ consent, onDone }: PluginConsentCardProps): React.JSX.Element {
   const isRunner = consent.executionMode === 'runner';
   const [pending, setPending] = useState(false);
   const [resolved, setResolved] = useState<PluginConsentOutcome | null>(null);
@@ -254,9 +251,9 @@ export function PluginConsentCard({
           {setup !== null && pairing.state === 'waiting' && (
             <>
               <Text style={styles.help}>
-                On the machine that will run it: <Text style={styles.pluginId}>dina-plugin serve</Text>{' '}
-                and paste this setup code. The runner pairs with its own key; Dina binds that exact
-                device to this install.
+                On the machine that will run it:{' '}
+                <Text style={styles.pluginId}>dina-plugin serve</Text> and paste this setup code.
+                The runner pairs with its own key; Dina binds that exact device to this install.
               </Text>
               <Text
                 testID={`plugin-consent-setup-code-${consent.installId}`}
@@ -278,19 +275,28 @@ export function PluginConsentCard({
                   Expires in {formatDuration(secondsLeft)}
                 </Text>
               </View>
-              <Text testID={`plugin-consent-pairing-state-${consent.installId}`} style={styles.progress}>
+              <Text
+                testID={`plugin-consent-pairing-state-${consent.installId}`}
+                style={styles.progress}
+              >
                 Waiting for the runner…
               </Text>
             </>
           )}
           {pairing.state === 'bound' && (
-            <Text testID={`plugin-consent-pairing-state-${consent.installId}`} style={styles.progressBound}>
+            <Text
+              testID={`plugin-consent-pairing-state-${consent.installId}`}
+              style={styles.progressBound}
+            >
               Identity bound · <Text style={styles.pluginId}>{pairing.deviceDid}</Text>
             </Text>
           )}
           {pairing.state === 'expired' && (
             <>
-              <Text testID={`plugin-consent-pairing-state-${consent.installId}`} style={styles.pairingError}>
+              <Text
+                testID={`plugin-consent-pairing-state-${consent.installId}`}
+                style={styles.pairingError}
+              >
                 The setup code expired before the runner paired.
               </Text>
               <TouchableOpacity
@@ -303,8 +309,12 @@ export function PluginConsentCard({
             </>
           )}
           {pairing.state === 'refused' && (
-            <Text testID={`plugin-consent-pairing-state-${consent.installId}`} style={styles.pairingError}>
-              This install can&apos;t take a runner any more: {pairing.error}. Decline and start again.
+            <Text
+              testID={`plugin-consent-pairing-state-${consent.installId}`}
+              style={styles.pairingError}
+            >
+              This install can&apos;t take a runner any more: {pairing.error}. Decline and start
+              again.
             </Text>
           )}
         </View>

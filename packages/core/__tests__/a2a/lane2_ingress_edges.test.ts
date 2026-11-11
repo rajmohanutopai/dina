@@ -31,7 +31,15 @@ import { getPublicKey, sign } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
 import { SQLiteServiceGrantRepository } from '../../src/service/service_grant_repository';
 
-import { InboundWorld, didRequestSignature, errorOf, listing, resultOf, save, sentTask } from './inbound_fixture';
+import {
+  InboundWorld,
+  didRequestSignature,
+  errorOf,
+  listing,
+  resultOf,
+  save,
+  sentTask,
+} from './inbound_fixture';
 
 let iw: InboundWorld;
 beforeEach(async () => {
@@ -39,12 +47,12 @@ beforeEach(async () => {
 });
 afterEach(() => iw.close());
 
-const count = (sql: string): number =>
-  (iw.world.store.db.query(sql) as { n: number }[])[0]?.n ?? 0;
+const count = (sql: string): number => (iw.world.store.db.query(sql) as { n: number }[])[0]?.n ?? 0;
 const inboundRows = () => count("SELECT COUNT(*) AS n FROM a2a_tasks WHERE direction = 'inbound'");
 const receiptRows = () => count('SELECT COUNT(*) AS n FROM a2a_idempotency_receipts');
 const pushRows = () => count('SELECT COUNT(*) AS n FROM a2a_push_configs');
-const eta = (route = '42') => sentTask(iw.call({ skill: 'eta_query', params: { route_id: route } })).id as string;
+const eta = (route = '42') =>
+  sentTask(iw.call({ skill: 'eta_query', params: { route_id: route } })).id as string;
 
 /** A raw body sent as the gateway would forward it. */
 function raw(body: string, over: Partial<GatewayEnvelope['request']> = {}): GatewayEnvelope {
@@ -60,7 +68,10 @@ describe('push-config routes bind the task id and the config id to the signed bo
     const made = resultOf(
       ingressCreatePushConfig(
         iw.rt,
-        iw.request('CreateTaskPushNotificationConfig', { taskId: a, url: 'https://hooks.example.test/a' }),
+        iw.request('CreateTaskPushNotificationConfig', {
+          taskId: a,
+          url: 'https://hooks.example.test/a',
+        }),
         a,
       ),
     );
@@ -70,17 +81,34 @@ describe('push-config routes bind the task id and the config id to the signed bo
       errorOf(
         ingressCreatePushConfig(
           iw.rt,
-          iw.request('CreateTaskPushNotificationConfig', { taskId: a, url: 'https://hooks.example.test/x' }),
+          iw.request('CreateTaskPushNotificationConfig', {
+            taskId: a,
+            url: 'https://hooks.example.test/x',
+          }),
           b,
         ),
       ),
     ).toEqual({ code: -32600, reason: 'id_mismatch' });
     // Get: the right task with another config id, and the right config under another task.
     expect(
-      errorOf(ingressGetPushConfig(iw.rt, iw.request('GetTaskPushNotificationConfig', { taskId: a, id: cfg }), a, 'other')),
+      errorOf(
+        ingressGetPushConfig(
+          iw.rt,
+          iw.request('GetTaskPushNotificationConfig', { taskId: a, id: cfg }),
+          a,
+          'other',
+        ),
+      ),
     ).toEqual({ code: -32600, reason: 'id_mismatch' });
     expect(
-      errorOf(ingressGetPushConfig(iw.rt, iw.request('GetTaskPushNotificationConfig', { taskId: a, id: cfg }), b, cfg)),
+      errorOf(
+        ingressGetPushConfig(
+          iw.rt,
+          iw.request('GetTaskPushNotificationConfig', { taskId: a, id: cfg }),
+          b,
+          cfg,
+        ),
+      ),
     ).toEqual({ code: -32600, reason: 'id_mismatch' });
     // Delete: the right task with another config id, the right config under another task, and the ids swapped.
     for (const [taskRoute, configRoute] of [
@@ -90,18 +118,52 @@ describe('push-config routes bind the task id and the config id to the signed bo
     ] as const) {
       expect(
         errorOf(
-          ingressDeletePushConfig(iw.rt, iw.request('DeleteTaskPushNotificationConfig', { taskId: a, id: cfg }), taskRoute, configRoute),
+          ingressDeletePushConfig(
+            iw.rt,
+            iw.request('DeleteTaskPushNotificationConfig', { taskId: a, id: cfg }),
+            taskRoute,
+            configRoute,
+          ),
         ),
       ).toEqual({ code: -32600, reason: 'id_mismatch' });
     }
     // Nothing changed: task a still holds its one config, task b none.
-    expect(resultOf(ingressListPushConfigs(iw.rt, iw.request('ListTaskPushNotificationConfigs', { taskId: a }), a)).configs).toHaveLength(1);
-    expect(resultOf(ingressListPushConfigs(iw.rt, iw.request('ListTaskPushNotificationConfigs', { taskId: b }), b)).configs).toHaveLength(0);
+    expect(
+      resultOf(
+        ingressListPushConfigs(
+          iw.rt,
+          iw.request('ListTaskPushNotificationConfigs', { taskId: a }),
+          a,
+        ),
+      ).configs,
+    ).toHaveLength(1);
+    expect(
+      resultOf(
+        ingressListPushConfigs(
+          iw.rt,
+          iw.request('ListTaskPushNotificationConfigs', { taskId: b }),
+          b,
+        ),
+      ).configs,
+    ).toHaveLength(0);
     // Control: the same body on its own route deletes it.
     expect(
-      ingressDeletePushConfig(iw.rt, iw.request('DeleteTaskPushNotificationConfig', { taskId: a, id: cfg }), a, cfg).status,
+      ingressDeletePushConfig(
+        iw.rt,
+        iw.request('DeleteTaskPushNotificationConfig', { taskId: a, id: cfg }),
+        a,
+        cfg,
+      ).status,
     ).toBe(200);
-    expect(resultOf(ingressListPushConfigs(iw.rt, iw.request('ListTaskPushNotificationConfigs', { taskId: a }), a)).configs).toHaveLength(0);
+    expect(
+      resultOf(
+        ingressListPushConfigs(
+          iw.rt,
+          iw.request('ListTaskPushNotificationConfigs', { taskId: a }),
+          a,
+        ),
+      ).configs,
+    ).toHaveLength(0);
   });
 });
 
@@ -114,7 +176,10 @@ describe('the signed query (§5.1, spec §3.6)', () => {
       method: 'SendMessage',
       params: iw.message({ skill: 'eta_query', params: { route_id: '7' } }),
     });
-    const byParam = ingressSendMessage(iw.rt, raw(body, { query: 'A2A-Version=1.0', version: undefined }));
+    const byParam = ingressSendMessage(
+      iw.rt,
+      raw(body, { query: 'A2A-Version=1.0', version: undefined }),
+    );
     expect((sentTask(byParam).status as { state: string }).state).toBe('TASK_STATE_SUBMITTED');
     const before = inboundRows();
     for (const query of ['foo=bar', 'A2A-Version=1.0&x=1', 'a2a-version=1.0']) {
@@ -130,8 +195,14 @@ describe('the signed query (§5.1, spec §3.6)', () => {
 describe('strict I-JSON at Core (§5.1): refused before any state', () => {
   // Plan C46
   it.each([
-    ['a __proto__ member', '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"__proto__":{"x":1},"message":{}}}'],
-    ['a lone surrogate', '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"\\ud800"}}}'],
+    [
+      'a __proto__ member',
+      '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"__proto__":{"x":1},"message":{}}}',
+    ],
+    [
+      'a lone surrogate',
+      '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"messageId":"\\ud800"}}}',
+    ],
     ['array params', '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":[1,2]}'],
   ])('%s', (_name, body) => {
     const answer = ingressSendMessage(iw.rt, raw(body));
@@ -155,7 +226,10 @@ describe('one credential, never both (§5.1)', () => {
       jsonrpc: '2.0',
       id: 9000 + n,
       method: 'SendMessage',
-      params: iw.message({ skill: 'eta_query', params: { route_id: '1' } }, { messageId: `both-${n}` }),
+      params: iw.message(
+        { skill: 'eta_query', params: { route_id: '1' } },
+        { messageId: `both-${n}` },
+      ),
     });
     return {
       request: { method: 'POST', path: A2A_RPC_PATH, query: '', body, version: '1.0' },
@@ -168,7 +242,12 @@ describe('one credential, never both (§5.1)', () => {
     // The world's client binds Alice's DID; a second client keeps its bearer.
     const issued = issueDidChallenge(iw.world.store, iw.clientId, alice.did, iw.world.clock);
     if (!issued.ok) throw new Error(issued.reason);
-    const proof = didBindingSigningInput({ nodeDid: NODE_DID, clientId: iw.clientId, did: alice.did, challenge: issued.challenge });
+    const proof = didBindingSigningInput({
+      nodeDid: NODE_DID,
+      clientId: iw.clientId,
+      did: alice.did,
+      challenge: issued.challenge,
+    });
     const bound = await ingressCompleteDidBinding(
       iw.rt,
       {
@@ -176,7 +255,11 @@ describe('one credential, never both (§5.1)', () => {
           method: 'POST',
           path: A2A_DID_BINDING_PATH,
           query: '',
-          body: JSON.stringify({ did: alice.did, challenge: issued.challenge, signature: bytesToHex(sign(alice.privateKey, new TextEncoder().encode(proof))) }),
+          body: JSON.stringify({
+            did: alice.did,
+            challenge: issued.challenge,
+            signature: bytesToHex(sign(alice.privateKey, new TextEncoder().encode(proof))),
+          }),
         },
         client_auth: {},
       },
@@ -186,18 +269,25 @@ describe('one credential, never both (§5.1)', () => {
     const other = createA2AClient(iw.world.store, { display_name: 'Other' }, iw.world.clock);
     if (!other.ok) throw new Error(other.reason);
     // Each credential alone runs a call.
-    expect((sentTask(ingressSendMessage(iw.rt, signedByAlice())).status as { state: string }).state).toBe('TASK_STATE_SUBMITTED');
+    expect(
+      (sentTask(ingressSendMessage(iw.rt, signedByAlice())).status as { state: string }).state,
+    ).toBe('TASK_STATE_SUBMITTED');
     const byBearer = iw.request(
       'SendMessage',
       iw.message({ skill: 'eta_query', params: { route_id: '1' } }, { messageId: 'bearer-alone' }),
       {},
       `Bearer ${other.token}`,
     );
-    expect((sentTask(ingressSendMessage(iw.rt, byBearer)).status as { state: string }).state).toBe('TASK_STATE_SUBMITTED');
+    expect((sentTask(ingressSendMessage(iw.rt, byBearer)).status as { state: string }).state).toBe(
+      'TASK_STATE_SUBMITTED',
+    );
     expect(inboundRows()).toBe(2);
     // Both at once: refused, whichever Core would have read first.
     const signed = signedByAlice();
-    const both: GatewayEnvelope = { ...signed, client_auth: { ...signed.client_auth, authorization: `Bearer ${other.token}` } };
+    const both: GatewayEnvelope = {
+      ...signed,
+      client_auth: { ...signed.client_auth, authorization: `Bearer ${other.token}` },
+    };
     const answer = ingressSendMessage(iw.rt, both);
     expect(answer.status).toBe(401);
     expect(answer.headers?.['www-authenticate']).toBe('Bearer realm="dina-a2a"');
@@ -212,7 +302,10 @@ describe('budgets (notes M3; receipts.ts)', () => {
     const create = (n: number) =>
       ingressCreatePushConfig(
         iw.rt,
-        iw.request('CreateTaskPushNotificationConfig', { taskId: id, url: `https://hooks.example.test/${n}` }),
+        iw.request('CreateTaskPushNotificationConfig', {
+          taskId: id,
+          url: `https://hooks.example.test/${n}`,
+        }),
         id,
       );
     // 59 more new calls use up the minute's budget of 60.
@@ -221,15 +314,48 @@ describe('budgets (notes M3; receipts.ts)', () => {
     expect([over.status, over.headers?.['retry-after']]).toEqual([429, '60']);
     expect(pushRows()).toBe(0);
     // The reads still pass: they spend another budget.
-    expect(ingressListPushConfigs(iw.rt, iw.request('ListTaskPushNotificationConfigs', { taskId: id }), id).status).toBe(200);
-    expect(errorOf(ingressGetPushConfig(iw.rt, iw.request('GetTaskPushNotificationConfig', { taskId: id, id: 'x' }), id, 'x')).code).toBe(-32001);
-    expect(ingressDeletePushConfig(iw.rt, iw.request('DeleteTaskPushNotificationConfig', { taskId: id, id: 'x' }), id, 'x').status).toBe(200);
+    expect(
+      ingressListPushConfigs(
+        iw.rt,
+        iw.request('ListTaskPushNotificationConfigs', { taskId: id }),
+        id,
+      ).status,
+    ).toBe(200);
+    expect(
+      errorOf(
+        ingressGetPushConfig(
+          iw.rt,
+          iw.request('GetTaskPushNotificationConfig', { taskId: id, id: 'x' }),
+          id,
+          'x',
+        ),
+      ).code,
+    ).toBe(-32001);
+    expect(
+      ingressDeletePushConfig(
+        iw.rt,
+        iw.request('DeleteTaskPushNotificationConfig', { taskId: id, id: 'x' }),
+        id,
+        'x',
+      ).status,
+    ).toBe(200);
     // A minute later Create passes again.
     iw.world.clock += 60_001;
     expect(create(2).status).toBe(200);
     // And past the read budget, the reads stop while Create still passes.
-    for (let i = 0; i < 600; i += 1) ingressListPushConfigs(iw.rt, iw.request('ListTaskPushNotificationConfigs', { taskId: id }), id);
-    expect(ingressListPushConfigs(iw.rt, iw.request('ListTaskPushNotificationConfigs', { taskId: id }), id).status).toBe(429);
+    for (let i = 0; i < 600; i += 1)
+      ingressListPushConfigs(
+        iw.rt,
+        iw.request('ListTaskPushNotificationConfigs', { taskId: id }),
+        id,
+      );
+    expect(
+      ingressListPushConfigs(
+        iw.rt,
+        iw.request('ListTaskPushNotificationConfigs', { taskId: id }),
+        id,
+      ).status,
+    ).toBe(429);
     expect(create(3).status).toBe(200);
   });
 
@@ -294,7 +420,10 @@ describe('receipts (§7.2 steps 5 and 8, §10 "Message mutation")', () => {
       );
     expect(send('https://hooks.example.test/one').status).toBe(200);
     expect(pushRows()).toBe(1);
-    expect(errorOf(send('https://hooks.example.test/two'))).toEqual({ code: -32602, reason: 'message_id_reused' });
+    expect(errorOf(send('https://hooks.example.test/two'))).toEqual({
+      code: -32602,
+      reason: 'message_id_reused',
+    });
     expect([inboundRows(), pushRows()]).toEqual([1, 1]);
   });
 
@@ -312,7 +441,12 @@ describe('receipts (§7.2 steps 5 and 8, §10 "Message mutation")', () => {
     const hidden: unknown[][] = [];
     const spy = jest.spyOn(db, 'query').mockImplementation(((sql: string, params?: unknown[]) => {
       // Only the receipt lookup for this caller and this message id misses, once.
-      if (hidden.length === 0 && sql.includes('FROM a2a_idempotency_receipts') && Array.isArray(params) && params.includes('twice-at-once')) {
+      if (
+        hidden.length === 0 &&
+        sql.includes('FROM a2a_idempotency_receipts') &&
+        Array.isArray(params) &&
+        params.includes('twice-at-once')
+      ) {
         hidden.push(params);
         return [];
       }
@@ -330,11 +464,17 @@ describe('receipts (§7.2 steps 5 and 8, §10 "Message mutation")', () => {
     // The receipt's key refuses the second commit, and nothing of it stays. (The driver's error
     // comes from a native module a reused worker may have loaded in another realm, so its class
     // is not this file's Error: the test reads what it says, not what it is an instance of.)
-    expect(second).toEqual(expect.objectContaining({ message: expect.stringMatching(/UNIQUE constraint failed: a2a_idempotency_receipts/) }));
+    expect(second).toEqual(
+      expect.objectContaining({
+        message: expect.stringMatching(/UNIQUE constraint failed: a2a_idempotency_receipts/),
+      }),
+    );
     expect([inboundRows(), receiptRows()]).toEqual([1, 1]);
     expect(count('SELECT COUNT(*) AS n FROM workflow_tasks')).toBe(1);
     // The caller's retry is a plain replay.
-    expect(sentTask(ingressSendMessage(iw.rt, { ...env, request: { ...env.request } })).id).toBe(first.id);
+    expect(sentTask(ingressSendMessage(iw.rt, { ...env, request: { ...env.request } })).id).toBe(
+      first.id,
+    );
   });
 });
 
@@ -365,7 +505,11 @@ describe('contextId carries no authority (§5.2)', () => {
         iw.request(
           'SendMessage',
           iw.message(
-            { skill: 'eta_query@private', params: { route_id: '1' }, grant_id: issued.grant.grantId },
+            {
+              skill: 'eta_query@private',
+              params: { route_id: '1' },
+              grant_id: issued.grant.grantId,
+            },
             { contextId: 'their-context' },
           ),
           {},
@@ -376,11 +520,15 @@ describe('contextId carries no authority (§5.2)', () => {
     expect((theirs.status as { state: string }).state).toBe('TASK_STATE_SUBMITTED');
     // This client names a grant, and the other client's context, as its contextId: no door.
     for (const contextId of [mine.grant.grantId, issued.grant.grantId, 'their-context']) {
-      const refused = sentTask(iw.call({ skill: 'eta_query@private', params: { route_id: '2' } }, { contextId }));
+      const refused = sentTask(
+        iw.call({ skill: 'eta_query@private', params: { route_id: '2' } }, { contextId }),
+      );
       expect((refused.status as { state: string }).state).toBe('TASK_STATE_REJECTED');
     }
     // Sharing a context shows nothing of the other client's tasks.
-    const listed = resultOf(ingressListTasks(iw.rt, iw.request('ListTasks', { contextId: 'their-context' })));
+    const listed = resultOf(
+      ingressListTasks(iw.rt, iw.request('ListTasks', { contextId: 'their-context' })),
+    );
     expect((listed.tasks as { id: string }[]).map((t) => t.id)).not.toContain(theirs.id);
   });
 });
@@ -391,7 +539,11 @@ describe('CancelTask (§7.4, §10 "Cross-principal")', () => {
     const id = eta();
     const other = createA2AClient(iw.world.store, { display_name: 'Other' }, iw.world.clock);
     if (!other.ok) throw new Error(other.reason);
-    const answer = ingressCancelTask(iw.rt, iw.request('CancelTask', { id }, {}, `Bearer ${other.token}`), id);
+    const answer = ingressCancelTask(
+      iw.rt,
+      iw.request('CancelTask', { id }, {}, `Bearer ${other.token}`),
+      id,
+    );
     expect(errorOf(answer).code).toBe(-32001);
     expect(iw.opOf(id).state).toBe('open');
     expect(iw.childOf(id).status).toBe('queued');
@@ -403,7 +555,9 @@ describe('CancelTask (§7.4, §10 "Cross-principal")', () => {
     iw.runChild(done, { eta_minutes: 3 });
     const refused = sentTask(iw.call({ skill: 'appointment_status', params: {} })).id as string;
     for (const id of [done, refused]) {
-      expect(errorOf(ingressCancelTask(iw.rt, iw.request('CancelTask', { id }), id)).code).toBe(-32002);
+      expect(errorOf(ingressCancelTask(iw.rt, iw.request('CancelTask', { id }), id)).code).toBe(
+        -32002,
+      );
     }
     expect(iw.opOf(done).state).toBe('completed');
     expect(iw.opOf(refused).state).toBe('rejected');
@@ -450,7 +604,9 @@ describe('ListTasks (§4.3, A2A §3.1.4)', () => {
     expect(token).not.toBe('');
     for (let i = 0; token !== ''; i += 1) {
       if (i >= 100) throw new Error('paging never ended');
-      const got = resultOf(ingressListTasks(rt, iw.request('ListTasks', { pageSize: 2, pageToken: token })));
+      const got = resultOf(
+        ingressListTasks(rt, iw.request('ListTasks', { pageSize: 2, pageToken: token })),
+      );
       rest.push(...(got.tasks as { id: string }[]).map((t) => t.id));
       expect(typeof got.nextPageToken).toBe('string');
       token = got.nextPageToken as string;
@@ -468,15 +624,24 @@ describe('ListTasks (§4.3, A2A §3.1.4)', () => {
     expect(own.totalSize).toBe(2);
     const other = createA2AClient(iw.world.store, { display_name: 'Other' }, iw.world.clock);
     if (!other.ok) throw new Error(other.reason);
-    expect(page({}, `Bearer ${other.token}`)).toEqual(expect.objectContaining({ tasks: [], totalSize: 0 }));
+    expect(page({}, `Bearer ${other.token}`)).toEqual(
+      expect.objectContaining({ tasks: [], totalSize: 0 }),
+    );
     // And the other client's own call shows to it alone.
     const theirs = sentTask(
       ingressSendMessage(
         iw.rt,
-        iw.request('SendMessage', iw.message({ skill: 'eta_query', params: { route_id: '3' } }), {}, `Bearer ${other.token}`),
+        iw.request(
+          'SendMessage',
+          iw.message({ skill: 'eta_query', params: { route_id: '3' } }),
+          {},
+          `Bearer ${other.token}`,
+        ),
       ),
     ).id as string;
-    expect((page({}, `Bearer ${other.token}`).tasks as { id: string }[]).map((t) => t.id)).toEqual([theirs]);
+    expect((page({}, `Bearer ${other.token}`).tasks as { id: string }[]).map((t) => t.id)).toEqual([
+      theirs,
+    ]);
     expect((page({}).tasks as { id: string }[]).map((t) => t.id)).not.toContain(theirs);
   });
 
@@ -488,7 +653,15 @@ describe('ListTasks (§4.3, A2A §3.1.4)', () => {
       base64urlEncodeUtf8('nonsense'),
       base64urlEncodeUtf8('1:2:3'),
       // The cursor is JSON [time, task id]: every other JSON shape is refused too.
-      ...['[1]', '[1,"a","b"]', '["1","a"]', '[1.5,"a"]', '[1,""]', '[1,2]', '{"at":1,"id":"a"}'].map(base64urlEncodeUtf8),
+      ...[
+        '[1]',
+        '[1,"a","b"]',
+        '["1","a"]',
+        '[1.5,"a"]',
+        '[1,""]',
+        '[1,2]',
+        '{"at":1,"id":"a"}',
+      ].map(base64urlEncodeUtf8),
     ];
     for (const pageToken of malformed) {
       expect(errorOf(ingressListTasks(iw.rt, iw.request('ListTasks', { pageToken })))).toEqual({
@@ -518,8 +691,12 @@ describe('no internal id in a Lane 2 answer (A2A-I5, §4.3 "opaque cursor", §10
       expect(task.contextId).toMatch(uuid);
       expect(task.id).not.toBe(String(iw.opOf(task.id as string).id));
     }
-    const read = resultOf(ingressGetTask(iw.rt, iw.request('GetTask', { id: tasks[0]?.id }), tasks[0]?.id as string));
-    expect(JSON.stringify(read)).not.toContain(iw.opOf(tasks[0]?.id as string).internal_id ?? '\u0000');
+    const read = resultOf(
+      ingressGetTask(iw.rt, iw.request('GetTask', { id: tasks[0]?.id }), tasks[0]?.id as string),
+    );
+    expect(JSON.stringify(read)).not.toContain(
+      iw.opOf(tasks[0]?.id as string).internal_id ?? '\u0000',
+    );
   });
 });
 
@@ -527,7 +704,10 @@ describe('one timing class across refusal causes (A2A-I4)', () => {
   // Plan C98
   it('refusals for different causes take the same order of time', async () => {
     await save(listing({ discoverability: 'known_only', isDiscoverable: false }), 'private');
-    const rt = { ...iw.rt, budgets: new PrincipalBudgets({ perMinute: 1e9, replayPerMinute: 1e9, readPerMinute: 1e9 }) };
+    const rt = {
+      ...iw.rt,
+      budgets: new PrincipalBudgets({ perMinute: 1e9, replayPerMinute: 1e9, readPerMinute: 1e9 }),
+    };
     const causes: Record<string, Record<string, unknown>> = {
       unknown: { skill: 'appointment_status', params: {} },
       commerce: { skill: 'com.dinakernel.commerce.order_status', params: {} },
@@ -538,10 +718,15 @@ describe('one timing class across refusal causes (A2A-I4)', () => {
     const median = (xs: number[]) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] ?? 0;
     /** One sample set: the causes interleaved round by round; the ratio of the slowest median to the fastest. */
     const sample = (set: number): number => {
-      const times: Record<string, number[]> = Object.fromEntries(Object.keys(causes).map((k) => [k, []]));
+      const times: Record<string, number[]> = Object.fromEntries(
+        Object.keys(causes).map((k) => [k, []]),
+      );
       for (let round = 0; round < 120; round += 1) {
         for (const [name, data] of Object.entries(causes)) {
-          const env = iw.request('SendMessage', iw.message(data, { messageId: `t-${set}-${name}-${round}` }));
+          const env = iw.request(
+            'SendMessage',
+            iw.message(data, { messageId: `t-${set}-${name}-${round}` }),
+          );
           const start = process.hrtime.bigint();
           const answer = ingressSendMessage(rt, env);
           const took = Number(process.hrtime.bigint() - start);

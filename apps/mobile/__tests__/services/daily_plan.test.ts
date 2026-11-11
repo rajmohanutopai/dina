@@ -116,7 +116,9 @@ afterEach(() => {
 });
 
 function scheduledIds(): string[] {
-  return __getScheduled().map((r) => (r as { identifier: string }).identifier).sort();
+  return __getScheduled()
+    .map((r) => (r as { identifier: string }).identifier)
+    .sort();
 }
 
 describe('planning and review', () => {
@@ -139,7 +141,10 @@ describe('planning and review', () => {
     const evening = atTime(MORNING, '18:30');
     expect((await loadToday(evening)).reviewDue).toBe(true);
     expect(await finishReview(evening)).toBe(1);
-    expect(store.getTask(b.id)).toMatchObject({ plannedFor: planDayKeyAfter(evening, 1), carried: 1 });
+    expect(store.getTask(b.id)).toMatchObject({
+      plannedFor: planDayKeyAfter(evening, 1),
+      carried: 1,
+    });
     expect((await loadToday(evening)).reviewDue).toBe(false);
   });
 
@@ -156,12 +161,18 @@ describe("an agent's tasks", () => {
       store,
       AGENT,
       'Office Claude',
-      parseBatch({ batch_id: 'b1', persona: 'work', items: [{ title: 'Answer Priya', source_ref: 'm1' }] }, MORNING),
+      parseBatch(
+        { batch_id: 'b1', persona: 'work', items: [{ title: 'Answer Priya', source_ref: 'm1' }] },
+        MORNING,
+      ),
       MORNING,
     );
     let view = await loadToday(MORNING);
     expect(view.pendingFeeds).toEqual([
-      expect.objectContaining({ held: 1, feed: expect.objectContaining({ agentName: 'Office Claude', persona: 'work' }) }),
+      expect.objectContaining({
+        held: 1,
+        feed: expect.objectContaining({ agentName: 'Office Claude', persona: 'work' }),
+      }),
     ]);
     expect(view.others).toHaveLength(0);
     await decideAgentFeed(AGENT, 'work', true, MORNING + 1);
@@ -185,7 +196,9 @@ describe('check-ins', () => {
       at: atTime(MORNING, '13:00'),
       deepLink: 'dina://plan',
     });
-    expect(byKind.get('evening')?.body).toBe('1 task still open. Carry them to tomorrow or drop them.');
+    expect(byKind.get('evening')?.body).toBe(
+      '1 task still open. Carry them to tomorrow or drop them.',
+    );
     // 09:00 is past today's 08:00 plan time: the next morning is tomorrow's.
     expect(byKind.get('morning')?.at).toBe(atTime(MORNING + 24 * 3_600_000, '08:00'));
     expect(byKind.has('weekly')).toBe(false); // no goals
@@ -202,7 +215,9 @@ describe('check-ins', () => {
   it('the weekly note names a goal that got no time', async () => {
     store.addGoal('Run three times a week', '', MORNING - 10 * 24 * 3_600_000);
     await addTask('x', MORNING);
-    const weekly = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find((c) => c.kind === 'weekly');
+    const weekly = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find(
+      (c) => c.kind === 'weekly',
+    );
     // Next Sunday at the evening time; 15 days since the goal was set by then.
     expect(new Date(weekly?.at ?? 0).getDay()).toBe(0);
     expect(weekly?.body).toMatch(/^No time on "Run three times a week" for 15 days\.$/);
@@ -214,9 +229,7 @@ describe('check-ins', () => {
     await planToday(MORNING, null);
     await rescheduleCheckins(MORNING);
     const mornings = MORNING_FADE_DAYS.map((_, i) => checkinId('morning', i));
-    expect(scheduledIds()).toEqual(
-      [checkinId('evening'), checkinId('midday'), ...mornings].sort(),
-    );
+    expect(scheduledIds()).toEqual([checkinId('evening'), checkinId('midday'), ...mornings].sort());
 
     // Done: nothing is left to say.
     const [t] = store.listTasks({ statuses: ['open'] });
@@ -241,8 +254,13 @@ describe('check-ins', () => {
 });
 
 it('settings fall back to the defaults on bad values', () => {
-  expect(validSettings({ planTime: '25:00', capacityHours: -1, weeklyDay: 9 })).toEqual(DEFAULT_PLAN_SETTINGS);
-  expect(validSettings({ planTime: '07:30', checkins: false })).toMatchObject({ planTime: '07:30', checkins: false });
+  expect(validSettings({ planTime: '25:00', capacityHours: -1, weeklyDay: 9 })).toEqual(
+    DEFAULT_PLAN_SETTINGS,
+  );
+  expect(validSettings({ planTime: '07:30', checkins: false })).toMatchObject({
+    planTime: '07:30',
+    checkins: false,
+  });
   expect(planDayKey(MORNING)).toBe('2026-11-03');
 });
 
@@ -310,7 +328,9 @@ describe('goal plans (§15–§21)', () => {
     expect(started?.id).toBe(p2.id);
     expect(await suggestTasksForPhase(p2.id, MORNING, null)).toBe(0);
     const n = await suggestTasksForPhase(p2.id, MORNING, async () =>
-      JSON.stringify({ tasks: [{ title: 'Order lumber' }, { title: 'Hire the crew', after: [0] }] }),
+      JSON.stringify({
+        tasks: [{ title: 'Order lumber' }, { title: 'Hire the crew', after: [0] }],
+      }),
     );
     expect(n).toBe(2);
     const g = loadGoal(id, MORNING)!;
@@ -326,7 +346,9 @@ describe('goal plans (§15–§21)', () => {
     const g = loadGoal(id, now)!;
     expect(g.late?.phase.id).toBe(p1.id);
     expect(g.late?.days).toBe(12);
-    const weekly = computeCheckins(store, DEFAULT_PLAN_SETTINGS, now).find((c) => c.kind === 'weekly');
+    const weekly = computeCheckins(store, DEFAULT_PLAN_SETTINGS, now).find(
+      (c) => c.kind === 'weekly',
+    );
     expect(weekly?.body).toMatch(/^Roof \(Build the house\) is \d+ days late\.$/);
     expect(await moveLateDates(id, now)).toBe(12);
     expect(loadGoal(id, now)!.late).toBeNull();
@@ -444,9 +466,9 @@ describe('things that repeat (§24)', () => {
     await expect(
       addRoutine({ title: 'x', kind: 'monthly', dayOfMonth: 40 }, MORNING),
     ).rejects.toThrow(/1 to 31/);
-    await expect(addRoutine({ title: ' ', kind: 'per_week', timesPerWeek: 2 }, MORNING)).rejects.toThrow(
-      /repeats/,
-    );
+    await expect(
+      addRoutine({ title: ' ', kind: 'per_week', timesPerWeek: 2 }, MORNING),
+    ).rejects.toThrow(/repeats/);
   });
 });
 
@@ -492,9 +514,9 @@ describe('check-ins while the app stays closed (§25)', () => {
     const early = atTime(MORNING, '06:00');
     await planToday(early, null);
     const list = computeCheckins(store, DEFAULT_PLAN_SETTINGS, early);
-    expect(list.filter((c) => c.kind === 'morning').every((c) => c.at > atTime(MORNING, '23:00'))).toBe(
-      true,
-    );
+    expect(
+      list.filter((c) => c.kind === 'morning').every((c) => c.at > atTime(MORNING, '23:00')),
+    ).toBe(true);
   });
 
   it('two weekly notes go ahead, and a date past its phase shows in both', async () => {
@@ -620,7 +642,9 @@ describe('the review round on the phone', () => {
     const view = await loadToday(MORNING);
     expect(view.planned.map((p) => p.task.id)).toEqual([b.id]);
     expect(view.others).toEqual([]);
-    const midday = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find((c) => c.kind === 'midday');
+    const midday = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find(
+      (c) => c.kind === 'midday',
+    );
     expect(midday?.body).toBe('Next: Book the dentist');
     await planToday(MORNING, null);
     expect((await loadToday(MORNING)).planned.map((p) => p.task.id)).toEqual([b.id]);
@@ -635,7 +659,9 @@ describe('the review round on the phone', () => {
     expect((await loadToday(MORNING)).planned).toHaveLength(1);
     await setGoalActive(goal.id, false, MORNING);
     expect((await loadToday(MORNING)).planned).toEqual([]);
-    expect(computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).some((c) => c.kind === 'midday')).toBe(false);
+    expect(
+      computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).some((c) => c.kind === 'midday'),
+    ).toBe(false);
   });
 
   it('a re-plan keeps what is done; one after the review reviews again', async () => {
@@ -688,10 +714,14 @@ describe('the review round on the phone', () => {
   it('the weekly note counts each goal once', async () => {
     const house = store.addGoal('House', '', MORNING - 30 * DAY);
     addGoalPhase(house.id, 'Roof', MORNING - DAY, MORNING - 30 * DAY);
-    const weekly = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find((c) => c.kind === 'weekly');
+    const weekly = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find(
+      (c) => c.kind === 'weekly',
+    );
     expect(weekly?.body).toMatch(/^Roof \(House\) is \d+ days late\.$/);
     store.addGoal('Fit', '', MORNING - 30 * DAY);
-    const again = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find((c) => c.kind === 'weekly');
+    const again = computeCheckins(store, DEFAULT_PLAN_SETTINGS, MORNING).find(
+      (c) => c.kind === 'weekly',
+    );
     expect(again?.body).toMatch(/late, and 1 other goal needs a look\.$/);
   });
 

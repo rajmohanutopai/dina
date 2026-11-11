@@ -202,7 +202,12 @@ export async function handleInboundD2D(
     // Fail closed: nothing is accepted unverified, and nothing valid is lost
     // because the directory is down. The relay keeps it for a later try.
     if (sender.unresolved === true) {
-      return { success: false, retryLater: true, senderDID: env.from_did, error: 'sender unresolved' };
+      return {
+        success: false,
+        retryLater: true,
+        senderDID: env.from_did,
+        error: 'sender unresolved',
+      };
     }
     const myPub = getPublicKey(privateKey);
 
@@ -238,7 +243,12 @@ export async function handleInboundD2D(
     ) {
       const fresh = await sender.refresh();
       if (fresh.unresolved === true) {
-        return { success: false, retryLater: true, senderDID: env.from_did, error: 'sender unresolved' };
+        return {
+          success: false,
+          retryLater: true,
+          senderDID: env.from_did,
+          error: 'sender unresolved',
+        };
       }
       result = receiveD2D(d2dPayload, myPub, privateKey, fresh.keys, fresh.trust, pipelineOptions);
     }

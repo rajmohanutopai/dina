@@ -54,7 +54,6 @@ import {
   quoteVersion,
 } from '@dina/commerce-protocol';
 
-
 import { fallbackApplied } from '../commitment/option_handler';
 
 import {
@@ -68,8 +67,7 @@ const hash: Sha256Fn = (data) => sha256(data);
 
 export type TradeAuthorOutcome<T> =
   /** `replayed`: a retry of a request already authored, so `document` is the first one. */
-  | { ok: true; document: T; replayed?: boolean }
-  | { ok: false; refusal: string };
+  { ok: true; document: T; replayed?: boolean } | { ok: false; refusal: string };
 
 /** One key, a different request: a caller's bug, and never a second document. */
 const IDEMPOTENCY_KEY_REUSED = 'idempotency_key_reused';
@@ -185,7 +183,10 @@ export class TradeLedgerService {
       dispatched_at: isoNow(this.deps.now()),
       ...(args.expectedBy !== undefined ? { expected_by: args.expectedBy } : {}),
     };
-    const note = { ...draft, note_digest: tradeRecordDigest('delivery_note', draft, hash) } as DeliveryNote;
+    const note = {
+      ...draft,
+      note_digest: tradeRecordDigest('delivery_note', draft, hash),
+    } as DeliveryNote;
     const shapeError = validateDeliveryNote(note, hash);
     if (shapeError) return { ok: false, refusal: shapeError };
 
@@ -226,13 +227,17 @@ export class TradeLedgerService {
       return { ok: false, refusal: 'no received payment note with that digest' };
     }
     const note = rehydrateTradeDocument(noteRow);
-    if (note.kind !== 'payment_note') return { ok: false, refusal: 'retained row is not a payment note' };
+    if (note.kind !== 'payment_note')
+      return { ok: false, refusal: 'retained row is not a payment note' };
     if (note.document.supplier_did !== this.deps.nodeDid()) {
       return { ok: false, refusal: 'this node is not the note supplier' };
     }
     const existing = this.deps.documents.answersTo(args.paymentNoteDigest, 'payment_ack');
     if (existing.length > 0) {
-      return { ok: false, refusal: 'the note already has an acknowledgement — the first answer stands' };
+      return {
+        ok: false,
+        refusal: 'the note already has an acknowledgement — the first answer stands',
+      };
     }
     const draft = {
       protocol_version: note.document.protocol_version,
@@ -462,10 +467,19 @@ export class TradeLedgerService {
   }): { creditDays: number; dueBasis: string; currency: string } | null {
     const quote = this.deps.readBoundQuote(args.counterpartyDid, args.purchaseOrderId, args.role);
     const terms = quote?.payment_terms;
-    if (quote === undefined || quote === null || terms?.credit_days === undefined || terms.due_basis === undefined) {
+    if (
+      quote === undefined ||
+      quote === null ||
+      terms?.credit_days === undefined ||
+      terms.due_basis === undefined
+    ) {
       return null;
     }
-    return { creditDays: terms.credit_days, dueBasis: terms.due_basis, currency: quote.total.currency };
+    return {
+      creditDays: terms.credit_days,
+      dueBasis: terms.due_basis,
+      currency: quote.total.currency,
+    };
   }
 
   /** Assert a payment made (buyer side). Relationship-scoped (§4.4). */
@@ -499,10 +513,14 @@ export class TradeLedgerService {
       for (const row of this.deps.documents.listByCounterparty(args.supplierDid, 'payment_note')) {
         if (row.direction !== 'outbound') continue;
         const held = rehydrateTradeDocument(row);
-        if (held.kind !== 'payment_note' || held.document.external_ref !== args.externalRef) continue;
+        if (held.kind !== 'payment_note' || held.document.external_ref !== args.externalRef)
+          continue;
         return samePayment(held.document)
           ? { ok: true, document: held.document, replayed: true }
-          : { ok: false, refusal: 'external_ref already records a different payment to this supplier' };
+          : {
+              ok: false,
+              refusal: 'external_ref already records a different payment to this supplier',
+            };
       }
     }
     const draft = {
@@ -516,7 +534,10 @@ export class TradeLedgerService {
       paid_at: isoNow(this.deps.now()),
       ...(args.orderRefs !== undefined ? { order_refs: args.orderRefs } : {}),
     };
-    const note = { ...draft, note_digest: tradeRecordDigest('payment_note', draft, hash) } as PaymentNote;
+    const note = {
+      ...draft,
+      note_digest: tradeRecordDigest('payment_note', draft, hash),
+    } as PaymentNote;
     const shapeError = validatePaymentNote(note, hash);
     if (shapeError) return { ok: false, refusal: shapeError };
 
@@ -629,7 +650,10 @@ export class TradeLedgerService {
     // counterparty's debt on its supply ledger.
     const paymentDirection = args.role === 'supplier' ? 'outbound' : 'inbound';
     const payments: Money[] = [];
-    for (const ackRow of this.deps.documents.listByCounterparty(args.counterpartyDid, 'payment_ack')) {
+    for (const ackRow of this.deps.documents.listByCounterparty(
+      args.counterpartyDid,
+      'payment_ack',
+    )) {
       if (ackRow.direction !== paymentDirection) continue;
       const ack = rehydrateTradeDocument(ackRow);
       if (ack.kind !== 'payment_ack' || ack.document.kind !== 'received') continue;
@@ -647,11 +671,7 @@ export class TradeLedgerService {
    * `from_delivery` prices each receipt's accepted value against the
    * bound quote through the SAME pricing the §6.5 gate uses.
    */
-  dues(args: {
-    counterpartyDid: string;
-    currency: string;
-    role: 'buyer' | 'supplier';
-  }): {
+  dues(args: { counterpartyDid: string; currency: string; role: 'buyer' | 'supplier' }): {
     dues: (DerivedDue & { purchase_order_id: string })[];
   } {
     const out: (DerivedDue & { purchase_order_id: string })[] = [];
@@ -665,7 +685,11 @@ export class TradeLedgerService {
       if (terms?.due_basis === undefined || terms.credit_days === undefined) continue;
 
       if (terms.due_basis === 'from_acceptance') {
-        const acceptance = this.deps.readAcceptance(args.counterpartyDid, purchaseOrderId, args.role);
+        const acceptance = this.deps.readAcceptance(
+          args.counterpartyDid,
+          purchaseOrderId,
+          args.role,
+        );
         if (acceptance === null) continue;
         const derived = deriveDues({
           currency: args.currency,
@@ -719,7 +743,10 @@ export class TradeLedgerService {
     paymentNotes: TradeDocumentRow[];
   } {
     const cutoff = this.deps.now() - args.olderThanMs;
-    const pending = (kind: 'delivery_note' | 'payment_note', answerKind: 'delivery_receipt' | 'payment_ack') =>
+    const pending = (
+      kind: 'delivery_note' | 'payment_note',
+      answerKind: 'delivery_receipt' | 'payment_ack',
+    ) =>
       this.deps.documents
         .listByCounterparty(args.counterpartyDid, kind)
         .filter(
@@ -732,5 +759,4 @@ export class TradeLedgerService {
       paymentNotes: pending('payment_note', 'payment_ack'),
     };
   }
-
 }

@@ -263,7 +263,8 @@ export function parseOptionMessage(raw: unknown): OptionMessage | null {
       };
     case 'exit':
       // The cancellation's own validator runs where it is resolved.
-      if (!isRecord(raw.cancellation) || JSON.stringify(raw.cancellation).length > 4_096) return null;
+      if (!isRecord(raw.cancellation) || JSON.stringify(raw.cancellation).length > 4_096)
+        return null;
       return { v: 1, kind: 'exit', cancellation: raw.cancellation };
     default:
       return null;
@@ -395,7 +396,9 @@ export interface ShipperModelView {
  * (§11); issued with no card, so it must be at or above the least `fee` Core
  * may agree alone. A day with no cost entry is a day with no run.
  */
-export function answerOptionRequest(args: OptionRequestArgs & { chooseFee?: undefined }): OptionBody | DeclineBody;
+export function answerOptionRequest(
+  args: OptionRequestArgs & { chooseFee?: undefined },
+): OptionBody | DeclineBody;
 export function answerOptionRequest(args: OptionRequestArgs): OptionBody | DeclineBody | null;
 export function answerOptionRequest(args: OptionRequestArgs): OptionBody | DeclineBody | null {
   const { request, store } = args;
@@ -420,7 +423,11 @@ interface OptionRequestArgs {
    * automatic limit and the asking fee, and the never-rules are judged on
    * the fee that goes out.
    */
-  chooseFee?: (bounds: { day: string; crates: number; slackMs: number }) => bigint | 'asking' | 'wait';
+  chooseFee?: (bounds: {
+    day: string;
+    crates: number;
+    slackMs: number;
+  }) => bigint | 'asking' | 'wait';
 }
 
 /**
@@ -990,9 +997,7 @@ export class OrderFallbackStore {
               WHERE role = 'seller'
                 AND (applied_at > ? OR (applied_at = ? AND order_digest > ?))
               ORDER BY applied_at, order_digest LIMIT ?`,
-        after === null
-          ? [limit]
-          : [after.appliedAt, after.appliedAt, after.orderDigest, limit],
+        after === null ? [limit] : [after.appliedAt, after.appliedAt, after.orderDigest, limit],
       )
       .map((r) => this.row(r) as OrderFallback);
   }
@@ -1047,7 +1052,12 @@ export class ExitAskStore {
   constructor(private readonly db: DatabaseAdapter) {}
 
   /** Keep an approved exit once; the first kept stands. */
-  ask(supplierDid: string, purchaseOrderId: string, cancellation: Record<string, unknown>, nowMs: number): void {
+  ask(
+    supplierDid: string,
+    purchaseOrderId: string,
+    cancellation: Record<string, unknown>,
+    nowMs: number,
+  ): void {
     this.db.execute(
       `INSERT OR IGNORE INTO commitment_exit_asks
          (supplier_did, purchase_order_id, cancellation_json, asked_at, sent_at)
@@ -1066,7 +1076,11 @@ export class ExitAskStore {
   }
 
   /** Approved exits the transport has not yet taken. */
-  unsent(): { supplierDid: string; purchaseOrderId: string; cancellation: Record<string, unknown> }[] {
+  unsent(): {
+    supplierDid: string;
+    purchaseOrderId: string;
+    cancellation: Record<string, unknown>;
+  }[] {
     return this.db
       .query(`SELECT * FROM commitment_exit_asks WHERE sent_at IS NULL ORDER BY asked_at`)
       .flatMap((r) => {

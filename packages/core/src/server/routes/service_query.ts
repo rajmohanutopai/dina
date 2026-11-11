@@ -24,7 +24,11 @@ import {
 import { MAX_SERVICE_TTL } from '../../d2d/families';
 import { getNodeDID } from '../../pairing/ceremony';
 import { issueServiceOffer } from '../../service/issue_offer';
-import { isReadOnlyCapability, readFallbacks, setFailoverSender } from '../../service/provider_failover';
+import {
+  isReadOnlyCapability,
+  readFallbacks,
+  setFailoverSender,
+} from '../../service/provider_failover';
 import { loadProviderStanding, providerStanding } from '../../service/provider_outcomes';
 import { getServiceGrantRepository } from '../../service/service_grant_repository';
 import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../workflow/domain';
@@ -247,8 +251,7 @@ export function validateServiceQueryRequest(
   if (b.grant_id !== undefined && typeof b.grant_id !== 'string') {
     return { ok: false, error: 'grant_id must be a string when present' };
   }
-  const grantId =
-    typeof b.grant_id === 'string' && b.grant_id !== '' ? b.grant_id : undefined;
+  const grantId = typeof b.grant_id === 'string' && b.grant_id !== '' ? b.grant_id : undefined;
   return {
     ok: true,
     req: {
@@ -317,17 +320,14 @@ export async function submitServiceQuery(
     typeof options.requesterSessionId === 'string' &&
     options.requesterSessionId !== '';
   if (
-    (options.requesterAgentDid !== undefined ||
-      options.requesterSessionId !== undefined) &&
+    (options.requesterAgentDid !== undefined || options.requesterSessionId !== undefined) &&
     !hasRequester
   ) {
     return { status: 500, body: { error: 'incomplete requester principal' } };
   }
   const requesterDid = hasRequester ? (options.requesterAgentDid ?? '') : '';
   const requesterSession = hasRequester ? (options.requesterSessionId ?? '') : '';
-  const requesterPrincipal = hasRequester
-    ? `${requesterDid}\u0000${requesterSession}`
-    : undefined;
+  const requesterPrincipal = hasRequester ? `${requesterDid}\u0000${requesterSession}` : undefined;
 
   const idemKey = computeIdempotencyKey(
     q.to_did,
@@ -461,7 +461,12 @@ export function registerServiceQueryRoutes(
   // REAL_LIFE_FIXES §9: which providers this node has seen go quiet, for
   // Brain's ranking. Brain only; no contents, only standing.
   router.get('/v1/service/provider-standing', async (req) => {
-    if (!(req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined))) {
+    if (
+      !(
+        req.callerType === 'brain' ||
+        (req.trustedInProcess === true && req.callerType === undefined)
+      )
+    ) {
       return { status: 403, body: { error: 'brain only' } };
     }
     const dids = (typeof req.query.dids === 'string' ? req.query.dids : '')
@@ -529,7 +534,8 @@ export function registerServiceQueryRoutes(
   // exists before the offer goes out.
   router.post('/v1/service/offer', async (req) => {
     const grantRepo = getServiceGrantRepository();
-    if (grantRepo === null) return { status: 503, body: { error: 'service-grant store not wired' } };
+    if (grantRepo === null)
+      return { status: 503, body: { error: 'service-grant store not wired' } };
     const sender = getD2DSender();
     if (sender === null) return { status: 503, body: { error: 'D2D sender not wired' } };
     const selfDID = getNodeDID();

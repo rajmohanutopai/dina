@@ -187,7 +187,10 @@ export function checkEgressGates(
   const tradeCounterparty =
     messageType === MsgTypeCommerceTrade &&
     tradeKind !== '' &&
-    isTradeCounterparty(recipientDID, tradeKind, { document: tradeDocument, direction: 'outbound' });
+    isTradeCounterparty(recipientDID, tradeKind, {
+      document: tradeDocument,
+      direction: 'outbound',
+    });
   // COMMITMENT_KERNEL §6 step 6 — a run's fallback notice to the buyer of an
   // order this node recorded a fallback for, contact or not (a buyer found on
   // the AppView has no contact row). Nothing else in the family passes.
@@ -195,8 +198,10 @@ export function checkEgressGates(
   // notice it kept for that order.
   const fallbackCounterparty =
     messageType === MsgTypeCommitmentOption &&
-    ((tradeKind === 'option_fallback' && (fallbackRecipientCheck?.(recipientDID, tradeDocument) ?? false)) ||
-      (tradeKind === 'option_exit' && (exitRecipientCheck?.(recipientDID, tradeDocument) ?? false)));
+    ((tradeKind === 'option_fallback' &&
+      (fallbackRecipientCheck?.(recipientDID, tradeDocument) ?? false)) ||
+      (tradeKind === 'option_exit' &&
+        (exitRecipientCheck?.(recipientDID, tradeDocument) ?? false)));
   if (
     messageType !== MsgTypeCommerceInvite &&
     !tradeCounterparty &&
@@ -242,7 +247,9 @@ export function setFallbackRecipientCheck(
 /** May the buyer's exit go to this supplier? Installed by the option family. */
 let exitRecipientCheck: ((recipientDID: string, exit: unknown) => boolean) | null = null;
 
-export function setExitRecipientCheck(check: ((recipientDID: string, exit: unknown) => boolean) | null): void {
+export function setExitRecipientCheck(
+  check: ((recipientDID: string, exit: unknown) => boolean) | null,
+): void {
   exitRecipientCheck = check;
 }
 

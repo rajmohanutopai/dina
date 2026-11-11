@@ -134,10 +134,10 @@ describe('Chat Streaming Hook (4.10)', () => {
     });
 
     it('processStream respects abort', async () => {
-      let chunkCount = 0;
+      let _chunkCount = 0;
       async function* slowStream(): AsyncIterable<StreamChunk> {
         for (let i = 0; i < 100; i++) {
-          chunkCount++;
+          _chunkCount++;
           yield { type: 'text', text: `token-${i} ` };
           if (i === 2) abortStream(); // abort after 3 chunks
         }
@@ -154,7 +154,7 @@ describe('Chat Streaming Hook (4.10)', () => {
 
   describe('guard scanner', () => {
     it('runs guard scan on complete', () => {
-      setGuardScanner((text) => ({ passed: true, violations: [] }));
+      setGuardScanner((_text) => ({ passed: true, violations: [] }));
 
       startStream();
       feedChunk({ type: 'text', text: 'Safe response' });
@@ -164,7 +164,7 @@ describe('Chat Streaming Hook (4.10)', () => {
     });
 
     it('detects guard violations', () => {
-      setGuardScanner((text) => ({
+      setGuardScanner((_text) => ({
         passed: false,
         violations: ['anti_her_violation'],
       }));

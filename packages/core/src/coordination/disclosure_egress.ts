@@ -152,7 +152,8 @@ function locateResult(json: string): Located | null {
     return null;
   }
   if (!isRecord(parsed)) return null;
-  if (parsed.status === 'success' && isRecord(parsed.result)) return { parsed, wrapped: true, result: parsed.result };
+  if (parsed.status === 'success' && isRecord(parsed.result))
+    return { parsed, wrapped: true, result: parsed.result };
   if (parsed.status === 'unavailable' || parsed.status === 'error') return null;
   return { parsed, wrapped: false, result: parsed };
 }
@@ -179,10 +180,17 @@ function rebuild(located: Located, disclosures: Disclosure[] | null, withheld: b
   const base: Record<string, unknown> = withheld
     ? {
         ...rest,
-        ...(Array.isArray(rest.accepted_slots) ? { accepted_slots: rest.accepted_slots.map(bareSlot) } : {}),
-        ...(Array.isArray(rest.counter_slots) ? { counter_slots: rest.counter_slots.map(bareSlot) } : {}),
+        ...(Array.isArray(rest.accepted_slots)
+          ? { accepted_slots: rest.accepted_slots.map(bareSlot) }
+          : {}),
+        ...(Array.isArray(rest.counter_slots)
+          ? { counter_slots: rest.counter_slots.map(bareSlot) }
+          : {}),
       }
-    : { ...rest, ...(located.result.message !== undefined ? { message: located.result.message } : {}) };
+    : {
+        ...rest,
+        ...(located.result.message !== undefined ? { message: located.result.message } : {}),
+      };
   const result = disclosures === null ? base : { ...base, disclosures };
   return JSON.stringify(located.wrapped ? { ...located.parsed, result } : result);
 }
@@ -307,14 +315,23 @@ function reviewDeadline(deadlineSec: number, nowSec: number): number | null {
  * card can be made — no store, no time left to ask, a failed create — so the
  * caller answers without the fact rather than not at all.
  */
-function holdForReview(ctx: ServiceQueryBridgeContext, gated: GatedDisclosures, deps: DisclosureGateDeps): boolean {
+function holdForReview(
+  ctx: ServiceQueryBridgeContext,
+  gated: GatedDisclosures,
+  deps: DisclosureGateDeps,
+): boolean {
   const workflow = deps.workflow();
   if (workflow === null) return false;
   const nowSec = Math.floor(deps.nowMs() / 1000);
   const execution = workflow.store().getById(ctx.taskId);
   const expiresAtSec = reviewDeadline(queryDeadlineSec(execution, ctx.ttlSeconds, nowSec), nowSec);
   if (expiresAtSec === null) {
-    appendAudit('disclosure_gate', 'disclosure_review_unavailable', ctx.taskId, `reason=no_time_to_ask`);
+    appendAudit(
+      'disclosure_gate',
+      'disclosure_review_unavailable',
+      ctx.taskId,
+      `reason=no_time_to_ask`,
+    );
     return false;
   }
   const requester = deps.contactName(ctx.fromDID) ?? ctx.fromDID;
@@ -345,7 +362,12 @@ function holdForReview(ctx: ServiceQueryBridgeContext, gated: GatedDisclosures, 
     // other failure to make the card is reported, and the caller answers
     // without the fact — never silence, never the fact.
     if (!(error instanceof WorkflowConflictError)) {
-      appendAudit('disclosure_gate', 'disclosure_review_unavailable', ctx.taskId, `reason=create_failed`);
+      appendAudit(
+        'disclosure_gate',
+        'disclosure_review_unavailable',
+        ctx.taskId,
+        `reason=create_failed`,
+      );
       return false;
     }
   }
@@ -356,7 +378,9 @@ function holdForReview(ctx: ServiceQueryBridgeContext, gated: GatedDisclosures, 
  * The gate. Passes every other capability through untouched; for this one,
  * drops what may not leave, and holds what needs a yes.
  */
-export function makeDisclosureEgressGate(over: Partial<DisclosureGateDeps> = {}): ResponseEgressGate {
+export function makeDisclosureEgressGate(
+  over: Partial<DisclosureGateDeps> = {},
+): ResponseEgressGate {
   const deps = defaultDeps(over);
   return (ctx): IngressResultDecision => {
     if (ctx.capability !== GROUP_COORDINATION_CAPABILITY) return { kind: 'passthrough' };
@@ -387,14 +411,23 @@ export function makeDisclosureEgressGate(over: Partial<DisclosureGateDeps> = {})
  * completed, holds no result, or answers a different requester than the
  * card claims — a planted card releases nothing.
  */
-function heldResult(workflow: WorkflowService, payload: DisclosureReviewPayload): { task: WorkflowTask; resultJSON: string } | null {
+function heldResult(
+  workflow: WorkflowService,
+  payload: DisclosureReviewPayload,
+): { task: WorkflowTask; resultJSON: string } | null {
   const task = workflow.store().getById(payload.execution_task_id);
-  if (task === null || task.status !== WorkflowTaskState.Completed || typeof task.result !== 'string') return null;
+  if (
+    task === null ||
+    task.status !== WorkflowTaskState.Completed ||
+    typeof task.result !== 'string'
+  )
+    return null;
   // A delegation or approval task carries its own identity: the card must agree with it.
   const own = workflow.outgoingContextFor(task, task.result);
   if (own !== null) {
     const c = payload.context;
-    if (own.fromDID !== c.fromDID || own.queryId !== c.queryId || own.capability !== c.capability) return null;
+    if (own.fromDID !== c.fromDID || own.queryId !== c.queryId || own.capability !== c.capability)
+      return null;
   }
   return { task, resultJSON: task.result };
 }
@@ -411,7 +444,9 @@ const DECISION_AUDIT = {
  * Either way the requester hears once, and what they hear is what Core
  * stored, gated again now.
  */
-export function makeDisclosureDecisionHandler(over: Partial<DisclosureGateDeps> = {}): ApprovalDecisionHandler {
+export function makeDisclosureDecisionHandler(
+  over: Partial<DisclosureGateDeps> = {},
+): ApprovalDecisionHandler {
   const deps = defaultDeps(over);
   return ({ task, decision }) => {
     const payload = parseDisclosureReviewPayload(task.payload);
@@ -423,7 +458,11 @@ export function makeDisclosureDecisionHandler(over: Partial<DisclosureGateDeps> 
     if (held !== null) {
       const variants = gatedVariants(held.resultJSON, payload.context.fromDID, deps.tierFor);
       const resultJSON =
-        variants === null ? held.resultJSON : decision === 'approved' ? variants.withKept : variants.without;
+        variants === null
+          ? held.resultJSON
+          : decision === 'approved'
+            ? variants.withKept
+            : variants.without;
       released = workflow.releaseBridge({ ...payload.context, resultJSON });
     }
     appendAudit(
@@ -437,11 +476,20 @@ export function makeDisclosureDecisionHandler(over: Partial<DisclosureGateDeps> 
 }
 
 /** The approve moved the card to `queued`; its execution is the send, so it completes here. */
-function settleApprovedReview(workflow: WorkflowService, task: WorkflowTask, released: boolean, now: number): void {
+function settleApprovedReview(
+  workflow: WorkflowService,
+  task: WorkflowTask,
+  released: boolean,
+  now: number,
+): void {
   try {
     workflow.store().transition(task.id, WorkflowTaskState.Queued, WorkflowTaskState.Running, now);
     if (released) {
-      workflow.complete(task.id, JSON.stringify({ decision: 'approved' }), 'sent with the household disclosure');
+      workflow.complete(
+        task.id,
+        JSON.stringify({ decision: 'approved' }),
+        'sent with the household disclosure',
+      );
     } else {
       workflow.fail(task.id, 'the answer this card held no longer exists');
     }

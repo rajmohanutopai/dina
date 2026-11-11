@@ -12,7 +12,12 @@
  * states, never stored beside them where the two could disagree.
  */
 
-import { validateCatalogPointer, validateCatalogSnapshot, validateCatalogSnapshotPage, validateProductRef } from '@dina/commerce-protocol';
+import {
+  validateCatalogPointer,
+  validateCatalogSnapshot,
+  validateCatalogSnapshotPage,
+  validateProductRef,
+} from '@dina/commerce-protocol';
 
 import type { FieldProvenance } from './catalog_draft_store';
 import type { DatabaseAdapter } from '../storage/db_adapter';
@@ -208,9 +213,7 @@ export interface OrderDraft {
  * every line is in a submitted order, explicitly abandoned, or
  * expired-and-acknowledged (§5.1).
  */
-export function deriveOrderDraftState(
-  draft: OrderDraft,
-): 'open' | 'awaiting_answers' | 'closed' {
+export function deriveOrderDraftState(draft: OrderDraft): 'open' | 'awaiting_answers' | 'closed' {
   if (draft.abandoned) return 'closed';
   const everyLineSettled =
     draft.lines.length > 0 && draft.lines.every((line) => line.submittedIn !== null);

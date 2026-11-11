@@ -60,11 +60,7 @@ import {
  *     disabled, status used to render a "this request is no longer
  *     actionable" pill.
  */
-export type ActionableStatus =
-  | 'pending'
-  | 'expired'
-  | 'already-accepted'
-  | 'already-rejected';
+export type ActionableStatus = 'pending' | 'expired' | 'already-accepted' | 'already-rejected';
 
 export interface ActionableResult {
   readonly actionable: boolean;

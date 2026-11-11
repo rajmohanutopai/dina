@@ -27,10 +27,7 @@ export {
 } from './src/notifications/bridges';
 export { setReviewDraftStarter } from './src/reasoning/draft_review_tool';
 export { createGeminiClassifier } from './src/routing/gemini_classify';
-export {
-  registerPersonaSelector,
-  resetPersonaSelector,
-} from './src/routing/persona_selector';
+export { registerPersonaSelector, resetPersonaSelector } from './src/routing/persona_selector';
 export type {
   StagingDrainCoreClient,
   StagingDrainOptions,

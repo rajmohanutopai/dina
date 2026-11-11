@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 3.30
  */
 
-import { signRequest , getPublicKey } from '@dina/core';
+import { signRequest, getPublicKey } from '@dina/core';
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import {

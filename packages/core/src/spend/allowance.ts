@@ -130,7 +130,12 @@ async function listUses(): Promise<SpendUse[]> {
 
 /** The calendar week or month containing `at`, in `zone`: e.g. "2026-W41", "2026-10". */
 export function periodKey(at: number, period: 'week' | 'month', zone: string): string {
-  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: zone, year: 'numeric', month: '2-digit', day: '2-digit' })
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: zone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  })
     .formatToParts(new Date(at))
     .reduce<Record<string, string>>((m, p) => ((m[p.type] = p.value), m), {});
   const y = Number(parts.year);
@@ -142,7 +147,14 @@ export function periodKey(at: number, period: 'week' | 'month', zone: string): s
   const day = (date.getUTCDay() + 6) % 7;
   date.setUTCDate(date.getUTCDate() - day + 3);
   const firstThursday = new Date(Date.UTC(date.getUTCFullYear(), 0, 4));
-  const week = 1 + Math.round(((date.getTime() - firstThursday.getTime()) / 86_400_000 - 3 + ((firstThursday.getUTCDay() + 6) % 7)) / 7);
+  const week =
+    1 +
+    Math.round(
+      ((date.getTime() - firstThursday.getTime()) / 86_400_000 -
+        3 +
+        ((firstThursday.getUTCDay() + 6) % 7)) /
+        7,
+    );
   return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
 }
 
@@ -164,13 +176,19 @@ function matchAgents(name: string): ReturnType<typeof listActiveDevices> {
 }
 
 function words(s: string): Set<string> {
-  return new Set(s.toLowerCase().split(/[^\p{L}\p{N}]+/u).filter((w) => w.length > 2));
+  return new Set(
+    s
+      .toLowerCase()
+      .split(/[^\p{L}\p{N}]+/u)
+      .filter((w) => w.length > 2),
+  );
 }
 
 /** The declared category matches the owner's words: one shared word, case-folded. */
 function categoryMatches(allowance: string, declared: string): boolean {
   const a = words(allowance);
-  for (const w of words(declared)) if (a.has(w) || a.has(w.replace(/s$/, '')) || a.has(`${w}s`)) return true;
+  for (const w of words(declared))
+    if (a.has(w) || a.has(w.replace(/s$/, '')) || a.has(`${w}s`)) return true;
   return false;
 }
 
@@ -195,17 +213,32 @@ export async function proposeAllowance(input: {
 }): Promise<AllowanceProposeOutcome> {
   const now = input.now ?? Date.now();
   const checked = verifySpanProof(input.proof, 'spend_allowance', now);
-  if (!checked.ok) return { status: 'refused', reason: `owner turn not proven (${checked.reason})` };
-  if (!isValidMinor(input.amountMinor)) return { status: 'refused', reason: 'the amount must be a positive whole number of the smallest unit' };
-  if (input.perItemCapMinor !== undefined && !isValidMinor(input.perItemCapMinor)) return { status: 'refused', reason: 'the per-item cap is not valid' };
-  if (!isCurrency(input.currency)) return { status: 'refused', reason: 'the currency must be a three-letter code' };
-  if (input.period !== 'week' && input.period !== 'month') return { status: 'refused', reason: 'the period is a week or a month' };
+  if (!checked.ok)
+    return { status: 'refused', reason: `owner turn not proven (${checked.reason})` };
+  if (!isValidMinor(input.amountMinor))
+    return {
+      status: 'refused',
+      reason: 'the amount must be a positive whole number of the smallest unit',
+    };
+  if (input.perItemCapMinor !== undefined && !isValidMinor(input.perItemCapMinor))
+    return { status: 'refused', reason: 'the per-item cap is not valid' };
+  if (!isCurrency(input.currency))
+    return { status: 'refused', reason: 'the currency must be a three-letter code' };
+  if (input.period !== 'week' && input.period !== 'month')
+    return { status: 'refused', reason: 'the period is a week or a month' };
   const category = input.category.trim();
-  if (category === '' || !drawsOnlyFrom(category, checked.turnText)) return { status: 'refused', reason: "the category must be the owner's own words" };
+  if (category === '' || !drawsOnlyFrom(category, checked.turnText))
+    return { status: 'refused', reason: "the category must be the owner's own words" };
   const name = input.agent.trim().toLowerCase();
   const agents = matchAgents(name);
   if (name === '' || agents.length !== 1) {
-    return { status: 'refused', reason: agents.length > 1 ? `more than one agent matches "${input.agent}"` : `no paired agent is called "${input.agent}"` };
+    return {
+      status: 'refused',
+      reason:
+        agents.length > 1
+          ? `more than one agent matches "${input.agent}"`
+          : `no paired agent is called "${input.agent}"`,
+    };
   }
   const expiresAt = input.until !== undefined ? Date.parse(input.until) : now + 90 * 86_400_000;
   if (!Number.isFinite(expiresAt) || expiresAt <= now || expiresAt - now > MAX_DAYS * 86_400_000) {
@@ -213,7 +246,8 @@ export async function proposeAllowance(input: {
   }
   const service = getWorkflowService();
   if (service === null) return { status: 'refused', reason: 'approvals are not available' };
-  const agent = agents[0]!;
+  const agent = agents[0];
+  if (agent === undefined) throw new Error('proposeAllowance: one matching agent expected');
   const id = `allow-${bytesToHex(randomBytes(8))}`;
   const allowance: SpendAllowance = {
     id,
@@ -290,7 +324,8 @@ export async function revokeAllowance(id: string, now: number = Date.now()): Pro
 }
 
 async function revokeAllForAgent(agentDid: string): Promise<void> {
-  for (const a of await listAllowances()) if (a.agentDid === agentDid && a.state !== 'revoked') await revokeAllowance(a.id);
+  for (const a of await listAllowances())
+    if (a.agentDid === agentDid && a.state !== 'revoked') await revokeAllowance(a.id);
 }
 
 // Revoking an agent's device ends its allowances; re-pairing does not restore them.
@@ -318,12 +353,22 @@ export interface SpendClaim {
 }
 
 /** Decide one declared purchase; records exactly one use per request key. */
-export async function evaluateSpend(claim: SpendClaim, now: number = Date.now()): Promise<SpendDecision> {
+export async function evaluateSpend(
+  claim: SpendClaim,
+  now: number = Date.now(),
+): Promise<SpendDecision> {
   const amount = claim.amount as { value_minor?: unknown; currency?: unknown } | null | undefined;
-  if (amount === null || typeof amount !== 'object') return { kind: 'invalid', error: 'amount must be { value_minor, currency }' };
-  if (!isValidMinor(amount.value_minor)) return { kind: 'invalid', error: 'amount.value_minor must be a positive whole number' };
-  if (!isCurrency(amount.currency)) return { kind: 'invalid', error: 'amount.currency must be a three-letter code' };
-  if (typeof claim.requestKey !== 'string' || claim.requestKey.trim() === '' || claim.requestKey.length > 128) {
+  if (amount === null || typeof amount !== 'object')
+    return { kind: 'invalid', error: 'amount must be { value_minor, currency }' };
+  if (!isValidMinor(amount.value_minor))
+    return { kind: 'invalid', error: 'amount.value_minor must be a positive whole number' };
+  if (!isCurrency(amount.currency))
+    return { kind: 'invalid', error: 'amount.currency must be a three-letter code' };
+  if (
+    typeof claim.requestKey !== 'string' ||
+    claim.requestKey.trim() === '' ||
+    claim.requestKey.length > 128
+  ) {
     return { kind: 'invalid', error: 'request_key is required with an amount' };
   }
   const merchant = typeof claim.merchant === 'string' ? claim.merchant.trim().slice(0, 200) : '';
@@ -331,7 +376,9 @@ export async function evaluateSpend(claim: SpendClaim, now: number = Date.now())
   const value = amount.value_minor;
   const currency = amount.currency;
   const requestKey = claim.requestKey.trim();
-  const digest = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify([value, currency, merchant, category]))));
+  const digest = bytesToHex(
+    sha256(new TextEncoder().encode(JSON.stringify([value, currency, merchant, category]))),
+  );
   const useKey = `${claim.agentDid}|${requestKey}`;
   return locked(async () => {
     const prior = await kvGet(useKey, NS_USE);
@@ -359,7 +406,10 @@ export async function evaluateSpend(claim: SpendClaim, now: number = Date.now())
     }
     // A review is a normal intent card; its id is recorded so a retry
     // returns the same card instead of raising another.
-    const proposalId = chosen !== null ? `spend-${bytesToHex(randomBytes(8))}` : `prop-intent-${bytesToHex(randomBytes(8))}`;
+    const proposalId =
+      chosen !== null
+        ? `spend-${bytesToHex(randomBytes(8))}`
+        : `prop-intent-${bytesToHex(randomBytes(8))}`;
     const use: SpendUse = {
       allowanceId: chosen?.id ?? '',
       agentDid: claim.agentDid,
@@ -377,7 +427,12 @@ export async function evaluateSpend(claim: SpendClaim, now: number = Date.now())
     };
     await kvSet(useKey, JSON.stringify(use), NS_USE);
     if (chosen === null) return { kind: 'review' as const, proposalId, fresh: true };
-    appendAudit(claim.agentDid, 'spend_auto_approved', chosen.id, `minor=${value} currency=${currency}`);
+    appendAudit(
+      claim.agentDid,
+      'spend_auto_approved',
+      chosen.id,
+      `minor=${value} currency=${currency}`,
+    );
     return { kind: 'auto' as const, proposalId, allowanceId: chosen.id };
   });
 }
@@ -388,7 +443,12 @@ export async function evaluateSpend(claim: SpendClaim, now: number = Date.now())
  * 'approved' and counts against a live allowance for that agent, once.
  * Bound to the card the record names, so no other key can claim it.
  */
-export async function recordApprovedSpend(input: { agentDid: string; requestKey: string; proposalId: string; now?: number }): Promise<void> {
+export async function recordApprovedSpend(input: {
+  agentDid: string;
+  requestKey: string;
+  proposalId: string;
+  now?: number;
+}): Promise<void> {
   const now = input.now ?? Date.now();
   await locked(async () => {
     const key = `${input.agentDid}|${input.requestKey}`;
@@ -398,7 +458,11 @@ export async function recordApprovedSpend(input: { agentDid: string; requestKey:
     if (use.proposalId !== input.proposalId || use.decision !== 'review') return;
     const declared = use.amountDeclared ?? 0;
     const a = (await listAllowances()).find(
-      (x) => x.state === 'active' && x.agentDid === input.agentDid && x.currency === use.currency && now < x.expiresAt,
+      (x) =>
+        x.state === 'active' &&
+        x.agentDid === input.agentDid &&
+        x.currency === use.currency &&
+        now < x.expiresAt,
     );
     const approved: SpendUse = {
       ...use,
@@ -423,14 +487,26 @@ export async function reconcileSpend(): Promise<void> {
   for (const use of await listUses()) {
     if (use.decision !== 'review') continue;
     const task = service.store().getById(use.proposalId);
-    if (task !== null && (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running || task.status === WorkflowTaskState.Completed)) {
-      await recordApprovedSpend({ agentDid: use.agentDid, requestKey: use.requestKey, proposalId: use.proposalId });
+    if (
+      task !== null &&
+      (task.status === WorkflowTaskState.Queued ||
+        task.status === WorkflowTaskState.Running ||
+        task.status === WorkflowTaskState.Completed)
+    ) {
+      await recordApprovedSpend({
+        agentDid: use.agentDid,
+        requestKey: use.requestKey,
+        proposalId: use.proposalId,
+      });
     }
   }
   for (const a of await listAllowances()) {
     if (a.state !== 'proposed' && a.state !== 'active') continue;
     const task = service.store().getById(a.id);
-    if (task !== null && (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running)) {
+    if (
+      task !== null &&
+      (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running)
+    ) {
       // Approved: turn it on if a crash came first, and settle the card.
       await activateAllowance(task);
       try {
@@ -439,7 +515,10 @@ export async function reconcileSpend(): Promise<void> {
       } catch {
         /* already settled */
       }
-    } else if (a.state === 'proposed' && (task === null || task.status !== WorkflowTaskState.PendingApproval)) {
+    } else if (
+      a.state === 'proposed' &&
+      (task === null || task.status !== WorkflowTaskState.PendingApproval)
+    ) {
       await declineAllowance({ payload: JSON.stringify({ allowance_id: a.id }) } as WorkflowTask);
     }
   }
@@ -447,7 +526,16 @@ export async function reconcileSpend(): Promise<void> {
 
 /** This period's purchases under each allowance, one by one (owner view). */
 export async function listSpendUses(now: number = Date.now()): Promise<
-  { allowanceId: string; decision: SpendUse['decision']; amountMinor: number; currency: string; merchant: string; category: string; at: number; proposalId: string }[]
+  {
+    allowanceId: string;
+    decision: SpendUse['decision'];
+    amountMinor: number;
+    currency: string;
+    merchant: string;
+    category: string;
+    at: number;
+    proposalId: string;
+  }[]
 > {
   const allowances = new Map((await listAllowances()).map((a) => [a.id, a]));
   return (await listUses())
@@ -469,14 +557,18 @@ export async function listSpendUses(now: number = Date.now()): Promise<
 }
 
 /** What each allowance has used this period (owner view). */
-export async function allowanceStatus(now: number = Date.now()): Promise<{ allowance: SpendAllowance; spentMinor: number; period: string }[]> {
+export async function allowanceStatus(
+  now: number = Date.now(),
+): Promise<{ allowance: SpendAllowance; spentMinor: number; period: string }[]> {
   const uses = await listUses();
   return (await listAllowances()).map((a) => {
     const key = periodKey(now, a.period, a.timezone);
     return {
       allowance: a,
       period: key,
-      spentMinor: uses.filter((u) => u.allowanceId === a.id && u.periodKey === key).reduce((s, u) => s + u.amountMinor, 0),
+      spentMinor: uses
+        .filter((u) => u.allowanceId === a.id && u.periodKey === key)
+        .reduce((s, u) => s + u.amountMinor, 0),
     };
   });
 }

@@ -50,17 +50,16 @@
  *     in-process two-node setups infeasible without process forks).
  */
 
-
-
 import {
   WorkflowService,
   setWorkflowService,
-
   InMemoryWorkflowRepository,
-  setWorkflowRepository, LocalDelegationRunner ,
+  setWorkflowRepository,
+  LocalDelegationRunner,
   setServiceConfig,
   getServiceConfig,
-  resetServiceConfigState, makeServiceResponseBridgeSender,
+  resetServiceConfigState,
+  makeServiceResponseBridgeSender,
   ServiceQueryIngress,
   serviceSchemaError,
 } from '@dina/core';
@@ -69,7 +68,7 @@ import type { ServiceQueryBody, ServiceResponseBody } from '@dina/core';
 import type { ServiceConfig } from '@dina/protocol';
 
 const ALONSO_DID = 'did:plc:alonso-test';
-const DEMO_PROVIDER_DID = 'did:plc:demo-provider-test';
+const _DEMO_PROVIDER_DID = 'did:plc:demo-provider-test';
 const RUNNER_AGENT_DID = 'did:plc:demo-provider-agent-test';
 
 const ETA_PARAMS_SCHEMA = {
@@ -123,10 +122,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
    * receives a structured service_query_execution payload and returns
    * a structured result that conforms to ETA_RESULT_SCHEMA.
    */
-  function transitRunner(
-    capability: string,
-    params: unknown,
-  ): Promise<unknown> {
+  function transitRunner(capability: string, params: unknown): Promise<unknown> {
     if (capability !== 'eta_query') {
       return Promise.reject(new Error(`unsupported capability: ${capability}`));
     }
@@ -413,9 +409,7 @@ describe('Service-query — provider-side cross-node E2E', () => {
     expect(capturedResponses[0]!.to).toBe(ALONSO_DID);
     expect(capturedResponses[0]!.body.query_id).toBe(query.query_id);
     expect(capturedResponses[0]!.body.status).toBe('error');
-    expect((capturedResponses[0]!.body as { error: string }).error).toMatch(
-      /transit MCP|crashed/i,
-    );
+    expect((capturedResponses[0]!.body as { error: string }).error).toMatch(/transit MCP|crashed/i);
   });
 
   it('runner returns drifted result (missing required field) → bridge sends error, not bad data', async () => {
@@ -473,8 +467,6 @@ describe('Service-query — provider-side cross-node E2E', () => {
     // The validator's error message should reference the missing
     // field — this is what makes the failure debuggable on Alonso's
     // side instead of "got back nonsense".
-    expect((capturedResponses[0]!.body as { error: string }).error).toMatch(
-      /stop_name|required/i,
-    );
+    expect((capturedResponses[0]!.body as { error: string }).error).toMatch(/stop_name|required/i);
   });
 });

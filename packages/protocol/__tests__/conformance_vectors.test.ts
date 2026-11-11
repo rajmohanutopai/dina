@@ -39,6 +39,7 @@ import {
   SERVICE_TYPE_MSGBOX,
 } from '../src/constants';
 import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_builder';
+import { computeScoreV1, type ScoreV1Input, type ScoreV1Output } from '../src/peerlens/score_v1';
 import { buildAuthSignedPayload } from '../src/types/auth_frames';
 
 import type { DIDDocument } from '../src/types/plc_document';
@@ -81,19 +82,20 @@ describe('conformance vector — canonical_request_string (task 10.7)', () => {
     expect(vector.cases.length).toBeGreaterThan(0);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — reference buildCanonicalPayload matches frozen expected', (_name, c) => {
-    const actual = buildCanonicalPayload(
-      c.inputs.method,
-      c.inputs.path,
-      c.inputs.query,
-      c.inputs.timestamp,
-      c.inputs.nonce,
-      c.inputs.body_hash_hex,
-    );
-    expect(actual).toBe(c.expected_canonical_string);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — reference buildCanonicalPayload matches frozen expected',
+    (_name, c) => {
+      const actual = buildCanonicalPayload(
+        c.inputs.method,
+        c.inputs.path,
+        c.inputs.query,
+        c.inputs.timestamp,
+        c.inputs.nonce,
+        c.inputs.body_hash_hex,
+      );
+      expect(actual).toBe(c.expected_canonical_string);
+    },
+  );
 
   it('every output uses LF line separators (0x0A), never CRLF', () => {
     for (const c of vector.cases) {
@@ -138,12 +140,13 @@ describe('conformance vector — d2d_envelope_round_trip (task 10.12)', () => {
     expect(vector.cases.length).toBeGreaterThan(0);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — reference buildMessageJSON matches frozen expected', (_name, c) => {
-    const actual = buildMessageJSON(c.inputs);
-    expect(actual).toBe(c.expected_json_string);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — reference buildMessageJSON matches frozen expected',
+    (_name, c) => {
+      const actual = buildMessageJSON(c.inputs);
+      expect(actual).toBe(c.expected_json_string);
+    },
+  );
 
   it('every output parses back to an object whose `to` is an array', () => {
     for (const c of vector.cases) {
@@ -196,12 +199,13 @@ describe('conformance vector — sha256_body_hash (task 10.8)', () => {
     expect(vector.cases.length).toBeGreaterThan(0);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — node:crypto SHA-256 matches frozen hex', (_name, c) => {
-    const hex = createHash('sha256').update(c.body_utf8, 'utf8').digest('hex');
-    expect(hex).toBe(c.expected_sha256_hex);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — node:crypto SHA-256 matches frozen hex',
+    (_name, c) => {
+      const hex = createHash('sha256').update(c.body_utf8, 'utf8').digest('hex');
+      expect(hex).toBe(c.expected_sha256_hex);
+    },
+  );
 
   it('every hash is 64 lowercase hex chars', () => {
     for (const c of vector.cases) {
@@ -266,7 +270,7 @@ describe('conformance vector — plc_document_verification (task 10.13)', () => 
     }
   });
 
-  it('vector\'s declared fragments match constants.ts', () => {
+  it("vector's declared fragments match constants.ts", () => {
     expect(vector.assertions.verification_method_fragment).toBe(DINA_SIGNING_FRAGMENT);
     expect(vector.assertions.messaging_service_fragment).toBe(DINA_MESSAGING_FRAGMENT);
   });
@@ -300,7 +304,7 @@ describe('conformance vector — plc_document_verification (task 10.13)', () => 
     expect(doc.id).toMatch(new RegExp(vector.assertions.id_format_regex));
   });
 
-  it('vector\'s allowed_service_types matches the reference union', () => {
+  it("vector's allowed_service_types matches the reference union", () => {
     expect(vector.assertions.allowed_service_types).toEqual([SERVICE_TYPE_MSGBOX]);
   });
 });
@@ -343,25 +347,27 @@ describe('conformance vector — ed25519_sign_verify (task 10.5)', () => {
     expect(vector.cases.length).toBeGreaterThan(0);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — signature verifies against frozen public key', (_name, c) => {
-    const pub = importEd25519Pub(c.public_key_hex);
-    const msg = Buffer.from(c.message_utf8, 'utf8');
-    expect(msg.toString('hex')).toBe(c.message_hex); // pin utf8 → hex invariant
-    const ok = cryptoVerify(null, msg, pub, Buffer.from(c.signature_hex, 'hex'));
-    expect(ok).toBe(c.expected_verify);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — signature verifies against frozen public key',
+    (_name, c) => {
+      const pub = importEd25519Pub(c.public_key_hex);
+      const msg = Buffer.from(c.message_utf8, 'utf8');
+      expect(msg.toString('hex')).toBe(c.message_hex); // pin utf8 → hex invariant
+      const ok = cryptoVerify(null, msg, pub, Buffer.from(c.signature_hex, 'hex'));
+      expect(ok).toBe(c.expected_verify);
+    },
+  );
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — tampered message fails verification', (_name, c) => {
-    const pub = importEd25519Pub(c.public_key_hex);
-    const tampered = Buffer.from(c.tamper.message_utf8, 'utf8');
-    expect(tampered.toString('hex')).toBe(c.tamper.message_hex);
-    const ok = cryptoVerify(null, tampered, pub, Buffer.from(c.signature_hex, 'hex'));
-    expect(ok).toBe(c.tamper.expected_verify);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — tampered message fails verification',
+    (_name, c) => {
+      const pub = importEd25519Pub(c.public_key_hex);
+      const tampered = Buffer.from(c.tamper.message_utf8, 'utf8');
+      expect(tampered.toString('hex')).toBe(c.tamper.message_hex);
+      const ok = cryptoVerify(null, tampered, pub, Buffer.from(c.signature_hex, 'hex'));
+      expect(ok).toBe(c.tamper.expected_verify);
+    },
+  );
 
   it('every public key is 64 hex chars (32 raw bytes)', () => {
     for (const c of vector.cases) {
@@ -411,10 +417,7 @@ describe('conformance vector — auth_challenge_response (task 10.11)', () => {
   });
 
   it('signed payload matches buildAuthSignedPayload(nonce, ts) byte-exactly', () => {
-    const derived = buildAuthSignedPayload(
-      vector.scenario.nonce,
-      vector.scenario.ts,
-    );
+    const derived = buildAuthSignedPayload(vector.scenario.nonce, vector.scenario.ts);
     expect(derived).toBe(vector.frames.signed_payload_utf8);
     // Hex round-trip
     expect(Buffer.from(derived, 'utf8').toString('hex')).toBe(vector.frames.signed_payload_hex);
@@ -425,7 +428,7 @@ describe('conformance vector — auth_challenge_response (task 10.11)', () => {
     expect(bytes).toBe(vector.assertions.signed_payload_byte_count);
   });
 
-  it('signature verifies against the response frame\'s public key', () => {
+  it("signature verifies against the response frame's public key", () => {
     const pub = importEd25519Pub(vector.frames.auth_response.pub);
     const payload = Buffer.from(vector.frames.signed_payload_utf8, 'utf8');
     const sig = Buffer.from(vector.frames.auth_response.sig, 'hex');
@@ -477,26 +480,27 @@ describe('conformance vector — did_key_from_ed25519_pub (task 10.6)', () => {
     expect(vector.cases.length).toBeGreaterThan(0);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — did:key derivation matches frozen value', (_name, c) => {
-    const pub = hexToBytes(c.public_key_hex);
-    expect(pub.length).toBe(32);
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — did:key derivation matches frozen value',
+    (_name, c) => {
+      const pub = hexToBytes(c.public_key_hex);
+      expect(pub.length).toBe(32);
 
-    // Multicodec varint 0xed 0x01 = ed25519-pub
-    const multicodec = hexToBytes(c.multicodec_prefix_hex);
-    expect(multicodec).toEqual(new Uint8Array([0xed, 0x01]));
+      // Multicodec varint 0xed 0x01 = ed25519-pub
+      const multicodec = hexToBytes(c.multicodec_prefix_hex);
+      expect(multicodec).toEqual(new Uint8Array([0xed, 0x01]));
 
-    const payload = new Uint8Array(34);
-    payload.set(multicodec, 0);
-    payload.set(pub, 2);
-    expect(bytesToHex(payload)).toBe(c.payload_hex);
-    expect(payload.length).toBe(c.payload_byte_count);
+      const payload = new Uint8Array(34);
+      payload.set(multicodec, 0);
+      payload.set(pub, 2);
+      expect(bytesToHex(payload)).toBe(c.payload_hex);
+      expect(payload.length).toBe(c.payload_byte_count);
 
-    const encoded = base58.encode(payload);
-    expect(encoded).toBe(c.base58btc_encoded);
-    expect(`did:key:z${encoded}`).toBe(c.expected_did_key);
-  });
+      const encoded = base58.encode(payload);
+      expect(encoded).toBe(c.base58btc_encoded);
+      expect(`did:key:z${encoded}`).toBe(c.expected_did_key);
+    },
+  );
 
   it('every did:key starts with the multibase-base58btc "did:key:z" prefix', () => {
     for (const c of vector.cases) {
@@ -537,23 +541,24 @@ describe('conformance vector — blake2b_24_sealed_nonce (task 10.9)', () => {
     expect(vector.cases.length).toBeGreaterThan(0);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — BLAKE2b(24) nonce matches frozen value', (_name, c) => {
-    const ephemeral = hexToBytes(c.ephemeral_pub_hex);
-    const recipient = hexToBytes(c.recipient_pub_hex);
-    expect(ephemeral.length).toBe(32);
-    expect(recipient.length).toBe(32);
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — BLAKE2b(24) nonce matches frozen value',
+    (_name, c) => {
+      const ephemeral = hexToBytes(c.ephemeral_pub_hex);
+      const recipient = hexToBytes(c.recipient_pub_hex);
+      expect(ephemeral.length).toBe(32);
+      expect(recipient.length).toBe(32);
 
-    const input = new Uint8Array(64);
-    input.set(ephemeral, 0);
-    input.set(recipient, 32);
-    expect(bytesToHex(input)).toBe(c.concatenated_input_hex);
+      const input = new Uint8Array(64);
+      input.set(ephemeral, 0);
+      input.set(recipient, 32);
+      expect(bytesToHex(input)).toBe(c.concatenated_input_hex);
 
-    const nonce = blake2b(input, { dkLen: 24 });
-    expect(nonce.length).toBe(24);
-    expect(bytesToHex(nonce)).toBe(c.expected_nonce_hex);
-  });
+      const nonce = blake2b(input, { dkLen: 24 });
+      expect(nonce.length).toBe(24);
+      expect(bytesToHex(nonce)).toBe(c.expected_nonce_hex);
+    },
+  );
 
   it('every nonce is 48 lowercase hex chars (24 bytes)', () => {
     for (const c of vector.cases) {
@@ -576,7 +581,10 @@ describe('conformance vector — blake2b_24_sealed_nonce (task 10.9)', () => {
   it('BLAKE2b(24) != SHA-512(input)[:24] — catches the pre-#9 Go regression', () => {
     const c = vector.cases[0]!;
     const input = hexToBytes(c.concatenated_input_hex);
-    const sha512Truncated = createHash('sha512').update(Buffer.from(input)).digest('hex').slice(0, 48);
+    const sha512Truncated = createHash('sha512')
+      .update(Buffer.from(input))
+      .digest('hex')
+      .slice(0, 48);
     expect(sha512Truncated).not.toBe(c.expected_nonce_hex);
   });
 });
@@ -620,21 +628,23 @@ describe('conformance vector — nacl_sealed_box (task 10.10)', () => {
     expect(vector.recipient.private_key_hex).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — decrypt yields expected plaintext', (_name, c) => {
-    const ct = sodium.from_hex(c.ciphertext_hex);
-    expect(ct.length).toBe(c.ciphertext_byte_count);
-    const ptBytes = sodium.crypto_box_seal_open(ct, pub, priv);
-    expect(sodium.to_string(ptBytes)).toBe(c.expected_plaintext_utf8);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — decrypt yields expected plaintext',
+    (_name, c) => {
+      const ct = sodium.from_hex(c.ciphertext_hex);
+      expect(ct.length).toBe(c.ciphertext_byte_count);
+      const ptBytes = sodium.crypto_box_seal_open(ct, pub, priv);
+      expect(sodium.to_string(ptBytes)).toBe(c.expected_plaintext_utf8);
+    },
+  );
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — ciphertext length is plaintext + 48 overhead', (_name, c) => {
-    const plaintextLen = Buffer.byteLength(c.expected_plaintext_utf8, 'utf8');
-    expect(c.ciphertext_byte_count).toBe(plaintextLen + 48);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — ciphertext length is plaintext + 48 overhead',
+    (_name, c) => {
+      const plaintextLen = Buffer.byteLength(c.expected_plaintext_utf8, 'utf8');
+      expect(c.ciphertext_byte_count).toBe(plaintextLen + 48);
+    },
+  );
 
   it('flipping a byte in any ciphertext causes decrypt to throw (Poly1305 MAC fails)', () => {
     const c = vector.cases[0]!;
@@ -656,7 +666,9 @@ describe('conformance vector — nacl_sealed_box (task 10.10)', () => {
   });
 
   it('recipient keypair is derivable from the shipped seed', () => {
-    const seed = sodium.from_hex('5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a');
+    const seed = sodium.from_hex(
+      '5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a',
+    );
     const keys = sodium.crypto_box_seed_keypair(seed);
     expect(sodium.to_hex(keys.publicKey)).toBe(vector.recipient.public_key_hex);
     expect(sodium.to_hex(keys.privateKey)).toBe(vector.recipient.private_key_hex);
@@ -664,12 +676,6 @@ describe('conformance vector — nacl_sealed_box (task 10.10)', () => {
 });
 
 // ─── TN-PROTO-004 — trust_score_v1 ─────────────────────────────────────────
-
-import {
-  computeScoreV1,
-  type ScoreV1Input,
-  type ScoreV1Output,
-} from '../src/peerlens/score_v1';
 
 interface ScoreV1Case {
   name: string;
@@ -700,19 +706,20 @@ describe('conformance vector — trust_score_v1 (TN-PROTO-004)', () => {
     expect(new Date(vector.scenario.now_iso).getTime()).toBe(vector.scenario.now_ms);
   });
 
-  it.each(
-    vector.cases.map((c) => [c.name, c]),
-  )('%s — computeScoreV1 matches frozen expected output', (_name, c) => {
-    const got = computeScoreV1(c.input, vector.scenario.now_ms);
-    // Strict equality across every numeric field — both sides are
-    // deterministic IEEE-754 doubles produced by the same reference.
-    expect(got.overallScore).toBe(c.expected_output.overallScore);
-    expect(got.confidence).toBe(c.expected_output.confidence);
-    expect(got.components.sentiment).toBe(c.expected_output.components.sentiment);
-    expect(got.components.vouch).toBe(c.expected_output.components.vouch);
-    expect(got.components.reviewer).toBe(c.expected_output.components.reviewer);
-    expect(got.components.network).toBe(c.expected_output.components.network);
-  });
+  it.each(vector.cases.map((c) => [c.name, c]))(
+    '%s — computeScoreV1 matches frozen expected output',
+    (_name, c) => {
+      const got = computeScoreV1(c.input, vector.scenario.now_ms);
+      // Strict equality across every numeric field — both sides are
+      // deterministic IEEE-754 doubles produced by the same reference.
+      expect(got.overallScore).toBe(c.expected_output.overallScore);
+      expect(got.confidence).toBe(c.expected_output.confidence);
+      expect(got.components.sentiment).toBe(c.expected_output.components.sentiment);
+      expect(got.components.vouch).toBe(c.expected_output.components.vouch);
+      expect(got.components.reviewer).toBe(c.expected_output.components.reviewer);
+      expect(got.components.network).toBe(c.expected_output.components.network);
+    },
+  );
 
   it('every overallScore is in [0, 1]', () => {
     for (const c of vector.cases) {
@@ -751,9 +758,9 @@ describe('conformance vector — trust_score_v1 (TN-PROTO-004)', () => {
   });
 
   it('an unvouched-author case is present (author weight collapses to zero)', () => {
-    expect(vector.cases.some((c) =>
-      c.input.attestationsAbout.some((a) => !a.authorHasInboundVouch),
-    )).toBe(true);
+    expect(
+      vector.cases.some((c) => c.input.attestationsAbout.some((a) => !a.authorHasInboundVouch)),
+    ).toBe(true);
   });
 });
 

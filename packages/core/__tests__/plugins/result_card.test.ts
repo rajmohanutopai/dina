@@ -58,11 +58,17 @@ describe('the template renders the answer', () => {
     expect(card).not.toBeNull();
     expect(kinds(card?.blocks ?? [])).toEqual(['title', 'stat', 'keyValue']);
     expect(card?.blocks[1]).toEqual({ kind: 'stat', value: 'EWB-9912', caption: 'bill number' });
-    expect(card?.blocks[2]).toEqual({ kind: 'keyValue', label: 'Valid until', value: '2026-09-18' });
+    expect(card?.blocks[2]).toEqual({
+      kind: 'keyValue',
+      label: 'Valid until',
+      value: '2026-09-18',
+    });
   });
 
   it('a field the runner left out drops its block, never an empty row', () => {
-    const card = buildPluginResultCard(task({ result: JSON.stringify({ eway_bill_no: 'EWB-9912' }) }));
+    const card = buildPluginResultCard(
+      task({ result: JSON.stringify({ eway_bill_no: 'EWB-9912' }) }),
+    );
     expect(kinds(card?.blocks ?? [])).toEqual(['title', 'stat']);
   });
 
@@ -102,7 +108,12 @@ describe('untrusted mode, and no outbound exit', () => {
           version: 1,
           blocks: [
             { kind: 'title', text: 'E-way bill' },
-            { kind: 'link', label: 'Download the bill', url: 'https://example.test/bill', action: 'open_url' },
+            {
+              kind: 'link',
+              label: 'Download the bill',
+              url: 'https://example.test/bill',
+              action: 'open_url',
+            },
             { kind: 'media', url: 'https://example.test/bill.png', alt: 'the bill' },
           ],
         },
@@ -180,12 +191,19 @@ describe('when there is nothing to draw', () => {
 
   it('a template whose every block fails validation is null, not an empty card', () => {
     const card = buildPluginResultCard(
-      task({ card: { version: 1, blocks: [{ kind: 'keyValue', label: 'Valid until', value: '{missing}' }] } }),
+      task({
+        card: {
+          version: 1,
+          blocks: [{ kind: 'keyValue', label: 'Valid until', value: '{missing}' }],
+        },
+      }),
     );
     expect(card).toBeNull();
   });
 
   it('an unparseable envelope renders nothing', () => {
-    expect(buildPluginResultCard({ status: 'completed', payload: 'not json', result: '{}' })).toBeNull();
+    expect(
+      buildPluginResultCard({ status: 'completed', payload: 'not json', result: '{}' }),
+    ).toBeNull();
   });
 });

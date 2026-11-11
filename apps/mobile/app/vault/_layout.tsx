@@ -83,9 +83,7 @@ export default function VaultStackLayout(): React.ReactElement {
         headerShadowVisible: false,
         headerTintColor: colors.textPrimary,
         headerBackTitle: '',
-        headerLeft: ({ canGoBack }) => (
-          <VaultStackBack canGoBack={canGoBack ?? false} />
-        ),
+        headerLeft: ({ canGoBack }) => <VaultStackBack canGoBack={canGoBack ?? false} />,
       }}
     >
       <Stack.Screen

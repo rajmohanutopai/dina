@@ -293,9 +293,7 @@ describe('TrustScoreResolver (task 6.21)', () => {
       const r = new TrustScoreResolver({
         fetchFn: async () => ({ kind: 'unknown' }),
       });
-      await expect(
-        r.getTrustScore(42 as unknown as string),
-      ).rejects.toThrow(/did/);
+      await expect(r.getTrustScore(42 as unknown as string)).rejects.toThrow(/did/);
     });
   });
 

@@ -46,14 +46,12 @@ describe('loadVerificationStatus', () => {
     // Force the next getGenericPassword to throw. We're testing the
     // catch arm in loadVerificationStatus.
     const origGet = Keychain.getGenericPassword;
-    (Keychain as unknown as { getGenericPassword: () => Promise<never> }).getGenericPassword =
-      () => Promise.reject(new Error('keychain unavailable'));
+    (Keychain as unknown as { getGenericPassword: () => Promise<never> }).getGenericPassword = () =>
+      Promise.reject(new Error('keychain unavailable'));
     try {
       expect(await loadVerificationStatus()).toBe('verified');
     } finally {
-      (
-        Keychain as unknown as { getGenericPassword: typeof origGet }
-      ).getGenericPassword = origGet;
+      (Keychain as unknown as { getGenericPassword: typeof origGet }).getGenericPassword = origGet;
     }
   });
 });
@@ -105,13 +103,12 @@ describe('verification banner dismissal', () => {
 
   it('fails open to not-dismissed on a keychain read error', async () => {
     const origGet = Keychain.getGenericPassword;
-    (Keychain as unknown as { getGenericPassword: () => Promise<never> }).getGenericPassword =
-      () => Promise.reject(new Error('keychain unavailable'));
+    (Keychain as unknown as { getGenericPassword: () => Promise<never> }).getGenericPassword = () =>
+      Promise.reject(new Error('keychain unavailable'));
     try {
       expect(await isVerificationBannerDismissed()).toBe(false);
     } finally {
-      (Keychain as unknown as { getGenericPassword: typeof origGet }).getGenericPassword =
-        origGet;
+      (Keychain as unknown as { getGenericPassword: typeof origGet }).getGenericPassword = origGet;
     }
   });
 });

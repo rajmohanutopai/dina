@@ -127,7 +127,13 @@ export type RepoRejectionReason =
 
 export type WriteOutcome =
   | { ok: true; result: CreatedRecord }
-  | { ok: false; reason: Exclude<RepoRejectionReason, 'not_found'>; error: string; status?: number; detail?: string };
+  | {
+      ok: false;
+      reason: Exclude<RepoRejectionReason, 'not_found'>;
+      error: string;
+      status?: number;
+      detail?: string;
+    };
 
 export type GetOutcome =
   | { ok: true; result: FetchedRecord }
@@ -135,11 +141,23 @@ export type GetOutcome =
 
 export type DeleteOutcome =
   | { ok: true }
-  | { ok: false; reason: Exclude<RepoRejectionReason, 'not_found'>; error: string; status?: number; detail?: string };
+  | {
+      ok: false;
+      reason: Exclude<RepoRejectionReason, 'not_found'>;
+      error: string;
+      status?: number;
+      detail?: string;
+    };
 
 export type ListOutcome =
   | { ok: true; result: ListRecordsResult }
-  | { ok: false; reason: Exclude<RepoRejectionReason, 'not_found'>; error: string; status?: number; detail?: string };
+  | {
+      ok: false;
+      reason: Exclude<RepoRejectionReason, 'not_found'>;
+      error: string;
+      status?: number;
+      detail?: string;
+    };
 
 export const MAX_LIST_LIMIT = 100;
 export const DEFAULT_LIST_LIMIT = 50;
@@ -215,11 +233,7 @@ export class RecordCrudClient {
     return extractCreated(result.body, 'putRecord', this.onEvent);
   }
 
-  async getRecord(input: {
-    did?: string;
-    collection: string;
-    rkey: string;
-  }): Promise<GetOutcome> {
+  async getRecord(input: { did?: string; collection: string; rkey: string }): Promise<GetOutcome> {
     const targetDid = input.did ?? this.did;
     const bad = validateGet({ ...input, did: targetDid });
     if (bad !== null) {
@@ -499,8 +513,12 @@ function mapErrorCommon(
   op: RepoRequestKind,
   result: { status: number; body: Record<string, unknown> | null },
   onEvent?: (event: RecordCrudEvent) => void,
-):
-  | { ok: false; reason: 'rate_limited' | 'rejected_by_pds' | 'network_error'; error: string; status?: number } {
+): {
+  ok: false;
+  reason: 'rate_limited' | 'rejected_by_pds' | 'network_error';
+  error: string;
+  status?: number;
+} {
   const body = result.body as { error?: string } | null;
   if (result.status === 0) {
     onEvent?.({ kind: 'rejected', op, reason: 'network_error' });

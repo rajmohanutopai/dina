@@ -13,8 +13,4 @@ export {
   secp256k1ToDidKeyMultibase,
   buildSigningKeyRotation,
 } from '@dina/core';
-export type {
-  PLCUpdateParams,
-  PLCUpdateResult,
-  SigningKeyRotationParams,
-} from '@dina/core';
+export type { PLCUpdateParams, PLCUpdateResult, SigningKeyRotationParams } from '@dina/core';

@@ -229,7 +229,8 @@ export function buildComparisonCard(args: {
     // still lists what was on the table.
     fields.push({
       label: 'Recommended',
-      value: choice === undefined ? 'none — no offer met the requirements' : `none — ${choice.reason}`,
+      value:
+        choice === undefined ? 'none — no offer met the requirements' : `none — ${choice.reason}`,
     });
     return {
       kind: 'commerce_comparison',

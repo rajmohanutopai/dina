@@ -79,14 +79,10 @@ export interface SelfCertifyOutput {
 export function selfCertifyDIDDoc(input: SelfCertifyInput): SelfCertifyOutput {
   if (!input.doc) throw new Error('selfCertifyDIDDoc: doc is required');
   if (!input.doc.id || !input.doc.id.startsWith('did:')) {
-    throw new Error(
-      'selfCertifyDIDDoc: doc.id must be a DID (starts with "did:")',
-    );
+    throw new Error('selfCertifyDIDDoc: doc.id must be a DID (starts with "did:")');
   }
   if (!input.signingPrivateKey || input.signingPrivateKey.length !== 32) {
-    throw new Error(
-      'selfCertifyDIDDoc: signingPrivateKey must be 32 bytes (Ed25519 seed)',
-    );
+    throw new Error('selfCertifyDIDDoc: signingPrivateKey must be 32 bytes (Ed25519 seed)');
   }
 
   const digest = digestDoc(input.doc);
@@ -101,9 +97,7 @@ export function selfCertifyDIDDoc(input: SelfCertifyInput): SelfCertifyOutput {
   return { doc: input.doc, proof };
 }
 
-export type VerifyResult =
-  | { ok: true }
-  | { ok: false; reason: VerifyRejectionReason };
+export type VerifyResult = { ok: true } | { ok: false; reason: VerifyRejectionReason };
 
 export type VerifyRejectionReason =
   | 'wrong_proof_type'
@@ -189,8 +183,8 @@ function stableStringify(value: unknown): string {
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, '0');
   }
   return out;
 }

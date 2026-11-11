@@ -33,7 +33,11 @@ beforeAll(async () => {
     const chunks: Buffer[] = [];
     req.on('data', (c: Buffer) => chunks.push(c));
     req.on('end', () => {
-      seen.push({ url: req.url ?? '', headers: req.headers, body: Buffer.concat(chunks).toString() });
+      seen.push({
+        url: req.url ?? '',
+        headers: req.headers,
+        body: Buffer.concat(chunks).toString(),
+      });
       setTimeout(() => {
         res.writeHead(200, {
           'content-type': 'application/json',
@@ -58,7 +62,11 @@ beforeEach(() => {
 
 const seed = new Uint8Array(32).fill(52);
 const link = (timeoutMs: number) =>
-  createCoreLink({ baseUrl: base, key: { seed, did: deriveDIDKey(getPublicKey(seed)) }, timeoutMs });
+  createCoreLink({
+    baseUrl: base,
+    key: { seed, did: deriveDIDKey(getPublicKey(seed)) },
+    timeoutMs,
+  });
 const envelope: UcpWebhookEnvelope = {
   path: '/ucp/webhooks/orders',
   query: '',

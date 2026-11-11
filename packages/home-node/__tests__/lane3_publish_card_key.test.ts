@@ -33,7 +33,10 @@ function directory(last: Record<string, unknown>, postStatus = 200) {
   const fetchFn = (async (_url: string | URL | Request, init?: RequestInit) => {
     if (init?.method === 'POST') {
       posts.push(JSON.parse(String(init.body)) as Record<string, unknown>);
-      return new Response(JSON.stringify({ message: postStatus === 200 ? 'ok' : 'invalid operation' }), { status: postStatus });
+      return new Response(
+        JSON.stringify({ message: postStatus === 200 ? 'ok' : 'invalid operation' }),
+        { status: postStatus },
+      );
     }
     return new Response(JSON.stringify([{ operation: last }]), { status: 200 });
   }) as typeof fetch;
@@ -41,7 +44,13 @@ function directory(last: Record<string, unknown>, postStatus = 200) {
 }
 
 const ensure = (fetchFn: typeof fetch, generation = 0) =>
-  ensureA2ACardKey({ did: DID, cardPublicKey: deriveP256SigningKey(SEED, generation).publicKey, masterSeed: SEED, plcURL: PLC, fetch: fetchFn });
+  ensureA2ACardKey({
+    did: DID,
+    cardPublicKey: deriveP256SigningKey(SEED, generation).publicKey,
+    masterSeed: SEED,
+    plcURL: PLC,
+    fetch: fetchFn,
+  });
 
 // Plan E150
 it('the key it posts decodes to the 33-byte compressed P-256 key the card is signed with', async () => {
@@ -55,7 +64,9 @@ it('the key it posts decodes to the 33-byte compressed P-256 key the card is sig
   expect(Buffer.from(key ?? new Uint8Array())).toEqual(Buffer.from(cardKey.publicKey));
   // A signature by the card's private key verifies under the posted key.
   const message = new TextEncoder().encode('card signing input');
-  expect(p256.verify(p256.sign(message, cardKey.privateKey), message, key ?? new Uint8Array())).toBe(true);
+  expect(
+    p256.verify(p256.sign(message, cardKey.privateKey), message, key ?? new Uint8Array()),
+  ).toBe(true);
 });
 
 // Plan E151
@@ -70,10 +81,21 @@ it.each([
   ['a tombstone', { type: 'plc_tombstone', prev: 'bafyprevious', sig: 'sig' }],
   [
     'a legacy create operation',
-    { type: 'create', signingKey: 'did:key:zQ3shsigning', recoveryKey: ROTATION, handle: 'node.example', service: 'https://pds.example', prev: null, sig: 'sig' },
+    {
+      type: 'create',
+      signingKey: 'did:key:zQ3shsigning',
+      recoveryKey: ROTATION,
+      handle: 'node.example',
+      service: 'https://pds.example',
+      prev: null,
+      sig: 'sig',
+    },
   ],
-])('a last operation that is %s carries no rotation keys, so it is not chained onto: it throws and posts nothing', async (_name, last) => {
-  const { fetchFn, posts } = directory(last);
-  await expect(ensure(fetchFn)).rejects.toThrow(/no rotation keys/);
-  expect(posts).toEqual([]);
-});
+])(
+  'a last operation that is %s carries no rotation keys, so it is not chained onto: it throws and posts nothing',
+  async (_name, last) => {
+    const { fetchFn, posts } = directory(last);
+    await expect(ensure(fetchFn)).rejects.toThrow(/no rotation keys/);
+    expect(posts).toEqual([]);
+  },
+);

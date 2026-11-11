@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Tasks 4.2, 4.3
  */
 
-import { unwrapSeed, type WrappedSeed } from '../../../core/src/crypto/aesgcm';
+import { unwrapSeed } from '../../../core/src/crypto/aesgcm';
 import { validateMnemonic } from '../../../core/src/crypto/bip39';
 import { personaExists } from '../../../core/src/persona/service';
 import {

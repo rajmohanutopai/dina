@@ -38,10 +38,12 @@
  * a few cents.
  */
 
-
-import { InProcessTransport , createCoreRouter , clearVaults , resetStagingState ,
+import {
+  InProcessTransport,
+  createCoreRouter,
+  clearVaults,
+  resetStagingState,
   configureRateLimiter,
-  registerPublicKeyResolver,
 } from '@dina/core';
 
 import {
@@ -55,12 +57,7 @@ import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
 import { ToolRegistry } from '../../src/reasoning/tool_registry';
 import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import {
-  resetReasoningProvider,
-  setAccessiblePersonas,
-} from '../../src/vault_context/assembly';
-
-
+import { resetReasoningProvider, setAccessiblePersonas } from '../../src/vault_context/assembly';
 
 import {
   closeSQLiteVault,
@@ -188,7 +185,7 @@ const SCENARIOS: Scenario[] = [
   },
   {
     label: 'edge-02 pet vet',
-    remember: "Max needs his rabies booster shot next month at the vet",
+    remember: 'Max needs his rabies booster shot next month at the vet',
     ask: 'What shot does Max need at the vet?',
     mustContainAny: ['rabies'],
   },
@@ -351,7 +348,6 @@ describeReal(
           haystack.includes(needle.toLowerCase()),
         );
         if (!hit) {
-           
           console.log(
             `[${scenario.label}] remember="${scenario.remember}"\n  ask=${scenario.ask}\n  response=${askResp.response}\n  expectedAny=${JSON.stringify(scenario.mustContainAny)}`,
           );

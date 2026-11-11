@@ -25,8 +25,8 @@ import {
 import { appendAudit, sanitizeAuditDetail } from '../audit/service';
 import { applyInboundBuyerResponse } from '../commerce/buyer_response';
 import { isCommerceCapability, isCommerceWireCapability } from '../commerce/capability_names';
-import { getCommerceRuntime } from '../commerce/runtime';
 import { getInviteService } from '../commerce/invite_compose';
+import { getCommerceRuntime } from '../commerce/runtime';
 import { handleConsentMessage } from '../commitment/evidence_handler';
 import { handleOptionMessage } from '../commitment/option_handler';
 import { getServiceOfferRepository } from '../contacts/service_offers_repository';
@@ -56,7 +56,6 @@ import {
 import { oneLine } from '../util/one_line';
 import { WorkflowConflictError } from '../workflow/repository';
 import { getWorkflowService } from '../workflow/service';
-
 
 import { unsealMessage, type D2DPayload, type DinaMessage } from './envelope';
 import {
@@ -601,12 +600,7 @@ function admitVerifiedMessage(
     }
     const offerErr = validateServiceOfferBody(parsedOffer);
     if (offerErr !== null) {
-      appendAudit(
-        message.from,
-        'd2d_recv_service_offer_invalid',
-        message.to,
-        `id=${message.id}`,
-      );
+      appendAudit(message.from, 'd2d_recv_service_offer_invalid', message.to, `id=${message.id}`);
       return {
         action: 'dropped',
         messageId: message.id,
@@ -788,9 +782,16 @@ function admitVerifiedMessage(
     } catch {
       parsedConsent = null;
     }
-    const kept = isContact ? handleConsentMessage(message.from, parsedConsent, Date.now()) : 'refused';
+    const kept = isContact
+      ? handleConsentMessage(message.from, parsedConsent, Date.now())
+      : 'refused';
     if (kept === 'refused')
-      appendAudit(message.from, 'd2d_recv_consent_refused', message.to, `contact=${String(isContact)}`);
+      appendAudit(
+        message.from,
+        'd2d_recv_consent_refused',
+        message.to,
+        `contact=${String(isContact)}`,
+      );
     return {
       action: kept === 'kept' ? 'bypassed' : 'dropped',
       messageId: message.id,
@@ -870,7 +871,13 @@ function admitVerifiedMessage(
       parsedTrade !== null && typeof parsedTrade === 'object'
         ? ((parsedTrade as { document?: unknown }).document ?? null)
         : null;
-    if (!isContact && !isTradeCounterparty(message.from, tradeKind, { document: tradeDocument, direction: 'inbound' })) {
+    if (
+      !isContact &&
+      !isTradeCounterparty(message.from, tradeKind, {
+        document: tradeDocument,
+        direction: 'inbound',
+      })
+    ) {
       appendAudit(
         message.from,
         'd2d_recv_trade_denied',
@@ -883,7 +890,8 @@ function admitVerifiedMessage(
         messageType: message.type,
         senderDID: message.from,
         signatureValid: true,
-        reason: 'commerce.trade rejected: sender is neither a known contact nor a trading counterparty',
+        reason:
+          'commerce.trade rejected: sender is neither a known contact nor a trading counterparty',
       };
     }
     // §4.3's stored-verified rule: the retained evidence is the SIGNED
@@ -1035,7 +1043,11 @@ function admitVerifiedMessage(
 
   // REAL_LIFE_FIXES_2 §14: a contact's coordination request may have a
   // standing reply the owner set; the message is still staged as usual.
-  if (stageResult.action !== 'quarantined' && isContact && message.type === 'coordination.request') {
+  if (
+    stageResult.action !== 'quarantined' &&
+    isContact &&
+    message.type === 'coordination.request'
+  ) {
     void answerWithStandingReply(message.from).catch(() => undefined);
   }
 
@@ -1094,7 +1106,14 @@ function admitVerifiedMessage(
  */
 function applyServiceIngressDecision(
   messageType: string,
-  message: { id: string; type: string; from: string; to: string; created_time: number; body: string },
+  message: {
+    id: string;
+    type: string;
+    from: string;
+    to: string;
+    created_time: number;
+    body: string;
+  },
   bypass: ServiceBypassDecision,
   /**
    * The sender's signature over this envelope, ALREADY VERIFIED by the caller
@@ -1202,12 +1221,9 @@ function applyServiceIngressDecision(
         const nowSec = Math.floor(Date.now() / 1000);
         try {
           durableLive =
-            service.store().findServiceQueryTask(
-              body.query_id,
-              message.from,
-              body.capability,
-              nowSec,
-            ) !== null;
+            service
+              .store()
+              .findServiceQueryTask(body.query_id, message.from, body.capability, nowSec) !== null;
         } catch {
           durableLive = false; // conflict / fault → do not authorize on doubt
         }
@@ -1541,5 +1557,7 @@ function completeMatchingServiceQueryTask(
   );
   // REAL_LIFE_FIXES §9: the provider answered (an error reply is still a
   // reply), so it is alive.
-  recordProviderOutcome(raw.from, responseStatus === 'success' ? 'answered' : 'error', { handedOff: true });
+  recordProviderOutcome(raw.from, responseStatus === 'success' ? 'answered' : 'error', {
+    handedOff: true,
+  });
 }

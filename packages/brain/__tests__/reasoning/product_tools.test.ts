@@ -73,8 +73,7 @@ function makeClient(
 ): ProductToolAppViewClient {
   return {
     searchCatalog: async () => candidates,
-    getProfile: async (did: string) =>
-      did in trust ? { overallTrustScore: trust[did] } : null,
+    getProfile: async (did: string) => (did in trust ? { overallTrustScore: trust[did] } : null),
   };
 }
 
@@ -85,10 +84,15 @@ function tools(
   core: ProductToolCoreClient = NO_CONTACTS,
   now: () => Date = FIXED,
 ) {
-  const pair = createProductResearchTools({ appViewClient: makeClient(candidates, trust), core, now });
+  const pair = createProductResearchTools({
+    appViewClient: makeClient(candidates, trust),
+    core,
+    now,
+  });
   return {
     pair,
-    search: async (args: Record<string, unknown>) => (await pair.searchProducts.execute(args)) as SearchProductsResult,
+    search: async (args: Record<string, unknown>) =>
+      (await pair.searchProducts.execute(args)) as SearchProductsResult,
     recommend: async (args: Record<string, unknown>) =>
       (await pair.recommendOffer.execute(args)) as RecommendOfferResult,
   };
@@ -140,7 +144,10 @@ describe('search_products — money-free consumer research', () => {
   it('hands the loop prices in MAJOR units, never the wire minor units (a hundredfold misread)', async () => {
     const result = await run(
       [
-        candidate({ supplierDid: 'did:plc:inr', indicativePrice: { currency: 'INR', minorUnits: '449900' } }),
+        candidate({
+          supplierDid: 'did:plc:inr',
+          indicativePrice: { currency: 'INR', minorUnits: '449900' },
+        }),
         candidate({
           supplierDid: 'did:plc:inr2',
           catalogSnapshotRef: 's2',
@@ -158,7 +165,11 @@ describe('search_products — money-free consumer research', () => {
   });
 
   it('hands the loop seller trust as a percentage — no basis-point field remains, even on an offer that has trust', async () => {
-    const result = await run([candidate({ supplierDid: 'did:plc:t' })], { 'did:plc:t': 0.937 }, { query: 'x' });
+    const result = await run(
+      [candidate({ supplierDid: 'did:plc:t' })],
+      { 'did:plc:t': 0.937 },
+      { query: 'x' },
+    );
     expect(result.ranked[0].trustPercent).toBe(94);
     expect(result.ranked[0]).not.toHaveProperty('trustBp');
   });
@@ -167,17 +178,37 @@ describe('search_products — money-free consumer research', () => {
     const result = await run(
       [
         candidate({ supplierDid: 'did:plc:good', catalogSnapshotRef: 's1' }),
-        candidate({ supplierDid: 'did:plc:free', catalogSnapshotRef: 's2', indicativePrice: { currency: 'INR', minorUnits: '' } }),
-        candidate({ supplierDid: 'did:plc:neg', catalogSnapshotRef: 's3', indicativePrice: { currency: 'INR', minorUnits: '-4050' } }),
-        candidate({ supplierDid: 'did:plc:dec', catalogSnapshotRef: 's4', indicativePrice: { currency: 'INR', minorUnits: '12.50' } }),
+        candidate({
+          supplierDid: 'did:plc:free',
+          catalogSnapshotRef: 's2',
+          indicativePrice: { currency: 'INR', minorUnits: '' },
+        }),
+        candidate({
+          supplierDid: 'did:plc:neg',
+          catalogSnapshotRef: 's3',
+          indicativePrice: { currency: 'INR', minorUnits: '-4050' },
+        }),
+        candidate({
+          supplierDid: 'did:plc:dec',
+          catalogSnapshotRef: 's4',
+          indicativePrice: { currency: 'INR', minorUnits: '12.50' },
+        }),
       ],
       {},
       { query: 'x' },
     );
     expect(result.failed).toBeUndefined();
     expect(result.ranked.map((r) => r.supplierDid)).toEqual(['did:plc:good']);
-    expect(result.unpriced.map((u) => u.supplierDid).sort()).toEqual(['did:plc:dec', 'did:plc:free', 'did:plc:neg']);
-    expect(result.unpriced.every((u) => typeof u.malformedPrice === 'string' && u.malformedPrice.startsWith('money:'))).toBe(true);
+    expect(result.unpriced.map((u) => u.supplierDid).sort()).toEqual([
+      'did:plc:dec',
+      'did:plc:free',
+      'did:plc:neg',
+    ]);
+    expect(
+      result.unpriced.every(
+        (u) => typeof u.malformedPrice === 'string' && u.malformedPrice.startsWith('money:'),
+      ),
+    ).toBe(true);
     // The malformed rows are not "free": the card's Recommended is the good seller.
     expect(result.card?.fields.find((f) => f.label === 'Recommended')?.value).toBe('did:plc:good');
   });
@@ -185,10 +216,26 @@ describe('search_products — money-free consumer research', () => {
   it('keeps ONE listing per supplier — the cheapest valid price — and says how many it folded', async () => {
     const result = await run(
       [
-        candidate({ supplierDid: 'did:plc:twice', catalogSnapshotRef: 's1', indicativePrice: { currency: 'INR', minorUnits: '60000' } }),
-        candidate({ supplierDid: 'did:plc:twice', catalogSnapshotRef: 's2', indicativePrice: { currency: 'INR', minorUnits: '55000' } }),
-        candidate({ supplierDid: 'did:plc:twice', catalogSnapshotRef: 's3', indicativePrice: undefined }),
-        candidate({ supplierDid: 'did:plc:once', catalogSnapshotRef: 's4', indicativePrice: { currency: 'INR', minorUnits: '70000' } }),
+        candidate({
+          supplierDid: 'did:plc:twice',
+          catalogSnapshotRef: 's1',
+          indicativePrice: { currency: 'INR', minorUnits: '60000' },
+        }),
+        candidate({
+          supplierDid: 'did:plc:twice',
+          catalogSnapshotRef: 's2',
+          indicativePrice: { currency: 'INR', minorUnits: '55000' },
+        }),
+        candidate({
+          supplierDid: 'did:plc:twice',
+          catalogSnapshotRef: 's3',
+          indicativePrice: undefined,
+        }),
+        candidate({
+          supplierDid: 'did:plc:once',
+          catalogSnapshotRef: 's4',
+          indicativePrice: { currency: 'INR', minorUnits: '70000' },
+        }),
       ],
       {},
       { query: 'x' },
@@ -217,7 +264,11 @@ describe('search_products — money-free consumer research', () => {
         [
           candidate({ supplierDid: 'did:plc:chairmaker', catalogSnapshotRef: 's1' }),
           candidate({ supplierDid: 'did:plc:stranger', catalogSnapshotRef: 's2' }),
-          candidate({ supplierDid: 'did:plc:alonso', catalogSnapshotRef: 's3', indicativePrice: undefined }),
+          candidate({
+            supplierDid: 'did:plc:alonso',
+            catalogSnapshotRef: 's3',
+            indicativePrice: undefined,
+          }),
         ],
         {},
         { query: 'chair' },
@@ -246,15 +297,23 @@ describe('search_products — money-free consumer research', () => {
         ...(result.card?.alternatives.map((a) => a.seller) ?? []),
       ].sort();
       expect(shown).toEqual(['ChairMaker (did:plc:chairmaker)', 'did:plc:stranger']);
-      expect(result.handoff.find((h) => h.supplierDid === 'did:plc:chairmaker')?.sellerName).toBe('ChairMaker');
-      expect(result.handoff.find((h) => h.supplierDid === 'did:plc:stranger')).not.toHaveProperty('sellerName');
+      expect(result.handoff.find((h) => h.supplierDid === 'did:plc:chairmaker')?.sellerName).toBe(
+        'ChairMaker',
+      );
+      expect(result.handoff.find((h) => h.supplierDid === 'did:plc:stranger')).not.toHaveProperty(
+        'sellerName',
+      );
       // Unpriced listings are annotated too: "your go-to seller lists it but
       // states no price" is worth knowing.
       expect(result.unpriced).toEqual([
         {
           supplierDid: 'did:plc:alonso',
           serviceUri: 'at://did:plc:alonso/svc',
-          contact: { name: 'Don Alonso Furniture', trustLevel: 'trusted', preferredFor: ['office furniture', 'chairs'] },
+          contact: {
+            name: 'Don Alonso Furniture',
+            trustLevel: 'trusted',
+            preferredFor: ['office furniture', 'chairs'],
+          },
         },
       ]);
     });
@@ -262,7 +321,11 @@ describe('search_products — money-free consumer research', () => {
     it('a lookup that answers a DIFFERENT contact (alias or name match) is not attached to this seller', async () => {
       const core: ProductToolCoreClient = {
         contactLookup: async () =>
-          ({ did: 'did:plc:someone-else', displayName: 'Someone Else', trustLevel: 'verified' }) as Contact,
+          ({
+            did: 'did:plc:someone-else',
+            displayName: 'Someone Else',
+            trustLevel: 'verified',
+          }) as Contact,
       };
       const result = await run([candidate({ supplierDid: 'did:plc:x' })], {}, { query: 'x' }, core);
       expect(result.ranked[0]).not.toHaveProperty('contact');
@@ -301,9 +364,17 @@ describe('search_products — money-free consumer research', () => {
       await run(
         [
           candidate({ supplierDid: 'did:plc:a', catalogSnapshotRef: 's1' }),
-          candidate({ supplierDid: 'did:plc:a', catalogSnapshotRef: 's1b', indicativePrice: { currency: 'INR', minorUnits: '40000' } }),
+          candidate({
+            supplierDid: 'did:plc:a',
+            catalogSnapshotRef: 's1b',
+            indicativePrice: { currency: 'INR', minorUnits: '40000' },
+          }),
           candidate({ supplierDid: 'did:plc:b', catalogSnapshotRef: 's2' }),
-          candidate({ supplierDid: 'did:plc:c', catalogSnapshotRef: 's3', indicativePrice: undefined }),
+          candidate({
+            supplierDid: 'did:plc:c',
+            catalogSnapshotRef: 's3',
+            indicativePrice: undefined,
+          }),
         ],
         {},
         { query: 'x' },
@@ -363,7 +434,11 @@ describe('search_products — money-free consumer research', () => {
     const result = await run(
       [
         candidate({ supplierDid: 'did:plc:priced' }),
-        candidate({ supplierDid: 'did:plc:bare', catalogSnapshotRef: 's3', indicativePrice: undefined }),
+        candidate({
+          supplierDid: 'did:plc:bare',
+          catalogSnapshotRef: 's3',
+          indicativePrice: undefined,
+        }),
       ],
       {},
       { query: 'x' },
@@ -373,9 +448,13 @@ describe('search_products — money-free consumer research', () => {
   });
 
   it('accepts identifiers without a free-text query', async () => {
-    const result = await run([candidate({ supplierDid: 'did:plc:x' })], {}, {
-      identifiers: ['gtin:08901234567890'],
-    });
+    const result = await run(
+      [candidate({ supplierDid: 'did:plc:x' })],
+      {},
+      {
+        identifiers: ['gtin:08901234567890'],
+      },
+    );
     expect(result.ranked).toHaveLength(1);
     expect(result.card?.primaryAction).toBe('where_to_buy');
   });
@@ -394,8 +473,17 @@ describe('search_products — money-free consumer research', () => {
       },
       getProfile: async () => null,
     };
-    const { searchProducts } = createProductResearchTools({ appViewClient: client, core: NO_CONTACTS, resultLimit: 7, now: FIXED });
-    await searchProducts.execute({ query: 'q', identifiers: ['gtin:1'], region: 'iso-3166-2:IN-KA' });
+    const { searchProducts } = createProductResearchTools({
+      appViewClient: client,
+      core: NO_CONTACTS,
+      resultLimit: 7,
+      now: FIXED,
+    });
+    await searchProducts.execute({
+      query: 'q',
+      identifiers: ['gtin:1'],
+      region: 'iso-3166-2:IN-KA',
+    });
     expect(seen).toEqual({ q: 'q', identifiers: ['gtin:1'], region: 'iso-3166-2:IN-KA', limit: 7 });
   });
 
@@ -406,7 +494,11 @@ describe('search_products — money-free consumer research', () => {
       },
       getProfile: async () => null,
     };
-    const { searchProducts } = createProductResearchTools({ appViewClient: client, core: NO_CONTACTS, now: FIXED });
+    const { searchProducts } = createProductResearchTools({
+      appViewClient: client,
+      core: NO_CONTACTS,
+      now: FIXED,
+    });
     const result = (await searchProducts.execute({ query: 'x' })) as SearchProductsResult;
     expect(result.failed).toBe(true);
     expect(result.card).toBeUndefined();
@@ -464,61 +556,98 @@ describe('search_products — money-free consumer research', () => {
 
 describe('recommend_offer — the loop commits its preference-weighed pick to the card (§5.A6)', () => {
   const CATALOG = [
-    candidate({ supplierDid: 'did:plc:cheap', catalogSnapshotRef: 's1', indicativePrice: { currency: 'INR', minorUnits: '449900' } }),
-    candidate({ supplierDid: 'did:plc:steady', catalogSnapshotRef: 's2', indicativePrice: { currency: 'INR', minorUnits: '589900' } }),
-    candidate({ supplierDid: 'did:plc:sworn', catalogSnapshotRef: 's3', indicativePrice: { currency: 'INR', minorUnits: '419900' } }),
-    candidate({ supplierDid: 'did:plc:bare', catalogSnapshotRef: 's4', indicativePrice: undefined }),
+    candidate({
+      supplierDid: 'did:plc:cheap',
+      catalogSnapshotRef: 's1',
+      indicativePrice: { currency: 'INR', minorUnits: '449900' },
+    }),
+    candidate({
+      supplierDid: 'did:plc:steady',
+      catalogSnapshotRef: 's2',
+      indicativePrice: { currency: 'INR', minorUnits: '589900' },
+    }),
+    candidate({
+      supplierDid: 'did:plc:sworn',
+      catalogSnapshotRef: 's3',
+      indicativePrice: { currency: 'INR', minorUnits: '419900' },
+    }),
+    candidate({
+      supplierDid: 'did:plc:bare',
+      catalogSnapshotRef: 's4',
+      indicativePrice: undefined,
+    }),
   ];
   const TRUST = { 'did:plc:cheap': 0.28, 'did:plc:steady': 0.94, 'did:plc:sworn': 0.83 };
-  const DIRECTORY = directory({ 'did:plc:sworn': { displayName: 'ChairMaker', trustLevel: 'verified' } });
+  const DIRECTORY = directory({
+    'did:plc:sworn': { displayName: 'ChairMaker', trustLevel: 'verified' },
+  });
 
   it('rebuilds the SAME research’s card with the pick on top, the reason in the owner’s terms, and the set-aside seller gone', async () => {
     const t = tools(CATALOG, TRUST, DIRECTORY);
     const found = await t.search({ query: 'chair' });
     expect(found.researchId).toMatch(/^research_/);
     // The ranking's own #1 is the cheapest — the sworn-off seller.
-    expect(found.card?.fields.find((f) => f.label === 'Recommended')?.value).toBe('ChairMaker (did:plc:sworn)');
+    expect(found.card?.fields.find((f) => f.label === 'Recommended')?.value).toBe(
+      'ChairMaker (did:plc:sworn)',
+    );
 
     const out = await t.recommend({
       research_id: found.researchId,
       supplier_did: 'did:plc:steady',
       reason: 'your rule: a proven seller over the cheapest',
-      set_aside: [{ supplier_did: 'did:plc:sworn', reason: 'you swore off ChairMaker after a cracked base' }],
+      set_aside: [
+        { supplier_did: 'did:plc:sworn', reason: 'you swore off ChairMaker after a cracked base' },
+      ],
     });
     expect(out.recommended).toBe('did:plc:steady');
     const value = (label: string) => out.card.fields.find((f) => f.label === label)?.value;
     expect(value('Recommended')).toBe('did:plc:steady');
     expect(value('Chosen for')).toBe('your rule: a proven seller over the cheapest');
-    expect(value('Set aside')).toBe('ChairMaker (did:plc:sworn): you swore off ChairMaker after a cracked base');
+    expect(value('Set aside')).toBe(
+      'ChairMaker (did:plc:sworn): you swore off ChairMaker after a cracked base',
+    );
     expect(value('Indicative price')).toBe('INR 5899.00');
     // The passed-over #1 stays visible; the set-aside seller leaves the alternatives and the links.
     expect(out.card.alternatives.map((a) => a.supplierDid)).toEqual(['did:plc:cheap']);
-    expect(out.card.handoff?.map((h) => h.supplierDid)).toEqual(['did:plc:cheap', 'did:plc:steady', 'did:plc:bare']);
+    expect(out.card.handoff?.map((h) => h.supplierDid)).toEqual([
+      'did:plc:cheap',
+      'did:plc:steady',
+      'did:plc:bare',
+    ]);
     expect(out.card.primaryAction).toBe('where_to_buy');
   });
 
   it('a pick of NOTHING is a card that says so in the owner’s terms', async () => {
     const t = tools(CATALOG, TRUST);
     const found = await t.search({ query: 'chair' });
-    const out = await t.recommend({ research_id: found.researchId, reason: 'nothing fits your ₹4,000 cap' });
+    const out = await t.recommend({
+      research_id: found.researchId,
+      reason: 'nothing fits your ₹4,000 cap',
+    });
     expect(out.recommended).toBeNull();
-    expect(out.card.fields.find((f) => f.label === 'Recommended')?.value).toBe('none — nothing fits your ₹4,000 cap');
+    expect(out.card.fields.find((f) => f.label === 'Recommended')?.value).toBe(
+      'none — nothing fits your ₹4,000 cap',
+    );
     expect(out.card.alternatives).toHaveLength(3);
   });
 
   it('names only what the research holds: an unknown supplier, a set-aside stranger, or the pick set aside are refused', async () => {
     const t = tools(CATALOG, TRUST);
     const { researchId } = await t.search({ query: 'chair' });
-    await expect(t.recommend({ research_id: researchId, supplier_did: 'did:plc:nobody', reason: 'x' })).rejects.toThrow(
-      /not among the ranked offers/,
-    );
+    await expect(
+      t.recommend({ research_id: researchId, supplier_did: 'did:plc:nobody', reason: 'x' }),
+    ).rejects.toThrow(/not among the ranked offers/);
     // An unpriced listing is held by the research (it may be set aside) but is
     // not a ranked offer (it cannot be the pick).
-    await expect(t.recommend({ research_id: researchId, supplier_did: 'did:plc:bare', reason: 'x' })).rejects.toThrow(
-      /not among the ranked offers/,
-    );
     await expect(
-      t.recommend({ research_id: researchId, reason: 'x', set_aside: [{ supplier_did: 'did:plc:nobody', reason: 'y' }] }),
+      t.recommend({ research_id: researchId, supplier_did: 'did:plc:bare', reason: 'x' }),
+    ).rejects.toThrow(/not among the ranked offers/);
+    await expect(
+      t.recommend({
+        research_id: researchId,
+        reason: 'x',
+        set_aside: [{ supplier_did: 'did:plc:nobody', reason: 'y' }],
+      }),
     ).rejects.toThrow(/does not hold/);
     await expect(
       t.recommend({
@@ -528,16 +657,20 @@ describe('recommend_offer — the loop commits its preference-weighed pick to th
         set_aside: [{ supplier_did: 'did:plc:steady', reason: 'y' }],
       }),
     ).rejects.toThrow(/cannot also be set aside/);
-    await expect(t.recommend({ research_id: researchId, supplier_did: 'did:plc:steady', reason: '  ' })).rejects.toThrow(
-      /reason is required/,
-    );
+    await expect(
+      t.recommend({ research_id: researchId, supplier_did: 'did:plc:steady', reason: '  ' }),
+    ).rejects.toThrow(/reason is required/);
     await expect(t.recommend({ reason: 'x' })).rejects.toThrow(/unknown or expired research_id/);
-    await expect(t.recommend({ research_id: researchId, reason: 'x', set_aside: 'did:plc:cheap' })).rejects.toThrow(
-      /set_aside must be an array/,
-    );
-    await expect(t.recommend({ research_id: researchId, reason: 'x', set_aside: [{ supplier_did: 'did:plc:cheap' }] })).rejects.toThrow(
-      /needs supplier_did and reason/,
-    );
+    await expect(
+      t.recommend({ research_id: researchId, reason: 'x', set_aside: 'did:plc:cheap' }),
+    ).rejects.toThrow(/set_aside must be an array/);
+    await expect(
+      t.recommend({
+        research_id: researchId,
+        reason: 'x',
+        set_aside: [{ supplier_did: 'did:plc:cheap' }],
+      }),
+    ).rejects.toThrow(/needs supplier_did and reason/);
   });
 
   it('set_aside is bounded: no supplier twice, never more entries than suppliers', async () => {
@@ -553,16 +686,23 @@ describe('recommend_offer — the loop commits its preference-weighed pick to th
         ],
       }),
     ).rejects.toThrow(/names did:plc:cheap twice/);
-    const tooMany = Array.from({ length: 5 }, () => ({ supplier_did: 'did:plc:cheap', reason: 'a' }));
-    await expect(t.recommend({ research_id: researchId, reason: 'x', set_aside: tooMany })).rejects.toThrow(
-      /lists 5 entries for 4 suppliers/,
-    );
+    const tooMany = Array.from({ length: 5 }, () => ({
+      supplier_did: 'did:plc:cheap',
+      reason: 'a',
+    }));
+    await expect(
+      t.recommend({ research_id: researchId, reason: 'x', set_aside: tooMany }),
+    ).rejects.toThrow(/lists 5 entries for 4 suppliers/);
   });
 
   it('the note steers the model back to answering, never to describing the card', async () => {
     const t = tools(CATALOG, TRUST);
     const { researchId } = await t.search({ query: 'chair' });
-    const picked = await t.recommend({ research_id: researchId, supplier_did: 'did:plc:steady', reason: 'x' });
+    const picked = await t.recommend({
+      research_id: researchId,
+      supplier_did: 'did:plc:steady',
+      reason: 'x',
+    });
     expect(picked.note).toMatch(/Now answer the user in full/);
     expect(picked.note).toMatch(/Do not describe this card or this tool/);
     const none = await t.recommend({ research_id: researchId, reason: 'x' });
@@ -572,16 +712,24 @@ describe('recommend_offer — the loop commits its preference-weighed pick to th
   it('a forged, foreign or expired research_id is a typed refusal, never a card; a live one resolves up to the TTL', async () => {
     let clock = new Date('2026-08-08T10:00:00.000Z');
     const t = tools(CATALOG, TRUST, NO_CONTACTS, () => clock);
-    await expect(t.recommend({ research_id: 'research_forged', reason: 'x' })).rejects.toThrow(/unknown or expired/);
+    await expect(t.recommend({ research_id: 'research_forged', reason: 'x' })).rejects.toThrow(
+      /unknown or expired/,
+    );
     const { researchId } = await t.search({ query: 'chair' });
     // Another pipeline's cache does not know this id.
-    await expect(tools(CATALOG, TRUST).recommend({ research_id: researchId, reason: 'x' })).rejects.toThrow(/unknown or expired/);
+    await expect(
+      tools(CATALOG, TRUST).recommend({ research_id: researchId, reason: 'x' }),
+    ).rejects.toThrow(/unknown or expired/);
     // Still live at the edge of the window…
     clock = new Date(clock.getTime() + RESEARCH_TTL_MS);
-    await expect(t.recommend({ research_id: researchId, reason: 'x' })).resolves.toMatchObject({ recommended: null });
+    await expect(t.recommend({ research_id: researchId, reason: 'x' })).resolves.toMatchObject({
+      recommended: null,
+    });
     // …gone one millisecond past it.
     clock = new Date(clock.getTime() + 1);
-    await expect(t.recommend({ research_id: researchId, reason: 'x' })).rejects.toThrow(/unknown or expired/);
+    await expect(t.recommend({ research_id: researchId, reason: 'x' })).rejects.toThrow(
+      /unknown or expired/,
+    );
   });
 
   it('the cache is bounded: the newest 16 stay, the one before them is forgotten', async () => {
@@ -590,15 +738,31 @@ describe('recommend_offer — the loop commits its preference-weighed pick to th
     const second = (await t.search({ query: 'chair 1' })).researchId;
     for (let i = 2; i <= RESEARCH_CACHE_MAX; i++) await t.search({ query: `chair ${String(i)}` });
     // 17 researches: the first is gone, the second (the oldest of the newest 16) still resolves.
-    await expect(t.recommend({ research_id: first, reason: 'x' })).rejects.toThrow(/unknown or expired/);
-    await expect(t.recommend({ research_id: second, reason: 'x' })).resolves.toMatchObject({ recommended: null });
+    await expect(t.recommend({ research_id: first, reason: 'x' })).rejects.toThrow(
+      /unknown or expired/,
+    );
+    await expect(t.recommend({ research_id: second, reason: 'x' })).resolves.toMatchObject({
+      recommended: null,
+    });
   });
 
   it('one cache serves every registry of a pipeline: a research_id minted before a pause resolves after the resume', async () => {
     const cache = createResearchCache(FIXED);
-    const before = createProductResearchTools({ appViewClient: makeClient(CATALOG, TRUST), core: NO_CONTACTS, cache, now: FIXED });
-    const after = createProductResearchTools({ appViewClient: makeClient(CATALOG, TRUST), core: NO_CONTACTS, cache, now: FIXED });
-    const { researchId } = (await before.searchProducts.execute({ query: 'chair' })) as SearchProductsResult;
+    const before = createProductResearchTools({
+      appViewClient: makeClient(CATALOG, TRUST),
+      core: NO_CONTACTS,
+      cache,
+      now: FIXED,
+    });
+    const after = createProductResearchTools({
+      appViewClient: makeClient(CATALOG, TRUST),
+      core: NO_CONTACTS,
+      cache,
+      now: FIXED,
+    });
+    const { researchId } = (await before.searchProducts.execute({
+      query: 'chair',
+    })) as SearchProductsResult;
     const out = (await after.recommendOffer.execute({
       research_id: researchId,
       supplier_did: 'did:plc:steady',
@@ -614,7 +778,12 @@ describe('recommend_offer — the loop commits its preference-weighed pick to th
       research_id: researchId,
       supplier_did: 'did:plc:steady',
       reason: `line one\nline\u0007two\u202e reversed\u2069 ${'x'.repeat(400)}`,
-      set_aside: [{ supplier_did: 'did:plc:cheap', reason: `\u202eunknown\u202c seller\u0085${'y'.repeat(300)}` }],
+      set_aside: [
+        {
+          supplier_did: 'did:plc:cheap',
+          reason: `\u202eunknown\u202c seller\u0085${'y'.repeat(300)}`,
+        },
+      ],
     });
     const chosenFor = out.card.fields.find((f) => f.label === 'Chosen for')?.value ?? '';
     expect(chosenFor.startsWith('line one line two reversed x')).toBe(true);
@@ -622,7 +791,14 @@ describe('recommend_offer — the loop commits its preference-weighed pick to th
     const forbidden = (text: string) =>
       [...text].some((ch) => {
         const c = ch.charCodeAt(0);
-        return c < 0x20 || (c >= 0x7f && c <= 0x9f) || c === 0x200e || c === 0x200f || (c >= 0x202a && c <= 0x202e) || (c >= 0x2066 && c <= 0x2069);
+        return (
+          c < 0x20 ||
+          (c >= 0x7f && c <= 0x9f) ||
+          c === 0x200e ||
+          c === 0x200f ||
+          (c >= 0x202a && c <= 0x202e) ||
+          (c >= 0x2066 && c <= 0x2069)
+        );
       });
     expect(forbidden(chosenFor)).toBe(false);
     const setAside = out.card.fields.find((f) => f.label === 'Set aside')?.value ?? '';

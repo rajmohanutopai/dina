@@ -31,6 +31,32 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 1c task 1.28.
  */
 
+import {
+  readGroupPlanWire,
+  type GroupPlanHandleWire,
+  type GroupPlanWire,
+} from '../coordination/plan_wire';
+import {
+  WorkflowConflictError,
+  WorkflowValidationError,
+  WorkflowTransitionError,
+} from '../workflow/service';
+
+import type { StoredAskRecord } from '../ask/ask_record_repository';
+import type { StoredChatMessage } from '../chat/repository';
+import type { Contact } from '../contacts/directory';
+import type { QuarantinedMessage } from '../d2d/quarantine';
+import type { RiskLevel } from '../gatekeeper/intent';
+import type { TocEntry, TopicKind } from '../memory/domain';
+import type { StoredNotificationItem } from '../notifications/repository';
+import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
+import type { PiiNamesResult } from '../pii/names';
+import type { PromisesAndWaits } from '../promises/view';
+import type { Reminder, RecurringFrequency } from '../reminders/service';
+import type { WorkflowEvent, WorkflowTask } from '../workflow/domain';
+import type { CreateWorkflowTaskInput } from '../workflow/service';
+import type { NotifyPriority, ServiceConfig } from '@dina/protocol';
+
 /**
  * Transport-agnostic Core client. Brain uses this as its only means of
  * reaching Core; concrete transports (`InProcessTransport`,
@@ -90,7 +116,10 @@ export type InvokePluginToolResult =
  */
 export const INVOKE_PLUGIN_RESPONSE_MALFORMED = 'response_malformed';
 
-export function parseInvokePluginToolResponse(status: number, raw: unknown): InvokePluginToolResult {
+export function parseInvokePluginToolResponse(
+  status: number,
+  raw: unknown,
+): InvokePluginToolResult {
   const r = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   if (status >= 200 && status < 300) {
     const taskId = typeof r.task_id === 'string' ? r.task_id : '';
@@ -105,7 +134,10 @@ export function parseInvokePluginToolResponse(status: number, raw: unknown): Inv
       };
     }
     if (r.ok === true && r.mode === 'approval_required' && taskId !== '') {
-      const card = (r.card !== null && typeof r.card === 'object' ? r.card : {}) as Record<string, unknown>;
+      const card = (r.card !== null && typeof r.card === 'object' ? r.card : {}) as Record<
+        string,
+        unknown
+      >;
       return {
         ok: true,
         mode: 'approval_required',
@@ -113,7 +145,9 @@ export function parseInvokePluginToolResponse(status: number, raw: unknown): Inv
         executionId,
         card: {
           riskLevel: typeof card.risk_level === 'string' ? card.risk_level : 'MODERATE',
-          reasons: Array.isArray(card.reasons) ? card.reasons.filter((x): x is string => typeof x === 'string') : [],
+          reasons: Array.isArray(card.reasons)
+            ? card.reasons.filter((x): x is string => typeof x === 'string')
+            : [],
           paramsText: typeof card.params_text === 'string' ? card.params_text : '',
         },
       };
@@ -126,7 +160,12 @@ export function parseInvokePluginToolResponse(status: number, raw: unknown): Inv
   }
   return {
     ok: false,
-    code: typeof r.code === 'string' ? r.code : typeof r.error === 'string' ? r.error : `http_${status}`,
+    code:
+      typeof r.code === 'string'
+        ? r.code
+        : typeof r.error === 'string'
+          ? r.error
+          : `http_${status}`,
     message:
       typeof r.message === 'string'
         ? r.message
@@ -156,7 +195,10 @@ export type OpenGroupPlanClientResult =
 // not), and the web bundle is built through Babel.
 export { readGroupPlanHandles } from '../coordination/plan_wire';
 
-export function parseOpenGroupPlanResponse(status: number, raw: unknown): OpenGroupPlanClientResult {
+export function parseOpenGroupPlanResponse(
+  status: number,
+  raw: unknown,
+): OpenGroupPlanClientResult {
   const r = (raw !== null && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   if (status >= 200 && status < 300) {
     const plan = readGroupPlanWire(r.plan);
@@ -255,7 +297,11 @@ export interface A2AGuardWork {
  * Why the guard decided as it did: a pattern no model was needed for, the
  * model's own pass or block, or a model answer that could not be read.
  */
-export type A2AGuardVerdictCode = 'instruction_pattern' | 'model_pass' | 'model_block' | 'guard_unparseable';
+export type A2AGuardVerdictCode =
+  | 'instruction_pattern'
+  | 'model_pass'
+  | 'model_block'
+  | 'guard_unparseable';
 
 export interface A2AGuardVerdictInput {
   jobId: string;
@@ -267,7 +313,9 @@ export interface A2AGuardVerdictInput {
   note?: string;
 }
 
-export type A2AGuardVerdictResult = { ok: true; state: string } | { ok: false; status: number; reason: string };
+export type A2AGuardVerdictResult =
+  | { ok: true; state: string }
+  | { ok: false; status: number; reason: string };
 
 /** A line Brain names: a variant handle it saw, and a quantity in the unit's steps. */
 export interface UcpLineInput {
@@ -448,7 +496,11 @@ export interface CoreClient {
    * Brain's vault tools when the agent wants to drill into a specific
    * item the search surfaced.
    */
-  vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null>;
+  vaultGet(
+    persona: string,
+    itemId: string,
+    opts?: VaultReleaseOptions,
+  ): Promise<VaultQueryItem | null>;
 
   /** Insert or upsert a vault item into the named persona's DB. */
   vaultStore(persona: string, item: VaultItemInput): Promise<VaultStoreResult>;
@@ -625,7 +677,10 @@ export interface CoreClient {
 
   // ─── Owner settings (REAL_LIFE_FIXES_2 §0; Brain reads) ───────────────
   /** Report-or-enforce modes for the reply guards. */
-  getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }>;
+  getGuardModes(): Promise<{
+    action_claims: 'report' | 'enforce';
+    regulated: 'report' | 'enforce';
+  }>;
   /** The owner's time zone, or the host's when none is set. */
   getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }>;
 
@@ -684,19 +739,28 @@ export interface CoreClient {
    * Core checks the span proof and picks the source itself. Throws on a
    * refused proof (409 `no_owner_turn`).
    */
-  stagingIngestOwnerWords(proof: OwnerWordsProof): Promise<StagingIngestResult & { source: string }>;
+  stagingIngestOwnerWords(
+    proof: OwnerWordsProof,
+  ): Promise<StagingIngestResult & { source: string }>;
 
   /**
    * The owner's chat asks to message a contact (REAL_LIFE_FIXES §7). Core
    * binds it to the owner's turn: sent at once, or a confirm card.
    */
-  talkSend(input: { proof: OwnerWordsProof; contact: string; proposedText: string }): Promise<TalkSendResult>;
+  talkSend(input: {
+    proof: OwnerWordsProof;
+    contact: string;
+    proposedText: string;
+  }): Promise<TalkSendResult>;
 
   /**
    * Ask Core to forget something the owner named (REAL_LIFE_FIXES_2 §4).
    * Core plans it and always raises a card; nothing is deleted by this call.
    */
-  forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult>;
+  forgetPropose(input: {
+    proof: OwnerWordsProof;
+    request: ForgetRequestBody;
+  }): Promise<ForgetProposeResult>;
   /** Raised each time a forget finishes; Brain reloads its thread copies when it moves. */
   forgetEpoch(): Promise<number>;
 
@@ -729,7 +793,15 @@ export interface CoreClient {
     replyText: string;
     until: string;
   }): Promise<Record<string, unknown>>;
-  standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }>;
+  standingReplyList(): Promise<{
+    rules: {
+      id: string;
+      state: string;
+      reply_text: string;
+      contacts: string[];
+      expires_at: string;
+    }[];
+  }>;
   /** Stop a standing reply; Brain proves the owner asked to. */
   standingReplyRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }>;
 
@@ -744,7 +816,11 @@ export interface CoreClient {
     perItemCapMinor?: number;
     until?: string;
   }): Promise<Record<string, unknown>>;
-  spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[]; uses?: Record<string, unknown>[]; agents?: string[] }>;
+  spendAllowanceList(): Promise<{
+    allowances: Record<string, unknown>[];
+    uses?: Record<string, unknown>[];
+    agents?: string[];
+  }>;
   spendAllowanceRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }>;
 
   /**
@@ -1696,20 +1772,6 @@ export interface ServiceQueryResult {
 
 // ─── Memory ToC method types (task 1.29g) ───────────────────────────────
 
-/** Import via relative path — TocEntry lives in core's memory domain. */
-import { readGroupPlanWire, type GroupPlanHandleWire, type GroupPlanWire } from '../coordination/plan_wire';
-import {
-  WorkflowConflictError,
-  WorkflowValidationError,
-  WorkflowTransitionError,
-} from '../workflow/service';
-
-import type { StoredAskRecord } from '../ask/ask_record_repository';
-import type { StoredChatMessage } from '../chat/repository';
-import type { Contact } from '../contacts/directory';
-import type { QuarantinedMessage } from '../d2d/quarantine';
-import type { RiskLevel } from '../gatekeeper/intent';
-import type { TocEntry } from '../memory/domain';
 export type { TocEntry };
 
 /**
@@ -1728,7 +1790,11 @@ export function readAccessDecisions(
 /** Read a `request` answer; anything unrecognised is `denied` (fail closed). */
 export function readAccessDecision(raw: Record<string, unknown>): AgentPersonaAccessDecision {
   if (raw.decision === 'allowed') return { decision: 'allowed' };
-  if (raw.decision === 'approval_required' && typeof raw.task_id === 'string' && raw.task_id !== '') {
+  if (
+    raw.decision === 'approval_required' &&
+    typeof raw.task_id === 'string' &&
+    raw.task_id !== ''
+  ) {
     return { decision: 'approval_required', taskId: raw.task_id };
   }
   return {
@@ -2021,11 +2087,6 @@ export interface ServiceRespondResult {
 
 /** Re-export from core's workflow domain — the event shape is already
  *  authoritative there; Brain consumers just need the type name. */
-import type { TopicKind } from '../memory/domain';
-import type { StoredNotificationItem } from '../notifications/repository';
-import type { ExtractionResult, ApplyExtractionResponse, Person } from '../people/domain';
-import type { PromisesAndWaits } from '../promises/view';
-import type { WorkflowEvent } from '../workflow/domain';
 export type { WorkflowEvent };
 
 export interface ListWorkflowEventsOptions {
@@ -2057,8 +2118,6 @@ export interface FailWorkflowEventOptions {
 /** Re-export the workflow domain types + typed errors so Brain consumers
  *  can keep all their CoreClient-adjacent imports on `@dina/core` without
  *  deep-importing into `workflow/service` or `workflow/repository`. */
-import type { WorkflowTask } from '../workflow/domain';
-import type { CreateWorkflowTaskInput } from '../workflow/service';
 
 export type { WorkflowTask, CreateWorkflowTaskInput };
 export { WorkflowConflictError, WorkflowValidationError, WorkflowTransitionError };
@@ -2163,13 +2222,11 @@ export type { GroupPlanHandleWire, GroupPlanWire };
 export type { Contact };
 
 /** People-graph types crossing the Core HTTP boundary. */
-import type { PiiNamesResult } from '../pii/names';
 export type { ExtractionResult, ApplyExtractionResponse, Person };
 
 /** Reminder types crossing the Core HTTP boundary. Re-exported so Brain
  *  consumers find them on `@dina/core` without a deep import into
  *  `reminders/service`. */
-import type { Reminder, RecurringFrequency } from '../reminders/service';
 export type { Reminder, RecurringFrequency };
 
 /** The durable notification-log row shape, crossing the Core boundary (R4-03). */
@@ -2275,7 +2332,6 @@ export function updateContactBody(updates: UpdateContactParams): Record<string, 
 // ─── Policy management types ────────────────────────────────────────────────
 
 export type { RiskLevel } from '../gatekeeper/intent';
-import type { NotifyPriority, ServiceConfig } from '@dina/protocol';
 
 export interface ActionPolicyEntry {
   action: string;

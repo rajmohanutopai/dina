@@ -37,11 +37,7 @@ import { runToListItem } from '../../run/list';
 import { getMessageRepository } from '../../run/message';
 import { getRunRepository } from '../../run/repository';
 import { getReservationRepository } from '../../run/reservation';
-import {
-  RunNotFoundError,
-  getRunService,
-  type RunService,
-} from '../../run/service';
+import { RunNotFoundError, getRunService, type RunService } from '../../run/service';
 
 import { makeOwnerGuard, type OwnerGuard } from './owner_guard';
 
@@ -81,7 +77,10 @@ function replayOrConflict(fn: () => CoreResponse): CoreResponse {
     return fn();
   } catch (err) {
     if (err instanceof CommandIdempotencyConflictError) {
-      return j(409, { error: 'conflict', reason: 'idempotency_key reused with a different request' });
+      return j(409, {
+        error: 'conflict',
+        reason: 'idempotency_key reused with a different request',
+      });
     }
     throw err;
   }
@@ -116,7 +115,11 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       expiresAt = now + Math.round(body.ttl_seconds * 1000);
     }
     if (expiresAt === undefined) {
-      return j(400, { error: 'invalid', field: 'expires_at', reason: 'expires_at or ttl_seconds is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'expires_at',
+        reason: 'expires_at or ttl_seconds is required',
+      });
     }
 
     const idemKey = String(body.idempotency_key ?? '');
@@ -145,7 +148,9 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       on_stop: body.on_stop as OnStop | undefined,
       max_count: typeof body.max_count === 'number' ? body.max_count : null,
       max_count_basis:
-        typeof body.max_count_basis === 'string' ? (body.max_count_basis as MaxCountBasis) : undefined,
+        typeof body.max_count_basis === 'string'
+          ? (body.max_count_basis as MaxCountBasis)
+          : undefined,
       stop_on_exhaustion:
         typeof body.stop_on_exhaustion === 'boolean' ? body.stop_on_exhaustion : undefined,
       expires_at: expiresAt,
@@ -175,7 +180,8 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       // stronger than `create`'s live-run dedup alone. A same-key/different-body
       // start is a 409 (key reuse).
       if (idemKey === '') return compute();
-      const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+      const owner =
+        typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
       // Hash the RAW client request (minus the key), NOT the normalized
       // `createParams`: the latter carries the DERIVED absolute `expires_at`
       // (now + ttl_seconds) which differs on every replay, so a genuine retry of a
@@ -221,7 +227,8 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
     const messages = getMessageRepository();
-    if (messages === null) return j(503, { error: 'unavailable', reason: 'message store not wired' });
+    if (messages === null)
+      return j(503, { error: 'unavailable', reason: 'message store not wired' });
 
     const body = isRecord(req.body) ? req.body : {};
     const messageId = typeof body.message_id === 'string' ? body.message_id : '';
@@ -236,12 +243,20 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       return j(400, { error: 'invalid', field: 'decision' });
     }
     if (decisionRevision === undefined) {
-      return j(400, { error: 'invalid', field: 'decision_revision', reason: 'decision_revision is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'decision_revision',
+        reason: 'decision_revision is required',
+      });
     }
     // REQUIRED durable idempotency key (§12.5): every owner mutation is receipted.
     const decideIdemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
     if (decideIdemKey === '') {
-      return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'idempotency_key',
+        reason: 'idempotency_key is required',
+      });
     }
 
     const runId = String(req.params.id ?? '');
@@ -338,12 +353,18 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
         }
       }
       const after = messages.getById(messageId);
-      return j(200, { message_id: messageId, state: after?.state, decision, decision_revision: nextRevision });
+      return j(200, {
+        message_id: messageId,
+        state: after?.state,
+        decision,
+        decision_revision: nextRevision,
+      });
     };
 
     // Durable per-command idempotency (§12.5 / VERIF #6): a replayed decide with
     // the same key returns the stored response without re-deciding.
-    const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+    const owner =
+      typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
     return replayOrConflict(
       () =>
         recordOrReplayCommand<CoreResponse>({
@@ -367,7 +388,8 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     const denied = ownerOnlyGuard(req);
     if (denied !== null) return denied;
     const messages = getMessageRepository();
-    if (messages === null) return j(503, { error: 'unavailable', reason: 'message store not wired' });
+    if (messages === null)
+      return j(503, { error: 'unavailable', reason: 'message store not wired' });
     const dispatch = getRunDispatchService();
     if (dispatch === null) {
       return j(503, { error: 'unavailable', reason: 'dispatch service not wired' });
@@ -377,7 +399,11 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     if (messageId === '') return j(400, { error: 'invalid', field: 'message_id' });
     const idemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
     if (idemKey === '') {
-      return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'idempotency_key',
+        reason: 'idempotency_key is required',
+      });
     }
     const runId = String(req.params.id ?? '');
     // The message must belong to THIS run (the owner addressed a specific run).
@@ -388,7 +414,8 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       const after = messages.getById(messageId);
       return j(200, { message_id: messageId, state: after?.state, authorized });
     };
-    const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+    const owner =
+      typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
     return replayOrConflict(
       () =>
         recordOrReplayCommand<CoreResponse>({
@@ -420,7 +447,11 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     const body = isRecord(req.body) ? req.body : {};
     const configVersion = body.config_version;
     if (typeof configVersion !== 'number') {
-      return j(400, { error: 'invalid', field: 'config_version', reason: 'config_version is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'config_version',
+        reason: 'config_version is required',
+      });
     }
 
     // Request-deterministic field validation, up front (§5 bounds) — the same
@@ -429,8 +460,16 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     // safe outside the idempotency barrier; the lower-only ceiling + terminal
     // guard are state-dependent and live in `compute`.
     if (body.interval_ms !== undefined) {
-      if (typeof body.interval_ms !== 'number' || !Number.isInteger(body.interval_ms) || body.interval_ms < 0) {
-        return j(400, { error: 'invalid', field: 'interval_ms', reason: 'interval_ms must be a non-negative integer' });
+      if (
+        typeof body.interval_ms !== 'number' ||
+        !Number.isInteger(body.interval_ms) ||
+        body.interval_ms < 0
+      ) {
+        return j(400, {
+          error: 'invalid',
+          field: 'interval_ms',
+          reason: 'interval_ms must be a non-negative integer',
+        });
       }
     }
     if (body.queue_cap !== undefined) {
@@ -440,16 +479,28 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
         body.queue_cap < 1 ||
         body.queue_cap > MAX_QUEUE_CAP
       ) {
-        return j(400, { error: 'invalid', field: 'queue_cap', reason: `queue_cap must be an integer in 1..${MAX_QUEUE_CAP}` });
+        return j(400, {
+          error: 'invalid',
+          field: 'queue_cap',
+          reason: `queue_cap must be an integer in 1..${MAX_QUEUE_CAP}`,
+        });
       }
     }
     if (body.priority_ceiling !== undefined) {
       const next = body.priority_ceiling;
       if (next !== 'solicited' && next !== 'engagement' && next !== 'fiduciary') {
-        return j(400, { error: 'invalid', field: 'priority_ceiling', reason: 'priority_ceiling must be solicited|engagement' });
+        return j(400, {
+          error: 'invalid',
+          field: 'priority_ceiling',
+          reason: 'priority_ceiling must be solicited|engagement',
+        });
       }
       if (next === 'fiduciary') {
-        return j(400, { error: 'invalid', field: 'priority_ceiling', reason: 'fiduciary (Tier-1) is Phase 2' });
+        return j(400, {
+          error: 'invalid',
+          field: 'priority_ceiling',
+          reason: 'fiduciary (Tier-1) is Phase 2',
+        });
       }
     }
     // Rebinding to a REAL grant must state the replacement's expiry EXPLICITLY —
@@ -482,7 +533,10 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
       // Terminal states are absorbing (§5.1) — never accept a config change on a
       // completed/stopped/expired run (it would return a misleading 200).
       if (isRunTerminal(run.state)) {
-        return j(409, { error: 'conflict', reason: `run is ${run.state} (terminal); config is frozen` });
+        return j(409, {
+          error: 'conflict',
+          reason: `run is ${run.state} (terminal); config is frozen`,
+        });
       }
 
       const patch: Parameters<RunService['updateConfig']>[1] = {};
@@ -497,7 +551,9 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
         // clears `paused_reason` on the next valid reserve. Clearing the grant to
         // null clears its expiry. The expiry was validated (number|null) up-front.
         patch.provider_grant_expires_at_sec =
-          body.provider_grant_id === null ? null : (body.provider_grant_expires_at_sec as number | null);
+          body.provider_grant_id === null
+            ? null
+            : (body.provider_grant_expires_at_sec as number | null);
       }
       if (typeof body.priority_ceiling === 'string') {
         const next = body.priority_ceiling as PriorityCeiling;
@@ -526,9 +582,14 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     // the same key returns the stored response instead of a spurious 409.
     const idemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
     if (idemKey === '') {
-      return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'idempotency_key',
+        reason: 'idempotency_key is required',
+      });
     }
-    const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+    const owner =
+      typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
     return replayOrConflict(
       () =>
         recordOrReplayCommand<CoreResponse>({
@@ -709,12 +770,17 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
     if (reservationId === '') return j(400, { error: 'invalid', field: 'reservation_id' });
     const idemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
     if (idemKey === '') {
-      return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+      return j(400, {
+        error: 'invalid',
+        field: 'idempotency_key',
+        reason: 'idempotency_key is required',
+      });
     }
     const runId = String(req.params.id ?? '');
     if (svc.get(runId) === null) return j(404, { error: 'not_found' });
     // The reservation must belong to THIS run (the owner addressed a specific run).
-    if (reservations.getById(reservationId)?.run_id !== runId) return j(404, { error: 'not_found' });
+    if (reservations.getById(reservationId)?.run_id !== runId)
+      return j(404, { error: 'not_found' });
 
     const compute = (): CoreResponse => {
       const now = Date.now();
@@ -747,16 +813,15 @@ export function registerRunRoutes(router: CoreRouter, ownerCapability?: string):
         }
       }
       // Recompute the pause: with the last lost slot resolved, fetch resumes.
-      const anyLost = reservations
-        .listByRun(runId)
-        .some((r) => r.state === 'response_lost');
+      const anyLost = reservations.listByRun(runId).some((r) => r.state === 'response_lost');
       const run = runs.getById(runId);
       if (!anyLost && run !== null && run.paused_reason === 'response_lost') {
         runs.setPausedReason(runId, null, now);
       }
       return j(200, { reservation_id: reservationId, state: 'skipped', fetch_resumed: !anyLost });
     };
-    const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
+    const owner =
+      typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
     return replayOrConflict(
       () =>
         recordOrReplayCommand<CoreResponse>({
@@ -804,7 +869,11 @@ function steer(
   // undo a newer `pause` — even across restart. A keyless mutation is rejected.
   const idemKey = typeof body.idempotency_key === 'string' ? body.idempotency_key : '';
   if (idemKey === '') {
-    return j(400, { error: 'invalid', field: 'idempotency_key', reason: 'idempotency_key is required' });
+    return j(400, {
+      error: 'invalid',
+      field: 'idempotency_key',
+      reason: 'idempotency_key is required',
+    });
   }
   const owner = typeof req.callerDID === 'string' && req.callerDID !== '' ? req.callerDID : 'owner';
   return replayOrConflict(

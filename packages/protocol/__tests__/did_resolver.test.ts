@@ -26,10 +26,7 @@
  * Pure function — runs under plain Jest, no runtime deps.
  */
 
-import {
-  resolveAssertionMethod,
-  resolveAssertionMethods,
-} from '../src/identity/did_resolver';
+import { resolveAssertionMethod, resolveAssertionMethods } from '../src/identity/did_resolver';
 
 import type { DIDDocument, VerificationMethod } from '../src/types/plc_document';
 

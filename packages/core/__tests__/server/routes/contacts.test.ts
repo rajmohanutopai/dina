@@ -458,22 +458,15 @@ describe('POST /v1/contacts trust_level validation', () => {
     expect(addContact).toHaveBeenCalledWith('did:plc:abc', 'did:plc:abc', 'verified');
   });
 
-  it.each([
-    'trusted-ish',
-    'BLOCKED',
-    'admin',
-    '',
-    'verified ',
-    123,
-    true,
-    null,
-    {},
-  ])('rejects invalid trust_level %p with 400 and never calls addContact', async (level) => {
-    const { addContact, handler } = makeAddHandler();
-    const res = await handler(post({ did: 'did:plc:abc', trust_level: level }));
-    expect(res.status).toBe(400);
-    expect(addContact).not.toHaveBeenCalled();
-  });
+  it.each(['trusted-ish', 'BLOCKED', 'admin', '', 'verified ', 123, true, null, {}])(
+    'rejects invalid trust_level %p with 400 and never calls addContact',
+    async (level) => {
+      const { addContact, handler } = makeAddHandler();
+      const res = await handler(post({ did: 'did:plc:abc', trust_level: level }));
+      expect(res.status).toBe(400);
+      expect(addContact).not.toHaveBeenCalled();
+    },
+  );
 });
 
 // ---------------------------------------------------------------------------
@@ -656,21 +649,35 @@ describe('PUT /v1/contacts/:did — the paper identity', () => {
 
   it('answers a domain refusal with its findings, so the owner sees every problem at once', async () => {
     const { handlers } = handlersWithPaper([
-      { refusal: 'malformed_registration', field: 'registrations[0]', detail: 'the gstin does not pass its own format check' },
-      { refusal: 'malformed_address', field: 'billing_address.country', detail: 'country must be an ISO-3166-1 alpha-2 code, e.g. IN or US' },
+      {
+        refusal: 'malformed_registration',
+        field: 'registrations[0]',
+        detail: 'the gstin does not pass its own format check',
+      },
+      {
+        refusal: 'malformed_address',
+        field: 'billing_address.country',
+        detail: 'country must be an ISO-3166-1 alpha-2 code, e.g. IN or US',
+      },
     ]);
     const res = await handlers.updateContact(
       req({
         method: 'PUT',
         path: `/v1/contacts/${DID}`,
         params: { did: DID },
-        ...jsonBody({ registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' }], billing_address: { line1: 'x', city: 'y', country: 'India' } }),
+        ...jsonBody({
+          registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' }],
+          billing_address: { line1: 'x', city: 'y', country: 'India' },
+        }),
       }),
     );
     expect(res.status).toBe(400);
     const body = res.body as { error: string; findings: { field: string }[] };
     expect(body.error).toBe('identity_invalid');
-    expect(body.findings.map((f) => f.field)).toEqual(['registrations[0]', 'billing_address.country']);
+    expect(body.findings.map((f) => f.field)).toEqual([
+      'registrations[0]',
+      'billing_address.country',
+    ]);
   });
 
   it.each([
@@ -690,7 +697,12 @@ describe('PUT /v1/contacts/:did — the paper identity', () => {
   it('does not touch the paper identity when the body names none of its fields', async () => {
     const { handlers, calls } = handlersWithPaper();
     const res = await handlers.updateContact(
-      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody({ preferred_for: ['chairs'] }) }),
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ preferred_for: ['chairs'] }),
+      }),
     );
     expect(res.status).toBe(200);
     expect(calls).toHaveLength(0);
@@ -722,12 +734,21 @@ describe('PUT /v1/contacts/:did — the paper identity', () => {
     const handlers = makeContactsHandlers({
       getContact: () => contactFixture(DID, 'ChairMaker'),
       checkContactChannels: () => [
-        { refusal: 'malformed_channel', field: 'phone', detail: 'a phone must be 8–15 digits' } as never,
+        {
+          refusal: 'malformed_channel',
+          field: 'phone',
+          detail: 'a phone must be 8–15 digits',
+        } as never,
       ],
       setContactChannels: () => [],
     });
     const res = await handlers.updateContact(
-      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody({ phone: 'call me' }) }),
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ phone: 'call me' }),
+      }),
     );
     expect(res.status).toBe(400);
     expect((res.body as { error: string }).error).toBe('identity_invalid');
@@ -744,7 +765,12 @@ describe('PUT /v1/contacts/:did — the paper identity', () => {
       },
     });
     const res = await handlers.updateContact(
-      req({ method: 'PUT', path: `/v1/contacts/${DID}`, params: { did: DID }, ...jsonBody({ phone: 42 }) }),
+      req({
+        method: 'PUT',
+        path: `/v1/contacts/${DID}`,
+        params: { did: DID },
+        ...jsonBody({ phone: 42 }),
+      }),
     );
     expect(res.status).toBe(400);
     expect(calls).toHaveLength(0);
@@ -757,7 +783,11 @@ describe('PUT /v1/contacts/:did — the paper identity', () => {
       checkPaperIdentity: () => [],
       // The channels object: the paper identity must not be committed either.
       checkContactChannels: () => [
-        { refusal: 'malformed_channel', field: 'phone', detail: 'a phone must be 8–15 digits' } as never,
+        {
+          refusal: 'malformed_channel',
+          field: 'phone',
+          detail: 'a phone must be 8–15 digits',
+        } as never,
       ],
       setPaperIdentity: () => {
         written.push('paper');

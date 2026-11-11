@@ -19,7 +19,6 @@ import { getGenericPassword, resetGenericPassword, setGenericPassword } from './
 
 import type { StaffIdentity } from '@dina/core';
 
-
 const STAFF_SERVICE = 'com.dina.staff-identity';
 
 interface StoredStaffIdentity {

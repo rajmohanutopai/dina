@@ -28,7 +28,6 @@
  * path in the first place.
  */
 
-
 import type { BuyerApprovalContext } from './approval_payload';
 import type { ActingForChain, QuorumPolicy, StaffGrant } from './staff_authority';
 import type { PurchaseOrderProposal } from '@dina/commerce-protocol';

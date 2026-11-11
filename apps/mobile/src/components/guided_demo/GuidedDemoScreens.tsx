@@ -97,16 +97,11 @@ export function GuidedDemoBanner({
   // bar), keeping the top of the screen + most of the chat visible. `insets`
   // unused for bottom now (we sit above the tab bar) but kept for the notch-free
   // contract.
-  const hasProgress =
-    stepCount !== undefined && stepCount > 0 && step !== undefined && step > 0;
+  const hasProgress = stepCount !== undefined && stepCount > 0 && step !== undefined && step > 0;
   // Show the running count on every actionable step (incl. the last, e.g. 10/10);
   // only the COMPLETE state drops the number for "End Demo".
   const eyebrowSuffix =
-    demoComplete === true
-      ? '  ·  End Demo'
-      : hasProgress
-        ? `  ·  ${step}/${stepCount}`
-        : '';
+    demoComplete === true ? '  ·  End Demo' : hasProgress ? `  ·  ${step}/${stepCount}` : '';
   // Chip-styled (Remember/Ask) only for composer steps; navigate/approval/
   // publish use a generic button (with an explicit label when provided).
   const composerStyle = nextMode !== undefined;

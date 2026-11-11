@@ -13,17 +13,10 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import {
-  applyMigrations,
-  IDENTITY_MIGRATIONS,
-  SQLitePeopleRepository,
-} from '@dina/core';
+import { applyMigrations, IDENTITY_MIGRATIONS, SQLitePeopleRepository } from '@dina/core';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import {
-  registerPersonLinkProvider,
-  resetPersonLinkProvider,
-} from '../../src/person/linking';
+import { registerPersonLinkProvider, resetPersonLinkProvider } from '../../src/person/linking';
 import {
   applyPeopleGraphExtraction,
   linksToExtractionResult,
@@ -188,13 +181,16 @@ describe('applyPeopleGraphExtraction', () => {
       ok: false,
       reason: 'empty_text',
     });
-    expect(
-      await applyPeopleGraphExtraction('   ', 'item-1', { repo: harness.repo }),
-    ).toEqual({ ok: false, reason: 'empty_text' });
+    expect(await applyPeopleGraphExtraction('   ', 'item-1', { repo: harness.repo })).toEqual({
+      ok: false,
+      reason: 'empty_text',
+    });
   });
 
   it('returns no_repo when neither override nor singleton is set', async () => {
-    registerPersonLinkProvider(stubLinkProvider({ identity_links: [{ name: 'X', confidence: 'high' }] }));
+    registerPersonLinkProvider(
+      stubLinkProvider({ identity_links: [{ name: 'X', confidence: 'high' }] }),
+    );
     // No `repo` option, and the singleton (default null in this test
     // process) isn't installed — should fail-soft.
     const outcome = await applyPeopleGraphExtraction('Sancho is here', 'item-1');
@@ -346,11 +342,9 @@ describe('applyPeopleGraphExtraction', () => {
         ],
       }),
     );
-    const outcome = await applyPeopleGraphExtraction(
-      'Plain is my friend',
-      'item-no-conflict',
-      { repo: harness.repo },
-    );
+    const outcome = await applyPeopleGraphExtraction('Plain is my friend', 'item-no-conflict', {
+      repo: harness.repo,
+    });
     expect(outcome.ok).toBe(true);
     if (outcome.ok) {
       expect(outcome.applied.conflicts).toEqual([]);

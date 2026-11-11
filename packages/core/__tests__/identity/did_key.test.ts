@@ -7,7 +7,7 @@
  * Source: tests/test_did_key.py
  */
 
-import { TEST_ED25519_SEED, TEST_DID_KEY_PREFIX, bytesToHex } from '@dina/test-harness';
+import { TEST_ED25519_SEED, bytesToHex } from '@dina/test-harness';
 
 import { getPublicKey } from '../../src/crypto/ed25519';
 import {

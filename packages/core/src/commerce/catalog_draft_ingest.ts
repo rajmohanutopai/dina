@@ -26,12 +26,7 @@ import {
   CATALOG_FIELD_ORIGIN,
   assembleCatalogItems,
 } from './catalog_assembler';
-import {
-  type CatalogImport,
-  type CatalogRowSource,
-  type ImportFinding,
-  importCatalogRows,
-} from './catalog_import';
+import { type CatalogRowSource, type ImportFinding, importCatalogRows } from './catalog_import';
 
 import type {
   CatalogDraft,
@@ -49,7 +44,10 @@ import type { CatalogItem } from '@dina/commerce-protocol';
  * settings, a caller that is not this node — and those refusals are about the
  * request, not about the rows.
  */
-export interface IngressOutcome { ok: true; draft: CatalogDraft }
+export interface IngressOutcome {
+  ok: true;
+  draft: CatalogDraft;
+}
 
 export interface DraftIngressDeps {
   drafts: CatalogDraftRepository;

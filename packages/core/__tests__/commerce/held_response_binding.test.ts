@@ -106,9 +106,9 @@ describe('held evidence binds to a service.response result', () => {
     // THE CENTRAL CASE. Everything about this response is genuine and signed;
     // the digest is simply not part of what the supplier answered. The old
     // tree-walk accepted it.
-    expect(heldResponseCommitsTo(body({ query_id: DIGEST, result: { state: 'accepted' } }), DIGEST)).toBe(
-      false,
-    );
+    expect(
+      heldResponseCommitsTo(body({ query_id: DIGEST, result: { state: 'accepted' } }), DIGEST),
+    ).toBe(false);
   });
 
   it('REFUSES a digest hidden in a card rather than the result', () => {
@@ -119,7 +119,7 @@ describe('held evidence binds to a service.response result', () => {
         body({ card: { title: DIGEST }, result: { state: 'accepted' } }),
         DIGEST,
       ),
-      ).toBe(false);
+    ).toBe(false);
   });
 
   it('refuses an unsuccessful response even when the result names the digest', () => {

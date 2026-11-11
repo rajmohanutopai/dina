@@ -91,7 +91,12 @@ describe('PayloadStore envelope', () => {
     const { store } = makeStore(new InMemoryErasureKeyStore(), cipher);
 
     const pt = enc.encode('sensitive message envelope');
-    const ref = store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: pt });
+    const ref = store.putPayload({
+      payloadId: 'p1',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: pt,
+    });
     expect(ref.content_id).toMatch(/^[0-9a-f]{64}$/);
     expect(store.blobState('p1')).toBe('published');
 
@@ -103,8 +108,16 @@ describe('PayloadStore envelope', () => {
     const cipher = new StubPersonaCipher();
     cipher.open('general');
     const { store } = makeStore(new InMemoryErasureKeyStore(), cipher);
-    store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: enc.encode('PLAINTEXT-MARKER') });
-    const rows = db.query<{ blob: Uint8Array }>('SELECT blob FROM run_payload_blobs WHERE payload_id = ?', ['p1']);
+    store.putPayload({
+      payloadId: 'p1',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('PLAINTEXT-MARKER'),
+    });
+    const rows = db.query<{ blob: Uint8Array }>(
+      'SELECT blob FROM run_payload_blobs WHERE payload_id = ?',
+      ['p1'],
+    );
     const blobText = dec.decode(need(rows[0]).blob);
     expect(blobText).not.toContain('PLAINTEXT-MARKER');
   });
@@ -113,7 +126,12 @@ describe('PayloadStore envelope', () => {
     const cipher = new StubPersonaCipher(); // 'general' never opened → locked
     const { store } = makeStore(new InMemoryErasureKeyStore(), cipher);
     expect(() =>
-      store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: enc.encode('x') }),
+      store.putPayload({
+        payloadId: 'p1',
+        runId: 'r1',
+        persona: 'general',
+        plaintext: enc.encode('x'),
+      }),
     ).toThrow(PersonaLockedError);
   });
 
@@ -121,7 +139,12 @@ describe('PayloadStore envelope', () => {
     const cipher = new StubPersonaCipher();
     cipher.open('general');
     const { store } = makeStore(new InMemoryErasureKeyStore(), cipher);
-    store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: enc.encode('x') });
+    store.putPayload({
+      payloadId: 'p1',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('x'),
+    });
     // Confirm it decrypts while open, then lock and confirm it seals.
     expect(store.getPayload('p1', 'general')).not.toBeNull();
     cipher.lock('general'); // DEK out of RAM
@@ -135,7 +158,12 @@ describe('crypto-shred (§13/§20)', () => {
     cipher.open('general');
     const erasure = new InMemoryErasureKeyStore('backup_resistant');
     const { store } = makeStore(erasure, cipher);
-    store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: enc.encode('secret') });
+    store.putPayload({
+      payloadId: 'p1',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('secret'),
+    });
 
     store.shredPayload('p1');
 
@@ -150,8 +178,18 @@ describe('crypto-shred (§13/§20)', () => {
     const cipher = new StubPersonaCipher();
     cipher.open('general');
     const { store } = makeStore(new InMemoryErasureKeyStore(), cipher);
-    store.putPayload({ payloadId: 'a', runId: 'r1', persona: 'general', plaintext: enc.encode('A') });
-    store.putPayload({ payloadId: 'b', runId: 'r1', persona: 'general', plaintext: enc.encode('B') });
+    store.putPayload({
+      payloadId: 'a',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('A'),
+    });
+    store.putPayload({
+      payloadId: 'b',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('B'),
+    });
 
     store.shredPayload('a');
 
@@ -164,9 +202,24 @@ describe('crypto-shred (§13/§20)', () => {
     cipher.open('general');
     const erasure = new InMemoryErasureKeyStore('backup_resistant');
     const { store } = makeStore(erasure, cipher);
-    store.putPayload({ payloadId: 'r1-a', runId: 'run1', persona: 'general', plaintext: enc.encode('A') });
-    store.putPayload({ payloadId: 'r1-b', runId: 'run1', persona: 'general', plaintext: enc.encode('B') });
-    store.putPayload({ payloadId: 'r2-c', runId: 'run2', persona: 'general', plaintext: enc.encode('C') });
+    store.putPayload({
+      payloadId: 'r1-a',
+      runId: 'run1',
+      persona: 'general',
+      plaintext: enc.encode('A'),
+    });
+    store.putPayload({
+      payloadId: 'r1-b',
+      runId: 'run1',
+      persona: 'general',
+      plaintext: enc.encode('B'),
+    });
+    store.putPayload({
+      payloadId: 'r2-c',
+      runId: 'run2',
+      persona: 'general',
+      plaintext: enc.encode('C'),
+    });
 
     // Terminal shred of run1: both its payloads become inert; run2 is untouched.
     expect(store.shredRun('run1')).toBe(2);
@@ -186,7 +239,12 @@ describe('crypto-shred (§13/§20)', () => {
     // Tier-0-backed erasure store = logical_deletion (backup-restorable).
     const erasure = new SQLiteErasureKeyStore(db);
     const { store } = makeStore(erasure, cipher);
-    store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: enc.encode('recoverable') });
+    store.putPayload({
+      payloadId: 'p1',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('recoverable'),
+    });
 
     // What a backup would have captured before the shred.
     const backedUpKey = need(erasure.get('p1'));
@@ -215,7 +273,12 @@ describe('GC vs publish (§13)', () => {
     const cipher = new StubPersonaCipher();
     cipher.open('general');
     const { store } = makeStore(new InMemoryErasureKeyStore(), cipher);
-    store.putPayload({ payloadId: 'p1', runId: 'r1', persona: 'general', plaintext: enc.encode('x') });
+    store.putPayload({
+      payloadId: 'p1',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc.encode('x'),
+    });
 
     // live payload (key present) → GC refuses
     expect(store.gcPayload('p1')).toBe(false);
@@ -255,14 +318,34 @@ describe('GC vs publish (§13)', () => {
     // A crashed prepare from 20 minutes ago (never published) — its leaf key
     // and ciphertext would otherwise live forever.
     const old = Date.now() - 20 * 60_000;
-    store.preparePayload({ payloadId: 'stale', runId: 'r1', persona: 'general', plaintext: enc2.encode('a') });
+    store.preparePayload({
+      payloadId: 'stale',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc2.encode('a'),
+    });
     db.run('UPDATE run_payload_blobs SET updated_at = ? WHERE payload_id = ?', [old, 'stale']);
     // A FRESH prepare (mid-publish) — must survive.
-    store.preparePayload({ payloadId: 'fresh', runId: 'r1', persona: 'general', plaintext: enc2.encode('b') });
+    store.preparePayload({
+      payloadId: 'fresh',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc2.encode('b'),
+    });
     // A live published payload — must survive.
-    store.putPayload({ payloadId: 'live', runId: 'r1', persona: 'general', plaintext: enc2.encode('c') });
+    store.putPayload({
+      payloadId: 'live',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc2.encode('c'),
+    });
     // A published-then-crypto-shredded payload — physical GC due.
-    store.putPayload({ payloadId: 'shredded', runId: 'r1', persona: 'general', plaintext: enc2.encode('d') });
+    store.putPayload({
+      payloadId: 'shredded',
+      runId: 'r1',
+      persona: 'general',
+      plaintext: enc2.encode('d'),
+    });
     erasure.destroy('shredded');
 
     const report = store.sweepMaintenance();

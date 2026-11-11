@@ -103,14 +103,7 @@ function defaultRequestId(): string {
 export class RemoteTransportError extends Error {
   constructor(
     message: string,
-    readonly stage:
-      | 'connect'
-      | 'auth'
-      | 'send'
-      | 'timeout'
-      | 'response'
-      | 'decrypt'
-      | 'signature',
+    readonly stage: 'connect' | 'auth' | 'send' | 'timeout' | 'response' | 'decrypt' | 'signature',
   ) {
     super(message);
     this.name = 'RemoteTransportError';
@@ -184,7 +177,9 @@ export class RemoteCoreClient {
       const ws = this.opts.makeWebSocket(this.opts.msgboxUrl);
       const timer = setTimeout(() => {
         finish(() =>
-          reject(new RemoteTransportError(`no response within ${String(this.timeoutMs)}ms`, 'timeout')),
+          reject(
+            new RemoteTransportError(`no response within ${String(this.timeoutMs)}ms`, 'timeout'),
+          ),
         );
       }, this.timeoutMs);
 
@@ -285,7 +280,10 @@ export class RemoteCoreClient {
       inner = JSON.parse(ciphertextRaw === '' ? '{}' : ciphertextRaw) as Record<string, unknown>;
       const status = Number(inner.status ?? 200);
       if (status >= 200 && status < 300) {
-        throw new RemoteTransportError('plaintext success refused — responses must be sealed', 'response');
+        throw new RemoteTransportError(
+          'plaintext success refused — responses must be sealed',
+          'response',
+        );
       }
     }
 

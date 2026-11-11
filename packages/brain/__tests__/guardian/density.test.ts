@@ -10,17 +10,12 @@ import {
   buildDisclosure,
   applyDisclosure,
   computeEntityDensity,
-  type DensityTier,
   type DensityAnalysis,
 } from '../../src/guardian/density';
 
 import type { AssembledContext } from '../../src/vault_context/assembly';
 
-function makeContext(
-  count: number,
-  persona = 'general',
-  score = 0.8,
-): AssembledContext {
+function makeContext(count: number, persona = 'general', score = 0.8): AssembledContext {
   const items = Array.from({ length: count }, (_, i) => ({
     id: `item-${i}`,
     content_l0: `Item ${i} headline`,

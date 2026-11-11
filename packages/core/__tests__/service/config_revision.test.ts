@@ -42,7 +42,8 @@ afterEach(() => {
 });
 
 const revisionOf = (rkey: string) =>
-  db.query<{ revision: number }>('SELECT revision FROM service_configs WHERE rkey = ?', [rkey])[0]?.revision;
+  db.query<{ revision: number }>('SELECT revision FROM service_configs WHERE rkey = ?', [rkey])[0]
+    ?.revision;
 
 const listing = (cid: string): ServiceConfig => ({
   isDiscoverable: true,
@@ -87,14 +88,21 @@ describe('service_configs.revision', () => {
     const repo = new SQLiteServiceConfigRepository(db);
     await repo.put('self', JSON.stringify(listing('bafy-old')), 1_000);
     await repo.put('other', JSON.stringify(listing('bafy-unrelated')), 1_000);
-    const result = rebindListingsForUpdate(db, { installId: 'inst-1', fromCid: 'bafy-old', toCid: 'bafy-new' });
+    const result = rebindListingsForUpdate(db, {
+      installId: 'inst-1',
+      fromCid: 'bafy-old',
+      toCid: 'bafy-new',
+    });
     expect(result.rebound).toEqual(['self']);
     expect(revisionOf('self')).toBe(2);
     expect(revisionOf('other')).toBe(1);
   });
 
   it('an install that gains the column starts existing rows at 0, and the next write moves them on', async () => {
-    applyMigrations(db, IDENTITY_MIGRATIONS.filter((m) => m.version < 56));
+    applyMigrations(
+      db,
+      IDENTITY_MIGRATIONS.filter((m) => m.version < 56),
+    );
     db.execute(
       `INSERT INTO service_configs (rkey, config_json, created_at, updated_at) VALUES ('self', ?, 1, 1)`,
       [JSON.stringify(listing('bafy-a'))],

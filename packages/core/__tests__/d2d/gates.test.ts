@@ -241,35 +241,56 @@ describe('D2D Egress 4-Gate Enforcement', () => {
     });
   });
 
-  describe('COMMITMENT_KERNEL §6 step 6 — a run\'s fallback notice to a buyer who is no contact', () => {
+  describe("COMMITMENT_KERNEL §6 step 6 — a run's fallback notice to a buyer who is no contact", () => {
     afterEach(() => setFallbackRecipientCheck(null));
 
     it('passes only for the buyer of an order this node recorded a fallback for', () => {
       clearGatesState();
       const notice = { v: 1, kind: 'fallback', purchase_order_id: 'po-1' };
-      setFallbackRecipientCheck((did, n) => did === 'did:plc:buyer' && (n as typeof notice).purchase_order_id === 'po-1');
-      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], 'option_fallback', notice).allowed).toBe(true);
-      expect(checkEgressGates('did:plc:other', 'commitment.option', [], 'option_fallback', notice).allowed).toBe(false);
+      setFallbackRecipientCheck(
+        (did, n) => did === 'did:plc:buyer' && (n as typeof notice).purchase_order_id === 'po-1',
+      );
+      expect(
+        checkEgressGates('did:plc:buyer', 'commitment.option', [], 'option_fallback', notice)
+          .allowed,
+      ).toBe(true);
+      expect(
+        checkEgressGates('did:plc:other', 'commitment.option', [], 'option_fallback', notice)
+          .allowed,
+      ).toBe(false);
       // Any other kind of the family still needs a contact.
-      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], '', null).allowed).toBe(false);
+      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], '', null).allowed).toBe(
+        false,
+      );
       // A trade kind does not open the family's door.
-      expect(checkEgressGates('did:plc:buyer', 'commitment.option', [], 'delivery_note', notice).allowed).toBe(false);
+      expect(
+        checkEgressGates('did:plc:buyer', 'commitment.option', [], 'delivery_note', notice).allowed,
+      ).toBe(false);
     });
   });
 
-  describe('COMMITMENT_KERNEL §15 step 12 — the buyer\'s exit to a supplier who is no contact', () => {
+  describe("COMMITMENT_KERNEL §15 step 12 — the buyer's exit to a supplier who is no contact", () => {
     afterEach(() => setExitRecipientCheck(null));
 
     it('passes only to the supplier whose fallback notice the buyer kept for that order', () => {
       clearGatesState();
       const exit = { v: 1, kind: 'exit', cancellation: { purchase_order_id: 'po-1' } };
       setExitRecipientCheck(
-        (did, e) => did === 'did:plc:supplier' && (e as typeof exit).cancellation.purchase_order_id === 'po-1',
+        (did, e) =>
+          did === 'did:plc:supplier' &&
+          (e as typeof exit).cancellation.purchase_order_id === 'po-1',
       );
-      expect(checkEgressGates('did:plc:supplier', 'commitment.option', [], 'option_exit', exit).allowed).toBe(true);
-      expect(checkEgressGates('did:plc:other', 'commitment.option', [], 'option_exit', exit).allowed).toBe(false);
+      expect(
+        checkEgressGates('did:plc:supplier', 'commitment.option', [], 'option_exit', exit).allowed,
+      ).toBe(true);
+      expect(
+        checkEgressGates('did:plc:other', 'commitment.option', [], 'option_exit', exit).allowed,
+      ).toBe(false);
       // The fallback door does not open the exit's, nor the other way round.
-      expect(checkEgressGates('did:plc:supplier', 'commitment.option', [], 'option_fallback', exit).allowed).toBe(false);
+      expect(
+        checkEgressGates('did:plc:supplier', 'commitment.option', [], 'option_fallback', exit)
+          .allowed,
+      ).toBe(false);
     });
   });
 });

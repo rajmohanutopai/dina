@@ -11,7 +11,7 @@ import {
   persistConnectedBrainMemoryProposal,
   type PersistConnectedBrainMemoryResult,
 } from '../agent/connected_brain_facades';
-import { resolveInstalledPersonaName , isPersonaOpen, personaExists } from '../persona/service';
+import { resolveInstalledPersonaName, isPersonaOpen, personaExists } from '../persona/service';
 import { createReminderDurable } from '../reminders/service';
 
 import type { ReasoningCommitReceipt, ReasoningValidatedProposal } from './broker';

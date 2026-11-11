@@ -169,7 +169,11 @@ describe('buildAuthResponse (task 4.42)', () => {
       const id = fixedIdentity();
       expect(() =>
         buildAuthResponse({
-          challenge: { type: 'not_a_challenge', nonce: 'x', ts: 1 } as unknown as AuthChallengeFrame,
+          challenge: {
+            type: 'not_a_challenge',
+            nonce: 'x',
+            ts: 1,
+          } as unknown as AuthChallengeFrame,
           did: DID,
           privateKey: id.root.privateKey,
           publicKey: id.root.publicKey,

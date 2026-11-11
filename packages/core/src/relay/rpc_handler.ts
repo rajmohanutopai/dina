@@ -21,7 +21,6 @@ import { validateIdentityBinding } from './identity_binding';
 import { unsealRPCRequest, type CoreRPCRequest } from './rpc_envelope';
 import { validateInnerAuth } from './rpc_envelope';
 
-
 export interface RPCHandlerResult {
   valid: boolean;
   request?: CoreRPCRequest;

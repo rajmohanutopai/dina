@@ -42,7 +42,7 @@ ALL of:
   options.
 - No JavaScript exceptions in the console between steps (web only).
 - No `Cannot read properties of undefined (reading
-  'setGenericPasswordForOptions')` — that's the Phase 2 keychain shim
+'setGenericPasswordForOptions')` — that's the Phase 2 keychain shim
   regression class. If it appears, rebuild the SPA bundle via
   `npm run -w @dina/home-node-lite-web-e2e build:bundle`.
 

@@ -14,7 +14,10 @@ import {
 const enc = new TextEncoder();
 
 /** Build the wire envelope + the SHA-256 digests a provider would sign. */
-function envelope(card: unknown, params: unknown): {
+function envelope(
+  card: unknown,
+  params: unknown,
+): {
   payload: Uint8Array;
   cardDigest: string;
   paramsDigest: string;
@@ -121,7 +124,13 @@ describe('parseResultCardPayload (81B-04)', () => {
 describe('renderRunPayloadView (E76-06)', () => {
   it('renders the card title + body from a stored envelope', () => {
     const { payload } = envelope(
-      { version: 1, blocks: [{ kind: 'title', text: 'Route 42' }, { kind: 'body', text: 'ETA 5m' }] },
+      {
+        version: 1,
+        blocks: [
+          { kind: 'title', text: 'Route 42' },
+          { kind: 'body', text: 'ETA 5m' },
+        ],
+      },
       {},
     );
     const v = renderRunPayloadView(payload);

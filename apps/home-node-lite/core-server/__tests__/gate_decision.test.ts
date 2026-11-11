@@ -89,10 +89,7 @@ describe('classifyToolCall — dispatch', () => {
     }
   });
   it('the bundled Dina MCP namespace enters Core without recursive approval', () => {
-    for (const toolName of [
-      'mcp__plugin_dina_dina__dina_status',
-      'mcp__dina__dina_status',
-    ]) {
+    for (const toolName of ['mcp__plugin_dina_dina__dina_status', 'mcp__dina__dina_status']) {
       expect(classify(toolName, {})).toMatchObject({
         action: 'dina_core_operation',
         risk: 'SAFE',

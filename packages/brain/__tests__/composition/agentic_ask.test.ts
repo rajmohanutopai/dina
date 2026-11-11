@@ -70,7 +70,9 @@ function fakeAppView(): Parameters<typeof buildAgenticAskPipeline>[0]['appViewCl
     async resolveTrust() {
       return {} as unknown as Awaited<
         ReturnType<
-          NonNullable<Parameters<typeof buildAgenticAskPipeline>[0]['appViewClient']['resolveTrust']>
+          NonNullable<
+            Parameters<typeof buildAgenticAskPipeline>[0]['appViewClient']['resolveTrust']
+          >
         >
       >;
     },
@@ -84,7 +86,9 @@ function fakeAppView(): Parameters<typeof buildAgenticAskPipeline>[0]['appViewCl
   };
 }
 
-function fakeOrchestratorHandle(): Parameters<typeof buildAgenticAskPipeline>[0]['orchestratorHandle'] {
+function fakeOrchestratorHandle(): Parameters<
+  typeof buildAgenticAskPipeline
+>[0]['orchestratorHandle'] {
   return {
     async issueQueryToDID() {
       return {
@@ -98,23 +102,49 @@ function fakeOrchestratorHandle(): Parameters<typeof buildAgenticAskPipeline>[0]
   };
 }
 
-interface FakeTask { id: string; status: string; payload: string }
+interface FakeTask {
+  id: string;
+  status: string;
+  payload: string;
+}
 
 function fakeCoreClient(): Parameters<typeof buildAgenticAskPipeline>[0]['coreClient'] {
   return {
-    async findContactsByPreference() { return []; },
-    async contactLookup() { return null; },
+    async findContactsByPreference() {
+      return [];
+    },
+    async contactLookup() {
+      return null;
+    },
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
-    async listPluginToolCapabilities() { return []; },
-    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    async listPluginToolCapabilities() {
+      return [];
+    },
+    async invokePluginTool() {
+      return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' };
+    },
     // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
-    async listContacts() { return []; },
-    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
-    async getGroupPlan() { return null; },
-    async listGroupPlanHandles() { return []; },
-    async createWorkflowTask() { return { task: {} as unknown as WorkflowTask, deduped: false }; },
-    async getWorkflowTask() { return null; },
-    async completeWorkflowTask() { return {} as unknown as WorkflowTask; },
+    async listContacts() {
+      return [];
+    },
+    async openGroupPlan() {
+      return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' };
+    },
+    async getGroupPlan() {
+      return null;
+    },
+    async listGroupPlanHandles() {
+      return [];
+    },
+    async createWorkflowTask() {
+      return { task: {} as unknown as WorkflowTask, deduped: false };
+    },
+    async getWorkflowTask() {
+      return null;
+    },
+    async completeWorkflowTask() {
+      return {} as unknown as WorkflowTask;
+    },
   };
 }
 
@@ -124,26 +154,54 @@ function makeFakeWorkflowCoreClient(): {
   setStatus: (id: string, s: string) => void;
 } {
   const tasks = new Map<string, FakeTask>();
-  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const setStatus = (id: string, s: string) => {
+    const t = tasks.get(id);
+    if (t) t.status = s;
+  };
   const client = {
-    async findContactsByPreference() { return []; },
-    async contactLookup() { return null; },
+    async findContactsByPreference() {
+      return [];
+    },
+    async contactLookup() {
+      return null;
+    },
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
-    async listPluginToolCapabilities() { return []; },
-    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    async listPluginToolCapabilities() {
+      return [];
+    },
+    async invokePluginTool() {
+      return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' };
+    },
     // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
-    async listContacts() { return []; },
-    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
-    async getGroupPlan() { return null; },
-    async listGroupPlanHandles() { return []; },
+    async listContacts() {
+      return [];
+    },
+    async openGroupPlan() {
+      return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' };
+    },
+    async getGroupPlan() {
+      return null;
+    },
+    async listGroupPlanHandles() {
+      return [];
+    },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
-      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      const t: FakeTask = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
       tasks.set(input.id, t);
       return { task: t as unknown as WorkflowTask, deduped: false };
     },
-    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
-    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
+    async getWorkflowTask(id: string) {
+      return (tasks.get(id) as unknown as WorkflowTask) ?? null;
+    },
+    async completeWorkflowTask(id: string) {
+      setStatus(id, 'completed');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
   };
   return { client, tasks, setStatus };
 }
@@ -200,7 +258,10 @@ describe('buildAgenticAskPipeline', () => {
     // for quotes; the card opens the Ask for quotes screen, nothing is sent).
     // The full set is documented in composition/agentic_ask.ts.
     const pipeline = buildAgenticAskPipeline(makeBuilderInput());
-    const names = pipeline.tools.toDefinitions().map((t) => t.name).sort();
+    const names = pipeline.tools
+      .toDefinitions()
+      .map((t) => t.name)
+      .sort();
     expect(names).toEqual(
       [
         'browse_vault',
@@ -237,10 +298,14 @@ describe('buildAgenticAskPipeline', () => {
       a2aSelfDid: async () => self,
     } as never;
     const names = (input: Parameters<typeof buildAgenticAskPipeline>[0]) =>
-      buildAgenticAskPipeline(input).tools.toDefinitions().map((t) => t.name);
+      buildAgenticAskPipeline(input)
+        .tools.toDefinitions()
+        .map((t) => t.name);
     // No Lane 1 (the phone): not offered, even if the client could search.
     const searching = { ...fakeAppView(), searchA2AAgents: async () => [] };
-    expect(names({ ...makeBuilderInput(), appViewClient: searching })).not.toContain('search_a2a_agents');
+    expect(names({ ...makeBuilderInput(), appViewClient: searching })).not.toContain(
+      'search_a2a_agents',
+    );
     // Lane 1, but a client with no directory method: not offered.
     expect(names({ ...makeBuilderInput(), a2aClient })).not.toContain('search_a2a_agents');
     // Both: offered, and it never returns this node's own card. The node's
@@ -265,7 +330,12 @@ describe('buildAgenticAskPipeline', () => {
     });
     expect(pipeline.tools.toDefinitions().map((t) => t.name)).toContain('search_a2a_agents');
     const outcome = await pipeline.tools.execute('search_a2a_agents', { skill: 'eta_query' });
-    expect(outcome).toEqual(expect.objectContaining({ success: true, result: expect.objectContaining({ candidates: [] }) }));
+    expect(outcome).toEqual(
+      expect.objectContaining({
+        success: true,
+        result: expect.objectContaining({ candidates: [] }),
+      }),
+    );
   });
 
   it('defaults sensitivePersonas to [health, financial] when omitted', () => {
@@ -311,14 +381,19 @@ describe('buildAgenticAskPipeline', () => {
         askId: 'ask-1',
         requesterDid: 'did:key:zRequester',
       });
-      const staticNames = pipeline.tools.toDefinitions().map((t) => t.name).sort();
-      const askNames = askTools.toDefinitions().map((t) => t.name).sort();
+      const staticNames = pipeline.tools
+        .toDefinitions()
+        .map((t) => t.name)
+        .sort();
+      const askNames = askTools
+        .toDefinitions()
+        .map((t) => t.name)
+        .sort();
       expect(askNames).toEqual(staticNames);
     });
 
     it('per-ask vault_search returns approval_required on a sensitive persona', async () => {
-      const { createPersona, resetPersonaState } =
-        require('../../../core/src/persona/service');
+      const { createPersona, resetPersonaState } = require('../../../core/src/persona/service');
       resetPersonaState();
       createPersona('health', 'sensitive');
 
@@ -361,8 +436,10 @@ describe('buildAgenticAskPipeline', () => {
       // The static pipeline.tools has no persona guard — sensitive personas
       // surface as accessible:false rather than bailing the loop. This is
       // the degraded-mode contract for callers that use pipeline.tools directly.
-      const { setAccessiblePersonas, resetReasoningProvider } =
-        require('../../src/vault_context/assembly');
+      const {
+        setAccessiblePersonas,
+        resetReasoningProvider,
+      } = require('../../src/vault_context/assembly');
       resetReasoningProvider();
       setAccessiblePersonas([]); // sensitive persona not unlocked
       const pipeline = buildAgenticAskPipeline(makeBuilderInput());
@@ -380,8 +457,7 @@ describe('buildAgenticAskPipeline', () => {
     });
 
     it('two asks get distinct approval ids (askId binding)', async () => {
-      const { createPersona, resetPersonaState } =
-        require('../../../core/src/persona/service');
+      const { createPersona, resetPersonaState } = require('../../../core/src/persona/service');
       resetPersonaState();
       createPersona('health', 'sensitive');
 
@@ -409,10 +485,11 @@ describe('buildAgenticAskPipeline', () => {
       // End-to-end: first read parks (pending_approval); operator approves
       // (task → queued); second read (Pattern A resume path) consumes
       // (task → completed) + proceeds.
-      const { createPersona, resetPersonaState } =
-        require('../../../core/src/persona/service');
-      const { setAccessiblePersonas, resetReasoningProvider } =
-        require('../../src/vault_context/assembly');
+      const { createPersona, resetPersonaState } = require('../../../core/src/persona/service');
+      const {
+        setAccessiblePersonas,
+        resetReasoningProvider,
+      } = require('../../src/vault_context/assembly');
       const { storeItem, clearVaults } = require('../../../core/src/vault/crud');
       resetPersonaState();
       resetReasoningProvider();

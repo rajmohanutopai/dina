@@ -96,27 +96,49 @@ const CALLBACK_PAGE_HEADERS = {
 } as const;
 
 const escapeHtml = (s: string): string =>
-  s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string);
+  s.replace(
+    /[&<>"']/g,
+    (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] as string,
+  );
 
 /**
  * What the owner sees after the merchant sends them back: linked at `host`;
  * a sign-in already used or lapsed (a reload after a link that worked lands
  * here, so it claims nothing about the account); a no at the shop; or not linked.
  */
-export function callbackPage(outcome: { linked: true; host: string } | { linked: false; reason?: string }): string {
-  const head = '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">';
+export function callbackPage(
+  outcome: { linked: true; host: string } | { linked: false; reason?: string },
+): string {
+  const head =
+    '<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width">';
   const page = (title: string, h1: string, p: string) =>
     `${head}<title>${title}</title><body style="font-family:system-ui;margin:2rem"><h1>${h1}</h1><p>${p}</p>`;
   if (outcome.linked)
-    return page('Account linked', `Your account at ${escapeHtml(outcome.host)} is linked`, 'You can close this page and go back to Dina.');
+    return page(
+      'Account linked',
+      `Your account at ${escapeHtml(outcome.host)} is linked`,
+      'You can close this page and go back to Dina.',
+    );
   if (outcome.reason === 'unknown_state')
-    return page('Sign-in already used', 'This sign-in was already used or has expired', 'Linked accounts in Dina shows whether your account is linked.');
+    return page(
+      'Sign-in already used',
+      'This sign-in was already used or has expired',
+      'Linked accounts in Dina shows whether your account is linked.',
+    );
   if (outcome.reason === 'denied')
     return page('Not linked', 'You said no at the shop', 'Nothing was linked.');
   // Core did not answer in time: it may still be finishing, so nothing is claimed.
   if (outcome.reason === 'no_answer')
-    return page('Linking', 'Dina did not answer in time', 'Linked accounts in Dina shows whether your account is linked.');
-  return page('Not linked', 'Your account was not linked', 'Nothing changed. Start again from Dina if you still want to link it.');
+    return page(
+      'Linking',
+      'Dina did not answer in time',
+      'Linked accounts in Dina shows whether your account is linked.',
+    );
+  return page(
+    'Not linked',
+    'Your account was not linked',
+    'Nothing changed. Start again from Dina if you still want to link it.',
+  );
 }
 
 export interface StreamLimits {
@@ -153,7 +175,8 @@ const SSE_HEAD = {
 /** Where a stream on Core's answer starts, and whose it is: null when Core's answer does not say. */
 function streamStartOf(answer: CoreAnswer): StreamStart | null {
   const { eventSeq, credentialGen, streamClient } = answer;
-  if (eventSeq === undefined || credentialGen === undefined || streamClient === undefined) return null;
+  if (eventSeq === undefined || credentialGen === undefined || streamClient === undefined)
+    return null;
   return { afterSeq: eventSeq, client: streamClient, credentialGen };
 }
 
@@ -199,7 +222,14 @@ function clientAuth(headers: IncomingHttpHeaders): GatewayEnvelope['client_auth'
   const signature = one(DID_REQUEST_HEADERS.signature);
   const signed =
     did !== undefined || timestamp !== undefined || nonce !== undefined || signature !== undefined
-      ? { did_signature: { did: did ?? '', timestamp: timestamp ?? '', nonce: nonce ?? '', signature: signature ?? '' } }
+      ? {
+          did_signature: {
+            did: did ?? '',
+            timestamp: timestamp ?? '',
+            nonce: nonce ?? '',
+            signature: signature ?? '',
+          },
+        }
       : {};
   return { ...(authorization === undefined ? {} : { authorization }), ...signed };
 }
@@ -214,9 +244,13 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
 
   // The raw body, byte for byte: Core binds the route to it and hashes it.
   app.removeAllContentTypeParsers();
-  app.addContentTypeParser(['application/json', A2A_REST_CONTENT_TYPE], { parseAs: 'string' }, (_req, body, done) => {
-    done(null, body);
-  });
+  app.addContentTypeParser(
+    ['application/json', A2A_REST_CONTENT_TYPE],
+    { parseAs: 'string' },
+    (_req, body, done) => {
+      done(null, body);
+    },
+  );
 
   // A REST client reads every error as a `google.rpc.Status`; the reference
   // SDK fails outright on anything else. JSON-RPC and the other doors keep
@@ -230,13 +264,22 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     const status = err.statusCode ?? 500;
     const rest = isRestPath(req.raw.url);
     const reason =
-      status === 413 ? 'payload_too_large' : status === 415 ? 'unsupported_media_type' : status < 500 ? 'bad_request' : 'internal';
+      status === 413
+        ? 'payload_too_large'
+        : status === 415
+          ? 'unsupported_media_type'
+          : status < 500
+            ? 'bad_request'
+            : 'internal';
     if (status >= 500) deps.logger.error({ status }, 'a2a gateway error');
     const code = status >= 400 && status < 500 ? status : 500;
     if (rest) return restEdge(reply, code, code === 500 ? 'INTERNAL' : 'INVALID_ARGUMENT', reason);
     if (isA2ARpcPath((req.raw.url ?? '').split('?')[0] ?? '')) {
       // A body not sent as JSON is content Dina does not read: A2A's own error names it.
-      if (code === 415) return reply.code(415).send(jsonRpcError(null, a2aError('contentTypeNotSupported', reason)));
+      if (code === 415)
+        return reply
+          .code(415)
+          .send(jsonRpcError(null, a2aError('contentTypeNotSupported', reason)));
       return rpcEdge(reply, code, reason, null);
     }
     return reply.code(code).send({ error: reason });
@@ -385,23 +428,43 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
   // them) under the 512 KiB cap.
   app.register(async (scope) => {
     scope.removeAllContentTypeParsers();
-    scope.addContentTypeParser('*', { parseAs: 'buffer', bodyLimit: UCP_WEBHOOK_MAX_BYTES }, (_req, body, done) => {
-      done(null, body);
-    });
-    scope.post(UCP_WEBHOOK_PUBLIC_PATH, { bodyLimit: UCP_WEBHOOK_MAX_BYTES }, async (req, reply) => {
-      if (limited(req.ip)) return reply.code(429).header('retry-after', '60').send({ error: 'rate_limited' });
-      const url = req.raw.url ?? '';
-      const q = url.indexOf('?');
-      const body = Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : new Uint8Array();
-      const forwarded = await deps.core.ucpWebhook(
-        ucpWebhookEnvelope(UCP_WEBHOOK_PUBLIC_PATH, q === -1 ? '' : url.slice(q + 1), req.headers, body),
-      );
-      if (!forwarded.ok || forwarded.answer.status !== 200) {
-        deps.logger.warn({ core_status: forwarded.ok ? forwarded.answer.status : forwarded.status }, 'ucp webhook not stored');
-        return reply.code(503).header('retry-after', '30').send({ error: 'unavailable' });
-      }
-      return reply.code(200).header('content-type', 'application/json').send(forwarded.answer.body);
-    });
+    scope.addContentTypeParser(
+      '*',
+      { parseAs: 'buffer', bodyLimit: UCP_WEBHOOK_MAX_BYTES },
+      (_req, body, done) => {
+        done(null, body);
+      },
+    );
+    scope.post(
+      UCP_WEBHOOK_PUBLIC_PATH,
+      { bodyLimit: UCP_WEBHOOK_MAX_BYTES },
+      async (req, reply) => {
+        if (limited(req.ip))
+          return reply.code(429).header('retry-after', '60').send({ error: 'rate_limited' });
+        const url = req.raw.url ?? '';
+        const q = url.indexOf('?');
+        const body = Buffer.isBuffer(req.body) ? new Uint8Array(req.body) : new Uint8Array();
+        const forwarded = await deps.core.ucpWebhook(
+          ucpWebhookEnvelope(
+            UCP_WEBHOOK_PUBLIC_PATH,
+            q === -1 ? '' : url.slice(q + 1),
+            req.headers,
+            body,
+          ),
+        );
+        if (!forwarded.ok || forwarded.answer.status !== 200) {
+          deps.logger.warn(
+            { core_status: forwarded.ok ? forwarded.answer.status : forwarded.status },
+            'ucp webhook not stored',
+          );
+          return reply.code(503).header('retry-after', '30').send({ error: 'unavailable' });
+        }
+        return reply
+          .code(200)
+          .header('content-type', 'application/json')
+          .send(forwarded.answer.body);
+      },
+    );
   });
 
   // A merchant's OAuth redirect back (UCP plan §3.17): the owner's browser, at the end of
@@ -410,7 +473,11 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
   // pending link is consumed once, so the page is never cached or referred on.
   app.get(UCP_OAUTH_CALLBACK_PATH, async (req, reply) => {
     reply.headers(CALLBACK_PAGE_HEADERS);
-    if (limited(req.ip)) return reply.code(429).header('retry-after', '60').send(callbackPage({ linked: false }));
+    if (limited(req.ip))
+      return reply
+        .code(429)
+        .header('retry-after', '60')
+        .send(callbackPage({ linked: false }));
     const query = req.query as Record<string, unknown>;
     const params: Record<string, string> = {};
     for (const name of ['code', 'state', 'iss', 'error'] as const) {
@@ -419,15 +486,21 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     }
     const forwarded = await deps.core.ucpOauthCallback(params);
     const body = forwarded.ok
-      ? (forwarded.answer.body as { linked?: unknown; merchant_host?: unknown; reason?: unknown } | undefined)
+      ? (forwarded.answer.body as
+          | { linked?: unknown; merchant_host?: unknown; reason?: unknown }
+          | undefined)
       : undefined;
-    if (!forwarded.ok) deps.logger.warn({ core_status: forwarded.status }, 'ucp oauth callback not taken');
+    if (!forwarded.ok)
+      deps.logger.warn({ core_status: forwarded.status }, 'ucp oauth callback not taken');
     const outcome =
       body?.linked === true && typeof body.merchant_host === 'string'
         ? { linked: true as const, host: body.merchant_host }
         : !forwarded.ok
           ? { linked: false as const, reason: 'no_answer' }
-          : { linked: false as const, ...(typeof body?.reason === 'string' ? { reason: body.reason } : {}) };
+          : {
+              linked: false as const,
+              ...(typeof body?.reason === 'string' ? { reason: body.reason } : {}),
+            };
     return reply.code(forwarded.ok ? 200 : 503).send(callbackPage(outcome));
   });
 
@@ -435,7 +508,8 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
   // owner's challenge, which names the DID, is the authority; Core checks it
   // and the signature, and wants no other credential.
   app.post(A2A_DID_BINDING_PATH, async (req, reply) => {
-    if (limited(req.ip)) return reply.code(429).header('retry-after', '60').send({ error: 'rate_limited' });
+    if (limited(req.ip))
+      return reply.code(429).header('retry-after', '60').send({ error: 'rate_limited' });
     const url = req.raw.url ?? '';
     const q = url.indexOf('?');
     const forwarded = await deps.core.forward(A2A_DID_COMPLETE_ROUTE, {
@@ -452,7 +526,10 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
       return reply.code(503).send({ error: 'unavailable' });
     }
     deps.logger.info({ status: forwarded.answer.status }, 'a2a did binding');
-    return reply.code(forwarded.answer.status).headers(forwarded.answer.headers).send(forwarded.answer.body);
+    return reply
+      .code(forwarded.answer.status)
+      .headers(forwarded.answer.headers)
+      .send(forwarded.answer.body);
   });
 
   // The JSON-RPC endpoint, at its path with or without a trailing slash (`isA2ARpcPath`).
@@ -467,11 +544,15 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
       return reply.code(200).send(jsonRpcError(parsed.id, parsed.error));
     }
     const { request } = parsed;
-    if (versionRefused(req.headers)) return reply.code(200).send(jsonRpcError(request.id, a2aError('versionNotSupported')));
+    if (versionRefused(req.headers))
+      return reply.code(200).send(jsonRpcError(request.id, a2aError('versionNotSupported')));
     const route = ingressPathFor(request);
     if (!route.ok) {
       // A dot-segment id names no task, and no forward could keep it: the answer Core gives an unknown id.
-      const error = route.reason === 'id_unroutable' ? a2aError('taskNotFound') : a2aError('invalidParams', route.reason);
+      const error =
+        route.reason === 'id_unroutable'
+          ? a2aError('taskNotFound')
+          : a2aError('invalidParams', route.reason);
       return reply.code(200).send(jsonRpcError(request.id, error));
     }
     const streaming = A2A_STREAMING_METHODS.has(request.method);
@@ -479,7 +560,8 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
     // while Core answers: then no stream opens, and the slot is freed.
     let left = false;
     if (streaming) {
-      if (!slots.take(req.ip)) return rpcEdge(reply, 429, 'too_many_streams', request.id, { 'retry-after': '60' });
+      if (!slots.take(req.ip))
+        return rpcEdge(reply, 429, 'too_many_streams', request.id, { 'retry-after': '60' });
       reply.raw.once('close', () => {
         left = true;
       });
@@ -501,8 +583,10 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
       client_auth: clientAuth(req.headers),
     });
     // A JSON-RPC error (an unknown task, a refused call) is answered as one, never as a stream.
-    const refused = forwarded.ok && isPlainObject(forwarded.answer.body) && 'error' in forwarded.answer.body;
-    const streams = streaming && forwarded.ok && forwarded.answer.status === 200 && !refused && !left;
+    const refused =
+      forwarded.ok && isPlainObject(forwarded.answer.body) && 'error' in forwarded.answer.body;
+    const streams =
+      streaming && forwarded.ok && forwarded.answer.status === 200 && !refused && !left;
     if (streaming && !streams) {
       // No stream follows a refusal, or a client that left: the slot is free again.
       slots.answered();
@@ -526,10 +610,19 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
       'a2a call',
     );
     if (streams) {
-      stream(reply, req.ip, (event) => ({ jsonrpc: '2.0', id: request.id, result: event }), answer, (why) => {
-        if (why === 'unavailable') rpcEdge(reply, 503, 'unavailable', request.id);
-        else rpcEdge(reply, 401, 'unauthenticated', request.id, { 'www-authenticate': A2A_BEARER_CHALLENGE });
-      });
+      stream(
+        reply,
+        req.ip,
+        (event) => ({ jsonrpc: '2.0', id: request.id, result: event }),
+        answer,
+        (why) => {
+          if (why === 'unavailable') rpcEdge(reply, 503, 'unavailable', request.id);
+          else
+            rpcEdge(reply, 401, 'unauthenticated', request.id, {
+              'www-authenticate': A2A_BEARER_CHALLENGE,
+            });
+        },
+      );
       return reply;
     }
     return reply.code(answer.status).headers(answer.headers).send(answer.body);
@@ -549,21 +642,31 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
       const q = url.indexOf('?');
       // The path as the client sent it, still percent-encoded: Core matches it again.
       const path = q === -1 ? url : url.slice(0, q);
-      if (limited(req.ip)) return restEdge(reply, 429, 'RESOURCE_EXHAUSTED', 'rate_limited', { 'retry-after': '60' });
+      if (limited(req.ip))
+        return restEdge(reply, 429, 'RESOURCE_EXHAUSTED', 'rate_limited', { 'retry-after': '60' });
       const match = matchRestRequest(req.method, path);
       if (match === null) {
         const allowed = restMethodsFor(path);
-        if (allowed.length > 0) return restEdge(reply, 405, 'UNIMPLEMENTED', 'method_not_allowed', { allow: allowed.join(', ') });
+        if (allowed.length > 0)
+          return restEdge(reply, 405, 'UNIMPLEMENTED', 'method_not_allowed', {
+            allow: allowed.join(', '),
+          });
         return restEdge(reply, 404, 'NOT_FOUND', 'not_found');
       }
       if (versionRefused(req.headers)) {
         const refused = restError(a2aError('versionNotSupported'));
-        return reply.code(refused.status).headers({ 'content-type': A2A_REST_CONTENT_TYPE }).send(refused.body);
+        return reply
+          .code(refused.status)
+          .headers({ 'content-type': A2A_REST_CONTENT_TYPE })
+          .send(refused.body);
       }
       const streaming = A2A_STREAMING_METHODS.has(match.operation);
       let left = false;
       if (streaming) {
-        if (!slots.take(req.ip)) return restEdge(reply, 429, 'RESOURCE_EXHAUSTED', 'too_many_streams', { 'retry-after': '60' });
+        if (!slots.take(req.ip))
+          return restEdge(reply, 429, 'RESOURCE_EXHAUSTED', 'too_many_streams', {
+            'retry-after': '60',
+          });
         reply.raw.once('close', () => {
           left = true;
         });
@@ -590,16 +693,31 @@ export function buildGatewayServer(deps: GatewayServerDeps): FastifyInstance {
         return reply;
       }
       if (!forwarded.ok) {
-        deps.logger.warn({ method: match.operation, core_status: forwarded.status }, 'a2a rest call not answered by Core');
+        deps.logger.warn(
+          { method: match.operation, core_status: forwarded.status },
+          'a2a rest call not answered by Core',
+        );
         return restEdge(reply, 503, 'UNAVAILABLE', 'unavailable');
       }
       const { answer } = forwarded;
-      deps.logger.info({ method: match.operation, binding: 'rest', status: answer.status, ms: now() - started }, 'a2a call');
+      deps.logger.info(
+        { method: match.operation, binding: 'rest', status: answer.status, ms: now() - started },
+        'a2a call',
+      );
       if (streams) {
-        stream(reply, req.ip, (event) => event, answer, (why) => {
-          if (why === 'unavailable') restEdge(reply, 503, 'UNAVAILABLE', 'unavailable');
-          else restEdge(reply, 401, 'UNAUTHENTICATED', 'unauthenticated', { 'www-authenticate': A2A_BEARER_CHALLENGE });
-        });
+        stream(
+          reply,
+          req.ip,
+          (event) => event,
+          answer,
+          (why) => {
+            if (why === 'unavailable') restEdge(reply, 503, 'UNAVAILABLE', 'unavailable');
+            else
+              restEdge(reply, 401, 'UNAUTHENTICATED', 'unauthenticated', {
+                'www-authenticate': A2A_BEARER_CHALLENGE,
+              });
+          },
+        );
         return reply;
       }
       return reply
@@ -636,7 +754,10 @@ function rpcEdge(
   id: JsonRpcId | null,
   headers: Record<string, string> = {},
 ): FastifyReply {
-  return reply.code(code).headers(headers).send(jsonRpcError(id, dinaRefusal(reason)));
+  return reply
+    .code(code)
+    .headers(headers)
+    .send(jsonRpcError(id, dinaRefusal(reason)));
 }
 
 /** The gateway's own answer to a REST client: a `google.rpc.Status`, as Core's are. */

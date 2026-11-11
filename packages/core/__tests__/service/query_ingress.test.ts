@@ -10,9 +10,6 @@
 
 import { validateServiceResponseBody } from '@dina/protocol';
 
-import { WorkflowTaskState } from '../../src/workflow/domain';
-import { InMemoryWorkflowRepository, WorkflowConflictError } from '../../src/workflow/repository';
-import { WorkflowService, type CreateWorkflowTaskInput } from '../../src/workflow/service';
 import { capabilitySchemaHash } from '../../src/service/capability_schema_hash';
 import {
   ServiceQueryIngress,
@@ -20,6 +17,9 @@ import {
   snapshotForCapability,
   type ServiceDirectResponder,
 } from '../../src/service/query_ingress';
+import { WorkflowTaskState } from '../../src/workflow/domain';
+import { InMemoryWorkflowRepository, WorkflowConflictError } from '../../src/workflow/repository';
+import { WorkflowService, type CreateWorkflowTaskInput } from '../../src/workflow/service';
 
 import type { ProviderIngressSubmitter } from '../../src/plugins/provider_ingress';
 import type { ServiceReasoningSubmitter } from '../../src/reasoning/service_execution';
@@ -826,7 +826,11 @@ describe('ServiceQueryIngress.admitQuery — auto path', () => {
       ...baseConfig,
       capabilitySchemas: {
         ...baseConfig.capabilitySchemas,
-        route_info: { params: snapshot.params, result: snapshot.result, schemaHash: snapshot.schema_hash },
+        route_info: {
+          params: snapshot.params,
+          result: snapshot.result,
+          schemaHash: snapshot.schema_hash,
+        },
       },
     };
     const ingress = makeIngress({ core, uuid: 'u1', config });
@@ -1769,7 +1773,6 @@ function recordingSubmitter(
   };
 }
 
-
 /**
  * Records what the handler sent back to the requester. `jest.fn(async () =>
  * undefined)` infers a ZERO-argument tuple, so its recorded calls cannot be
@@ -2077,7 +2080,11 @@ describe('what the move added: Core checks the card itself, and never throws on 
     ttl_seconds: 60,
   };
 
-  function seedCard(core: ReturnType<typeof stubCore>, id: string, payload: Record<string, unknown>) {
+  function seedCard(
+    core: ReturnType<typeof stubCore>,
+    id: string,
+    payload: Record<string, unknown>,
+  ) {
     core.seed({
       id,
       kind: 'approval',
@@ -2091,18 +2098,30 @@ describe('what the move added: Core checks the card itself, and never throws on 
   it('starts nothing for a card the owner never approved', async () => {
     const core = stubCore();
     const logs: Record<string, unknown>[] = [];
-    const ingress = new ServiceQueryIngress({ workflow: core.workflow, readConfig: () => baseConfig, logger: (e) => logs.push(e) });
+    const ingress = new ServiceQueryIngress({
+      workflow: core.workflow,
+      readConfig: () => baseConfig,
+      logger: (e) => logs.push(e),
+    });
     seedCard(core, 'approval-pending', CARD);
     await ingress.executeApproved('approval-pending');
     expect(core.createCalls).toHaveLength(0);
     expect(core.cancelCalls).toHaveLength(0);
     expect(core.workflow.store().getById('approval-pending')?.status).toBe('pending_approval');
-    expect(logs).toContainEqual(expect.objectContaining({ event: 'service.query.approved_not_live', state: 'pending_approval' }));
+    expect(logs).toContainEqual(
+      expect.objectContaining({
+        event: 'service.query.approved_not_live',
+        state: 'pending_approval',
+      }),
+    );
   });
 
   it('starts nothing for a card the owner denied, or that expired', async () => {
     const core = stubCore();
-    const ingress = new ServiceQueryIngress({ workflow: core.workflow, readConfig: () => baseConfig });
+    const ingress = new ServiceQueryIngress({
+      workflow: core.workflow,
+      readConfig: () => baseConfig,
+    });
     seedCard(core, 'approval-denied', CARD);
     core.workflow.cancel('approval-denied', 'denied_by_operator');
     seedCard(core, 'approval-expired', { ...CARD, query_id: 'q-exp' });
@@ -2115,9 +2134,18 @@ describe('what the move added: Core checks the card itself, and never throws on 
 
   it('throws on a task that is not a service card, so the event is retried and seen', async () => {
     const core = stubCore();
-    const ingress = new ServiceQueryIngress({ workflow: core.workflow, readConfig: () => baseConfig });
+    const ingress = new ServiceQueryIngress({
+      workflow: core.workflow,
+      readConfig: () => baseConfig,
+    });
     await expect(ingress.executeApproved('no-such-card')).rejects.toThrow(/not found/);
-    core.seed({ id: 'del-1', kind: 'delegation', description: 'x', payload: '{}', initialState: WorkflowTaskState.Queued });
+    core.seed({
+      id: 'del-1',
+      kind: 'delegation',
+      description: 'x',
+      payload: '{}',
+      initialState: WorkflowTaskState.Queued,
+    });
     await expect(ingress.executeApproved('del-1')).rejects.toThrow(/not an approval card/);
     core.seed({
       id: 'approval-other',
@@ -2151,7 +2179,9 @@ describe('what the move added: Core checks the card itself, and never throws on 
     expect(core.createCalls).toHaveLength(0);
     expect(inbound).toHaveLength(0);
     expect(responses).toHaveLength(0);
-    expect(logs).toContainEqual(expect.objectContaining({ event: 'service.query.create_failed', query_id: 'q-1' }));
+    expect(logs).toContainEqual(
+      expect.objectContaining({ event: 'service.query.create_failed', query_id: 'q-1' }),
+    );
     expect(JSON.stringify(logs)).not.toContain('location');
   });
 
@@ -2159,12 +2189,19 @@ describe('what the move added: Core checks the card itself, and never throws on 
     const config: ServiceConfig = {
       isDiscoverable: true,
       name: 'Odd',
-      capabilities: { constructor: { mcpServer: 'transit', mcpTool: 't', responsePolicy: 'auto' as const } },
+      capabilities: {
+        constructor: { mcpServer: 'transit', mcpTool: 't', responsePolicy: 'auto' as const },
+      },
     };
     const core = stubCore();
     const ingress = new ServiceQueryIngress({ workflow: core.workflow, readConfig: () => config });
     await expect(
-      ingress.admitQuery(REQUESTER, { query_id: 'q-odd', capability: 'constructor', params: {}, ttl_seconds: 60 }),
+      ingress.admitQuery(REQUESTER, {
+        query_id: 'q-odd',
+        capability: 'constructor',
+        params: {},
+        ttl_seconds: 60,
+      }),
     ).resolves.toBeUndefined();
     // No published schema and no registry entry: nothing to validate against, so it runs.
     expect(core.createCalls).toHaveLength(1);
@@ -2199,7 +2236,11 @@ describe('an approved card runs only against the live listing (review of the ing
 
   it('takes the lane and the tool from the listing, never from the card', async () => {
     const { core, ingress } = harness();
-    await executeApproved(core, ingress, 'approval-forged-lane', { ...CARD, mcp_server: 'a2a:ra-1', mcp_tool: 'steal' });
+    await executeApproved(core, ingress, 'approval-forged-lane', {
+      ...CARD,
+      mcp_server: 'a2a:ra-1',
+      mcp_tool: 'steal',
+    });
     const task = core.workflow.store().getById('svc-exec-from-approval-forged-lane');
     expect(task?.requested_runner).toBe('transit');
     expect(JSON.parse(task?.payload ?? '{}').mcp_tool).toBe('get_route');
@@ -2210,8 +2251,12 @@ describe('an approved card runs only against the live listing (review of the ing
       const { core, sent, ingress } = harness(config);
       await executeApproved(core, ingress, 'approval-gone', CARD);
       expect(core.createCalls).toHaveLength(0);
-      expect(sent).toEqual([expect.objectContaining({ status: 'unavailable', error: 'capability_not_configured' })]);
-      expect(core.cancelCalls).toEqual([{ id: 'approval-gone', reason: 'capability_not_configured' }]);
+      expect(sent).toEqual([
+        expect.objectContaining({ status: 'unavailable', error: 'capability_not_configured' }),
+      ]);
+      expect(core.cancelCalls).toEqual([
+        { id: 'approval-gone', reason: 'capability_not_configured' },
+      ]);
     }
   });
 
@@ -2220,26 +2265,43 @@ describe('an approved card runs only against the live listing (review of the ing
       ...baseConfig,
       capabilitySchemas: {
         ...baseConfig.capabilitySchemas,
-        route_info: { params: { type: 'object' }, result: { type: 'object' }, schemaHash: 'hash-new' },
+        route_info: {
+          params: { type: 'object' },
+          result: { type: 'object' },
+          schemaHash: 'hash-new',
+        },
       },
     };
     const { core, sent, ingress } = harness(config);
     await executeApproved(core, ingress, 'approval-drift', CARD);
     expect(core.createCalls).toHaveLength(0);
-    expect(sent).toEqual([expect.objectContaining({ status: 'error', error: 'schema_version_mismatch' })]);
+    expect(sent).toEqual([
+      expect.objectContaining({ status: 'error', error: 'schema_version_mismatch' }),
+    ]);
     expect(core.cancelCalls.map((c) => c.reason)).toEqual(['schema_version_mismatch']);
   });
 
   it('checks the card’s params again, and strips what the schema does not declare', async () => {
     const schema = {
-      params: { type: 'object', required: ['route'], properties: { route: { type: 'string', minLength: 2 } } },
+      params: {
+        type: 'object',
+        required: ['route'],
+        properties: { route: { type: 'string', minLength: 2 } },
+      },
       result: { type: 'object' },
       schemaHash: 'hash-r',
     };
-    const config: ServiceConfig = { ...baseConfig, capabilitySchemas: { ...baseConfig.capabilitySchemas, route_info: schema } };
+    const config: ServiceConfig = {
+      ...baseConfig,
+      capabilitySchemas: { ...baseConfig.capabilitySchemas, route_info: schema },
+    };
     const snapshot = { params: schema.params, result: schema.result, schema_hash: 'hash-r' };
     const bad = harness(config);
-    await executeApproved(bad.core, bad.ingress, 'approval-bad', { ...CARD, params: { route: 'x' }, schema_snapshot: snapshot });
+    await executeApproved(bad.core, bad.ingress, 'approval-bad', {
+      ...CARD,
+      params: { route: 'x' },
+      schema_snapshot: snapshot,
+    });
     expect(bad.core.createCalls).toHaveLength(0);
     expect(bad.sent).toEqual([expect.objectContaining({ status: 'error' })]);
     expect(bad.core.cancelCalls.map((c) => c.reason)).toEqual(['params_invalid']);
@@ -2260,19 +2322,27 @@ describe('an approved card runs only against the live listing (review of the ing
         ...baseConfig,
         capabilities: {
           ...baseConfig.capabilities,
-          eta_query: { ...baseConfig.capabilities.eta_query, mcpServer: lane, instruction: 'Answer from notes.' },
+          eta_query: {
+            ...baseConfig.capabilities.eta_query,
+            mcpServer: lane,
+            instruction: 'Answer from notes.',
+          },
           route_info: { ...baseConfig.capabilities.route_info, mcpServer: lane },
         },
       };
       const admitted = harness(config);
       await admitted.ingress.admitQuery(REQUESTER, validQuery);
       expect(admitted.core.createCalls).toHaveLength(0);
-      expect(admitted.sent).toEqual([expect.objectContaining({ status: 'unavailable', error: 'capability_not_executable' })]);
+      expect(admitted.sent).toEqual([
+        expect.objectContaining({ status: 'unavailable', error: 'capability_not_executable' }),
+      ]);
 
       const approved = harness(config);
       await executeApproved(approved.core, approved.ingress, 'approval-reserved', CARD);
       expect(approved.core.createCalls).toHaveLength(0);
-      expect(approved.sent).toEqual([expect.objectContaining({ status: 'unavailable', error: 'capability_not_executable' })]);
+      expect(approved.sent).toEqual([
+        expect.objectContaining({ status: 'unavailable', error: 'capability_not_executable' }),
+      ]);
     },
   );
 });
@@ -2282,12 +2352,18 @@ describe('checkQuerySchemaHash falls back to the stored hash when the canonical 
   const config: ServiceConfig = {
     ...baseConfig,
     capabilitySchemas: {
-      eta_query: { ...baseConfig.capabilitySchemas!.eta_query, description: 'bad \ud800 text', schemaHash: 'stored-h' },
+      eta_query: {
+        ...baseConfig.capabilitySchemas!.eta_query,
+        description: 'bad \ud800 text',
+        schemaHash: 'stored-h',
+      },
     },
   };
 
   it('accepts the stored hash and refuses anything else', () => {
     expect(checkQuerySchemaHash(config, { ...validQuery, schema_hash: 'stored-h' })).toBeNull();
-    expect(checkQuerySchemaHash(config, { ...validQuery, schema_hash: 'other' })).toBe('schema_version_mismatch');
+    expect(checkQuerySchemaHash(config, { ...validQuery, schema_hash: 'other' })).toBe(
+      'schema_version_mismatch',
+    );
   });
 });

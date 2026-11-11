@@ -65,18 +65,23 @@ async function installStatus(pluginId: string): Promise<BuyerInstallStatus> {
   } catch (err) {
     return { state: 'unavailable', reason: err instanceof Error ? err.message : String(err) };
   }
-  if (!view.registry_available) return { state: 'unavailable', reason: 'plugin registry not wired' };
+  if (!view.registry_available)
+    return { state: 'unavailable', reason: 'plugin registry not wired' };
   const active = view.installs.find(
     (install) => install.plugin_id === pluginId && install.status === 'active',
   );
-  return active === undefined ? { state: 'absent' } : { state: 'active', installId: active.install_id };
+  return active === undefined
+    ? { state: 'absent' }
+    : { state: 'active', installId: active.install_id };
 }
 
 /** What the consent card renders before the owner decides. */
 export function buyerInstallConsentSummary(): { name: string; capabilities: string[] } {
   return {
     name: BUYER_REFERENCE_MANIFEST.display_name,
-    capabilities: BUYER_REFERENCE_MANIFEST.capabilities.map((capability) => capability.display_name),
+    capabilities: BUYER_REFERENCE_MANIFEST.capabilities.map(
+      (capability) => capability.display_name,
+    ),
   };
 }
 

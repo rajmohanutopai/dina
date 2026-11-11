@@ -14,7 +14,13 @@ function stubClient(overrides?: Partial<PeerlensAppViewClient>): PeerlensAppView
       subjectType: 'product',
       trustLevel: 'trusted',
       confidence: 0.9,
-      attestationSummary: { total: 10, positive: 8, neutral: 1, negative: 1, averageDimensions: {} },
+      attestationSummary: {
+        total: 10,
+        positive: 8,
+        neutral: 1,
+        negative: 1,
+        averageDimensions: {},
+      },
       flags: [],
       authenticity: null,
       graphContext: null,
@@ -51,9 +57,7 @@ describe('createSearchPeerlensTool', () => {
     const result = raw as { subject: { trustLevel: string; recommendation: string } };
     expect(result.subject.trustLevel).toBe('trusted');
     expect(result.subject.recommendation).toBe('proceed');
-    expect(client.resolveTrust).toHaveBeenCalledWith(
-      expect.objectContaining({ subject }),
-    );
+    expect(client.resolveTrust).toHaveBeenCalledWith(expect.objectContaining({ subject }));
   });
 
   it('routes a query to searchTrust and filters pass-through', async () => {

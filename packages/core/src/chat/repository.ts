@@ -135,7 +135,11 @@ export class SQLiteChatMessageRepository implements ChatMessageRepository {
     this.db.execute('PRAGMA secure_delete=ON');
     let n = 0;
     this.db.transaction(() => {
-      for (const id of ids) n += this.db.run(`DELETE FROM chat_messages WHERE id = ? AND ${scopedWhere()}`, [id, ...scopedParams()]);
+      for (const id of ids)
+        n += this.db.run(`DELETE FROM chat_messages WHERE id = ? AND ${scopedWhere()}`, [
+          id,
+          ...scopedParams(),
+        ]);
     });
     return n;
   }

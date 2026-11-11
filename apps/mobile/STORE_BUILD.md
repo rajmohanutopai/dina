@@ -6,11 +6,11 @@ This is the committed pipeline for producing the artifacts that ship to the App 
 
 ## Profiles in `eas.json`
 
-| Profile | Distribution | iOS sim? | Android | When to use |
-|---|---|---|---|---|
-| `development` | internal | yes | APK (debug) | Day-to-day debugging on a real device with Expo Dev Client; talks to the dev server. |
-| `preview` | internal | no | APK (release) | TestFlight internal track / Play Console internal track — what testers actually install. |
-| `production` | store | no | AAB | App Store / Play Store submission. `autoIncrement` bumps the build number on every run so we never re-upload the same number. |
+| Profile       | Distribution | iOS sim? | Android       | When to use                                                                                                                   |
+| ------------- | ------------ | -------- | ------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `development` | internal     | yes      | APK (debug)   | Day-to-day debugging on a real device with Expo Dev Client; talks to the dev server.                                          |
+| `preview`     | internal     | no       | APK (release) | TestFlight internal track / Play Console internal track — what testers actually install.                                      |
+| `production`  | store        | no       | AAB           | App Store / Play Store submission. `autoIncrement` bumps the build number on every run so we never re-upload the same number. |
 
 All three profiles set `EXPO_PUBLIC_DINA_ENV` so the in-app boot can branch on it (e.g. point at production MsgBox/PDS/AppView for `production`, the `test-*.dinakernel.com` triplet for `preview`).
 

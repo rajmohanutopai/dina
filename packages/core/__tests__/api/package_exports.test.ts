@@ -16,9 +16,7 @@ const EXPECTED_EXPORTS: Record<string, string> = {
 
 describe('@dina/core package exports', () => {
   it('declares the public Core entry points explicitly', async () => {
-    const pkg = JSON.parse(
-      await readFile(join(__dirname, '..', '..', 'package.json'), 'utf8'),
-    );
+    const pkg = JSON.parse(await readFile(join(__dirname, '..', '..', 'package.json'), 'utf8'));
 
     expect(Object.keys(pkg.exports).sort()).toEqual(Object.keys(EXPECTED_EXPORTS).sort());
     for (const [subpath, sourcePath] of Object.entries(EXPECTED_EXPORTS)) {

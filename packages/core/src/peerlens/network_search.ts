@@ -18,13 +18,11 @@
  */
 
 import { TRUST_CACHE_TTL_MS } from '../constants';
-import { listContacts, getContact, resolveByName, type Contact } from '../contacts/directory';
+import { listContacts, resolveByName } from '../contacts/directory';
 
-import { getCachedTrust, cacheTrustScore, type TrustScore } from './cache';
 import {
   type PeerlensQueryClient,
   type PeerlensProfile,
-  type QueryResult,
   type AttestationSearchHit,
   type AttestationSearchParams,
 } from './query_client';
@@ -178,7 +176,9 @@ export function dropSearchCache(query: PeerlensSearchQuery): void {
  *   - Network attestations: weight 0.5
  *   - Unknown reviewers: weight 0.2
  */
-export async function searchTrustNetwork(query: PeerlensSearchQuery): Promise<PeerlensSearchResult> {
+export async function searchTrustNetwork(
+  query: PeerlensSearchQuery,
+): Promise<PeerlensSearchResult> {
   const limit = query.limit ?? 20;
   const cacheKey = buildCacheKey(query);
 
@@ -338,9 +338,7 @@ function profileToReviews(profile: PeerlensProfile): PeerlensReview[] {
   const rating = Math.min(5, Math.max(1, Math.round(1 + profile.overallTrustScore * 4)));
 
   const domainNote =
-    profile.activeDomains.length > 0
-      ? ` across ${profile.activeDomains.length} domain(s)`
-      : '';
+    profile.activeDomains.length > 0 ? ` across ${profile.activeDomains.length} domain(s)` : '';
 
   return [
     {

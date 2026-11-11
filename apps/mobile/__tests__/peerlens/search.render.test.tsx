@@ -92,17 +92,13 @@ describe('SearchScreen — render states', () => {
   });
 
   it('renders generic empty state when no results + no q', () => {
-    const { getByTestId, getByText } = render(
-      <SearchScreen results={[]} facets={EMPTY_FACETS} />,
-    );
+    const { getByTestId, getByText } = render(<SearchScreen results={[]} facets={EMPTY_FACETS} />);
     expect(getByTestId('search-empty')).toBeTruthy();
     expect(getByText(/Try a search above/)).toBeTruthy();
   });
 
   it('renders contextualised empty state when no results + q provided', () => {
-    const { getByText } = render(
-      <SearchScreen results={[]} facets={EMPTY_FACETS} q="aeron" />,
-    );
+    const { getByText } = render(<SearchScreen results={[]} facets={EMPTY_FACETS} q="aeron" />);
     expect(getByText(/Nothing found for “aeron”/)).toBeTruthy();
   });
 
@@ -125,9 +121,7 @@ describe('SearchScreen — render states', () => {
   });
 
   it('does NOT render facet bar when facets empty AND no results', () => {
-    const { queryByTestId } = render(
-      <SearchScreen results={[]} facets={EMPTY_FACETS} />,
-    );
+    const { queryByTestId } = render(<SearchScreen results={[]} facets={EMPTY_FACETS} />);
     expect(queryByTestId('facet-bar')).toBeNull();
   });
 
@@ -162,11 +156,7 @@ describe('SearchScreen — interactions', () => {
   it('tap on a result card fires onSelectSubject', () => {
     const onSelect = jest.fn();
     const { getByTestId } = render(
-      <SearchScreen
-        results={makeResults(2)}
-        facets={SOME_FACETS}
-        onSelectSubject={onSelect}
-      />,
+      <SearchScreen results={makeResults(2)} facets={SOME_FACETS} onSelectSubject={onSelect} />,
     );
     fireEvent.press(getByTestId('subject-card-sub-1'));
     expect(onSelect).toHaveBeenCalledWith('sub-1');
@@ -175,11 +165,7 @@ describe('SearchScreen — interactions', () => {
   it('tap on facet chip fires onTapFacet with value', () => {
     const onTap = jest.fn();
     const { getByTestId } = render(
-      <SearchScreen
-        results={makeResults(1)}
-        facets={SOME_FACETS}
-        onTapFacet={onTap}
-      />,
+      <SearchScreen results={makeResults(1)} facets={SOME_FACETS} onTapFacet={onTap} />,
     );
     fireEvent.press(getByTestId('facet-chip-Furniture'));
     expect(onTap).toHaveBeenCalledWith('Furniture');
@@ -188,12 +174,7 @@ describe('SearchScreen — interactions', () => {
   it('tap on Retry fires onRetry', () => {
     const onRetry = jest.fn();
     const { getByTestId } = render(
-      <SearchScreen
-        results={[]}
-        facets={EMPTY_FACETS}
-        error="boom"
-        onRetry={onRetry}
-      />,
+      <SearchScreen results={[]} facets={EMPTY_FACETS} error="boom" onRetry={onRetry} />,
     );
     fireEvent.press(getByTestId('search-retry'));
     expect(onRetry).toHaveBeenCalledTimes(1);

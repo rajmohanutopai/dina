@@ -78,8 +78,8 @@ their compliance claim at whichever level they target.
 3. When the producing task (10.5 – 10.13 in the plan) lands:
    a. Emit the vector from the reference source pinned in `producer`.
    b. Commit alongside a test in `__tests__/conformance_vectors.test.ts`
-      that re-derives the `expected` fields from the reference and
-      asserts equality.
+   that re-derives the `expected` fields from the reference and
+   asserts equality.
    c. Replace the sentinel with the real `.json` file.
 
 Vectors are **frozen at land time**. Regenerating them is a

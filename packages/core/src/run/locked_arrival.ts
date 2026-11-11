@@ -48,7 +48,10 @@ export interface RunSpool {
    *  `staged_key_id` so orphan GC destroys the key before deleting the blob.
    *  Optional so minimal test doubles keep working; without it orphan GC is
    *  skipped. */
-  listStaleEntries?(cutoffMs: number, limit: number): { spool_id: string; staged_key_id: string | null }[];
+  listStaleEntries?(
+    cutoffMs: number,
+    limit: number,
+  ): { spool_id: string; staged_key_id: string | null }[];
 }
 
 /** In-memory spool for tests. The Node fs impl (fsync + atomic rename) mirrors
@@ -75,7 +78,10 @@ export class InMemoryRunSpool implements RunSpool {
   ack(id: string): void {
     this.blobs.delete(id);
   }
-  listStaleEntries(cutoffMs: number, limit: number): { spool_id: string; staged_key_id: string | null }[] {
+  listStaleEntries(
+    cutoffMs: number,
+    limit: number,
+  ): { spool_id: string; staged_key_id: string | null }[] {
     const out: { spool_id: string; staged_key_id: string | null }[] = [];
     for (const [id, v] of this.blobs.entries()) {
       if (v.createdAt < cutoffMs) out.push({ spool_id: id, staged_key_id: v.stagedKeyId });
@@ -126,7 +132,12 @@ export type PublishOutcome =
   | { outcome: 'published'; ref: PayloadRef }
   | {
       outcome: 'response_lost';
-      reason: 'blob_missing' | 'digest_mismatch' | 'erasure_key_gone' | 'publish_failed' | 'corrupt';
+      reason:
+        | 'blob_missing'
+        | 'digest_mismatch'
+        | 'erasure_key_gone'
+        | 'publish_failed'
+        | 'corrupt';
     };
 
 export interface LockedArrivalStoreOptions {
@@ -197,7 +208,8 @@ export class LockedArrivalStore {
 
   private erasure(): ErasureKeyStore {
     const s = this.explicitErasure ?? getErasureKeyStore();
-    if (s === null || s === undefined) throw new Error('LockedArrivalStore: no ErasureKeyStore wired');
+    if (s === null || s === undefined)
+      throw new Error('LockedArrivalStore: no ErasureKeyStore wired');
     return s;
   }
 
@@ -289,7 +301,12 @@ export class LockedArrivalStore {
    * open-persona envelope (the Tier-0 CAS is the sole commit) → ack the spool. A
    * missing/corrupt staged blob or a shredded leaf key surfaces `response_lost`.
    */
-  publish(payloadId: string, runId: string, persona: string, ref: SealedResponseRef): PublishOutcome {
+  publish(
+    payloadId: string,
+    runId: string,
+    persona: string,
+    ref: SealedResponseRef,
+  ): PublishOutcome {
     // Crash-recovery no-op (§7): if the persona blob was already published (crash
     // after the Tier-0 CAS, before the spool ack), FINALIZE (destroy the staging
     // key, then ack — B-01: a bare ack left the staging key alive forever) and
@@ -378,16 +395,24 @@ export class SQLiteRunSpool implements RunSpool {
     this.db.run('DELETE FROM run_spool WHERE spool_id = ?', [id]);
   }
 
-  listStaleEntries(cutoffMs: number, limit: number): { spool_id: string; staged_key_id: string | null }[] {
+  listStaleEntries(
+    cutoffMs: number,
+    limit: number,
+  ): { spool_id: string; staged_key_id: string | null }[] {
     return this.db
-      .query<{ spool_id: string; staged_key_id: string | null }>(
+      .query<{
+        spool_id: string;
+        staged_key_id: string | null;
+      }>(
         'SELECT spool_id, staged_key_id FROM run_spool WHERE created_at < ? ORDER BY created_at ASC LIMIT ?',
         [cutoffMs, limit],
       )
       .map((r) => ({
         spool_id: String(r.spool_id),
         staged_key_id:
-          r.staged_key_id === null || r.staged_key_id === undefined ? null : String(r.staged_key_id),
+          r.staged_key_id === null || r.staged_key_id === undefined
+            ? null
+            : String(r.staged_key_id),
       }));
   }
 }

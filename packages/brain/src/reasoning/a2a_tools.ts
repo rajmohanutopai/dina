@@ -21,7 +21,11 @@ import {
   MAX_ID_LENGTH,
   parseQualifiedSkill,
 } from '@dina/a2a';
-import { getCapabilityEntry, isPublicExposureAllowed, resolveCanonicalCapability } from '@dina/protocol';
+import {
+  getCapabilityEntry,
+  isPublicExposureAllowed,
+  resolveCanonicalCapability,
+} from '@dina/protocol';
 
 import { AppViewError, type A2ADirectoryAgent, type AppViewClient } from '../appview_client/http';
 
@@ -74,20 +78,25 @@ const REFUSAL_NOTES: Readonly<Record<string, string>> = {
   envelope_skill_not_bound:
     'The data names a different skill than the one you asked for. For a Dina agent, data.skill must be that skill id exactly as its card writes it.',
   credential_revoked: 'That agent cannot be called: its credential was revoked.',
-  too_many_pending: 'Too many requests to remote agents are waiting for approval. Ask the owner to answer those first.',
+  too_many_pending:
+    'Too many requests to remote agents are waiting for approval. Ask the owner to answer those first.',
   too_many_recent: 'Dina has asked remote agents too often in the last hour. Try again later.',
   empty_message: 'The message to send is empty.',
   text_too_long: 'The message is too long to send.',
   message_too_large: 'The message is too large to send.',
   a2a_unavailable: 'Remote agents are not available on this node.',
-  no_owner_turn: 'A request to a remote agent must follow something the owner said in this conversation.',
-  source_not_in_message: 'A quoted source is not part of the message. Quote the exact words the message contains.',
+  no_owner_turn:
+    'A request to a remote agent must follow something the owner said in this conversation.',
+  source_not_in_message:
+    'A quoted source is not part of the message. Quote the exact words the message contains.',
   source_unproven:
     'Dina could not confirm a quoted source: a source must be a whole message the owner sent here, or the whole body of a vault item read here and saved before this conversation. Leave it unquoted if unsure.',
-  source_changed: 'A quoted vault item has changed since it was read. Read it again before quoting it.',
+  source_changed:
+    'A quoted vault item has changed since it was read. Read it again before quoting it.',
   sources_malformed: 'Each source must say it came from "owner" or "vault"; nothing was proposed.',
   too_many_sources: 'Too many quoted sources. Quote fewer, longer passages.',
-  placeholder_in_input: 'The message already contains text shaped like a placeholder such as [EMAIL_1]. Write it differently.',
+  placeholder_in_input:
+    'The message already contains text shaped like a placeholder such as [EMAIL_1]. Write it differently.',
 };
 
 /**
@@ -159,7 +168,11 @@ export function createDelegateToA2AAgentTool(opts: A2AToolOptions): AgentTool {
           : undefined;
       const sources = parseSources(args.sources);
       if (sources === 'malformed') {
-        return { status: 'refused', reason: 'sources_malformed', note: REFUSAL_NOTES.sources_malformed ?? '' };
+        return {
+          status: 'refused',
+          reason: 'sources_malformed',
+          note: REFUSAL_NOTES.sources_malformed ?? '',
+        };
       }
       const out: A2ADelegateResult = await opts.core.delegateToA2AAgent({
         agentId,
@@ -241,7 +254,11 @@ function publicSkillKeys(skills: readonly string[]): string[] | null {
 }
 
 /** The candidate offers the asked-for skill: that exact id, or any skill of that capability. */
-function offers(agent: A2ADirectoryAgent, keys: readonly string[], wanted: { id: string; rkey?: string; canonical: string }): boolean {
+function offers(
+  agent: A2ADirectoryAgent,
+  keys: readonly string[],
+  wanted: { id: string; rkey?: string; canonical: string },
+): boolean {
   if (wanted.rkey !== undefined) return agent.skills.includes(wanted.id);
   return keys.includes(wanted.canonical);
 }
@@ -262,7 +279,8 @@ export function createSearchA2AAgentsTool(opts: SearchA2AAgentsToolOptions): Age
         skill: {
           type: 'string',
           maxLength: MAX_ID_LENGTH,
-          description: 'A capability (e.g. "eta_query") or an exact skill id (e.g. "price_check@shop").',
+          description:
+            'A capability (e.g. "eta_query") or an exact skill id (e.g. "price_check@shop").',
         },
         q: {
           type: 'string',
@@ -276,7 +294,10 @@ export function createSearchA2AAgentsTool(opts: SearchA2AAgentsToolOptions): Age
       const q = typeof args.q === 'string' && args.q !== '' ? args.q : undefined;
       // The directory's own limits, held here so the model hears what to change, never "unavailable".
       if (q !== undefined && q.length > A2A_DIRECTORY_QUERY_MAX_LENGTH) {
-        return { candidates: [], note: `Use at most ${A2A_DIRECTORY_QUERY_MAX_LENGTH} characters of words to match.` };
+        return {
+          candidates: [],
+          note: `Use at most ${A2A_DIRECTORY_QUERY_MAX_LENGTH} characters of words to match.`,
+        };
       }
       if (skillArg !== undefined && skillArg.length > MAX_ID_LENGTH) {
         return { candidates: [], note: `Use a skill id of at most ${MAX_ID_LENGTH} characters.` };
@@ -284,11 +305,19 @@ export function createSearchA2AAgentsTool(opts: SearchA2AAgentsToolOptions): Age
       let wanted: { id: string; rkey?: string; canonical: string } | undefined;
       if (skillArg !== undefined) {
         const qualified = parseQualifiedSkill(skillArg);
-        const canonical = qualified === null ? null : resolveCanonicalCapability(qualified.capability);
+        const canonical =
+          qualified === null ? null : resolveCanonicalCapability(qualified.capability);
         if (qualified === null || canonical === null) {
-          return { candidates: [], note: 'That is not a capability Dina knows. Use search_capabilities to find one.' };
+          return {
+            candidates: [],
+            note: 'That is not a capability Dina knows. Use search_capabilities to find one.',
+          };
         }
-        wanted = { id: skillArg, canonical, ...(qualified.rkey !== undefined ? { rkey: qualified.rkey } : {}) };
+        wanted = {
+          id: skillArg,
+          canonical,
+          ...(qualified.rkey !== undefined ? { rkey: qualified.rkey } : {}),
+        };
       }
       let found: A2ADirectoryAgent[];
       try {
@@ -300,7 +329,8 @@ export function createSearchA2AAgentsTool(opts: SearchA2AAgentsToolOptions): Age
       } catch (err) {
         // Closed (503) or unreachable (no status): said plainly. Any other
         // answer (a 400 or 500) is a fault, and surfaces as one.
-        if (!(err instanceof AppViewError) || (err.status !== 503 && err.status !== null)) throw err;
+        if (!(err instanceof AppViewError) || (err.status !== 503 && err.status !== null))
+          throw err;
         opts.logger?.({ event: 'a2a.directory_unavailable', status: err.status });
         return { candidates: [], note: 'The agent directory is not available right now.' };
       }
@@ -316,7 +346,11 @@ export function createSearchA2AAgentsTool(opts: SearchA2AAgentsToolOptions): Age
         .map((a) => ({ agent: a, keys: publicSkillKeys(a.skills) }))
         .filter((c): c is { agent: A2ADirectoryAgent; keys: string[] } => c.keys !== null)
         .filter((c) => wanted === undefined || offers(c.agent, c.keys, wanted))
-        .sort((x, y) => Number(x.agent.stale) - Number(y.agent.stale) || y.agent.trustScore - x.agent.trustScore)
+        .sort(
+          (x, y) =>
+            Number(x.agent.stale) - Number(y.agent.stale) ||
+            y.agent.trustScore - x.agent.trustScore,
+        )
         .slice(0, limit)
         .map(({ agent }) => ({
           did: agent.did,
@@ -328,7 +362,11 @@ export function createSearchA2AAgentsTool(opts: SearchA2AAgentsToolOptions): Age
           stale: agent.stale,
           indexed_at: agent.indexedAt,
         }));
-      opts.logger?.({ event: 'a2a.directory_searched', returned: found.length, kept: candidates.length });
+      opts.logger?.({
+        event: 'a2a.directory_searched',
+        returned: found.length,
+        kept: candidates.length,
+      });
       return {
         candidates,
         note: candidates.length === 0 ? 'No agent in the directory offers that.' : CANDIDATES_NOTE,

@@ -12,7 +12,6 @@ import { InlineDemoApprovalCard } from '../../src/components/InlineDemoApprovalC
 
 import type { ChatMessage } from '@dina/brain/chat';
 
-
 const APPROVAL_ID = 'guided-demo-approval-42';
 
 function seedRequest(): void {

@@ -1,8 +1,17 @@
 /** REAL_LIFE_FIXES_2 §5 — the owner's readable export: manifest to Brain, document to the owner, once. */
 
-import { cancelReadableExports, prepareReadableExport, takeReadableExport } from '../../src/export/readable';
+import {
+  cancelReadableExports,
+  prepareReadableExport,
+  takeReadableExport,
+} from '../../src/export/readable';
 import { setNodeDID } from '../../src/pairing/ceremony';
-import { closePersona, createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
+import {
+  closePersona,
+  createPersona,
+  openPersona,
+  resetPersonaState,
+} from '../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerOwnerExportRoutes } from '../../src/server/routes/owner_export';
 import { storeItem } from '../../src/vault/crud';
@@ -13,13 +22,24 @@ const CAP = 'cap-export';
 beforeEach(() => {
   resetPersonaState();
   setNodeDID('did:plc:owner');
-  for (const [name, tier] of [['general', 'default'], ['finance', 'locked']] as const) {
+  for (const [name, tier] of [
+    ['general', 'default'],
+    ['finance', 'locked'],
+  ] as const) {
     createPersona(name, tier);
     openPersona(name, true);
     setVaultRepository(name, new InMemoryVaultRepository());
   }
-  storeItem('general', { type: 'note', summary: 'bike lock code 1234', body: 'bike lock code 1234' });
-  storeItem('finance', { type: 'note', summary: 'mortgage with Halcyon', body: 'mortgage with Halcyon' });
+  storeItem('general', {
+    type: 'note',
+    summary: 'bike lock code 1234',
+    body: 'bike lock code 1234',
+  });
+  storeItem('finance', {
+    type: 'note',
+    summary: 'mortgage with Halcyon',
+    body: 'mortgage with Halcyon',
+  });
   cancelReadableExports();
 });
 
@@ -41,10 +61,16 @@ function req(method: CoreRequest['method'], path: string, caller: 'brain' | 'own
 it('a locked persona is excluded while closed and included once unlocked', async () => {
   closePersona('finance');
   const closed = await prepareReadableExport();
-  expect(closed.manifest.personas.find((p) => p.persona === 'finance')).toMatchObject({ included: false, why: expect.stringMatching(/passphrase/) });
+  expect(closed.manifest.personas.find((p) => p.persona === 'finance')).toMatchObject({
+    included: false,
+    why: expect.stringMatching(/passphrase/),
+  });
   openPersona('finance', true);
   const open = await prepareReadableExport();
-  expect(open.manifest.personas.find((p) => p.persona === 'finance')).toMatchObject({ included: true, items: 1 });
+  expect(open.manifest.personas.find((p) => p.persona === 'finance')).toMatchObject({
+    included: true,
+    items: 1,
+  });
 });
 
 it('Brain gets a manifest and an id, never the document; the owner takes it once', async () => {
@@ -54,11 +80,20 @@ it('Brain gets a manifest and an id, never the document; the owner takes it once
   expect(prep.status).toBe(200);
   const { id } = prep.body as { id: string };
   expect(JSON.stringify(prep.body)).not.toContain('bike lock code');
-  expect((await router.handle({ ...req('GET', `/v1/owner-export/${id}`, 'brain'), params: { id } })).status).toBe(403);
-  const doc = await router.handle({ ...req('GET', `/v1/owner-export/${id}`, 'owner'), params: { id } });
+  expect(
+    (await router.handle({ ...req('GET', `/v1/owner-export/${id}`, 'brain'), params: { id } }))
+      .status,
+  ).toBe(403);
+  const doc = await router.handle({
+    ...req('GET', `/v1/owner-export/${id}`, 'owner'),
+    params: { id },
+  });
   expect(doc.status).toBe(200);
   expect(JSON.stringify(doc.body)).toContain('bike lock code 1234');
-  expect((await router.handle({ ...req('GET', `/v1/owner-export/${id}`, 'owner'), params: { id } })).status).toBe(404);
+  expect(
+    (await router.handle({ ...req('GET', `/v1/owner-export/${id}`, 'owner'), params: { id } }))
+      .status,
+  ).toBe(404);
 });
 
 it('expires, and a forget cancels exports not yet taken', async () => {
@@ -70,9 +105,14 @@ it('expires, and a forget cancels exports not yet taken', async () => {
 });
 
 it('a forget during preparation leaves no export holding the forgotten item', async () => {
-  const { setTopicRepository, InMemoryTopicRepository } = await import('../../src/memory/repository');
+  const { setTopicRepository, InMemoryTopicRepository } =
+    await import('../../src/memory/repository');
   const { getVaultRepository } = await import('../../src/vault/repository');
-  const id = storeItem('general', { type: 'note', summary: 'Vesna owes rent', body: 'Vesna owes rent' });
+  const id = storeItem('general', {
+    type: 'note',
+    summary: 'Vesna owes rent',
+    body: 'Vesna owes rent',
+  });
   let release!: () => void;
   const gate = new Promise<void>((r) => (release = r));
   let paused = false;

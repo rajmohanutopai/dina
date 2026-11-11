@@ -59,11 +59,7 @@ export function useUnreadCount(kind?: NotificationKind): number {
       // it, the count stayed at the mount-time `getUnreadCount(kind)`
       // (which ran before boot hydration) and the badge stayed empty.
       // Walk is O(n) over an N typically <100, cheap.
-      if (
-        event.type === 'appended' ||
-        event.type === 'marked_read' ||
-        event.type === 'hydrated'
-      ) {
+      if (event.type === 'appended' || event.type === 'marked_read' || event.type === 'hydrated') {
         setCount(getUnreadCount(kind));
       }
     });

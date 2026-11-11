@@ -81,9 +81,7 @@ export interface RerankableCard {
  * Empty input returns the same empty array (object-identity stable
  * so callers can `useMemo`-key off the reference).
  */
-export function rerankByContacts(
-  cards: readonly RerankableCard[],
-): readonly RerankableCard[] {
+export function rerankByContacts(cards: readonly RerankableCard[]): readonly RerankableCard[] {
   if (cards.length === 0) return cards;
   const sorted = [...cards];
   sorted.sort(compareCards);

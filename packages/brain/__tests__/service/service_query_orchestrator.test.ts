@@ -515,7 +515,9 @@ describe('ServiceQueryOrchestrator — listing identity (service_uri, #1)', () =
       params: { route_id: '42', location: { lat: 1, lng: 2 } },
       serviceUri: 'at://did:plc:bus42/com.dinakernel.service.profile/route-42',
     });
-    expect(coreSeen[0].serviceUri).toBe('at://did:plc:bus42/com.dinakernel.service.profile/route-42');
+    expect(coreSeen[0].serviceUri).toBe(
+      'at://did:plc:bus42/com.dinakernel.service.profile/route-42',
+    );
   });
 
   it('issueQueryToDID omits service_uri when the caller did not supply one', async () => {
@@ -544,7 +546,9 @@ describe('ServiceQueryOrchestrator — listing identity (service_uri, #1)', () =
       capability: 'eta_query',
       params: { location: { lat: 0, lng: 0 } },
     });
-    expect(coreSeen[0].serviceUri).toBe('at://did:plc:bus42/com.dinakernel.service.profile/route-42');
+    expect(coreSeen[0].serviceUri).toBe(
+      'at://did:plc:bus42/com.dinakernel.service.profile/route-42',
+    );
   });
 
   it('issueQuery omits service_uri when the winning profile carries no uri', async () => {

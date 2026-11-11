@@ -57,7 +57,8 @@ import {
   MSG_TYPE_COORDINATION_BOOKED as MsgTypeCoordinationBooked,
   MSG_TYPE_COMMITMENT_OPTION as MsgTypeCommitmentOption,
   MSG_TYPE_COMMITMENT_CONSENT as MsgTypeCommitmentConsent,
- D2D_SCENARIOS } from '@dina/protocol';
+  D2D_SCENARIOS,
+} from '@dina/protocol';
 
 import type { VaultItemType } from '../vault/validation';
 import type {

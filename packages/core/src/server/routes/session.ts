@@ -78,13 +78,15 @@ export function registerSessionRoutes(router: CoreRouter): void {
     if (agentDid === '') {
       return { status: 401, body: { error: 'unauthenticated: no caller DID' } };
     }
-    const sessions = getSessionRegistry().listActive(agentDid).map((session) => ({
-      session_id: session.sessionId,
-      name: session.hostSessionId,
-      status: 'active',
-      lease_expires_at: Math.floor(session.leaseExpiresAtMs / 1000),
-      grants: [],
-    }));
+    const sessions = getSessionRegistry()
+      .listActive(agentDid)
+      .map((session) => ({
+        session_id: session.sessionId,
+        name: session.hostSessionId,
+        status: 'active',
+        lease_expires_at: Math.floor(session.leaseExpiresAtMs / 1000),
+        grants: [],
+      }));
     return { status: 200, body: { sessions } };
   });
 }

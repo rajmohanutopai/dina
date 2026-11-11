@@ -80,10 +80,16 @@ describe('checkVaultCapability', () => {
     expect(checkVaultCapability(agentCap, 'read')).toEqual({ ok: true });
   });
   it('denies an agent write', () => {
-    expect(checkVaultCapability(agentCap, 'write')).toEqual({ ok: false, reason: 'operation_denied' });
+    expect(checkVaultCapability(agentCap, 'write')).toEqual({
+      ok: false,
+      reason: 'operation_denied',
+    });
   });
   it('denies an agent delete', () => {
-    expect(checkVaultCapability(agentCap, 'delete')).toEqual({ ok: false, reason: 'operation_denied' });
+    expect(checkVaultCapability(agentCap, 'delete')).toEqual({
+      ok: false,
+      reason: 'operation_denied',
+    });
   });
   it('allows the owner everything', () => {
     const owner: VaultCapability = { origin: 'owner_request' };

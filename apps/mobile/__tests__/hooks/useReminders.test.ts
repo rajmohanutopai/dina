@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 5.6
  */
 
-import { createReminder, resetReminderState } from '../../../core/src/reminders/service';
+import { createReminder } from '../../../core/src/reminders/service';
 import {
   getUpcomingReminders,
   getOverdueReminders,

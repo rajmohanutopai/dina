@@ -677,7 +677,11 @@ export function withPublishedCatalogue(
  * product at its unit price, added to (or replacing in) the live catalogue.
  * For tests whose subject is not the floors (COMMITMENT_KERNEL §15 step 10).
  */
-export function publishQuotedPrices(runtime: CommerceRuntime, params: unknown, resultJSON: string): void {
+export function publishQuotedPrices(
+  runtime: CommerceRuntime,
+  params: unknown,
+  resultJSON: string,
+): void {
   let result: { can_supply?: unknown; lines?: unknown };
   try {
     result = JSON.parse(resultJSON) as typeof result;
@@ -694,7 +698,8 @@ export function publishQuotedPrices(runtime: CommerceRuntime, params: unknown, r
     offered_product?: ProductRef;
   }[]) {
     const product = raw.offered_product ?? asked.find((l) => l.line_id === raw.line_id)?.product;
-    if (product === undefined || raw.unit_price === undefined || raw.quantity === undefined) continue;
+    if (product === undefined || raw.unit_price === undefined || raw.quantity === undefined)
+      continue;
     const at = items.findIndex((item) => productRefsEqual(item.product, product));
     if (at >= 0) {
       items[at] = { ...(items[at] as CatalogItem), indicative_price: raw.unit_price };

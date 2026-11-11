@@ -139,7 +139,9 @@ export async function vaultHasText(persona: string, needle: string): Promise<boo
   const n = needle.toLowerCase();
   const items = await listVault(persona);
   return items.some((it) =>
-    [it.body, it.summary, it.type].some((f) => typeof f === 'string' && f.toLowerCase().includes(n)),
+    [it.body, it.summary, it.type].some(
+      (f) => typeof f === 'string' && f.toLowerCase().includes(n),
+    ),
   );
 }
 

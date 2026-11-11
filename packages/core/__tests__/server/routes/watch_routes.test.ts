@@ -33,7 +33,15 @@ function req(
   };
 }
 
-const NON_OWNER: (string | undefined)[] = [undefined, 'brain', 'agent', 'plugin', 'connector', 'device', 'service'];
+const NON_OWNER: (string | undefined)[] = [
+  undefined,
+  'brain',
+  'agent',
+  'plugin',
+  'connector',
+  'device',
+  'service',
+];
 
 describe('/v1/watch/* — owner boundary + management', () => {
   let router: CoreRouter;
@@ -92,7 +100,9 @@ describe('/v1/watch/* — owner boundary + management', () => {
     expect((created.body as { subscription_id: string }).subscription_id).toBe('sub-new');
 
     const list = (
-      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] }
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as {
+        watches: WatchListItem[];
+      }
     ).watches;
     expect(list.map((w) => w.subscription_id)).toContain('sub-new');
   });
@@ -110,9 +120,13 @@ describe('/v1/watch/* — owner boundary + management', () => {
     const b = await router.handle(req('POST', '/v1/watch/create', 'owner', body));
     expect(a.status).toBe(201);
     expect(b.status).toBe(201);
-    expect((a.body as { watch_id: string }).watch_id).toBe((b.body as { watch_id: string }).watch_id);
+    expect((a.body as { watch_id: string }).watch_id).toBe(
+      (b.body as { watch_id: string }).watch_id,
+    );
     const list = (
-      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] }
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as {
+        watches: WatchListItem[];
+      }
     ).watches;
     expect(list.filter((w) => w.subscription_id === 'sub-idem')).toHaveLength(1);
   });
@@ -137,7 +151,10 @@ describe('/v1/watch/* — owner boundary + management', () => {
       }),
     );
     expect(resp.status).toBe(201);
-    expect(svc.deliveryPolicyFor('sub-flt')).toEqual({ active: true, filter: { contains: 'delayed' } });
+    expect(svc.deliveryPolicyFor('sub-flt')).toEqual({
+      active: true,
+      filter: { contains: 'delayed' },
+    });
     // R5-07 — a PRESENT-but-malformed filter is REJECTED (400), never silently
     // dropped to "fire always"; the watch is not created (fail closed).
     const bad = await router.handle(
@@ -216,19 +233,27 @@ describe('/v1/watch/* — owner boundary + management', () => {
 
     expect((await router.handle(req('POST', `/v1/watch/${id}/pause`, 'owner'))).status).toBe(200);
     let items = (
-      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] }
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as {
+        watches: WatchListItem[];
+      }
     ).watches;
     expect(items[0].status).toBe('paused');
     expect(items[0].next_run_at).toBeNull();
 
     expect((await router.handle(req('POST', `/v1/watch/${id}/resume`, 'owner'))).status).toBe(200);
-    items = ((await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] })
-      .watches;
+    items = (
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as {
+        watches: WatchListItem[];
+      }
+    ).watches;
     expect(items[0].status).toBe('active');
 
     expect((await router.handle(req('POST', `/v1/watch/${id}/cancel`, 'owner'))).status).toBe(200);
-    items = ((await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as { watches: WatchListItem[] })
-      .watches;
+    items = (
+      (await router.handle(req('GET', '/v1/watch/list', 'owner'))).body as {
+        watches: WatchListItem[];
+      }
+    ).watches;
     expect(items).toHaveLength(0); // cancelled watches leave the active list
   });
 

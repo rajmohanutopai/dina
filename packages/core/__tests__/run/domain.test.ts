@@ -69,9 +69,9 @@ describe('validateCreateParams', () => {
   });
 
   it('requires a future hard TTL (expires_at)', () => {
-    expect(() => validateCreateParams({ ...baseParams(), expires_at: undefined as never }, NOW)).toThrow(
-      /expires_at/,
-    );
+    expect(() =>
+      validateCreateParams({ ...baseParams(), expires_at: undefined as never }, NOW),
+    ).toThrow(/expires_at/);
     expect(() => validateCreateParams(baseParams({ expires_at: NOW - 1 }), NOW)).toThrow(/future/);
   });
 
@@ -135,7 +135,11 @@ describe('decideBarrier — monotonic strengthen-only (§5.1)', () => {
     // duplicate fencing → no-op (never re-fences or moves the deadline)
     expect(decideBarrier(fencing, 'expiry', NOW + 5_000).kind).toBe('noop');
     // duplicate permissive → no-op
-    const perm: BarrierState = { cause: 'count', strength: 'permissive', deadline_at: NOW + 20_000 };
+    const perm: BarrierState = {
+      cause: 'count',
+      strength: 'permissive',
+      deadline_at: NOW + 20_000,
+    };
     expect(decideBarrier(perm, 'finish_pending', NOW + 1_000).kind).toBe('noop');
   });
 });

@@ -53,7 +53,9 @@ describe('the trade-details screen', () => {
     });
     const view = render(<ContactTradeDetailsScreen />);
     await waitFor(() => expect(view.getByTestId('contact-trade-legalName')).toBeTruthy());
-    expect(view.getByTestId('contact-trade-legalName').props.value).toBe('ChairMaker Industries LLP');
+    expect(view.getByTestId('contact-trade-legalName').props.value).toBe(
+      'ChairMaker Industries LLP',
+    );
     expect(view.getByTestId('contact-trade-gstin').props.value).toBe(GSTIN);
     expect(view.getByTestId('contact-trade-phone').props.value).toBe('+919845012345');
     expect(view.getByTestId('contact-trade-email').props.value).toBe('sales@chairmaker.example');
@@ -110,7 +112,11 @@ describe('the trade-details screen', () => {
 
   it('an address the owner part-typed is SENT, so Core can say what is missing beside the field', async () => {
     saveMock.mockResolvedValue([
-      { refusal: 'malformed_address', field: 'billing_address.line1', detail: 'a street line is required' },
+      {
+        refusal: 'malformed_address',
+        field: 'billing_address.line1',
+        detail: 'a street line is required',
+      },
     ]);
     const view = render(<ContactTradeDetailsScreen />);
     await waitFor(() => expect(view.getByTestId('contact-trade-save')).toBeTruthy());
@@ -129,20 +135,34 @@ describe('the trade-details screen', () => {
 
   it('a finding that belongs beside NO field is shown in the error slot, never swallowed', async () => {
     saveMock.mockResolvedValue([
-      { refusal: 'channel_held_by_another_person', field: 'somewhere_else', detail: 'another contact already has this one' },
+      {
+        refusal: 'channel_held_by_another_person',
+        field: 'somewhere_else',
+        detail: 'another contact already has this one',
+      },
     ]);
     const view = render(<ContactTradeDetailsScreen />);
     await waitFor(() => expect(view.getByTestId('contact-trade-save')).toBeTruthy());
     fireEvent.press(view.getByTestId('contact-trade-save'));
     await waitFor(() => expect(view.getByTestId('contact-trade-error')).toBeTruthy());
-    expect(view.getByTestId('contact-trade-error').props.children).toContain('another contact already has this one');
+    expect(view.getByTestId('contact-trade-error').props.children).toContain(
+      'another contact already has this one',
+    );
     expect(back).not.toHaveBeenCalled();
   });
 
   it('shows a refusal beside the field it belongs to, and STAYS on the screen', async () => {
     saveMock.mockResolvedValue([
-      { refusal: 'malformed_registration', field: 'registrations[0]', detail: 'the gstin does not pass its own format check' },
-      { refusal: 'malformed_channel', field: 'phone', detail: 'a phone must be 8–15 digits, optionally with a leading + country code' },
+      {
+        refusal: 'malformed_registration',
+        field: 'registrations[0]',
+        detail: 'the gstin does not pass its own format check',
+      },
+      {
+        refusal: 'malformed_channel',
+        field: 'phone',
+        detail: 'a phone must be 8–15 digits, optionally with a leading + country code',
+      },
     ]);
     const view = render(<ContactTradeDetailsScreen />);
     await waitFor(() => expect(view.getByTestId('contact-trade-save')).toBeTruthy());
@@ -150,7 +170,9 @@ describe('the trade-details screen', () => {
     fireEvent.press(view.getByTestId('contact-trade-save'));
 
     await waitFor(() => expect(view.getByTestId('contact-trade-finding-gstin')).toBeTruthy());
-    expect(view.getByTestId('contact-trade-finding-gstin').props.children).toContain('format check');
+    expect(view.getByTestId('contact-trade-finding-gstin').props.children).toContain(
+      'format check',
+    );
     expect(view.getByTestId('contact-trade-finding-phone')).toBeTruthy();
     // A refused save wrote nothing, so the owner stays where their typing is.
     expect(back).not.toHaveBeenCalled();

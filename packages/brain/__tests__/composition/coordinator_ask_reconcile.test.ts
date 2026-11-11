@@ -15,7 +15,10 @@ import {
 } from '../../src/chat/thread';
 import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
 
-type Ev = { kind: string; id: string };
+interface Ev {
+  kind: string;
+  id: string;
+}
 
 function fake(records: Record<string, unknown>) {
   const subs = new Set<(e: Ev) => void>();
@@ -53,7 +56,12 @@ function placeholder(askId: string): void {
 function approvalRow(askId: string): void {
   addUserMessage('main', 'a question');
   addMessage('main', 'approval', 'needs approval', {
-    metadata: { kind: 'ask_approval', askId, approvalId: `appr-${askId}-health`, persona: 'health' },
+    metadata: {
+      kind: 'ask_approval',
+      askId,
+      approvalId: `appr-${askId}-health`,
+      persona: 'health',
+    },
   });
 }
 
@@ -76,7 +84,9 @@ beforeEach(() => resetThreads());
 describe('placeholder rows', () => {
   it('a finished ask morphs the row to its answer', async () => {
     placeholder('ask-1');
-    const h = make({ 'ask-1': { status: 'complete', answerJson: JSON.stringify({ text: 'the answer' }) } });
+    const h = make({
+      'ask-1': { status: 'complete', answerJson: JSON.stringify({ text: 'the answer' }) },
+    });
     await h.reconcile();
     expect(askRow()?.content).toBe('the answer');
     expect(readLifecycle(askRow()!)).toMatchObject({ status: 'complete' });
@@ -119,7 +129,10 @@ describe('approval rows', () => {
     const records: Record<string, unknown> = { 'ask-5': { status: 'pending_approval' } };
     const h = make(records);
     await h.reconcile();
-    records['ask-5'] = { status: 'complete', answerJson: JSON.stringify({ text: 'approved answer' }) };
+    records['ask-5'] = {
+      status: 'complete',
+      answerJson: JSON.stringify({ text: 'approved answer' }),
+    };
     h.fire({ kind: 'completed', id: 'ask-5' });
     await flush();
     await h.reconcile();
@@ -183,7 +196,11 @@ it('a live approval flow marks its row when it delivers', async () => {
       registry: { get: async (id: string) => records[id] ?? null },
       handleAsk: async () => ({
         kind: 'fast_path',
-        body: { status: 'pending_approval', approval_id: 'appr-ask-11-health', request_id: 'ask-11' },
+        body: {
+          status: 'pending_approval',
+          approval_id: 'appr-ask-11-health',
+          request_id: 'ask-11',
+        },
       }),
       subscribe: (fn: (e: Ev) => void) => {
         subs.add(fn);

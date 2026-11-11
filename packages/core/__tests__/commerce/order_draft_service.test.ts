@@ -113,7 +113,11 @@ function makeService(
   present = true,
   boundary = new InMemoryAttributionBoundaryRepository(),
   voucher: string | null = 'did:plc:draftowner000000000000000',
-): { service: OrderDraftService; repo: InMemoryOrderDraftRepository; boundary: InMemoryAttributionBoundaryRepository } {
+): {
+  service: OrderDraftService;
+  repo: InMemoryOrderDraftRepository;
+  boundary: InMemoryAttributionBoundaryRepository;
+} {
   const repo = new InMemoryOrderDraftRepository();
   const service = new OrderDraftService({
     drafts: repo,
@@ -134,12 +138,18 @@ describe('REPAIR A LINE (matrix row 1)', () => {
     repo.put(
       makeDraft({
         lines: [
-          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } }),
+          resolvedLine({
+            vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
+          }),
         ],
         conversations: [sentConversation()],
       }),
     );
-    const outcome = service.repairLine('odr-1', { lineId: 'line-1', field: 'quantity', value: '25' });
+    const outcome = service.repairLine('odr-1', {
+      lineId: 'line-1',
+      field: 'quantity',
+      value: '25',
+    });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     const line = outcome.draft.lines[0]!;
@@ -157,18 +167,26 @@ describe('REPAIR A LINE (matrix row 1)', () => {
   it('a line in a SUBMITTED order refuses — rejected/timed-out lines reopen first', () => {
     const { service, repo } = makeService();
     repo.put(makeDraft({ lines: [resolvedLine({ submittedIn: 'conv-9' })] }));
-    const outcome = service.repairLine('odr-1', { lineId: 'line-1', field: 'quantity', value: '25' });
+    const outcome = service.repairLine('odr-1', {
+      lineId: 'line-1',
+      field: 'quantity',
+      value: '25',
+    });
     expect(outcome).toMatchObject({ ok: false, refusal: 'line_submitted' });
   });
 
-  it('other lines\' vouch entries STAND', () => {
+  it("other lines' vouch entries STAND", () => {
     const { service, repo } = makeService();
     const untouched = resolvedLine({
       lineId: 'line-2',
       vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
     });
     repo.put(makeDraft({ lines: [resolvedLine(), untouched] }));
-    const outcome = service.repairLine('odr-1', { lineId: 'line-1', field: 'quantity', value: '25' });
+    const outcome = service.repairLine('odr-1', {
+      lineId: 'line-1',
+      field: 'quantity',
+      value: '25',
+    });
     expect(outcome.ok).toBe(true);
     if (!outcome.ok) return;
     expect(outcome.draft.lines[1]?.vouch).not.toBeNull();
@@ -244,7 +262,9 @@ describe('RESOLVE (matrix row 2) — refuse what the store cannot re-read', () =
     repo.put(
       makeDraft({
         lines: [
-          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } }),
+          resolvedLine({
+            vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
+          }),
         ],
       }),
     );
@@ -261,7 +281,9 @@ describe('RESOLVE (matrix row 2) — refuse what the store cannot re-read', () =
     const line = repo.get('odr-1')?.lines[0];
     expect(line?.generation).toBe(2);
     expect(line?.vouch).toBeNull();
-    expect(line?.resolution.kind === 'resolved' && line.resolution.product.value).toBe('CM-STOOL-1');
+    expect(line?.resolution.kind === 'resolved' && line.resolution.product.value).toBe(
+      'CM-STOOL-1',
+    );
   });
 });
 
@@ -298,11 +320,14 @@ describe('DEFER (matrix row 3)', () => {
   it('defer refuses on a line that is not ambiguous', () => {
     const { service, repo } = makeService();
     repo.put(makeDraft());
-    expect(service.deferLine('odr-1', 'line-1')).toMatchObject({ ok: false, refusal: 'not_ambiguous' });
+    expect(service.deferLine('odr-1', 'line-1')).toMatchObject({
+      ok: false,
+      refusal: 'not_ambiguous',
+    });
   });
 });
 
-describe('ACCEPT LINE FIELDS (matrix row 4 — the confirm gate\'s exit)', () => {
+describe("ACCEPT LINE FIELDS (matrix row 4 — the confirm gate's exit)", () => {
   it('accepts only named, existing, currently-proposed fields', () => {
     const { service, repo } = makeService();
     repo.put(
@@ -316,7 +341,10 @@ describe('ACCEPT LINE FIELDS (matrix row 4 — the confirm gate\'s exit)', () =>
     expect(
       service.acceptLineFields('odr-1', [{ lineId: 'line-1', field: 'product_hint' }]),
     ).toMatchObject({ ok: false, refusal: 'not_proposed' });
-    expect(service.acceptLineFields('odr-1', [])).toMatchObject({ ok: false, refusal: 'nothing_named' });
+    expect(service.acceptLineFields('odr-1', [])).toMatchObject({
+      ok: false,
+      refusal: 'nothing_named',
+    });
 
     const accepted = service.acceptLineFields('odr-1', [{ lineId: 'line-1', field: 'quantity' }]);
     expect(accepted.ok).toBe(true);
@@ -406,9 +434,7 @@ describe('CONFIRM — the ceremony', () => {
 
   it('names the still-proposed field that blocks it', () => {
     const { service, repo } = makeService();
-    repo.put(
-      makeDraft({ lines: [resolvedLine({ provenance: { quantity: 'proposed' } })] }),
-    );
+    repo.put(makeDraft({ lines: [resolvedLine({ provenance: { quantity: 'proposed' } })] }));
     const outcome = service.confirm('odr-1');
     expect(outcome).toMatchObject({ ok: false, refusal: 'unconfirmed_fields' });
     if (!outcome.ok) expect(outcome.detail).toContain('quantity');
@@ -460,13 +486,22 @@ describe('CONFIRM — the ceremony', () => {
             line_id: 'line-1',
             generation: 1,
             quantity: { value: '20', unit_code: 'each' },
-            resolved_product: { scheme: 'manufacturer_sku', value: 'CM-CHAIR-1', issuer_did: SUPPLIER },
+            resolved_product: {
+              scheme: 'manufacturer_sku',
+              value: 'CM-CHAIR-1',
+              issuer_did: SUPPLIER,
+            },
             supplier_did: SUPPLIER,
           },
         ],
         requirements: [
           { key: 'required_by', omitted: false, value: '2026-08-21', generation: 1 },
-          { key: 'instruction', omitted: false, value: 'deliver to the back entrance', generation: 1 },
+          {
+            key: 'instruction',
+            omitted: false,
+            value: 'deliver to the back entrance',
+            generation: 1,
+          },
         ],
       },
       hash,
@@ -501,7 +536,9 @@ describe('REOPEN and ABANDON', () => {
     repo.put(
       makeDraft({
         lines: [
-          resolvedLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } }),
+          resolvedLine({
+            vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
+          }),
         ],
         conversations: [sentConversation({ state: 'timed_out' })],
       }),
@@ -560,13 +597,22 @@ describe('§6.4 attribution at the vouch ceremony', () => {
             line_id: 'line-1',
             generation: 1,
             quantity: { value: '20', unit_code: 'each' },
-            resolved_product: { scheme: 'manufacturer_sku', value: 'CM-CHAIR-1', issuer_did: SUPPLIER },
+            resolved_product: {
+              scheme: 'manufacturer_sku',
+              value: 'CM-CHAIR-1',
+              issuer_did: SUPPLIER,
+            },
             supplier_did: SUPPLIER,
           },
         ],
         requirements: [
           { key: 'required_by', omitted: false, value: '2026-08-21', generation: 1 },
-          { key: 'instruction', omitted: false, value: 'deliver to the back entrance', generation: 1 },
+          {
+            key: 'instruction',
+            omitted: false,
+            value: 'deliver to the back entrance',
+            generation: 1,
+          },
         ],
       },
       hash,
@@ -582,13 +628,22 @@ describe('§6.4 attribution at the vouch ceremony', () => {
             line_id: 'line-1',
             generation: 1,
             quantity: { value: '20', unit_code: 'each' },
-            resolved_product: { scheme: 'manufacturer_sku', value: 'CM-CHAIR-1', issuer_did: SUPPLIER },
+            resolved_product: {
+              scheme: 'manufacturer_sku',
+              value: 'CM-CHAIR-1',
+              issuer_did: SUPPLIER,
+            },
             supplier_did: SUPPLIER,
           },
         ],
         requirements: [
           { key: 'required_by', omitted: false, value: '2026-08-21', generation: 1 },
-          { key: 'instruction', omitted: false, value: 'deliver to the back entrance', generation: 1 },
+          {
+            key: 'instruction',
+            omitted: false,
+            value: 'deliver to the back entrance',
+            generation: 1,
+          },
         ],
         attribution: { version: 2, vouched_by: voucher },
       },

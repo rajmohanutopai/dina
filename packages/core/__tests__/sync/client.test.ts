@@ -18,7 +18,6 @@ import {
   resetSyncState,
   registerDevice,
   connectDevice,
-  disconnectDevice,
   addSyncItem,
   corruptCache,
   validateSyncItemSize,

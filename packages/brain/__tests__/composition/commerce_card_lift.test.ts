@@ -59,7 +59,11 @@ describe('translateLoopResult — commerce comparison lift', () => {
   it('lifts nothing when the search_products call failed', () => {
     const out = translateLoopResult(
       completed([
-        { name: 'search_products', arguments: {}, outcome: { success: false, error: 'appview down' } },
+        {
+          name: 'search_products',
+          arguments: {},
+          outcome: { success: false, error: 'appview down' },
+        },
       ]),
       'x',
     );
@@ -83,19 +87,32 @@ describe('translateLoopResult — commerce comparison lift', () => {
     };
     const out = translateLoopResult(
       completed([
-        { name: 'search_products', arguments: {}, outcome: { success: true, result: { card: CARD, researchId: 'r1' } } },
+        {
+          name: 'search_products',
+          arguments: {},
+          outcome: { success: true, result: { card: CARD, researchId: 'r1' } },
+        },
         {
           name: 'recommend_offer',
           arguments: { research_id: 'r1', supplier_did: 'did:plc:steady', reason: 'x' },
-          outcome: { success: true, result: { card: decided, recommended: 'did:plc:steady', note: '' } },
+          outcome: {
+            success: true,
+            result: { card: decided, recommended: 'did:plc:steady', note: '' },
+          },
         },
       ]),
       'x',
     );
     expect(out.kind).toBe('answer');
     if (out.kind === 'answer') {
-      const card = out.answer.commerceCard as { blocks: { kind: string; label?: string; value?: string }[] };
-      expect(card.blocks.some((b) => b.kind === 'keyValue' && b.value === 'Steady Seats (did:plc:steady)')).toBe(true);
+      const card = out.answer.commerceCard as {
+        blocks: { kind: string; label?: string; value?: string }[];
+      };
+      expect(
+        card.blocks.some(
+          (b) => b.kind === 'keyValue' && b.value === 'Steady Seats (did:plc:steady)',
+        ),
+      ).toBe(true);
       expect(card.blocks.some((b) => b.kind === 'keyValue' && b.label === 'Chosen for')).toBe(true);
       expect(card.blocks.some((b) => b.value === 'did:plc:seller')).toBe(false);
     }
@@ -104,15 +121,25 @@ describe('translateLoopResult — commerce comparison lift', () => {
   it('a REFUSED recommend_offer leaves the research card standing', () => {
     const out = translateLoopResult(
       completed([
-        { name: 'search_products', arguments: {}, outcome: { success: true, result: { card: CARD, researchId: 'r1' } } },
-        { name: 'recommend_offer', arguments: {}, outcome: { success: false, error: 'not among the ranked offers' } },
+        {
+          name: 'search_products',
+          arguments: {},
+          outcome: { success: true, result: { card: CARD, researchId: 'r1' } },
+        },
+        {
+          name: 'recommend_offer',
+          arguments: {},
+          outcome: { success: false, error: 'not among the ranked offers' },
+        },
       ]),
       'x',
     );
     expect(out.kind).toBe('answer');
     if (out.kind === 'answer') {
       const card = out.answer.commerceCard as { blocks: { kind: string; value?: string }[] };
-      expect(card.blocks.some((b) => b.kind === 'keyValue' && b.value === 'did:plc:seller')).toBe(true);
+      expect(card.blocks.some((b) => b.kind === 'keyValue' && b.value === 'did:plc:seller')).toBe(
+        true,
+      );
     }
   });
 
@@ -123,8 +150,16 @@ describe('translateLoopResult — commerce comparison lift', () => {
     };
     const out = translateLoopResult(
       completed([
-        { name: 'search_products', arguments: {}, outcome: { success: true, result: { card: CARD } } },
-        { name: 'search_products', arguments: {}, outcome: { success: true, result: { card: second } } },
+        {
+          name: 'search_products',
+          arguments: {},
+          outcome: { success: true, result: { card: CARD } },
+        },
+        {
+          name: 'search_products',
+          arguments: {},
+          outcome: { success: true, result: { card: second } },
+        },
       ]),
       'x',
     );

@@ -87,7 +87,10 @@ export interface CardRepoClient {
   /** The DID the PDS session is signed in as; checked against the node's before every write. */
   sessionDid(): Promise<string>;
   getLatestCommit(): Promise<{ cid: string; rev: string }>;
-  getRecord(collection: string, rkey: string): Promise<{ uri: string; cid: string; value: Record<string, unknown> } | null>;
+  getRecord(
+    collection: string,
+    rkey: string,
+  ): Promise<{ uri: string; cid: string; value: Record<string, unknown> } | null>;
   putRecord(
     collection: string,
     rkey: string,
@@ -157,14 +160,18 @@ class RepoMoved extends Error {}
 
 /** The card's JSON-RPC endpoint: the one AppView indexes (§8.3), or null when the card names none. */
 function jsonRpcEndpoint(card: AgentCard): string | null {
-  return card.supportedInterfaces.find((i) => i.protocolBinding === PROTOCOL_BINDING_JSONRPC)?.url ?? null;
+  return (
+    card.supportedInterfaces.find((i) => i.protocolBinding === PROTOCOL_BINDING_JSONRPC)?.url ??
+    null
+  );
 }
 
 /** A card AppView would index: a JSON-RPC interface, and canonical bytes within the card cap (§8.3). */
 function publishable(card: AgentCard): boolean {
   return (
     jsonRpcEndpoint(card) !== null &&
-    new TextEncoder().encode(canonicalize(card as unknown as JsonValue)).length <= A2A_LIMITS.maxCardBytes
+    new TextEncoder().encode(canonicalize(card as unknown as JsonValue)).length <=
+      A2A_LIMITS.maxCardBytes
   );
 }
 
@@ -190,7 +197,8 @@ export class A2ACardPublisher implements A2APublisherPort {
     this.log = deps.log ?? (() => undefined);
     this.tickMs = deps.tickMs ?? 30_000;
     this.setTimeoutFn = deps.setTimeout ?? ((fn, ms) => setTimeout(fn, ms).unref());
-    this.clearTimeoutFn = deps.clearTimeout ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+    this.clearTimeoutFn =
+      deps.clearTimeout ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
   }
 
   start(): void {
@@ -219,7 +227,12 @@ export class A2ACardPublisher implements A2APublisherPort {
     if (this.timer !== null) this.clearTimeoutFn(this.timer);
     this.timer = null;
     this.running = this.step()
-      .catch((err: unknown) => this.log({ event: 'a2a.publisher.step_failed', error: err instanceof Error ? err.name : 'unknown' }))
+      .catch((err: unknown) =>
+        this.log({
+          event: 'a2a.publisher.step_failed',
+          error: err instanceof Error ? err.name : 'unknown',
+        }),
+      )
       .finally(() => this.slotFreed());
   }
 
@@ -295,8 +308,13 @@ export class A2ACardPublisher implements A2APublisherPort {
       if (!Number.isSafeInteger(epoch)) return { ok: false, reason: 'lost_race' };
       if (!(await this.sessionIsOurs())) return { ok: false, reason: 'repo_unreachable' };
       const keyId = this.deps.signingKeyId();
-      const fence = await signFence({ did: this.deps.nodeDid, publisher_epoch: epoch, publisher_instance: start.publisher_instance }, (m) =>
-        this.deps.sign(m),
+      const fence = await signFence(
+        {
+          did: this.deps.nodeDid,
+          publisher_epoch: epoch,
+          publisher_instance: start.publisher_instance,
+        },
+        (m) => this.deps.sign(m),
       );
       try {
         await this.deps.repo.putRecord(
@@ -309,12 +327,22 @@ export class A2ACardPublisher implements A2APublisherPort {
         if (!this.deps.isLostSwap(err)) return { ok: false, reason: 'repo_unreachable' };
         // Another write landed in between. If it was a fence, another server
         // is activating: the owner decides, so stop. Otherwise read again.
-        const fenceNow = await this.deps.repo.getRecord(A2A_FENCE_COLLECTION, A2A_SELF_RKEY).catch(() => undefined);
+        const fenceNow = await this.deps.repo
+          .getRecord(A2A_FENCE_COLLECTION, A2A_SELF_RKEY)
+          .catch(() => undefined);
         if (fenceNow === undefined) return { ok: false, reason: 'repo_unreachable' };
-        if ((fenceNow?.cid ?? null) !== (view.fence?.cid ?? null)) return { ok: false, reason: 'lost_race' };
+        if ((fenceNow?.cid ?? null) !== (view.fence?.cid ?? null))
+          return { ok: false, reason: 'lost_race' };
         continue;
       }
-      if (!recordActivation(store, { fencingGeneration: start.fencing_generation, epoch, keyId, nowMs: this.now() })) {
+      if (
+        !recordActivation(store, {
+          fencingGeneration: start.fencing_generation,
+          epoch,
+          keyId,
+          nowMs: this.now(),
+        })
+      ) {
         return { ok: false, reason: 'lost_race' };
       }
       this.log({ event: 'a2a.publisher.activated', epoch });
@@ -326,7 +354,9 @@ export class A2ACardPublisher implements A2APublisherPort {
 
   async deactivate(): Promise<DeactivationOutcome> {
     // Begun between steps: a step in flight finishes on the state it read.
-    const begun = await this.exclusive(() => Promise.resolve(beginDeactivation(this.deps.store, this.now())));
+    const begun = await this.exclusive(() =>
+      Promise.resolve(beginDeactivation(this.deps.store, this.now())),
+    );
     if (!begun) return { ok: false, reason: 'not_active' };
     this.nudge();
     await this.flush();
@@ -361,11 +391,16 @@ export class A2ACardPublisher implements A2APublisherPort {
     const built = row.listing_enabled === 1 && gatewayLive ? await this.deps.buildCard() : null;
     // A card AppView would refuse (no JSON-RPC interface, or over the cap) is not publishable.
     const card = built !== null && built.ok && publishable(built.card) ? built.card : null;
-    const eligible = publicationEligible(row, { gatewayLive, projectableSkills: card === null ? 0 : card.skills.length });
+    const eligible = publicationEligible(row, {
+      gatewayLive,
+      projectableSkills: card === null ? 0 : card.skills.length,
+    });
     if (eligible && card !== null) {
       const cardText = canonicalize(card as unknown as JsonValue);
       const hash = cardStringHash(cardText, this.deps.sha256);
-      const due = row.last_published_at !== null && now - row.last_published_at >= DIRECTORY_FRESHNESS_CADENCE_MS;
+      const due =
+        row.last_published_at !== null &&
+        now - row.last_published_at >= DIRECTORY_FRESHNESS_CADENCE_MS;
       // The record there is this card, under this epoch and this key: nothing to write.
       const current =
         row.state === 'published' &&
@@ -374,7 +409,12 @@ export class A2ACardPublisher implements A2APublisherPort {
         row.published_key_id === keyId;
       if (current && !due) {
         if (row.published_revision !== row.card_projection_revision) {
-          markPublishedCurrent(store, { revision: row.card_projection_revision, cardHash: hash, keyId, nowMs: now });
+          markPublishedCurrent(store, {
+            revision: row.card_projection_revision,
+            cardHash: hash,
+            keyId,
+            nowMs: now,
+          });
         }
         return;
       }
@@ -385,7 +425,8 @@ export class A2ACardPublisher implements A2APublisherPort {
     // Predicate false: delete whatever card the repository may hold, judged
     // by evidence (a lost completion or a handoff leaves one the row never
     // recorded as published).
-    if (row.card_maybe_present === 1 && !retryWaiting(row, 'unpublish', now)) await this.remove(row, 'unpublish');
+    if (row.card_maybe_present === 1 && !retryWaiting(row, 'unpublish', now))
+      await this.remove(row, 'unpublish');
   }
 
   /** The read sequence, restarted on a moving head a few times; null when the repository cannot be read. */
@@ -417,17 +458,25 @@ export class A2ACardPublisher implements A2APublisherPort {
   private judgeFence(fence: RepoView['fence'], row: PublicationRow): FenceVerdict {
     if (fence === null) return { kind: 'absent' };
     const value = withoutType(fence.value);
-    const epoch = typeof value.publisher_epoch === 'number' && Number.isSafeInteger(value.publisher_epoch) ? value.publisher_epoch : null;
+    const epoch =
+      typeof value.publisher_epoch === 'number' && Number.isSafeInteger(value.publisher_epoch)
+        ? value.publisher_epoch
+        : null;
     const verified = verifyFence(value, this.deps.nodeDid, (m, s) => this.deps.verify(m, s)).ok;
     if (!verified) {
       // Ours by its content but signed under a key this node no longer holds:
       // a rotation whose refresh did not run. Re-signed, keeping epoch and instance.
-      if (epoch === row.publisher_epoch && value.publisher_instance === row.publisher_instance && row.publication_active === 1) {
+      if (
+        epoch === row.publisher_epoch &&
+        value.publisher_instance === row.publisher_instance &&
+        row.publication_active === 1
+      ) {
         return { kind: 'resign' };
       }
       return { kind: 'unverifiable', epoch };
     }
-    if (epoch === row.publisher_epoch && value.publisher_instance === row.publisher_instance) return { kind: 'ours' };
+    if (epoch === row.publisher_epoch && value.publisher_instance === row.publisher_instance)
+      return { kind: 'ours' };
     return { kind: 'foreign', epoch: epoch ?? 0 };
   }
 
@@ -462,7 +511,9 @@ export class A2ACardPublisher implements A2APublisherPort {
   }
 
   private retryAt(row: PublicationRow): number {
-    const delay = PUBLISH_RETRY_DELAYS_MS[Math.min(row.attempts, PUBLISH_RETRY_DELAYS_MS.length - 1)] ?? 1_800_000;
+    const delay =
+      PUBLISH_RETRY_DELAYS_MS[Math.min(row.attempts, PUBLISH_RETRY_DELAYS_MS.length - 1)] ??
+      1_800_000;
     return this.now() + delay;
   }
 
@@ -477,31 +528,64 @@ export class A2ACardPublisher implements A2APublisherPort {
       return;
     }
     // Already under this key (a re-sign that landed before its record did).
-    if (recordFenceKey(this.deps.store, { fencingGeneration: row.fencing_generation, keyId, nowMs: this.now() })) this.again = true;
+    if (
+      recordFenceKey(this.deps.store, {
+        fencingGeneration: row.fencing_generation,
+        keyId,
+        nowMs: this.now(),
+      })
+    )
+      this.again = true;
   }
 
   /** Our fence, under another key: re-signed under this one, keeping epoch and instance. */
   private async resignFrom(row: PublicationRow, keyId: string, view: RepoView): Promise<void> {
     if (!(await this.sessionIsOurs())) return;
     const fence = await signFence(
-      { did: this.deps.nodeDid, publisher_epoch: row.publisher_epoch, publisher_instance: row.publisher_instance },
+      {
+        did: this.deps.nodeDid,
+        publisher_epoch: row.publisher_epoch,
+        publisher_instance: row.publisher_instance,
+      },
       (m) => this.deps.sign(m),
     );
     try {
-      await this.deps.repo.putRecord(A2A_FENCE_COLLECTION, A2A_SELF_RKEY, { $type: A2A_FENCE_COLLECTION, ...fence }, {
-        swapCommit: view.head,
-        swapRecord: view.fence?.cid ?? null,
-      });
+      await this.deps.repo.putRecord(
+        A2A_FENCE_COLLECTION,
+        A2A_SELF_RKEY,
+        { $type: A2A_FENCE_COLLECTION, ...fence },
+        {
+          swapCommit: view.head,
+          swapRecord: view.fence?.cid ?? null,
+        },
+      );
     } catch (err) {
-      this.log({ event: 'a2a.publisher.fence_resign_failed', lost_swap: this.deps.isLostSwap(err) });
+      this.log({
+        event: 'a2a.publisher.fence_resign_failed',
+        lost_swap: this.deps.isLostSwap(err),
+      });
       return;
     }
     this.log({ event: 'a2a.publisher.fence_resigned', epoch: row.publisher_epoch });
     // The envelope follows on the next step, at once.
-    if (recordFenceKey(this.deps.store, { fencingGeneration: row.fencing_generation, keyId, nowMs: this.now() })) this.again = true;
+    if (
+      recordFenceKey(this.deps.store, {
+        fencingGeneration: row.fencing_generation,
+        keyId,
+        nowMs: this.now(),
+      })
+    )
+      this.again = true;
   }
 
-  private async publish(row: PublicationRow, card: AgentCard, cardText: string, hash: string, due: boolean, keyId: string): Promise<void> {
+  private async publish(
+    row: PublicationRow,
+    card: AgentCard,
+    cardText: string,
+    hash: string,
+    due: boolean,
+    keyId: string,
+  ): Promise<void> {
     const { store, repo } = this.deps;
     if (!(await this.deps.cardKeyReady())) {
       this.log({ event: 'a2a.publisher.card_key_not_ready' });
@@ -547,16 +631,30 @@ export class A2ACardPublisher implements A2APublisherPort {
       attempted_record_digest: attemptedRecordDigest(record as JsonValue, this.deps.sha256),
       signing_key_id: keyId,
     };
-    if (!claimAttempt(store, attempt, { priorCid: view.card?.cid ?? null, repoCommitCid: view.head }, this.now())) return;
+    if (
+      !claimAttempt(
+        store,
+        attempt,
+        { priorCid: view.card?.cid ?? null, repoCommitCid: view.head },
+        this.now(),
+      )
+    )
+      return;
     if (!(await this.sessionIsOurs())) {
       failAttempt(store, attempt, this.retryAt(row), this.now());
       this.log({ event: 'a2a.publisher.session_not_ours' });
       return;
     }
     try {
-      const written = await repo.putRecord(A2A_CARD_COLLECTION, A2A_SELF_RKEY, record, { swapCommit: view.head });
+      const written = await repo.putRecord(A2A_CARD_COLLECTION, A2A_SELF_RKEY, record, {
+        swapCommit: view.head,
+      });
       if (completePublish(store, attempt, written, this.now())) {
-        this.log({ event: 'a2a.publisher.published', revision: attempt.card_projection_revision, freshness });
+        this.log({
+          event: 'a2a.publisher.published',
+          revision: attempt.card_projection_revision,
+          freshness,
+        });
       }
     } catch (err) {
       await this.recoverPublish(row, attempt, err);
@@ -569,20 +667,36 @@ export class A2ACardPublisher implements A2APublisherPort {
    * attempt still stands, which `completePublish` checks); otherwise
    * released for a retry.
    */
-  private async recoverPublish(row: PublicationRow, attempt: PublicationAttempt, err: unknown): Promise<void> {
+  private async recoverPublish(
+    row: PublicationRow,
+    attempt: PublicationAttempt,
+    err: unknown,
+  ): Promise<void> {
     const { store, repo } = this.deps;
     const lost = this.deps.isLostSwap(err);
     const there = await repo.getRecord(A2A_CARD_COLLECTION, A2A_SELF_RKEY).catch(() => undefined);
     if (there !== undefined && there !== null && isPlainObject(there.value)) {
-      if (attemptedRecordDigest(there.value as JsonValue, this.deps.sha256) === attempt.attempted_record_digest) {
+      if (
+        attemptedRecordDigest(there.value as JsonValue, this.deps.sha256) ===
+        attempt.attempted_record_digest
+      ) {
         if (completePublish(store, attempt, { uri: there.uri, cid: there.cid }, this.now())) {
-          this.log({ event: 'a2a.publisher.published', revision: attempt.card_projection_revision, recovered: true });
+          this.log({
+            event: 'a2a.publisher.published',
+            revision: attempt.card_projection_revision,
+            recovered: true,
+          });
         }
         return;
       }
     }
     // A lost swap is a moving head, not a failure: try again soon.
-    failAttempt(store, attempt, lost ? this.now() + PUBLISH_RETRY_DELAYS_MS[0] : this.retryAt(row), this.now());
+    failAttempt(
+      store,
+      attempt,
+      lost ? this.now() + PUBLISH_RETRY_DELAYS_MS[0] : this.retryAt(row),
+      this.now(),
+    );
     this.log({ event: 'a2a.publisher.publish_failed', lost_swap: lost });
   }
 
@@ -609,7 +723,15 @@ export class A2ACardPublisher implements A2APublisherPort {
       attempted_record_digest: null,
       signing_key_id: this.deps.signingKeyId(),
     };
-    if (!claimAttempt(store, attempt, { priorCid: view.card?.cid ?? null, repoCommitCid: view.head }, this.now())) return;
+    if (
+      !claimAttempt(
+        store,
+        attempt,
+        { priorCid: view.card?.cid ?? null, repoCommitCid: view.head },
+        this.now(),
+      )
+    )
+      return;
     if (view.card !== null) {
       if (!(await this.sessionIsOurs())) {
         failAttempt(store, attempt, this.retryAt(row), this.now());
@@ -619,16 +741,28 @@ export class A2ACardPublisher implements A2APublisherPort {
         await repo.deleteRecord(A2A_CARD_COLLECTION, A2A_SELF_RKEY, { swapCommit: view.head });
       } catch (err) {
         // Success only when the record is gone.
-        const there = await repo.getRecord(A2A_CARD_COLLECTION, A2A_SELF_RKEY).catch(() => undefined);
+        const there = await repo
+          .getRecord(A2A_CARD_COLLECTION, A2A_SELF_RKEY)
+          .catch(() => undefined);
         if (there !== null) {
-          failAttempt(store, attempt, this.deps.isLostSwap(err) ? this.now() + PUBLISH_RETRY_DELAYS_MS[0] : this.retryAt(row), this.now());
-          this.log({ event: 'a2a.publisher.unpublish_failed', lost_swap: this.deps.isLostSwap(err) });
+          failAttempt(
+            store,
+            attempt,
+            this.deps.isLostSwap(err) ? this.now() + PUBLISH_RETRY_DELAYS_MS[0] : this.retryAt(row),
+            this.now(),
+          );
+          this.log({
+            event: 'a2a.publisher.unpublish_failed',
+            lost_swap: this.deps.isLostSwap(err),
+          });
           return;
         }
       }
     }
     if (!completeUnpublish(store, attempt, this.now())) return;
-    this.log({ event: why === 'deactivate' ? 'a2a.publisher.deactivated' : 'a2a.publisher.unpublished' });
+    this.log({
+      event: why === 'deactivate' ? 'a2a.publisher.deactivated' : 'a2a.publisher.unpublished',
+    });
     if (why === 'deactivate') completeDeactivation(store, this.now());
   }
 }
@@ -668,7 +802,10 @@ export function cardKeyCheck(
       confirmed = id;
       return true;
     } catch {
-      notBefore = now() + (PUBLISH_RETRY_DELAYS_MS[Math.min(failures, PUBLISH_RETRY_DELAYS_MS.length - 1)] ?? 1_800_000);
+      notBefore =
+        now() +
+        (PUBLISH_RETRY_DELAYS_MS[Math.min(failures, PUBLISH_RETRY_DELAYS_MS.length - 1)] ??
+          1_800_000);
       failures += 1;
       return false;
     }
@@ -693,13 +830,13 @@ export function cardRepoOverPds(
       rkey: string,
       did?: string,
     ): Promise<{ uri: string; cid: string; value: Record<string, unknown> } | null>;
-  putRecord(
-    collection: string,
-    rkey: string,
-    record: Record<string, unknown>,
-    options: { swapCommit?: string; swapRecord?: string | null },
-  ): Promise<{ uri: string; cid: string }>;
-  deleteRecord(collection: string, rkey: string, options: { swapCommit?: string }): Promise<void>;
+    putRecord(
+      collection: string,
+      rkey: string,
+      record: Record<string, unknown>,
+      options: { swapCommit?: string; swapRecord?: string | null },
+    ): Promise<{ uri: string; cid: string }>;
+    deleteRecord(collection: string, rkey: string, options: { swapCommit?: string }): Promise<void>;
   },
   nodeDid: string,
 ): CardRepoClient {
@@ -707,8 +844,8 @@ export function cardRepoOverPds(
     sessionDid: () => pds.authenticate(),
     getLatestCommit: () => pds.getLatestCommit(nodeDid),
     getRecord: (collection, rkey) => pds.getRecord(collection, rkey, nodeDid),
-    putRecord: (collection, rkey, record, options) => pds.putRecord(collection, rkey, record, options),
+    putRecord: (collection, rkey, record, options) =>
+      pds.putRecord(collection, rkey, record, options),
     deleteRecord: (collection, rkey, options) => pds.deleteRecord(collection, rkey, options),
   };
 }
-

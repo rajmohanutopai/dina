@@ -18,11 +18,16 @@ import {
 // ---------------------------------------------------------------------------
 
 /** Build a mock `fetch` that resolves with the given status/headers/body. */
-function mockFetch(responder: (url: string, init?: RequestInit) => {
-  status: number;
-  headers: Record<string, string>;
-  body: Uint8Array;
-}): typeof globalThis.fetch {
+function mockFetch(
+  responder: (
+    url: string,
+    init?: RequestInit,
+  ) => {
+    status: number;
+    headers: Record<string, string>;
+    body: Uint8Array;
+  },
+): typeof globalThis.fetch {
   return async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = typeof input === 'string' ? input : input.toString();
     const res = responder(url, init);

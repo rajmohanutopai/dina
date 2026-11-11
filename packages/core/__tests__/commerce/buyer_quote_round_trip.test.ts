@@ -21,14 +21,12 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import type { SignedQuote } from '@dina/commerce-protocol';
-
+import { requestQuote } from '../../src/commerce/buyer_quote_request';
 import {
   applyInboundBuyerResponse,
   REQUEST_QUOTE_CAPABILITY,
   REQUEST_QUOTE_WIRE_CAPABILITY,
 } from '../../src/commerce/buyer_response';
-import { requestQuote } from '../../src/commerce/buyer_quote_request';
 import { installCommerceServiceQueryDispatch } from '../../src/commerce/buyer_sender';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
 import {
@@ -40,6 +38,8 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 import { BUYER_DID, SUPPLIER_DID, makeProjection, withPublishedCatalogue } from './helpers';
+
+import type { SignedQuote } from '@dina/commerce-protocol';
 
 const NOW = Date.parse('2026-08-10T09:00:00.000Z');
 
@@ -118,7 +118,11 @@ describe('§15 step 12 — the buyer asks for the exit right with a partner run'
     const asked = await ask('req-exit-1');
     expect(asked).toMatchObject({
       kind: 'sent',
-      request: { protocol_version: '1.5', exit_if_run_fails: true, onward_sharing: { recipient_role: 'shipper' } },
+      request: {
+        protocol_version: '1.5',
+        exit_if_run_fails: true,
+        onward_sharing: { recipient_role: 'shipper' },
+      },
     });
     expect(
       buyer.settings.writeBuyer({
@@ -137,13 +141,17 @@ describe('§15 step 12 — the buyer asks for the exit right with a partner run'
     ).toBe(true);
     const off = await ask('req-exit-2');
     expect(off).toMatchObject({ kind: 'sent', request: { protocol_version: '1.4' } });
-    expect((off as unknown as { request: Record<string, unknown> }).request.exit_if_run_fails).toBeUndefined();
+    expect(
+      (off as unknown as { request: Record<string, unknown> }).request.exit_if_run_fails,
+    ).toBeUndefined();
   });
 
   it('with no partner run possible, nothing is asked', async () => {
     installCommerceRuntime(openRuntime(BUYER_DID));
     const plain = await sanchoAsks();
-    expect((plain as unknown as { request: Record<string, unknown> }).request.exit_if_run_fails).toBeUndefined();
+    expect(
+      (plain as unknown as { request: Record<string, unknown> }).request.exit_if_run_fails,
+    ).toBeUndefined();
   });
 });
 
@@ -259,7 +267,6 @@ describe('the buyer asks, and can recognise the answer', () => {
 
 /** The runtime currently installed, for assertions about what it holds. */
 function installedRuntime(): CommerceRuntime {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const mod = require('../../src/commerce/runtime') as {
     getCommerceRuntime: () => CommerceRuntime | null;
   };

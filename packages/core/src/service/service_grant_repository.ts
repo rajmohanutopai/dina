@@ -149,14 +149,8 @@ export class SQLiteServiceGrantRepository implements ServiceGrantRepository {
     nowSec: number;
   }): boolean {
     if (args.granteeDid === '') return false;
-    const params: unknown[] = [
-      args.granteeDid,
-      args.serviceRkey,
-      args.capability,
-      args.nowSec,
-    ];
-    let sql =
-      `SELECT 1 FROM service_grants
+    const params: unknown[] = [args.granteeDid, args.serviceRkey, args.capability, args.nowSec];
+    let sql = `SELECT 1 FROM service_grants
        WHERE grantee_did = ? AND service_rkey = ? AND capability = ?
          AND revoked_at IS NULL
          AND (expires_at IS NULL OR expires_at > ?)`;

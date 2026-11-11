@@ -211,9 +211,7 @@ describe('useTrustSearch', () => {
           resolveLater = res;
         }),
     );
-    const { unmount } = render(
-      <Probe hook={() => useTrustSearch({ q: 'q', enabled: true })} />,
-    );
+    const { unmount } = render(<Probe hook={() => useTrustSearch({ q: 'q', enabled: true })} />);
     unmount();
     // Resolve AFTER unmount — runner's cancelled-flag must skip setState.
     await act(async () => {
@@ -366,9 +364,7 @@ describe('useSubjectDetail', () => {
   it('skips when subjectId or viewerDid is empty', async () => {
     render(
       <Probe
-        hook={() =>
-          useSubjectDetail({ subjectId: '', viewerDid: 'did:plc:v', enabled: true })
-        }
+        hook={() => useSubjectDetail({ subjectId: '', viewerDid: 'did:plc:v', enabled: true })}
       />,
     );
     await flushAsync();
@@ -499,9 +495,7 @@ describe('useNetworkFeed', () => {
     let captured: ReturnType<typeof useNetworkFeed> | null = null;
     render(
       <Probe
-        hook={() =>
-          useNetworkFeed({ viewerDid: 'did:plc:viewer', enabled: true })
-        }
+        hook={() => useNetworkFeed({ viewerDid: 'did:plc:viewer', enabled: true })}
         onState={(s) => {
           captured = s;
         }}
@@ -533,9 +527,7 @@ describe('useNetworkFeed', () => {
     let captured: ReturnType<typeof useNetworkFeed> | null = null;
     render(
       <Probe
-        hook={() =>
-          useNetworkFeed({ viewerDid: 'did:plc:viewer', enabled: true })
-        }
+        hook={() => useNetworkFeed({ viewerDid: 'did:plc:viewer', enabled: true })}
         onState={(s) => {
           captured = s;
         }}
@@ -546,11 +538,7 @@ describe('useNetworkFeed', () => {
   });
 
   it('skips when viewerDid is not a DID (boot not finished)', async () => {
-    render(
-      <Probe
-        hook={() => useNetworkFeed({ viewerDid: '', enabled: true })}
-      />,
-    );
+    render(<Probe hook={() => useNetworkFeed({ viewerDid: '', enabled: true })} />);
     await flushAsync();
     expect(feedMock).not.toHaveBeenCalled();
   });

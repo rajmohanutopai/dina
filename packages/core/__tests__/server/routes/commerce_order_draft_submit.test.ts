@@ -306,9 +306,7 @@ describe('the four outcome classes', () => {
     };
     installBuyerOrderSender(sender);
     const outcomes = await new DispatchIntentSweeper().tick();
-    expect(outcomes).toEqual([
-      { draftId: 'odr-1', conversationId: 'conv-1', kind: 'uncertain' },
-    ]);
+    expect(outcomes).toEqual([{ draftId: 'odr-1', conversationId: 'conv-1', kind: 'uncertain' }]);
     expect(sent.length).toBe(1);
     const after = heldConversation('conv-1');
     expect(after.state).toBe('submitted_unconfirmed');
@@ -415,9 +413,7 @@ describe('crash replay, record-first (§5.1)', () => {
     // it a definitive refusal, and reopen the competitor against an order
     // durably on its way. The sweeper resolves record-first instead.
     const outcomes = await new DispatchIntentSweeper().tick();
-    expect(outcomes).toEqual([
-      { draftId: 'odr-1', conversationId: 'conv-1', kind: 'uncertain' },
-    ]);
+    expect(outcomes).toEqual([{ draftId: 'odr-1', conversationId: 'conv-1', kind: 'uncertain' }]);
     expect(heldConversation('conv-1').state).toBe('submitted_unconfirmed');
     // Competitors STAYED closed; the line was not reopened for a re-buy.
     expect(heldConversation('conv-b').state).toBe('superseded');

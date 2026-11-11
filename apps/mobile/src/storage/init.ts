@@ -370,7 +370,8 @@ export async function initializePersistence(
       // deriving the recipient set differently is how one of them ends up
       // permissive.
       permittedRecipients: permittedD2DRecipients({
-        listGrants: (installId: string) => getPluginGrantRepository()?.listByInstall(installId) ?? [],
+        listGrants: (installId: string) =>
+          getPluginGrantRepository()?.listByInstall(installId) ?? [],
         capability: 'com.dinakernel.plugin.d2d_send',
         nowSec: () => Math.floor(Date.now() / 1000),
       }),

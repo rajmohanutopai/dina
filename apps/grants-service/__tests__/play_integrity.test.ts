@@ -111,7 +111,9 @@ describe('PlayIntegrityClient.check', () => {
   });
 
   it('reads Device Recall bit0 as "already claimed"', async () => {
-    const { pi } = client({ decode: { status: 200, body: decodedPayload({ recallBitFirst: true }) } });
+    const { pi } = client({
+      decode: { status: 200, body: decodedPayload({ recallBitFirst: true }) },
+    });
     expect(await pi.check('tok')).toEqual({ claimed: true });
   });
 

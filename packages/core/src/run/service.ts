@@ -31,11 +31,7 @@ import {
   type RunRecord,
 } from './domain';
 import { probeErasureMode } from './erasure_store';
-import {
-  RunConflictError,
-  type RunConfigPatch,
-  type RunRepository,
-} from './repository';
+import { RunConflictError, type RunConfigPatch, type RunRepository } from './repository';
 
 export interface RunServiceOptions {
   repository: RunRepository;
@@ -244,8 +240,14 @@ export class RunService {
       const fresh = this.repo.getById(run.run_id);
       if (fresh === null || isRunTerminal(fresh.state)) return;
       const current: BarrierState | null =
-        fresh.drain_cause !== null && fresh.drain_strength !== null && fresh.drain_deadline_at !== null
-          ? { cause: fresh.drain_cause, strength: fresh.drain_strength, deadline_at: fresh.drain_deadline_at }
+        fresh.drain_cause !== null &&
+        fresh.drain_strength !== null &&
+        fresh.drain_deadline_at !== null
+          ? {
+              cause: fresh.drain_cause,
+              strength: fresh.drain_strength,
+              deadline_at: fresh.drain_deadline_at,
+            }
           : null;
       const decision = decideBarrier(current, cause, nowMs + fresh.drain_deadline_ms);
       if (decision.kind === 'noop') {

@@ -13,7 +13,11 @@ import { blocksToCarFile, MemoryBlockstore, Repo, WriteOpAction } from '@atproto
 
 import { releaseRkeyFromCid } from '@dina/protocol';
 
-import { createRepoProofVerifier, selfCheckRepoProofVerifier, type DidDoc } from '../src/repo_proof_verifier';
+import {
+  createRepoProofVerifier,
+  selfCheckRepoProofVerifier,
+  type DidDoc,
+} from '../src/repo_proof_verifier';
 
 const COLLECTION = 'com.dinakernel.plugin.release';
 const REPO_DID = 'did:plc:testpublisher00000000000';
@@ -23,13 +27,26 @@ function didDocFor(signingKey: string, did = REPO_DID): DidDoc {
   return {
     id: did,
     verificationMethod: [
-      { id: `${did}#atproto`, type: 'Multikey', controller: did, publicKeyMultibase: signingKey.replace(/^did:key:/, '') },
+      {
+        id: `${did}#atproto`,
+        type: 'Multikey',
+        controller: did,
+        publicKeyMultibase: signingKey.replace(/^did:key:/, ''),
+      },
     ],
-    service: [{ id: '#atproto_pds', type: 'AtprotoPersonalDataServer', serviceEndpoint: 'https://pds.example.com' }],
+    service: [
+      {
+        id: '#atproto_pds',
+        type: 'AtprotoPersonalDataServer',
+        serviceEndpoint: 'https://pds.example.com',
+      },
+    ],
   };
 }
 
-async function mintRelease(keypair: Secp256k1Keypair): Promise<{ car: Uint8Array; cid: string; rkey: string }> {
+async function mintRelease(
+  keypair: Secp256k1Keypair,
+): Promise<{ car: Uint8Array; cid: string; rkey: string }> {
   const probeStorage = new MemoryBlockstore();
   const probe = await Repo.create(probeStorage, REPO_DID, keypair, [
     { action: WriteOpAction.Create, collection: COLLECTION, rkey: '3jzfcijpj2z2a', record: RECORD },

@@ -32,8 +32,7 @@ import {
   type ReviewDraftLifecycle,
   type ReviewDraftStatus,
 } from '@dina/brain/chat';
-import { listPersonas, isPersonaOpen , queryVault } from '@dina/core';
-
+import { listPersonas, isPersonaOpen, queryVault } from '@dina/core';
 
 import { loadActiveProvider } from '../ai/active_provider';
 import { createScrubbedLLMProvider } from '../ai/provider';
@@ -70,8 +69,7 @@ import type { LLMProvider } from '@dina/brain/llm';
  */
 function buildSubject(phrase: string): NonNullable<WriteFormState['subject']> {
   const detection = detectSubjectType(phrase);
-  const kind: SubjectKind =
-    detection !== null ? (detection.type as SubjectKind) : 'product';
+  const kind: SubjectKind = detection !== null ? (detection.type as SubjectKind) : 'product';
   return {
     kind,
     name: phrase,
@@ -192,8 +190,7 @@ interface RunDraftAndPatchOptions {
 
 async function runDraftAndPatch(opts: RunDraftAndPatchOptions): Promise<void> {
   const items = searchVault(opts.subject.name);
-  const llm =
-    opts.llmProvider !== undefined ? opts.llmProvider : await defaultProvider();
+  const llm = opts.llmProvider !== undefined ? opts.llmProvider : await defaultProvider();
   let result: ComposeContextResult;
   try {
     result = await inferComposeContext({
@@ -234,10 +231,7 @@ export function mergeDraftIntoFormState(
       typeof values.headline === 'string' && values.headline.length > 0
         ? values.headline
         : base.headline,
-    body:
-      typeof values.body === 'string' && values.body.length > 0
-        ? values.body
-        : base.body,
+    body: typeof values.body === 'string' && values.body.length > 0 ? values.body : base.body,
     useCases:
       values.use_cases !== undefined && values.use_cases.length > 0
         ? [...values.use_cases]
@@ -246,11 +240,7 @@ export function mergeDraftIntoFormState(
   };
 }
 
-function patchToReady(
-  threadId: string,
-  draftId: string,
-  values: WriteFormState,
-): void {
+function patchToReady(threadId: string, draftId: string, values: WriteFormState): void {
   const subjectName = values.subject?.name ?? 'this subject';
   updateReviewDraftLifecycle(
     threadId,

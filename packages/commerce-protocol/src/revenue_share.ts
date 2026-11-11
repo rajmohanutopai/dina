@@ -287,10 +287,7 @@ export function verifySettlementAgainstAgreement(
   return null;
 }
 
-export function validateSettlementAcknowledgement(
-  value: unknown,
-  sha256: Sha256Fn,
-): string | null {
+export function validateSettlementAcknowledgement(value: unknown, sha256: Sha256Fn): string | null {
   if (value === null || typeof value !== 'object') return 'ack: must be an object';
   const a = value as Partial<SettlementAcknowledgement> & Record<string, unknown>;
   return (

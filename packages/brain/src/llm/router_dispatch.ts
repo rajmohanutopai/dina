@@ -36,8 +36,6 @@ import { PII_TOKEN_NOTE, PiiSession } from '../pii/session';
 import { getStrangerNames, type StrangerNames } from '../pii/strangers';
 
 import { getProviderTiers } from './provider_config';
-
-import type { DecisionAnswers, DecisionBackend, DecisionRequest } from './decisions';
 import {
   isFTSOnly,
   isLightweightTask,
@@ -56,6 +54,7 @@ import type {
   StreamChunk,
   ToolCall,
 } from './adapters/provider';
+import type { DecisionAnswers, DecisionBackend, DecisionRequest } from './decisions';
 
 export interface LLMRouterOptions {
   /**
@@ -302,11 +301,14 @@ export class LLMRouter {
     // 3. Cloud provider selected — enforce consent gate for sensitive
     //    personas. Matches Python: missing consent throws, caller's
     //    UX layer handles the prompt-the-user flow.
-    const providerName = this.config.cloudProviders[0]!;
+    const providerName = this.config.cloudProviders[0];
+    if (providerName === undefined) {
+      throw new Error('LLMRouter: no cloud provider configured');
+    }
     const isSensitive = persona !== undefined && this.config.sensitivePersonas.includes(persona);
-    if (isSensitive && this.config.cloudConsentGranted !== true) {
+    if (persona !== undefined && isSensitive && this.config.cloudConsentGranted !== true) {
       throw new CloudConsentError(
-        persona!,
+        persona,
         `Cloud LLM consent required: persona "${persona}" is sensitive and no local LLM is available`,
       );
     }

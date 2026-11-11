@@ -81,7 +81,10 @@ export async function loadProviderStanding(did: string): Promise<void> {
 }
 
 /** Was the provider ejected at `now`? (Read side for ranking.) */
-export function providerStanding(did: string, now: number = Date.now()): { ejected: boolean; until: number } {
+export function providerStanding(
+  did: string,
+  now: number = Date.now(),
+): { ejected: boolean; until: number } {
   const s = cache.get(did);
   if (s === undefined) return { ejected: false, until: 0 };
   return { ejected: s.ejectedUntil > now, until: s.ejectedUntil };

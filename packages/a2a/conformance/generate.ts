@@ -90,21 +90,28 @@ export const VECTOR_UNICODE_CARD_TEXT = canonicalize({
  * hides in the source.
  */
 const INDEPENDENT = {
-  public_key_hex: "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
-  card_text: "{\"capabilities\":{\"extendedAgentCard\":false,\"pushNotifications\":false,\"streaming\":false},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"Next-bus times for route 42.\",\"name\":\"Bus 42 Desk\",\"skills\":[{\"description\":\"Arrival time.\",\"id\":\"eta_query@self\",\"name\":\"ETA\",\"tags\":[\"transit\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://a2a.example.org/rpc\"}],\"version\":\"1\"}",
-  card_hash: "c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf",
-  envelope_signing_text: "{\"card_hash\":\"c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf\",\"collection\":\"com.dinakernel.a2a.card\",\"did\":\"did:plc:ewvi7nxzyoun6zhxrhs64oiz\",\"domain\":\"dina:a2a:directory-envelope:v1\",\"freshness_epoch\":3,\"publisher_epoch\":2,\"publisher_instance\":\"3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47\",\"rkey\":\"self\",\"v\":1}",
-  envelope_sig: "luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg==",
-  fence_signing_text: "{\"did\":\"did:plc:ewvi7nxzyoun6zhxrhs64oiz\",\"domain\":\"dina:a2a:fence:v1\",\"publisher_epoch\":2,\"publisher_instance\":\"3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47\",\"v\":1}",
-  fence_sig: "VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg==",
-  record_digest: "3a07ff68078a2e23f4c0fcc70e86bd806df6a48c512f1ccdd8a0a232b64b4617",
-  envelope_only_change_digest: "4290d88715c1e14c4d5bf14cf568f6426774141dcd163a4127d3c117a53dd468",
-  sibling_change_digest: "a7a227200f9dc01404a9989fa3083769163f23c7b9dcf1302c6b7f32db59da67",
-  unicode_card_text: "{\"capabilities\":{},\"defaultInputModes\":[\"application/json\"],\"defaultOutputModes\":[\"application/json\"],\"description\":\"L\u00ednea 42\u2028horarios\",\"name\":\"B\u00fas 42 \u2014 \ud83d\ude8c\",\"skills\":[{\"description\":\"Hora.\",\"id\":\"eta_query@self\",\"name\":\"ETA\",\"tags\":[\"\uff5e\",\"\ud83d\ude00\"]}],\"supportedInterfaces\":[{\"protocolBinding\":\"JSONRPC\",\"protocolVersion\":\"1.0\",\"url\":\"https://a2a.example.org/rpc\"}],\"version\":\"1\",\"\ud83d\ude00\":\"grinning face\",\"\uff5e\":\"fullwidth tilde\"}",
-  unicode_card_text_utf8_hex: "7b226361706162696c6974696573223a7b7d2c2264656661756c74496e7075744d6f646573223a5b226170706c69636174696f6e2f6a736f6e225d2c2264656661756c744f75747075744d6f646573223a5b226170706c69636174696f6e2f6a736f6e225d2c226465736372697074696f6e223a224cc3ad6e6561203432e280a8686f726172696f73222c226e616d65223a2242c3ba7320343220e2809420f09f9a8c222c22736b696c6c73223a5b7b226465736372697074696f6e223a22486f72612e222c226964223a226574615f71756572794073656c66222c226e616d65223a22455441222c2274616773223a5b22efbd9e222c22f09f9880225d7d5d2c22737570706f72746564496e7465726661636573223a5b7b2270726f746f636f6c42696e64696e67223a224a534f4e525043222c2270726f746f636f6c56657273696f6e223a22312e30222c2275726c223a2268747470733a2f2f6132612e6578616d706c652e6f72672f727063227d5d2c2276657273696f6e223a2231222c22f09f9880223a226772696e6e696e672066616365222c22efbd9e223a2266756c6c77696474682074696c6465227d",
-  unicode_card_hash: "d2d415d34cfffccd3fc7be06ba3637135842d40e7eab02799d11c87d805f4801",
-  unicode_record_digest: "9938e00c88636553765a4db4d7c2b7b1687e65826f9d488573251682614b8c3f",
-  signing_text_sha256: "02efeb9c92604a20a0e0a1df9f1a12124eb780e8e81096f392ee021f8d861e77",
+  public_key_hex: 'd75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a',
+  card_text:
+    '{"capabilities":{"extendedAgentCard":false,"pushNotifications":false,"streaming":false},"defaultInputModes":["application/json"],"defaultOutputModes":["application/json"],"description":"Next-bus times for route 42.","name":"Bus 42 Desk","skills":[{"description":"Arrival time.","id":"eta_query@self","name":"ETA","tags":["transit"]}],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"https://a2a.example.org/rpc"}],"version":"1"}',
+  card_hash: 'c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf',
+  envelope_signing_text:
+    '{"card_hash":"c3c977cd93e4713ced3ba0a105c99a6406559cddf652e77f3ec2e518925b18cf","collection":"com.dinakernel.a2a.card","did":"did:plc:ewvi7nxzyoun6zhxrhs64oiz","domain":"dina:a2a:directory-envelope:v1","freshness_epoch":3,"publisher_epoch":2,"publisher_instance":"3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47","rkey":"self","v":1}',
+  envelope_sig:
+    'luZUmLx0RBwN5EVB+yk/tTlPn3Jdu1AZTwla8WLZ7/e+GlN/K8A5Bv+nmcGklOr5XHpXQsNxA4t9Lxu9fx9VCg==',
+  fence_signing_text:
+    '{"did":"did:plc:ewvi7nxzyoun6zhxrhs64oiz","domain":"dina:a2a:fence:v1","publisher_epoch":2,"publisher_instance":"3f2b8c1e-7a4d-4b9e-9c1f-2d6e8a0b5c47","v":1}',
+  fence_sig:
+    'VAza+XWyLIxEK8JWo3wyRInFkt3QmlTHR8l2wLlUhchq69RL5qg/HZpR1j6FKT6rOYXml2r8UlINKRfMgzNYBg==',
+  record_digest: '3a07ff68078a2e23f4c0fcc70e86bd806df6a48c512f1ccdd8a0a232b64b4617',
+  envelope_only_change_digest: '4290d88715c1e14c4d5bf14cf568f6426774141dcd163a4127d3c117a53dd468',
+  sibling_change_digest: 'a7a227200f9dc01404a9989fa3083769163f23c7b9dcf1302c6b7f32db59da67',
+  unicode_card_text:
+    '{"capabilities":{},"defaultInputModes":["application/json"],"defaultOutputModes":["application/json"],"description":"L\u00ednea 42\u2028horarios","name":"B\u00fas 42 \u2014 \ud83d\ude8c","skills":[{"description":"Hora.","id":"eta_query@self","name":"ETA","tags":["\uff5e","\ud83d\ude00"]}],"supportedInterfaces":[{"protocolBinding":"JSONRPC","protocolVersion":"1.0","url":"https://a2a.example.org/rpc"}],"version":"1","\ud83d\ude00":"grinning face","\uff5e":"fullwidth tilde"}',
+  unicode_card_text_utf8_hex:
+    '7b226361706162696c6974696573223a7b7d2c2264656661756c74496e7075744d6f646573223a5b226170706c69636174696f6e2f6a736f6e225d2c2264656661756c744f75747075744d6f646573223a5b226170706c69636174696f6e2f6a736f6e225d2c226465736372697074696f6e223a224cc3ad6e6561203432e280a8686f726172696f73222c226e616d65223a2242c3ba7320343220e2809420f09f9a8c222c22736b696c6c73223a5b7b226465736372697074696f6e223a22486f72612e222c226964223a226574615f71756572794073656c66222c226e616d65223a22455441222c2274616773223a5b22efbd9e222c22f09f9880225d7d5d2c22737570706f72746564496e7465726661636573223a5b7b2270726f746f636f6c42696e64696e67223a224a534f4e525043222c2270726f746f636f6c56657273696f6e223a22312e30222c2275726c223a2268747470733a2f2f6132612e6578616d706c652e6f72672f727063227d5d2c2276657273696f6e223a2231222c22f09f9880223a226772696e6e696e672066616365222c22efbd9e223a2266756c6c77696474682074696c6465227d',
+  unicode_card_hash: 'd2d415d34cfffccd3fc7be06ba3637135842d40e7eab02799d11c87d805f4801',
+  unicode_record_digest: '9938e00c88636553765a4db4d7c2b7b1687e65826f9d488573251682614b8c3f',
+  signing_text_sha256: '02efeb9c92604a20a0e0a1df9f1a12124eb780e8e81096f392ee021f8d861e77',
 } as const;
 
 /** RFC 8785 cases, expected output written by hand. */
@@ -393,9 +400,15 @@ async function main(): Promise<void> {
     signing_text_sha256: bytesToHex(sha256(utf8Bytes(canonicalize(envelopeUnsigned)))),
   };
   for (const [name, value] of Object.entries(INDEPENDENT)) {
-    check(computed[name as keyof typeof INDEPENDENT] === value, `${name} differs from its independent derivation`);
+    check(
+      computed[name as keyof typeof INDEPENDENT] === value,
+      `${name} differs from its independent derivation`,
+    );
   }
-  check(attemptedRecordDigest(reordered, sha256) === INDEPENDENT.record_digest, 'member order changes the digest');
+  check(
+    attemptedRecordDigest(reordered, sha256) === INDEPENDENT.record_digest,
+    'member order changes the digest',
+  );
 
   const vectors = {
     description:

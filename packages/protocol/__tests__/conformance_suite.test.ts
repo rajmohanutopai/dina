@@ -14,11 +14,7 @@ import * as path from 'node:path';
 
 import sodium from 'libsodium-wrappers';
 
-import {
-  formatReport,
-  runConformance,
-  type ConformanceReport,
-} from '../conformance/suite';
+import { formatReport, runConformance, type ConformanceReport } from '../conformance/suite';
 
 const VECTORS_DIR = path.resolve(__dirname, '..', 'conformance', 'vectors');
 
@@ -40,9 +36,9 @@ describe('runConformance — end-to-end runner (task 10.14)', () => {
 
   it('summary counts add up to total', () => {
     const { summary } = report;
-    expect(
-      summary.passed + summary.failed + summary.skipped + summary.notImplemented,
-    ).toBe(summary.total);
+    expect(summary.passed + summary.failed + summary.skipped + summary.notImplemented).toBe(
+      summary.total,
+    );
   });
 
   it('every frozen L1/L2/L3 vector with a verifier ends up pass or fail (not skip)', () => {

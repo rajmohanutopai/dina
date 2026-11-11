@@ -88,6 +88,12 @@ export function setRetentionDays(days: number): void {
  */
 /** The shared in-memory insert both append variants use: idempotent id-upsert,
  *  sorted-insert by firedAt DESC, subscriber fire only for a NEW id. */
+/** First index whose item is not at or after `firedAt` (firedAt DESC order). */
+function sortedInsertIndex(firedAt: number): number {
+  const at = items.findIndex((existing) => !(existing.firedAt >= firedAt));
+  return at < 0 ? items.length : at;
+}
+
 function insertItem(input: AppendNotificationInput): NotificationItem {
   const firedAt = input.now ?? Date.now();
   const id = input.id ?? `nt-${bytesToHex(randomBytes(6))}`;
@@ -120,9 +126,7 @@ function insertItem(input: AppendNotificationInput): NotificationItem {
   } else {
     // Sorted-insert by firedAt DESC so list reads are O(1) without
     // re-sorting. New items typically land at index 0.
-    let insertAt = 0;
-    while (insertAt < items.length && items[insertAt]!.firedAt >= firedAt) insertAt += 1;
-    items.splice(insertAt, 0, item);
+    items.splice(sortedInsertIndex(firedAt), 0, item);
   }
 
   if (existingIdx < 0) fire({ type: 'appended', item });
@@ -192,7 +196,8 @@ export function markNotificationRead(id: string, now?: number): boolean {
 export function dropGuidedDemoNotifications(): number {
   const before = items.length;
   for (let i = items.length - 1; i >= 0; i -= 1) {
-    if (isGuidedDemoScope(items[i]!.dataScope)) items.splice(i, 1);
+    const item = items[i];
+    if (item !== undefined && isGuidedDemoScope(item.dataScope)) items.splice(i, 1);
   }
   const dropped = before - items.length;
   if (dropped > 0) fire({ type: 'hydrated', loaded: items.length });
@@ -320,9 +325,7 @@ export function mergeNotifications(rows: StoredNotificationItem[]): number {
     if (idx >= 0) {
       items[idx] = item;
     } else {
-      let insertAt = 0;
-      while (insertAt < items.length && items[insertAt]!.firedAt >= item.firedAt) insertAt += 1;
-      items.splice(insertAt, 0, item);
+      items.splice(sortedInsertIndex(item.firedAt), 0, item);
       appended.push(item);
     }
     changed += 1;
@@ -394,10 +397,13 @@ function persist(
       // budget the failure is logged (metadata only) and the in-memory copy —
       // which the user already sees — remains authoritative for this session.
       if (attempt < 3) {
-        const t = setTimeout(() => {
-          pendingPersistRetries.delete(t);
-          persist(item, attempt + 1, repo);
-        }, 2_000 * (attempt + 1));
+        const t = setTimeout(
+          () => {
+            pendingPersistRetries.delete(t);
+            persist(item, attempt + 1, repo);
+          },
+          2_000 * (attempt + 1),
+        );
         pendingPersistRetries.add(t);
         (t as { unref?: () => void }).unref?.();
         return;
@@ -405,7 +411,6 @@ function persist(
       console.warn('[notifications] persist failed after retries:', err);
     });
   } catch (err) {
-
     console.warn('[notifications] persist failed:', err);
   }
 }
@@ -415,11 +420,9 @@ function persistMarkRead(id: string, readAt: number): void {
   if (repo === null) return;
   try {
     void repo.markRead(id, readAt).catch((err) => {
-       
       console.warn('[notifications] markRead persist failed:', err);
     });
   } catch (err) {
-     
     console.warn('[notifications] markRead persist failed:', err);
   }
 }
@@ -430,7 +433,8 @@ function maybePurge(now: number): void {
   const cutoff = now - retentionDays * MS_DAY;
   // Drop in-memory rows past retention.
   for (let i = items.length - 1; i >= 0; i--) {
-    const item = items[i]!;
+    const item = items[i];
+    if (item === undefined) continue;
     const expired = item.expiresAt !== undefined ? item.expiresAt < cutoff : item.firedAt < cutoff;
     if (expired) items.splice(i, 1);
   }
@@ -438,11 +442,9 @@ function maybePurge(now: number): void {
   if (repo === null) return;
   try {
     void repo.purgeBefore(cutoff).catch((err) => {
-       
       console.warn('[notifications] purge failed:', err);
     });
   } catch (err) {
-     
     console.warn('[notifications] purge failed:', err);
   }
 }

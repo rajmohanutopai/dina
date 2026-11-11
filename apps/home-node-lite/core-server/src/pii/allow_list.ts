@@ -36,7 +36,7 @@
 import type { PIIMatch } from '@dina/core';
 
 /** One entry in the allow list. */
-interface AllowEntry {
+interface _AllowEntry {
   /** Normalized (lowercased) token. */
   token: string;
   /** When set, only suppress matches of this specific type. Undefined = all types. */

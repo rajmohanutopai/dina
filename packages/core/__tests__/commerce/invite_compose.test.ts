@@ -139,9 +139,8 @@ describe('composeInviteService — the contact seam is the DIRECTORY', () => {
       redemption_digest: redeemed.ok ? redeemed.value.redemption.redemption_digest : '',
       confirmed_at: '2027-01-15T08:00:00.000Z',
     };
-    const { inviteRecordDigest } = jest.requireActual<typeof import('@dina/commerce-protocol')>(
-      '@dina/commerce-protocol',
-    );
+    const { inviteRecordDigest } =
+      jest.requireActual<typeof import('@dina/commerce-protocol')>('@dina/commerce-protocol');
     const { createHash } = jest.requireActual<typeof import('node:crypto')>('node:crypto');
     const confirmation = {
       ...confirmationDraft,
@@ -212,11 +211,13 @@ describe('composeInviteService — the contact seam is the DIRECTORY', () => {
       createdAt: Math.floor(T0 / 1000),
     });
 
-    const redeemed = await service.redeemCode({ code: minted.value.code, serviceRkeys: ['veg-stall'] });
+    const redeemed = await service.redeemCode({
+      code: minted.value.code,
+      serviceRkeys: ['veg-stall'],
+    });
     if (!redeemed.ok) throw new Error(redeemed.refusal);
-    const { inviteRecordDigest } = jest.requireActual<typeof import('@dina/commerce-protocol')>(
-      '@dina/commerce-protocol',
-    );
+    const { inviteRecordDigest } =
+      jest.requireActual<typeof import('@dina/commerce-protocol')>('@dina/commerce-protocol');
     const { createHash } = jest.requireActual<typeof import('node:crypto')>('node:crypto');
     const digest = (data: Uint8Array) => new Uint8Array(createHash('sha256').update(data).digest());
     const confirmationDraft = {
@@ -236,7 +237,9 @@ describe('composeInviteService — the contact seam is the DIRECTORY', () => {
     });
     expect(confirmed.ok).toBe(true);
     const prefix = inviteGrantPrefix(minted.value.offer.nonce);
-    expect(grants.listByGrantee(INVITER).filter((g) => g.grantId.startsWith(prefix))).toHaveLength(1);
+    expect(grants.listByGrantee(INVITER).filter((g) => g.grantId.startsWith(prefix))).toHaveLength(
+      1,
+    );
 
     const noticeDraft = {
       protocol_version: '1.0',
@@ -256,7 +259,9 @@ describe('composeInviteService — the contact seam is the DIRECTORY', () => {
 
     const after = grants.listByGrantee(INVITER);
     expect(after.find((g) => g.grantId === 'manual_grant_1')?.revokedAt).toBeUndefined();
-    expect(after.filter((g) => g.grantId.startsWith(prefix)).every((g) => g.revokedAt !== undefined)).toBe(true);
+    expect(
+      after.filter((g) => g.grantId.startsWith(prefix)).every((g) => g.revokedAt !== undefined),
+    ).toBe(true);
     expect(getContact(INVITER)).not.toBeNull();
   });
 });

@@ -7,6 +7,8 @@
  * the broker is pure request/response shaping and is pinned here.
  */
 
+import { getGrantCredential } from '../../src/ai/credits';
+import { getApiKey } from '../../src/ai/provider';
 import {
   createMobileVisionBroker,
   normalizePickedPages,
@@ -22,9 +24,6 @@ jest.mock('../../src/ai/provider', () => ({
 jest.mock('../../src/ai/credits', () => ({
   getGrantCredential: jest.fn(),
 }));
-
-import { getGrantCredential } from '../../src/ai/credits';
-import { getApiKey } from '../../src/ai/provider';
 
 const mockGetApiKey = getApiKey as jest.MockedFunction<typeof getApiKey>;
 const mockGetGrant = getGrantCredential as jest.MockedFunction<typeof getGrantCredential>;
@@ -42,8 +41,7 @@ function okResponse(content: unknown): Response {
   return {
     ok: true,
     status: 200,
-    json: () =>
-      Promise.resolve({ choices: [{ message: { content: JSON.stringify(content) } }] }),
+    json: () => Promise.resolve({ choices: [{ message: { content: JSON.stringify(content) } }] }),
   } as unknown as Response;
 }
 
@@ -100,7 +98,11 @@ it('a missing credential throws the NAMED error before any transmission', async 
     },
   });
   await expect(
-    broker.extractRows({ purpose: 'catalog_extraction', schemaId: 'catalog-rows-1', pages: [PAGE] }),
+    broker.extractRows({
+      purpose: 'catalog_extraction',
+      schemaId: 'catalog-rows-1',
+      pages: [PAGE],
+    }),
   ).rejects.toThrow('no vision-capable AI key configured');
   expect(fetched).toBe(0);
 });
@@ -153,8 +155,16 @@ it('each purpose gets its own instruction — order pages ask for quantities', a
     },
   });
 
-  await broker.extractRows({ purpose: 'order_extraction', schemaId: 'order-lines-1', pages: [PAGE] });
-  await broker.extractRows({ purpose: 'catalog_extraction', schemaId: 'catalog-rows-1', pages: [PAGE] });
+  await broker.extractRows({
+    purpose: 'order_extraction',
+    schemaId: 'order-lines-1',
+    pages: [PAGE],
+  });
+  await broker.extractRows({
+    purpose: 'catalog_extraction',
+    schemaId: 'catalog-rows-1',
+    pages: [PAGE],
+  });
 
   expect(prompts[0]).toContain('order sheet');
   expect(prompts[0]).toContain('quantity');
@@ -167,10 +177,18 @@ it('a provider error status and non-JSON content each throw rather than inventin
   const failing = createMobileVisionBroker({
     readCredential: () => Promise.resolve(OPENAI_CRED),
     fetchImpl: () =>
-      Promise.resolve({ ok: false, status: 429, json: () => Promise.resolve({}) } as unknown as Response),
+      Promise.resolve({
+        ok: false,
+        status: 429,
+        json: () => Promise.resolve({}),
+      } as unknown as Response),
   });
   await expect(
-    failing.extractRows({ purpose: 'catalog_extraction', schemaId: 'catalog-rows-1', pages: [PAGE] }),
+    failing.extractRows({
+      purpose: 'catalog_extraction',
+      schemaId: 'catalog-rows-1',
+      pages: [PAGE],
+    }),
   ).rejects.toThrow('429');
 
   const garbled = createMobileVisionBroker({
@@ -183,7 +201,11 @@ it('a provider error status and non-JSON content each throw rather than inventin
       } as unknown as Response),
   });
   await expect(
-    garbled.extractRows({ purpose: 'catalog_extraction', schemaId: 'catalog-rows-1', pages: [PAGE] }),
+    garbled.extractRows({
+      purpose: 'catalog_extraction',
+      schemaId: 'catalog-rows-1',
+      pages: [PAGE],
+    }),
   ).rejects.toThrow('non-JSON');
 });
 
@@ -195,7 +217,9 @@ it('a provider error status and non-JSON content each throw rather than inventin
 // and an ISO-BMFF 'ftypheic' box — what an iPhone camera photo starts with.
 const JPEG_B64 = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]).toString('base64');
 const PNG_B64 = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).toString('base64');
-const HEIC_B64 = Buffer.from([0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63]).toString('base64');
+const HEIC_B64 = Buffer.from([
+  0, 0, 0, 0x18, 0x66, 0x74, 0x79, 0x70, 0x68, 0x65, 0x69, 0x63,
+]).toString('base64');
 
 it('recognizes JPEG and PNG base64 signatures and nothing else', () => {
   expect(pageLooksJpegOrPng(JPEG_B64)).toBe(true);
@@ -236,7 +260,9 @@ it('an asset with neither usable base64 nor a uri is dropped, not sent', async (
 // ---------------------------------------------------------------------------
 
 it('an OpenAI BYOK key wins and goes direct', async () => {
-  mockGetApiKey.mockImplementation((p) => Promise.resolve(p === 'openai' ? 'sk-byok' : 'sk-or-byok'));
+  mockGetApiKey.mockImplementation((p) =>
+    Promise.resolve(p === 'openai' ? 'sk-byok' : 'sk-or-byok'),
+  );
   mockGetGrant.mockResolvedValue({ key: 'sk-or-grant', modelPin: 'deepseek/deepseek-v4-pro' });
 
   await expect(resolveVisionCredential()).resolves.toEqual({

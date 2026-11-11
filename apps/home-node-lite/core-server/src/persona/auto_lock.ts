@@ -96,14 +96,11 @@ export class AutoLockRegistry {
     this.lockFn = opts.lockFn;
     this.defaultTtlMs = opts.defaultTtlMs ?? DEFAULT_AUTO_LOCK_TTL_MS;
     if (!Number.isFinite(this.defaultTtlMs) || this.defaultTtlMs <= 0) {
-      throw new Error(
-        `AutoLockRegistry: defaultTtlMs must be > 0 (got ${this.defaultTtlMs})`,
-      );
+      throw new Error(`AutoLockRegistry: defaultTtlMs must be > 0 (got ${this.defaultTtlMs})`);
     }
     this.nowMsFn = opts.nowMsFn ?? Date.now;
     this.setTimerFn = opts.setTimerFn ?? ((fn, ms) => setTimeout(fn, ms));
-    this.clearTimerFn =
-      opts.clearTimerFn ?? ((h) => clearTimeout(h as NodeJS.Timeout));
+    this.clearTimerFn = opts.clearTimerFn ?? ((h) => clearTimeout(h as NodeJS.Timeout));
     this.onEvent = opts.onEvent;
   }
 
@@ -143,7 +140,9 @@ export class AutoLockRegistry {
     // unlock emits its own 'unlock' event; override the kind to 'touch'
     // by re-dispatching so consumers can distinguish fresh unlocks
     // from activity-driven deadline bumps.
-    const entry = this.entries.get(persona)!;
+    const entry = this.entries.get(persona);
+    if (entry === undefined)
+      throw new Error(`AutoLockRegistry.touch: entry for ${persona} missing after unlock`);
     this.onEvent?.({ kind: 'touch', persona, deadlineMs: entry.deadlineMs });
   }
 

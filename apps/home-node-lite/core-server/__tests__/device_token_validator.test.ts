@@ -183,10 +183,10 @@ describe('authenticateBearerFromDeviceRegistry (task 4.65)', () => {
     ['bearer with no token', 'Bearer ', 'malformed' as const],
   ])('rejects %s → reason=%s', (_label, header, reason) => {
     const validator = new DeviceTokenBearerValidator(new DeviceTokenRegistry());
-    const out = authenticateBearerFromDeviceRegistry(
-      header,
-      validator,
-    ) as Extract<DeviceTokenValidationDetail, { ok: false }>;
+    const out = authenticateBearerFromDeviceRegistry(header, validator) as Extract<
+      DeviceTokenValidationDetail,
+      { ok: false }
+    >;
     expect(out.ok).toBe(false);
     expect(out.reason).toBe(reason);
   });
@@ -197,8 +197,6 @@ describe('authenticateBearerFromDeviceRegistry (task 4.65)', () => {
     });
     const { rawToken } = registry.issue({ deviceName: 'phone' });
     const validator = new DeviceTokenBearerValidator(registry);
-    expect(authenticateBearerFromDeviceRegistry(`bearer ${rawToken}`, validator).ok).toBe(
-      true,
-    );
+    expect(authenticateBearerFromDeviceRegistry(`bearer ${rawToken}`, validator).ok).toBe(true);
   });
 });

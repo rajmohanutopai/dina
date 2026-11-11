@@ -302,7 +302,9 @@ describe('Anti-Her Pre-Screening Classifier', () => {
         }),
       );
 
-      const result = await preScreenMessage('What is the difference between sadness and depression?');
+      const result = await preScreenMessage(
+        'What is the difference between sadness and depression?',
+      );
       expect(result.category).toBe('normal');
       expect(result.shouldRedirect).toBe(false);
     });

@@ -30,7 +30,13 @@
  * next claim, so state survives a gateway restart.
  */
 
-import { type DeliveryAck, type DeliveryClaim, type DeliveryItem, type DeliveryWebhook, type JsonObject } from '@dina/a2a';
+import {
+  type DeliveryAck,
+  type DeliveryClaim,
+  type DeliveryItem,
+  type DeliveryWebhook,
+  type JsonObject,
+} from '@dina/a2a';
 
 import { WorkflowTaskState } from '../workflow/domain';
 
@@ -65,9 +71,10 @@ const MIN_CLAIM_BATCH = 100;
 /** How long a held task's events wait before a claim looks at its client again. */
 export const SUSPENDED_HOLD_MS = 60_000;
 
-
 /** The wait before each retry of a webhook event; one more failure is final. */
-export const WEBHOOK_RETRY_DELAYS_MS: readonly number[] = Object.freeze([5_000, 30_000, 120_000, 600_000, 1_800_000]);
+export const WEBHOOK_RETRY_DELAYS_MS: readonly number[] = Object.freeze([
+  5_000, 30_000, 120_000, 600_000, 1_800_000,
+]);
 
 /** The events one change of a task produces, in the order a client must see them (A2A §3.5.2). */
 function changeEvents(rt: InboundCore, op: Parameters<typeof projectInboundTask>[1]): JsonObject[] {
@@ -115,7 +122,8 @@ export function recordInboundChange(rt: InboundCore, opId: number): void {
   if (op.event_state === key) return;
   const now = rt.a2a.nowMs();
   // A visible change: its time is now (the event's timestamp, ListTasks' order).
-  if (op.status_updated_at !== now) store.updateTask(op.id, [op.state], { status_updated_at: now }, now);
+  if (op.status_updated_at !== now)
+    store.updateTask(op.id, [op.state], { status_updated_at: now }, now);
   const events = changeEvents(rt, { ...op, status_updated_at: now });
   const webhooks = store.pushConfigsOf(op.id);
   let seq = op.event_seq;
@@ -129,7 +137,8 @@ export function recordInboundChange(rt: InboundCore, opId: number): void {
       created_at: now,
     };
     store.insertOutboxRow({ ...row, target_kind: 'sse', target_id: '' });
-    for (const hook of webhooks) store.insertOutboxRow({ ...row, target_kind: 'webhook', target_id: hook.id });
+    for (const hook of webhooks)
+      store.insertOutboxRow({ ...row, target_kind: 'webhook', target_id: hook.id });
   }
   store.setEventCursor(op.id, seq, key);
   // A SendMessage waiting on the task looks again once this commit is done.
@@ -160,13 +169,27 @@ export function endLostEgress(rt: InboundCore, op: A2ATaskRow): A2ATaskRow | nul
     const store = rt.a2a.store;
     const now = rt.a2a.nowMs();
     const effectful = snapshot !== null && INBOUND_EFFECTFUL_CLASSES.has(snapshot.action_class);
-    if (store.updateTask(op.id, ['completed'], { state: effectful ? 'outcome_unknown' : 'failed', reason_code: 'authority_revoked' }, now)) {
+    if (
+      store.updateTask(
+        op.id,
+        ['completed'],
+        { state: effectful ? 'outcome_unknown' : 'failed', reason_code: 'authority_revoked' },
+        now,
+      )
+    ) {
       recordInboundChange(rt, op.id);
     } else if (op.input_required_json !== null && op.internal_id !== null) {
       const waiting = rt.a2a.workflow.store().getById(op.internal_id);
       // The question goes with it: an ended task asks nothing, and keeps no question to show.
-      const ended = { state: 'failed', reason_code: 'authority_revoked', input_required_json: null } as const;
-      if (waiting?.status === WorkflowTaskState.Awaiting && store.updateTask(op.id, ['open'], ended, now)) {
+      const ended = {
+        state: 'failed',
+        reason_code: 'authority_revoked',
+        input_required_json: null,
+      } as const;
+      if (
+        waiting?.status === WorkflowTaskState.Awaiting &&
+        store.updateTask(op.id, ['open'], ended, now)
+      ) {
         rt.a2a.workflow.cancel(waiting.id, 'a2a_authority_revoked');
         recordInboundChange(rt, op.id);
       }
@@ -180,14 +203,22 @@ export function endLostEgress(rt: InboundCore, op: A2ATaskRow): A2ATaskRow | nul
  * whose lease lapsed before any effect goes back to the queue, and its task
  * reads SUBMITTED again. Runs inside the repository's transaction.
  */
-export function inboundRequeueObserver(core: () => InboundCore | null): (task: WorkflowTask) => void {
+export function inboundRequeueObserver(
+  core: () => InboundCore | null,
+): (task: WorkflowTask) => void {
   return (task) => {
     const rt = core();
     if (rt === null) return;
     const link = rt.a2a.store.getChild(task.id);
     if (link === null || link.role !== 'execution') return;
     const op = rt.a2a.store.getTask(link.operation_ref);
-    if (op === null || op.direction !== 'inbound' || op.state !== 'open' || op.internal_id !== task.id) return;
+    if (
+      op === null ||
+      op.direction !== 'inbound' ||
+      op.state !== 'open' ||
+      op.internal_id !== task.id
+    )
+      return;
     recordInboundChange(rt, op.id);
   };
 }
@@ -216,9 +247,10 @@ export function claimDeliveries(
     endExpiredBearers(store, now);
     // The fences of clients whose credential ended lately, in every claim while they hold:
     // the gateway applies them before it publishes this claim's events.
-    const fenced = store
-      .streamFences(now)
-      .map((f) => ({ client: streamClientKeyOf(a2aPrincipal(f.client_id)), before_gen: f.credential_gen }));
+    const fenced = store.streamFences(now).map((f) => ({
+      client: streamClientKeyOf(a2aPrincipal(f.client_id)),
+      before_gen: f.credential_gen,
+    }));
     const closed = new Set<string>();
     // Each stream event carries its client's credential generation (§10): an older stream ends instead of getting it.
     const gens = new Map<string, number>();
@@ -292,9 +324,16 @@ export function claimDeliveries(
             webhook = { url: config.url, headers: webhookHeaders(config) };
           }
           const claimId = newA2AId();
-          if (!store.claimOutboxRow(row.id, claimId, args.claimant, now + DELIVERY_LEASE_MS, now)) continue;
+          if (!store.claimOutboxRow(row.id, claimId, args.claimant, now + DELIVERY_LEASE_MS, now))
+            continue;
           taken += 1;
-          const base = { id: row.id, claim_id: claimId, task_id: op.external_id, seq: row.seq, event: JSON.parse(row.event_json) as JsonObject };
+          const base = {
+            id: row.id,
+            claim_id: claimId,
+            task_id: op.external_id,
+            seq: row.seq,
+            event: JSON.parse(row.event_json) as JsonObject,
+          };
           items.push(
             webhook === undefined
               ? { ...base, target: 'sse', credential_gen: genOf(op.principal) }
@@ -310,7 +349,10 @@ export function claimDeliveries(
 }
 
 /** Apply the gateway's reports; returns how many held (a stale or foreign claim changes nothing). */
-export function ackDeliveries(rt: InboundCore, args: { claimant: string; acks: readonly DeliveryAck[] }): number {
+export function ackDeliveries(
+  rt: InboundCore,
+  args: { claimant: string; acks: readonly DeliveryAck[] },
+): number {
   const store = rt.a2a.store;
   return store.transaction(() => {
     const now = rt.a2a.nowMs();
@@ -322,7 +364,10 @@ export function ackDeliveries(rt: InboundCore, args: { claimant: string; acks: r
       let to: Parameters<typeof store.settleOutboxRow>[2];
       if (ack.outcome === 'retry') {
         const delay = WEBHOOK_RETRY_DELAYS_MS[row.attempts - 1];
-        to = row.target_kind === 'webhook' && delay !== undefined ? { status: 'pending', nextAttemptAt: now + delay } : { status: 'failed' };
+        to =
+          row.target_kind === 'webhook' && delay !== undefined
+            ? { status: 'pending', nextAttemptAt: now + delay }
+            : { status: 'failed' };
       } else {
         to = { status: ack.outcome };
       }

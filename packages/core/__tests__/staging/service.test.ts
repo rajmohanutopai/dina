@@ -976,7 +976,7 @@ describe('Staging Service', () => {
     it('returns items with matching status', () => {
       ingest({ source: 'g', source_id: 'ls-1' });
       ingest({ source: 'g', source_id: 'ls-2' });
-      const { id } = ingest({ source: 'g', source_id: 'ls-3' });
+      const { id: _id } = ingest({ source: 'g', source_id: 'ls-3' });
       claim(1); // claims first item → classifying
 
       const received = listByStatus('received');

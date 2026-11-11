@@ -39,7 +39,11 @@ import { buildMessageJSON, type BuildMessageJSONInput } from '../src/envelope_bu
 import { computeScoreV1, type ScoreV1Input, type ScoreV1Output } from '../src/peerlens/score_v1';
 import { computePluginDigests } from '../src/plugins/digests';
 import { normalizePluginManifest } from '../src/plugins/normalize';
-import { isValidReleaseRkey, releaseRkeyFromCid, sha256DigestFromCid } from '../src/plugins/release_rkey';
+import {
+  isValidReleaseRkey,
+  releaseRkeyFromCid,
+  sha256DigestFromCid,
+} from '../src/plugins/release_rkey';
 import { buildAuthSignedPayload } from '../src/types/auth_frames';
 
 import type { PluginManifest } from '../src/plugins/types';
@@ -113,8 +117,12 @@ const VERIFIERS: Record<string, Verifier> = {
       cases: {
         name: string;
         inputs: {
-          method: string; path: string; query: string;
-          timestamp: string; nonce: string; body_hash_hex: string;
+          method: string;
+          path: string;
+          query: string;
+          timestamp: string;
+          nonce: string;
+          body_hash_hex: string;
         };
         expected_canonical_string: string;
       }[];
@@ -122,8 +130,12 @@ const VERIFIERS: Record<string, Verifier> = {
     const failures: string[] = [];
     for (const c of v.cases) {
       const got = buildCanonicalPayload(
-        c.inputs.method, c.inputs.path, c.inputs.query,
-        c.inputs.timestamp, c.inputs.nonce, c.inputs.body_hash_hex,
+        c.inputs.method,
+        c.inputs.path,
+        c.inputs.query,
+        c.inputs.timestamp,
+        c.inputs.nonce,
+        c.inputs.body_hash_hex,
       );
       if (got !== c.expected_canonical_string) failures.push(c.name);
     }
@@ -254,7 +266,12 @@ const VERIFIERS: Record<string, Verifier> = {
       document: {
         '@context': string[];
         id: string;
-        verificationMethod: { id: string; type: string; controller: string; publicKeyMultibase: string }[];
+        verificationMethod: {
+          id: string;
+          type: string;
+          controller: string;
+          publicKeyMultibase: string;
+        }[];
         authentication: string[];
         service: { id: string; type: string; serviceEndpoint: string }[];
       };
@@ -305,7 +322,8 @@ const VERIFIERS: Record<string, Verifier> = {
       // deterministic reference, so any drift means the formula moved.
       if (got.overallScore !== want.overallScore) failures.push(`${c.name}:overallScore`);
       if (got.confidence !== want.confidence) failures.push(`${c.name}:confidence`);
-      if (got.components.sentiment !== want.components.sentiment) failures.push(`${c.name}:sentiment`);
+      if (got.components.sentiment !== want.components.sentiment)
+        failures.push(`${c.name}:sentiment`);
       if (got.components.vouch !== want.components.vouch) failures.push(`${c.name}:vouch`);
       if (got.components.reviewer !== want.components.reviewer) failures.push(`${c.name}:reviewer`);
       if (got.components.network !== want.components.network) failures.push(`${c.name}:network`);
@@ -334,9 +352,11 @@ const VERIFIERS: Record<string, Verifier> = {
       for (const [capId, hash] of Object.entries(c.expected.per_capability)) {
         if (got.perCapability[capId] !== hash) failures.push(`${c.name}:scope:${capId}`);
       }
-      if (got.installScopeHash !== c.expected.install_scope_hash) failures.push(`${c.name}:install_scope`);
+      if (got.installScopeHash !== c.expected.install_scope_hash)
+        failures.push(`${c.name}:install_scope`);
       if (got.behaviorHash !== c.expected.behavior_hash) failures.push(`${c.name}:behavior`);
-      if (got.presentationHash !== c.expected.presentation_hash) failures.push(`${c.name}:presentation`);
+      if (got.presentationHash !== c.expected.presentation_hash)
+        failures.push(`${c.name}:presentation`);
     }
     return { cases: v.cases.length, failures };
   },
@@ -351,7 +371,9 @@ const VERIFIERS: Record<string, Verifier> = {
     };
     const failures: string[] = [];
     for (const c of v.cases) {
-      const declaredDigest = createHash('sha256').update(c.inputs.digest_source_utf8, 'utf8').digest('hex');
+      const declaredDigest = createHash('sha256')
+        .update(c.inputs.digest_source_utf8, 'utf8')
+        .digest('hex');
       const cidDigest = sha256DigestFromCid(c.inputs.cid);
       if (cidDigest === null || bytesToHex(cidDigest) !== declaredDigest) {
         failures.push(`${c.name}:cid-digest`);
@@ -405,7 +427,10 @@ const VERIFIERS: Record<string, Verifier> = {
       // Tamper check — flipping one byte must cause decrypt to throw.
       if (ct.length > 0) {
         const tampered = new Uint8Array(ct);
-        tampered[tampered.length - 1] = tampered[tampered.length - 1]! ^ 0x01;
+        const lastIndex = tampered.length - 1;
+        const lastByte = tampered[lastIndex];
+        if (lastByte === undefined) throw new Error('suite: non-empty ciphertext has no last byte');
+        tampered[lastIndex] = lastByte ^ 0x01;
         try {
           sodium.crypto_box_seal_open(tampered, pub, priv);
           failures.push(`${c.name}:tamper-did-not-fail`);
@@ -446,7 +471,7 @@ export function runConformance(vectorsDir: string): ConformanceReport {
         status: 'not-implemented',
         casesRun: 0,
         failures: [],
-        note: 'no verifier registered — suite needs a crypto primitive that isn\'t wired in yet',
+        note: "no verifier registered — suite needs a crypto primitive that isn't wired in yet",
       });
       continue;
     }

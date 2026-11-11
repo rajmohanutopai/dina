@@ -29,10 +29,10 @@ import {
   registerTrustQueryClient,
   resetTrustQueryClient,
   resetSearchCache,
-
   addContact,
   resetContactDirectory,
-  setPeopleRepository} from '@dina/core';
+  setPeopleRepository,
+} from '@dina/core';
 import { makeFakePeopleRepo } from '@dina/test-harness';
 
 import type { PeerlensQueryClient, PeerlensProfile, QueryResult } from '@dina/core';
@@ -67,13 +67,7 @@ describe('mobile Scenario 4 — PeerLens query', () => {
   it('searches local contacts when no AppView client is wired (offline mode)', async () => {
     // Seed a trusted contact — the local-contact path should surface
     // it even though no network client is registered.
-    addContact(
-      'did:plc:chair-maker',
-      'ChairMaker',
-      'verified',
-      'summary',
-      'acquaintance',
-    );
+    addContact('did:plc:chair-maker', 'ChairMaker', 'verified', 'summary', 'acquaintance');
 
     const result = await searchTrustNetwork({
       query: 'did:plc:chair-maker',
@@ -87,13 +81,7 @@ describe('mobile Scenario 4 — PeerLens query', () => {
   });
 
   it('merges local contacts + network attestations when client is wired', async () => {
-    addContact(
-      'did:plc:chair-maker',
-      'ChairMaker',
-      'verified',
-      'summary',
-      'acquaintance',
-    );
+    addContact('did:plc:chair-maker', 'ChairMaker', 'verified', 'summary', 'acquaintance');
 
     registerTrustQueryClient(
       makeStubClient({
@@ -126,13 +114,7 @@ describe('mobile Scenario 4 — PeerLens query', () => {
   });
 
   it('caches results — second identical query hits the cache', async () => {
-    addContact(
-      'did:plc:chair-maker',
-      'ChairMaker',
-      'verified',
-      'summary',
-      'acquaintance',
-    );
+    addContact('did:plc:chair-maker', 'ChairMaker', 'verified', 'summary', 'acquaintance');
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',
@@ -183,13 +165,7 @@ describe('mobile Scenario 4 — PeerLens query', () => {
   });
 
   it('name-based search resolves through the contact directory (no did: prefix)', async () => {
-    addContact(
-      'did:plc:chair-maker',
-      'ChairMaker',
-      'verified',
-      'summary',
-      'acquaintance',
-    );
+    addContact('did:plc:chair-maker', 'ChairMaker', 'verified', 'summary', 'acquaintance');
     registerTrustQueryClient(
       makeStubClient({
         did: 'did:plc:chair-maker',

@@ -13,7 +13,7 @@ import { MemoryService } from '../../src/memory/service';
 import { resetDataScope, setCurrentDataScope } from '../../src/scope/data_scope';
 import { makeMemoryHandlers } from '../../src/server/routes/memory';
 
-import type { CoreRequest, CoreResponse } from '../../src/server/router';
+import type { CoreRequest } from '../../src/server/router';
 
 const T0 = 1_700_000_000;
 

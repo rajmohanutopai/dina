@@ -44,7 +44,6 @@ import {
   type QuoteRequest,
   type RetainedEnvelope,
   type SignedQuote,
-
   validateInviteActivationAck,
   validateInviteConfirmation,
   validateInviteOffer,
@@ -53,12 +52,11 @@ import {
   type InviteConfirmation,
   type InviteOffer,
   type InviteRedemption,
-  type Money} from '@dina/commerce-protocol';
-
+  type Money,
+} from '@dina/commerce-protocol';
 
 import type { BuyerApprovalContext } from './approval_payload';
 import type { EnvelopeEvidence } from './buyer_status';
-
 
 export type Sha256Fn = Parameters<typeof validatePurchaseOrderProposal>[1];
 
@@ -305,7 +303,11 @@ export function rehydrateApprovalContext(json: string): Rehydrated<BuyerApproval
       return { ok: false, error: 'stored approval context: attribution is not an object' };
     }
     const attribution = c.attribution as Record<string, unknown>;
-    if (attribution.version !== 2 || typeof attribution.vouchedBy !== 'string' || attribution.vouchedBy === '') {
+    if (
+      attribution.version !== 2 ||
+      typeof attribution.vouchedBy !== 'string' ||
+      attribution.vouchedBy === ''
+    ) {
       return { ok: false, error: 'stored approval context: attribution is not a v2 attribution' };
     }
   }
@@ -371,7 +373,6 @@ function rehydrateRetainedEnvelope(value: unknown): RetainedEnvelope | null {
     body: body as string,
   };
 }
-
 
 // ---------------------------------------------------------------------------
 // §8 invite rows — this node's own writes, still verified on the way out

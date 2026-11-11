@@ -1,4 +1,0 @@
-$ dina validate --session ses_enyokxqbenyo research "Search for ergonomic chairs under $400"
-
-status: approved
-risk: SAFE

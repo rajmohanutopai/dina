@@ -20,13 +20,13 @@
  * gates the Bash tool calls Core sees; it is not an OS sandbox.
  */
 
+import { getDefaultRiskLevel, type RiskLevel } from '@dina/core';
+
 import {
   canonicalizePath,
-  isProtectedPath,
   pathHitsProtected,
   type ProtectedPathOptions,
 } from './coding_classifier';
-import { getDefaultRiskLevel, type RiskLevel } from '@dina/core';
 
 export interface BashClassifyInput {
   command: string;
@@ -64,11 +64,51 @@ const PRIVILEGE_PREFIXES = new Set(['sudo', 'su', 'doas']);
 
 /** Verbs that read file content → protected operand ⇒ secret_read. */
 const READ_VERBS = new Set([
-  'cat', 'tac', 'rev', 'bat', 'less', 'more', 'head', 'tail', 'nl', 'od', 'xxd',
-  'hexdump', 'strings', 'grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'cut',
-  'sort', 'uniq', 'comm', 'wc', 'md5', 'md5sum', 'shasum', 'sha1sum', 'sha256sum',
-  'sha512sum', 'base64', 'base32', 'basenc', 'diff', 'cmp', 'file', 'stat',
-  'readlink', 'fold', 'expand', 'unexpand', 'pr', 'column', 'fmt', 'paste',
+  'cat',
+  'tac',
+  'rev',
+  'bat',
+  'less',
+  'more',
+  'head',
+  'tail',
+  'nl',
+  'od',
+  'xxd',
+  'hexdump',
+  'strings',
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'ag',
+  'ack',
+  'cut',
+  'sort',
+  'uniq',
+  'comm',
+  'wc',
+  'md5',
+  'md5sum',
+  'shasum',
+  'sha1sum',
+  'sha256sum',
+  'sha512sum',
+  'base64',
+  'base32',
+  'basenc',
+  'diff',
+  'cmp',
+  'file',
+  'stat',
+  'readlink',
+  'fold',
+  'expand',
+  'unexpand',
+  'pr',
+  'column',
+  'fmt',
+  'paste',
 ]);
 /** Verbs that write/create files → protected operand ⇒ secret_write. */
 const WRITE_VERBS = new Set(['touch', 'mkdir', 'tee', 'install', 'ln']);
@@ -78,39 +118,167 @@ const COPY_VERBS = new Set(['cp', 'mv', 'rsync', 'dd']); // rsync/dd also below;
 const DESTRUCTIVE_VERBS = new Set(['rm', 'unlink', 'shred', 'srm', 'rmdir', 'truncate']);
 /** Always-benign verbs (never touch secret content). */
 const BENIGN_VERBS = new Set([
-  'echo', 'printf', 'pwd', 'cd', 'ls', 'dir', 'true', 'false', 'test', '[',
-  'which', 'type', 'whoami', 'hostname', 'uname', 'date', 'id', 'groups', 'tty',
-  'clear', 'history', 'basename', 'dirname', 'realpath', 'seq', 'yes', 'sleep',
-  'export', 'set', 'unset', 'alias', 'jobs', 'tput', 'env',
+  'echo',
+  'printf',
+  'pwd',
+  'cd',
+  'ls',
+  'dir',
+  'true',
+  'false',
+  'test',
+  '[',
+  'which',
+  'type',
+  'whoami',
+  'hostname',
+  'uname',
+  'date',
+  'id',
+  'groups',
+  'tty',
+  'clear',
+  'history',
+  'basename',
+  'dirname',
+  'realpath',
+  'seq',
+  'yes',
+  'sleep',
+  'export',
+  'set',
+  'unset',
+  'alias',
+  'jobs',
+  'tput',
+  'env',
   // common read-only status commands (no file-content or secret access)
-  'ps', 'df', 'du', 'uptime', 'free', 'printenv', 'locale', 'arch', 'nproc', 'whereis',
+  'ps',
+  'df',
+  'du',
+  'uptime',
+  'free',
+  'printenv',
+  'locale',
+  'arch',
+  'nproc',
+  'whereis',
 ]);
 const PACKAGE_MANAGERS = new Set([
-  'npm', 'yarn', 'pnpm', 'pip', 'pip3', 'gem', 'cargo', 'brew', 'apt', 'apt-get',
-  'dnf', 'yum', 'composer', 'bundle', 'poetry', 'go', 'mvn', 'gradle', 'nuget',
+  'npm',
+  'yarn',
+  'pnpm',
+  'pip',
+  'pip3',
+  'gem',
+  'cargo',
+  'brew',
+  'apt',
+  'apt-get',
+  'dnf',
+  'yum',
+  'composer',
+  'bundle',
+  'poetry',
+  'go',
+  'mvn',
+  'gradle',
+  'nuget',
 ]);
 const NETWORK_VERBS = new Set([
-  'curl', 'wget', 'http', 'https', 'nc', 'ncat', 'netcat', 'telnet', 'ssh',
-  'scp', 'sftp', 'ftp', 'aria2c', 'httpie',
+  'curl',
+  'wget',
+  'http',
+  'https',
+  'nc',
+  'ncat',
+  'netcat',
+  'telnet',
+  'ssh',
+  'scp',
+  'sftp',
+  'ftp',
+  'aria2c',
+  'httpie',
 ]);
 const SYSTEM_VERBS = new Set([
-  'chmod', 'chown', 'chgrp', 'mount', 'umount', 'launchctl', 'systemctl',
-  'service', 'defaults', 'scutil', 'pfctl', 'iptables', 'nft', 'setenforce',
-  'visudo', 'dscl', 'killall', 'kill', 'pkill', 'reboot', 'shutdown', 'crontab',
-  'sysctl', 'passwd', 'usermod', 'dseditgroup',
+  'chmod',
+  'chown',
+  'chgrp',
+  'mount',
+  'umount',
+  'launchctl',
+  'systemctl',
+  'service',
+  'defaults',
+  'scutil',
+  'pfctl',
+  'iptables',
+  'nft',
+  'setenforce',
+  'visudo',
+  'dscl',
+  'killall',
+  'kill',
+  'pkill',
+  'reboot',
+  'shutdown',
+  'crontab',
+  'sysctl',
+  'passwd',
+  'usermod',
+  'dseditgroup',
 ]);
 const DEPLOY_VERBS = new Set([
-  'docker', 'docker-compose', 'podman', 'kubectl', 'helm', 'terraform',
-  'pulumi', 'ansible', 'ansible-playbook', 'aws', 'gcloud', 'az', 'vercel',
-  'netlify', 'fly', 'flyctl', 'heroku', 'serverless', 'sls', 'cdk', 'eb',
+  'docker',
+  'docker-compose',
+  'podman',
+  'kubectl',
+  'helm',
+  'terraform',
+  'pulumi',
+  'ansible',
+  'ansible-playbook',
+  'aws',
+  'gcloud',
+  'az',
+  'vercel',
+  'netlify',
+  'fly',
+  'flyctl',
+  'heroku',
+  'serverless',
+  'sls',
+  'cdk',
+  'eb',
 ]);
 const INTERPRETERS = new Set([
-  'python', 'python3', 'node', 'deno', 'bun', 'ruby', 'perl', 'php', 'sh',
-  'bash', 'zsh', 'fish', 'osascript', 'rscript', 'lua', 'tclsh',
+  'python',
+  'python3',
+  'node',
+  'deno',
+  'bun',
+  'ruby',
+  'perl',
+  'php',
+  'sh',
+  'bash',
+  'zsh',
+  'fish',
+  'osascript',
+  'rscript',
+  'lua',
+  'tclsh',
 ]);
 /** Alternate interpreter binary names that normalise to a known interpreter. */
 const INTERPRETER_ALIASES: Record<string, string> = {
-  nodejs: 'node', dash: 'sh', ksh: 'sh', ash: 'sh', mksh: 'sh', pwsh: 'sh', powershell: 'sh',
+  nodejs: 'node',
+  dash: 'sh',
+  ksh: 'sh',
+  ash: 'sh',
+  mksh: 'sh',
+  pwsh: 'sh',
+  powershell: 'sh',
 };
 /** Resolve a verb to a known interpreter, stripping a version suffix
  *  (`python3.11`→`python`, `ruby2.7`→`ruby`) and applying aliases. */
@@ -159,7 +327,15 @@ const BUILD_VERBS = new Set(['make', 'cmake', 'ninja', 'bazel', 'buck', 'rake', 
 /** Inline-code flags that make an interpreter opaque → BLOCKED. */
 const INLINE_CODE_FLAGS = new Set(['-c', '-e', '--eval', '--command', '-']);
 /** git subcommands that rewrite/discard history or force-push → HIGH. */
-const GIT_DESTRUCTIVE = new Set(['reset', 'clean', 'rebase', 'filter-branch', 'reflog', 'gc', 'prune']);
+const GIT_DESTRUCTIVE = new Set([
+  'reset',
+  'clean',
+  'rebase',
+  'filter-branch',
+  'reflog',
+  'gc',
+  'prune',
+]);
 
 interface Tokenized {
   segments: string[][]; // each simple command as unquoted tokens
@@ -288,7 +464,11 @@ export function tokenizeBash(command: string): Tokenized {
 }
 
 /** Strip a leading `FOO=bar` env-assignment run and wrapper prefixes. */
-function unwrapVerb(tokens: string[]): { verb: string | null; args: string[]; privileged: boolean } {
+function unwrapVerb(tokens: string[]): {
+  verb: string | null;
+  args: string[];
+  privileged: boolean;
+} {
   let i = 0;
   let privileged = false;
   // env assignments: FOO=bar ...
@@ -302,7 +482,8 @@ function unwrapVerb(tokens: string[]): { verb: string | null; args: string[]; pr
       privileged = true;
       i++;
       // `sudo -u user cmd` — skip option flags following sudo
-      while (i < tokens.length && tokens[i].startsWith('-')) i += tokens[i] === '-u' || tokens[i] === '--user' ? 2 : 1;
+      while (i < tokens.length && tokens[i].startsWith('-'))
+        i += tokens[i] === '-u' || tokens[i] === '--user' ? 2 : 1;
       continue;
     }
     if (WRAPPER_PREFIXES.has(b) || b === 'env') {
@@ -357,11 +538,22 @@ function flagValues(args: string[], flags: readonly string[]): string[] {
 }
 
 /** Verbs whose FIRST non-flag arg is a pattern/program, not a path. */
-const PATTERN_FIRST_VERBS = new Set(['grep', 'egrep', 'fgrep', 'rg', 'ag', 'ack', 'sed', 'awk', 'gawk', 'nawk', 'mawk']);
+const PATTERN_FIRST_VERBS = new Set([
+  'grep',
+  'egrep',
+  'fgrep',
+  'rg',
+  'ag',
+  'ack',
+  'sed',
+  'awk',
+  'gawk',
+  'nawk',
+  'mawk',
+]);
 
 /** Unambiguous secret FILENAMES. Common words (keyfile/credentials) are omitted. */
-const SECRET_NAMES_SRC =
-  String.raw`\.env\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|\.pypirc\b|\.dockercfg\b|id_(?:rsa|ed25519|ecdsa|dsa)\b|wrapped_seed|recovery-phrase|show-recovery-phrase|owner[_-]capability|show-owner-capability|pds_identity|authorized_keys`;
+const SECRET_NAMES_SRC = String.raw`\.env\b|\.npmrc\b|\.netrc\b|\.pgpass\b|\.git-credentials\b|\.pypirc\b|\.dockercfg\b|id_(?:rsa|ed25519|ecdsa|dsa)\b|wrapped_seed|recovery-phrase|show-recovery-phrase|owner[_-]capability|show-owner-capability|pds_identity|authorized_keys`;
 /** A secret name inside a QUOTED string (awk `ARGV[1]="…"`, `getline < "…"`). */
 const SECRET_QUOTED = new RegExp(`["'][^"']*(?:${SECRET_NAMES_SRC})`, 'i');
 /** A secret name read/written by a sed `r`/`w`/`R`/`W` file command. The `r`/`w`
@@ -377,7 +569,13 @@ const SECRET_SED_RW = new RegExp(
 /** Awk/sed program-source flags whose VALUE is a program (`-e prog`). */
 const AWK_SED_PROG_FLAGS = new Set(['-e', '--source', '--expression', '--program']);
 /** Awk/sed flags whose following VALUE is NOT a program (`-v var=val`, `-F sep`). */
-const AWK_SED_VALUE_FLAGS = new Set(['-v', '--assign', '-F', '--field-separator', '--characters-as-bytes']);
+const AWK_SED_VALUE_FLAGS = new Set([
+  '-v',
+  '--assign',
+  '-F',
+  '--field-separator',
+  '--characters-as-bytes',
+]);
 
 /**
  * Collect every inspectable program string from an awk/sed arg list — all
@@ -530,7 +728,7 @@ function redirectTargets(raw: string): { writes: string[]; reads: string[] } {
   return { writes, reads };
 }
 
-function worse(a: RiskLevel, b: RiskLevel): RiskLevel {
+function _worse(a: RiskLevel, b: RiskLevel): RiskLevel {
   return RISK_RANK[a] >= RISK_RANK[b] ? a : b;
 }
 
@@ -541,9 +739,7 @@ function worse(a: RiskLevel, b: RiskLevel): RiskLevel {
 export function classifyBashCommand(input: BashClassifyInput): BashClassification {
   const cmd = input.command.trim();
   if (cmd === '') return blocked('empty command');
-  if (
-    /\bdina\s+home-node\s+(?:show-owner-capability|show-recovery-phrase)\b/i.test(cmd)
-  ) {
+  if (/\bdina\s+home-node\s+(?:show-owner-capability|show-recovery-phrase)\b/i.test(cmd)) {
     return blocked('command reveals Home Node owner or recovery authority');
   }
 
@@ -561,21 +757,27 @@ export function classifyBashCommand(input: BashClassifyInput): BashClassificatio
     keyDirs: (input.keyDirs ?? []).map(safe),
   };
   // Glob-aware: a glob/brace operand is expanded on the real fs so a metachar in
-  // a directory component (`/vault-parent/vau*​/keyfile`) can't hide a vault path.
+  // a directory component (`/vault-parent/vau*/keyfile`) can't hide a vault path.
   const anyProtected = (paths: string[]): boolean =>
     paths.some((p) => pathHitsProtected(p, cwd, opts));
 
   // Global redirect scan across the WHOLE command — catches a redirect even if
   // segment splitting ever strands the operator from its target.
   const gr = redirectTargets(cmd);
-  if (anyProtected(gr.writes)) return { action: 'secret_write', risk: 'BLOCKED', reason: 'redirect writes a protected path' };
-  if (anyProtected(gr.reads)) return { action: 'secret_read', risk: 'BLOCKED', reason: 'redirect reads a protected path' };
+  if (anyProtected(gr.writes))
+    return { action: 'secret_write', risk: 'BLOCKED', reason: 'redirect writes a protected path' };
+  if (anyProtected(gr.reads))
+    return { action: 'secret_read', risk: 'BLOCKED', reason: 'redirect reads a protected path' };
   if (gr.writes.some((w) => hasVar(w)) || gr.reads.some((r) => hasVar(r)))
-    return { action: 'secret_write', risk: 'BLOCKED', reason: 'redirect to a variable-expanded path' };
+    return {
+      action: 'secret_write',
+      risk: 'BLOCKED',
+      reason: 'redirect to a variable-expanded path',
+    };
 
   // Per-verb classification first, so a verb the table understands keeps its
   // precise label (rm → secret_write, sed -i → secret_write, …).
-  const results: Array<{ action: string; risk: RiskLevel; reason: string }> = [];
+  const results: { action: string; risk: RiskLevel; reason: string }[] = [];
   for (let si = 0; si < tok.segments.length; si++) {
     const seg = classifySegment(tok.segments[si], tok.rawSegments[si] ?? '', input, anyProtected);
     results.push(seg);
@@ -583,7 +785,8 @@ export function classifyBashCommand(input: BashClassifyInput): BashClassificatio
   }
   let winner = results[0];
   for (const r of results) if (RISK_RANK[r.risk] >= RISK_RANK[winner.risk]) winner = r;
-  if (winner.risk === 'BLOCKED') return { action: winner.action, risk: winner.risk, reason: winner.reason };
+  if (winner.risk === 'BLOCKED')
+    return { action: winner.action, risk: winner.risk, reason: winner.reason };
 
   // VERB-AGNOSTIC net for what the per-verb table MISSED — scan every token
   // (stripping operand prefixes like `if=`, `of=`, `@`, `name=@`, `--output=`)
@@ -592,13 +795,21 @@ export function classifyBashCommand(input: BashClassifyInput): BashClassificatio
   for (const seg of tok.segments) {
     for (const t of seg) {
       if (anyProtected(candidateOperandPaths(t)))
-        return { action: 'secret_read', risk: 'BLOCKED', reason: 'command references a protected path' };
+        return {
+          action: 'secret_read',
+          risk: 'BLOCKED',
+          reason: 'command references a protected path',
+        };
     }
   }
   // Last net: a protected path embedded in a quoted program/arg the tokenizer
   // kept whole — if the canonical vault dir appears anywhere, BLOCK.
   if (opts.vaultDir && cmd.toLowerCase().includes(opts.vaultDir.toLowerCase()))
-    return { action: 'secret_read', risk: 'BLOCKED', reason: 'command references the vault directory' };
+    return {
+      action: 'secret_read',
+      risk: 'BLOCKED',
+      reason: 'command references the vault directory',
+    };
 
   return { action: winner.action, risk: winner.risk, reason: winner.reason };
 
@@ -625,9 +836,12 @@ function classifySegment(
   // `set -e` / `export FOO=bar` (options/assignments) are NOT dumps and fall
   // through. Runs before unwrapVerb (which would consume a leading `env`).
   {
-    const firstReal = tokens.find((t) => t !== '' && !/^[A-Za-z_]\w*=/.test(t) && !t.startsWith('-'));
+    const firstReal = tokens.find(
+      (t) => t !== '' && !/^[A-Za-z_]\w*=/.test(t) && !t.startsWith('-'),
+    );
     const dv = firstReal ? basename(firstReal) : '';
-    if (dv === 'printenv') return mk('secret_read', 'printenv discloses environment secrets', 'BLOCKED');
+    if (dv === 'printenv')
+      return mk('secret_read', 'printenv discloses environment secrets', 'BLOCKED');
     if (dv === 'env' || dv === 'set' || dv === 'export' || dv === 'declare' || dv === 'typeset') {
       const rest = tokens.slice(tokens.indexOf(firstReal as string) + 1).filter((t) => t !== '');
       const hasCommand = rest.some((t) => !t.startsWith('-') && !/^[A-Za-z_]\w*=/.test(t));
@@ -722,14 +936,23 @@ function classifySegment(
     if (awkOpaque || sedExec || secretRef)
       return mk('secret_read', `${verb} inline exec / secret-file read — opaque`, 'BLOCKED');
     // `-f`/`--file` (any spelling) = an external script we can't inspect → MODERATE.
-    if (args.some((a) => a === '-f' || a === '--file' || (a.startsWith('-f') && a.length > 2) || a.startsWith('--file=')))
+    if (
+      args.some(
+        (a) =>
+          a === '-f' ||
+          a === '--file' ||
+          (a.startsWith('-f') && a.length > 2) ||
+          a.startsWith('--file='),
+      )
+    )
       return mk('code_edit_external', `${verb} -f external script`, 'MODERATE');
 
     const inPlace = args.some((a) => a === '-i' || a.startsWith('-i'));
     // Protected FILE operands are also caught by the global token-scan net; this
     // keeps the precise read/write label for the common case.
     const files = operandPathArgs(verb, args);
-    if (anyProtected(files)) return mk(inPlace ? 'secret_write' : 'secret_read', `${verb} on a protected path`);
+    if (anyProtected(files))
+      return mk(inPlace ? 'secret_write' : 'secret_read', `${verb} on a protected path`);
     return inPlace ? mk('code_edit', `${verb} -i`) : mk('code_read', verb);
   }
   if (WRITE_VERBS.has(verb)) {
@@ -753,7 +976,9 @@ function classifySegment(
     if (args.some((a) => a === '-exec' || a === '-execdir' || a === '-ok'))
       return mk('code_edit_external', 'find -exec runs arbitrary commands', 'MODERATE');
     if (args.some((a) => a === '-delete')) return mk('fs_destructive', 'find -delete', 'HIGH');
-    return anyProtected(pathArgs(args)) ? mk('secret_read', 'find over a protected path') : mk('code_read', 'find');
+    return anyProtected(pathArgs(args))
+      ? mk('secret_read', 'find over a protected path')
+      : mk('code_read', 'find');
   }
 
   if (verb === 'git' || verb === 'hg' || verb === 'svn') {
@@ -779,7 +1004,8 @@ function classifySegment(
     // Only a CONCRETE protected operand blocks — a git operand is often a branch
     // or revision, incl. a `$VAR` branch (`git checkout $BRANCH`), so an
     // indirection check here would over-block the common case.
-    if (anyProtected(operands)) return mk('secret_read', `${verb} touches a protected path`, 'BLOCKED');
+    if (anyProtected(operands))
+      return mk('secret_read', `${verb} touches a protected path`, 'BLOCKED');
     return classifyVcs(verb, args);
   }
 
@@ -798,12 +1024,17 @@ function classifySegment(
 
   if (SYSTEM_VERBS.has(verb)) return mk('system_modify', verb, 'HIGH');
   if (DEPLOY_VERBS.has(verb)) return mk('deploy', verb, 'HIGH');
-  if (BUILD_VERBS.has(verb)) return mk('code_edit_external', `runs a build/task runner (${verb})`, 'MODERATE');
+  if (BUILD_VERBS.has(verb))
+    return mk('code_edit_external', `runs a build/task runner (${verb})`, 'MODERATE');
 
   // Unknown verb (a local binary/script) — could do anything: conservative MODERATE.
   return mk('code_edit_external', `unrecognised command (${verb})`, 'MODERATE');
 
-  function mk(action: string, reason: string, forced?: RiskLevel): { action: string; risk: RiskLevel; reason: string } {
+  function mk(
+    action: string,
+    reason: string,
+    forced?: RiskLevel,
+  ): { action: string; risk: RiskLevel; reason: string } {
     const risk = forced ?? (getDefaultRiskLevel(action) as RiskLevel);
     return { action, risk, reason };
   }
@@ -817,14 +1048,19 @@ function classifyVcs(
   const rest = args;
   if (verb === 'git') {
     if (sub === 'push') {
-      const forced = rest.some((a) => a === '-f' || a === '--force' || a.startsWith('--force-with-lease'));
+      const forced = rest.some(
+        (a) => a === '-f' || a === '--force' || a.startsWith('--force-with-lease'),
+      );
       return forced
         ? { action: 'vcs_destructive', risk: 'HIGH', reason: 'git push --force' }
         : { action: 'vcs_push', risk: 'MODERATE', reason: 'git push' };
     }
     if (sub && GIT_DESTRUCTIVE.has(sub)) {
       // `git reset --hard`, `git clean -f`, `git rebase`, filter-branch, reflog, gc/prune
-      if (sub === 'reset' && !rest.some((a) => a === '--hard' || a === '--keep' || a === '--merge')) {
+      if (
+        sub === 'reset' &&
+        !rest.some((a) => a === '--hard' || a === '--keep' || a === '--merge')
+      ) {
         return { action: 'vcs_local', risk: 'SAFE', reason: 'git reset (soft/mixed)' };
       }
       return { action: 'vcs_destructive', risk: 'HIGH', reason: `git ${sub}` };
@@ -854,15 +1090,39 @@ function classifyPackage(
   // to a protected path → BLOCK, like every other file-touching verb (audit).
   if (anyProtected(pathArgs(args)))
     return { action: 'secret_read', risk: 'BLOCKED', reason: `${verb} touches a protected path` };
-  const INSTALL = new Set(['install', 'i', 'add', 'ci', 'get', 'update', 'upgrade', 'remove', 'uninstall', 'rm', 'sync']);
+  const INSTALL = new Set([
+    'install',
+    'i',
+    'add',
+    'ci',
+    'get',
+    'update',
+    'upgrade',
+    'remove',
+    'uninstall',
+    'rm',
+    'sync',
+  ]);
   const PUBLISH = new Set(['publish', 'push', 'release', 'deploy']);
   // RUNNER subcommands run arbitrary project/build code (build.rs, Rakefile,
   // an exec'd command) → MODERATE for EVERY manager, not just npm/go (audit:
   // `cargo run`, `bundle exec`, `poetry run` were falling through to SAFE).
-  const RUNNERS = new Set(['run', 'exec', 'test', 'start', 'dlx', 'build', 'bench', 'watch', 'tauri']);
+  const RUNNERS = new Set([
+    'run',
+    'exec',
+    'test',
+    'start',
+    'dlx',
+    'build',
+    'bench',
+    'watch',
+    'tauri',
+  ]);
   if (PUBLISH.has(sub)) return { action: 'deploy', risk: 'HIGH', reason: `${verb} ${sub}` };
-  if (INSTALL.has(sub)) return { action: 'package_install', risk: 'MODERATE', reason: `${verb} ${sub}` };
-  if (RUNNERS.has(sub)) return { action: 'code_edit_external', risk: 'MODERATE', reason: `${verb} ${sub} (runs code)` };
+  if (INSTALL.has(sub))
+    return { action: 'package_install', risk: 'MODERATE', reason: `${verb} ${sub}` };
+  if (RUNNERS.has(sub))
+    return { action: 'code_edit_external', risk: 'MODERATE', reason: `${verb} ${sub} (runs code)` };
   // bare `npm`, `npm ls`, `pip list`, `cargo --version` → benign read
   return { action: 'code_read', risk: 'SAFE', reason: `${verb} ${sub}`.trim() };
 }
@@ -875,8 +1135,15 @@ function looksRemote(arg: string): boolean {
 const RAW_PATH_FLAGS = new Set(['-T', '--upload-file']);
 /** Flags whose value carries a file via `@` (`@file` or `name@file`/`name=@file`). */
 const AT_FILE_FLAGS = new Set([
-  '-d', '--data', '--data-binary', '--data-ascii', '--data-raw', '--data-urlencode',
-  '-F', '--form', '--form-string',
+  '-d',
+  '--data',
+  '--data-binary',
+  '--data-ascii',
+  '--data-raw',
+  '--data-urlencode',
+  '-F',
+  '--form',
+  '--form-string',
 ]);
 
 /** The file a data/form/upload flag value references, or null (inline data). */
@@ -925,8 +1192,13 @@ function networkResult(
   const hosts = extractHosts(args);
   const allow = new Set((input.allowedHosts ?? []).map((h) => h.toLowerCase()));
   const allTrusted = hosts.length > 0 && hosts.every((h) => allow.has(h));
-  if (allTrusted) return { action: 'network_egress', risk: 'MODERATE', reason: `${verb} → allowlisted host` };
-  return { action: 'network_egress_untrusted', risk: 'HIGH', reason: `${verb} → non-allowlisted host` };
+  if (allTrusted)
+    return { action: 'network_egress', risk: 'MODERATE', reason: `${verb} → allowlisted host` };
+  return {
+    action: 'network_egress_untrusted',
+    risk: 'HIGH',
+    reason: `${verb} → non-allowlisted host`,
+  };
 }
 
 function extractHosts(args: string[]): string[] {

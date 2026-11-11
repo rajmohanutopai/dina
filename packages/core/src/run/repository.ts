@@ -14,13 +14,7 @@
  * singleton is wired at bootstrap (`setRunRepository`) and reset in tests.
  */
 
-import type {
-  DrainCause,
-  DrainStrength,
-  PausedReason,
-  RunRecord,
-  RunState,
-} from './domain';
+import type { DrainCause, DrainStrength, PausedReason, RunRecord, RunState } from './domain';
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
 /** Raised when a create violates a uniqueness constraint. */
@@ -186,8 +180,7 @@ const COLUMNS = [
 const TERMINAL_SQL = "('completed','stopped','expired')";
 
 function rowToRun(row: DBRow): RunRecord {
-  const num = (v: unknown): number | null =>
-    v === null || v === undefined ? null : Number(v);
+  const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
   return {
     run_id: String(row.run_id),
     idempotency_key: String(row.idempotency_key),

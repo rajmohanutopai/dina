@@ -14,7 +14,7 @@
 
 import { parseSilence } from '../llm/output_parser';
 
-import { classifyDeterministic, type ClassificationResult, type PriorityTier } from './silence';
+import { classifyDeterministic, type ClassificationResult } from './silence';
 
 /** Confidence threshold — LLM consulted below this. */
 const REFINEMENT_THRESHOLD = 0.75;

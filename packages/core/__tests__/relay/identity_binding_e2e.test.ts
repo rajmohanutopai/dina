@@ -19,7 +19,6 @@ import {
 import { buildRPCRequest, sealRPCRequest, unsealRPCRequest } from '../../src/relay/rpc_envelope';
 import { buildSignedResponse, verifyResponseSignature } from '../../src/relay/rpc_response';
 
-
 describe('Identity Binding E2E (Task 7.2)', () => {
   // Sender (CLI / paired device)
   const senderPriv = TEST_ED25519_SEED;

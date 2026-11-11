@@ -21,17 +21,9 @@
 
 import { describe, expect, it, jest } from '@jest/globals';
 
-import {
-  inferComposeContext,
-  type ComposeVaultItem,
-} from '../../src/peerlens/compose_context';
+import { inferComposeContext, type ComposeVaultItem } from '../../src/peerlens/compose_context';
 
-import type {
-  ChatMessage,
-  ChatOptions,
-  ChatResponse,
-  LLMProvider,
-} from '@dina/brain/llm';
+import type { ChatMessage, ChatOptions, ChatResponse, LLMProvider } from '@dina/brain/llm';
 
 const NOW = Date.parse('2026-05-02T12:00:00Z');
 const DAY = 24 * 60 * 60 * 1000;
@@ -56,7 +48,8 @@ function stubLLM(responses: (string | Error)[]): {
   chatMock: jest.Mock<(messages: ChatMessage[], opts?: ChatOptions) => Promise<ChatResponse>>;
 } {
   const queue = [...responses];
-  const chatMock = jest.fn<(messages: ChatMessage[], opts?: ChatOptions) => Promise<ChatResponse>>();
+  const chatMock =
+    jest.fn<(messages: ChatMessage[], opts?: ChatOptions) => Promise<ChatResponse>>();
   chatMock.mockImplementation(async () => {
     const next = queue.shift();
     if (next === undefined) {
@@ -279,9 +272,7 @@ describe('inferComposeContext — closed-vocabulary discipline', () => {
   });
 
   it('omits use_cases entirely when no LLM tag survives the filter', async () => {
-    const { llm } = stubLLM([
-      JSON.stringify({ use_cases: ['gardening', 'cooking'] }),
-    ]);
+    const { llm } = stubLLM([JSON.stringify({ use_cases: ['gardening', 'cooking'] })]);
     const result = await inferComposeContext({
       llm,
       subjectName: 'Aeron chair',
@@ -295,9 +286,7 @@ describe('inferComposeContext — closed-vocabulary discipline', () => {
   });
 
   it('drops last_used_bucket values outside the LastUsedBucket enum', async () => {
-    const { llm } = stubLLM([
-      JSON.stringify({ last_used_bucket: 'next_week' }),
-    ]);
+    const { llm } = stubLLM([JSON.stringify({ last_used_bucket: 'next_week' })]);
     const result = await inferComposeContext({
       llm,
       subjectName: 'Aeron chair',
@@ -428,7 +417,9 @@ describe('inferComposeContext — composition', () => {
   });
 
   it('vault_item_count in sources reflects total items provided (not 1)', async () => {
-    const { llm } = stubLLM([JSON.stringify({ use_cases: ['professional'], last_used_bucket: 'today' })]);
+    const { llm } = stubLLM([
+      JSON.stringify({ use_cases: ['professional'], last_used_bucket: 'today' }),
+    ]);
     const result = await inferComposeContext({
       llm,
       subjectName: 'Aeron chair',
@@ -537,9 +528,7 @@ describe('inferComposeContext — draft-freeform mode', () => {
 
   it('drops over-length headlines rather than truncating', async () => {
     const longHeadline = 'A'.repeat(141); // HEADLINE_MAX_LENGTH = 140
-    const { llm } = stubLLM([
-      JSON.stringify({ headline: longHeadline, body: 'short' }),
-    ]);
+    const { llm } = stubLLM([JSON.stringify({ headline: longHeadline, body: 'short' })]);
     const result = await inferComposeContext({
       llm,
       subjectName: 'Aeron chair',
@@ -555,9 +544,7 @@ describe('inferComposeContext — draft-freeform mode', () => {
 
   it('drops over-length bodies rather than truncating', async () => {
     const longBody = 'B'.repeat(4001); // BODY_MAX_LENGTH = 4000
-    const { llm } = stubLLM([
-      JSON.stringify({ headline: 'short headline', body: longBody }),
-    ]);
+    const { llm } = stubLLM([JSON.stringify({ headline: 'short headline', body: longBody })]);
     const result = await inferComposeContext({
       llm,
       subjectName: 'Aeron chair',
@@ -572,9 +559,7 @@ describe('inferComposeContext — draft-freeform mode', () => {
   });
 
   it('trims whitespace + collapses 3+ newlines in body', async () => {
-    const { llm } = stubLLM([
-      JSON.stringify({ body: '  one\n\n\n\ntwo  \n\nthree   ' }),
-    ]);
+    const { llm } = stubLLM([JSON.stringify({ body: '  one\n\n\n\ntwo  \n\nthree   ' })]);
     const result = await inferComposeContext({
       llm,
       subjectName: 'Aeron chair',

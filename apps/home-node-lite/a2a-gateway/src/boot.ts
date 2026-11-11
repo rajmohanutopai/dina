@@ -38,9 +38,17 @@ export class ServiceKeyError extends Error {
 export async function bootGateway(env: NodeJS.ProcessEnv = process.env): Promise<BootedGateway> {
   const config = loadConfig(env);
   const logger = createLogger(config);
-  const key = await loadServiceKey(config.serviceKey.dir, config.serviceKey.file, config.serviceKey.did);
+  const key = await loadServiceKey(
+    config.serviceKey.dir,
+    config.serviceKey.file,
+    config.serviceKey.did,
+  );
   if (!key.ok) throw new ServiceKeyError(key.reason);
-  const core = createCoreLink({ baseUrl: config.core.baseUrl, key: key.key, timeoutMs: config.core.timeoutMs });
+  const core = createCoreLink({
+    baseUrl: config.core.baseUrl,
+    key: key.key,
+    timeoutMs: config.core.timeoutMs,
+  });
   const hub = new StreamHub({
     maxStreams: config.streams.max,
     bufferMs: 30_000,
@@ -57,7 +65,13 @@ export async function bootGateway(env: NodeJS.ProcessEnv = process.env): Promise
     hub,
     streams: config.streams,
   });
-  const pump = new DeliveryPump({ core, hub, transport: createA2AHostTransport(), logger, ...config.delivery });
+  const pump = new DeliveryPump({
+    core,
+    hub,
+    transport: createA2AHostTransport(),
+    logger,
+    ...config.delivery,
+  });
   // Before the server closes: it waits for every open connection, and a
   // stream never goes idle, so ending the streams afterwards would wait on
   // itself. Stop claiming (in-flight webhook POSTs finish and are reported),
@@ -68,6 +82,9 @@ export async function bootGateway(env: NodeJS.ProcessEnv = process.env): Promise
   });
   await app.listen({ host: config.network.host, port: config.network.port });
   pump.start();
-  logger.info({ host: config.network.host, port: config.network.port, did: key.key.did }, 'a2a gateway listening');
+  logger.info(
+    { host: config.network.host, port: config.network.port, did: key.key.did },
+    'a2a gateway listening',
+  );
   return { app, logger, config, did: key.key.did };
 }

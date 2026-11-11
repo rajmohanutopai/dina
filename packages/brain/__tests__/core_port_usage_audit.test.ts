@@ -63,8 +63,7 @@ const ALLOWED_REPO_IMPORTERS: readonly { file: string; rationale: string }[] = [
  * SHOULD import CoreClient / types from there. Only deep imports
  * targeting `core/src/.../repository(.ts|.js)?` are flagged.
  */
-const REPO_IMPORT_RE =
-  /from\s+['"][^'"]*\bcore\/src\/[a-z_]+\/repository(?:\.(?:ts|js))?['"]/g;
+const REPO_IMPORT_RE = /from\s+['"][^'"]*\bcore\/src\/[a-z_]+\/repository(?:\.(?:ts|js))?['"]/g;
 
 function* walkTs(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
@@ -142,10 +141,10 @@ describe('Brain core-port usage audit (task 2.5)', () => {
       `import { Y } from '../../core/src/contacts/repository.ts';`,
     ];
     const shouldNotFlag = [
-      `import { CoreClient } from '@dina/core';`,                         // portable CoreClient
-      `import { VaultItem } from '@dina/core/src/domain/types';`,         // domain type, not repo
-      `import { signRequest } from '../../core/src/auth/canonical';`,     // auth layer, not repo
-      `import type { TocEntry } from '../../core/src/memory/domain';`,    // domain-layer type
+      `import { CoreClient } from '@dina/core';`, // portable CoreClient
+      `import { VaultItem } from '@dina/core/src/domain/types';`, // domain type, not repo
+      `import { signRequest } from '../../core/src/auth/canonical';`, // auth layer, not repo
+      `import type { TocEntry } from '../../core/src/memory/domain';`, // domain-layer type
     ];
 
     it.each(shouldFlag.map((s) => [s]))('flags repo import: %s', (snippet) => {

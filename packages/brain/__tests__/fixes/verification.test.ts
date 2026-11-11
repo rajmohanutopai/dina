@@ -7,8 +7,6 @@
  * Source: brain/tests/test_fix_verification.py
  */
 
-import { NotImplementedError } from '@dina/test-harness';
-
 describe('Brain Fix Verification', () => {
   describe('D2D serialization (SS19.1)', () => {
     it('send_d2d uses base64 JSON wire format', () => {

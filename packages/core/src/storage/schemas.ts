@@ -4075,7 +4075,8 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         PRIMARY KEY (contact_did, category)
       );
     `,
-  },  {
+  },
+  {
     // COMMITMENT_KERNEL §11 — the strategy slot. Per deal kind: who fills it
     // (the pack's fixed style, or Brain) and whether Brain's brief carries
     // values and costs (on by default, §16 item 3). Verdict budgets, kept
@@ -4103,7 +4104,8 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
         PRIMARY KEY (kind, negotiation_id)
       );
     `,
-  },  {
+  },
+  {
     // COMMITMENT_KERNEL §11 — a shelf negotiation's turns handed to the
     // strategy slot: one row per round, so a move is asked for once, applied
     // once, and the fixed style takes the round when the strategy does not
@@ -4354,7 +4356,8 @@ export const IDENTITY_MIGRATIONS: Migration[] = [
       UPDATE commitment_evidence SET broken_since = COALESCE(amended_at, recorded_at)
         WHERE outcome = 'broken';
     `,
-  },  {
+  },
+  {
     // OPENAI_DOTS_INTEGRATION §6.4 — a tender an outside agent drafted: what
     // the café needs, with the suppliers Core filled from its own trade
     // history. No target, no ceiling: the owner adds those when opening it.
@@ -4851,7 +4854,8 @@ export const PERSONA_MIGRATIONS: Migration[] = [
         ON vault_items(owner_memory_key, data_scope)
         WHERE owner_memory_key IS NOT NULL;
     `,
-  },  {
+  },
+  {
     // COMMITMENT_KERNEL §7 — value-model entries tagged with this persona: sealed
     // with its vault file, read only while it is open. Never a vault item, so
     // no search and no Brain read reaches them.

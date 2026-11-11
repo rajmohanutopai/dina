@@ -1,11 +1,16 @@
 /** REAL_LIFE_FIXES_2 §3 — a turn's receipts stay on its own message and back later claims. */
 
-import { earlierReceipts, storeTurnReceipts } from '../../src/chat/turn_receipts';
 import { addDinaResponse, addUserMessage, getThread, resetThreads } from '../../src/chat/thread';
+import { earlierReceipts, storeTurnReceipts } from '../../src/chat/turn_receipts';
 
 import type { ActionReceipt } from '../../src/guardian/action_claims';
 
-const sent: ActionReceipt = { action: 'send', status: 'done', targets: ['Wen'], object: 'running ten minutes late' };
+const sent: ActionReceipt = {
+  action: 'send',
+  status: 'done',
+  targets: ['Wen'],
+  object: 'running ten minutes late',
+};
 
 beforeEach(() => resetThreads());
 

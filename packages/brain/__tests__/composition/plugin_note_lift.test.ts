@@ -13,14 +13,29 @@ import { translateLoopResult } from '../../src/composition/ask_coordinator';
 import type { AgenticLoopResult } from '../../src/reasoning/agentic_loop';
 
 function completed(answer: string, toolCalls: AgenticLoopResult['toolCalls']): AgenticLoopResult {
-  return { answer, toolCalls, finishReason: 'completed', usage: { inputTokens: 0, outputTokens: 0 }, transcript: [] };
+  return {
+    answer,
+    toolCalls,
+    finishReason: 'completed',
+    usage: { inputTokens: 0, outputTokens: 0 },
+    transcript: [],
+  };
 }
 
-const NOTE = 'The exact request is waiting for your approval in Activity → Needs action (high risk). Nothing runs until you approve it.';
+const NOTE =
+  'The exact request is waiting for your approval in Activity → Needs action (high risk). Nothing runs until you approve it.';
 const INVOKED: AgenticLoopResult['toolCalls'][number] = {
   name: 'invoke_plugin',
-  arguments: { install_id: 'pli', capability_id: 'com.dinakernel.country.in.upi-payment-status', params: {}, param_categories: ['payment'] },
-  outcome: { success: true, result: { status: 'approval_required', task_id: 'plgx_1', note: NOTE } },
+  arguments: {
+    install_id: 'pli',
+    capability_id: 'com.dinakernel.country.in.upi-payment-status',
+    params: {},
+    param_categories: ['payment'],
+  },
+  outcome: {
+    success: true,
+    result: { status: 'approval_required', task_id: 'plgx_1', note: NOTE },
+  },
 };
 
 describe('translateLoopResult — the invoke_plugin note reaches the owner', () => {
@@ -47,13 +62,26 @@ describe('translateLoopResult — the invoke_plugin note reaches the owner', () 
       arguments: {},
       outcome: { success: true, result: { note: 'not a plugin note' } },
     };
-    const out = translateLoopResult(completed('I could not ask the plugin.', [refused, other]), 'q');
+    const out = translateLoopResult(
+      completed('I could not ask the plugin.', [refused, other]),
+      'q',
+    );
     if (out.kind !== 'answer') throw new Error('unreachable');
     expect(out.answer.text).toBe('I could not ask the plugin.');
   });
 
   it('the last successful ask wins when the model asked twice', () => {
-    const second = { ...INVOKED, outcome: { success: true as const, result: { status: 'dispatched', task_id: 'plgx_2', note: 'Asked under a standing approval.' } } };
+    const second = {
+      ...INVOKED,
+      outcome: {
+        success: true as const,
+        result: {
+          status: 'dispatched',
+          task_id: 'plgx_2',
+          note: 'Asked under a standing approval.',
+        },
+      },
+    };
     const out = translateLoopResult(completed('', [INVOKED, second]), 'q');
     if (out.kind !== 'answer') throw new Error('unreachable');
     expect(out.answer.text).toBe('Asked under a standing approval.');

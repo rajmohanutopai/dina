@@ -20,7 +20,7 @@ import { getAppState, areSecretsZeroed } from '../lifecycle/sleep_wake';
 import { listPersonas, isPersonaOpen } from '../persona/service';
 import { isConnected } from '../relay/msgbox_ws';
 import { inboxSize } from '../staging/service';
-import { storeItem, getItem, deleteItem, clearVaults } from '../vault/crud';
+import { storeItem, getItem, deleteItem } from '../vault/crud';
 
 export type CheckStatus = 'pass' | 'fail' | 'warn' | 'skip';
 

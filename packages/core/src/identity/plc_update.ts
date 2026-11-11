@@ -89,9 +89,7 @@ export interface PLCUpdateResult {
  * Build an unsigned PLC update operation. Pure — no I/O, no signing.
  * Returns the op ready for `signOperation` from `./directory`.
  */
-export function buildUpdateOperation(
-  params: PLCUpdateParams,
-): Record<string, unknown> {
+export function buildUpdateOperation(params: PLCUpdateParams): Record<string, unknown> {
   if (!params.did || !params.did.startsWith('did:plc:')) {
     throw new Error(
       `buildUpdateOperation: did must start with "did:plc:" (got ${JSON.stringify(params.did)})`,
@@ -110,19 +108,12 @@ export function buildUpdateOperation(
       );
     }
   }
-  if (
-    params.verificationMethods === null ||
-    typeof params.verificationMethods !== 'object'
-  ) {
-    throw new Error(
-      'buildUpdateOperation: verificationMethods must be a record',
-    );
+  if (params.verificationMethods === null || typeof params.verificationMethods !== 'object') {
+    throw new Error('buildUpdateOperation: verificationMethods must be a record');
   }
   for (const [k, v] of Object.entries(params.verificationMethods)) {
     if (typeof k !== 'string' || k.length === 0) {
-      throw new Error(
-        'buildUpdateOperation: verificationMethods keys must be non-empty strings',
-      );
+      throw new Error('buildUpdateOperation: verificationMethods keys must be non-empty strings');
     }
     if (typeof v !== 'string' || !v.startsWith('did:key:')) {
       throw new Error(
@@ -157,9 +148,7 @@ export async function updateDIDPLC(
   // Both are valid input to `derivePathSecp256k1` (which validates the
   // seed itself); rejecting non-32-byte input here would break lite.
   if (!params.signerRotationSeed || params.signerRotationSeed.length < 16) {
-    throw new Error(
-      'updateDIDPLC: signerRotationSeed must be at least 16 bytes',
-    );
+    throw new Error('updateDIDPLC: signerRotationSeed must be at least 16 bytes');
   }
 
   const operation = buildUpdateOperation(params);
@@ -177,10 +166,7 @@ export async function updateDIDPLC(
     );
   }
 
-  const { signedOperation, operationHash } = signOperation(
-    operation,
-    signer.privateKey,
-  );
+  const { signedOperation, operationHash } = signOperation(operation, signer.privateKey);
 
   if (config?.fetch) {
     const plcURL = (config.plcURL ?? DEFAULT_PLC_URL).replace(/\/$/, '');
@@ -241,13 +227,9 @@ export interface SigningKeyRotationParams {
   signerRotationGeneration?: number;
 }
 
-export function buildSigningKeyRotation(
-  params: SigningKeyRotationParams,
-): PLCUpdateParams {
+export function buildSigningKeyRotation(params: SigningKeyRotationParams): PLCUpdateParams {
   if (!params.newSigningPubKey || params.newSigningPubKey.length !== 32) {
-    throw new Error(
-      'buildSigningKeyRotation: newSigningPubKey must be 32 bytes (Ed25519 public)',
-    );
+    throw new Error('buildSigningKeyRotation: newSigningPubKey must be 32 bytes (Ed25519 public)');
   }
   const newSigningMultibase = publicKeyToMultibase(params.newSigningPubKey);
   return {

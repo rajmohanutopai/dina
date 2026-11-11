@@ -133,7 +133,12 @@ describe('RunEngine.pacerTick (§7/§11)', () => {
   it('reserves a slot on an active pull run and emits the query', async () => {
     const h = setup();
     h.runs.create(makeRun());
-    const emitted: { runId: string; reservationId: string; cursor: number; correlationId: string }[] = [];
+    const emitted: {
+      runId: string;
+      reservationId: string;
+      cursor: number;
+      correlationId: string;
+    }[] = [];
     const engine = makeEngine(h, {
       emitQuery: async ({ run, reservationId, cursor, correlationId }) => {
         emitted.push({ runId: run.run_id, reservationId, cursor, correlationId });
@@ -253,9 +258,7 @@ describe('RunEngine.pacerTick (§7/§11)', () => {
     // emits ZERO queries.) Mid-run invalidation is modelled by a past expiry.
     const h = setup();
     const nowSec = Math.floor(NOW / 1000);
-    h.runs.create(
-      makeRun({ provider_grant_id: 'g1', provider_grant_expires_at_sec: nowSec - 1 }),
-    );
+    h.runs.create(makeRun({ provider_grant_id: 'g1', provider_grant_expires_at_sec: nowSec - 1 }));
     const emitted: string[] = [];
     const engine = makeEngine(h, {
       emitQuery: async ({ run }) => {
@@ -336,9 +339,16 @@ describe('RunEngine.dispatchTick (§8)', () => {
     // non-actionable message. The old `listByState('active', pageLimit)` page
     // would be entirely these, hiding the later run's authorized action forever.
     for (let i = 0; i < 3; i += 1) {
-      h.runs.create(makeRun({ run_id: `idle-${i}`, idempotency_key: `k-idle-${i}`, created_at: NOW + i }));
+      h.runs.create(
+        makeRun({ run_id: `idle-${i}`, idempotency_key: `k-idle-${i}`, created_at: NOW + i }),
+      );
       h.messages.create(
-        makeMsg({ message_id: `im-${i}`, run_id: `idle-${i}`, state: 'classified', created_at: NOW + i }),
+        makeMsg({
+          message_id: `im-${i}`,
+          run_id: `idle-${i}`,
+          state: 'classified',
+          created_at: NOW + i,
+        }),
       );
     }
     // A LATER run with an owner-authorized action.

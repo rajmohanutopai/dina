@@ -94,7 +94,9 @@ export function checkPriceDivergence(args: {
   /** Owner-set; default 25. Flagged when |quoted/reference − 1| exceeds it. */
   thresholdPct?: number;
 }): DivergenceVerdict {
-  const threshold = BigInt(Math.max(1, Math.round(args.thresholdPct ?? DEFAULT_DIVERGENCE_THRESHOLD_PCT)));
+  const threshold = BigInt(
+    Math.max(1, Math.round(args.thresholdPct ?? DEFAULT_DIVERGENCE_THRESHOLD_PCT)),
+  );
 
   if (!productRefsEqual(args.item.product, args.resolvedProduct)) {
     return {
@@ -112,7 +114,8 @@ export function checkPriceDivergence(args: {
   }
 
   const quotedFactor = factorToBase(args.quoted.priceBasis.unit_code, args.item);
-  if ('refusal' in quotedFactor) return { kind: 'no_comparable_basis', reason: quotedFactor.refusal };
+  if ('refusal' in quotedFactor)
+    return { kind: 'no_comparable_basis', reason: quotedFactor.refusal };
   const referenceFactor = factorToBase(args.item.pack.sell_unit.unit_code, args.item);
   if ('refusal' in referenceFactor) {
     return { kind: 'no_comparable_basis', reason: referenceFactor.refusal };

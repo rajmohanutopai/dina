@@ -95,16 +95,11 @@ describe('deriveAuthoredAttestationRows', () => {
 
   it('confidence forwards from the wire when present, null when absent', () => {
     expect(
-      deriveAuthoredAttestationRows([makeHit({ confidence: 'speculative' })])[0]
-        .confidence,
+      deriveAuthoredAttestationRows([makeHit({ confidence: 'speculative' })])[0].confidence,
     ).toBe('speculative');
+    expect(deriveAuthoredAttestationRows([makeHit({ confidence: null })])[0].confidence).toBeNull();
     expect(
-      deriveAuthoredAttestationRows([makeHit({ confidence: null })])[0]
-        .confidence,
-    ).toBeNull();
-    expect(
-      deriveAuthoredAttestationRows([makeHit({ confidence: undefined })])[0]
-        .confidence,
+      deriveAuthoredAttestationRows([makeHit({ confidence: undefined })])[0].confidence,
     ).toBeNull();
   });
 
@@ -113,11 +108,7 @@ describe('deriveAuthoredAttestationRows', () => {
     const b = makeHit({ uri: 'at://x/2', subjectId: 's2' });
     const c = makeHit({ uri: 'at://x/3', subjectId: 's3' });
     const rows = deriveAuthoredAttestationRows([a, b, c]);
-    expect(rows.map((r) => r.uri)).toEqual([
-      'at://x/1',
-      'at://x/2',
-      'at://x/3',
-    ]);
+    expect(rows.map((r) => r.uri)).toEqual(['at://x/1', 'at://x/2', 'at://x/3']);
   });
 
   it('drops hits with a missing/blank subjectId', () => {
@@ -172,9 +163,7 @@ describe('deriveAuthoredAttestationRows', () => {
   });
 
   it('null/empty category collapses to null (screen hides the slot)', () => {
-    expect(
-      deriveAuthoredAttestationRows([makeHit({ category: '' })])[0].category,
-    ).toBeNull();
+    expect(deriveAuthoredAttestationRows([makeHit({ category: '' })])[0].category).toBeNull();
     // `category: null as any` simulates a wire-shape relaxation; treat
     // the same as empty rather than rendering `'null'` literally.
     expect(
@@ -187,9 +176,7 @@ describe('deriveAuthoredAttestationRows', () => {
   });
 
   it('preserves a categorical category verbatim', () => {
-    const rows = deriveAuthoredAttestationRows([
-      makeHit({ category: 'place/cafe' }),
-    ]);
+    const rows = deriveAuthoredAttestationRows([makeHit({ category: 'place/cafe' })]);
     expect(rows[0].category).toBe('place/cafe');
   });
 
@@ -200,9 +187,7 @@ describe('deriveAuthoredAttestationRows', () => {
   });
 
   it('malformed createdAt falls back to 0 instead of NaN', () => {
-    const rows = deriveAuthoredAttestationRows([
-      makeHit({ recordCreatedAt: 'not-a-date' }),
-    ]);
+    const rows = deriveAuthoredAttestationRows([makeHit({ recordCreatedAt: 'not-a-date' })]);
     expect(rows[0].createdAtMs).toBe(0);
   });
 

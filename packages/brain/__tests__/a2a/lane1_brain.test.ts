@@ -9,12 +9,14 @@ import { deleteThread, getThread } from '../../src/chat/thread';
 import { buildAgenticAskPipeline } from '../../src/composition/agentic_ask';
 import { resetIdentityExtractor } from '../../src/pipeline/identity_extraction';
 import { createFindPersonTool } from '../../src/reasoning/people_tool';
-import { WorkflowEventConsumer, type WorkflowEventConsumerCoreClient } from '../../src/service/workflow_event_consumer';
+import {
+  WorkflowEventConsumer,
+  type WorkflowEventConsumerCoreClient,
+} from '../../src/service/workflow_event_consumer';
 import { setPeopleReadBackend } from '../../src/vault_context/assembly';
 import { builderInput, type BuilderInput } from '../composition/ask_pipeline_input';
 
 import type { A2AOperationStatus, Person, WorkflowEvent, WorkflowTask } from '@dina/core';
-
 
 describe('the proposal tools exist only where Lane 1 runs and the ask names its conversation (notes M1a, M1b)', () => {
   const A2A_TOOLS = ['delegate_to_a2a_agent', 'list_a2a_agents'];
@@ -27,17 +29,27 @@ describe('the proposal tools exist only where Lane 1 runs and the ask names its 
     },
     a2aSelfDid: async () => 'did:plc:self',
   } as unknown as NonNullable<BuilderInput['a2aClient']>;
-  const names = (tools: { toDefinitions(): { name: string }[] }) => tools.toDefinitions().map((t) => t.name);
+  const names = (tools: { toDefinitions(): { name: string }[] }) =>
+    tools.toDefinitions().map((t) => t.name);
 
   afterEach(() => resetIdentityExtractor());
 
   // Plan B70
   it('offers them to an ask that names its conversation on a host with an A2A client, bound to that conversation', async () => {
     const pipeline = buildAgenticAskPipeline(builderInput({ a2aClient }));
-    const tools = pipeline.buildToolsForAsk?.({ askId: 'ask-1', requesterDid: 'did:key:owner', releaseSession: 'chat:t-7', replyTo: 't-7' });
+    const tools = pipeline.buildToolsForAsk?.({
+      askId: 'ask-1',
+      requesterDid: 'did:key:owner',
+      releaseSession: 'chat:t-7',
+      replyTo: 't-7',
+    });
     if (tools === undefined) throw new Error('no per-ask tools');
     expect(names(tools)).toEqual(expect.arrayContaining(A2A_TOOLS));
-    await tools.execute('delegate_to_a2a_agent', { agent_id: 'a', skill: 's', message: 'Summarize the note.' });
+    await tools.execute('delegate_to_a2a_agent', {
+      agent_id: 'a',
+      skill: 's',
+      message: 'Summarize the note.',
+    });
     expect(proposals.at(-1)).toMatchObject({ releaseSession: 'chat:t-7', replyTo: 't-7' });
   });
 
@@ -51,9 +63,16 @@ describe('the proposal tools exist only where Lane 1 runs and the ask names its 
 
   // Plan B249
   it('withholds every A2A tool on a host with no A2A client (the phone), whatever the conversation', () => {
-    const searching = { ...(builderInput().appViewClient as object), searchA2AAgents: async () => [] } as unknown as BuilderInput['appViewClient'];
+    const searching = {
+      ...(builderInput().appViewClient as object),
+      searchA2AAgents: async () => [],
+    } as unknown as BuilderInput['appViewClient'];
     const pipeline = buildAgenticAskPipeline(builderInput({ appViewClient: searching }));
-    const tools = pipeline.buildToolsForAsk?.({ askId: 'ask-3', requesterDid: 'did:key:owner', releaseSession: 'chat:main' });
+    const tools = pipeline.buildToolsForAsk?.({
+      askId: 'ask-3',
+      requesterDid: 'did:key:owner',
+      releaseSession: 'chat:main',
+    });
     expect(names(tools ?? pipeline.tools).filter((n) => n.includes('a2a'))).toEqual([]);
     expect(names(pipeline.tools).filter((n) => n.includes('a2a'))).toEqual([]);
   });
@@ -116,7 +135,12 @@ describe('a delivery that arrives twice (notes M1a "idempotent by event id")', (
         const a2a = (details as { a2a?: { operation_id: string; reply_to: string | null } }).a2a;
         if (a2a === undefined) return;
         deliveries += 1;
-        deliverA2AOutcome({ threadId: a2a.reply_to ?? 'main', text, eventId: event.event_id, operationId: a2a.operation_id });
+        deliverA2AOutcome({
+          threadId: a2a.reply_to ?? 'main',
+          text,
+          eventId: event.event_id,
+          operationId: a2a.operation_id,
+        });
       },
     });
   }
@@ -141,7 +165,10 @@ describe('a delivery that arrives twice (notes M1a "idempotent by event id")', (
     expect(deliveries).toBe(3);
     const thread = getThread(THREAD);
     expect(thread).toHaveLength(1);
-    expect(thread[0]).toMatchObject({ type: 'dina', content: 'Summarizer answered:\n\nThe summary.' });
+    expect(thread[0]).toMatchObject({
+      type: 'dina',
+      content: 'Summarizer answered:\n\nThe summary.',
+    });
     expect(getThread('main')).toEqual([]);
   });
 });
@@ -178,7 +205,10 @@ describe('find_person on the server (notes M1b second review)', () => {
         },
       ],
     };
-    setPeopleReadBackend({ peopleList: async () => [person], peopleFindByName: async () => [person] });
+    setPeopleReadBackend({
+      peopleList: async () => [person],
+      peopleFindByName: async () => [person],
+    });
     const out = JSON.stringify(await createFindPersonTool().execute({ name: 'Emma' }));
     expect(out).toContain('Emma');
     expect(out).not.toContain('VAULT-EXCERPT');

@@ -13,9 +13,9 @@
 import {
   setWorkflowService,
   WorkflowService,
-
   setWorkflowRepository,
-  InMemoryWorkflowRepository} from '@dina/core';
+  InMemoryWorkflowRepository,
+} from '@dina/core';
 
 import {
   createDemoServiceResponder,

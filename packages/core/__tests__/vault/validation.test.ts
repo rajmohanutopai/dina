@@ -10,8 +10,6 @@ import {
   VALID_VAULT_ITEM_TYPES,
   VALID_SENDER_TRUST,
   VALID_CONFIDENCE,
-  VALID_RETRIEVAL_POLICY,
-  VALID_ENRICHMENT_STATUS,
   MAX_VAULT_ITEM_SIZE,
   validateVaultItem,
 } from '../../src/vault/validation';

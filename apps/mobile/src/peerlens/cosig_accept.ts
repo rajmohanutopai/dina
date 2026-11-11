@@ -59,11 +59,7 @@
  *     await sendD2D(senderDid, accept);
  */
 
-import {
-  COSIG_ACCEPT_TYPE,
-  validateCosigAccept,
-  type CosigAccept,
-} from '@dina/protocol';
+import { COSIG_ACCEPT_TYPE, validateCosigAccept, type CosigAccept } from '@dina/protocol';
 
 // ─── Public types ─────────────────────────────────────────────────────────
 
@@ -158,9 +154,7 @@ export const MAX_NAMESPACE_LEN = 255;
  * BEFORE the cap check so a 2001-char trimmed value doesn't slip
  * through on a 2002-char untrimmed input.
  */
-export function buildCosigEndorsement(
-  input: BuildCosigEndorsementInput,
-): CosigEndorsementRecord {
+export function buildCosigEndorsement(input: BuildCosigEndorsementInput): CosigEndorsementRecord {
   if (typeof input.attestationAuthorDid !== 'string' || input.attestationAuthorDid.length === 0) {
     throw new Error('buildCosigEndorsement: attestationAuthorDid must be a non-empty string');
   }
@@ -182,11 +176,7 @@ export function buildCosigEndorsement(
   // bind the field to a TextInput without pre-trimming. Over-cap
   // values DO throw — the user typed something real and we
   // shouldn't silently drop a 2001-char note.
-  const relationship = trimOptional(
-    input.relationship,
-    MAX_RELATIONSHIP_LEN,
-    'relationship',
-  );
+  const relationship = trimOptional(input.relationship, MAX_RELATIONSHIP_LEN, 'relationship');
   if (relationship !== undefined) record.relationship = relationship;
 
   const text = trimOptional(input.text, MAX_TEXT_LEN, 'text');
@@ -212,9 +202,7 @@ export function buildCosigEndorsement(
  *   - Any `validateCosigAccept` error (length caps, type literal,
  *     ISO `createdAt` shape).
  */
-export function buildCosigAcceptFrame(
-  input: BuildCosigAcceptFrameInput,
-): CosigAccept {
+export function buildCosigAcceptFrame(input: BuildCosigAcceptFrameInput): CosigAccept {
   if (typeof input.nowMs !== 'number' || !Number.isFinite(input.nowMs)) {
     throw new Error('buildCosigAcceptFrame: nowMs must be a finite number');
   }
@@ -261,11 +249,7 @@ function trimRequired(value: unknown, maxLen: number, fieldName: string): string
  * silently dropping a 2001-char note would lose data); throws on
  * non-string (defensive — caller bug).
  */
-function trimOptional(
-  value: unknown,
-  maxLen: number,
-  fieldName: string,
-): string | undefined {
+function trimOptional(value: unknown, maxLen: number, fieldName: string): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== 'string') {
     throw new Error(`buildCosigEndorsement: ${fieldName} must be a string`);

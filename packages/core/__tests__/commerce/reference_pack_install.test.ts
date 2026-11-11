@@ -152,27 +152,33 @@ describe('the shipped reference packs', () => {
     expect(validatePluginManifest(manifest).ok).toBe(true);
   });
 
-  it.each(PACKS)('%s: the reserved first-party id is refused at the third-party door', async (_name, manifest) => {
-    // Iter 17: `com.dinakernel.*` may only enter through the owner's reference
-    // ceremony (local publisher key). A stranger publishing our manifest
-    // verbatim — same id — is refused as inauthentic, never staged.
-    const release = publishRelease(manifest);
-    repoServing([{ ...release, record: manifest }]);
-    const begun = await beginInstall({
-      publisherDid: PUBLISHER,
-      rkey: release.rkey,
-      trustAnchor: { kind: 'repo_proof' },
-      nowMs: T0,
-    });
-    expect(begun.ok).toBe(false);
-    if (!begun.ok) expect(begun.code).toBe('authenticity_failed');
-    expect(getPluginInstallRepository()?.list() ?? []).toEqual([]);
-  });
+  it.each(PACKS)(
+    '%s: the reserved first-party id is refused at the third-party door',
+    async (_name, manifest) => {
+      // Iter 17: `com.dinakernel.*` may only enter through the owner's reference
+      // ceremony (local publisher key). A stranger publishing our manifest
+      // verbatim — same id — is refused as inauthentic, never staged.
+      const release = publishRelease(manifest);
+      repoServing([{ ...release, record: manifest }]);
+      const begun = await beginInstall({
+        publisherDid: PUBLISHER,
+        rkey: release.rkey,
+        trustAnchor: { kind: 'repo_proof' },
+        nowMs: T0,
+      });
+      expect(begun.ok).toBe(false);
+      if (!begun.ok) expect(begun.code).toBe('authenticity_failed');
+      expect(getPluginInstallRepository()?.list() ?? []).toEqual([]);
+    },
+  );
 
   it.each(PACKS)('%s: installs through the real door, by AT-URI', async (_name, reference) => {
     // What a third-party author does: copy our manifest under THEIR id. Every
     // other gate a stranger's pack meets, this copy meets.
-    const manifest = { ...reference, plugin_id: reference.plugin_id.replace('com.dinakernel.', 'com.acme.') };
+    const manifest = {
+      ...reference,
+      plugin_id: reference.plugin_id.replace('com.dinakernel.', 'com.acme.'),
+    };
     const release = publishRelease(manifest);
     repoServing([{ ...release, record: manifest }]);
 
@@ -250,7 +256,10 @@ describe('the shipped reference packs', () => {
     // revoke buying, and a compromised supplier runner would carry buyer
     // authority.
     // A third-party pair, shaped exactly like ours, under its own namespace.
-    const supplierManifest = { ...SUPPLIER_REFERENCE_MANIFEST, plugin_id: 'com.acme.commerce.supplier' };
+    const supplierManifest = {
+      ...SUPPLIER_REFERENCE_MANIFEST,
+      plugin_id: 'com.acme.commerce.supplier',
+    };
     const buyerManifest = { ...BUYER_REFERENCE_MANIFEST, plugin_id: 'com.acme.commerce.buyer' };
     const supplier = publishRelease(supplierManifest);
     const buyer = publishRelease(buyerManifest);

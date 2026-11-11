@@ -15,12 +15,7 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { signRequest } from '../auth/canonical';
 import { defaultFetch } from '../runtime/fetch';
-import {
-  isNonRetryableStatus,
-  isRetryableStatus,
-  backoff,
-  parseResponseBody,
-} from '../transport/http_retry';
+import { isNonRetryableStatus, backoff, parseResponseBody } from '../transport/http_retry';
 
 export interface BrainClientConfig {
   coreURL: string;

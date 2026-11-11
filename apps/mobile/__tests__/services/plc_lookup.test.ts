@@ -13,20 +13,13 @@
  *   - Defensive shape: missing/odd fields don't crash
  */
 
-import {
-  lookupPlc,
-  invalidatePlcCache,
-  clearPlcCache,
-} from '../../src/services/plc_lookup';
+import { lookupPlc, invalidatePlcCache, clearPlcCache } from '../../src/services/plc_lookup';
 
 const SANCHO_DID = 'did:plc:zaxxz2vts2umzfk2r5fpzes4';
 
 function makeFakePlcResponse(): Record<string, unknown> {
   return {
-    '@context': [
-      'https://www.w3.org/ns/did/v1',
-      'https://w3id.org/security/multikey/v1',
-    ],
+    '@context': ['https://www.w3.org/ns/did/v1', 'https://w3id.org/security/multikey/v1'],
     id: SANCHO_DID,
     alsoKnownAs: ['at://rajmohanddc9.test-pds.dinakernel.com'],
     verificationMethod: [

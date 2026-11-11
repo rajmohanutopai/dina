@@ -13,14 +13,9 @@
  * Source: docs/GUIDED_DEMO_DATA_SCOPE_DESIGN.md § "Cleanup"
  */
 
-
 import { clearActiveDemo } from './active_demo';
 import { deleteDataScope, registerScopedCleanup, type DeleteDataScopeResult } from './cleanup';
-import {
-  USER_SCOPE,
-  setCurrentDataScope,
-  type DataScope,
-} from './data_scope';
+import { USER_SCOPE, setCurrentDataScope, type DataScope } from './data_scope';
 import { scopedTableDeleter } from './repository';
 
 import type { DatabaseAdapter } from '../storage/db_adapter';
@@ -86,7 +81,10 @@ export interface PersonaCleanupDbs {
  * preserved + retried on the next boot, instead of being silently lost.
  */
 export function wirePersonaScopeCleanups(
-  getPersonaDbs: () => DatabaseAdapter[] | PersonaCleanupDbs | Promise<DatabaseAdapter[] | PersonaCleanupDbs>,
+  getPersonaDbs: () =>
+    | DatabaseAdapter[]
+    | PersonaCleanupDbs
+    | Promise<DatabaseAdapter[] | PersonaCleanupDbs>,
 ): void {
   for (const { table, order } of PERSONA_SCOPED_TABLES) {
     registerScopedCleanup({
@@ -130,7 +128,7 @@ export async function tearDownDataScope(scope: DataScope): Promise<DeleteDataSco
     // to `user`: the un-deleted demo rows stay hidden (every repo filters by
     // scope), so the user isn't stranded in a half-torn-down demo. Recovery is
     // cleared ONLY on a fully clean delete.
-     
+
     console.warn(
       `[scope/teardown] partial cleanup for "${scope}": ${result.errors.length} table(s) failed — ` +
         `keeping recovery record for retry (${result.errors.map((e) => e.table).join(', ')})`,

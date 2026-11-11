@@ -98,7 +98,10 @@ describe('fetchCreditsConfig', () => {
   });
 
   it('clamps the remote payload', async () => {
-    const c = await fetchCreditsConfig('ios', fetchJson(200, { ...GOOD_CONFIG, model_pin: 'evil/x' }));
+    const c = await fetchCreditsConfig(
+      'ios',
+      fetchJson(200, { ...GOOD_CONFIG, model_pin: 'evil/x' }),
+    );
     expect(c.enabled).toBe(true);
     expect(c.modelPin).toBe(CREDITS_DEFAULT_CONFIG.model_pin);
   });

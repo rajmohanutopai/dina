@@ -27,7 +27,6 @@ import { bytesToHex } from '@noble/hashes/utils.js';
 
 import { ensureDefaultAgentGatingPolicy } from '../../agent/gating_policy';
 import { grantStandingAccess } from '../../agent/standing_grants';
-import { getPersona } from '../../persona/service';
 import { resolveAgentScope, type AgentScope } from '../../auth/agent_scope';
 import { getDevice, persistDeviceDurable, revokeDeviceDurable } from '../../devices/registry';
 import {
@@ -36,6 +35,7 @@ import {
   getPairingIntent,
   restorePairingCode,
 } from '../../pairing/ceremony';
+import { getPersona } from '../../persona/service';
 
 import type { DeviceRole } from '../../devices/registry';
 import type { CoreRouter } from '../router';
@@ -99,13 +99,23 @@ export function registerPairRoutes(router: CoreRouter): void {
     // agent; none by default. Each must exist and be standard.
     let standardPersonas: string[] | undefined;
     if (body.standard_personas !== undefined) {
-      if (!Array.isArray(body.standard_personas) || body.standard_personas.some((p) => typeof p !== 'string')) {
-        return { status: 400, body: { error: 'standard_personas must be an array of persona names' } };
+      if (
+        !Array.isArray(body.standard_personas) ||
+        body.standard_personas.some((p) => typeof p !== 'string')
+      ) {
+        return {
+          status: 400,
+          body: { error: 'standard_personas must be an array of persona names' },
+        };
       }
       if (role !== 'agent') {
         return { status: 400, body: { error: 'standard_personas applies to agent pairings only' } };
       }
-      standardPersonas = [...new Set((body.standard_personas as string[]).map((p) => p.trim()).filter((p) => p !== ''))];
+      standardPersonas = [
+        ...new Set(
+          (body.standard_personas as string[]).map((p) => p.trim()).filter((p) => p !== ''),
+        ),
+      ];
       const bad = standardPersonas.filter((p) => getPersona(p)?.tier !== 'standard');
       if (bad.length > 0) {
         return { status: 400, body: { error: `not a standard persona: ${bad.join(', ')}` } };
@@ -334,7 +344,8 @@ export function registerPairRoutes(router: CoreRouter): void {
       if (result.standardPersonas !== undefined) {
         const paired = getDevice(result.deviceId);
         if (paired !== null && paired.role === 'agent') {
-          for (const persona of result.standardPersonas) grantStandingAccess(paired.did, persona, result.deviceId);
+          for (const persona of result.standardPersonas)
+            grantStandingAccess(paired.did, persona, result.deviceId);
         }
       }
       return {

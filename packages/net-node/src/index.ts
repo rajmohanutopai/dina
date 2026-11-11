@@ -104,10 +104,7 @@ export class NodeHttpClient implements HttpClient {
 
   async request(url: string, init: HttpRequestInit): Promise<HttpResponse> {
     const controller = this.timeoutMs !== undefined ? new AbortController() : null;
-    const timer =
-      controller !== null
-        ? setTimeout(() => controller.abort(), this.timeoutMs)
-        : null;
+    const timer = controller !== null ? setTimeout(() => controller.abort(), this.timeoutMs) : null;
     try {
       const fetchInit: RequestInit = {
         method: init.method,
@@ -228,7 +225,6 @@ export function createCanonicalRequestSigner(
  * Returns a plain Uint8Array view (not a Buffer subclass).
  */
 async function defaultNonce(byteLen: number): Promise<Uint8Array> {
-   
   const { randomBytes } = await import('node:crypto');
   const buf = randomBytes(byteLen);
   return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
@@ -435,9 +431,7 @@ export async function createNodeWebSocket(
  * expects. Production Core server boot uses this path; tests inject a
  * fake factory to avoid real network IO.
  */
-export function makeNodeWebSocketFactory(
-  options: NodeWebSocketOptions = {},
-): WebSocketFactory {
+export function makeNodeWebSocketFactory(options: NodeWebSocketOptions = {}): WebSocketFactory {
   return (url: string) => {
     const wsModule = options.wsModule ?? loadWsModuleSync();
     if (wsModule === null) {
@@ -578,10 +572,7 @@ export interface ReconnectDelayConfig {
  * Add jitter in production callers to spread the "thundering herd"
  * when many clients reconnect simultaneously after a server restart.
  */
-export function computeReconnectDelay(
-  attempt: number,
-  config: ReconnectDelayConfig = {},
-): number {
+export function computeReconnectDelay(attempt: number, config: ReconnectDelayConfig = {}): number {
   if (!Number.isInteger(attempt) || attempt < 0) {
     throw new Error(`net-node: reconnect attempt must be a non-negative integer, got ${attempt}`);
   }

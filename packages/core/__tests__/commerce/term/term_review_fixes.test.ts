@@ -19,7 +19,9 @@ import {
   revshareRecordDigest,
   sealTermRecord,
   type AgreementTermination,
- TermListing, TermRequest } from '@dina/commerce-protocol';
+  TermListing,
+  TermRequest,
+} from '@dina/commerce-protocol';
 
 import { TERM_PROPOSAL_CARD } from '../../../src/commerce/term/term_buyer';
 import {

@@ -685,7 +685,11 @@ export function setPluginDeviceVerifier(v: VerifyPluginDevice | null): void {
  * no verifier, no bind. The general marketplace route does not use this; there
  * Core binds the device that consumed the install's pairing code (§15.3).
  */
-export function bindVerifiedRunnerDevice(installId: string, deviceDid: string, nowMs: number): boolean {
+export function bindVerifiedRunnerDevice(
+  installId: string,
+  deviceDid: string,
+  nowMs: number,
+): boolean {
   const installs = getPluginInstallRepository();
   if (installs === null) return false;
   if (deviceDid === '' || pluginDeviceVerifier === null || !pluginDeviceVerifier(deviceDid)) {

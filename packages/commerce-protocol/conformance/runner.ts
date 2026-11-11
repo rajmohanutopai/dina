@@ -427,7 +427,6 @@ export function runConformance(
   // `executedFamilies` at the end, where "did any case actually run" is a fact
   // rather than an inference.
 
-
   const record = (family: string, name: string, expected: unknown, actual: unknown): void => {
     if (expected === actual) {
       cases.push({ family, name, status: 'pass' });
@@ -451,7 +450,11 @@ export function runConformance(
   const arithmetic = asRecord(vectors.arithmetic);
   const lineCases = asArray(arithmetic.line_subtotals);
   if (impl.lineSubtotalMinorUnits === undefined) {
-    skipFamily('arithmetic.line_subtotals', lineCases.length, 'lineSubtotalMinorUnits not supplied');
+    skipFamily(
+      'arithmetic.line_subtotals',
+      lineCases.length,
+      'lineSubtotalMinorUnits not supplied',
+    );
   } else {
     for (const raw of lineCases) {
       const c = asRecord(raw);
@@ -505,8 +508,12 @@ export function runConformance(
       }
       if (expectsError !== '') {
         const refused = actual.startsWith('threw: ') && actual.includes(expectsError);
-        record('arithmetic.totals', str(c.name), `refused containing "${expectsError}"`,
-          refused ? `refused containing "${expectsError}"` : actual);
+        record(
+          'arithmetic.totals',
+          str(c.name),
+          `refused containing "${expectsError}"`,
+          refused ? `refused containing "${expectsError}"` : actual,
+        );
       } else {
         record('arithmetic.totals', str(c.name), str(c.expected_minor_units), actual);
       }
@@ -575,7 +582,12 @@ export function runConformance(
       // `each ` are here because case-folding and trimming are exactly how two
       // implementations come to disagree about a quantity.
       const code = str(raw);
-      record('units.rejected', JSON.stringify(code), 'null', impl.unitDef(code) === null ? 'null' : 'defined');
+      record(
+        'units.rejected',
+        JSON.stringify(code),
+        'null',
+        impl.unitDef(code) === null ? 'null' : 'defined',
+      );
     }
   }
 
@@ -615,7 +627,12 @@ export function runConformance(
             actual !== null &&
             (actual as { refused?: unknown }).refused === true) ||
           (typeof actual === 'string' && actual.startsWith('threw: '));
-        record('quantity.comparisons', str(c.name), 'refused', refused ? 'refused' : JSON.stringify(actual));
+        record(
+          'quantity.comparisons',
+          str(c.name),
+          'refused',
+          refused ? 'refused' : JSON.stringify(actual),
+        );
       } else {
         record('quantity.comparisons', str(c.name), c.compare, actual);
       }
@@ -787,7 +804,11 @@ export function runConformance(
   // though its fields meant what 1.0 says they mean.
   const admissionCases = asArray(evolution.version_admission);
   if (impl.admitVersion === undefined) {
-    skipFamily('schema_evolution.version_admission', admissionCases.length, 'admitVersion not supplied');
+    skipFamily(
+      'schema_evolution.version_admission',
+      admissionCases.length,
+      'admitVersion not supplied',
+    );
   } else {
     for (const raw of admissionCases) {
       const c = asRecord(raw);
@@ -836,7 +857,11 @@ export function runConformance(
   // disagree about a digest over identical content.
   const unknownFieldCases = asArray(evolution.unknown_fields);
   if (impl.canonicalJson === undefined) {
-    skipFamily('schema_evolution.unknown_fields', unknownFieldCases.length * 3, 'canonicalJson not supplied');
+    skipFamily(
+      'schema_evolution.unknown_fields',
+      unknownFieldCases.length * 3,
+      'canonicalJson not supplied',
+    );
   } else {
     for (const raw of unknownFieldCases) {
       const c = asRecord(raw);
@@ -857,7 +882,12 @@ export function runConformance(
         str(c.with_unknown_canonical),
         withUnknown,
       );
-      record('schema_evolution.unknown_fields', `${name}/same_bytes`, c.same_bytes, known === withUnknown);
+      record(
+        'schema_evolution.unknown_fields',
+        `${name}/same_bytes`,
+        c.same_bytes,
+        known === withUnknown,
+      );
     }
   }
 
@@ -899,7 +929,12 @@ export function runConformance(
       } catch (err) {
         actual = `threw: ${err instanceof Error ? err.message : String(err)}`;
       }
-      record('catalog.page_digests', `page ${str(String(page.page_index))}`, str(page.page_digest), actual);
+      record(
+        'catalog.page_digests',
+        `page ${str(String(page.page_index))}`,
+        str(page.page_digest),
+        actual,
+      );
     }
   }
 
@@ -912,11 +947,20 @@ export function runConformance(
     } catch (err) {
       actual = `threw: ${err instanceof Error ? err.message : String(err)}`;
     }
-    record('catalog.payload_root', 'payload_root over the page digests', str(catalogSnapshot.payload_root), actual);
+    record(
+      'catalog.payload_root',
+      'payload_root over the page digests',
+      str(catalogSnapshot.payload_root),
+      actual,
+    );
   }
 
   if (impl.catalogSnapshotDigest === undefined) {
-    skipFamily('catalog.snapshot_digest', hasSnapshot ? 1 : 0, 'catalogSnapshotDigest not supplied');
+    skipFamily(
+      'catalog.snapshot_digest',
+      hasSnapshot ? 1 : 0,
+      'catalogSnapshotDigest not supplied',
+    );
   } else if (hasSnapshot) {
     let actual: string;
     try {
@@ -924,7 +968,12 @@ export function runConformance(
     } catch (err) {
       actual = `threw: ${err instanceof Error ? err.message : String(err)}`;
     }
-    record('catalog.snapshot_digest', 'snapshot_digest', str(catalogSnapshot.snapshot_digest), actual);
+    record(
+      'catalog.snapshot_digest',
+      'snapshot_digest',
+      str(catalogSnapshot.snapshot_digest),
+      actual,
+    );
   }
 
   // THE CHAIN, and its refusals are the load-bearing half. §10.2 makes a GAP
@@ -1031,7 +1080,11 @@ export function runConformance(
   // for a quantity nobody agreed on.
   const subtotalRefusals = asArray(malformed.line_subtotal);
   if (impl.lineSubtotalMinorUnits === undefined) {
-    skipFamily('malformed.line_subtotal', subtotalRefusals.length, 'lineSubtotalMinorUnits not supplied');
+    skipFamily(
+      'malformed.line_subtotal',
+      subtotalRefusals.length,
+      'lineSubtotalMinorUnits not supplied',
+    );
   } else {
     for (const raw of subtotalRefusals) {
       const c = asRecord(raw);
@@ -1116,7 +1169,11 @@ export function runConformance(
    * base". The generator asserts this property in a comment; nothing checked
    * it until a reviewer asked what did.
    */
-  const acceptsBase = (family: string, base: unknown, validator?: (v: unknown) => string | null): void => {
+  const acceptsBase = (
+    family: string,
+    base: unknown,
+    validator?: (v: unknown) => string | null,
+  ): void => {
     if (validator === undefined || base === undefined) {
       skipFamily(family, base === undefined ? 0 : 1, 'validator not supplied');
       return;
@@ -1275,7 +1332,11 @@ export function runConformance(
   const evolutionForParse = asRecord(vectors.schema_evolution);
   const parseCases = asArray(evolutionForParse.unknown_fields);
   if (vectors.schema_evolution === undefined) {
-    skipFamily('schema_evolution.parse_round_trip', parseCases.length, 'schema_evolution vectors not supplied');
+    skipFamily(
+      'schema_evolution.parse_round_trip',
+      parseCases.length,
+      'schema_evolution vectors not supplied',
+    );
   } else if (impl.parseThenCanonicalJson === undefined) {
     skipFamily(
       'schema_evolution.parse_round_trip',
@@ -1313,7 +1374,11 @@ export function runConformance(
   const nested = asRecord(vectors.nested_unknown);
   const nestedCases = asArray(nested.cases);
   if (vectors.nested_unknown === undefined) {
-    skipFamily('schema_evolution.nested_unknown', nestedCases.length, 'nested_unknown vectors not supplied');
+    skipFamily(
+      'schema_evolution.nested_unknown',
+      nestedCases.length,
+      'nested_unknown vectors not supplied',
+    );
   } else if (impl.parseThenCanonicalJson === undefined) {
     skipFamily(
       'schema_evolution.nested_unknown',
@@ -1393,7 +1458,9 @@ export function formatReport(report: ConformanceReport): string {
   ];
   for (const c of report.cases) {
     if (c.status === 'pass') continue;
-    lines.push(`  ${c.status.toUpperCase()} ${c.family} / ${c.name}${c.detail === undefined ? '' : ` — ${c.detail}`}`);
+    lines.push(
+      `  ${c.status.toUpperCase()} ${c.family} / ${c.name}${c.detail === undefined ? '' : ` — ${c.detail}`}`,
+    );
   }
   // The verdict is only legible beside what it covered.
   lines.push(`  EXECUTED: ${report.executedFamilies.join(', ') || '(none)'}`);

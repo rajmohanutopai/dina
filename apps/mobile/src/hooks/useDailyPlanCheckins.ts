@@ -12,11 +12,7 @@ import { AppState } from 'react-native';
 import { setDayPlanRunner } from '@dina/brain';
 import { setPlanChangedListener } from '@dina/core';
 
-import {
-  applySavedQuietHours,
-  planTodayForChat,
-  rescheduleCheckins,
-} from '../services/daily_plan';
+import { applySavedQuietHours, planTodayForChat, rescheduleCheckins } from '../services/daily_plan';
 
 /** Chat can change several things in one turn; reschedule once after them. */
 const CHANGE_SETTLE_MS = 1000;

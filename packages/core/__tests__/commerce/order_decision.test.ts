@@ -350,7 +350,11 @@ describe('cancellation goes through Core, not the runner (§12.5, §12.8)', () =
     });
 
     expect(seen).toEqual([
-      { req: { ...REQUEST, buyer_did: 'did:plc:attacker' }, buyer: BUYER, policy: 'refused_policy' },
+      {
+        req: { ...REQUEST, buyer_did: 'did:plc:attacker' },
+        buyer: BUYER,
+        policy: 'refused_policy',
+      },
     ]);
   });
 
@@ -489,23 +493,20 @@ describe('transformInboundOrderResult — the workflow seam', () => {
   //
   // What is LEFT in this list is a capability commerce genuinely does not own,
   // which is the only thing the rule was ever about.
-  it.each(['availability'])(
-    'leaves %s untouched',
-    (capability) => {
-      const seen: unknown[] = [];
-      runtimeWith(() => ({ acknowledgement: {} }), seen);
+  it.each(['availability'])('leaves %s untouched', (capability) => {
+    const seen: unknown[] = [];
+    runtimeWith(() => ({ acknowledgement: {} }), seen);
 
-      expect(
-        transformInboundOrderResult({
-          capability,
-          fromDid: BUYER,
-          params: { purchase_order_id: PO },
-          resultJSON: RUNNER_ANSWER,
-        }),
-      ).toEqual({ kind: 'passthrough' });
-      expect(seen).toEqual([]);
-    },
-  );
+    expect(
+      transformInboundOrderResult({
+        capability,
+        fromDid: BUYER,
+        params: { purchase_order_id: PO },
+        resultJSON: RUNNER_ANSWER,
+      }),
+    ).toEqual({ kind: 'passthrough' });
+    expect(seen).toEqual([]);
+  });
 
   it('WITHHOLDS the runner answer when the decision cannot be recorded', () => {
     runtimeWith(() => ({ error: 'admission: unknown order' }));

@@ -96,7 +96,10 @@ function readGuests(v: unknown): { contactDid: string; required: boolean }[] | n
   return out;
 }
 
-export function registerGroupCoordinationRoutes(router: CoreRouter, ownerCapability?: string): void {
+export function registerGroupCoordinationRoutes(
+  router: CoreRouter,
+  ownerCapability?: string,
+): void {
   const ownerOnly = makeOwnerGuard(ownerCapability, 'group plans are the organizer’s own');
 
   const guarded =
@@ -112,7 +115,10 @@ export function registerGroupCoordinationRoutes(router: CoreRouter, ownerCapabil
   const brainOrOwner =
     (handler: (req: CoreRequest) => Promise<CoreResponse>) =>
     async (req: CoreRequest): Promise<CoreResponse> => {
-      if (req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined)) {
+      if (
+        req.callerType === 'brain' ||
+        (req.trustedInProcess === true && req.callerType === undefined)
+      ) {
         return handler(req);
       }
       const denied = ownerOnly(req);
@@ -124,7 +130,8 @@ export function registerGroupCoordinationRoutes(router: CoreRouter, ownerCapabil
     brainOrOwner(async (req) => {
       const b = isRecord(req.body) ? req.body : {};
       const guests = readGuests(b.guests);
-      if (guests === null) return j(400, { error: 'malformed_guest', detail: 'guests[].contact_did' });
+      if (guests === null)
+        return j(400, { error: 'malformed_guest', detail: 'guests[].contact_did' });
       if (!Array.isArray(b.candidates)) return j(400, { error: 'no_candidates' });
       if (b.window_seconds !== undefined && typeof b.window_seconds !== 'number') {
         return j(400, { error: 'bad_window' });

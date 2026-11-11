@@ -118,7 +118,11 @@ export class MemoryService {
    *   §4.2 (b)): each persona whose topics are returned is logged, since
    *   topic names reach the model and taint what it writes.
    */
-  async toc(personas: string[] | undefined, limit: number, release?: ReleaseContext): Promise<TocEntry[]> {
+  async toc(
+    personas: string[] | undefined,
+    limit: number,
+    release?: ReleaseContext,
+  ): Promise<TocEntry[]> {
     if (limit <= 0) return [];
 
     // Data-scope isolation: the working-memory tables are NOT scope-partitioned,
@@ -181,7 +185,8 @@ export class MemoryService {
     merged.sort((a, b) => (rankOf.get(a) ?? 0) - (rankOf.get(b) ?? 0) || b.salience - a.salience);
     const returned = merged.slice(0, limit);
     const byPersona = new Map<string, string[]>();
-    for (const entry of returned) byPersona.set(entry.persona, [...(byPersona.get(entry.persona) ?? []), entry.topic]);
+    for (const entry of returned)
+      byPersona.set(entry.persona, [...(byPersona.get(entry.persona) ?? []), entry.topic]);
     for (const [persona, topics] of byPersona) recordTopicRelease(release, persona, topics);
     return returned;
   }

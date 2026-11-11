@@ -15,7 +15,7 @@ import { AskRegistry, InMemoryAskAdapter, type AskEvent } from '../../src/ask/as
 
 const REQ_DID = 'did:plc:alice';
 
-function fixedClock(start = 1_700_000_000_000) {
+function _fixedClock(start = 1_700_000_000_000) {
   let now = start;
   return {
     nowMsFn: () => now,

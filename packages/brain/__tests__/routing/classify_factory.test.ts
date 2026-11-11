@@ -12,8 +12,7 @@ import {
   configureClassification,
 } from '../../src/routing/classify_factory';
 
-import type { LLMProvider, ChatResponse } from '../../src/llm/adapters/provider';
-
+import type { LLMProvider } from '../../src/llm/adapters/provider';
 
 function mockProvider(name: string, content: string): LLMProvider {
   return {

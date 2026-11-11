@@ -33,7 +33,11 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { clearVaults, listRecentItems } from '../../src/vault/crud';
 import { SQLiteWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, getWorkflowService, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 function openDB(): NodeSQLiteAdapter {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-staging-sweep-'));
@@ -204,7 +208,11 @@ describe('staging sweep and timer', () => {
 
   describe('REQ-04: parked memories drain', () => {
     it('parking clears the raw body and keeps the classified copy', () => {
-      const { id } = ingest({ source: 'user_remember', source_id: 'r1', data: { body: 'raw text' } });
+      const { id } = ingest({
+        source: 'user_remember',
+        source_id: 'r1',
+        data: { body: 'raw text' },
+      });
       claim(1);
       resolve(id, 'newvault', true, { ...classified, body: 'raw text' });
       const parked = getItem(id)!;
@@ -214,7 +222,11 @@ describe('staging sweep and timer', () => {
     });
 
     it('a parked row with nothing classified keeps its body, the only copy', () => {
-      const { id } = ingest({ source: 'user_remember', source_id: 'r2', data: { body: 'raw text' } });
+      const { id } = ingest({
+        source: 'user_remember',
+        source_id: 'r2',
+        data: { body: 'raw text' },
+      });
       claim(1);
       resolve(id, 'newvault', true);
       expect(getItem(id)?.data.body).toBe('raw text');
@@ -262,7 +274,12 @@ describe('staging sweep and timer', () => {
         metadata: JSON.stringify({
           remember: {
             reminders: [
-              { message: 'dentist', dueAtMs: Date.now() + 60_000, persona: 'newvault', timezone: 'UTC' },
+              {
+                message: 'dentist',
+                dueAtMs: Date.now() + 60_000,
+                persona: 'newvault',
+                timezone: 'UTC',
+              },
             ],
           },
         }),

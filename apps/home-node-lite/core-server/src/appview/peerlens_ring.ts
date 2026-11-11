@@ -118,10 +118,7 @@ export class TrustRingIndex {
     contacts: Iterable<Did>;
     twoHopContacts: Iterable<Did>;
   }) {
-    this.userDid =
-      typeof opts.userDid === 'string' && opts.userDid !== ''
-        ? opts.userDid
-        : null;
+    this.userDid = typeof opts.userDid === 'string' && opts.userDid !== '' ? opts.userDid : null;
     // Freeze via ReadonlySet<Did>; Set itself is already structurally
     // read-through from the outside since we never expose it.
     this.contacts = new Set(opts.contacts);

@@ -72,9 +72,7 @@ export function buildPushEnvelope(input: BuildPushEnvelopeInput): PushEnvelopeFr
     throw new Error('buildPushEnvelope: recipientDid is required');
   }
   if (!input.recipientEd25519Pub || input.recipientEd25519Pub.length !== 32) {
-    throw new Error(
-      'buildPushEnvelope: recipientEd25519Pub must be 32 bytes (Ed25519 public key)',
-    );
+    throw new Error('buildPushEnvelope: recipientEd25519Pub must be 32 bytes (Ed25519 public key)');
   }
   const sealed = sealEncrypt(input.plaintext, input.recipientEd25519Pub);
   return {
@@ -111,8 +109,8 @@ export function openPushEnvelope(
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, '0');
   }
   return out;
 }

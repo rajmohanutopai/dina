@@ -6,7 +6,13 @@
  * (UIDAI), the holder-type fourth letter for PAN.
  */
 
-import { isAadhaarNumber, isGstin, isPan, PAN_HOLDER_TYPES, verhoeffValid } from '../../src/pii/checksums';
+import {
+  isAadhaarNumber,
+  isGstin,
+  isPan,
+  PAN_HOLDER_TYPES,
+  verhoeffValid,
+} from '../../src/pii/checksums';
 import { detectPII } from '../../src/pii/patterns';
 
 describe('verhoeffValid', () => {
@@ -74,12 +80,15 @@ describe('isGstin', () => {
     expect(isGstin('27AAPFU0939F1ZV')).toBe(true);
   });
 
-  it.each(['29AAGCB7383J1Z4', '07AAACB2894G1ZP', '33AAACT2803M1ZI', '19AABCT3518Q1ZT', '09AAACH7409R1ZZ'])(
-    'accepts a well-formed, correctly-checksummed GSTIN (%s)',
-    (gstin) => {
-      expect(isGstin(gstin)).toBe(true);
-    },
-  );
+  it.each([
+    '29AAGCB7383J1Z4',
+    '07AAACB2894G1ZP',
+    '33AAACT2803M1ZI',
+    '19AABCT3518Q1ZT',
+    '09AAACH7409R1ZZ',
+  ])('accepts a well-formed, correctly-checksummed GSTIN (%s)', (gstin) => {
+    expect(isGstin(gstin)).toBe(true);
+  });
 
   it('refuses a wrong check character — a filing under a mistyped number is worse than a refusal', () => {
     expect(isGstin('27AAPFU0939F1ZW')).toBe(false);

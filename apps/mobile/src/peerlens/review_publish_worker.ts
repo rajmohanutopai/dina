@@ -19,8 +19,8 @@ import {
 
 import { classifyPublishError } from './classify_publish_error';
 import { publishAttestationToPDS } from './publish_attestation';
-import type { PublishAttemptDeps } from './publish_attempt';
 
+import type { PublishAttemptDeps } from './publish_attempt';
 import type { PDSPublisher } from '@dina/brain';
 
 export interface ReviewPublishWorkerDeps {
@@ -50,8 +50,7 @@ export async function runReviewPublishTick(deps: ReviewPublishWorkerDeps): Promi
   return runSharedReviewPublishTick({
     repo: deps.repo,
     ownerDid: deps.did,
-    publish: (job, record) =>
-      publishToPDS(deps.publisher, job.ownerDid, record, job.rkey),
+    publish: (job, record) => publishToPDS(deps.publisher, job.ownerDid, record, job.rkey),
     classifyError: classifyPublishError,
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });

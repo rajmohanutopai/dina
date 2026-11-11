@@ -33,10 +33,7 @@ import { handleChat, type ChatResponse } from '@dina/brain/chat';
  * `addUserMessage` + `addDinaResponse` against the local thread
  * store mirror.
  */
-export async function runChatTurn(
-  text: string,
-  threadId: string,
-): Promise<ChatResponse> {
+export async function runChatTurn(text: string, threadId: string): Promise<ChatResponse> {
   return handleChat(text, threadId);
 }
 

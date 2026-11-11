@@ -274,7 +274,11 @@ function authorizeOrderSubject(
   /** The manifest capability this listing is BOUND to; see `commerceNames`. */
   pluginCapabilityId: string,
 ): SubjectAuthorization {
-  const needsOrder = isCommerceCapability(REQUIRES_EXISTING_ORDER, query.capability, pluginCapabilityId);
+  const needsOrder = isCommerceCapability(
+    REQUIRES_EXISTING_ORDER,
+    query.capability,
+    pluginCapabilityId,
+  );
   const selfAuthorizing = isCommerceCapability(
     SELF_AUTHORIZING_BY_PAYLOAD,
     query.capability,
@@ -547,7 +551,11 @@ export function createProviderIngressTask(args: {
   // that is not active, and NEGOTIATION_PLAN §4.5 accepts that.
   if (isCommerceCapability(RECORDS_QUOTE_OUTCOME, query.capability)) {
     // The buyer is the relay-authenticated sender, never a field in the body.
-    const answered = answerQuoteOutcomeInCore({ params: query.params, buyerDid: query.fromDid, nowMs });
+    const answered = answerQuoteOutcomeInCore({
+      params: query.params,
+      buyerDid: query.fromDid,
+      nowMs,
+    });
     return answered.ok
       ? { ok: true, coreAnswerJson: answered.json }
       : { ok: false, code: answered.code, error: `provider ingress: ${answered.error}` };
@@ -566,7 +574,10 @@ export function createProviderIngressTask(args: {
   const waitingReask =
     isCommerceCapability(COUNTERS_QUOTE, query.capability, boundCapabilityId) &&
     isWaitingReask(query.params, query.fromDid);
-  if (!waitingReask && isCommerceCapability(SPENDS_PROBING_BUDGET, query.capability, boundCapabilityId)) {
+  if (
+    !waitingReask &&
+    isCommerceCapability(SPENDS_PROBING_BUDGET, query.capability, boundCapabilityId)
+  ) {
     const refused = refuseProbing(query);
     if (refused !== null) return refused;
   }

@@ -29,7 +29,8 @@ export interface WatchListItem {
 export function watchTaskToListItem(task: WorkflowTask): WatchListItem | null {
   const payload = parseWatchPollPayload(task.payload);
   if (payload === null) return null;
-  const nextRun = task.next_run_at !== undefined && task.next_run_at !== 0 ? task.next_run_at : null;
+  const nextRun =
+    task.next_run_at !== undefined && task.next_run_at !== 0 ? task.next_run_at : null;
   return {
     watch_id: task.id,
     subscription_id: payload.subscription_id,

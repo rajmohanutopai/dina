@@ -401,13 +401,9 @@ export async function pickHandle(
     maxLen: maxPrefixChars(opts.pdsHost),
   });
   const candidateHandles = candidatePrefixes.map((p) => `${p}.${opts.pdsHost}`);
-  const checks = await Promise.all(
-    candidateHandles.map((h) => checkHandleAvailability(h, opts)),
-  );
+  const checks = await Promise.all(candidateHandles.map((h) => checkHandleAvailability(h, opts)));
 
-  const alternatives = checks
-    .filter((r) => r.kind === 'available')
-    .slice(0, count);
+  const alternatives = checks.filter((r) => r.kind === 'available').slice(0, count);
 
   return { preferred: preferredResult, alternatives };
 }

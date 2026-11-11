@@ -72,7 +72,8 @@ const DisclosureSchema = {
     kind: { type: 'string', enum: ['dietary', 'accessibility', 'transport', 'note'] },
     text: {
       type: 'string',
-      description: 'The need itself, in a few words ("gluten-free", "step-free access", "we can drive one car").',
+      description:
+        'The need itself, in a few words ("gluten-free", "step-free access", "we can drive one car").',
     },
     about: { type: 'string', enum: ['household'] },
   },
@@ -99,7 +100,8 @@ export const AvailabilityCoordinationResultSchema = {
     disclosures: {
       type: 'array',
       items: DisclosureSchema,
-      description: 'A need the household has and chooses to say — a diet, a mobility need, who can drive. Omit the field when there is none; never state that a need is absent, and never a name or who it is for.',
+      description:
+        'A need the household has and chooses to say — a diet, a mobility need, who can drive. Omit the field when there is none; never state that a need is absent, and never a name or who it is for.',
     },
   },
 } as const;

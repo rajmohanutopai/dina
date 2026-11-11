@@ -132,7 +132,9 @@ export class RememberModelUnavailableError extends Error {
 export function isRememberModelUnavailable(err: unknown): boolean {
   return (
     err instanceof RememberModelUnavailableError ||
-    (typeof err === 'object' && err !== null && (err as { code?: unknown }).code === 'model_unavailable')
+    (typeof err === 'object' &&
+      err !== null &&
+      (err as { code?: unknown }).code === 'model_unavailable')
   );
 }
 
@@ -224,10 +226,17 @@ export function buildRememberRuntime(input: RememberRuntimeInput): {
         ...search,
         async execute(args) {
           const out = await search.execute(args);
-          const rows = (out as { results?: { id?: unknown; body?: unknown; content_l0?: unknown }[] } | null)?.results ?? [];
+          const rows =
+            (out as { results?: { id?: unknown; body?: unknown; content_l0?: unknown }[] } | null)
+              ?.results ?? [];
           for (const r of rows) {
             if (typeof r.id !== 'string' || r.id === '') continue;
-            const text = typeof r.body === 'string' && r.body !== '' ? r.body : typeof r.content_l0 === 'string' ? r.content_l0 : '';
+            const text =
+              typeof r.body === 'string' && r.body !== ''
+                ? r.body
+                : typeof r.content_l0 === 'string'
+                  ? r.content_l0
+                  : '';
             seen.set(r.id, text);
           }
           return out;

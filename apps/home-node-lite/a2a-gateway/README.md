@@ -3,15 +3,15 @@
 The public door for outside A2A agents (docs/A2A_GATEWAY_ARCHITECTURE.md §4.1,
 Lane 2). It serves:
 
-| Path | What |
-|---|---|
-| `GET /.well-known/agent-card.json` | The node's signed Agent Card, as Core built it |
-| `GET /.well-known/jwks.json` | The key set the card's `jku` names |
-| `POST /a2a/v1` | JSON-RPC: every A2A v1.0 method; `SendStreamingMessage` and `SubscribeToTask` answer as Server-Sent Events |
+| Path                                | What                                                                                                                                                                                                                                                                                                        |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /.well-known/agent-card.json`  | The node's signed Agent Card, as Core built it                                                                                                                                                                                                                                                              |
+| `GET /.well-known/jwks.json`        | The key set the card's `jku` names                                                                                                                                                                                                                                                                          |
+| `POST /a2a/v1`                      | JSON-RPC: every A2A v1.0 method; `SendStreamingMessage` and `SubscribeToTask` answer as Server-Sent Events                                                                                                                                                                                                  |
 | `GET`, `POST`, `DELETE /a2a/rest/…` | REST (HTTP+JSON): the same methods at the v1.0 paths (`/message:send`, `/message:stream`, `/tasks`, `/tasks/{id}`, `/tasks/{id}:cancel`, `/tasks/{id}:subscribe`, `/tasks/{id}/pushNotificationConfigs[/{configId}]`, `/extendedAgentCard`); answers are `application/a2a+json`, errors `google.rpc.Status` |
-| `POST /a2a/v1/did-binding` | Binds a client to a DID with the owner's challenge (design §5.1) |
-| `POST /ucp/webhooks/orders` | UCP order webhooks from merchants (docs/UCP_IMPLEMENTATION_PLAN.md §3.13): the exact body, at most 512 KiB, and the webhook's own headers, forwarded for Core to store and verify; Core's 200 is relayed, anything else is a `503` the merchant retries |
-| `GET /healthz` | Liveness |
+| `POST /a2a/v1/did-binding`          | Binds a client to a DID with the owner's challenge (design §5.1)                                                                                                                                                                                                                                            |
+| `POST /ucp/webhooks/orders`         | UCP order webhooks from merchants (docs/UCP_IMPLEMENTATION_PLAN.md §3.13): the exact body, at most 512 KiB, and the webhook's own headers, forwarded for Core to store and verify; Core's 200 is relayed, anything else is a `503` the merchant retries                                                     |
+| `GET /healthz`                      | Liveness                                                                                                                                                                                                                                                                                                    |
 
 ## What it does and does not do
 
@@ -55,18 +55,18 @@ Core must know the gateway, and the gateway must have its own key:
 3. Start the gateway. Put a TLS terminator in front of it; the gateway itself
    listens on loopback (`127.0.0.1:8400`) by default.
 
-| Variable | Default | Meaning |
-|---|---|---|
-| `DINA_A2A_GATEWAY_HOST` | `127.0.0.1` | Listen host |
-| `DINA_A2A_GATEWAY_PORT` | `8400` | Listen port |
-| `DINA_CORE_URL` | `http://127.0.0.1:8100` | Core |
-| `DINA_A2A_GATEWAY_KEY_DIR` | (required) | Directory holding the key |
-| `DINA_A2A_GATEWAY_KEY_FILE` | `gateway.ed25519` | The key file: a raw 32-byte Ed25519 seed |
-| `DINA_A2A_GATEWAY_DID` | (optional) | Checked against the key at boot |
-| `DINA_A2A_GATEWAY_IP_LIMIT` | `120` | Calls per minute per client address |
-| `DINA_A2A_GATEWAY_MAX_STREAMS` | `500` | Event streams open at once |
-| `DINA_A2A_GATEWAY_STREAMS_PER_IP` | `20` | Of those, per client address |
-| `DINA_A2A_GATEWAY_TRUST_PROXY` | `0` | How many proxies in front set `X-Forwarded-For` (normally `1`). Their count, never "trust all": a client can write its own entries |
+| Variable                          | Default                 | Meaning                                                                                                                            |
+| --------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `DINA_A2A_GATEWAY_HOST`           | `127.0.0.1`             | Listen host                                                                                                                        |
+| `DINA_A2A_GATEWAY_PORT`           | `8400`                  | Listen port                                                                                                                        |
+| `DINA_CORE_URL`                   | `http://127.0.0.1:8100` | Core                                                                                                                               |
+| `DINA_A2A_GATEWAY_KEY_DIR`        | (required)              | Directory holding the key                                                                                                          |
+| `DINA_A2A_GATEWAY_KEY_FILE`       | `gateway.ed25519`       | The key file: a raw 32-byte Ed25519 seed                                                                                           |
+| `DINA_A2A_GATEWAY_DID`            | (optional)              | Checked against the key at boot                                                                                                    |
+| `DINA_A2A_GATEWAY_IP_LIMIT`       | `120`                   | Calls per minute per client address                                                                                                |
+| `DINA_A2A_GATEWAY_MAX_STREAMS`    | `500`                   | Event streams open at once                                                                                                         |
+| `DINA_A2A_GATEWAY_STREAMS_PER_IP` | `20`                    | Of those, per client address                                                                                                       |
+| `DINA_A2A_GATEWAY_TRUST_PROXY`    | `0`                     | How many proxies in front set `X-Forwarded-For` (normally `1`). Their count, never "trust all": a client can write its own entries |
 
 With Docker: `docker compose -f apps/home-node-lite/docker-compose.lite.yml
 --profile a2a run --rm a2a-gateway keygen`, put the printed DID and the public

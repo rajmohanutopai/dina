@@ -29,16 +29,12 @@ interface RunResult {
 }
 
 function runCLI(args: string[] = [], env: NodeJS.ProcessEnv = {}): RunResult {
-  const res = spawnSync(
-    process.execPath,
-    ['--import', 'tsx', CLI_PATH, ...args],
-    {
-      cwd: PKG_ROOT,
-      encoding: 'utf8',
-      env: { ...process.env, ...env },
-      timeout: 30_000,
-    },
-  );
+  const res = spawnSync(process.execPath, ['--import', 'tsx', CLI_PATH, ...args], {
+    cwd: PKG_ROOT,
+    encoding: 'utf8',
+    env: { ...process.env, ...env },
+    timeout: 30_000,
+  });
   return {
     code: res.status,
     stdout: res.stdout ?? '',
@@ -69,7 +65,13 @@ describe('conformance CLI — exit-code contract (task 10.15)', () => {
     expect(code).toBe(0);
     const parsed = JSON.parse(stdout) as {
       producedAt: string;
-      summary: { total: number; passed: number; failed: number; skipped: number; notImplemented: number };
+      summary: {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        notImplemented: number;
+      };
       results: { name: string; status: string }[];
     };
     expect(parsed.summary.failed).toBe(0);
@@ -86,7 +88,13 @@ describe('conformance CLI — exit-code contract (task 10.15)', () => {
     expect(human.code).toBe(0);
     expect(machine.code).toBe(0);
     const parsed = JSON.parse(machine.stdout) as {
-      summary: { total: number; passed: number; failed: number; skipped: number; notImplemented: number };
+      summary: {
+        total: number;
+        passed: number;
+        failed: number;
+        skipped: number;
+        notImplemented: number;
+      };
     };
     expect(human.stdout).toContain(`total:          ${parsed.summary.total}`);
     expect(human.stdout).toContain(`passed:         ${parsed.summary.passed}`);
@@ -107,11 +115,11 @@ describe('conformance CLI — exit-code contract (task 10.15)', () => {
         runConformance('/nonexistent/path/to/vectors');
       });
     `;
-    const res = spawnSync(
-      process.execPath,
-      ['--import', 'tsx', '-e', bogusScript],
-      { cwd: PKG_ROOT, encoding: 'utf8', timeout: 15_000 },
-    );
+    const res = spawnSync(process.execPath, ['--import', 'tsx', '-e', bogusScript], {
+      cwd: PKG_ROOT,
+      encoding: 'utf8',
+      timeout: 15_000,
+    });
     expect(res.status).not.toBe(0);
   });
 });

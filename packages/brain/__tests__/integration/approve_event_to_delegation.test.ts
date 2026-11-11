@@ -262,7 +262,11 @@ describe('WorkflowEventConsumer.onApproved → Core executes the approved query 
       delivery_failed: false,
       details: JSON.stringify({ kind: 'approval', task_payload: '{}' }),
     });
-    const queuedBefore = repo.listByKindAndState('delegation', WorkflowTaskState.Queued, 100).length;
+    const queuedBefore = repo.listByKindAndState(
+      'delegation',
+      WorkflowTaskState.Queued,
+      100,
+    ).length;
     const delegation = service.store().getById('svc-exec-from-approval-u3');
     const second = await consumer.runTick();
     expect(second.failed).toBe(0);
@@ -270,7 +274,9 @@ describe('WorkflowEventConsumer.onApproved → Core executes the approved query 
     // card and started nothing: the delegation is the same row, untouched.
     expect(service.store().getById('svc-exec-from-approval-u3')).toEqual(delegation);
     expect(service.store().getById('approval-u3')!.status).toBe('cancelled');
-    expect(repo.listByKindAndState('delegation', WorkflowTaskState.Queued, 100)).toHaveLength(queuedBefore);
+    expect(repo.listByKindAndState('delegation', WorkflowTaskState.Queued, 100)).toHaveLength(
+      queuedBefore,
+    );
   });
 
   // Regression for the live Tier 1 salon-booking failure: the approval
@@ -296,7 +302,11 @@ describe('WorkflowEventConsumer.onApproved → Core executes the approved query 
       capabilitySchemas: {
         appointment_book: {
           params: { type: 'object', properties: { time: { type: 'string' } } },
-          result: { type: 'object', required: ['status'], properties: { status: { type: 'string' } } },
+          result: {
+            type: 'object',
+            required: ['status'],
+            properties: { status: { type: 'string' } },
+          },
           schemaHash: 'a'.repeat(64),
         },
       },

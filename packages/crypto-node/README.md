@@ -11,19 +11,19 @@ encryption.
 
 ## Runtime library choices
 
-| Capability | Library | Why |
-|---|---|---|
-| **Ed25519 sign/verify/deriveFromSeed** | `@noble/ed25519` + `@noble/hashes` (SLIP-0010) | Same libs `@dina/core` uses — guaranteed byte-identical output between pure-core tests and the Node adapter. Pure JS, zero native deps, audited. |
-| **X25519 fromEd25519 / scalarMult** | `@noble/curves/ed25519` | Ships with Ed25519→X25519 conversion. Same provenance as Ed25519. |
-| **secp256k1 (did:plc rotation)** | `@noble/curves/secp256k1` | Drop-in; Dina doesn't do any exotic secp256k1 flows, just sign/verify + derive. |
-| **SHA-256** | `@noble/hashes/sha256` | Stable, fast-enough; matches everywhere else in the codebase. |
-| **BLAKE2b(24)** | `@noble/hashes/blake2b` | Used for NaCl sealed-box nonce derivation — **must match libsodium** (not Go's pre-#9 sha512-truncated path). |
-| **HKDF-SHA256** | `@noble/hashes/hkdf` | Standard RFC 5869 impl. |
-| **NaCl sealed-box** | `libsodium-wrappers` (native) | Faster than TweetNaCl for the high-volume encrypt/decrypt path. libsodium's constant-time guarantees are binding-grade; `tweetnacl`'s are weaker. |
-| **Argon2id** | `argon2` (native) | Only reasonable Node option for password KDF. Bound to native libargon2; prebuilt binaries for linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64. |
-| **randomBytes** | `node:crypto.randomBytes` | Node built-in CSPRNG — no npm dep needed. |
+| Capability                             | Library                                        | Why                                                                                                                                                 |
+| -------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Ed25519 sign/verify/deriveFromSeed** | `@noble/ed25519` + `@noble/hashes` (SLIP-0010) | Same libs `@dina/core` uses — guaranteed byte-identical output between pure-core tests and the Node adapter. Pure JS, zero native deps, audited.    |
+| **X25519 fromEd25519 / scalarMult**    | `@noble/curves/ed25519`                        | Ships with Ed25519→X25519 conversion. Same provenance as Ed25519.                                                                                   |
+| **secp256k1 (did:plc rotation)**       | `@noble/curves/secp256k1`                      | Drop-in; Dina doesn't do any exotic secp256k1 flows, just sign/verify + derive.                                                                     |
+| **SHA-256**                            | `@noble/hashes/sha256`                         | Stable, fast-enough; matches everywhere else in the codebase.                                                                                       |
+| **BLAKE2b(24)**                        | `@noble/hashes/blake2b`                        | Used for NaCl sealed-box nonce derivation — **must match libsodium** (not Go's pre-#9 sha512-truncated path).                                       |
+| **HKDF-SHA256**                        | `@noble/hashes/hkdf`                           | Standard RFC 5869 impl.                                                                                                                             |
+| **NaCl sealed-box**                    | `libsodium-wrappers` (native)                  | Faster than TweetNaCl for the high-volume encrypt/decrypt path. libsodium's constant-time guarantees are binding-grade; `tweetnacl`'s are weaker.   |
+| **Argon2id**                           | `argon2` (native)                              | Only reasonable Node option for password KDF. Bound to native libargon2; prebuilt binaries for linux-x64 / linux-arm64 / darwin-x64 / darwin-arm64. |
+| **randomBytes**                        | `node:crypto.randomBytes`                      | Node built-in CSPRNG — no npm dep needed.                                                                                                           |
 
-### Why pure-JS @noble/* for the bulk of it
+### Why pure-JS @noble/\* for the bulk of it
 
 We already pulled `@noble/*` into `@dina/core` (protocol-level crypto
 helpers + canonical-sign tests). Reusing them here gives us:

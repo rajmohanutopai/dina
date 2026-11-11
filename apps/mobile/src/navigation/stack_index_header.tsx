@@ -96,11 +96,7 @@ export function StackIndexHeader({
         </Pressable>
 
         <View style={styles.titleWrap} accessible={false}>
-          <Text
-            style={styles.title}
-            numberOfLines={1}
-            accessibilityRole="header"
-          >
+          <Text style={styles.title} numberOfLines={1} accessibilityRole="header">
             {title}
           </Text>
         </View>

@@ -10,9 +10,9 @@ import { loadConfig } from './config';
 import { DevStubDeviceState } from './dev_devicecheck_stub';
 import { DeviceCheckClient } from './devicecheck';
 import { GoogleAccessTokenMinter } from './google_oauth';
+import { SqliteGrantLedger } from './ledger';
 import { OpenRouterProvisioner } from './openrouter_provisioner';
 import { PlayIntegrityClient } from './play_integrity';
-import { SqliteGrantLedger } from './ledger';
 import { buildServer } from './server';
 
 import type { DeviceState, KeyProvisioner } from './ports';
@@ -90,7 +90,9 @@ async function main(): Promise<void> {
     app.log.warn('⚠️  GRANTS_DEV_ALLOW_ANDROID=1 — Android claim gate OPEN. DEV/E2E ONLY.');
   }
   if (devStaticKey !== undefined && devStaticKey !== '') {
-    app.log.warn('⚠️  GRANTS_DEV_STATIC_KEY set — provisioning BYPASSED (fixed key). DEV/E2E ONLY.');
+    app.log.warn(
+      '⚠️  GRANTS_DEV_STATIC_KEY set — provisioning BYPASSED (fixed key). DEV/E2E ONLY.',
+    );
   }
   app.log.info(
     {

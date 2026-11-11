@@ -43,7 +43,6 @@ describe('workflow service composition', () => {
       // Matched as a PROPERTY KEY, not a substring. `toContain` passed
       // against a field renamed to `MUTATED_pluginCompletionHandlerXX`,
       // which is the assertion being weaker than the claim it makes.
-      // eslint-disable-next-line jest/no-conditional-in-test -- guarded above
       expect(body ?? '').toMatch(/(^|[\s{,])pluginCompletionHandler\s*:/);
     }
   });

@@ -14,10 +14,7 @@ import {
 import { AskRegistry, InMemoryAskAdapter, type AskEvent } from '../../src/ask/ask_registry';
 
 import type { AskExecuteFn, ExecuteOutcome } from '../../src/ask/ask_handler';
-import type {
-  AgenticLoopResult,
-  PausedAgenticState,
-} from '../../src/reasoning/agentic_loop';
+import type { AgenticLoopResult, PausedAgenticState } from '../../src/reasoning/agentic_loop';
 
 const REQUESTER_DID = 'did:key:z6MkAlonsoTester';
 const FROZEN_NOW_MS = 1_750_000_000_000;
@@ -497,9 +494,7 @@ describe('AskApprovalResumer', () => {
   });
 
   describe('Pattern A — paused state resume', () => {
-    function makePausedState(
-      overrides: Partial<PausedAgenticState> = {},
-    ): PausedAgenticState {
+    function makePausedState(overrides: Partial<PausedAgenticState> = {}): PausedAgenticState {
       return {
         version: 1,
         transcript: [{ role: 'user', content: 'show me my balance' }],
@@ -518,9 +513,7 @@ describe('AskApprovalResumer', () => {
       };
     }
 
-    function makeAgenticResult(
-      overrides: Partial<AgenticLoopResult> = {},
-    ): AgenticLoopResult {
+    function makeAgenticResult(overrides: Partial<AgenticLoopResult> = {}): AgenticLoopResult {
       return {
         answer: 'your balance is $42',
         toolCalls: [],
@@ -539,9 +532,7 @@ describe('AskApprovalResumer', () => {
     }
 
     function buildPatternAHarness(opts: {
-      resumeFromPausedFn?: (
-        s: PausedAgenticState,
-      ) => Promise<AgenticLoopResult>;
+      resumeFromPausedFn?: (s: PausedAgenticState) => Promise<AgenticLoopResult>;
       executeFn?: AskExecuteFn;
       scriptedResults?: AgenticLoopResult[];
     }): PatternAHarness {
@@ -640,7 +631,14 @@ describe('AskApprovalResumer', () => {
           seenCtx = { question: ctx.question, forcedSources: ctx.forcedSources };
           return {
             text: 'Asking the restaurant…',
-            serviceQueries: [{ taskId: 'task-1', queryId: 'q-1', capability: 'price_check', serviceName: 'Kebab Co' }],
+            serviceQueries: [
+              {
+                taskId: 'task-1',
+                queryId: 'q-1',
+                capability: 'price_check',
+                serviceName: 'Kebab Co',
+              },
+            ],
           };
         },
         onEvent: () => undefined,
@@ -659,7 +657,10 @@ describe('AskApprovalResumer', () => {
       expect(final?.status).toBe('complete');
       const answer = JSON.parse(final?.answerJson ?? '{}');
       expect(answer.serviceQueries?.[0]?.taskId).toBe('task-1'); // rich, not text-only
-      expect(seenCtx).toEqual({ question: 'price of a kebab', forcedSources: ['provider_services'] });
+      expect(seenCtx).toEqual({
+        question: 'price of a kebab',
+        forcedSources: ['provider_services'],
+      });
     });
 
     it('re-parks with new approvalId AND new paused state when loop bails again', async () => {
@@ -752,9 +753,7 @@ describe('AskApprovalResumer', () => {
     ])('translates finishReason=%s into markFailed', async (finishReason) => {
       const paused = makePausedState();
       const h = buildPatternAHarness({
-        scriptedResults: [
-          makeAgenticResult({ answer: '', finishReason, pausedState: undefined }),
-        ],
+        scriptedResults: [makeAgenticResult({ answer: '', finishReason, pausedState: undefined })],
       });
       await h.registry.enqueue({
         id: 'ask-1',
@@ -871,11 +870,7 @@ describe('AskApprovalResumer', () => {
       });
 
       await reg.enqueue({ id: 'ask-1', question: 'q', requesterDid: REQUESTER_DID });
-      await reg.markPendingApproval(
-        'ask-1',
-        'appr-1',
-        JSON.stringify(makePausedState()),
-      );
+      await reg.markPendingApproval('ask-1', 'appr-1', JSON.stringify(makePausedState()));
       await reg.resumeAfterApproval('ask-1');
       await flushAsync();
 

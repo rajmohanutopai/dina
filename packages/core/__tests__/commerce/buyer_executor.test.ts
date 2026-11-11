@@ -185,7 +185,7 @@ async function submit(
     serviceRkey: 'self',
     send: sender(outcome),
     nowMs: NOW,
-  
+
     // DR-1: authority is REQUIRED now. The single-owner configuration is
     // one grant evaluated like any other — not a branch that skips §7.3.
     authority: singleOwnerAuthority({
@@ -268,9 +268,8 @@ describe('§16.2 buyer-side retention — the khata readers must SEE the purchas
       typeof import('../../src/commerce/trade_readers')
     >('../../src/commerce/trade_readers');
     const proposal = order();
-    const { commerceRecordDigest } = jest.requireActual<
-      typeof import('@dina/commerce-protocol')
-    >('@dina/commerce-protocol');
+    const { commerceRecordDigest } =
+      jest.requireActual<typeof import('@dina/commerce-protocol')>('@dina/commerce-protocol');
     const { createHash } = jest.requireActual<typeof import('node:crypto')>('node:crypto');
     const sha = (data: Uint8Array) => new Uint8Array(createHash('sha256').update(data).digest());
     const ackDraft = {
@@ -304,7 +303,9 @@ describe('§16.2 buyer-side retention — the khata readers must SEE the purchas
     expect(readers.listAcceptedOrderIds(proposal.supplier_did, 'buyer')).toEqual([
       proposal.purchase_order_id,
     ]);
-    expect(readers.readAcceptance(proposal.supplier_did, proposal.purchase_order_id)).not.toBeNull();
+    expect(
+      readers.readAcceptance(proposal.supplier_did, proposal.purchase_order_id),
+    ).not.toBeNull();
   });
 
   it('a rejected submit retains the order but earns NO accepted id', async () => {
@@ -339,7 +340,7 @@ describe('two writers on one order', () => {
           return { kind: 'ambiguous', reason: 'slow' } as const;
         },
         nowMs: NOW,
-      
+
         // DR-1: authority is REQUIRED now. The single-owner configuration is
         // one grant evaluated like any other — not a branch that skips §7.3.
         authority: singleOwnerAuthority({
@@ -383,7 +384,7 @@ describe('two writers on one order', () => {
         return { kind: 'ambiguous', reason: 'transport slow' } as const;
       },
       nowMs: NOW,
-    
+
       // DR-1: authority is REQUIRED now. The single-owner configuration is
       // one grant evaluated like any other — not a branch that skips §7.3.
       authority: singleOwnerAuthority({
@@ -441,7 +442,7 @@ describe('two writers on one order', () => {
           return { kind: 'ambiguous', reason: 'slow' } as const;
         },
         nowMs: NOW,
-      
+
         // DR-1: authority is REQUIRED now. The single-owner configuration is
         // one grant evaluated like any other — not a branch that skips §7.3.
         authority: singleOwnerAuthority({
@@ -480,7 +481,7 @@ describe('the crash between recording and sending', () => {
         serviceRkey: 'self',
         send: () => Promise.reject(new Error('the process died mid-send')),
         nowMs: NOW,
-      
+
         // DR-1: authority is REQUIRED now. The single-owner configuration is
         // one grant evaluated like any other — not a branch that skips §7.3.
         authority: singleOwnerAuthority({

@@ -28,7 +28,6 @@ import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 
 import { getApprovalManager } from '@dina/core';
 
-
 import { colors, radius, spacing, textStyles } from '../theme';
 
 import { MessageTimestamp } from './MessageTimestamp';

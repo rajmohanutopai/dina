@@ -287,8 +287,8 @@ function defaultRandomBytes(n: number): Uint8Array {
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, '0');
   }
   return out;
 }

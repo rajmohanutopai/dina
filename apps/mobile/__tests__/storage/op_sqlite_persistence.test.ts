@@ -47,10 +47,14 @@ describe('OpSQLiteAdapter — real SQLite via the op-sqlite mock', () => {
     adapter.run("INSERT INTO j (id, status) VALUES ('a', 'queued')");
 
     // First claimer: WHERE matches (still queued) → 1 row changed.
-    expect(adapter.run("UPDATE j SET status='publishing' WHERE id='a' AND status='queued'")).toBe(1);
+    expect(adapter.run("UPDATE j SET status='publishing' WHERE id='a' AND status='queued'")).toBe(
+      1,
+    );
     // Second claimer: WHERE no longer matches (already publishing) → 0 changed.
     // The old constant-1 bug returned 1 here → a double claim.
-    expect(adapter.run("UPDATE j SET status='publishing' WHERE id='a' AND status='queued'")).toBe(0);
+    expect(adapter.run("UPDATE j SET status='publishing' WHERE id='a' AND status='queued'")).toBe(
+      0,
+    );
     // DELETE of a missing row is likewise 0, not 1.
     expect(adapter.run("DELETE FROM j WHERE id='missing'")).toBe(0);
 

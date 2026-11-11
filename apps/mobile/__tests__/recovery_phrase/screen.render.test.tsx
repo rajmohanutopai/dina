@@ -141,7 +141,7 @@ describe('recovery-phrase reveal', () => {
     act(() => {
       // The mock RN AppState exposes `addEventListener` returning a
       // subscription; firing manually mirrors what the OS does.
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
       const handlers: ((s: string) => void)[] = (AppState as any).__changeHandlers ?? [];
       handlers.forEach((h) => h('inactive'));
     });
@@ -154,10 +154,7 @@ describe('recovery-phrase reveal', () => {
     jest.useFakeTimers();
     try {
       const { getByLabelText, findByText, queryByText } = render(<RecoveryPhraseScreen />);
-      fireEvent.changeText(
-        getByLabelText('Enter passphrase to view recovery phrase'),
-        'correct',
-      );
+      fireEvent.changeText(getByLabelText('Enter passphrase to view recovery phrase'), 'correct');
       fireEvent.press(getByLabelText('Reveal recovery phrase'));
       const words = FIXTURE_MNEMONIC.split(' ');
       // findByText polls; under fake timers the polling has to be

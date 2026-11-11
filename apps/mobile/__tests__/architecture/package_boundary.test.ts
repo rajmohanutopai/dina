@@ -124,9 +124,7 @@ describe('mobile package boundaries', () => {
 
     for (const file of files) {
       const source = await readFile(file, 'utf8');
-      if (
-        /@dina\/brain\/src\/(?:enrichment|appview_client|service\/capabilities)/.test(source)
-      ) {
+      if (/@dina\/brain\/src\/(?:enrichment|appview_client|service\/capabilities)/.test(source)) {
         offenders.push(relative(root, file));
       }
     }
@@ -210,7 +208,9 @@ describe('mobile package boundaries', () => {
       const source = await readFile(file, 'utf8');
       if (
         /@dina\/core\/src\/(?:gatekeeper\/sharing|vault\/crud|export\/archive)/.test(source) ||
-        /@dina\/brain\/src\/(?:service\/workflow_event_consumer|vault_context\/assembly|nudge\/whisper)/.test(source)
+        /@dina\/brain\/src\/(?:service\/workflow_event_consumer|vault_context\/assembly|nudge\/whisper)/.test(
+          source,
+        )
       ) {
         offenders.push(relative(root, file));
       }

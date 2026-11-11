@@ -9,8 +9,6 @@
  * yes would let a broken publisher pass.
  */
 
-
-
 import { randomBytes } from 'node:crypto';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
@@ -19,7 +17,6 @@ import * as path from 'node:path';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { validateCommerceEpochRecord, type Sha256Fn } from '@dina/commerce-protocol';
-import { stripRepoEnvelope } from '@dina/home-node';
 import {
   IDENTITY_MIGRATIONS,
   InMemoryCommerceQuoteLedgerRepository,
@@ -29,6 +26,7 @@ import {
   isCommerceRestorePending,
   markCommerceRestorePending,
 } from '@dina/core';
+import { stripRepoEnvelope } from '@dina/home-node';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { wireCommerceEpoch } from '../src/commerce/wire_epoch';
@@ -185,9 +183,7 @@ describe('commerce epoch repo wiring', () => {
     // protocol validates is the record under it. Validating the raw stored
     // value here is exactly the mistake the live reader made.
     expect(pds.state.record).not.toBeNull();
-    expect(
-      validateCommerceEpochRecord(stripRepoEnvelope(pds.state.record ?? {}), hash),
-    ).toBeNull();
+    expect(validateCommerceEpochRecord(stripRepoEnvelope(pds.state.record ?? {}), hash)).toBeNull();
     expect(validateCommerceEpochRecord(pds.state.record, hash)).not.toBeNull();
   });
 

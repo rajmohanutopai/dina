@@ -29,7 +29,7 @@ import {
   PAIRING_SECRET_BYTES,
 } from '../constants';
 import { isDeviceActive, registerDevice as persistDevice, revokeDevice } from '../devices/registry';
-import { multibaseToPublicKey , deriveDIDKey } from '../identity/did';
+import { multibaseToPublicKey, deriveDIDKey } from '../identity/did';
 import { getPluginInstallRepository } from '../plugins/registry';
 
 export interface PairingCode {
@@ -269,7 +269,9 @@ export function completePairing(
   // throws) or a registration failure is a client/transient error, not a code
   // guess — burning the code first permanently killed a legitimate code and
   // forced a full pairing restart. Consume it only once registration succeeds.
-  const pending = pendingCodes.get(code)!;
+  const pending = pendingCodes.get(code);
+  // isCodeValid() above returns false for an unknown code, so this holds.
+  if (pending === undefined) throw new Error('pairing: valid code has no pending entry');
 
   // Derive device DID from its public key.
   // PLG-28 #20: a MALFORMED key must count against the 3-attempt burn budget too.
@@ -312,13 +314,16 @@ export function completePairing(
     const nowMs = Date.now();
     let bound = false;
     try {
-      bound = installs !== null && installs.bindPendingDevice(pending.pluginInstallId, deviceDID, nowMs);
+      bound =
+        installs !== null && installs.bindPendingDevice(pending.pluginInstallId, deviceDID, nowMs);
     } catch (err) {
       // A storage fault (busy, I/O) is transient and not the runner's doing:
       // undo the registration so no unreferenced plugin device survives, keep
       // the code live so the same runner can retry, and surface the fault.
       revokeDevice(device.deviceId);
-      throw new Error(`pairing: runner bind failed: ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(
+        `pairing: runner bind failed: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
     // The pre-check above makes a refusal here a race (a rival code bound first
     // between the two calls). Undo the registration so the loser leaves no
@@ -336,13 +341,19 @@ export function completePairing(
     publicKeyMultibase,
     deviceId: device.deviceId,
     expiresAt: pending.expiresAt,
-    ...(pending.standardPersonas !== undefined ? { standardPersonas: pending.standardPersonas } : {}),
+    ...(pending.standardPersonas !== undefined
+      ? { standardPersonas: pending.standardPersonas }
+      : {}),
   });
 
+  const ownDID = nodeDID;
+  if (ownDID === null) throw new Error('pairing: node DID not set — call setNodeDID() at startup');
   return {
     deviceId: device.deviceId,
-    nodeDID: nodeDID!,
-    ...(pending.standardPersonas !== undefined ? { standardPersonas: [...pending.standardPersonas] } : {}),
+    nodeDID: ownDID,
+    ...(pending.standardPersonas !== undefined
+      ? { standardPersonas: [...pending.standardPersonas] }
+      : {}),
   };
 }
 
@@ -360,7 +371,9 @@ function repeatOfCompletedPairing(code: string, publicKeyMultibase: string): Pai
   return {
     deviceId: done.deviceId,
     nodeDID,
-    ...(done.standardPersonas !== undefined ? { standardPersonas: [...done.standardPersonas] } : {}),
+    ...(done.standardPersonas !== undefined
+      ? { standardPersonas: [...done.standardPersonas] }
+      : {}),
   };
 }
 
@@ -381,7 +394,11 @@ function runnerInstallRefusal(installId: string, deviceDid: string): string | nu
   ) {
     return 'plugin install request expired';
   }
-  if (install.deviceDid !== undefined && install.deviceDid !== '' && install.deviceDid !== deviceDid) {
+  if (
+    install.deviceDid !== undefined &&
+    install.deviceDid !== '' &&
+    install.deviceDid !== deviceDid
+  ) {
     return 'plugin install already bound to another runner';
   }
   return null;
@@ -529,7 +546,9 @@ export function deriveAlphanumericCode(secret: Uint8Array, n: number): string {
   const alphabet = PAIRING_CODE_ALPHABET;
   const out = new Array<string>(n);
   for (let i = 0; i < n; i++) {
-    out[i] = alphabet[hash[i] % alphabet.length]!;
+    const ch = alphabet[hash[i] % alphabet.length];
+    if (ch === undefined) throw new Error('deriveAlphanumericCode: alphabet index out of range');
+    out[i] = ch;
   }
   return out.join('');
 }

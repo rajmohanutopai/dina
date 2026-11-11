@@ -21,12 +21,7 @@ import {
   setEmbeddingLoader,
   resetOrchestratorState,
 } from '../../src/persona/orchestrator';
-import {
-  createPersona,
-  resetPersonaState,
-  isPersonaOpen,
-  getPersona,
-} from '../../src/persona/service';
+import { createPersona, resetPersonaState, isPersonaOpen } from '../../src/persona/service';
 
 const userSalt = new Uint8Array(16).fill(0xab);
 

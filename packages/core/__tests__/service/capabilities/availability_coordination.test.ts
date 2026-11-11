@@ -16,7 +16,10 @@ describe('availability_coordination — params', () => {
     expect(
       validateAvailabilityCoordinationParams({
         intent: 'find a time next week',
-        candidate_slots: [{ start: 'Tue 3pm' }, { start: 'Wed 10am', end: 'Wed 11am', note: 'after standup' }],
+        candidate_slots: [
+          { start: 'Tue 3pm' },
+          { start: 'Wed 10am', end: 'Wed 11am', note: 'after standup' },
+        ],
         constraints: 'mornings preferred',
       }),
     ).toBeNull();
@@ -65,7 +68,12 @@ describe('availability_coordination — result', () => {
 
   describe('household disclosures (GROUP_COORDINATION §6, rule 6)', () => {
     it('are optional and additive — a reply without them stays valid', () => {
-      expect(validateAvailabilityCoordinationResult({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] })).toBeNull();
+      expect(
+        validateAvailabilityCoordinationResult({
+          status: 'accepted',
+          accepted_slots: [{ start: 'Sat 26' }],
+        }),
+      ).toBeNull();
     });
 
     it('accept every kind, about the household', () => {
@@ -73,7 +81,9 @@ describe('availability_coordination — result', () => {
         expect(
           validateAvailabilityCoordinationResult({
             status: 'accepted',
-            disclosures: [{ kind, text: 'someone in the household is gluten-free', about: 'household' }],
+            disclosures: [
+              { kind, text: 'someone in the household is gluten-free', about: 'household' },
+            ],
           }),
         ).toBeNull();
       }
@@ -107,7 +117,9 @@ describe('availability_coordination — result', () => {
   });
 
   it('rejects a missing status (the only required field)', () => {
-    expect(validateAvailabilityCoordinationResult({ accepted_slots: [{ start: 'x' }] })).not.toBeNull();
+    expect(
+      validateAvailabilityCoordinationResult({ accepted_slots: [{ start: 'x' }] }),
+    ).not.toBeNull();
   });
 
   it('rejects an accepted_slot missing the required start (result-side slot validation)', () => {

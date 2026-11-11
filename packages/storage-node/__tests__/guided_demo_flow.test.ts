@@ -36,7 +36,10 @@ import { NodeSQLiteAdapter } from '../src/adapter';
 
 const KEY = '0'.repeat(64);
 const tmpDirs: string[] = [];
-function openAdapter(file: string, migrations: Parameters<typeof applyMigrations>[1]): NodeSQLiteAdapter {
+function openAdapter(
+  file: string,
+  migrations: Parameters<typeof applyMigrations>[1],
+): NodeSQLiteAdapter {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'gd-flow-'));
   tmpDirs.push(dir);
   const a = new NodeSQLiteAdapter({ path: path.join(dir, file), passphraseHex: KEY });

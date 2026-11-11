@@ -13,7 +13,11 @@ import React from 'react';
 
 import { resetNotifications } from '../../../../packages/brain/src/notifications/inbox';
 import NotificationsScreen from '../../app/notifications';
-import { resetInboxCoreClient, setInboxCoreClient, type InboxCoreClient } from '../../src/hooks/useServiceInbox';
+import {
+  resetInboxCoreClient,
+  setInboxCoreClient,
+  type InboxCoreClient,
+} from '../../src/hooks/useServiceInbox';
 
 import type { WorkflowTask } from '@dina/core';
 
@@ -53,8 +57,17 @@ const REVIEW = task(
   {
     type: 'disclosure_review',
     execution_task_id: 'exec-1',
-    context: { taskId: 'exec-1', fromDID: 'did:plc:mike', queryId: 'q-1', capability: 'availability_coordination', ttlSeconds: 120, serviceName: '' },
-    disclosures: [{ kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' }],
+    context: {
+      taskId: 'exec-1',
+      fromDID: 'did:plc:mike',
+      queryId: 'q-1',
+      capability: 'availability_coordination',
+      ttlSeconds: 120,
+      serviceName: '',
+    },
+    disclosures: [
+      { kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' },
+    ],
   },
   'Tell Mike about a household dietary need?',
 );
@@ -74,21 +87,47 @@ const PROPOSAL = task(
 );
 const CHECKOUT = task(
   'order-checkout-abc',
-  { type: 'order_checkout_link', attachment_digest: 'a'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', session_ref: 'cs_1', url: 'https://pay.example.com/s/cs_1', amount: { currency: 'INR', minor_units: '50000' } },
+  {
+    type: 'order_checkout_link',
+    attachment_digest: 'a'.repeat(64),
+    purchase_order_id: 'po-1',
+    supplier_did: 'did:plc:supplier5678',
+    provider: 'clover',
+    session_ref: 'cs_1',
+    url: 'https://pay.example.com/s/cs_1',
+    amount: { currency: 'INR', minor_units: '50000' },
+  },
   'Pay INR 500.00 for order po-1 through clover?',
 );
 const PAYMENT = task(
   'payment-evidence-def',
-  { type: 'payment_evidence_record', attachment_digest: 'b'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', provider_ref: 'ch_1', amount: { currency: 'INR', minor_units: '50000' } },
+  {
+    type: 'payment_evidence_record',
+    attachment_digest: 'b'.repeat(64),
+    purchase_order_id: 'po-1',
+    supplier_did: 'did:plc:supplier5678',
+    provider: 'clover',
+    provider_ref: 'ch_1',
+    amount: { currency: 'INR', minor_units: '50000' },
+  },
   'Record INR 500.00 as paid for order po-1? clover reports it captured.',
 );
 const INTENT = task(
   'intent-1',
-  { type: 'intent_validation', action: 'send_email', target: 'HR', agent_did: 'did:key:zAgentTest', risk_level: 'MODERATE' },
+  {
+    type: 'intent_validation',
+    action: 'send_email',
+    target: 'HR',
+    agent_did: 'did:key:zAgentTest',
+    risk_level: 'MODERATE',
+  },
   'intent intent-1',
 );
 
-function stubClient(pending: WorkflowTask[]): { client: InboxCoreClient; listCalls: { value: number } } {
+function stubClient(pending: WorkflowTask[]): {
+  client: InboxCoreClient;
+  listCalls: { value: number };
+} {
   const listCalls = { value: 0 };
   const client: InboxCoreClient = {
     async listWorkflowTasks(query) {
@@ -116,16 +155,20 @@ describe('approval inbox on the web page (decides through Brain)', () => {
     const screen = render(<NotificationsScreen />);
     await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
     fireEvent.press(screen.getByTestId('filter-needs_action'));
-    await waitFor(() => expect(screen.getByTestId('approvals-owner-surface-disclosure-review-exec-1')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('approvals-owner-surface-disclosure-review-exec-1')).toBeTruthy(),
+    );
     expect(screen.getByText('Share a household need?')).toBeTruthy();
     expect(screen.getByText('dietary: someone in the household is gluten-free')).toBeTruthy();
-    expect(screen.getByTestId('approvals-owner-surface-disclosure-review-exec-1').props.children).toBe(
-      "Approve or deny from your phone or Core's owner console.",
-    );
+    expect(
+      screen.getByTestId('approvals-owner-surface-disclosure-review-exec-1').props.children,
+    ).toBe("Approve or deny from your phone or Core's owner console.");
     expect(screen.queryByTestId('approvals-approve-disclosure-review-exec-1')).toBeNull();
     expect(screen.queryByTestId('approvals-deny-disclosure-review-exec-1')).toBeNull();
     // A connector's settings proposal is the owner's alone too (Core refuses Brain).
-    await waitFor(() => expect(screen.getByTestId('approvals-owner-surface-integration-settings-abc')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('approvals-owner-surface-integration-settings-abc')).toBeTruthy(),
+    );
     expect(screen.getByText('Apply a settings change?')).toBeTruthy();
     expect(screen.getByText('orderAcceptance: "auto"')).toBeTruthy();
     // The card names the device as the owner named it, beside its DID.
@@ -142,7 +185,9 @@ describe('approval inbox on the web page (decides through Brain)', () => {
     const screen = render(<NotificationsScreen />);
     await waitFor(() => expect(stub.listCalls.value).toBe(CALLS_PER_LOAD));
     fireEvent.press(screen.getByTestId('filter-needs_action'));
-    await waitFor(() => expect(screen.getByTestId('approvals-owner-surface-order-checkout-abc')).toBeTruthy());
+    await waitFor(() =>
+      expect(screen.getByTestId('approvals-owner-surface-order-checkout-abc')).toBeTruthy(),
+    );
     expect(screen.getByText('Open the payment link?')).toBeTruthy();
     expect(screen.getByTestId('approvals-open-link-order-checkout-abc')).toBeTruthy();
     expect(screen.queryByTestId('approvals-approve-order-checkout-abc')).toBeNull();

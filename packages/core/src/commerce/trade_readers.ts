@@ -67,7 +67,10 @@ export interface TradeRelationshipReaders {
 
 export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelationshipReaders {
   /** The (buyer, supplier) pairs an order of this relationship can have. */
-  const sides = (counterpartyDid: string, role?: TradeRole): { buyer: string; supplier: string }[] => {
+  const sides = (
+    counterpartyDid: string,
+    role?: TradeRole,
+  ): { buyer: string; supplier: string }[] => {
     const self = runtime.nodeDid();
     const asBuyer = { buyer: self, supplier: counterpartyDid };
     const asSupplier = { buyer: counterpartyDid, supplier: self };
@@ -110,10 +113,7 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
     }
     return null;
   };
-  const listAcceptedOrderIds = (
-    counterpartyDid: string,
-    role?: 'buyer' | 'supplier',
-  ): string[] => {
+  const listAcceptedOrderIds = (counterpartyDid: string, role?: 'buyer' | 'supplier'): string[] => {
     const ids = new Set<string>();
     const self = runtime.nodeDid();
     for (const buyerKey of [self, counterpartyDid]) {
@@ -154,7 +154,8 @@ export function tradeRelationshipReaders(runtime: CommerceRuntime): TradeRelatio
   const isOrderRejected = (counterpartyDid: string, purchaseOrderId: string): boolean => {
     // A buyer tracks the supplier's answer on its own order record; its
     // receipts retain accepted acknowledgements only.
-    if (runtime.buyerOrders.get(counterpartyDid, purchaseOrderId)?.state === 'rejected') return true;
+    if (runtime.buyerOrders.get(counterpartyDid, purchaseOrderId)?.state === 'rejected')
+      return true;
     let rejected = false;
     for (const { buyer, supplier } of sides(counterpartyDid)) {
       for (const receipt of runtime.receipts.listByOrder(buyer, purchaseOrderId)) {

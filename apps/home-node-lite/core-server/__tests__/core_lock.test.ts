@@ -171,5 +171,4 @@ describe('core.lock (item 2c)', () => {
       await fs.rm(base, { recursive: true, force: true });
     });
   });
-
 });

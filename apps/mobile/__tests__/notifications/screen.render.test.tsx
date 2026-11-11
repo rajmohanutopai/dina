@@ -70,8 +70,20 @@ describe('Notifications screen — render (5.67)', () => {
   });
 
   it('Unread filter hides read items', () => {
-    appendNotification({ id: 'r1', kind: 'reminder', title: 'still-unread', body: '', sourceId: '1' });
-    appendNotification({ id: 'r2', kind: 'reminder', title: 'already-read', body: '', sourceId: '2' });
+    appendNotification({
+      id: 'r1',
+      kind: 'reminder',
+      title: 'still-unread',
+      body: '',
+      sourceId: '1',
+    });
+    appendNotification({
+      id: 'r2',
+      kind: 'reminder',
+      title: 'already-read',
+      body: '',
+      sourceId: '2',
+    });
 
     const { getByTestId, queryByText } = render(<NotificationsScreen />);
     // Mark one read via a tap.

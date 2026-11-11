@@ -60,7 +60,9 @@ describe('local schemaHash ⇔ published schema_hash contract', () => {
 
   it('a params-only hash (the old form recipe) does NOT match the published hash', () => {
     const def = getCapability('appointment_availability');
-    const paramsOnly = bytesToHex(sha256(new TextEncoder().encode(JSON.stringify(def!.paramsSchema))));
+    const paramsOnly = bytesToHex(
+      sha256(new TextEncoder().encode(JSON.stringify(def!.paramsSchema))),
+    );
     const canonical = capabilitySchemaHash({
       params: def!.paramsSchema,
       result: def!.resultSchema,

@@ -154,7 +154,10 @@ function publicKeysEqual(a: Uint8Array, b: Uint8Array): boolean {
   if (a.byteLength !== b.byteLength) return false;
   let diff = 0;
   for (let i = 0; i < a.byteLength; i++) {
-    diff |= a[i]! ^ b[i]!;
+    const x = a[i];
+    const y = b[i];
+    if (x === undefined || y === undefined) throw new Error('publicKeysEqual: index out of range');
+    diff |= x ^ y;
   }
   return diff === 0;
 }

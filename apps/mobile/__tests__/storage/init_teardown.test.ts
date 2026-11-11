@@ -12,7 +12,6 @@
  */
 
 import { addMessage, getThread } from '../../../brain/src/chat/thread';
-import { kvGet, kvSet, setKVRepository } from '../../../core/src/kv/store';
 import {
   setChatMessageRepository,
   getChatMessageRepository,
@@ -24,6 +23,7 @@ import {
   setContactRepository,
   getContactRepository,
 } from '../../../core/src/contacts/repository';
+import { kvGet, kvSet, setKVRepository } from '../../../core/src/kv/store';
 import {
   setTopicRepository,
   getTopicRepository,

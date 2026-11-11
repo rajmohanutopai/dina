@@ -165,12 +165,13 @@ export async function sendServiceQuery(
 
   const dispatcher = dispatcherInstance;
   if (dispatcher === null) {
-    throw new ChatSendError('service-query dispatcher not wired — bring the node up before sending');
+    throw new ChatSendError(
+      'service-query dispatcher not wired — bring the node up before sending',
+    );
   }
 
   const offer = options.offer;
-  const serviceName =
-    options.serviceName ?? offer?.serviceName ?? cap;
+  const serviceName = options.serviceName ?? offer?.serviceName ?? cap;
 
   // TTL precedence: explicit override > the offer's `defaultTtlSeconds` (the
   // provider published it on the listing) > the orchestrator's capability

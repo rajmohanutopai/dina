@@ -51,11 +51,7 @@
  * extraction, not policy.
  */
 
-import type {
-  DietaryTag,
-  DeviceCompat,
-  UserPreferences,
-} from './user_preferences';
+import type { DietaryTag, DeviceCompat, UserPreferences } from './user_preferences';
 
 /**
  * Vault snapshot the inferer reads. Just the text fields it needs —
@@ -92,9 +88,7 @@ export interface InferenceContext {
  * Run inference. Returns a partial preferences shape — fields with
  * insufficient signal are omitted entirely.
  */
-export function inferPreferences(
-  ctx: InferenceContext,
-): Partial<UserPreferences> {
+export function inferPreferences(ctx: InferenceContext): Partial<UserPreferences> {
   // Build a mutable shape under a non-readonly type, then return as
   // the readonly Partial<UserPreferences>. The fields on
   // `UserPreferences` are `readonly`; assigning to them via index
@@ -196,10 +190,7 @@ const DIETARY_PATTERNS: readonly {
   },
   {
     tag: 'kosher',
-    patterns: [
-      /\b(?:i['’ ]?m|i am|i'm) kosher\b/i,
-      /\bi (?:eat|keep|follow) kosher\b/i,
-    ],
+    patterns: [/\b(?:i['’ ]?m|i am|i'm) kosher\b/i, /\bi (?:eat|keep|follow) kosher\b/i],
   },
   {
     tag: 'gluten-free',
@@ -250,4 +241,3 @@ function inferDietary(items: readonly VaultEvidence[]): DietaryTag[] {
   // hydrate path that compares "did anything change?").
   return Array.from(seen).sort();
 }
-

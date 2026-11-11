@@ -81,7 +81,11 @@ describe('reminder routes ⇄ CoreClient contract', () => {
   it('reminderComplete marks done (non-recurring → next null) and drops from pending', async () => {
     const t = build();
     const now = Date.now();
-    const r = await t.reminderCreate({ message: 'one-off', due_at: now - 1000, persona: 'general' });
+    const r = await t.reminderCreate({
+      message: 'one-off',
+      due_at: now - 1000,
+      persona: 'general',
+    });
     expect(await t.reminderListPending(now)).toHaveLength(1);
 
     const next = await t.reminderComplete(r.id);
@@ -117,7 +121,11 @@ describe('reminder routes ⇄ CoreClient contract', () => {
 
   it('reminderDelete removes the row', async () => {
     const t = build();
-    const r = await t.reminderCreate({ message: 'gone', due_at: Date.now() + 1000, persona: 'general' });
+    const r = await t.reminderCreate({
+      message: 'gone',
+      due_at: Date.now() + 1000,
+      persona: 'general',
+    });
     expect(await t.reminderDelete(r.id)).toBe(true);
     expect(await t.reminderListByPersona('general')).toHaveLength(0);
     // Idempotent-ish: deleting an unknown id returns false, no throw.

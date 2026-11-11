@@ -43,7 +43,6 @@ import type { A2ATaskRow, CancelState } from './store';
 export const GUARD_LEASE_MS = 3 * 60_000;
 export const GUARD_HELD_NOTICE_AFTER_MS = 2 * 60_000;
 
-
 export interface GuardWork {
   job_id: string;
   claim_id: string;
@@ -61,19 +60,48 @@ export interface GuardWork {
 export function claimNextGuardJob(runtime: A2ARuntime, leaseMs = GUARD_LEASE_MS): GuardWork | null {
   return runtime.store.transaction((): GuardWork | null => {
     const now = runtime.nowMs();
-    for (let job = runtime.store.nextClaimableGuardJob(now); job !== null; job = runtime.store.nextClaimableGuardJob(now)) {
+    for (
+      let job = runtime.store.nextClaimableGuardJob(now);
+      job !== null;
+      job = runtime.store.nextClaimableGuardJob(now)
+    ) {
       const op = runtime.store.getTask(job.operation_ref);
       const parsed = op?.result_quarantine != null ? parseStrictJson(op.result_quarantine) : null;
-      if (op === null || op.state !== 'quarantined' || parsed === null || !parsed.ok || op.quarantine_digest !== job.quarantine_digest) {
+      if (
+        op === null ||
+        op.state !== 'quarantined' ||
+        parsed === null ||
+        !parsed.ok ||
+        op.quarantine_digest !== job.quarantine_digest
+      ) {
         // Nothing releasable behind this job: close it, and its operation, so it is never handed out.
-        runtime.store.abandonGuardJob(job.job_id, JSON.stringify({ reason: 'quarantine_unreadable' }), now);
-        if (op !== null && runtime.store.updateTask(op.id, ['quarantined'], { state: 'blocked', reason_code: 'quarantine_unreadable' }, now)) {
+        runtime.store.abandonGuardJob(
+          job.job_id,
+          JSON.stringify({ reason: 'quarantine_unreadable' }),
+          now,
+        );
+        if (
+          op !== null &&
+          runtime.store.updateTask(
+            op.id,
+            ['quarantined'],
+            { state: 'blocked', reason_code: 'quarantine_unreadable' },
+            now,
+          )
+        ) {
           appendA2AOwnerEvent(runtime, op, A2A_RESULT_BLOCKED_EVENT);
         }
         continue;
       }
       const claimId = newA2AId();
-      if (!runtime.store.claimGuardJob(job.job_id, { state: job.state, claimId: job.claim_id }, claimId, now + leaseMs)) {
+      if (
+        !runtime.store.claimGuardJob(
+          job.job_id,
+          { state: job.state, claimId: job.claim_id },
+          claimId,
+          now + leaseMs,
+        )
+      ) {
         return null;
       }
       const agent = op.remote_agent_id === null ? null : runtime.store.getAgent(op.remote_agent_id);
@@ -85,7 +113,10 @@ export function claimNextGuardJob(runtime: A2ARuntime, leaseMs = GUARD_LEASE_MS)
         digest: job.quarantine_digest,
         operation_id: op.external_id,
         agent_name: agent?.name ?? '',
-        skill: agent === null ? skillId : (pinnedRemoteSkills(agent).find((s) => s.id === skillId)?.name ?? skillId),
+        skill:
+          agent === null
+            ? skillId
+            : (pinnedRemoteSkills(agent).find((s) => s.id === skillId)?.name ?? skillId),
         content: parsed.value,
       };
     }
@@ -95,7 +126,9 @@ export function claimNextGuardJob(runtime: A2ARuntime, leaseMs = GUARD_LEASE_MS)
 
 function parseSkill(op: A2ATaskRow): string {
   const parsed = op.consent_json === null ? null : parseStrictJson(op.consent_json);
-  return parsed?.ok === true && isPlainObject(parsed.value) && typeof parsed.value.skill === 'string'
+  return parsed?.ok === true &&
+    isPlainObject(parsed.value) &&
+    typeof parsed.value.skill === 'string'
     ? parsed.value.skill
     : '';
 }
@@ -121,30 +154,51 @@ export const GUARD_VERDICT_CODES: ReadonlySet<string> = new Set([
 
 export type GuardVerdictOutcome =
   | { ok: true; state: 'completed' | 'blocked' }
-  | { ok: false; reason: 'not_found' | 'bad_verdict' | 'digest_mismatch' | 'claim_lost' | 'operation_ended' };
+  | {
+      ok: false;
+      reason: 'not_found' | 'bad_verdict' | 'digest_mismatch' | 'claim_lost' | 'operation_ended';
+    };
 
-export function submitGuardVerdict(runtime: A2ARuntime, input: GuardVerdictInput): GuardVerdictOutcome {
-  if (input.verdict !== 'passed' && input.verdict !== 'blocked') return { ok: false, reason: 'bad_verdict' };
+export function submitGuardVerdict(
+  runtime: A2ARuntime,
+  input: GuardVerdictInput,
+): GuardVerdictOutcome {
+  if (input.verdict !== 'passed' && input.verdict !== 'blocked')
+    return { ok: false, reason: 'bad_verdict' };
   if (typeof input.code !== 'string' || !GUARD_VERDICT_CODES.has(input.code)) {
     return { ok: false, reason: 'bad_verdict' };
   }
-  if ((input.verdict === 'passed') !== (input.code === 'model_pass')) return { ok: false, reason: 'bad_verdict' };
+  if ((input.verdict === 'passed') !== (input.code === 'model_pass'))
+    return { ok: false, reason: 'bad_verdict' };
   const verdict = input.verdict;
   const code = input.code;
   return runtime.store.transaction((): GuardVerdictOutcome => {
     const job = runtime.store.getGuardJob(input.jobId);
     if (job === null) return { ok: false, reason: 'not_found' };
     if (input.digest !== job.quarantine_digest) return { ok: false, reason: 'digest_mismatch' };
-    if (job.state !== 'claimed' || job.claim_id !== input.claimId) return { ok: false, reason: 'claim_lost' };
+    if (job.state !== 'claimed' || job.claim_id !== input.claimId)
+      return { ok: false, reason: 'claim_lost' };
     const now = runtime.nowMs();
     const op = runtime.store.getTask(job.operation_ref);
-    if (op === null || op.state !== 'quarantined' || op.quarantine_digest !== job.quarantine_digest) {
+    if (
+      op === null ||
+      op.state !== 'quarantined' ||
+      op.quarantine_digest !== job.quarantine_digest
+    ) {
       // The operation stopped waiting (cancelled, or closed by the claim sweep): close the job, say nothing.
       runtime.store.abandonGuardJob(job.job_id, JSON.stringify({ reason: 'operation_ended' }), now);
       return { ok: false, reason: 'operation_ended' };
     }
     const note = a2aDisplayText(typeof input.note === 'string' ? input.note : '', 300);
-    if (!runtime.store.resolveGuardJob(job.job_id, input.claimId, verdict, JSON.stringify({ verdict, code, note }), now)) {
+    if (
+      !runtime.store.resolveGuardJob(
+        job.job_id,
+        input.claimId,
+        verdict,
+        JSON.stringify({ verdict, code, note }),
+        now,
+      )
+    ) {
       return { ok: false, reason: 'claim_lost' };
     }
     const moved =
@@ -152,13 +206,27 @@ export function submitGuardVerdict(runtime: A2ARuntime, input: GuardVerdictInput
         ? runtime.store.updateTask(
             op.id,
             ['quarantined'],
-            { state: 'completed', result_json: op.result_quarantine, result_quarantine: null, guard_receipt_id: job.job_id },
+            {
+              state: 'completed',
+              result_json: op.result_quarantine,
+              result_quarantine: null,
+              guard_receipt_id: job.job_id,
+            },
             now,
           )
-        : runtime.store.updateTask(op.id, ['quarantined'], { state: 'blocked', reason_code: `guard_blocked:${code}` }, now);
+        : runtime.store.updateTask(
+            op.id,
+            ['quarantined'],
+            { state: 'blocked', reason_code: `guard_blocked:${code}` },
+            now,
+          );
     // Read and written in this one transaction, so the move cannot miss; if it ever did, roll it all back.
     if (!moved) throw new Error('a2a guard verdict: operation moved inside its own transaction');
-    appendA2AOwnerEvent(runtime, op, verdict === 'passed' ? A2A_RESULT_RELEASED_EVENT : A2A_RESULT_BLOCKED_EVENT);
+    appendA2AOwnerEvent(
+      runtime,
+      op,
+      verdict === 'passed' ? A2A_RESULT_RELEASED_EVENT : A2A_RESULT_BLOCKED_EVENT,
+    );
     return { ok: true, state: verdict === 'passed' ? 'completed' : 'blocked' };
   });
 }
@@ -197,11 +265,15 @@ export interface OutboundOperationView {
   updated_at: number;
 }
 
-export function outboundOperationView(runtime: A2ARuntime, operationId: string): OutboundOperationView | null {
+export function outboundOperationView(
+  runtime: A2ARuntime,
+  operationId: string,
+): OutboundOperationView | null {
   const op = runtime.store.getTaskByExternal('outbound', 'owner', operationId);
   if (op === null) return null;
   const agent = op.remote_agent_id === null ? null : runtime.store.getAgent(op.remote_agent_id);
-  const released = op.state === 'completed' && op.result_json !== null ? parseStrictJson(op.result_json) : null;
+  const released =
+    op.state === 'completed' && op.result_json !== null ? parseStrictJson(op.result_json) : null;
   return {
     operation_id: op.external_id,
     state: op.state,
@@ -216,4 +288,3 @@ export function outboundOperationView(runtime: A2ARuntime, operationId: string):
     updated_at: op.status_updated_at,
   };
 }
-

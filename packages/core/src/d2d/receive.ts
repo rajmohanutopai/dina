@@ -26,7 +26,7 @@ export interface ReceiveResult {
 }
 
 /** Known trust levels that allow normal processing. */
-const TRUSTED_LEVELS = new Set(['trusted', 'verified', 'contact_ring1', 'contact_ring2']);
+const _TRUSTED_LEVELS = new Set(['trusted', 'verified', 'contact_ring1', 'contact_ring2']);
 
 /** Trust levels that trigger quarantine. */
 const QUARANTINE_LEVELS = new Set(['unknown']);

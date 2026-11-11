@@ -38,13 +38,13 @@ scenarios use the testID verbatim (e.g.
 ```ts
 // In a Claude prompt running against the web driver:
 
-await tabs_create_mcp()
-await navigate({ url: 'http://127.0.0.1:18290/' })
-await computer({ action: 'screenshot' })           // proof of state
-await read_page({ filter: 'interactive' })         // find testIDs
-await computer({ action: 'left_click', ref: 'ref_7' })
-await computer({ action: 'type', text: '/remember Emma loves dinosaurs' })
-await computer({ action: 'key', text: 'Enter' })
+await tabs_create_mcp();
+await navigate({ url: 'http://127.0.0.1:18290/' });
+await computer({ action: 'screenshot' }); // proof of state
+await read_page({ filter: 'interactive' }); // find testIDs
+await computer({ action: 'left_click', ref: 'ref_7' });
+await computer({ action: 'type', text: '/remember Emma loves dinosaurs' });
+await computer({ action: 'key', text: 'Enter' });
 ```
 
 ## iOS driver — `idb`

@@ -1,6 +1,6 @@
-import type { AgentFacadeContext } from '@dina/core';
-
 import { makeHttpServiceSearchHandler } from '../src/agent/http_service_search_handler';
+
+import type { AgentFacadeContext } from '@dina/core';
 
 const ctx: AgentFacadeContext = {
   agentDid: 'did:key:zAgent',
@@ -74,7 +74,9 @@ describe('Core-to-Brain service-search adapter', () => {
     const handler = makeHttpServiceSearchHandler({
       brainUrl: 'http://brain',
       timeoutMs: 1,
-      fetchImpl: jest.fn().mockRejectedValue(new Error('socket details')) as unknown as typeof fetch,
+      fetchImpl: jest
+        .fn()
+        .mockRejectedValue(new Error('socket details')) as unknown as typeof fetch,
     });
     expect(await handler(ctx)).toEqual({
       status: 503,

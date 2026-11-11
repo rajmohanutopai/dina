@@ -88,14 +88,23 @@ describe('validateTaxRegistrations', () => {
       'registrations',
     );
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({ refusal: 'unknown_registration_scheme', field: 'registrations[0]' });
+    expect(findings[0]).toMatchObject({
+      refusal: 'unknown_registration_scheme',
+      field: 'registrations[0]',
+    });
     expect(findings[0].detail).toContain('gstin');
   });
 
   it('refuses a malformed value WITHOUT echoing it — findings travel into logs and cards', () => {
-    const findings = validateTaxRegistrations([{ scheme: 'gstin', value: '27AAPFU0939F1ZW' }], 'registrations');
+    const findings = validateTaxRegistrations(
+      [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' }],
+      'registrations',
+    );
     expect(findings).toHaveLength(1);
-    expect(findings[0]).toMatchObject({ refusal: 'malformed_registration', field: 'registrations[0]' });
+    expect(findings[0]).toMatchObject({
+      refusal: 'malformed_registration',
+      field: 'registrations[0]',
+    });
     expect(findings[0].detail).not.toContain('27AAPFU0939F1ZW');
   });
 
@@ -125,7 +134,9 @@ describe('validateTaxRegistrations', () => {
       scheme: 'gstin' as const,
       value: GSTIN,
     }));
-    expect(validateTaxRegistrations(many, 'registrations').map((f) => f.refusal)).toContain('too_many_registrations');
+    expect(validateTaxRegistrations(many, 'registrations').map((f) => f.refusal)).toContain(
+      'too_many_registrations',
+    );
   });
 });
 
@@ -145,13 +156,24 @@ describe('the address a filing prints', () => {
       postalCode: '560001',
       country: 'IN',
     });
-    expect(normalisePostalAddress({ line1: 'x'.repeat(500), city: 'c', country: 'IN' }).line1).toHaveLength(120);
+    expect(
+      normalisePostalAddress({ line1: 'x'.repeat(500), city: 'c', country: 'IN' }).line1,
+    ).toHaveLength(120);
   });
 
   it('refuses only what would make a document wrong: no street, no city, no country code', () => {
-    expect(validatePostalAddress({ line1: '12 Nehru Road', city: 'Bengaluru', country: 'IN' }, 'address')).toEqual([]);
+    expect(
+      validatePostalAddress(
+        { line1: '12 Nehru Road', city: 'Bengaluru', country: 'IN' },
+        'address',
+      ),
+    ).toEqual([]);
     const findings = validatePostalAddress({ line1: '', city: '', country: 'India' }, 'address');
-    expect(findings.map((f) => f.field)).toEqual(['address.line1', 'address.city', 'address.country']);
+    expect(findings.map((f) => f.field)).toEqual([
+      'address.line1',
+      'address.city',
+      'address.country',
+    ]);
     expect(findings.every((f) => f.refusal === 'malformed_address')).toBe(true);
   });
 });

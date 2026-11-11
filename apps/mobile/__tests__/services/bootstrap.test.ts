@@ -22,7 +22,10 @@ import {
   handleChat,
 } from '../../../brain/src/chat/orchestrator';
 import { resetThreads, getThread } from '../../../brain/src/chat/thread';
-import { REVIEW_LAPSE_MARGIN_SEC, reviewTaskIdFor } from '../../../core/src/coordination/disclosure_egress';
+import {
+  REVIEW_LAPSE_MARGIN_SEC,
+  reviewTaskIdFor,
+} from '../../../core/src/coordination/disclosure_egress';
 import { clearSharingPolicies, setSharingPolicy } from '../../../core/src/gatekeeper/sharing';
 import { deriveLocalServiceIdentity } from '../../../core/src/identity/local_service_identity';
 import {
@@ -34,7 +37,10 @@ import {
   setReasoningContextRepository,
 } from '../../../core/src/reasoning/context_repository';
 import { getD2DSender } from '../../../core/src/server/routes/d2d_msg';
-import { getWorkflowRepository, InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
+import {
+  getWorkflowRepository,
+  InMemoryWorkflowRepository,
+} from '../../../core/src/workflow/repository';
 import { createNode, type CreateNodeOptions } from '../../src/services/bootstrap';
 
 import type { PDSSession } from '../../../brain/src/pds/account';
@@ -238,9 +244,8 @@ describe('createNode — handle shape', () => {
 
 describe('createNode — staging sweep (REQ-01)', () => {
   it('a started node returns a lapsed staging claim to the queue on its own timer', async () => {
-    const { ingest, stagingClaim, stagingGetItem, resetStagingState } = jest.requireActual<
-      typeof import('@dina/core')
-    >('@dina/core');
+    const { ingest, stagingClaim, stagingGetItem, resetStagingState } =
+      jest.requireActual<typeof import('@dina/core')>('@dina/core');
     resetStagingState();
     const sched = fakeScheduler();
     const node = await createNode(
@@ -524,7 +529,10 @@ describe('createNode — a lapsed disclosure review still answers (GROUP_COORDIN
       expect(sent[0].to).toBe('did:plc:mike');
       const body = sent[0].body as { query_id: string; result: Record<string, unknown> };
       expect(body.query_id).toBe('q-held');
-      expect(body.result).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 3 Oct 3pm' }] });
+      expect(body.result).toEqual({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 3 Oct 3pm' }],
+      });
       expect(JSON.stringify(sent[0].body)).not.toContain('gluten');
     } finally {
       clearSharingPolicies();
@@ -575,7 +583,9 @@ describe('createNode — onApproved wiring', () => {
     const listing: ServiceConfig = {
       isDiscoverable: true,
       name: 'Bus 42',
-      capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'review' } },
+      capabilities: {
+        eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'review' },
+      },
     };
     const node = await createNode(baseOptions({ coreClient: client, readConfig: () => listing }));
     // Core's ingress reads the card from the node's own workflow service, so
@@ -742,7 +752,9 @@ describe('createNode — a listing deleted before its unpublish landed (SERVICE-
     expect(pds.deleteRecordIdempotent.mock.calls.map((c) => c[1]).sort()).toEqual(['down', 'gone']);
     expect(await repo.listPendingUnpublish()).toEqual(['down']);
     // A delete on a running node: once it lands, nothing is owed for it.
-    const { clearServiceConfigDurable } = require('../../../../packages/core/src/service/service_config');
+    const {
+      clearServiceConfigDurable,
+    } = require('../../../../packages/core/src/service/service_config');
     await clearServiceConfigDurable('live');
     await new Promise((r) => setTimeout(r, 20));
     expect(pds.deleteRecordIdempotent.mock.calls.map((c) => c[1])).toContain('live');
@@ -771,7 +783,11 @@ describe('createNode — agenticAsk wiring', () => {
         };
       },
       async *stream() {
-        throw new Error('nope');
+        // Throws on the first `next()`, as a generator that never yields would.
+        const fail = (): never => {
+          throw new Error('nope');
+        };
+        yield fail();
       },
       async embed() {
         throw new Error('nope');
@@ -809,7 +825,11 @@ describe('createNode — agenticAsk wiring', () => {
         };
       },
       async *stream() {
-        throw new Error('nope');
+        // Throws on the first `next()`, as a generator that never yields would.
+        const fail = (): never => {
+          throw new Error('nope');
+        };
+        yield fail();
       },
       async embed() {
         throw new Error('nope');
@@ -945,7 +965,7 @@ describe('createNode — askCoordinator reconcile loop', () => {
 });
 
 describe('createNode — a stale dispose leaves the live node alone (PH-05)', () => {
-  it('A disposing after B started keeps B\'s senders, repositories and /service handler', async () => {
+  it("A disposing after B started keeps B's senders, repositories and /service handler", async () => {
     const opts = (did: string) =>
       baseOptions({
         did,

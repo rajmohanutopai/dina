@@ -8,8 +8,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { generateMnemonic, mnemonicToEntropy, serializeWrappedSeed, wrapSeed } from '@dina/core';
 import Fastify from 'fastify';
+
+import { generateMnemonic, mnemonicToEntropy, serializeWrappedSeed, wrapSeed } from '@dina/core';
 
 import { createGate, type CoreHandle, type GateEvent } from '../src/cell/gate';
 import { WRAPPED_SEED_NAME } from '../src/identity/master_seed';
@@ -38,7 +39,9 @@ it('setup ends locked, with the words and the mark, and unlock starts Core again
     app.post('/v1/owner/setup/owner-device', async () => ({ code: 'OWNERCODE' }));
     app.put('/v1/commerce/settings/buyer', async () => ({ ok: true }));
     app.post('/v1/commerce/install/begin', async () => ({ install_id: 'i', status: 'pending' }));
-    app.post('/v1/commerce/install/bind_reference_runner', async () => ({ device_did: 'did:key:z' }));
+    app.post('/v1/commerce/install/bind_reference_runner', async () => ({
+      device_did: 'did:key:z',
+    }));
     app.post('/v1/commerce/install/confirm', async (_q, reply) => {
       if (dies) {
         // The exit reaches the gate first, then the end of the handoff pipe.

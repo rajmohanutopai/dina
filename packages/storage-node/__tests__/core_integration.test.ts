@@ -49,7 +49,11 @@ function tempPath(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   }
 });
 
@@ -143,7 +147,10 @@ describe('core integration — PERSONA_MIGRATIONS against NodeSQLiteAdapter', ()
     try {
       applyMigrations(a, PERSONA_MIGRATIONS);
       const tables = a
-        .query<{ name: string; type: string }>(
+        .query<{
+          name: string;
+          type: string;
+        }>(
           "SELECT name, type FROM sqlite_master WHERE type IN ('table','virtual') OR name LIKE 'vault_items%'",
         )
         .map((r) => r.name);
@@ -233,7 +240,13 @@ describe('core integration — data_scope columns (guided demo)', () => {
     const a = openAdapter();
     try {
       applyMigrations(a, IDENTITY_MIGRATIONS);
-      for (const t of ['reminders', 'chat_messages', 'staging_inbox', 'people', 'person_surfaces']) {
+      for (const t of [
+        'reminders',
+        'chat_messages',
+        'staging_inbox',
+        'people',
+        'person_surfaces',
+      ]) {
         expect(columns(a, t)).toContain('data_scope');
       }
       // Infra / security tables must stay unscoped (design doc "Should Not Scope").
@@ -248,7 +261,9 @@ describe('core integration — data_scope columns (guided demo)', () => {
         expect(columns(a, t)).not.toContain('data_scope');
       }
       // Unspecified data_scope defaults to 'user'.
-      a.execute("INSERT INTO reminders (id, message, due_at, created_at) VALUES ('r1', 'hi', 0, 0)");
+      a.execute(
+        "INSERT INTO reminders (id, message, due_at, created_at) VALUES ('r1', 'hi', 0, 0)",
+      );
       const row = a.query<{ data_scope: string }>("SELECT data_scope FROM reminders WHERE id='r1'");
       expect(row[0]?.data_scope).toBe('user');
     } finally {
@@ -262,8 +277,12 @@ describe('core integration — data_scope columns (guided demo)', () => {
       applyMigrations(a, PERSONA_MIGRATIONS);
       expect(columns(a, 'vault_items')).toContain('data_scope');
       expect(columns(a, 'vault_item_subjects')).toContain('data_scope');
-      a.execute("INSERT INTO vault_items (id, timestamp, created_at, updated_at) VALUES ('v1', 0, 0, 0)");
-      const row = a.query<{ data_scope: string }>("SELECT data_scope FROM vault_items WHERE id='v1'");
+      a.execute(
+        "INSERT INTO vault_items (id, timestamp, created_at, updated_at) VALUES ('v1', 0, 0, 0)",
+      );
+      const row = a.query<{ data_scope: string }>(
+        "SELECT data_scope FROM vault_items WHERE id='v1'",
+      );
       expect(row[0]?.data_scope).toBe('user');
     } finally {
       a.close();

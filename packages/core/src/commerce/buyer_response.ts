@@ -522,7 +522,11 @@ function applyInboundStatus(args: {
       continue;
     }
     if (ingest.outcome === 'fork') {
-      recordProtocolFault(args.supplierDid, order, `status chain fork: ${ingest.detail ?? 'unknown'}`);
+      recordProtocolFault(
+        args.supplierDid,
+        order,
+        `status chain fork: ${ingest.detail ?? 'unknown'}`,
+      );
       return 'chain_fork';
     }
     if (ingest.outcome === 'not_our_order') {
@@ -572,11 +576,7 @@ function genesisEventOf(acknowledgement: OrderAcknowledgement | null): GenesisEv
  * against a busy row would hold that answer open. The chain itself already
  * refused to move, which is the part that protects the owner.
  */
-function recordProtocolFault(
-  supplierDid: string,
-  order: BuyerOrderRecord,
-  fault: string,
-): void {
+function recordProtocolFault(supplierDid: string, order: BuyerOrderRecord, fault: string): void {
   const runtime = getCommerceRuntime();
   if (runtime === null) return;
   runtime.buyerOrders.put(supplierDid, { ...order, protocolFault: fault });

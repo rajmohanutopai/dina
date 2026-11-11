@@ -25,7 +25,12 @@ function wireRuns(): RunService {
   const svc = new RunService({ repository: repo, nowMsFn: () => NOW });
   setRunService(svc);
   // The owner UI reaches runs ONLY through this owner-marked dispatch.
-  setOwnerDispatcher(inProcessOwnerDispatcher(createCoreRouter({ ownerCapability: 'test-owner-cap' }), 'test-owner-cap'));
+  setOwnerDispatcher(
+    inProcessOwnerDispatcher(
+      createCoreRouter({ ownerCapability: 'test-owner-cap' }),
+      'test-owner-cap',
+    ),
+  );
   return svc;
 }
 

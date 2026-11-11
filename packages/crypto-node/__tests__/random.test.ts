@@ -40,21 +40,15 @@ describe('NodeCryptoAdapter — randomBytes (task 3.28)', () => {
   });
 
   it('rejects non-integer counts', async () => {
-    await expect(adapter.randomBytes(1.5)).rejects.toThrow(
-      /must be a non-negative integer/,
-    );
+    await expect(adapter.randomBytes(1.5)).rejects.toThrow(/must be a non-negative integer/);
   });
 
   it('rejects negative counts', async () => {
-    await expect(adapter.randomBytes(-1)).rejects.toThrow(
-      /must be a non-negative integer/,
-    );
+    await expect(adapter.randomBytes(-1)).rejects.toThrow(/must be a non-negative integer/);
   });
 
   it('rejects NaN', async () => {
-    await expect(adapter.randomBytes(Number.NaN)).rejects.toThrow(
-      /must be a non-negative integer/,
-    );
+    await expect(adapter.randomBytes(Number.NaN)).rejects.toThrow(/must be a non-negative integer/);
   });
 
   it('output is a plain Uint8Array (not a Buffer)', async () => {

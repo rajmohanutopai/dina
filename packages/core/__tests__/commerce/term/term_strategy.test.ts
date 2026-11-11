@@ -64,9 +64,9 @@ import {
 
 import { STRATEGY_WAIT_MS, TERM_STRATEGY_CARD } from '../../../src/commerce/term/term_buyer';
 import { hash } from '../../../src/commerce/term/term_context';
-import { FIRST_OFFER_TURN } from '../../../src/commerce/term/term_seller';
-import { TERM_STRATEGY_QUESTION_CARD } from '../../../src/commerce/term/term_questions';
 import { SHELF_VENDOR_KIND } from '../../../src/commerce/term/term_model';
+import { TERM_STRATEGY_QUESTION_CARD } from '../../../src/commerce/term/term_questions';
+import { FIRST_OFFER_TURN } from '../../../src/commerce/term/term_seller';
 import { carriesWithheld, type StrategyMove } from '../../../src/commitment';
 import { assemble, type ValueEntry } from '../../../src/commitment/model_store';
 
@@ -650,13 +650,21 @@ describe('the store’s opening offer (§15 step 11)', () => {
     expect(JSON.stringify(brief)).not.toMatch(/250000|150000|180000|asking/);
     expect(carriesWithheld(brief)).toBe(false);
     expect(
-      store.engine.applyStrategyMove({ requestId, turn: FIRST_OFFER_TURN, move: propose(260_000n) }),
+      store.engine.applyStrategyMove({
+        requestId,
+        turn: FIRST_OFFER_TURN,
+        move: propose(260_000n),
+      }),
     ).toEqual({ outcome: 'answered' });
     expect(openings(store, requestId)).toEqual([260_000n]);
     expect(r.budget.left).toBe(9);
     // A replayed move changes nothing.
     expect(
-      store.engine.applyStrategyMove({ requestId, turn: FIRST_OFFER_TURN, move: propose(200_000n) }),
+      store.engine.applyStrategyMove({
+        requestId,
+        turn: FIRST_OFFER_TURN,
+        move: propose(200_000n),
+      }),
     ).toEqual({ outcome: 'already_applied' });
     expect(openings(store, requestId)).toEqual([260_000n]);
   });
@@ -737,7 +745,8 @@ describe('Brain asks the owner (§15 step 11)', () => {
     ...over,
   });
   const ask = (question: string): StrategyMove => ({ kind: 'ask_owner', question });
-  const questionCards = (node: Node) => node.cards.filter((c) => c.type === TERM_STRATEGY_QUESTION_CARD);
+  const questionCards = (node: Node) =>
+    node.cards.filter((c) => c.type === TERM_STRATEGY_QUESTION_CARD);
 
   it('G-22: the brand’s turn waits on the card; a yes goes back to Brain, whose proposal is the counter', () => {
     const r = rig();
@@ -749,7 +758,10 @@ describe('Brain asks the owner (§15 step 11)', () => {
     ).toEqual({ outcome: 'asked_owner' });
     const card = must(questionCards(brand)[0]);
     expect(card.description).toBe('Brain asks: May I offer ₹2,000 rent?');
-    expect(card.payload).toMatchObject({ question: 'May I offer ₹2,000 rent?', request_id: requestId });
+    expect(card.payload).toMatchObject({
+      question: 'May I offer ₹2,000 rent?',
+      request_id: requestId,
+    });
     expect(r.budget.left).toBe(10);
     // Waiting on the owner is not "no answer in time".
     fleet.advance(STRATEGY_WAIT_MS + 1);
@@ -759,12 +771,17 @@ describe('Brain asks the owner (§15 step 11)', () => {
     const again = must(r.briefs.at(-1));
     expect(again.ref).toEqual({ negotiationId: requestId, turn: 1 });
     expect(again.ownerAnswers).toEqual([{ question: 'May I offer ₹2,000 rent?', answer: 'yes' }]);
-    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n) })).toEqual({
-      outcome: 'sent',
-    });
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n) })).toEqual(
+      {
+        outcome: 'sent',
+      },
+    );
     expect(counters(brand, requestId).map((c) => c.targets.fee)).toEqual(['200000']);
     // A second answer to the same card changes nothing.
-    expect(brand.engine.decideCard(card.cardId, false)).toEqual({ ok: false, refusal: 'already_decided' });
+    expect(brand.engine.decideCard(card.cardId, false)).toEqual({
+      ok: false,
+      refusal: 'already_decided',
+    });
   });
 
   it('G-23: the store’s turn: a no goes back to Brain the same way', () => {
@@ -773,16 +790,22 @@ describe('Brain asks the owner (§15 step 11)', () => {
     withStrategy(store, r);
     openFixed(fleet, store, requestId, r);
     expect(
-      store.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Hold the rent this round?') }),
+      store.engine.applyStrategyMove({
+        requestId,
+        turn: 1,
+        move: ask('Hold the rent this round?'),
+      }),
     ).toEqual({ outcome: 'asked_owner' });
     const card = must(questionCards(store)[0]);
     expect(store.engine.decideCard(card.cardId, false)).toEqual({ ok: true });
     expect(must(r.briefs.at(-1)).ownerAnswers).toEqual([
       { question: 'Hold the rent this round?', answer: 'no' },
     ]);
-    expect(store.engine.applyStrategyMove({ requestId, turn: 1, move: propose(220_000n) })).toEqual({
-      outcome: 'answered',
-    });
+    expect(store.engine.applyStrategyMove({ requestId, turn: 1, move: propose(220_000n) })).toEqual(
+      {
+        outcome: 'answered',
+      },
+    );
   });
 
   it('G-24: a card left to lapse lets the fixed style play the turn', () => {
@@ -833,25 +856,41 @@ describe('Brain asks the owner (§15 step 11)', () => {
     const { brand, requestId } = setUp(fleet);
     withStrategy(brand, r);
     fleet.pump();
-    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go to ₹2,000?') })).toEqual({
+    expect(
+      brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go to ₹2,000?') }),
+    ).toEqual({
       outcome: 'asked_owner',
     });
     // The same commit again, or any other move, while the card waits.
-    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go to ₹2,000?') })).toEqual({
+    expect(
+      brand.engine.applyStrategyMove({ requestId, turn: 1, move: ask('Go to ₹2,000?') }),
+    ).toEqual({
       outcome: 'waiting_owner',
     });
-    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n) })).toEqual({
-      outcome: 'waiting_owner',
-    });
+    expect(brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n) })).toEqual(
+      {
+        outcome: 'waiting_owner',
+      },
+    );
     expect(counters(brand, requestId)).toEqual([]);
     brand.engine.decideCard(must(questionCards(brand)[0]).cardId, true);
     // The first task's move, from a brief with no answers, is stale now.
     expect(
-      brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n), answersSeen: 0 }),
+      brand.engine.applyStrategyMove({
+        requestId,
+        turn: 1,
+        move: propose(200_000n),
+        answersSeen: 0,
+      }),
     ).toEqual({ outcome: 'stale_move' });
     expect(counters(brand, requestId)).toEqual([]);
     expect(
-      brand.engine.applyStrategyMove({ requestId, turn: 1, move: propose(200_000n), answersSeen: 1 }),
+      brand.engine.applyStrategyMove({
+        requestId,
+        turn: 1,
+        move: propose(200_000n),
+        answersSeen: 1,
+      }),
     ).toEqual({ outcome: 'sent' });
   });
 
@@ -886,7 +925,11 @@ describe('Brain asks the owner (§15 step 11)', () => {
       // Five hours before the offer expires (days before the negotiation ends).
       h2.advance(Date.parse(head.valid_until) - 5 * 60 * 60 * 1000 - h2.nowMs);
       expect(
-        third.brand.engine.applyStrategyMove({ requestId: third.requestId, turn: 1, move: ask('Go higher?') }),
+        third.brand.engine.applyStrategyMove({
+          requestId: third.requestId,
+          turn: 1,
+          move: ask('Go higher?'),
+        }),
       ).toEqual({ outcome: 'asked_owner' });
       const lapse = must(questionCards(third.brand)[0]).expiresAtMs;
       expect(lapse).toBe(Date.parse(head.valid_until) - 30 * 60 * 1000);
@@ -901,7 +944,11 @@ describe('Brain asks the owner (§15 step 11)', () => {
       withStrategy(second.brand, near);
       g.pump();
       expect(
-        second.brand.engine.applyStrategyMove({ requestId: second.requestId, turn: 1, move: ask('Go higher?') }),
+        second.brand.engine.applyStrategyMove({
+          requestId: second.requestId,
+          turn: 1,
+          move: ask('Go higher?'),
+        }),
       ).toEqual({ outcome: 'fixed_style' });
     } finally {
       g.closeAll();

@@ -29,7 +29,9 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
 
     // NO badge — provider status is a toned keyValue instead.
     expect(kinds(spec)).not.toContain('badge');
-    const status = spec!.blocks.find((b: any) => b.kind === 'keyValue' && b.label === 'Status') as any;
+    const status = spec!.blocks.find(
+      (b: any) => b.kind === 'keyValue' && b.label === 'Status',
+    ) as any;
     expect(status.value).toBe('On route');
     expect(status.tone).toBe('positive');
 
@@ -63,10 +65,14 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
     expect((find(spec, 'title') as any).text).toBe("Dr Carl's Clinic");
     expect((find(spec, 'title') as any).icon).toBe('calendar');
     expect(kinds(spec)).not.toContain('badge');
-    const status = spec!.blocks.find((b: any) => b.kind === 'keyValue' && b.label === 'Status') as any;
+    const status = spec!.blocks.find(
+      (b: any) => b.kind === 'keyValue' && b.label === 'Status',
+    ) as any;
     expect(status.value).toBe('Confirmed');
     expect(status.tone).toBe('positive');
-    const kvLabels = spec!.blocks.filter((b: any) => b.kind === 'keyValue').map((b: any) => b.label);
+    const kvLabels = spec!.blocks
+      .filter((b: any) => b.kind === 'keyValue')
+      .map((b: any) => b.label);
     expect(kvLabels).toEqual(expect.arrayContaining(['Date', 'Time']));
     expect((find(spec, 'body') as any).text).toContain('insurance card');
   });
@@ -83,7 +89,11 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
         date: '2026-10-03',
         as_of: '2026-09-17',
         slots: [
-          { date: '2026-10-03', time: '15:00', note: 'Cake tasting; gluten-free tasting portions are kept on hand.' },
+          {
+            date: '2026-10-03',
+            time: '15:00',
+            note: 'Cake tasting; gluten-free tasting portions are kept on hand.',
+          },
           { date: '2026-10-03', time: '16:00' },
         ],
       },
@@ -91,7 +101,10 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
     const blocks: CardBlock[] = spec?.blocks ?? [];
     const list = blocks.find((b): b is ListBlock => b.kind === 'list');
     expect(list?.rows).toEqual([
-      { text: '15:00 · 2026-10-03', sub: 'Cake tasting; gluten-free tasting portions are kept on hand.' },
+      {
+        text: '15:00 · 2026-10-03',
+        sub: 'Cake tasting; gluten-free tasting portions are kept on hand.',
+      },
       { text: '16:00 · 2026-10-03' },
     ]);
     const section = blocks.find((b): b is SectionBlock => b.kind === 'section');
@@ -102,7 +115,10 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
   });
 
   it('a long list is capped with a count, arrays of scalars become rows, and an array of empty objects renders nothing', () => {
-    const many = Array.from({ length: 9 }, (_, i) => ({ name: `Option ${i + 1}`, detail: `d${i + 1}` }));
+    const many = Array.from({ length: 9 }, (_, i) => ({
+      name: `Option ${i + 1}`,
+      detail: `d${i + 1}`,
+    }));
     const spec = buildResultCardSpec({
       capability: 'price_check',
       serviceName: 'Shop',
@@ -128,7 +144,9 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
       serviceName: 'Clinic',
       result: { status: 'cancelled', note: 'Provider unavailable.' },
     });
-    const status = spec!.blocks.find((b: any) => b.kind === 'keyValue' && b.label === 'Status') as any;
+    const status = spec!.blocks.find(
+      (b: any) => b.kind === 'keyValue' && b.label === 'Status',
+    ) as any;
     expect(status.tone).toBe('critical');
   });
 
@@ -147,16 +165,18 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
     });
     expect((find(spec, 'title') as any).text).toBe('Organic Bananas (1 lb)');
     expect((find(spec, 'title') as any).icon).toBe('price');
-    const status = spec!.blocks.find((b: any) => b.kind === 'keyValue' && b.label === 'Status') as any;
+    const status = spec!.blocks.find(
+      (b: any) => b.kind === 'keyValue' && b.label === 'Status',
+    ) as any;
     expect(status.tone).toBe('positive');
     // money is currency-formatted ($0.79), with the currency folded into the
     // headline (NOT a separate "Currency" row).
     const stat = find(spec, 'stat') as any;
     expect(stat.value).toBe('$0.79');
     expect(stat.unit).toBeUndefined();
-    expect(
-      spec!.blocks.some((b: any) => b.kind === 'keyValue' && /currency/i.test(b.label)),
-    ).toBe(false);
+    expect(spec!.blocks.some((b: any) => b.kind === 'keyValue' && /currency/i.test(b.label))).toBe(
+      false,
+    );
     const link = find(spec, 'link') as any;
     expect(link.label).toBe('View item');
     expect(link.url).toBe('https://store.example.com/p/bananas');
@@ -278,7 +298,9 @@ describe('buildResultCardSpec — deterministic, capability-agnostic, no badges'
     });
     // "verified" lands as a Status keyValue value (provider data), NOT a badge.
     expect(kinds(spec)).not.toContain('badge');
-    const status = spec!.blocks.find((b: any) => b.kind === 'keyValue' && b.label === 'Status') as any;
+    const status = spec!.blocks.find(
+      (b: any) => b.kind === 'keyValue' && b.label === 'Status',
+    ) as any;
     expect(status.value).toBe('Verified');
   });
 });

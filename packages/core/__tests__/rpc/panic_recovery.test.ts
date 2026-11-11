@@ -62,7 +62,7 @@ describe('withPanicRecovery', () => {
 
   it('coerces non-Error throws into Error', async () => {
     const res = await withPanicRecovery(() => {
-      throw 'string rejection';  
+      throw 'string rejection';
     });
     expect(res.status).toBe(500);
     expect(decode(res.body).detail).toBe('string rejection');

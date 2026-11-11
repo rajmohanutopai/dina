@@ -24,9 +24,17 @@ import { clearSharingPolicies, setSharingPolicy } from '../../src/gatekeeper/sha
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerServiceRespondRoutes } from '../../src/server/routes/service_respond';
 import { registerWorkflowRoutes } from '../../src/server/routes/workflow';
-import { WorkflowTaskKind, WorkflowTaskPriority, WorkflowTaskState } from '../../src/workflow/domain';
+import {
+  WorkflowTaskKind,
+  WorkflowTaskPriority,
+  WorkflowTaskState,
+} from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, setWorkflowService, type ServiceQueryBridgeContext } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  setWorkflowService,
+  type ServiceQueryBridgeContext,
+} from '../../src/workflow/service';
 import { TaskExpirySweeper } from '../../src/workflow/task_expiry_sweeper';
 
 import type { SharingTier } from '../../src/gatekeeper/sharing';
@@ -78,7 +86,13 @@ function harness(): Harness {
 }
 
 /** The provider's execution task: created when the query arrived, with the requester's 120 s TTL. */
-function execTask(h: Harness, id = 'exec-1', capability?: string, arrivedAtMs = h.clock.now, ttlSeconds = 120): string {
+function execTask(
+  h: Harness,
+  id = 'exec-1',
+  capability?: string,
+  arrivedAtMs = h.clock.now,
+  ttlSeconds = 120,
+): string {
   h.repo.create({
     id,
     kind: WorkflowTaskKind.Delegation,
@@ -102,7 +116,11 @@ const flush = async (h: Harness): Promise<void> => {
   await h.service.flushBridgeInFlight();
 };
 
-const GLUTEN = { kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' };
+const GLUTEN = {
+  kind: 'dietary',
+  text: 'someone in the household is gluten-free',
+  about: 'household',
+};
 const STEP_FREE = { kind: 'accessibility', text: 'we need step-free access', about: 'household' };
 const CAN_DRIVE = { kind: 'transport', text: 'we can drive', about: 'household' };
 
@@ -121,7 +139,15 @@ describe('the tier decides whether a disclosure may leave (rule 5, first half)',
     h.tiers.set('health', 'none');
     h.tiers.set('general', 'summary');
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN, CAN_DRIVE],
+      }),
+      'ok',
+    );
     await flush(h);
     expect(h.sent).toHaveLength(1);
     expect(resultOf(h.sent[0])).toEqual({
@@ -134,9 +160,20 @@ describe('the tier decides whether a disclosure may leave (rule 5, first half)',
 
   it('no tier at all: nothing leaves, and the `disclosures` field is not even on the wire', async () => {
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN, CAN_DRIVE],
+      }),
+      'ok',
+    );
     await flush(h);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+    });
     const audit = queryAudit({ action: 'disclosure_gate_applied' });
     expect(audit).toHaveLength(1);
     expect(audit[0].detail).toContain('refused_by_tier=2');
@@ -151,7 +188,11 @@ describe('the tier decides whether a disclosure may leave (rule 5, first half)',
       id,
       JSON.stringify({
         status: 'accepted',
-        disclosures: [CAN_DRIVE, { kind: 'note', text: 'Lily gets shy', about: 'Lily' }, { kind: 'transport', text: '', about: 'household' }],
+        disclosures: [
+          CAN_DRIVE,
+          { kind: 'note', text: 'Lily gets shy', about: 'Lily' },
+          { kind: 'transport', text: '', about: 'household' },
+        ],
       }),
       'ok',
     );
@@ -166,13 +207,29 @@ describe('the tier decides whether a disclosure may leave (rule 5, first half)',
   it('`tierAdmitsDisclosure` reads summary and full as yes and everything else as no', () => {
     expect(tierAdmitsDisclosure('summary')).toBe(true);
     expect(tierAdmitsDisclosure('full')).toBe(true);
-    for (const t of ['none', 'locked', 'eta_only', 'free_busy', 'exact_location', undefined] as const) {
+    for (const t of [
+      'none',
+      'locked',
+      'eta_only',
+      'free_busy',
+      'exact_location',
+      undefined,
+    ] as const) {
       expect(tierAdmitsDisclosure(t)).toBe(false);
     }
   });
 
   it('`gateDisclosures` deduplicates by kind and text and reports review only for a health kind', () => {
-    const gated = gateDisclosures(ORGANIZER, [CAN_DRIVE, CAN_DRIVE, { ...GLUTEN, text: ' someone in the household is gluten-free ' }, GLUTEN], () => 'full');
+    const gated = gateDisclosures(
+      ORGANIZER,
+      [
+        CAN_DRIVE,
+        CAN_DRIVE,
+        { ...GLUTEN, text: ' someone in the household is gluten-free ' },
+        GLUTEN,
+      ],
+      () => 'full',
+    );
     expect(gated.kept).toEqual([CAN_DRIVE, GLUTEN]);
     expect(gated.reviewRequired).toBe(true);
     expect(gateDisclosures(ORGANIZER, [CAN_DRIVE], () => 'full').reviewRequired).toBe(false);
@@ -187,7 +244,15 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
 
   it('the reply is HELD: nothing is sent, a review card stands, and it lapses a margin before the query does', async () => {
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN, CAN_DRIVE],
+      }),
+      'ok',
+    );
     await flush(h);
     expect(h.sent).toHaveLength(0);
     const card = h.repo.getById(reviewTaskIdFor(id));
@@ -222,7 +287,9 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
     h.clock.now = T0 + 5_000; // the model took a while
     h.service.complete(id, JSON.stringify({ status: 'accepted', disclosures: [GLUTEN] }), 'ok');
     await flush(h);
-    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(arrival + 120 - REVIEW_LAPSE_MARGIN_SEC);
+    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(
+      arrival + 120 - REVIEW_LAPSE_MARGIN_SEC,
+    );
   });
 
   it('a manual claim’s lease on `expires_at` does not move the card’s deadline', async () => {
@@ -255,12 +322,23 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
       serviceName: 'x',
     });
     expect(gated).toBeNull();
-    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(Math.floor(T0 / 1000) + 120 - REVIEW_LAPSE_MARGIN_SEC);
+    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(
+      Math.floor(T0 / 1000) + 120 - REVIEW_LAPSE_MARGIN_SEC,
+    );
   });
 
   it('silence is a no: the card lapses through the sweeper and the availability leaves WITHOUT the fact, inside the window', async () => {
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], message: 'gluten-free please', disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        message: 'gluten-free please',
+        disclosures: [GLUTEN, CAN_DRIVE],
+      }),
+      'ok',
+    );
     await flush(h);
     expect(h.sent).toHaveLength(0);
     const sweeper = new TaskExpirySweeper({ repository: h.service, nowMsFn: () => h.clock.now });
@@ -274,8 +352,13 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
     await sweeper.runTick();
     await flush(h);
     expect(h.sent).toHaveLength(1);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
-    expect(Math.floor(h.clock.now / 1000)).toBeLessThan(h.repo.getById(id)?.expires_at ?? Math.floor(T0 / 1000) + 120);
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+    });
+    expect(Math.floor(h.clock.now / 1000)).toBeLessThan(
+      h.repo.getById(id)?.expires_at ?? Math.floor(T0 / 1000) + 120,
+    );
     expect(h.repo.getById(reviewTaskIdFor(id))?.status).toBe('failed');
     expect(queryAudit({ action: 'disclosure_review_lapsed' })).toHaveLength(1);
     // A late yes changes nothing: the card is gone and the requester heard once.
@@ -296,32 +379,65 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
   });
 
   it('too little time to ask: the owner is not held up and the availability answers without the fact', async () => {
-    const id = execTask(h, 'exec-short', undefined, T0, REVIEW_LAPSE_MARGIN_SEC + MIN_REVIEW_SEC - 1);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] }), 'ok');
+    const id = execTask(
+      h,
+      'exec-short',
+      undefined,
+      T0,
+      REVIEW_LAPSE_MARGIN_SEC + MIN_REVIEW_SEC - 1,
+    );
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN],
+      }),
+      'ok',
+    );
     await flush(h);
     expect(h.repo.getById(reviewTaskIdFor(id))).toBeNull();
     expect(h.sent).toHaveLength(1);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
-    expect(queryAudit({ action: 'disclosure_review_unavailable' }).map((e) => e.detail)).toEqual(['reason=no_time_to_ask']);
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+    });
+    expect(queryAudit({ action: 'disclosure_review_unavailable' }).map((e) => e.detail)).toEqual([
+      'reason=no_time_to_ask',
+    ]);
   });
 
   it('exactly enough time to ask: the card stands', async () => {
     const id = execTask(h, 'exec-just', undefined, T0, REVIEW_LAPSE_MARGIN_SEC + MIN_REVIEW_SEC);
     h.service.complete(id, JSON.stringify({ status: 'accepted', disclosures: [GLUTEN] }), 'ok');
     await flush(h);
-    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(Math.floor(T0 / 1000) + MIN_REVIEW_SEC);
+    expect(h.repo.getById(reviewTaskIdFor(id))?.expires_at).toBe(
+      Math.floor(T0 / 1000) + MIN_REVIEW_SEC,
+    );
     expect(h.sent).toHaveLength(0);
   });
 
   it('yes → the reply leaves WITH the disclosures, once, and the card completes', async () => {
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN],
+      }),
+      'ok',
+    );
     await flush(h);
     h.service.approve(reviewTaskIdFor(id));
     await flush(h);
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0].taskId).toBe(id);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+      disclosures: [GLUTEN],
+    });
     expect(h.repo.getById(reviewTaskIdFor(id))?.status).toBe('completed');
     expect(queryAudit({ action: 'disclosure_review_approved' })).toHaveLength(1);
     // Delivered: the bridge record is cleared, so a sweeper cannot send it twice.
@@ -330,12 +446,23 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
 
   it('no → the reply leaves WITHOUT the disclosures; the requester still hears the availability', async () => {
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN, CAN_DRIVE],
+      }),
+      'ok',
+    );
     await flush(h);
     h.service.cancel(reviewTaskIdFor(id), 'denied_by_operator');
     await flush(h);
     expect(h.sent).toHaveLength(1);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+    });
     expect(h.repo.getById(reviewTaskIdFor(id))?.status).toBe('cancelled');
     expect(queryAudit({ action: 'disclosure_review_denied' })).toHaveLength(1);
   });
@@ -351,7 +478,13 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
       status: WorkflowTaskState.PendingApproval,
       priority: WorkflowTaskPriority.Normal,
       description: 'x',
-      payload: JSON.stringify({ type: 'agent_persona_access', agent_did: 'did:plc:a', persona: 'general', mode: 'read', scope: 's' }),
+      payload: JSON.stringify({
+        type: 'agent_persona_access',
+        agent_did: 'did:plc:a',
+        persona: 'general',
+        mode: 'read',
+        scope: 's',
+      }),
       result_summary: '',
       policy: '',
       origin: 'agent',
@@ -391,7 +524,14 @@ describe('a health fact waits for the owner (rule 5, second half)', () => {
 
   it('the wrapper form `{status:"success", result}` is gated the same way', async () => {
     const id = execTask(h);
-    h.service.complete(id, JSON.stringify({ status: 'success', result: { status: 'accepted', disclosures: [CAN_DRIVE, GLUTEN] } }), 'ok');
+    h.service.complete(
+      id,
+      JSON.stringify({
+        status: 'success',
+        result: { status: 'accepted', disclosures: [CAN_DRIVE, GLUTEN] },
+      }),
+      'ok',
+    );
     await flush(h);
     expect(h.sent).toHaveLength(0);
     h.service.cancel(reviewTaskIdFor(id), 'no');
@@ -420,14 +560,22 @@ describe('which tier answers for a contact', () => {
     });
     const local: Harness = { service, repo, sent, tiers: new Map(), clock: { now: T0 } };
     const silent = execTask(local, 'exec-silent');
-    service.complete(silent, JSON.stringify({ status: 'accepted', disclosures: [CAN_DRIVE] }), 'ok');
+    service.complete(
+      silent,
+      JSON.stringify({ status: 'accepted', disclosures: [CAN_DRIVE] }),
+      'ok',
+    );
     await flush(local);
     expect(resultOf(sent[0])).toEqual({ status: 'accepted' });
 
     setSharingPolicy(ORGANIZER, 'general', 'summary');
     setSharingPolicy(ORGANIZER, 'health', 'none');
     const admitted = execTask(local, 'exec-admitted');
-    service.complete(admitted, JSON.stringify({ status: 'accepted', disclosures: [CAN_DRIVE, GLUTEN] }), 'ok');
+    service.complete(
+      admitted,
+      JSON.stringify({ status: 'accepted', disclosures: [CAN_DRIVE, GLUTEN] }),
+      'ok',
+    );
     await flush(local);
     expect(resultOf(sent[1])).toEqual({ status: 'accepted', disclosures: [CAN_DRIVE] });
     expect(repo.getById(reviewTaskIdFor(admitted))).toBeNull();
@@ -448,7 +596,10 @@ describe('a withheld disclosure takes the model’s prose with it (found on the 
     await flush(h);
     h.service.cancel(reviewTaskIdFor(id), 'no');
     await flush(h);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+    });
     expect(h.sent[0].resultJSON).not.toContain('gluten');
   });
 
@@ -468,7 +619,11 @@ describe('a withheld disclosure takes the model’s prose with it (found on the 
     const id = execTask(h);
     h.service.complete(id, JSON.stringify({ ...PROSE, disclosures: [GLUTEN, CAN_DRIVE] }), 'ok');
     await flush(h);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [CAN_DRIVE] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+      disclosures: [CAN_DRIVE],
+    });
   });
 
   it('a malformed disclosure (a named person) is enough to strip the prose that may name them too', async () => {
@@ -476,11 +631,19 @@ describe('a withheld disclosure takes the model’s prose with it (found on the 
     const id = execTask(h);
     h.service.complete(
       id,
-      JSON.stringify({ status: 'counter', counter_slots: [{ start: 'Sun 27', note: 'Lily prefers Sundays' }], message: 'Lily is shy', disclosures: [{ kind: 'note', text: 'Lily gets shy', about: 'Lily' }] }),
+      JSON.stringify({
+        status: 'counter',
+        counter_slots: [{ start: 'Sun 27', note: 'Lily prefers Sundays' }],
+        message: 'Lily is shy',
+        disclosures: [{ kind: 'note', text: 'Lily gets shy', about: 'Lily' }],
+      }),
       'ok',
     );
     await flush(h);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'counter', counter_slots: [{ start: 'Sun 27' }] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'counter',
+      counter_slots: [{ start: 'Sun 27' }],
+    });
     expect(h.sent[0].resultJSON).not.toContain('Lily');
   });
 
@@ -488,7 +651,11 @@ describe('a withheld disclosure takes the model’s prose with it (found on the 
     const id = execTask(h);
     h.service.complete(id, JSON.stringify({ ...PROSE, disclosures: [] }), 'ok');
     await flush(h);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: PROSE.accepted_slots, message: PROSE.message });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: PROSE.accepted_slots,
+      message: PROSE.message,
+    });
   });
 });
 
@@ -498,7 +665,11 @@ describe('the gate touches nothing else', () => {
     const eta = execTask(h, 'exec-eta', 'eta_query');
     h.service.complete(eta, JSON.stringify({ eta_min: 4, disclosures: [GLUTEN] }), 'ok');
     const plain = execTask(h, 'exec-plain');
-    h.service.complete(plain, JSON.stringify({ status: 'counter', counter_slots: [{ start: 'Sun 27' }] }), 'ok');
+    h.service.complete(
+      plain,
+      JSON.stringify({ status: 'counter', counter_slots: [{ start: 'Sun 27' }] }),
+      'ok',
+    );
     const failed = execTask(h, 'exec-failed');
     h.service.complete(failed, JSON.stringify({ status: 'error', error: 'no calendar' }), 'ok');
     await flush(h);
@@ -518,7 +689,9 @@ describe('the gate touches nothing else', () => {
     h.service.approve(reviewTaskIdFor(id));
     await flush(h);
     appendAudit('test', 'marker', 'x');
-    const everything = queryAudit().map((e) => `${e.action} ${e.resource} ${e.detail ?? ''}`).join('\n');
+    const everything = queryAudit()
+      .map((e) => `${e.action} ${e.resource} ${e.detail ?? ''}`)
+      .join('\n');
     expect(everything).toContain('disclosure_gate_applied');
     expect(everything).not.toContain('gluten');
   });
@@ -529,7 +702,12 @@ describe('the gate touches nothing else', () => {
 // provider answer leaves by
 // ---------------------------------------------------------------------------
 
-function routeReq(method: CoreRequest['method'], path: string, callerType: string | undefined, body?: unknown): CoreRequest {
+function routeReq(
+  method: CoreRequest['method'],
+  path: string,
+  callerType: string | undefined,
+  body?: unknown,
+): CoreRequest {
   return {
     method,
     path,
@@ -556,28 +734,54 @@ describe('the owner decides the card through the workflow routes; Brain cannot',
 
   it('a paired device approves → sent WITH; Brain is refused on approve and on cancel; a device cancel → sent WITHOUT', async () => {
     const first = execTask(h, 'exec-a');
-    h.service.complete(first, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] }), 'ok');
+    h.service.complete(
+      first,
+      JSON.stringify({
+        status: 'accepted',
+        accepted_slots: [{ start: 'Sat 26' }],
+        disclosures: [GLUTEN],
+      }),
+      'ok',
+    );
     await flush(h);
     const card = reviewTaskIdFor(first);
-    const brainApprove = await router.handle(routeReq('POST', `/v1/workflow/tasks/${card}/approve`, 'brain', {}));
+    const brainApprove = await router.handle(
+      routeReq('POST', `/v1/workflow/tasks/${card}/approve`, 'brain', {}),
+    );
     expect(brainApprove.status).toBe(403);
-    const brainCancel = await router.handle(routeReq('POST', `/v1/workflow/tasks/${card}/cancel`, 'brain', {}));
+    const brainCancel = await router.handle(
+      routeReq('POST', `/v1/workflow/tasks/${card}/cancel`, 'brain', {}),
+    );
     expect(brainCancel.status).toBe(403);
     await flush(h);
     expect(h.sent).toHaveLength(0);
     expect(h.repo.getById(card)?.status).toBe('pending_approval');
 
-    const approve = await router.handle(routeReq('POST', `/v1/workflow/tasks/${card}/approve`, 'device', {}));
+    const approve = await router.handle(
+      routeReq('POST', `/v1/workflow/tasks/${card}/approve`, 'device', {}),
+    );
     expect(approve.status).toBe(200);
     await flush(h);
     expect(h.sent).toHaveLength(1);
-    expect(resultOf(h.sent[0])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] });
+    expect(resultOf(h.sent[0])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+      disclosures: [GLUTEN],
+    });
     expect(h.repo.getById(card)?.status).toBe('completed');
 
     const second = execTask(h, 'exec-b');
-    h.service.complete(second, JSON.stringify({ status: 'accepted', disclosures: [STEP_FREE, CAN_DRIVE] }), 'ok');
+    h.service.complete(
+      second,
+      JSON.stringify({ status: 'accepted', disclosures: [STEP_FREE, CAN_DRIVE] }),
+      'ok',
+    );
     await flush(h);
-    const cancel = await router.handle(routeReq('POST', `/v1/workflow/tasks/${reviewTaskIdFor(second)}/cancel`, 'device', { reason: 'no' }));
+    const cancel = await router.handle(
+      routeReq('POST', `/v1/workflow/tasks/${reviewTaskIdFor(second)}/cancel`, 'device', {
+        reason: 'no',
+      }),
+    );
     expect(cancel.status).toBe(200);
     await flush(h);
     expect(h.sent).toHaveLength(2);
@@ -589,7 +793,15 @@ describe('the owner decides the card through the workflow routes; Brain cannot',
     registerWorkflowRoutes(console_, 'cap-owner');
     const withCard = async (id: string): Promise<string> => {
       const exec = execTask(h, id);
-      h.service.complete(exec, JSON.stringify({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] }), 'ok');
+      h.service.complete(
+        exec,
+        JSON.stringify({
+          status: 'accepted',
+          accepted_slots: [{ start: 'Sat 26' }],
+          disclosures: [GLUTEN],
+        }),
+        'ok',
+      );
       await flush(h);
       return reviewTaskIdFor(exec);
     };
@@ -600,24 +812,36 @@ describe('the owner decides the card through the workflow routes; Brain cannot',
     const card = await withCard('exec-console');
     // The stamp alone decides nothing; the wrong capability decides nothing.
     expect((await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`))).status).toBe(403);
-    expect((await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`, 'cap-other'))).status).toBe(403);
+    expect(
+      (await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`, 'cap-other'))).status,
+    ).toBe(403);
     await flush(h);
     expect(h.sent).toHaveLength(0);
     expect(h.repo.getById(card)?.status).toBe('pending_approval');
     // The exact capability approves: sent WITH the disclosure.
-    expect((await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`, 'cap-owner'))).status).toBe(200);
+    expect(
+      (await console_.handle(owner(`/v1/workflow/tasks/${card}/approve`, 'cap-owner'))).status,
+    ).toBe(200);
     await flush(h);
     expect(h.sent).toHaveLength(1);
     expect(resultOf(h.sent[0]).disclosures).toEqual([GLUTEN]);
     // And cancels: sent WITHOUT.
     const denied = await withCard('exec-console-deny');
-    expect((await console_.handle(owner(`/v1/workflow/tasks/${denied}/cancel`, 'cap-owner'))).status).toBe(200);
+    expect(
+      (await console_.handle(owner(`/v1/workflow/tasks/${denied}/cancel`, 'cap-owner'))).status,
+    ).toBe(200);
     await flush(h);
     expect(h.sent).toHaveLength(2);
-    expect(resultOf(h.sent[1])).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }] });
+    expect(resultOf(h.sent[1])).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+    });
     // A router registered with NO capability refuses every owner-marked decision, fail closed.
     const unconfigured = await withCard('exec-unconfigured');
-    expect((await router.handle(owner(`/v1/workflow/tasks/${unconfigured}/approve`, 'cap-owner'))).status).toBe(403);
+    expect(
+      (await router.handle(owner(`/v1/workflow/tasks/${unconfigured}/approve`, 'cap-owner')))
+        .status,
+    ).toBe(403);
     expect(h.repo.getById(unconfigured)?.status).toBe('pending_approval');
   });
 
@@ -630,7 +854,14 @@ describe('the owner decides the card through the workflow routes; Brain cannot',
         payload: JSON.stringify({
           type: 'disclosure_review',
           execution_task_id: 'exec-a',
-          context: { taskId: 'exec-a', fromDID: 'did:plc:attacker', queryId: 'q', capability: 'availability_coordination', ttlSeconds: 60, serviceName: '' },
+          context: {
+            taskId: 'exec-a',
+            fromDID: 'did:plc:attacker',
+            queryId: 'q',
+            capability: 'availability_coordination',
+            ttlSeconds: 60,
+            serviceName: '',
+          },
           disclosures: [],
         }),
         initial_state: 'pending_approval',
@@ -653,7 +884,14 @@ describe('the owner decides the card through the workflow routes; Brain cannot',
       payload: JSON.stringify({
         type: 'disclosure_review',
         execution_task_id: 'exec-c',
-        context: { taskId: 'exec-c', fromDID: 'did:plc:attacker', queryId: 'q-1', capability: 'availability_coordination', ttlSeconds: 120, serviceName: '' },
+        context: {
+          taskId: 'exec-c',
+          fromDID: 'did:plc:attacker',
+          queryId: 'q-1',
+          capability: 'availability_coordination',
+          ttlSeconds: 120,
+          serviceName: '',
+        },
         disclosures: [GLUTEN],
       }),
       result_summary: '',
@@ -700,7 +938,15 @@ describe('every door a provider answer leaves by is gated', () => {
       });
       h.repo.transition(id, WorkflowTaskState.Created, WorkflowTaskState.Running, h.clock.now);
       // A reasoning task completes only under its claim token (§9.1).
-      const landed = h.repo.completeWithDetails(id, '', 'composed', JSON.stringify(result), '{}', h.clock.now, 'claim-1');
+      const landed = h.repo.completeWithDetails(
+        id,
+        '',
+        'composed',
+        JSON.stringify(result),
+        '{}',
+        h.clock.now,
+        'claim-1',
+      );
       expect(landed).not.toBe(0);
       h.service.stageServiceQueryResponse({
         taskId: id,
@@ -750,7 +996,14 @@ describe('every door a provider answer leaves by is gated', () => {
     const held = await router.handle(
       routeReq('POST', '/v1/service/respond', 'device', {
         task_id: 'manual-health',
-        response_body: { status: 'success', result: { status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] } },
+        response_body: {
+          status: 'success',
+          result: {
+            status: 'accepted',
+            accepted_slots: [{ start: 'Sat 26' }],
+            disclosures: [GLUTEN],
+          },
+        },
       }),
     );
     expect(held.status).toBe(200);
@@ -763,18 +1016,31 @@ describe('every door a provider answer leaves by is gated', () => {
     await flush(h);
     expect(h.sent).toHaveLength(1);
     expect(h.sent[0].taskId).toBe('manual-health');
-    expect(resultOf(h.sent[0]).result).toEqual({ status: 'accepted', accepted_slots: [{ start: 'Sat 26' }], disclosures: [GLUTEN] });
+    expect(resultOf(h.sent[0]).result).toEqual({
+      status: 'accepted',
+      accepted_slots: [{ start: 'Sat 26' }],
+      disclosures: [GLUTEN],
+    });
 
     approval('manual-general');
     const sent = await router.handle(
       routeReq('POST', '/v1/service/respond', 'device', {
         task_id: 'manual-general',
-        response_body: { status: 'success', result: { status: 'accepted', disclosures: [CAN_DRIVE, { kind: 'note', text: 'x', about: 'Lily' }] } },
+        response_body: {
+          status: 'success',
+          result: {
+            status: 'accepted',
+            disclosures: [CAN_DRIVE, { kind: 'note', text: 'x', about: 'Lily' }],
+          },
+        },
       }),
     );
     expect(sent.status).toBe(200);
     expect(sent.body).toEqual({ status: 'sent', task_id: 'manual-general' });
     expect(sentBodies).toHaveLength(1);
-    expect((sentBodies[0] as { result: unknown }).result).toEqual({ status: 'accepted', disclosures: [CAN_DRIVE] });
+    expect((sentBodies[0] as { result: unknown }).result).toEqual({
+      status: 'accepted',
+      disclosures: [CAN_DRIVE],
+    });
   });
 });

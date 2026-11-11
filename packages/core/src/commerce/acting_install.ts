@@ -127,10 +127,7 @@ export function resolveActingInstall(
     };
   }
 
-  const held = Object.prototype.hasOwnProperty.call(
-    install.capabilityHashes,
-    claimed.capabilityId,
-  );
+  const held = Object.prototype.hasOwnProperty.call(install.capabilityHashes, claimed.capabilityId);
   if (!held) {
     return {
       ok: false,

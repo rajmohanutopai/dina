@@ -117,9 +117,7 @@ export type ServiceSearchOutcome =
   | { ok: false; reason: 'rejected_by_appview'; status: number; error: string }
   | { ok: false; reason: 'malformed_response'; detail: string };
 
-export type ServiceSearchFetchFn = (
-  input: ServiceSearchRequest,
-) => Promise<XrpcFetchResult>;
+export type ServiceSearchFetchFn = (input: ServiceSearchRequest) => Promise<XrpcFetchResult>;
 
 export interface ServiceSearchClientOptions {
   fetchFn: ServiceSearchFetchFn;
@@ -162,9 +160,7 @@ export function createServiceSearchClient(
   const fetchFn = opts.fetchFn;
   const onEvent = opts.onEvent;
 
-  return async function search(
-    input: ServiceSearchRequest,
-  ): Promise<ServiceSearchOutcome> {
+  return async function search(input: ServiceSearchRequest): Promise<ServiceSearchOutcome> {
     const validation = validateInput(input);
     if (validation !== null) {
       onEvent?.({
@@ -186,9 +182,10 @@ export function createServiceSearchClient(
     }
 
     if (result.status < 200 || result.status >= 300) {
-      const msg = typeof (result.body as { error?: unknown })?.error === 'string'
-        ? ((result.body as { error: string }).error)
-        : `status ${result.status}`;
+      const msg =
+        typeof (result.body as { error?: unknown })?.error === 'string'
+          ? (result.body as { error: string }).error
+          : `status ${result.status}`;
       onEvent?.({
         kind: 'rejected',
         reason: 'rejected_by_appview',
@@ -264,11 +261,7 @@ function validateInput(input: ServiceSearchRequest | null | undefined): string |
       return 'location.lng must be in [-180, 180]';
     }
     if (loc.radiusKm !== undefined) {
-      if (
-        typeof loc.radiusKm !== 'number' ||
-        !Number.isFinite(loc.radiusKm) ||
-        loc.radiusKm <= 0
-      ) {
+      if (typeof loc.radiusKm !== 'number' || !Number.isFinite(loc.radiusKm) || loc.radiusKm <= 0) {
         return 'location.radiusKm must be > 0';
       }
     }
@@ -298,8 +291,15 @@ function normaliseInput(input: ServiceSearchRequest): ServiceSearchRequest {
   };
 }
 
-interface ParseOk { ok: true; response: ServiceSearchResponse }
-interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
+interface ParseOk {
+  ok: true;
+  response: ServiceSearchResponse;
+}
+interface ParseFail {
+  ok: false;
+  reason: 'malformed_response';
+  detail: string;
+}
 
 function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
   if (!Array.isArray(body.services)) {
@@ -331,10 +331,8 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
     // capability OR a provider-owned namespaced custom (open vocabulary),
     // so accept both via the shared `classifyCapability` gate — the same
     // accept-set the request-side `isSearchableCapability` uses.
-    if (
-      typeof e.matchedCapability !== 'string' ||
-      !isSearchableCapability(e.matchedCapability)
-    ) continue;
+    if (typeof e.matchedCapability !== 'string' || !isSearchableCapability(e.matchedCapability))
+      continue;
     // `matchedSchema` is the capability schema entry the operator
     // published for this capability; `null` when none was published.
     // We accept either case but skip rows with malformed schemas so
@@ -349,12 +347,14 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
         schemaObj.params === null ||
         typeof schemaObj.params !== 'object' ||
         Array.isArray(schemaObj.params)
-      ) continue;
+      )
+        continue;
       if (
         schemaObj.result === null ||
         typeof schemaObj.result !== 'object' ||
         Array.isArray(schemaObj.result)
-      ) continue;
+      )
+        continue;
       schema = {
         description,
         params: schemaObj.params as Record<string, unknown>,
@@ -365,13 +365,9 @@ function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
       }
     }
     const distance =
-      typeof e.distanceKm === 'number' && Number.isFinite(e.distanceKm)
-        ? e.distanceKm
-        : -1;
+      typeof e.distanceKm === 'number' && Number.isFinite(e.distanceKm) ? e.distanceKm : -1;
     const trustScore =
-      typeof e.trustScore === 'number' && Number.isFinite(e.trustScore)
-        ? e.trustScore
-        : null;
+      typeof e.trustScore === 'number' && Number.isFinite(e.trustScore) ? e.trustScore : null;
     services.push({
       uri: e.uri,
       operatorDid: e.operatorDid,

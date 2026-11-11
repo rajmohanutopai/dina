@@ -20,18 +20,17 @@
  */
 
 import {
-  getCatalogCapability,
-  parseServiceListingUri,
-  parseServiceQueryExecutionPayload,
-  resolveCatalogCapability,
-} from '@dina/protocol';
-
-import {
   findCapabilityConfig,
   getCapability,
   lookupPublishedSchema,
   snapshotForCapability,
 } from '@dina/core';
+import {
+  getCatalogCapability,
+  parseServiceListingUri,
+  parseServiceQueryExecutionPayload,
+  resolveCatalogCapability,
+} from '@dina/protocol';
 
 import { answerCacheKey, getTier1AnswerCache, type Tier1AnswerCache } from './answer_cache';
 import { getVaultFactBuilder } from './capabilities/vault_facts';
@@ -88,7 +87,9 @@ export function makeTier1CapabilityRunner(options: Tier1RunnerOptions): LocalCap
     const serviceUri = payload.service_uri ?? '';
     const rkey = serviceUri === '' ? DEFAULT_RKEY : parseServiceListingUri(serviceUri)?.rkey;
     if (rkey === undefined) {
-      throw new Error(`tier1_runner: task ${task.id} names a listing that is not a listing reference`);
+      throw new Error(
+        `tier1_runner: task ${task.id} names a listing that is not a listing reference`,
+      );
     }
     const config = options.readConfig(rkey);
     const cap = findCapabilityConfig(config, capability);

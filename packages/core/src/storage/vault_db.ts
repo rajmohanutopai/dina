@@ -166,13 +166,13 @@ export class InMemoryVaultDB implements VaultDB {
     }
   }
 
-  query(sql: string, params?: unknown[]): VaultDBRow[] {
+  query(_sql: string, _params?: unknown[]): VaultDBRow[] {
     this.assertOpen();
     // In-memory: return empty for all queries (real data is in vault/crud.ts)
     return [];
   }
 
-  run(sql: string, params?: unknown[]): number {
+  run(sql: string, _params?: unknown[]): number {
     this.assertOpen();
     this.exec(sql);
     return 1;

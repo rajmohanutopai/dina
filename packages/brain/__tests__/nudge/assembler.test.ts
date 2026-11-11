@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 3.24
  */
 
-import { storeItem, clearVaults , DEFAULT_TEST_PERSONAS } from '@dina/core';
+import { storeItem, clearVaults, DEFAULT_TEST_PERSONAS } from '@dina/core';
 import { makeVaultItem, resetFactoryCounters } from '@dina/test-harness';
 
 import {

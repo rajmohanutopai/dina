@@ -272,7 +272,11 @@ export class PDSPublisher {
    * you need "already-gone" to succeed. With a precondition the PDS refuses
    * the delete (`InvalidSwap`, `casLost`) when it no longer holds.
    */
-  async deleteRecord(collection: string, rkey: string, options: DeleteRecordOptions = {}): Promise<void> {
+  async deleteRecord(
+    collection: string,
+    rkey: string,
+    options: DeleteRecordOptions = {},
+  ): Promise<void> {
     validateCollectionAndRkey(collection, rkey);
     const session = await this.ensureSession();
     await this.post(
@@ -303,7 +307,8 @@ export class PDSPublisher {
       throw await toPDSError(path, resp);
     }
     const body = await parseJSON(resp);
-    if (!body || typeof body !== 'object') throw new PDSPublisherError('getLatestCommit: malformed response', null);
+    if (!body || typeof body !== 'object')
+      throw new PDSPublisherError('getLatestCommit: malformed response', null);
     const r = body as Record<string, unknown>;
     if (typeof r.cid !== 'string' || r.cid === '' || typeof r.rev !== 'string' || r.rev === '') {
       throw new PDSPublisherError('getLatestCommit: response missing cid/rev', null);
@@ -329,22 +334,37 @@ export class PDSPublisher {
     for (;;) {
       const params = new URLSearchParams({ repo: session.did, collection, limit: '100' });
       if (cursor !== undefined) params.set('cursor', cursor);
-      const resp = await this.rawGet(`${this.pdsUrl}${path}?${params.toString()}`, session.accessJwt);
+      const resp = await this.rawGet(
+        `${this.pdsUrl}${path}?${params.toString()}`,
+        session.accessJwt,
+      );
       if (resp.status !== 200) {
         if (resp.status === 401) this.invalidateSession();
         throw await toPDSError(path, resp);
       }
       const body = await parseJSON(resp);
-      if (!body || typeof body !== 'object') throw new PDSPublisherError('listRecords: malformed response', null);
+      if (!body || typeof body !== 'object')
+        throw new PDSPublisherError('listRecords: malformed response', null);
       const r = body as { records?: unknown; cursor?: unknown };
-      if (!Array.isArray(r.records)) throw new PDSPublisherError('listRecords: response missing records', null);
+      if (!Array.isArray(r.records))
+        throw new PDSPublisherError('listRecords: response missing records', null);
       for (const rec of r.records) {
         const e = rec as { uri?: unknown; cid?: unknown; value?: unknown };
-        if (typeof e.uri !== 'string' || typeof e.cid !== 'string' || e.value === null || typeof e.value !== 'object') {
+        if (
+          typeof e.uri !== 'string' ||
+          typeof e.cid !== 'string' ||
+          e.value === null ||
+          typeof e.value !== 'object'
+        ) {
           throw new PDSPublisherError('listRecords: malformed record', null);
         }
-        out.push({ rkey: e.uri.slice(e.uri.lastIndexOf('/') + 1), cid: e.cid, value: e.value as Record<string, unknown> });
-        if (out.length > maxRecords) throw new PDSPublisherError(`listRecords: more than ${maxRecords} records`, null);
+        out.push({
+          rkey: e.uri.slice(e.uri.lastIndexOf('/') + 1),
+          cid: e.cid,
+          value: e.value as Record<string, unknown>,
+        });
+        if (out.length > maxRecords)
+          throw new PDSPublisherError(`listRecords: more than ${maxRecords} records`, null);
       }
       if (typeof r.cursor !== 'string' || r.cursor === '' || r.records.length === 0) return out;
       cursor = r.cursor;

@@ -28,7 +28,12 @@
  * across both surfaces.
  */
 
-import { trustBandFor, trustDisplayFor, type PeerlensBand, type TrustDisplay } from './score_helpers';
+import {
+  trustBandFor,
+  trustDisplayFor,
+  type PeerlensBand,
+  type TrustDisplay,
+} from './score_helpers';
 import {
   MIN_REVIEWS_FOR_NUMERIC,
   deriveCardSubtitle,
@@ -537,9 +542,7 @@ const FLAG_SCOPE_NOUN: Readonly<Record<FlagSummary['scope'], string>> = {
  * Pure helper — exported for tests + reuse if a card-side surface
  * eventually wants the same banner.
  */
-export function deriveFlagWarning(
-  summary: FlagSummary | null | undefined,
-): FlagWarning | null {
+export function deriveFlagWarning(summary: FlagSummary | null | undefined): FlagWarning | null {
   if (summary === null || summary === undefined) return null;
   const count = summary.contactsFlaggedCount;
   if (!Number.isFinite(count)) return null;
@@ -617,14 +620,11 @@ export function deriveAlternatives(
  * card's banding. Defensive null/non-finite handling lives here so
  * the helper itself stays honest about its accepted inputs.
  */
-function bandForScore(
-  score: number | null | undefined,
-): PeerlensBand {
+function bandForScore(score: number | null | undefined): PeerlensBand {
   if (score === null || score === undefined) return 'unrated';
   if (!Number.isFinite(score)) return 'unrated';
   return trustBandFor(score);
 }
-
 
 /**
  * **D4.** Normalise the wire's imported-source groups for rendering.

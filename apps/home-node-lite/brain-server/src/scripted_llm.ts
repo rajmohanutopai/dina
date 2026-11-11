@@ -40,11 +40,15 @@ export function loadScriptedRules(scriptFile: string | undefined): ScriptedRule[
   }
   const list = Array.isArray(parsed)
     ? parsed
-    : parsed !== null && typeof parsed === 'object' && Array.isArray((parsed as { rules?: unknown }).rules)
+    : parsed !== null &&
+        typeof parsed === 'object' &&
+        Array.isArray((parsed as { rules?: unknown }).rules)
       ? (parsed as { rules: unknown[] }).rules
       : null;
   if (list === null) {
-    throw new Error(`scripted LLM: "${scriptFile}" must be an array of rules or { "rules": [...] }`);
+    throw new Error(
+      `scripted LLM: "${scriptFile}" must be an array of rules or { "rules": [...] }`,
+    );
   }
   return list.map((r, i) => {
     if (r === null || typeof r !== 'object') {

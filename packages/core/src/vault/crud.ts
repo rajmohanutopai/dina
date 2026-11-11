@@ -212,12 +212,18 @@ export const OWNER_MEMORY_SOURCE_SET: ReadonlySet<string> = new Set(['user_remem
  */
 export function ownerMemoryKey(type: string, summary: string, body: string): string {
   const n = (s: string): string => s.normalize('NFC').trim().replace(/\s+/g, ' ');
-  return bytesToHex(sha256(new TextEncoder().encode(`${n(type)}\u0000${n(summary)}\u0000${n(body)}`)));
+  return bytesToHex(
+    sha256(new TextEncoder().encode(`${n(type)}\u0000${n(summary)}\u0000${n(body)}`)),
+  );
 }
 
 /** The key an item would carry, or null when it is not an owner memory. */
-function ownerMemoryKeyOf(item: Pick<VaultItem, 'source' | 'type' | 'summary' | 'body'>): string | null {
-  return OWNER_MEMORY_SOURCE_SET.has(item.source) ? ownerMemoryKey(item.type, item.summary, item.body) : null;
+function ownerMemoryKeyOf(
+  item: Pick<VaultItem, 'source' | 'type' | 'summary' | 'body'>,
+): string | null {
+  return OWNER_MEMORY_SOURCE_SET.has(item.source)
+    ? ownerMemoryKey(item.type, item.summary, item.body)
+    : null;
 }
 
 /** Result of a store: the id written, or the existing memory it repeated. */
@@ -373,7 +379,11 @@ export function getItemsForPerson(
 }
 
 /** Record a release of `items` (when the read is one) and hand them back. */
-function released<T extends VaultItem | null>(release: ReleaseContext | undefined, persona: string, items: T[]): T[] {
+function released<T extends VaultItem | null>(
+  release: ReleaseContext | undefined,
+  persona: string,
+  items: T[],
+): T[] {
   recordVaultRelease(
     release,
     persona,
@@ -382,7 +392,11 @@ function released<T extends VaultItem | null>(release: ReleaseContext | undefine
   return items;
 }
 
-export function queryVault(persona: string, query: SearchQuery, release?: ReleaseContext): VaultItem[] {
+export function queryVault(
+  persona: string,
+  query: SearchQuery,
+  release?: ReleaseContext,
+): VaultItem[] {
   return released(release, persona, searchVault(persona, query));
 }
 
@@ -410,7 +424,8 @@ function queryFTS(persona: string, query: SearchQuery): VaultItem[] {
   const repo = requireRepo(persona);
   // In-memory repo accepts free text; SQLite repo needs FTS5 MATCH
   // syntax (quoted tokens). Sanitise once — safe for both.
-  const match = query.wordForms === true ? recallFTSMatch(query.text) : sanitizeFTSMatch(query.text);
+  const match =
+    query.wordForms === true ? recallFTSMatch(query.text) : sanitizeFTSMatch(query.text);
   if (match === '') return [];
   const raw = repo.queryFTSSync(match, limit + (query.offset ?? 0));
   const filtered = raw.filter((item) => isSearchable(item) && passesFilters(item, query));
@@ -536,7 +551,8 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
   // REAL_LIFE_FIXES_2 §9.2: the keyword half is the FTS5 query itself
   // (sanitised, word forms for recall), scored by rank, not a raw substring
   // count over unsanitised words.
-  const match = query.wordForms === true ? recallFTSMatch(query.text) : sanitizeFTSMatch(query.text);
+  const match =
+    query.wordForms === true ? recallFTSMatch(query.text) : sanitizeFTSMatch(query.text);
   const hasEmbedding = query.embedding && query.embedding.length > 0;
 
   // If no text AND no embedding, nothing to search
@@ -553,7 +569,9 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
 
   // HNSW path: get semantic scores from index (O(log n))
   if (useHNSW) {
-    const hnswResults = searchIndex(persona, query.embedding!, limit * 3);
+    const queryEmbedding = query.embedding;
+    if (!queryEmbedding) throw new Error('queryHybrid: semantic search without a query embedding');
+    const hnswResults = searchIndex(persona, queryEmbedding, limit * 3);
     for (const r of hnswResults) {
       const similarity = 1 - r.distance; // convert distance to similarity
       if (similarity > 0) {
@@ -574,7 +592,9 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
       .map((t) => t.replace(/["*]/g, '').toLowerCase())
       .filter((t) => t !== '');
     for (const item of ranked) {
-      const text = [item.summary, item.body, item.content_l0, item.content_l1].join(' ').toLowerCase();
+      const text = [item.summary, item.body, item.content_l0, item.content_l1]
+        .join(' ')
+        .toLowerCase();
       const s = Math.max(1, terms.filter((t) => text.includes(t)).length);
       ftsScores.set(item.id, s);
       if (s > maxFts) maxFts = s;
@@ -587,7 +607,10 @@ function queryHybrid(persona: string, query: SearchQuery): VaultItem[] {
 
     // Semantic score (brute-force per-item, used when HNSW is not available)
     if (!useHNSW && hasEmbedding && item.embedding && item.embedding.length > 0) {
-      const semScore = cosineSimilarity(query.embedding!, item.embedding);
+      const queryEmbedding = query.embedding;
+      if (!queryEmbedding)
+        throw new Error('queryHybrid: semantic search without a query embedding');
+      const semScore = cosineSimilarity(queryEmbedding, item.embedding);
       if (semScore > 0) {
         semanticScores.set(item.id, semScore);
         if (semScore > maxSemantic) maxSemantic = semScore;
@@ -706,7 +729,11 @@ function toFloat32(v: Float32Array | Uint8Array): Float32Array {
  * invisible to callers — only query/search results are filtered by
  * retrieval_policy, but getItem filters only by deleted flag.
  */
-export function getItem(persona: string, itemId: string, release?: ReleaseContext): VaultItem | null {
+export function getItem(
+  persona: string,
+  itemId: string,
+  release?: ReleaseContext,
+): VaultItem | null {
   return released(release, persona, [requireRepo(persona).getItemSync(itemId)])[0] ?? null;
 }
 
@@ -806,11 +833,7 @@ function recentItems(persona: string, limit: number, type?: string): VaultItem[]
  * sorted by created_at ascending (oldest first — process in order).
  * Used by the enrichment batch sweep to find pending/failed items.
  */
-export function queryByEnrichmentStatus(
-  persona: string,
-  status: string,
-  limit = 50,
-): VaultItem[] {
+export function queryByEnrichmentStatus(persona: string, status: string, limit = 50): VaultItem[] {
   const results: VaultItem[] = [];
   for (const item of requireRepo(persona).valuesSync()) {
     if (item.deleted) continue;

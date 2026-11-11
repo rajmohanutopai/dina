@@ -96,7 +96,12 @@ export function checkRequestSignature(
     timely = false;
   }
   if (!timely) {
-    return { ok: false, did, rejectedAt: 'timestamp', reason: 'Timestamp outside ±5 minute window' };
+    return {
+      ok: false,
+      did,
+      rejectedAt: 'timestamp',
+      reason: 'Timestamp outside ±5 minute window',
+    };
   }
   // The resolver first (`did:plc` and other DIDs that do not carry their
   // key); then `did:key`, whose key is in the DID itself.
@@ -120,9 +125,25 @@ export function checkRequestSignature(
   try {
     verified =
       options.signedText === undefined
-        ? verifyRequest(req.method, req.path, req.query, timestamp, nonce, req.body, signature, publicKey)
+        ? verifyRequest(
+            req.method,
+            req.path,
+            req.query,
+            timestamp,
+            nonce,
+            req.body,
+            signature,
+            publicKey,
+          )
         : verifySignedText(
-            options.signedText({ method: req.method, path: req.path, query: req.query, timestamp, nonce, body: req.body }),
+            options.signedText({
+              method: req.method,
+              path: req.path,
+              query: req.query,
+              timestamp,
+              nonce,
+              body: req.body,
+            }),
             signature,
             publicKey,
           );
@@ -130,7 +151,12 @@ export function checkRequestSignature(
     verified = false;
   }
   if (!verified) {
-    return { ok: false, did, rejectedAt: 'signature', reason: 'Ed25519 signature verification failed' };
+    return {
+      ok: false,
+      did,
+      rejectedAt: 'signature',
+      reason: 'Ed25519 signature verification failed',
+    };
   }
   if (!options.nonces.check(nonce, timestamp, did)) {
     return { ok: false, did, rejectedAt: 'nonce', reason: 'Nonce already used (replay detected)' };
@@ -151,9 +177,11 @@ function isWithinAge(timestamp: string, maxAgeSeconds: number, now: number = Dat
  * Each handler refuses a second copy by its own id (the plan inbox keeps
  * batch ids for 3 days), since the 5-minute nonce cache cannot.
  */
-export const LONG_WINDOW_ROUTES: readonly { method: string; path: string; maxAgeSeconds: number }[] = [
-  { method: 'POST', path: '/v1/plan/inbox', maxAgeSeconds: 20 * 60 * 60 },
-];
+export const LONG_WINDOW_ROUTES: readonly {
+  method: string;
+  path: string;
+  maxAgeSeconds: number;
+}[] = [{ method: 'POST', path: '/v1/plan/inbox', maxAgeSeconds: 20 * 60 * 60 }];
 
 export function maxAgeForRoute(method: string, path: string): number | undefined {
   return LONG_WINDOW_ROUTES.find((r) => r.method === method.toUpperCase() && r.path === path)

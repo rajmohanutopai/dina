@@ -148,18 +148,29 @@ describe('minor 1.5: the exit right', () => {
   it('Q-53: the request asks for it only with the grant, from 1.5', () => {
     expect(
       validateQuoteRequest(
-        makeQuoteRequest({ protocol_version: '1.5', onward_sharing: grant, exit_if_run_fails: true }),
+        makeQuoteRequest({
+          protocol_version: '1.5',
+          onward_sharing: grant,
+          exit_if_run_fails: true,
+        }),
         hash,
       ),
     ).toBeNull();
     expect(
       validateQuoteRequest(
-        makeQuoteRequest({ protocol_version: '1.4', onward_sharing: grant, exit_if_run_fails: true }),
+        makeQuoteRequest({
+          protocol_version: '1.4',
+          onward_sharing: grant,
+          exit_if_run_fails: true,
+        }),
         hash,
       ),
     ).toMatch(/minor >= 1.5/);
     expect(
-      validateQuoteRequest(makeQuoteRequest({ protocol_version: '1.5', exit_if_run_fails: true }), hash),
+      validateQuoteRequest(
+        makeQuoteRequest({ protocol_version: '1.5', exit_if_run_fails: true }),
+        hash,
+      ),
     ).toMatch(/only with onward_sharing/);
     expect(
       validateQuoteRequest(

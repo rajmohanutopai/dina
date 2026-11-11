@@ -107,8 +107,8 @@ export async function expectAsyncThrows(
  * Assert that a Uint8Array is not all zeros (reject zero seed/key).
  */
 export function expectNotAllZero(bytes: Uint8Array): void {
-  for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] !== 0) return;
+  for (const byte of bytes) {
+    if (byte !== 0) return;
   }
   throw new Error(`Expected non-zero bytes, got all zeros (${bytes.length} bytes)`);
 }

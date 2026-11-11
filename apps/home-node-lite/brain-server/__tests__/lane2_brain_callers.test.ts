@@ -54,9 +54,17 @@ beforeAll(async () => {
   const coordinator = {
     handleAsk: async (input: { requesterDid: string }) => {
       asks.push({ requesterDid: input.requesterDid });
-      return { kind: 'fast_path' as const, status: 200 as const, body: { request_id: 'ask-1', status: 'complete' as const, answer: { text: 'ok' } } };
+      return {
+        kind: 'fast_path' as const,
+        status: 200 as const,
+        body: { request_id: 'ask-1', status: 'complete' as const, answer: { text: 'ok' } },
+      };
     },
-    handleStatus: async () => ({ kind: 'not_found' as const, status: 404 as const, body: { error: 'not found' } }),
+    handleStatus: async () => ({
+      kind: 'not_found' as const,
+      status: 404 as const,
+      body: { error: 'not found' },
+    }),
     gateway: {
       approve: async (id: string) => {
         decided.push(`approve:${id}`);
@@ -97,9 +105,21 @@ beforeEach(() => {
   decided.length = 0;
 });
 
-function signed(signer: { privateKey: Uint8Array; did: string }, method: string, url: string, body?: string) {
+function signed(
+  signer: { privateKey: Uint8Array; did: string },
+  method: string,
+  url: string,
+  body?: string,
+) {
   const [p, query = ''] = url.split('?');
-  const headers = signRequest(method, p ?? url, query, new TextEncoder().encode(body ?? ''), signer.privateKey, signer.did);
+  const headers = signRequest(
+    method,
+    p ?? url,
+    query,
+    new TextEncoder().encode(body ?? ''),
+    signer.privateKey,
+    signer.did,
+  );
   return booted.app.inject({
     method: method as 'GET',
     url,
@@ -135,18 +155,31 @@ describe('the gateway’s key opens no Brain route (design §4.1 compromise mode
   // Extra X-8
   it('a request signed with the gateway’s key gets 401 on every Brain route; Core’s own key is served', async () => {
     const routes = brainRoutes().filter((r) => r.url !== '/healthz' && r.url !== '/readyz');
-    for (const must of ['/api/v1/chat/a2a-result', '/api/v1/ask', '/api/v1/ask/x/approve', '/api/v1/ask/x/deny']) {
+    for (const must of [
+      '/api/v1/chat/a2a-result',
+      '/api/v1/ask',
+      '/api/v1/ask/x/approve',
+      '/api/v1/ask/x/deny',
+    ]) {
       expect(routes.map((r) => r.url)).toContain(must);
     }
     for (const route of routes) {
-      const body = route.method === 'GET' || route.method === 'DELETE' ? undefined : '{"text":"x","question":"q","requesterDid":"did:plc:x"}';
+      const body =
+        route.method === 'GET' || route.method === 'DELETE'
+          ? undefined
+          : '{"text":"x","question":"q","requesterDid":"did:plc:x"}';
       const res = await signed(GATEWAY, route.method, route.url, body);
       expect([route.method, route.url, res.statusCode]).toEqual([route.method, route.url, 401]);
     }
     expect(asks).toEqual([]);
     expect(decided).toEqual([]);
     // Control: Core's own key is a caller Brain serves.
-    const asked = await signed(CORE, 'POST', '/api/v1/ask', '{"question":"q","requesterDid":"did:key:z6MkAgent"}');
+    const asked = await signed(
+      CORE,
+      'POST',
+      '/api/v1/ask',
+      '{"question":"q","requesterDid":"did:key:z6MkAgent"}',
+    );
     expect(asked.statusCode).toBe(200);
   });
 });
@@ -154,25 +187,38 @@ describe('the gateway’s key opens no Brain route (design §4.1 compromise mode
 describe('who an ask is for comes from the verified caller (notes M2 preconditions)', () => {
   // Plan C232
   it('an owner device’s ask is the owner’s own, whatever its body names', async () => {
-    const res = await signed(OWNER_DEVICE, 'POST', '/api/v1/ask', '{"question":"q","requesterDid":"did:plc:somebody-else"}');
+    const res = await signed(
+      OWNER_DEVICE,
+      'POST',
+      '/api/v1/ask',
+      '{"question":"q","requesterDid":"did:plc:somebody-else"}',
+    );
     expect(res.statusCode).toBe(200);
     expect(asks).toEqual([{ requesterDid: OWNER_DID }]);
   });
 
   // Plan C233
   it('Core’s forwarded ask keeps the requester Core names', async () => {
-    const res = await signed(CORE, 'POST', '/api/v1/ask', '{"question":"q","requesterDid":"did:key:z6MkPairedAgent"}');
+    const res = await signed(
+      CORE,
+      'POST',
+      '/api/v1/ask',
+      '{"question":"q","requesterDid":"did:key:z6MkPairedAgent"}',
+    );
     expect(res.statusCode).toBe(200);
     expect(asks).toEqual([{ requesterDid: 'did:key:z6MkPairedAgent' }]);
   });
 
   // Plan C234
-  it.each(['approve', 'deny'])('%s is an owner-device act: Core gets 403 and the coordinator is untouched', async (verb) => {
-    const asCore = await signed(CORE, 'POST', `/api/v1/ask/ask-1/${verb}`, '{}');
-    expect(asCore.statusCode).toBe(403);
-    expect(decided).toEqual([]);
-    const asOwner = await signed(OWNER_DEVICE, 'POST', `/api/v1/ask/ask-1/${verb}`, '{}');
-    expect(asOwner.statusCode).toBe(200);
-    expect(decided).toEqual([`${verb}:appr-1`]);
-  });
+  it.each(['approve', 'deny'])(
+    '%s is an owner-device act: Core gets 403 and the coordinator is untouched',
+    async (verb) => {
+      const asCore = await signed(CORE, 'POST', `/api/v1/ask/ask-1/${verb}`, '{}');
+      expect(asCore.statusCode).toBe(403);
+      expect(decided).toEqual([]);
+      const asOwner = await signed(OWNER_DEVICE, 'POST', `/api/v1/ask/ask-1/${verb}`, '{}');
+      expect(asOwner.statusCode).toBe(200);
+      expect(decided).toEqual([`${verb}:appr-1`]);
+    },
+  );
 });

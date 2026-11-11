@@ -14,22 +14,13 @@
  * lie that gets through is a duplicate order.
  */
 
-import {
-  BUYER_DID,
-  SUPPLIER_DID,
-  SUPPLIER_PUBLIC_KEY,
-  makeHeldEvidence,
-  realHeldEvidenceVerifier,
-  supplierKeyResolver,
-} from './helpers';
-
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
+import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
 import {
   defaultHeldEvidenceKeys,
   makeHeldEvidenceVerifier,
 } from '../../src/commerce/held_evidence_verifier';
-import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveRootSigningKey } from '../../src/crypto/slip0010';
 import {
@@ -39,6 +30,15 @@ import {
   resetRotationState,
   rotateKey,
 } from '../../src/identity/rotation';
+
+import {
+  BUYER_DID,
+  SUPPLIER_DID,
+  SUPPLIER_PUBLIC_KEY,
+  makeHeldEvidence,
+  realHeldEvidenceVerifier,
+  supplierKeyResolver,
+} from './helpers';
 
 const OTHER_KEY = new Uint8Array(32).fill(9);
 /** A second real keypair, standing in for the generation after a rotation. */
@@ -145,7 +145,10 @@ describe('held-evidence verifier (the cryptography)', () => {
  */
 describe('held-evidence verifier across a key rotation', () => {
   /** Two generations of one node's own key, newest first, as the resolver sees them. */
-  const ROTATED_KEYS = [{ publicKey: getPublicKey(NEW_GEN_KEY) }, { publicKey: SUPPLIER_PUBLIC_KEY }];
+  const ROTATED_KEYS = [
+    { publicKey: getPublicKey(NEW_GEN_KEY) },
+    { publicKey: SUPPLIER_PUBLIC_KEY },
+  ];
 
   it('accepts a signature made by a PREVIOUS generation of its own key', () => {
     const verifier = makeHeldEvidenceVerifier((did) => (did === SUPPLIER_DID ? ROTATED_KEYS : []));

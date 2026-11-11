@@ -32,7 +32,11 @@ import {
 } from '../workflow/domain';
 import { WorkflowConflictError, getWorkflowService } from '../workflow/service';
 
-import { getStagingRepository, type StagingRepository, type StagingSweepResult } from './repository';
+import {
+  getStagingRepository,
+  type StagingRepository,
+  type StagingSweepResult,
+} from './repository';
 import {
   CHAT_AUTO_SOURCE,
   OWNER_MEMORY_SOURCES,
@@ -298,10 +302,18 @@ function d2dStampOf(item: StagingItem): Record<string, string> | undefined {
   const raw = (item.data as Record<string, unknown> | undefined)?.core_trust;
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const r = raw as Record<string, unknown>;
-  if (typeof r.sender_trust !== 'string' || typeof r.source_type !== 'string' || typeof r.retrieval_policy !== 'string') {
+  if (
+    typeof r.sender_trust !== 'string' ||
+    typeof r.source_type !== 'string' ||
+    typeof r.retrieval_policy !== 'string'
+  ) {
     return undefined;
   }
-  return { sender_trust: r.sender_trust, source_type: r.source_type, retrieval_policy: r.retrieval_policy };
+  return {
+    sender_trust: r.sender_trust,
+    source_type: r.source_type,
+    retrieval_policy: r.retrieval_policy,
+  };
 }
 
 /**
@@ -337,7 +349,11 @@ function storeItemInScope(
   // receive time, never from Brain. A D2D item without one stays quarantined.
   const d2dTrust =
     stagingSource === 'd2d'
-      ? (d2dStamp ?? { sender_trust: 'unknown', source_type: 'unknown', retrieval_policy: 'quarantine' })
+      ? (d2dStamp ?? {
+          sender_trust: 'unknown',
+          source_type: 'unknown',
+          retrieval_policy: 'quarantine',
+        })
       : null;
   // REAL_LIFE_FIXES §2.4: whether this is the owner's own memory comes from
   // the staging row's source (Core-set), never from the Brain-supplied item.
@@ -350,7 +366,9 @@ function storeItemInScope(
     // in an open persona; Brain cannot point a new memory at one it cannot read.
     contradicts: checkedChangeLink(classifiedItem.contradicts),
     id: ownedId,
-    ...(OWNER_MEMORY_SOURCES.has(stagingSource) || claimsOwnerMemory ? { source: stagingSource } : {}),
+    ...(OWNER_MEMORY_SOURCES.has(stagingSource) || claimsOwnerMemory
+      ? { source: stagingSource }
+      : {}),
     ...(d2dTrust ?? {}),
   };
   const prev = currentDataScope();
@@ -367,7 +385,8 @@ function checkedChangeLink(raw: unknown): string {
   if (typeof raw !== 'string') return '';
   const m = /^(supersedes|conflicts):([A-Za-z0-9_.:-]{1,128})$/.exec(raw.trim());
   if (m === null) return '';
-  const id = m[2]!;
+  const id = m[2];
+  if (id === undefined) throw new Error('checkedChangeLink: regex matched without its id group');
   for (const p of listPersonas()) {
     if (!p.isOpen) continue;
     try {
@@ -750,7 +769,14 @@ export function resolve(
   let storedOpenPersona: string | null = null;
   if (personaOpen && classifiedItem) {
     try {
-      storeItemInScope(persona, classifiedItem, item.data_scope, `stg-${item.id}`, item.source, d2dStampOf(item));
+      storeItemInScope(
+        persona,
+        classifiedItem,
+        item.data_scope,
+        `stg-${item.id}`,
+        item.source,
+        d2dStampOf(item),
+      );
       storedOpenPersona = persona;
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
@@ -975,7 +1001,8 @@ export function resolveMultiDetailed(
   // Primary persona tracks on the original item. A `stored` row names a vault
   // that took it: when the routed primary failed, that is the first that stored.
   const primaryOpen = primary.personaOpen;
-  item.persona = primaryFailed && !primaryRetries ? (storedPersonas[0] ?? primary.persona) : primary.persona;
+  item.persona =
+    primaryFailed && !primaryRetries ? (storedPersonas[0] ?? primary.persona) : primary.persona;
   if (!primaryOpen) {
     item.approval_id = approvalIds.get(primary.persona);
   }
@@ -1225,7 +1252,14 @@ function drainRowsForPersona(persona: string): StagingItem[] {
       // storeItemInScope.
       if (item.classified_item) {
         try {
-          storeItemInScope(persona, item.classified_item, item.data_scope, `stg-${item.id}`, item.source, d2dStampOf(item));
+          storeItemInScope(
+            persona,
+            item.classified_item,
+            item.data_scope,
+            `stg-${item.id}`,
+            item.source,
+            d2dStampOf(item),
+          );
         } catch {
           continue; // leave pending_unlock; do NOT mark stored
         }
@@ -1304,7 +1338,14 @@ export function drainForApproval(approvalId: string): StagingApprovalActionResul
     // Core-owned → a classifier-supplied id can never dictate the key and
     // overwrite an unrelated vault row.
     try {
-      storeItemInScope(item.persona, item.classified_item, item.data_scope, `stg-${item.id}`, item.source, d2dStampOf(item));
+      storeItemInScope(
+        item.persona,
+        item.classified_item,
+        item.data_scope,
+        `stg-${item.id}`,
+        item.source,
+        d2dStampOf(item),
+      );
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);
       throw new Error(`staging: vault store failed for persona "${item.persona}": ${reason}`);
@@ -1566,13 +1607,22 @@ export function computeSourceHash(data: Record<string, unknown>): string {
  * came from (its vault id is `stg-<stagingId>`), and, for a person, rows not
  * yet stored whose text names them as a whole word.
  */
-export function stagingIdsForItems(itemIds: readonly string[], surfaces: readonly string[]): string[] {
+export function stagingIdsForItems(
+  itemIds: readonly string[],
+  surfaces: readonly string[],
+): string[] {
   const out = new Set<string>();
   for (const id of itemIds) if (id.startsWith('stg-')) out.add(id.slice(4));
   if (surfaces.length > 0) {
     const repo = getStagingRepository();
     const rows = repo !== null ? repo.listAll() : [...inbox.values()];
-    const names = surfaces.map((s) => new RegExp(`(^|[^\\p{L}\\p{N}])${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`, 'iu'));
+    const names = surfaces.map(
+      (s) =>
+        new RegExp(
+          `(^|[^\\p{L}\\p{N}])${s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}($|[^\\p{L}\\p{N}])`,
+          'iu',
+        ),
+    );
     for (const row of rows) {
       if (row.status === 'stored') continue;
       const text = JSON.stringify(row.data ?? {});
@@ -1595,4 +1645,3 @@ export function forgetStagingItems(ids: readonly string[]): number {
   }
   return n;
 }
-

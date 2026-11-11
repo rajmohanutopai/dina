@@ -109,26 +109,33 @@ export function createCoordinateGroupTool(options: CoordinateGroupToolOptions): 
     terminal: true,
     ownerNote: (result) => {
       const note = (result as { note?: unknown } | null)?.note;
-      return typeof note === 'string' && note !== '' ? note : "I've started the plan; the answers will appear on the plan card.";
+      return typeof note === 'string' && note !== ''
+        ? note
+        : "I've started the plan; the answers will appear on the plan card.";
     },
     description:
-      "Find a time that works for several of the user's contacts at once — \"plan X with A, B and C\". Name each guest as the user did (a family or a person from their contacts) and say whether they are required; give the concrete candidate slots (dates or times in words, e.g. \"Sat 26 Sep afternoon\") you derived from what the user said. Core asks every guest the same question privately, waits one shared window, and folds the answers; nobody sees anyone else's reply. Fire-and-forget and turn-ending: say in one line what you are asking BEFORE calling this; the replies land on a plan card in the chat, not here. Use once per request, never `query_service` for a guest. Ask the user when a name matches more than one contact.",
+      'Find a time that works for several of the user\'s contacts at once — "plan X with A, B and C". Name each guest as the user did (a family or a person from their contacts) and say whether they are required; give the concrete candidate slots (dates or times in words, e.g. "Sat 26 Sep afternoon") you derived from what the user said. Core asks every guest the same question privately, waits one shared window, and folds the answers; nobody sees anyone else\'s reply. Fire-and-forget and turn-ending: say in one line what you are asking BEFORE calling this; the replies land on a plan card in the chat, not here. Use once per request, never `query_service` for a guest. Ask the user when a name matches more than one contact.',
     parameters: {
       type: 'object',
       properties: {
         intent: {
           type: 'string',
-          description: "What the plan is, in the user's words (e.g. \"Emma's 8th birthday, a Saturday this month\").",
+          description:
+            'What the plan is, in the user\'s words (e.g. "Emma\'s 8th birthday, a Saturday this month").',
         },
         guests: {
           type: 'array',
           items: {
             type: 'object',
             properties: {
-              name: { type: 'string', description: 'The contact as the user named them, or their DID.' },
+              name: {
+                type: 'string',
+                description: 'The contact as the user named them, or their DID.',
+              },
               required: {
                 type: 'boolean',
-                description: 'True when the plan needs this guest (default); false for a guest who would be nice to have.',
+                description:
+                  'True when the plan needs this guest (default); false for a guest who would be nice to have.',
               },
             },
             required: ['name'],
@@ -157,7 +164,9 @@ export function createCoordinateGroupTool(options: CoordinateGroupToolOptions): 
     },
     async execute(args): Promise<CoordinateGroupOutcome> {
       if (opened) {
-        throw new Error('coordinate_group: a plan was already opened this request. Wait for its card; a new plan is a new request.');
+        throw new Error(
+          'coordinate_group: a plan was already opened this request. Wait for its card; a new plan is a new request.',
+        );
       }
       const intent = typeof args.intent === 'string' ? args.intent.trim() : '';
       if (intent === '') throw new Error('coordinate_group: intent is required');
@@ -189,8 +198,11 @@ export function createCoordinateGroupTool(options: CoordinateGroupToolOptions): 
       if (unknown.length > 0 || ambiguous.length > 0) {
         const parts: string[] = [];
         if (unknown.length > 0) parts.push(`not in the user's contacts: ${unknown.join(', ')}`);
-        if (ambiguous.length > 0) parts.push(`more than one contact matches: ${ambiguous.join('; ')}`);
-        throw new Error(`coordinate_group: ${parts.join('. ')}. Ask the user which contact they mean; do not guess.`);
+        if (ambiguous.length > 0)
+          parts.push(`more than one contact matches: ${ambiguous.join('; ')}`);
+        throw new Error(
+          `coordinate_group: ${parts.join('. ')}. Ask the user which contact they mean; do not guess.`,
+        );
       }
       const result = await options.core.openGroupPlan({
         intent,
@@ -211,7 +223,11 @@ export function createCoordinateGroupTool(options: CoordinateGroupToolOptions): 
             status: 'pending',
             plan_id: '',
             intent,
-            guests: guests.map((g) => ({ contact_did: g.contactDid, display_name: g.displayName, required: g.required })),
+            guests: guests.map((g) => ({
+              contact_did: g.contactDid,
+              display_name: g.displayName,
+              required: g.required,
+            })),
             candidates,
             window_closes_at: null,
             note: 'Dina opened the plan, but the reply could not be read. Do not ask again; the plan is in Activity.',
@@ -274,7 +290,12 @@ export interface GroupPlanHandoff {
 /** What the tool answers when it cannot name ONE plan: the handles, for the model to pick from. */
 export interface GroupPlanChoice {
   status: 'choose_plan';
-  plans: { plan_id: string; intent: string; state: GroupPlanWire['state']; chosen: GroupPlanWire['chosen'] }[];
+  plans: {
+    plan_id: string;
+    intent: string;
+    state: GroupPlanWire['state'];
+    chosen: GroupPlanWire['chosen'];
+  }[];
   note: string;
 }
 
@@ -289,13 +310,14 @@ export function createGroupPlanHandoffTool(options: GroupPlanHandoffToolOptions)
   return {
     name: 'group_plan_handoff',
     description:
-      "What a group plan Dina coordinated yields — whether a time is settled, the chosen slot, and the de-identified requirements: kinds, counts and needs (e.g. dietary ×1: gluten-free). Use it whenever the user asks about a plan with several contacts (\"is a time settled with X and Y?\", \"book the bakery for the party\"): pass `chosen` as the time and turn each requirement into a portion or a provision for the provider (\"one gluten-free portion\"). It never returns who is coming, and you must never tell a provider whose need it is or that it came from a guest. Call it WITHOUT plan_id when you do not have one — it lists the recent plans (id, intent, state) so you can pick, or picks for you when only one fits. `ready` is false until a slot is chosen — then say so and stop.",
+      'What a group plan Dina coordinated yields — whether a time is settled, the chosen slot, and the de-identified requirements: kinds, counts and needs (e.g. dietary ×1: gluten-free). Use it whenever the user asks about a plan with several contacts ("is a time settled with X and Y?", "book the bakery for the party"): pass `chosen` as the time and turn each requirement into a portion or a provision for the provider ("one gluten-free portion"). It never returns who is coming, and you must never tell a provider whose need it is or that it came from a guest. Call it WITHOUT plan_id when you do not have one — it lists the recent plans (id, intent, state) so you can pick, or picks for you when only one fits. `ready` is false until a slot is chosen — then say so and stop.',
     parameters: {
       type: 'object',
       properties: {
         plan_id: {
           type: 'string',
-          description: 'The plan id from the plan card or from coordinate_group. Omit to list the recent plans and pick.',
+          description:
+            'The plan id from the plan card or from coordinate_group. Omit to list the recent plans and pick.',
         },
       },
       required: [],
@@ -309,7 +331,9 @@ export function createGroupPlanHandoffTool(options: GroupPlanHandoffToolOptions)
         const handles = await options.core.listGroupPlanHandles();
         options.logger?.({ event: 'group_plan_handles_listed', count: handles.length });
         if (handles.length === 0) {
-          throw new Error('group_plan_handoff: Dina has coordinated no plan yet. Offer to plan one with coordinate_group.');
+          throw new Error(
+            'group_plan_handoff: Dina has coordinated no plan yet. Offer to plan one with coordinate_group.',
+          );
         }
         const bookable = handles.filter((h) => h.state === 'settled' || h.state === 'confirming');
         if (handles.length === 1) {
@@ -319,14 +343,20 @@ export function createGroupPlanHandoffTool(options: GroupPlanHandoffToolOptions)
         } else {
           return {
             status: 'choose_plan',
-            plans: handles.map((h) => ({ plan_id: h.plan_id, intent: h.intent, state: h.state, chosen: h.chosen })),
+            plans: handles.map((h) => ({
+              plan_id: h.plan_id,
+              intent: h.intent,
+              state: h.state,
+              chosen: h.chosen,
+            })),
             note: 'More than one plan could be meant. Pick the one the user means by its intent and call again with its plan_id; ask the user if it is not clear.',
           };
         }
       }
       const plan = await options.core.getGroupPlan(planId);
       if (plan === null) throw new Error(`group_plan_handoff: no plan ${planId}`);
-      const ready = plan.chosen !== null && (plan.state === 'settled' || plan.state === 'confirming');
+      const ready =
+        plan.chosen !== null && (plan.state === 'settled' || plan.state === 'confirming');
       options.logger?.({
         event: 'group_plan_handoff',
         state: plan.state,

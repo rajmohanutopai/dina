@@ -32,23 +32,17 @@ describe('exportRecoveryPhrase (task 4.61)', () => {
 
   describe('error paths', () => {
     it('throws on empty input', () => {
-      expect(() => exportRecoveryPhrase('')).toThrow(
-        /mnemonic must be a non-empty string/,
-      );
+      expect(() => exportRecoveryPhrase('')).toThrow(/mnemonic must be a non-empty string/);
     });
 
     it('throws on non-string input', () => {
-      expect(() =>
-        exportRecoveryPhrase(42 as unknown as string),
-      ).toThrow(/non-empty string/);
+      expect(() => exportRecoveryPhrase(42 as unknown as string)).toThrow(/non-empty string/);
     });
 
     it('throws on wrong word count', () => {
       // 10 words — not a valid BIP-39 length.
       const bad = 'abandon '.repeat(10).trim();
-      expect(() => exportRecoveryPhrase(bad)).toThrow(
-        /12 \/ 15 \/ 18 \/ 21 \/ 24 words/,
-      );
+      expect(() => exportRecoveryPhrase(bad)).toThrow(/12 \/ 15 \/ 18 \/ 21 \/ 24 words/);
     });
 
     it('throws on bad checksum (valid words, wrong order)', () => {
@@ -186,18 +180,12 @@ describe('importRecoveryPhrase (task 4.61)', () => {
 
 describe('normaliseMnemonic', () => {
   it('lowercases + collapses whitespace', () => {
-    expect(normaliseMnemonic('Abandon\tAbandon  Abandon')).toBe(
-      'abandon abandon abandon',
-    );
+    expect(normaliseMnemonic('Abandon\tAbandon  Abandon')).toBe('abandon abandon abandon');
   });
 
   it('strips trailing punctuation', () => {
-    expect(normaliseMnemonic('abandon abandon abandon.')).toBe(
-      'abandon abandon abandon',
-    );
-    expect(normaliseMnemonic('abandon, abandon! abandon?')).toBe(
-      'abandon abandon abandon',
-    );
+    expect(normaliseMnemonic('abandon abandon abandon.')).toBe('abandon abandon abandon');
+    expect(normaliseMnemonic('abandon, abandon! abandon?')).toBe('abandon abandon abandon');
   });
 
   it('is idempotent', () => {

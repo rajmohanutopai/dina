@@ -65,14 +65,22 @@ const card = (host: string, over: Record<string, unknown> = {}) => ({
 });
 const CARDS: Record<string, Record<string, unknown>> = {
   'https://agent.example/.well-known/agent-card.json': card('agent.example'),
-  'https://tenant.example/.well-known/agent-card.json': card('tenant.example', { supportedInterfaces: [iface('tenant.example', 't-9')] }),
+  'https://tenant.example/.well-known/agent-card.json': card('tenant.example', {
+    supportedInterfaces: [iface('tenant.example', 't-9')],
+  }),
   'https://keyed.example/.well-known/agent-card.json': card('keyed.example', {
     securitySchemes: { key: { apiKeySecurityScheme: { location: 'header', name: 'X-Api-Key' } } },
     securityRequirements: [{ schemes: { key: { list: [] } } }],
   }),
 };
 
-interface Rpc { method: string; params: Record<string, unknown>; id: string; headers: Readonly<Record<string, string>>; raw: string }
+interface Rpc {
+  method: string;
+  params: Record<string, unknown>;
+  id: string;
+  headers: Readonly<Record<string, string>>;
+  raw: string;
+}
 type Script = (rpc: Rpc) => A2AHttpResult | Record<string, unknown>;
 
 let dir: string;
@@ -85,19 +93,39 @@ let script: Script;
 let rpcs: Rpc[];
 
 function task(id: string, state: string, artifacts?: unknown[]): Record<string, unknown> {
-  return { id, contextId: 'ctx-1', status: { state }, ...(artifacts !== undefined ? { artifacts } : {}) };
+  return {
+    id,
+    contextId: 'ctx-1',
+    status: { state },
+    ...(artifacts !== undefined ? { artifacts } : {}),
+  };
 }
-const done = (text = 'ok') => task('rt-1', 'TASK_STATE_COMPLETED', [{ artifactId: 'a', parts: [{ text }] }]);
-const answer = (body: string): A2AHttpResult => ({ ok: true, status: 200, body, connectedAddress: '203.0.113.9' });
+const done = (text = 'ok') =>
+  task('rt-1', 'TASK_STATE_COMPLETED', [{ artifactId: 'a', parts: [{ text }] }]);
+const answer = (body: string): A2AHttpResult => ({
+  ok: true,
+  status: 200,
+  body,
+  connectedAddress: '203.0.113.9',
+});
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'a2a-lane1-runner-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: '34'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: '34'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   clock = START;
   const store = new A2AStore(db);
   const hooks = a2aWorkflowHooks(() => runtime);
-  workflow = new WorkflowService({ repository: new SQLiteWorkflowRepository(db), nowMsFn: () => clock, approvalDecisionHandler: hooks.approvalDecisionHandler });
+  workflow = new WorkflowService({
+    repository: new SQLiteWorkflowRepository(db),
+    nowMsFn: () => clock,
+    approvalDecisionHandler: hooks.approvalDecisionHandler,
+  });
   runtime = createA2ARuntime({ store, workflow, nowMs: () => clock });
   rpcs = [];
   script = () => ({ message: { messageId: 'm-r', role: 'ROLE_AGENT', parts: [{ text: 'done' }] } });
@@ -106,11 +134,20 @@ beforeEach(() => {
     if (request.method === 'GET' && served !== undefined) return answer(JSON.stringify(served));
     const raw = request.body ?? '{}';
     const body = JSON.parse(raw) as { id: string; method: string; params: Record<string, unknown> };
-    const rpc = { method: body.method, params: body.params, id: body.id, headers: request.headers, raw };
+    const rpc = {
+      method: body.method,
+      params: body.params,
+      id: body.id,
+      headers: request.headers,
+      raw,
+    };
     rpcs.push(rpc);
     const out = script(rpc);
     if ('ok' in out && typeof out.ok === 'boolean') return out as A2AHttpResult;
-    const reply = 'error' in out ? { jsonrpc: '2.0', id: body.id, error: out.error } : { jsonrpc: '2.0', id: body.id, result: out };
+    const reply =
+      'error' in out
+        ? { jsonrpc: '2.0', id: body.id, error: out.error }
+        : { jsonrpc: '2.0', id: body.id, result: out };
     return answer(JSON.stringify(reply));
   });
   log = new A2AReleaseLog(db, () => clock);
@@ -126,7 +163,10 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-async function agent(host = 'agent.example', secret?: string): Promise<{ agentId: string; credentialRef: string }> {
+async function agent(
+  host = 'agent.example',
+  secret?: string,
+): Promise<{ agentId: string; credentialRef: string }> {
   const d = { store: runtime.store, nowMs: () => clock };
   const reg = await registerRemoteAgent(d, `https://${host}/.well-known/agent-card.json`);
   if (!reg.ok) throw new Error(reg.reason);
@@ -134,14 +174,24 @@ async function agent(host = 'agent.example', secret?: string): Promise<{ agentId
   const cred =
     secret === undefined
       ? createNoneCredential(d, agentId)
-      : createRemoteCredential(d, agentId, { kind: 'api_key', scheme: 'key', secret: { value: secret } });
+      : createRemoteCredential(d, agentId, {
+          kind: 'api_key',
+          scheme: 'key',
+          secret: { value: secret },
+        });
   if (!cred.ok) throw new Error(cred.reason);
-  bindRemoteSkill(d, agentId, { skill: 'summarize', actionClass: 'read', credentialRef: cred.credential.credential_ref });
+  bindRemoteSkill(d, agentId, {
+    skill: 'summarize',
+    actionClass: 'read',
+    credentialRef: cred.credential.credential_ref,
+  });
   activateRemoteAgent(d, agentId);
   return { agentId, credentialRef: cred.credential.credential_ref };
 }
 
-function runner(over: Partial<ConstructorParameters<typeof A2ADispatchRunner>[0]> = {}): A2ADispatchRunner {
+function runner(
+  over: Partial<ConstructorParameters<typeof A2ADispatchRunner>[0]> = {},
+): A2ADispatchRunner {
   return new A2ADispatchRunner({
     runtime: () => runtime,
     runnerDid: 'did:key:z6MkLaneOneRunner',
@@ -155,7 +205,14 @@ function runner(over: Partial<ConstructorParameters<typeof A2ADispatchRunner>[0]
 }
 
 function approved(agentId: string, text = 'Summarize this.', sources?: unknown): string {
-  const p = proposeDelegation(runtime, { agentId, skill: 'summarize', text, replyTo: 'main', releaseSession: SESSION, ...(sources !== undefined ? { sources } : {}) });
+  const p = proposeDelegation(runtime, {
+    agentId,
+    skill: 'summarize',
+    text,
+    replyTo: 'main',
+    releaseSession: SESSION,
+    ...(sources !== undefined ? { sources } : {}),
+  });
   if (!p.ok) throw new Error(p.reason);
   workflow.approve(p.approvalTaskId);
   return p.operationId;
@@ -256,7 +313,10 @@ describe('remote states while polling (design §6.4)', () => {
   // Plan B187
   it('INPUT_REQUIRED met while polling ends the call remote_needs_input, with no second message', async () => {
     const { agentId } = await agent();
-    script = (rpc) => (rpc.method === 'SendMessage' ? { task: task('rt-1', 'TASK_STATE_WORKING') } : task('rt-1', 'TASK_STATE_INPUT_REQUIRED'));
+    script = (rpc) =>
+      rpc.method === 'SendMessage'
+        ? { task: task('rt-1', 'TASK_STATE_WORKING') }
+        : task('rt-1', 'TASK_STATE_INPUT_REQUIRED');
     const id = approved(agentId);
     await runOnce();
     expect(rpcs.map((r) => r.method)).toEqual(['SendMessage', 'GetTask']);
@@ -284,7 +344,9 @@ describe('remote states while polling (design §6.4)', () => {
     script = (rpc) =>
       rpc.method === 'SendMessage'
         ? { task: task('rt-1', 'TASK_STATE_WORKING') }
-        : task('someone-else', 'TASK_STATE_COMPLETED', [{ artifactId: 'a', parts: [{ text: 'not yours' }] }]);
+        : task('someone-else', 'TASK_STATE_COMPLETED', [
+            { artifactId: 'a', parts: [{ text: 'not yours' }] },
+          ]);
     const id = approved(agentId);
     await runOnce();
     const row = op(id);
@@ -296,7 +358,10 @@ describe('remote states while polling (design §6.4)', () => {
 describe('answers that are not strict JSON-RPC are never a result (design §6.4, strict I-JSON)', () => {
   const message = '{"messageId":"m","role":"ROLE_AGENT","parts":[{"text":"x"}]}';
   // Each body answers the id the runner really sent (`@ID`), so each row meets its own rule.
-  const reply = (body: string): Script => (rpc) => answer(body.replaceAll('@ID', rpc.id));
+  const reply =
+    (body: string): Script =>
+    (rpc) =>
+      answer(body.replaceAll('@ID', rpc.id));
 
   // Plan B192 (control: a strict answer to the same call is a result held for the guard)
   it('a strict answer with the runner’s own id is held for the guard', async () => {
@@ -311,10 +376,26 @@ describe('answers that are not strict JSON-RPC are never a result (design §6.4,
 
   // Plan B192
   it.each([
-    ['duplicate members', `{"jsonrpc":"2.0","id":"@ID","result":{"message":${message}},"result":{"message":${message}}}`, 'response_malformed'],
-    ['a __proto__ member', `{"jsonrpc":"2.0","id":"@ID","result":{"message":${message},"__proto__":{"task":{}}}}`, 'response_malformed'],
-    ['another JSON-RPC id', `{"jsonrpc":"2.0","id":"@ID-x","result":{"message":${message}}}`, 'response_malformed'],
-    ['a task and a message in one answer', `{"jsonrpc":"2.0","id":"@ID","result":{"task":{"id":"rt","status":{"state":"TASK_STATE_COMPLETED"}},"message":${message}}}`, 'response_invalid'],
+    [
+      'duplicate members',
+      `{"jsonrpc":"2.0","id":"@ID","result":{"message":${message}},"result":{"message":${message}}}`,
+      'response_malformed',
+    ],
+    [
+      'a __proto__ member',
+      `{"jsonrpc":"2.0","id":"@ID","result":{"message":${message},"__proto__":{"task":{}}}}`,
+      'response_malformed',
+    ],
+    [
+      'another JSON-RPC id',
+      `{"jsonrpc":"2.0","id":"@ID-x","result":{"message":${message}}}`,
+      'response_malformed',
+    ],
+    [
+      'a task and a message in one answer',
+      `{"jsonrpc":"2.0","id":"@ID","result":{"task":{"id":"rt","status":{"state":"TASK_STATE_COMPLETED"}},"message":${message}}}`,
+      'response_invalid',
+    ],
   ])('%s: the outcome is unknown, and Core holds no result', async (_name, body, reason) => {
     const { agentId } = await agent();
     script = reply(body);
@@ -380,8 +461,11 @@ describe('what the remote learns (A2A-I5)', () => {
       getItem('general', item.id, { sessionId: SESSION, audience: 'brain' });
       let claimId = '';
       let childId = '';
-      script = (rpc) => (rpc.method === 'SendMessage' ? { task: task('rt-1', 'TASK_STATE_WORKING') } : done());
-      const id = approved(agentId, NOTE, [{ quote: NOTE, from: 'vault', persona: 'general', item_id: item.id }]);
+      script = (rpc) =>
+        rpc.method === 'SendMessage' ? { task: task('rt-1', 'TASK_STATE_WORKING') } : done();
+      const id = approved(agentId, NOTE, [
+        { quote: NOTE, from: 'vault', persona: 'general', item_id: item.id },
+      ]);
       const row = op(id);
       if (row === null) throw new Error('no operation');
       const children = runtime.store.childrenOf(row.id).map((c) => c.child_task_id);
@@ -399,10 +483,22 @@ describe('what the remote learns (A2A-I5)', () => {
       const permits = runtime.store.permitsOf(row.id).map((p) => p.permit_id);
       const sent = rpcs.find((r) => r.method === 'SendMessage');
       const message = (sent?.params.message ?? {}) as Record<string, unknown>;
-      expect(message.messageId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+      expect(message.messageId).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/,
+      );
       expect(message.messageId).not.toBe(id);
       expect(Object.keys(message).sort()).toEqual(['messageId', 'parts', 'role']);
-      const internal = [id, row.request_hash ?? '', agentId, credentialRef, item.id, claimId, childId, ...children, ...permits].filter((x) => x !== '');
+      const internal = [
+        id,
+        row.request_hash ?? '',
+        agentId,
+        credentialRef,
+        item.id,
+        claimId,
+        childId,
+        ...children,
+        ...permits,
+      ].filter((x) => x !== '');
       expect(internal.length).toBeGreaterThan(6);
       for (const rpc of rpcs) {
         const wire = `${rpc.raw}\n${JSON.stringify(rpc.headers)}`;
@@ -443,7 +539,13 @@ describe('what the runner logs (design §10, §12: metadata only)', () => {
     expect(entries.length).toBeGreaterThan(0);
     // Printed as a logger would print them: an Error inside an entry shows its message and stack.
     const logged = `${inspect(entries, { depth: null })}\n${printed.join('\n')}`;
-    for (const secret of [KEY, EMAIL, 'Write to', 'REMOTE-ERROR-TEXT-88', 'REMOTE-RESULT-TEXT-91']) {
+    for (const secret of [
+      KEY,
+      EMAIL,
+      'Write to',
+      'REMOTE-ERROR-TEXT-88',
+      'REMOTE-RESULT-TEXT-91',
+    ]) {
       expect(logged).not.toContain(secret);
     }
   });

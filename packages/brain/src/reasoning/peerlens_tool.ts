@@ -38,8 +38,7 @@ import type { SubjectType } from '@dina/protocol';
 
 /** Minimum AppView surface the tool needs — lets tests swap a stub in
  *  without building the full `AppViewClient`. */
-export interface PeerlensAppViewClient
-  extends Pick<AppViewClient, 'resolveTrust' | 'searchTrust'> {}
+export type PeerlensAppViewClient = Pick<AppViewClient, 'resolveTrust' | 'searchTrust'>;
 
 export interface SearchPeerlensNetworkToolOptions {
   appViewClient: PeerlensAppViewClient;
@@ -58,14 +57,12 @@ export interface SearchPeerlensNetworkToolOptions {
  * Tool name is `search_peerlens` to match the `VAULT_CONTEXT`
  * prompt's enumeration.
  */
-export function createSearchPeerlensTool(
-  options: SearchPeerlensNetworkToolOptions,
-): AgentTool {
+export function createSearchPeerlensTool(options: SearchPeerlensNetworkToolOptions): AgentTool {
   const { appViewClient, logger, requesterDid } = options;
   return {
     name: 'search_peerlens',
     description:
-      "Search verified peer reviews and vendor/product reputation in PeerLens. Pass `subject` (a JSON string like `{\"type\":\"product\",\"domain\":\"amazon.com\",\"productId\":\"B0...\"}` or `{\"type\":\"did\",\"did\":\"did:plc:...\"}` or `{\"type\":\"organization\",\"domain\":\"nytimes.com\"}`) for an aggregate credibility signal + recommendation. Pass `query` (free text like 'standing desk reviews') + optional `subjectType` / `domain` / `sentiment` / `minConfidence` for raw attestation rows. At least one of subject or query is required.",
+      'Search verified peer reviews and vendor/product reputation in PeerLens. Pass `subject` (a JSON string like `{"type":"product","domain":"amazon.com","productId":"B0..."}` or `{"type":"did","did":"did:plc:..."}` or `{"type":"organization","domain":"nytimes.com"}`) for an aggregate credibility signal + recommendation. Pass `query` (free text like \'standing desk reviews\') + optional `subjectType` / `domain` / `sentiment` / `minConfidence` for raw attestation rows. At least one of subject or query is required.',
     parameters: {
       type: 'object',
       properties: {
@@ -141,7 +138,9 @@ export function createSearchPeerlensTool(
           out.subject = await appViewClient.resolveTrust({
             subject,
             ...(requesterDid !== undefined ? { requesterDid } : {}),
-            ...(typeof args.domain === 'string' && args.domain !== '' ? { domain: args.domain } : {}),
+            ...(typeof args.domain === 'string' && args.domain !== ''
+              ? { domain: args.domain }
+              : {}),
             ...(typeof args.context === 'string' && isResolveContext(args.context)
               ? { context: args.context }
               : {}),
@@ -164,7 +163,9 @@ export function createSearchPeerlensTool(
             ...(typeof args.subjectType === 'string' && isSubjectType(args.subjectType)
               ? { subjectType: args.subjectType }
               : {}),
-            ...(typeof args.domain === 'string' && args.domain !== '' ? { domain: args.domain } : {}),
+            ...(typeof args.domain === 'string' && args.domain !== ''
+              ? { domain: args.domain }
+              : {}),
             ...(typeof args.sentiment === 'string' && isSentiment(args.sentiment)
               ? { sentiment: args.sentiment }
               : {}),
@@ -227,10 +228,6 @@ function isSentiment(value: string): value is 'positive' | 'neutral' | 'negative
   return value === 'positive' || value === 'neutral' || value === 'negative';
 }
 
-function isConfidence(
-  value: string,
-): value is 'speculative' | 'moderate' | 'high' | 'certain' {
-  return (
-    value === 'speculative' || value === 'moderate' || value === 'high' || value === 'certain'
-  );
+function isConfidence(value: string): value is 'speculative' | 'moderate' | 'high' | 'certain' {
+  return value === 'speculative' || value === 'moderate' || value === 'high' || value === 'certain';
 }

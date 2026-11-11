@@ -19,7 +19,9 @@ const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 const BEARER = 'bearer-123';
 
 function pds(
-  results: Partial<Record<RepoRequestKind, { status: number; body: Record<string, unknown> | null }>>,
+  results: Partial<
+    Record<RepoRequestKind, { status: number; body: Record<string, unknown> | null }>
+  >,
 ): RepoClientFn {
   return async (kind) => {
     const entry = results[kind];
@@ -39,32 +41,35 @@ function client(opts: Parameters<typeof pds>[0]) {
 describe('RecordCrudClient (task 6.4)', () => {
   describe('construction', () => {
     it('throws without pdsClient', () => {
-      expect(() =>
-        new RecordCrudClient({
-          pdsClient: undefined as unknown as RepoClientFn,
-          did: DID,
-          bearer: BEARER,
-        }),
+      expect(
+        () =>
+          new RecordCrudClient({
+            pdsClient: undefined as unknown as RepoClientFn,
+            did: DID,
+            bearer: BEARER,
+          }),
       ).toThrow(/pdsClient/);
     });
 
     it('throws without did', () => {
-      expect(() =>
-        new RecordCrudClient({
-          pdsClient: pds({}),
-          did: '',
-          bearer: BEARER,
-        }),
+      expect(
+        () =>
+          new RecordCrudClient({
+            pdsClient: pds({}),
+            did: '',
+            bearer: BEARER,
+          }),
       ).toThrow(/did/);
     });
 
     it('throws without bearer', () => {
-      expect(() =>
-        new RecordCrudClient({
-          pdsClient: pds({}),
-          did: DID,
-          bearer: '',
-        }),
+      expect(
+        () =>
+          new RecordCrudClient({
+            pdsClient: pds({}),
+            did: DID,
+            bearer: '',
+          }),
       ).toThrow(/bearer/);
     });
   });
@@ -135,7 +140,10 @@ describe('RecordCrudClient (task 6.4)', () => {
     it.each([
       ['bad collection', { collection: 'BAD-COLL', record: {} }],
       ['bad rkey', { collection: 'x.y', rkey: 'bad/key', record: {} }],
-      ['record not object', { collection: 'x.y', record: [] as unknown as Record<string, unknown> }],
+      [
+        'record not object',
+        { collection: 'x.y', record: [] as unknown as Record<string, unknown> },
+      ],
     ])('rejects %s with invalid_input', async (_label, input) => {
       const c = client({});
       const out = await c.createRecord(input as Parameters<typeof c.createRecord>[0]);
@@ -233,7 +241,7 @@ describe('RecordCrudClient (task 6.4)', () => {
       }
     });
 
-    it('can override did (read someone else\'s repo)', async () => {
+    it("can override did (read someone else's repo)", async () => {
       const otherDid = 'did:plc:zyxwvutsrqponmlkjihgfedc';
       let seenPayload: Record<string, unknown> | null = null;
       const pdsClient: RepoClientFn = async (_kind, payload) => {

@@ -26,7 +26,7 @@ describe('wireWorkflowPlane composition', () => {
     }
   });
 
-  it('passes the D2D sender\'s outcome to Core, so a message that went nowhere is not counted as sent', () => {
+  it("passes the D2D sender's outcome to Core, so a message that went nowhere is not counted as sent", () => {
     // COMMITMENT_KERNEL §15 step 6: the booked record marks a guest told only
     // when the sender took the message; an adapter that dropped the result
     // would mark a lost one as sent.

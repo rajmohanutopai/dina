@@ -468,18 +468,14 @@ describe('mutateUserPreferences — race-safe functional updates', () => {
 
     // Stub keychain to fail ONCE then succeed. The first mutate's
     // task should reject; the second must still resolve and apply.
-    const original = (
-      await import('react-native-keychain')
-    ).setGenericPassword;
+    const original = (await import('react-native-keychain')).setGenericPassword;
     let calls = 0;
     const RNKeychain = await import('react-native-keychain');
-    (RNKeychain as any).setGenericPassword = jest
-      .fn()
-      .mockImplementation((...args: unknown[]) => {
-        calls += 1;
-        if (calls === 1) return Promise.reject(new Error('keychain busy'));
-        return (original as any)(...args);
-      });
+    (RNKeychain as any).setGenericPassword = jest.fn().mockImplementation((...args: unknown[]) => {
+      calls += 1;
+      if (calls === 1) return Promise.reject(new Error('keychain busy'));
+      return (original as any)(...args);
+    });
 
     try {
       const failing = mutateUserPreferences((p) => ({

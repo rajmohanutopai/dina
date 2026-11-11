@@ -44,10 +44,18 @@ import {
   type GroupCoordinationDeps,
   type GroupCoordinationResult,
 } from '../../src/coordination/group_coordination_service';
-import { MAX_PLAN_ROUNDS, currentSpoke, windowClosesAt, type GroupPlan } from '../../src/coordination/group_plan';
+import {
+  MAX_PLAN_ROUNDS,
+  currentSpoke,
+  windowClosesAt,
+  type GroupPlan,
+} from '../../src/coordination/group_plan';
 import { InMemoryGroupPlanRepository } from '../../src/coordination/group_plan_repository';
 import { installGroupSlotStrategy, slotFromMove } from '../../src/coordination/group_slot_strategy';
-import { emitServiceOfferReceived, resetServiceOfferReceivedListeners } from '../../src/d2d/service_offer_events';
+import {
+  emitServiceOfferReceived,
+  resetServiceOfferReceivedListeners,
+} from '../../src/d2d/service_offer_events';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import { submitServiceQuery } from '../../src/server/routes/service_query';
 import { applyMigrations } from '../../src/storage/migration';
@@ -56,11 +64,14 @@ import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
 
 import type { NegotiationBrief } from '../../src/commitment/strategy_submit';
-import type { WorkflowTask } from '../../src/workflow/domain';
 import type { TrustLevel } from '../../src/contacts/directory';
-import type { ServiceOffer, ServiceOfferRepository } from '../../src/contacts/service_offers_repository';
+import type {
+  ServiceOffer,
+  ServiceOfferRepository,
+} from '../../src/contacts/service_offers_repository';
 import type { ServiceQueryBody } from '../../src/d2d/service_bodies';
 import type { SharingTier } from '../../src/gatekeeper/sharing';
+import type { WorkflowTask } from '../../src/workflow/domain';
 
 const T0 = 1_800_000_000_000;
 const GARCIA = 'did:plc:garcia';
@@ -77,7 +88,9 @@ class FakeOffers implements ServiceOfferRepository {
     this.rows.set(o.grantId, o);
   }
   listByProviderDid(did: string): ServiceOffer[] {
-    return [...this.rows.values()].filter((o) => o.providerDid === did).sort((a, b) => b.createdAt - a.createdAt);
+    return [...this.rows.values()]
+      .filter((o) => o.providerDid === did)
+      .sort((a, b) => b.createdAt - a.createdAt);
   }
   findByProviderDidAndCapability(did: string, cap: string): ServiceOffer[] {
     return this.listByProviderDid(did).filter((o) => o.capability === cap);
@@ -157,7 +170,18 @@ function harness(): Harness {
     nowMs: () => clock.now,
     newId: () => `id${(ids += 1)}`,
   };
-  return { deps, clock, queries, preflights, offers, plans, workflow, trust, failSendsTo, holdTiers };
+  return {
+    deps,
+    clock,
+    queries,
+    preflights,
+    offers,
+    plans,
+    workflow,
+    trust,
+    failSendsTo,
+    holdTiers,
+  };
 }
 
 function ok(result: GroupCoordinationResult): GroupPlan {
@@ -180,14 +204,31 @@ function taskOf(plan: GroupPlan, did: string): string {
 }
 
 /** Land a reply the way the receive pipeline does: the full service.response JSON as the task result. */
-function reply(h: Harness, plan: GroupPlan, did: string, result: unknown, status = 'success'): void {
+function reply(
+  h: Harness,
+  plan: GroupPlan,
+  did: string,
+  result: unknown,
+  status = 'success',
+): void {
   const taskId = taskOf(plan, did);
-  const body = { query_id: 'q', capability: GROUP_COORDINATION_CAPABILITY, status, result, ttl_seconds: 60 };
-  const eventId = h.workflow.store().completeWithDetails(taskId, '', 'received', JSON.stringify(body), '{}', h.clock.now);
+  const body = {
+    query_id: 'q',
+    capability: GROUP_COORDINATION_CAPABILITY,
+    status,
+    result,
+    ttl_seconds: 60,
+  };
+  const eventId = h.workflow
+    .store()
+    .completeWithDetails(taskId, '', 'received', JSON.stringify(body), '{}', h.clock.now);
   if (eventId === 0) throw new Error(`reply to ${did} did not land`);
 }
 
-async function openDefault(h: Harness, over: Partial<Parameters<typeof openGroupPlan>[0]> = {}): Promise<GroupPlan> {
+async function openDefault(
+  h: Harness,
+  over: Partial<Parameters<typeof openGroupPlan>[0]> = {},
+): Promise<GroupPlan> {
   return ok(
     await openGroupPlan(
       {
@@ -234,11 +275,14 @@ describe('opening a plan fans out N ordinary 1:1 spokes', () => {
       // Nothing on the wire names the plan or another guest.
       const wire = JSON.stringify(q.body);
       expect(wire).not.toContain(plan.planId);
-      for (const other of [GARCIA, MILLER, JOHNSON].filter((d) => d !== q.to)) expect(wire).not.toContain(other);
+      for (const other of [GARCIA, MILLER, JOHNSON].filter((d) => d !== q.to))
+        expect(wire).not.toContain(other);
     }
     // The spoke echoes the guest's own offer (grant + listing), as the Talk thread would.
     expect(h.queries[0].body.grant_id).toBe('grant_garcia');
-    expect(h.queries[0].body.service_uri).toBe(`at://${GARCIA}/com.dinakernel.service.profile/talk`);
+    expect(h.queries[0].body.service_uri).toBe(
+      `at://${GARCIA}/com.dinakernel.service.profile/talk`,
+    );
     // Distinct query ids; every spoke recorded with the task that carried it.
     expect(new Set(h.queries.map((q) => q.body.query_id)).size).toBe(3);
     for (const did of [GARCIA, MILLER, JOHNSON]) {
@@ -262,19 +306,34 @@ describe('opening a plan fans out N ordinary 1:1 spokes', () => {
       requested_surface: 'talk',
       intent: INTENT,
     });
-    expect(currentSpoke(guest(plan, MILLER), 1)).toEqual({ round: 1, stage: 'grant_requested', requestId: expect.any(String) });
+    expect(currentSpoke(guest(plan, MILLER), 1)).toEqual({
+      round: 1,
+      stage: 'grant_requested',
+      requestId: expect.any(String),
+    });
     expect(guest(plan, MILLER).outcome).toBe('waiting');
   });
 
   it('refuses a guest who is not a contact, or is blocked, before anything is sent (§5 layer 1)', async () => {
     h.trust.set(MILLER, 'blocked');
     const blocked = await openGroupPlan(
-      { intent: INTENT, guests: [{ contactDid: GARCIA, required: true }, { contactDid: MILLER, required: true }], candidates: [SAT_26] },
+      {
+        intent: INTENT,
+        guests: [
+          { contactDid: GARCIA, required: true },
+          { contactDid: MILLER, required: true },
+        ],
+        candidates: [SAT_26],
+      },
       h.deps,
     );
     expect(blocked).toEqual({ ok: false, refusal: 'guest_not_a_contact', detail: MILLER });
     const stranger = await openGroupPlan(
-      { intent: INTENT, guests: [{ contactDid: 'did:plc:stranger', required: true }], candidates: [SAT_26] },
+      {
+        intent: INTENT,
+        guests: [{ contactDid: 'did:plc:stranger', required: true }],
+        candidates: [SAT_26],
+      },
       h.deps,
     );
     expect(refusal(stranger)).toBe('guest_not_a_contact');
@@ -284,15 +343,39 @@ describe('opening a plan fans out N ordinary 1:1 spokes', () => {
   });
 
   it('the bounds refuse the whole plan by name and nothing goes out (rule 8)', async () => {
-    const nine = Array.from({ length: 9 }, (_, i) => ({ contactDid: `did:plc:g${i}`, required: true }));
+    const nine = Array.from({ length: 9 }, (_, i) => ({
+      contactDid: `did:plc:g${i}`,
+      required: true,
+    }));
     for (const g of nine) h.trust.set(g.contactDid, 'verified');
-    expect(refusal(await openGroupPlan({ intent: INTENT, guests: nine, candidates: [SAT_26] }, h.deps))).toBe('too_many_guests');
+    expect(
+      refusal(await openGroupPlan({ intent: INTENT, guests: nine, candidates: [SAT_26] }, h.deps)),
+    ).toBe('too_many_guests');
     const thirteen = Array.from({ length: 13 }, (_, i) => ({ start: `Sat ${i}` }));
     expect(
-      refusal(await openGroupPlan({ intent: INTENT, guests: [{ contactDid: GARCIA, required: true }], candidates: thirteen }, h.deps)),
+      refusal(
+        await openGroupPlan(
+          {
+            intent: INTENT,
+            guests: [{ contactDid: GARCIA, required: true }],
+            candidates: thirteen,
+          },
+          h.deps,
+        ),
+      ),
     ).toBe('too_many_candidates');
     expect(
-      refusal(await openGroupPlan({ intent: INTENT, guests: [{ contactDid: GARCIA, required: true }], candidates: [SAT_26], windowSeconds: 301 }, h.deps)),
+      refusal(
+        await openGroupPlan(
+          {
+            intent: INTENT,
+            guests: [{ contactDid: GARCIA, required: true }],
+            candidates: [SAT_26],
+            windowSeconds: 301,
+          },
+          h.deps,
+        ),
+      ),
     ).toBe('bad_window');
     expect(h.queries).toHaveLength(0);
   });
@@ -311,7 +394,10 @@ describe('opening a plan fans out N ordinary 1:1 spokes', () => {
 
   it('nothing wired → a named refusal, never a throw', async () => {
     setWorkflowService(null);
-    const result = await openGroupPlan({ intent: INTENT, guests: [{ contactDid: GARCIA, required: true }], candidates: [SAT_26] }, { ...h.deps, workflow: undefined });
+    const result = await openGroupPlan(
+      { intent: INTENT, guests: [{ contactDid: GARCIA, required: true }], candidates: [SAT_26] },
+      { ...h.deps, workflow: undefined },
+    );
     expect(result).toEqual({ ok: false, refusal: 'not_wired', detail: 'workflow service' });
   });
 });
@@ -321,7 +407,9 @@ describe('the fold on read', () => {
     const plan = await openDefault(h);
     const read = ok(await readGroupPlan(plan.planId, h.deps));
     expect(read.state).toBe('proposing');
-    expect(read.fold).toEqual(expect.objectContaining({ state: 'waiting', agreed: [], missingRequired: [GARCIA, MILLER] }));
+    expect(read.fold).toEqual(
+      expect.objectContaining({ state: 'waiting', agreed: [], missingRequired: [GARCIA, MILLER] }),
+    );
     expect(windowClosesAt(read)).toBe(T0 + 120_000);
   });
 
@@ -330,7 +418,10 @@ describe('the fold on read', () => {
     reply(h, plan, GARCIA, { status: 'accepted', accepted_slots: [SAT_26, SAT_19], as_of: 'now' });
     let read = ok(await readGroupPlan(plan.planId, h.deps));
     expect(guest(read, GARCIA).outcome).toBe('answered');
-    expect(guest(read, GARCIA).reply).toEqual({ status: 'accepted', accepted_slots: [SAT_26, SAT_19] });
+    expect(guest(read, GARCIA).reply).toEqual({
+      status: 'accepted',
+      accepted_slots: [SAT_26, SAT_19],
+    });
     expect(read.state).toBe('proposing');
     reply(h, plan, MILLER, { status: 'accepted', accepted_slots: [SAT_19] });
     read = ok(await readGroupPlan(plan.planId, h.deps));
@@ -355,7 +446,9 @@ describe('the fold on read', () => {
       ],
     });
     const read = ok(await readGroupPlan(plan.planId, h.deps));
-    expect(guest(read, MILLER).disclosures).toEqual([{ kind: 'dietary', text: 'someone is gluten-free', about: 'household' }]);
+    expect(guest(read, MILLER).disclosures).toEqual([
+      { kind: 'dietary', text: 'someone is gluten-free', about: 'household' },
+    ]);
     const audit = queryAudit({ action: 'group_plan_disclosure_dropped' });
     expect(audit).toHaveLength(1);
     expect(audit[0].detail).toContain('dropped=2');
@@ -381,7 +474,11 @@ describe('the fold on read', () => {
   it('guest-authored text is clipped, not refused: an over-long counter slot still lands as a counter', async () => {
     const plan = await openDefault(h);
     const longStart = 'Sunday '.repeat(30);
-    reply(h, plan, GARCIA, { status: 'counter', counter_slots: [{ start: longStart, note: 'x'.repeat(500) }], message: 'y'.repeat(1000) });
+    reply(h, plan, GARCIA, {
+      status: 'counter',
+      counter_slots: [{ start: longStart, note: 'x'.repeat(500) }],
+      message: 'y'.repeat(1000),
+    });
     const read = ok(await readGroupPlan(plan.planId, h.deps));
     const r = guest(read, GARCIA).reply;
     if (r?.status !== 'counter') throw new Error(`expected a counter, got ${JSON.stringify(r)}`);
@@ -391,11 +488,16 @@ describe('the fold on read', () => {
   });
 
   it('`toSpokeReply` keeps only the fold’s fields', () => {
-    expect(toSpokeReply({ status: 'accepted', accepted_slots: [SAT_26], as_of: 'x', extra: 1 })).toEqual({
+    expect(
+      toSpokeReply({ status: 'accepted', accepted_slots: [SAT_26], as_of: 'x', extra: 1 }),
+    ).toEqual({
       status: 'accepted',
       accepted_slots: [SAT_26],
     });
-    expect(toSpokeReply({ status: 'needs_more_info', message: 'which weekend?' })).toEqual({ status: 'needs_more_info', message: 'which weekend?' });
+    expect(toSpokeReply({ status: 'needs_more_info', message: 'which weekend?' })).toEqual({
+      status: 'needs_more_info',
+      message: 'which weekend?',
+    });
     expect(toSpokeReply({ status: 'accepted', message: 5 })).toBeNull();
     expect(toSpokeReply('accepted')).toBeNull();
   });
@@ -423,9 +525,16 @@ describe('the shared window collapses every negative path (§5, rule 9)', () => 
     expect(read.state).toBe('proposing');
     h.clock.now = closesAt;
     read = ok(await readGroupPlan(plan.planId, h.deps));
-    expect(read.guests.map((g) => g.outcome)).toEqual(['unreachable', 'unreachable', 'unreachable', 'unreachable']);
+    expect(read.guests.map((g) => g.outcome)).toEqual([
+      'unreachable',
+      'unreachable',
+      'unreachable',
+      'unreachable',
+    ]);
     // Every unreachable guest carries the same non-reason: nothing on the record says which was which.
-    expect(new Set(read.guests.map((g) => JSON.stringify({ reply: g.reply, outcome: g.outcome }))).size).toBe(1);
+    expect(
+      new Set(read.guests.map((g) => JSON.stringify({ reply: g.reply, outcome: g.outcome }))).size,
+    ).toBe(1);
     expect(read.state).toBe('folded');
     // The round is over (plan state) and the required replies are missing
     // (fold state): nothing was agreed, and nobody is named as having said no.
@@ -458,8 +567,15 @@ describe('the shared window collapses every negative path (§5, rule 9)', () => 
     reply(h, plan, GARCIA, { status: 'accepted', accepted_slots: [SAT_26] });
     h.clock.now = T0 + 600_000;
     const read = ok(await readGroupPlan(plan.planId, h.deps));
-    expect(guest(read, MILLER)).toEqual(expect.objectContaining({ outcome: 'answered', reply: { status: 'accepted', accepted_slots: [SAT_26] } }));
-    expect(guest(read, GARCIA)).toEqual(expect.objectContaining({ outcome: 'unreachable', reply: null }));
+    expect(guest(read, MILLER)).toEqual(
+      expect.objectContaining({
+        outcome: 'answered',
+        reply: { status: 'accepted', accepted_slots: [SAT_26] },
+      }),
+    );
+    expect(guest(read, GARCIA)).toEqual(
+      expect.objectContaining({ outcome: 'unreachable', reply: null }),
+    );
     expect(read.state).toBe('folded');
     expect(read.fold?.missingRequired).toEqual([GARCIA]);
   });
@@ -484,10 +600,17 @@ describe('the offer that unlocks a spoke', () => {
     expect(await replayOfferForOpenPlans(MILLER, h.deps)).toBe(1);
     expect(h.queries.map((q) => q.to)).toEqual([GARCIA, JOHNSON, MILLER]);
     expect(h.queries[2].body.ttl_seconds).toBe(90);
-    expect(h.queries[2].body.params).toEqual({ intent: INTENT, candidate_slots: [SAT_12, SAT_19, SAT_26] });
+    expect(h.queries[2].body.params).toEqual({
+      intent: INTENT,
+      candidate_slots: [SAT_12, SAT_19, SAT_26],
+    });
     const read = ok(await readGroupPlan(plan.planId, h.deps));
-    expect(guest(read, MILLER).spokes).toEqual([{ round: 1, stage: 'queried', taskId: expect.any(String), queryId: expect.any(String) }]);
-    expect(h.workflow.store().getById(taskOf(read, MILLER))?.expires_at).toBe(Math.floor((T0 + 120_000) / 1000));
+    expect(guest(read, MILLER).spokes).toEqual([
+      { round: 1, stage: 'queried', taskId: expect.any(String), queryId: expect.any(String) },
+    ]);
+    expect(h.workflow.store().getById(taskOf(read, MILLER))?.expires_at).toBe(
+      Math.floor((T0 + 120_000) / 1000),
+    );
     // A second event for the same guest sends nothing more.
     expect(await replayOfferForOpenPlans(MILLER, h.deps)).toBe(0);
     expect(h.queries).toHaveLength(3);
@@ -516,15 +639,31 @@ describe('the offer that unlocks a spoke', () => {
     h.offers.remove('grant_miller');
     const plan = await openDefault(h);
     const dispose = wireGroupCoordinationOfferReplay(h.deps);
-    emitServiceOfferReceived({ providerDID: MILLER, capability: 'eta_query', grantId: 'g', serviceUri: 'u', serviceName: 'n', schemaHash: '' });
+    emitServiceOfferReceived({
+      providerDID: MILLER,
+      capability: 'eta_query',
+      grantId: 'g',
+      serviceUri: 'u',
+      serviceName: 'n',
+      schemaHash: '',
+    });
     await Promise.resolve();
     expect(h.queries).toHaveLength(2);
     h.offers.upsert(offerFrom(MILLER));
-    emitServiceOfferReceived({ providerDID: MILLER, capability: GROUP_COORDINATION_CAPABILITY, grantId: 'grant_miller', serviceUri: 'u', serviceName: 'n', schemaHash: '' });
+    emitServiceOfferReceived({
+      providerDID: MILLER,
+      capability: GROUP_COORDINATION_CAPABILITY,
+      grantId: 'grant_miller',
+      serviceUri: 'u',
+      serviceName: 'n',
+      schemaHash: '',
+    });
     await new Promise((r) => setTimeout(r, 0));
     expect(h.queries.map((q) => q.to)).toEqual([GARCIA, JOHNSON, MILLER]);
     dispose();
-    expect(currentSpoke(guest(ok(await readGroupPlan(plan.planId, h.deps)), MILLER), 1)?.stage).toBe('queried');
+    expect(
+      currentSpoke(guest(ok(await readGroupPlan(plan.planId, h.deps)), MILLER), 1)?.stage,
+    ).toBe('queried');
   });
 });
 
@@ -547,11 +686,15 @@ describe('choosing, widening, settling', () => {
     expect(confirming.chosen).toEqual(SAT_26);
     expect(h.queries.slice(3).map((q) => q.to)).toEqual([GARCIA, MILLER, JOHNSON]);
     for (const q of h.queries.slice(3)) {
-      expect(q.body.params).toEqual({ intent: `Confirming Sat 26: ${INTENT}`, candidate_slots: [SAT_26] });
+      expect(q.body.params).toEqual({
+        intent: `Confirming Sat 26: ${INTENT}`,
+        candidate_slots: [SAT_26],
+      });
       expect(q.body.ttl_seconds).toBe(120);
     }
     expect(windowClosesAt(confirming)).toBe(T0 + 10_000 + 120_000);
-    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    for (const did of [GARCIA, MILLER, JOHNSON])
+      reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
     const settled = ok(await readGroupPlan(plan.planId, h.deps));
     expect(settled.state).toBe('settled');
     expect(settled.chosen).toEqual(SAT_26);
@@ -574,12 +717,17 @@ describe('choosing, widening, settling', () => {
     expect(stuck.state).toBe('confirming');
     expect(stuck.fold?.state).toBe('empty');
     expect(stuck.fold?.emptiedBy).toEqual([MILLER]);
-    const widened = ok(await widenPlan(plan.planId, [{ start: 'Sun 27' }, { start: 'Sun 4 Oct' }], h.deps));
+    const widened = ok(
+      await widenPlan(plan.planId, [{ start: 'Sun 27' }, { start: 'Sun 4 Oct' }], h.deps),
+    );
     expect(widened.state).toBe('proposing');
     expect(widened.round).toBe(3);
     expect(widened.chosen).toBeNull();
     expect(h.queries.slice(6).map((q) => q.body.params)).toEqual(
-      Array(3).fill({ intent: INTENT, candidate_slots: [{ start: 'Sun 27' }, { start: 'Sun 4 Oct' }] }),
+      Array(3).fill({
+        intent: INTENT,
+        candidate_slots: [{ start: 'Sun 27' }, { start: 'Sun 4 Oct' }],
+      }),
     );
     // Disclosures survive a widen; replies do not.
     expect(widened.guests.every((g) => g.reply === null && g.outcome === 'waiting')).toBe(true);
@@ -596,9 +744,17 @@ describe('choosing, widening, settling', () => {
     expect(h.workflow.store().getById(johnsonRound1)?.status).toBe('cancelled');
     expect(taskOf(confirming, JOHNSON)).not.toBe(johnsonRound1);
     // The old task cannot complete; the new one is still waiting.
-    const landed = h.workflow
-      .store()
-      .completeWithDetails(johnsonRound1, '', 'received', JSON.stringify({ status: 'success', result: { status: 'accepted', accepted_slots: [SAT_26] } }), '{}', h.clock.now);
+    const landed = h.workflow.store().completeWithDetails(
+      johnsonRound1,
+      '',
+      'received',
+      JSON.stringify({
+        status: 'success',
+        result: { status: 'accepted', accepted_slots: [SAT_26] },
+      }),
+      '{}',
+      h.clock.now,
+    );
     expect(landed).toBe(0);
     expect(guest(ok(await readGroupPlan(plan.planId, h.deps)), JOHNSON).outcome).toBe('waiting');
   });
@@ -608,11 +764,14 @@ describe('choosing, widening, settling', () => {
     for (let round = 2; round <= MAX_PLAN_ROUNDS; round += 1) {
       plan = ok(await widenPlan(plan.planId, [{ start: `Sun ${round}` }], h.deps));
       expect(plan.round).toBe(round);
-      for (const did of [GARCIA, MILLER]) reply(h, plan, did, { status: 'accepted', accepted_slots: [] });
+      for (const did of [GARCIA, MILLER])
+        reply(h, plan, did, { status: 'accepted', accepted_slots: [] });
       plan = ok(await readGroupPlan(plan.planId, h.deps));
     }
     const sent = h.queries.length;
-    expect(refusal(await widenPlan(plan.planId, [{ start: 'Sun 9' }], h.deps))).toBe('rounds_exhausted');
+    expect(refusal(await widenPlan(plan.planId, [{ start: 'Sun 9' }], h.deps))).toBe(
+      'rounds_exhausted',
+    );
     expect(h.queries).toHaveLength(sent);
   });
 
@@ -632,7 +791,11 @@ describe('choosing, widening, settling', () => {
 
   it('deleting a plan removes it and what guests disclosed for it, and cancels its live spokes', async () => {
     const plan = await openDefault(h);
-    reply(h, plan, GARCIA, { status: 'accepted', accepted_slots: [SAT_26], disclosures: [{ kind: 'dietary', text: 'gluten-free', about: 'household' }] });
+    reply(h, plan, GARCIA, {
+      status: 'accepted',
+      accepted_slots: [SAT_26],
+      disclosures: [{ kind: 'dietary', text: 'gluten-free', about: 'household' }],
+    });
     ok(await readGroupPlan(plan.planId, h.deps));
     expect(await deleteGroupPlan(plan.planId, h.deps)).toEqual({ ok: true, removed: true });
     expect(h.plans.get(plan.planId)).toBeNull();
@@ -667,7 +830,9 @@ describe('the organizer holds what its own tier admits (§13)', () => {
     const read = ok(await readGroupPlan(plan.planId, h.deps));
     expect(guest(read, GARCIA).outcome).toBe('answered');
     expect(guest(read, GARCIA).reply).toEqual({ status: 'accepted', accepted_slots: [SAT_26] });
-    expect(guest(read, GARCIA).disclosures).toEqual([{ kind: 'transport', text: 'we can drive', about: 'household' }]);
+    expect(guest(read, GARCIA).disclosures).toEqual([
+      { kind: 'transport', text: 'we can drive', about: 'household' },
+    ]);
     // …and the prose that may repeat the refused fact is not held either.
     const plan2 = await openDefault(h);
     reply(h, plan2, MILLER, {
@@ -711,10 +876,12 @@ describe('a provisional fold is not a decision (§4, §13)', () => {
 describe('a settled plan can be reopened or stopped (§13)', () => {
   it('widen from settled reopens the fold within the round ceiling; abandon from settled stops it', async () => {
     const plan = await openDefault(h);
-    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    for (const did of [GARCIA, MILLER, JOHNSON])
+      reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
     ok(await readGroupPlan(plan.planId, h.deps));
     const confirming = ok(await chooseSlot(plan.planId, SAT_26, h.deps));
-    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    for (const did of [GARCIA, MILLER, JOHNSON])
+      reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
     setNodeDID('did:plc:mikeorganiser0000000000');
     const settled = ok(await readGroupPlan(plan.planId, h.deps));
     expect(settled.state).toBe('settled');
@@ -727,7 +894,11 @@ describe('a settled plan can be reopened or stopped (§13)', () => {
     ]);
     // The Garcias can't make the 26th after all: the organizer reopens with other dates.
     const reopened = ok(await widenPlan(plan.planId, [{ start: 'Sun 27' }], h.deps));
-    expect(booked().slice(3).map((m) => [m.to, (m.body as { state: string }).state])).toEqual([
+    expect(
+      booked()
+        .slice(3)
+        .map((m) => [m.to, (m.body as { state: string }).state]),
+    ).toEqual([
       [GARCIA, 'cancelled'],
       [MILLER, 'cancelled'],
       [JOHNSON, 'cancelled'],
@@ -743,10 +914,12 @@ describe('a settled plan can be reopened or stopped (§13)', () => {
   it('deleting a settled plan tells each booked guest first; one that cannot be told keeps the plan', async () => {
     setNodeDID('did:plc:mikeorganiser0000000000');
     const plan = await openDefault(h);
-    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    for (const did of [GARCIA, MILLER, JOHNSON])
+      reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
     ok(await readGroupPlan(plan.planId, h.deps));
     const confirming = ok(await chooseSlot(plan.planId, SAT_26, h.deps));
-    for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
+    for (const did of [GARCIA, MILLER, JOHNSON])
+      reply(h, confirming, did, { status: 'accepted', accepted_slots: [SAT_26] });
     expect(ok(await readGroupPlan(plan.planId, h.deps)).state).toBe('settled');
     h.failSendsTo.add(MILLER);
     expect(await deleteGroupPlan(plan.planId, h.deps)).toEqual({
@@ -763,7 +936,8 @@ describe('a settled plan can be reopened or stopped (§13)', () => {
     h.failSendsTo.delete(MILLER);
     expect(await deleteGroupPlan(plan.planId, h.deps)).toEqual({ ok: true, removed: true });
     const cancels = h.preflights.filter(
-      (m) => m.type === 'coordination.booked' && (m.body as { state: string }).state === 'cancelled',
+      (m) =>
+        m.type === 'coordination.booked' && (m.body as { state: string }).state === 'cancelled',
     );
     // Each guest told once: the Garcias and Johnsons on the first try, the Millers on the second.
     expect(cancels.map((m) => m.to).sort()).toEqual([GARCIA, JOHNSON, MILLER].sort());
@@ -788,7 +962,10 @@ describe('the fan-out survives its own faults', () => {
       await openGroupPlan(
         {
           intent: INTENT,
-          guests: [{ contactDid: GARCIA, required: true }, { contactDid: MILLER, required: true }],
+          guests: [
+            { contactDid: GARCIA, required: true },
+            { contactDid: MILLER, required: true },
+          ],
           candidates: [SAT_26],
           windowSeconds: 120,
         },
@@ -824,7 +1001,10 @@ describe('the fan-out survives its own faults', () => {
     expect(h.queries).toHaveLength(3);
     expect(taskOf(read, MILLER)).toBe(millerTask);
     expect(guest(read, MILLER)).toEqual(
-      expect.objectContaining({ outcome: 'answered', reply: { status: 'accepted', accepted_slots: [SAT_26] } }),
+      expect.objectContaining({
+        outcome: 'answered',
+        reply: { status: 'accepted', accepted_slots: [SAT_26] },
+      }),
     );
     // The 1:1 path is unchanged: an unscoped repeat of a COMPLETED query is a new query.
     const again = await submitServiceQuery(
@@ -889,10 +1069,16 @@ describe('deleting a plan deletes what guests disclosed for it (§7)', () => {
 describe('what leaves the node, and what the log holds', () => {
   it('the audit trail carries counts and ids, never the intent or a disclosure', async () => {
     const plan = await openDefault(h);
-    reply(h, plan, GARCIA, { status: 'accepted', accepted_slots: [SAT_26], disclosures: [{ kind: 'dietary', text: 'peanut allergy', about: 'nobody' }] });
+    reply(h, plan, GARCIA, {
+      status: 'accepted',
+      accepted_slots: [SAT_26],
+      disclosures: [{ kind: 'dietary', text: 'peanut allergy', about: 'nobody' }],
+    });
     ok(await readGroupPlan(plan.planId, h.deps));
     appendAudit('test', 'marker', 'x');
-    const everything = queryAudit().map((e) => `${e.action} ${e.resource} ${e.detail ?? ''}`).join('\n');
+    const everything = queryAudit()
+      .map((e) => `${e.action} ${e.resource} ${e.detail ?? ''}`)
+      .join('\n');
     expect(everything).toContain('group_plan_opened');
     expect(everything).not.toContain('Emma');
     expect(everything).not.toContain('peanut');
@@ -1056,9 +1242,20 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
     installGroupSlotStrategy({
       settings: () => settings,
       canSpend: (id, nowMs) =>
-        strategies.canSpend({ kind: 'group.organizer', negotiationId: id, nowMs, thresholdVersion: 0 }).ok,
+        strategies.canSpend({
+          kind: 'group.organizer',
+          negotiationId: id,
+          nowMs,
+          thresholdVersion: 0,
+        }).ok,
       charge: (id, nowMs) =>
-        strategies.charge({ kind: 'group.organizer', negotiationId: id, count: 1, nowMs, thresholdVersion: 0 }).ok,
+        strategies.charge({
+          kind: 'group.organizer',
+          negotiationId: id,
+          count: 1,
+          nowMs,
+          thresholdVersion: 0,
+        }).ok,
       turns,
       submit: (brief) => {
         briefs.push(brief);
@@ -1102,7 +1299,12 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
             kind: 'group.organizer',
             ref: { negotiationId: planId, turn },
             ...(answersSeen > 0
-              ? { ownerAnswers: Array.from({ length: answersSeen }, () => ({ question: 'q', answer: 'yes' })) }
+              ? {
+                  ownerAnswers: Array.from({ length: answersSeen }, () => ({
+                    question: 'q',
+                    answer: 'yes',
+                  })),
+                }
               : {}),
           },
           result: { move: { kind: 'ask_owner', question } },
@@ -1115,7 +1317,10 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
           input: {
             kind: 'group.organizer',
             ref: { negotiationId: planId, turn },
-            ownerAnswers: Array.from({ length: answersSeen }, () => ({ question: 'q', answer: 'yes' })),
+            ownerAnswers: Array.from({ length: answersSeen }, () => ({
+              question: 'q',
+              answer: 'yes',
+            })),
           },
           result: { move: { kind: 'propose', versions: [{ terms: [{ name: 'slot', value }] }] } },
         },
@@ -1123,25 +1328,33 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
       );
     /** The owner answers the card the way the inbox does; the handler is told. */
     function answer(cardId: string, decision: 'approved' | 'denied'): void {
-      const task = decision === 'approved' ? h.workflow.approve(cardId) : h.workflow.cancel(cardId, 'no');
+      const task =
+        decision === 'approved' ? h.workflow.approve(cardId) : h.workflow.cancel(cardId, 'no');
       handler({ task, decision });
     }
-    const openCard = (planId: string, turn: number) => questions.openFor('group.organizer', planId, turn)?.cardId ?? '';
+    const openCard = (planId: string, turn: number) =>
+      questions.openFor('group.organizer', planId, turn)?.cardId ?? '';
     const turnState = (planId: string, turn: number) =>
       new StrategyTurnStore(db).get('group.organizer', planId, turn)?.state;
 
     it('GQ-01: a question goes on a card; the round waits; a yes goes back to Brain, whose pick then stands', async () => {
       const plan = await folded();
-      expect(await askMove(plan.planId, 1, 'Saturday 26th clashes with the school fete. Take it anyway?')).toBe(
-        'asked_owner',
-      );
+      expect(
+        await askMove(
+          plan.planId,
+          1,
+          'Saturday 26th clashes with the school fete. Take it anyway?',
+        ),
+      ).toBe('asked_owner');
       const card = h.workflow.store().getById(openCard(plan.planId, 1));
       expect(card?.status).toBe('pending_approval');
       expect(card?.description).toBe(
         'Brain asks, on a group booking: Saturday 26th clashes with the school fete. Take it anyway?',
       );
       // The card names no plan and no guest.
-      expect(card?.payload).not.toMatch(new RegExp([plan.planId, GARCIA, MILLER, JOHNSON].join('|')));
+      expect(card?.payload).not.toMatch(
+        new RegExp([plan.planId, GARCIA, MILLER, JOHNSON].join('|')),
+      );
       // Nothing is chosen while the card is open, and reading does not ask Brain again.
       const waiting = ok(await readGroupPlan(plan.planId, h.deps));
       expect(waiting.state).toBe('folded');
@@ -1171,7 +1384,9 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
       const plan = await folded();
       await askMove(plan.planId, 1, 'May I pick the earlier one?');
       answer(openCard(plan.planId, 1), 'denied');
-      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'May I pick the earlier one?', answer: 'no' }]);
+      expect(briefs[1]?.ownerAnswers).toEqual([
+        { question: 'May I pick the earlier one?', answer: 'no' },
+      ]);
       // Brain asks a second question; the owner lets it lapse.
       expect(await askMove(plan.planId, 1, 'Then the later one?', 1)).toBe('asked_owner');
       const second = h.workflow.store().getById(openCard(plan.planId, 1));
@@ -1236,7 +1451,9 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
       const plan = await folded();
       await askMove(plan.planId, 1, `Is ${plan.planId} the family lunch?`);
       const card = h.workflow.store().getById(openCard(plan.planId, 1));
-      expect(card?.description).toBe('Brain asks, on a group booking: Is this deal the family lunch?');
+      expect(card?.description).toBe(
+        'Brain asks, on a group booking: Is this deal the family lunch?',
+      );
       expect(card?.payload).not.toContain(plan.planId);
     });
 
@@ -1251,7 +1468,8 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
     it('GQ-09: a delete that stops with a guest still to tell withdraws Brain’s question', async () => {
       setNodeDID('did:plc:mikeorganiser0000000000');
       const plan = await openDefault(h);
-      for (const did of [GARCIA, MILLER, JOHNSON]) reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
+      for (const did of [GARCIA, MILLER, JOHNSON])
+        reply(h, plan, did, { status: 'accepted', accepted_slots: [SAT_26] });
       ok(await readGroupPlan(plan.planId, h.deps));
       const confirming = ok(await chooseSlot(plan.planId, SAT_26, h.deps));
       for (const did of [GARCIA, MILLER, JOHNSON])
@@ -1261,13 +1479,17 @@ describe('Brain picks the slot (COMMITMENT_KERNEL §15 step 11)', () => {
       h.failSendsTo.add(MILLER);
       const wider = ok(await widenPlan(plan.planId, [SAT_19], h.deps));
       // Miller cannot be reached for the wider round either: the owner goes on without them.
-      for (const did of [GARCIA, JOHNSON]) reply(h, wider, did, { status: 'accepted', accepted_slots: [SAT_19] });
+      for (const did of [GARCIA, JOHNSON])
+        reply(h, wider, did, { status: 'accepted', accepted_slots: [SAT_19] });
       ok(await makeGuestOptional(plan.planId, MILLER, h.deps));
       const refolded = ok(await readGroupPlan(plan.planId, h.deps));
       expect(refolded.state).toBe('folded');
       expect(await askMove(plan.planId, refolded.round, 'The 19th then?')).toBe('asked_owner');
       const cardId = openCard(plan.planId, refolded.round);
-      expect(await deleteGroupPlan(plan.planId, h.deps)).toMatchObject({ ok: false, refusal: 'cancellations_pending' });
+      expect(await deleteGroupPlan(plan.planId, h.deps)).toMatchObject({
+        ok: false,
+        refusal: 'cancellations_pending',
+      });
       expect(h.workflow.store().getById(cardId)?.status).toBe('cancelled');
       expect(questions.byCard(cardId)?.answer).toBe('lapsed');
     });

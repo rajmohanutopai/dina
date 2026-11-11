@@ -38,9 +38,7 @@ export function useReviewPublishJob(
     const bind = (): void => {
       setJob(readJob(threadId, draftId));
       unsubRepo?.();
-      unsubRepo = getReviewPublishRepository()?.subscribe(() =>
-        setJob(readJob(threadId, draftId)),
-      );
+      unsubRepo = getReviewPublishRepository()?.subscribe(() => setJob(readJob(threadId, draftId)));
     };
     bind();
     // Re-bind on EITHER the repo being (re)installed OR the booted node becoming

@@ -23,7 +23,6 @@ describe('Core API Contract', () => {
   // Skip all tests in this suite if harness couldn't bind a socket
   function requireHarness(): CoreTestHarness {
     if (!harness) {
-      // eslint-disable-next-line jest/no-standalone-expect
       expect('harness').toBe('available (socket binding failed — skipping)');
     }
     return harness!;

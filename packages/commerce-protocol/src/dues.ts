@@ -28,7 +28,9 @@ export interface DerivedDue {
   basis: DueBasis;
 }
 
-export type DeriveDuesResult = { value: DerivedDue[]; error: null } | { value: null; error: string };
+export type DeriveDuesResult =
+  | { value: DerivedDue[]; error: null }
+  | { value: null; error: string };
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -58,7 +60,10 @@ export function deriveDues(input: {
 
   if (input.due_basis === 'from_acceptance') {
     if (input.accepted_at === undefined || input.order_total_minor === undefined) {
-      return { value: null, error: 'dues: from_acceptance needs accepted_at and order_total_minor' };
+      return {
+        value: null,
+        error: 'dues: from_acceptance needs accepted_at and order_total_minor',
+      };
     }
     const dateError = validateIsoUtc(input.accepted_at, 'dues.accepted_at');
     if (dateError) return { value: null, error: dateError };
@@ -76,7 +81,10 @@ export function deriveDues(input: {
   const receipts = input.receipted ?? [];
   const dues: DerivedDue[] = [];
   for (const [i, receipt] of receipts.entries()) {
-    const dateError = validateIsoUtc(receipt.received_at, `dues.receipted[${String(i)}].received_at`);
+    const dateError = validateIsoUtc(
+      receipt.received_at,
+      `dues.receipted[${String(i)}].received_at`,
+    );
     if (dateError) return { value: null, error: dateError };
     const amount: Money = { currency: input.currency, minor_units: receipt.value_minor };
     const moneyError = validateMoney(amount);

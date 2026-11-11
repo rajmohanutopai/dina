@@ -11,11 +11,7 @@ import * as fs from 'node:fs/promises';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import {
-  FileKeystore,
-  KeytarKeystore,
-  createKeytarKeystore,
-} from '../src';
+import { FileKeystore, KeytarKeystore, createKeytarKeystore } from '../src';
 
 async function makeTmpDir(): Promise<string> {
   return fs.mkdtemp(path.join(os.tmpdir(), 'keystore-node-test-'));
@@ -152,7 +148,11 @@ describe('FileKeystore', () => {
 });
 
 describe('KeytarKeystore (mocked)', () => {
-  interface Row { service: string; account: string; password: string }
+  interface Row {
+    service: string;
+    account: string;
+    password: string;
+  }
 
   /** Stand-in for the native `keytar` module. */
   function mockKeytar(): {
@@ -161,9 +161,7 @@ describe('KeytarKeystore (mocked)', () => {
       getPassword: (service: string, account: string) => Promise<string | null>;
       setPassword: (service: string, account: string, password: string) => Promise<void>;
       deletePassword: (service: string, account: string) => Promise<boolean>;
-      findCredentials: (
-        service: string,
-      ) => Promise<{ account: string; password: string }[]>;
+      findCredentials: (service: string) => Promise<{ account: string; password: string }[]>;
     };
   } {
     const rows: Row[] = [];

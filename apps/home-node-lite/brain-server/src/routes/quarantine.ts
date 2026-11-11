@@ -24,7 +24,10 @@ function asError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-interface SenderBody { sender_did?: unknown; sender_label?: unknown }
+interface SenderBody {
+  sender_did?: unknown;
+  sender_label?: unknown;
+}
 
 function readSender(body: SenderBody | undefined): { did: string; label: string } {
   const b = body ?? {};

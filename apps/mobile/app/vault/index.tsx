@@ -15,15 +15,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Stack, useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useMemo, useState } from 'react';
-import {
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import {
@@ -209,10 +201,7 @@ function AddVaultForm({
   }, [name, tier, description, onCreated]);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.formScreen}
-      behavior="padding"
-    >
+    <KeyboardAvoidingView style={styles.formScreen} behavior="padding">
       <ScrollView
         style={styles.scrollFlex}
         contentContainerStyle={styles.formScrollContent}

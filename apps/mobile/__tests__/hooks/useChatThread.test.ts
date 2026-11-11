@@ -5,7 +5,6 @@
  */
 
 import { resetChatDefaults } from '../../../brain/src/chat/orchestrator';
-import { resetThreads } from '../../../brain/src/chat/thread';
 import { resetStagingState } from '../../../core/src/staging/service';
 import {
   getThreadState,

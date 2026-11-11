@@ -41,7 +41,12 @@ describe('activation', () => {
     expect(second).toEqual({ ok: true, epoch: 2 });
     expect(first).toEqual({ ok: false, reason: 'lost_race' });
     expect(w.rowOf(r1).publication_active).toBe(0);
-    expect(w.repo.fence()).toEqual(expect.objectContaining({ publisher_epoch: 2, publisher_instance: w.rowOf(r2).publisher_instance }));
+    expect(w.repo.fence()).toEqual(
+      expect.objectContaining({
+        publisher_epoch: 2,
+        publisher_instance: w.rowOf(r2).publisher_instance,
+      }),
+    );
   });
 
   // Plan E67
@@ -49,28 +54,36 @@ describe('activation', () => {
     const n = w.node();
     w.listOn(n);
     w.repo.reachable = false;
-    expect(await n.publisher.activate({ refence: false })).toEqual({ ok: false, reason: 'repo_unreachable' });
+    expect(await n.publisher.activate({ refence: false })).toEqual({
+      ok: false,
+      reason: 'repo_unreachable',
+    });
     w.repo.reachable = true;
     await n.publisher.flush();
     expect(w.repo.writes).toEqual([]);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ publication_active: 0, publisher_epoch: 0 }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({ publication_active: 0, publisher_epoch: 0 }),
+    );
   });
 
   // Plan E68
   it.each([
     ['a fence it can verify', KEY_A, false],
     ['a fence it cannot verify, even on the owner’s word', KEY_B, true],
-  ])('epochs stay bounded safe integers: above %s at the largest safe epoch, nothing is written', async (_name, signer, refence) => {
-    await w.writeFence(signer, Number.MAX_SAFE_INTEGER, '00000000-0000-4000-8000-999999999999');
-    const fenceBefore = w.repo.fenceCid();
-    const n = w.node();
-    w.listOn(n);
-    expect((await n.publisher.activate({ refence })).ok).toBe(false);
-    await n.publisher.flush();
-    expect(w.repo.writes).toEqual([]);
-    expect(w.repo.fenceCid()).toBe(fenceBefore);
-    expect(w.rowOf(n).publication_active).toBe(0);
-  });
+  ])(
+    'epochs stay bounded safe integers: above %s at the largest safe epoch, nothing is written',
+    async (_name, signer, refence) => {
+      await w.writeFence(signer, Number.MAX_SAFE_INTEGER, '00000000-0000-4000-8000-999999999999');
+      const fenceBefore = w.repo.fenceCid();
+      const n = w.node();
+      w.listOn(n);
+      expect((await n.publisher.activate({ refence })).ok).toBe(false);
+      await n.publisher.flush();
+      expect(w.repo.writes).toEqual([]);
+      expect(w.repo.fenceCid()).toBe(fenceBefore);
+      expect(w.rowOf(n).publication_active).toBe(0);
+    },
+  );
 
   // Plan E81
   it('the fence write is conditional on the head and on the fence it replaces: null when there was none', async () => {
@@ -125,7 +138,14 @@ describe('the read sequence', () => {
     expect(sequences).toBe(3); // the notes' bound: three tries
     expect(w.repo.writes.length).toBe(writes);
     expect(w.nameInRepo()).toBe('Bus 42');
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'published', attempt_tuple_json: null, publication_active: 1, notice: null }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'published',
+        attempt_tuple_json: null,
+        publication_active: 1,
+        notice: null,
+      }),
+    );
     // Settled again, the next step publishes.
     w.repo.onEveryRecordRead = null;
     await w.step(n);
@@ -158,7 +178,9 @@ describe('the predicate drives the card', () => {
     n.refuse = 'public_origin_invalid';
     await w.step(n);
     expect(w.repo.card()).toBeNull();
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'not_published', card_maybe_present: 0 }),
+    );
     n.refuse = null;
     await w.step(n);
     expect(w.nameInRepo()).toBe('Bus 42');
@@ -174,7 +196,9 @@ describe('the predicate drives the card', () => {
     await w.step(n);
     expect(w.repo.writes.length).toBe(writes);
     expect(w.nameInRepo()).toBe('Bus 42');
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'published', attempt_tuple_json: null }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'published', attempt_tuple_json: null }),
+    );
     n.buildThrows = false;
     await w.step(n);
     expect(w.nameInRepo()).toBe('Bus 47');
@@ -215,7 +239,12 @@ describe('the 14-day refresh', () => {
   // Plan E104
   it('14 days less 1 ms reads and writes nothing; at 14 days the record is a new commit with the same card', async () => {
     const n = await w.activeNode();
-    const before = { cid: w.repo.cardCid(), card: w.repo.card()?.card, reads: w.repo.reads, writes: w.repo.writes.length };
+    const before = {
+      cid: w.repo.cardCid(),
+      card: w.repo.card()?.card,
+      reads: w.repo.reads,
+      writes: w.repo.writes.length,
+    };
     w.clock += DIRECTORY_FRESHNESS_CADENCE_MS - 1;
     await w.step(n);
     expect(w.repo.reads).toBe(before.reads);
@@ -254,7 +283,9 @@ describe('retries', () => {
     expect(delays).toEqual([5_000, 30_000, 120_000, 600_000, 1_800_000, 1_800_000]);
     await w.step(n);
     expect(w.nameInRepo()).toBe('Bus 42');
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'published', attempts: 0, next_retry_at: null }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'published', attempts: 0, next_retry_at: null }),
+    );
   });
 
   // Cold audit C6-10: "predicate-false always drives an unpublish" (§8.2)
@@ -266,13 +297,25 @@ describe('retries', () => {
     await w.touchListing(n);
     w.repo.dropNextWrite = true;
     await w.step(n);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', retry_operation: 'publish', next_retry_at: w.clock + 5_000 }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        retry_operation: 'publish',
+        next_retry_at: w.clock + 5_000,
+      }),
+    );
     // The owner removes the last public listing meanwhile: nothing is left to project.
     n.card = null;
     await w.touchListing(n);
     await w.step(n);
     expect(w.repo.card()).toBeNull();
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ card_maybe_present: 0, next_retry_at: null, retry_operation: null }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        card_maybe_present: 0,
+        next_retry_at: null,
+        retry_operation: null,
+      }),
+    );
   });
 
   it('control: a failed unpublish waits out its own retry time', async () => {
@@ -304,7 +347,9 @@ describe('retries', () => {
     w.repo.dropNextWrite = true;
     await w.step(n);
     const failed = w.rowOf(n);
-    expect(failed).toEqual(expect.objectContaining({ state: 'failed', attempts: 1, attempt_tuple_json: null }));
+    expect(failed).toEqual(
+      expect.objectContaining({ state: 'failed', attempts: 1, attempt_tuple_json: null }),
+    );
     const due = failed.next_retry_at ?? 0;
     expect(due).toBe(w.clock + PUBLISH_RETRY_DELAYS_MS[0]);
     // The process restarts before the retry is due: its first step reads and writes nothing.
@@ -322,7 +367,12 @@ describe('retries', () => {
     expect(w.repo.attempted.length - quiet.attempted).toBe(1);
     expect(w.nameInRepo()).toBe('Bus 42');
     expect(w.rowOf(n)).toEqual(
-      expect.objectContaining({ state: 'published', attempts: 0, attempt_tuple_json: null, last_published_cid: w.repo.cardCid() }),
+      expect.objectContaining({
+        state: 'published',
+        attempts: 0,
+        attempt_tuple_json: null,
+        last_published_cid: w.repo.cardCid(),
+      }),
     );
   });
 });
@@ -341,7 +391,13 @@ describe('keys', () => {
     expect(w.repo.writes.slice(writes)).toEqual([`delete ${A2A_CARD_COLLECTION}`]);
     expect(w.repo.card()).toBeNull();
     expect(w.fenceVerifiesUnder(KEY_A)).toBe(true);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', publication_active: 0, card_maybe_present: 0 }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'not_published',
+        publication_active: 0,
+        card_maybe_present: 0,
+      }),
+    );
   });
 });
 
@@ -357,7 +413,13 @@ describe('two-phase deactivation', () => {
     w.restart(n);
     await n.publisher.flush();
     expect(w.repo.card()).toBeNull();
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', publication_active: 0, card_maybe_present: 0 }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'not_published',
+        publication_active: 0,
+        card_maybe_present: 0,
+      }),
+    );
   });
 
   // Plan E116
@@ -373,7 +435,13 @@ describe('two-phase deactivation', () => {
     w.restart(n);
     await n.publisher.flush();
     expect(w.repo.attempted.length).toBe(attempted);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'not_published', publication_active: 0, card_maybe_present: 0 }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'not_published',
+        publication_active: 0,
+        card_maybe_present: 0,
+      }),
+    );
   });
 
   // Plan E117
@@ -394,7 +462,13 @@ describe('two-phase deactivation', () => {
     expect(w.rowOf(a).state).toBe('deactivating');
     w.clock += PUBLISH_RETRY_DELAYS_MS[1];
     await w.step(a);
-    expect(w.rowOf(a)).toEqual(expect.objectContaining({ state: 'stood_down', publication_active: 0, notice: 'another_server_publishing' }));
+    expect(w.rowOf(a)).toEqual(
+      expect.objectContaining({
+        state: 'stood_down',
+        publication_active: 0,
+        notice: 'another_server_publishing',
+      }),
+    );
     expect(w.nameInRepo()).toBe('Bus 42');
     expect(w.repo.writes.filter((x) => x.startsWith('delete'))).toEqual([]);
     expect(w.rowOf(b).publication_active).toBe(1);
@@ -435,7 +509,13 @@ describe('stand-down', () => {
     n.card = CARD('Bus 50');
     await w.touchListing(n);
     await w.step(n);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'stood_down', publication_active: 0, notice: 'another_server_publishing' }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'stood_down',
+        publication_active: 0,
+        notice: 'another_server_publishing',
+      }),
+    );
     expect(w.repo.writes.length).toBe(writes);
     expect(w.nameInRepo()).toBe('Bus 42');
   });
@@ -448,7 +528,9 @@ describe('stand-down', () => {
     n.card = CARD('Bus 51');
     await w.touchListing(n);
     await w.step(n);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'stood_down', notice: 'fence_missing' }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({ state: 'stood_down', notice: 'fence_missing' }),
+    );
     expect(w.repo.writes.length).toBe(writes);
   });
 });

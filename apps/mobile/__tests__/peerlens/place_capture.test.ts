@@ -147,7 +147,7 @@ describe('buildMapsUri — AppView enricher parity', () => {
   });
 
   it('preserves precision of the rounded values', () => {
-    const c = validateCoordinates(40.7128123456789, -74.0059876543210)!;
+    const c = validateCoordinates(40.7128123456789, -74.005987654321)!;
     const uri = buildMapsUri(c);
     expect(uri).toBe('https://www.google.com/maps?q=40.712812,-74.005988');
   });
@@ -215,21 +215,19 @@ describe('buildPlaceSubjectRef — composition', () => {
 
 describe('buildPlaceSubjectRef — validation', () => {
   it('throws on empty name', () => {
-    expect(() =>
-      buildPlaceSubjectRef({ name: '', coordinates: { lat: 1, lng: 1 } }),
-    ).toThrow(/non-empty/);
+    expect(() => buildPlaceSubjectRef({ name: '', coordinates: { lat: 1, lng: 1 } })).toThrow(
+      /non-empty/,
+    );
   });
 
   it('throws on whitespace-only name', () => {
-    expect(() =>
-      buildPlaceSubjectRef({ name: '   ', coordinates: { lat: 1, lng: 1 } }),
-    ).toThrow(/non-empty/);
+    expect(() => buildPlaceSubjectRef({ name: '   ', coordinates: { lat: 1, lng: 1 } })).toThrow(
+      /non-empty/,
+    );
   });
 
   it('throws when neither coordinates nor Place ID provided (place is unidentifiable)', () => {
-    expect(() =>
-      buildPlaceSubjectRef({ name: 'X', coordinates: null }),
-    ).toThrow(/unidentifiable/);
+    expect(() => buildPlaceSubjectRef({ name: 'X', coordinates: null })).toThrow(/unidentifiable/);
   });
 
   it('throws when coordinates is null AND placeId is empty/whitespace', () => {
@@ -244,7 +242,11 @@ describe('buildPlaceSubjectRef — validation', () => {
 describe('transitionCaptureMode — valid transitions', () => {
   // Coverage matrix from the state-machine table. A test per declared
   // (from, event) → to entry plus a few cross-cutting invariants.
-  const validTransitions: [CaptureMode, Parameters<typeof transitionCaptureMode>[1], CaptureMode][] = [
+  const validTransitions: [
+    CaptureMode,
+    Parameters<typeof transitionCaptureMode>[1],
+    CaptureMode,
+  ][] = [
     ['idle', 'start_locating', 'locating'],
     ['idle', 'start_manual', 'manual'],
     ['locating', 'success', 'ready'],

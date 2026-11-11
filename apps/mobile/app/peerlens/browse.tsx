@@ -96,7 +96,12 @@ export default function BrowseScreen(props: BrowseScreenProps = {}): React.React
     <View style={styles.container} testID="browse-screen">
       <View style={styles.searchBarContainer}>
         <View style={styles.searchBar}>
-          <Ionicons name="search-outline" size={18} color={colors.textMuted} style={styles.searchIcon} />
+          <Ionicons
+            name="search-outline"
+            size={18}
+            color={colors.textMuted}
+            style={styles.searchIcon}
+          />
           <TextInput
             value={q}
             onChangeText={onQChange}
@@ -113,7 +118,10 @@ export default function BrowseScreen(props: BrowseScreenProps = {}): React.React
           {q.length > 0 ? (
             <Pressable
               onPress={() => onQChange?.('')}
-              style={({ pressed }) => [styles.searchClearBtn, pressed && styles.searchClearBtnPressed]}
+              style={({ pressed }) => [
+                styles.searchClearBtn,
+                pressed && styles.searchClearBtnPressed,
+              ]}
               testID="trust-search-clear"
               accessibilityRole="button"
               accessibilityLabel="Clear search"
@@ -125,7 +133,12 @@ export default function BrowseScreen(props: BrowseScreenProps = {}): React.React
         </View>
       </View>
 
-      <FacetBarView facets={facets} activeValue={activeFacet} onTap={onTapFacet} onShowMore={onShowMoreFacets} />
+      <FacetBarView
+        facets={facets}
+        activeValue={activeFacet}
+        onTap={onTapFacet}
+        onShowMore={onShowMoreFacets}
+      />
 
       {isLoading && feed.length === 0 ? (
         <View style={styles.loading} testID="trust-feed-loading">
@@ -171,7 +184,11 @@ export default function BrowseScreen(props: BrowseScreenProps = {}): React.React
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.bgPrimary },
-  searchBarContainer: { paddingHorizontal: spacing.lg, paddingTop: spacing.md, paddingBottom: spacing.sm },
+  searchBarContainer: {
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.md,
+    paddingBottom: spacing.sm,
+  },
   searchBar: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -181,12 +198,23 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   searchIcon: { marginRight: spacing.sm },
-  searchInput: { ...textStyles.body, flex: 1, color: colors.textPrimary, paddingVertical: spacing.sm },
+  searchInput: {
+    ...textStyles.body,
+    flex: 1,
+    color: colors.textPrimary,
+    paddingVertical: spacing.sm,
+  },
   searchClearBtn: { padding: spacing.xs },
   searchClearBtnPressed: { opacity: 0.6 },
   loading: { flex: 1, paddingVertical: spacing.xxl, alignItems: 'center', gap: spacing.md },
   loadingText: textStyles.bodySmall,
-  empty: { flex: 1, paddingVertical: spacing.xxl, paddingHorizontal: spacing.lg, alignItems: 'center', gap: spacing.sm },
+  empty: {
+    flex: 1,
+    paddingVertical: spacing.xxl,
+    paddingHorizontal: spacing.lg,
+    alignItems: 'center',
+    gap: spacing.sm,
+  },
   emptyTitle: { ...textStyles.h3, marginTop: spacing.md },
   emptyBody: { ...textStyles.bodySmall, color: colors.textSecondary, textAlign: 'center' },
   searchCta: {

@@ -87,8 +87,7 @@ export interface ParsedAttestationDeepLink {
  * validator) for the DID format itself; this regex only verifies the
  * URI's structural shape.
  */
-const AT_URI_REGEX =
-  /^at:\/\/([^/\s]+)\/([a-zA-Z0-9.-]+(?:\.[a-zA-Z0-9.-]+)+)\/([^/\s]+)$/;
+const AT_URI_REGEX = /^at:\/\/([^/\s]+)\/([a-zA-Z0-9.-]+(?:\.[a-zA-Z0-9.-]+)+)\/([^/\s]+)$/;
 
 const PEERLENS_BASE_PATH = '/peerlens/';
 const ATTESTATION_QUERY_KEY = 'attestation';
@@ -104,13 +103,13 @@ export function parseAtUri(uri: unknown): ParsedAtUri | null {
   const match = AT_URI_REGEX.exec(uri);
   if (!match) return null;
   // Regex groups: 1=did, 2=collection, 3=rkey. Indices are 1-based.
-  // The match always has exactly 4 entries (full + 3 groups) — the
-  // non-null assertions reflect that contract, not a guess.
-  return {
-    did: match[1]!,
-    collection: match[2]!,
-    rkey: match[3]!,
-  };
+  // The match always has exactly 4 entries (full + 3 groups); none of
+  // the groups is optional, so a missing one breaks that contract.
+  const [, did, collection, rkey] = match;
+  if (did === undefined || collection === undefined || rkey === undefined) {
+    throw new Error('AT-URI match is missing a capture group');
+  }
+  return { did, collection, rkey };
 }
 
 /**
@@ -143,9 +142,7 @@ export function buildAttestationDeepLink(input: AttestationDeepLinkInput): strin
     );
   }
   if (!AT_URI_REGEX.test(att)) {
-    throw new Error(
-      `buildAttestationDeepLink: attestationUri is not a valid AT-URI: "${att}"`,
-    );
+    throw new Error(`buildAttestationDeepLink: attestationUri is not a valid AT-URI: "${att}"`);
   }
 
   return `${path}?${ATTESTATION_QUERY_KEY}=${encodeURIComponent(att)}`;

@@ -152,7 +152,8 @@ export function getAskRecordRepository(): AskRecordRepository | null {
 export function wireToStoredAskRecord(body: unknown): StoredAskRecord | null {
   if (body === null || typeof body !== 'object') return null;
   const b = body as Record<string, unknown>;
-  const str = (v: unknown): string | undefined => (typeof v === 'string' && v !== '' ? v : undefined);
+  const str = (v: unknown): string | undefined =>
+    typeof v === 'string' && v !== '' ? v : undefined;
   const num = (v: unknown): number | undefined =>
     typeof v === 'number' && Number.isFinite(v) ? v : undefined;
   const id = str(b.id);

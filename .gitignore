@@ -242,9 +242,6 @@ secrets/*
 # Install-time crypto venv (created by install.sh for seed wrapping)
 .install-venv/
 
-# Go build artifacts
-legacy/go-core/dina-core
-
 # Swap files
 *.swp
 *.swo
@@ -264,7 +261,7 @@ appview/dist/
 # working state, never for the public repo.
 .claude/
 
-# Test stack artifacts (from prepare_non_unit_env.sh)
+# Leftovers from the removed Docker test stack (may hold keys)
 .test-stack.json
 .test-stack-keys/
 
@@ -274,16 +271,6 @@ marketing.txt
 api/core-api.bundled.yaml
 # Instance data (secrets, keys, env) — created by install.sh --instance
 instances/
-
-tests/sanity/.env.sanity
-tests/sanity/*.session
-tests/sanity/*.session-journal
-tests/sanity/*.lock
-tests/sanity/regression-alonso/
-tests/sanity/regression-sancho/
-tests/sanity/config-*.json
-tests/sanity/gmail_credentials.json
-tests/sanity/gog-auth/
 
 # ── TypeScript workspace (packages/, apps/, home-node-lite) ──
 # node_modules/ and dist/ are already covered above; the following are specific

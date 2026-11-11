@@ -25,7 +25,6 @@ import { useEffect, useState } from 'react';
 
 import { queryVault } from '@dina/core';
 
-
 import { loadActiveProvider } from '../../ai/active_provider';
 import { createScrubbedLLMProvider } from '../../ai/provider';
 import {
@@ -104,9 +103,7 @@ async function defaultProvider(): Promise<LLMProvider | null> {
   }
 }
 
-export function useComposeContext(
-  opts: UseComposeContextOptions,
-): UseComposeContextState {
+export function useComposeContext(opts: UseComposeContextOptions): UseComposeContextState {
   const [state, setState] = useState<UseComposeContextState>({
     result: null,
     isLoading: false,
@@ -175,10 +172,7 @@ export function useComposeContext(
         const vocabulary = useCasesForCategory(opts.category);
         const nowMs = opts.nowMs ?? Date.now();
 
-        const llm =
-          opts.llmProvider !== undefined
-            ? opts.llmProvider
-            : await defaultProvider();
+        const llm = opts.llmProvider !== undefined ? opts.llmProvider : await defaultProvider();
         if (cancelled) return;
 
         const result = await inferComposeContext({
@@ -205,7 +199,6 @@ export function useComposeContext(
     // dep. Subject/persona/category/nowMs trigger refetches.
     // The persona dep uses a stable string key so an array prop
     // (new reference each render) doesn't re-fire the effect.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     opts.enabled,
     opts.subjectName,

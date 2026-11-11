@@ -76,9 +76,7 @@ function makeProfile(overrides: Partial<PeerlensProfile> = {}): PeerlensProfile 
 
 describe('ReviewerProfileScreen — render states', () => {
   it('renders loading state when profile is null + no error', () => {
-    const { getByTestId, queryByTestId } = render(
-      <ReviewerProfileScreen profile={null} />,
-    );
+    const { getByTestId, queryByTestId } = render(<ReviewerProfileScreen profile={null} />);
     expect(getByTestId('reviewer-profile-loading')).toBeTruthy();
     expect(queryByTestId('reviewer-profile-screen')).toBeNull();
     expect(queryByTestId('reviewer-profile-error')).toBeNull();
@@ -163,7 +161,12 @@ describe('ReviewerProfileScreen — render states', () => {
         isSelf
         authoredRows={[]}
         pendingItems={[
-          { jobId: 'job-1', status: 'publishing', title: 'Great ergonomic chair', publishedUri: null },
+          {
+            jobId: 'job-1',
+            status: 'publishing',
+            title: 'Great ergonomic chair',
+            publishedUri: null,
+          },
         ]}
       />,
     );
@@ -225,9 +228,7 @@ describe('ReviewerProfileScreen — render states', () => {
   });
 
   it('renders loaded state with all sections when profile is provided', () => {
-    const { getByTestId } = render(
-      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />,
-    );
+    const { getByTestId } = render(<ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />);
     expect(getByTestId('reviewer-profile-screen')).toBeTruthy();
     expect(getByTestId('reviewer-stats-grid')).toBeTruthy();
     expect(getByTestId('reviewer-sentiment-row')).toBeTruthy();
@@ -261,37 +262,27 @@ describe('ReviewerProfileScreen — header card', () => {
 
   it('renders the namespace fragment when provided', () => {
     const { getByTestId, getByText } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        namespace="namespace_2"
-        nowMs={NOW}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} namespace="namespace_2" nowMs={NOW} />,
     );
     expect(getByTestId('reviewer-namespace')).toBeTruthy();
     expect(getByText('#namespace_2')).toBeTruthy();
   });
 
   it('omits namespace pill when namespace is null', () => {
-    const { queryByTestId } = render(
-      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />,
-    );
+    const { queryByTestId } = render(<ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />);
     expect(queryByTestId('reviewer-namespace')).toBeNull();
   });
 
   it('shows last-active relative time', () => {
     // Profile's lastActive is NOW - 2h.
-    const { getByText } = render(
-      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />,
-    );
+    const { getByText } = render(<ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />);
     expect(getByText(/Last active 2h ago/)).toBeTruthy();
   });
 });
 
 describe('ReviewerProfileScreen — stats grid', () => {
   it('renders stat cells for each metric', () => {
-    const { getByTestId } = render(
-      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />,
-    );
+    const { getByTestId } = render(<ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} />);
     expect(getByTestId('reviewer-stat-attestations')).toBeTruthy();
     expect(getByTestId('reviewer-stat-vouches')).toBeTruthy();
     expect(getByTestId('reviewer-stat-endorsements')).toBeTruthy();
@@ -405,10 +396,7 @@ describe('ReviewerProfileScreen — active domains', () => {
 
   it('hides the Active-in section entirely when activeDomains is empty', () => {
     const { queryByTestId } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile({ activeDomains: [] })}
-        nowMs={NOW}
-      />,
+      <ReviewerProfileScreen profile={makeProfile({ activeDomains: [] })} nowMs={NOW} />,
     );
     expect(queryByTestId('reviewer-domains-section')).toBeNull();
   });
@@ -424,11 +412,7 @@ describe('ReviewerProfileScreen — accessibility (TN-TEST-061 surface)', () => 
 
   it('Retry button has accessibilityLabel="Retry"', () => {
     const { getByLabelText } = render(
-      <ReviewerProfileScreen
-        profile={null}
-        error="boom"
-        onRetry={() => undefined}
-      />,
+      <ReviewerProfileScreen profile={null} error="boom" onRetry={() => undefined} />,
     );
     expect(getByLabelText('Retry')).toBeTruthy();
   });
@@ -437,9 +421,7 @@ describe('ReviewerProfileScreen — accessibility (TN-TEST-061 surface)', () => 
     const profile = makeProfile({
       attestationSummary: { total: 10, positive: 7, neutral: 2, negative: 1 },
     });
-    const { getByLabelText } = render(
-      <ReviewerProfileScreen profile={profile} nowMs={NOW} />,
-    );
+    const { getByLabelText } = render(<ReviewerProfileScreen profile={profile} nowMs={NOW} />);
     expect(getByLabelText('7 positive')).toBeTruthy();
     expect(getByLabelText('2 neutral')).toBeTruthy();
     expect(getByLabelText('1 negative')).toBeTruthy();
@@ -478,22 +460,14 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
 
   it('hides the section while authoredRows is null (initial load)', () => {
     const { queryByTestId } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={null}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={null} />,
     );
     expect(queryByTestId('reviewer-authored-section')).toBeNull();
   });
 
   it('renders an empty-state line when authoredRows is []', () => {
     const { getByTestId, getByText } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={[]}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={[]} />,
     );
     expect(getByTestId('reviewer-authored-section')).toBeTruthy();
     expect(getByTestId('reviewer-authored-empty')).toBeTruthy();
@@ -502,11 +476,7 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
 
   it('renders one row per authored attestation', () => {
     const { getByTestId, getAllByTestId } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={[ROW_A, ROW_B]}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={[ROW_A, ROW_B]} />,
     );
     expect(getByTestId('reviewer-authored-section')).toBeTruthy();
     expect(getAllByTestId(/^reviewer-authored-row-/)).toHaveLength(2);
@@ -516,11 +486,7 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
 
   it('row carries subject title, sentiment chip, and relative-time label', () => {
     const { getByText, getByTestId } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={[ROW_A]}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={[ROW_A]} />,
     );
     expect(getByText('Aeron Chair')).toBeTruthy();
     expect(getByText('“Worth every penny”')).toBeTruthy();
@@ -531,11 +497,7 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
 
   it('omits the headline line when text is empty', () => {
     const { queryByText } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={[ROW_B]}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={[ROW_B]} />,
     );
     // No quoted line because headline === ''
     expect(queryByText(/“.*”/)).toBeNull();
@@ -546,11 +508,7 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
     // render (3d ago). We assert the time label present and that no
     // text matches the category-style slash path.
     const { getByText, queryByText } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={[ROW_B]}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={[ROW_B]} />,
     );
     expect(getByText('3d ago')).toBeTruthy();
     expect(queryByText(/\//)).toBeNull(); // no `office_furniture/chair`-style category
@@ -572,11 +530,7 @@ describe('ReviewerProfileScreen — Reviews written list', () => {
 
   it('row exposes a descriptive accessibilityLabel', () => {
     const { getByLabelText } = render(
-      <ReviewerProfileScreen
-        profile={makeProfile()}
-        nowMs={NOW}
-        authoredRows={[ROW_A]}
-      />,
+      <ReviewerProfileScreen profile={makeProfile()} nowMs={NOW} authoredRows={[ROW_A]} />,
     );
     expect(getByLabelText('Positive review of Aeron Chair')).toBeTruthy();
   });
@@ -634,9 +588,7 @@ describe('ReviewerProfileScreen — Edit affordance on own reviews', () => {
         authoredRows={[ROW]}
       />,
     );
-    expect(
-      getByLabelText('Edit your positive review of Aeron Chair'),
-    ).toBeTruthy();
+    expect(getByLabelText('Edit your positive review of Aeron Chair')).toBeTruthy();
   });
 
   it('tapping the Edit pill fires onEditAuthored with the full row payload', () => {
@@ -782,7 +734,9 @@ describe('ReviewerProfileScreen — pending-row actions + reconcile', () => {
       <ReviewerProfileScreen
         profile={makeProfile()}
         authoredRows={[liveRow]}
-        pendingItems={[{ jobId: 'r1', status: 'published', title: 'Listed', publishedUri: 'at://x' }]}
+        pendingItems={[
+          { jobId: 'r1', status: 'published', title: 'Listed', publishedUri: 'at://x' },
+        ]}
       />,
     );
     // "Prune when listed": the receipt whose URI is now in the authored list is
@@ -833,9 +787,24 @@ describe('pendingReviewItems (helper)', () => {
   it('includes queued/publishing/published, excludes failed; newest first; DID-scoped', () => {
     const items = pendingReviewItems(
       [
-        job({ jobId: 'a', status: 'queued', createdAt: 1, draftJSON: JSON.stringify({ headline: 'A' }) }),
-        job({ jobId: 'b', status: 'publishing', createdAt: 2, draftJSON: JSON.stringify({ headline: 'B' }) }),
-        job({ jobId: 'c', status: 'published', createdAt: 3, draftJSON: JSON.stringify({ headline: 'C' }) }),
+        job({
+          jobId: 'a',
+          status: 'queued',
+          createdAt: 1,
+          draftJSON: JSON.stringify({ headline: 'A' }),
+        }),
+        job({
+          jobId: 'b',
+          status: 'publishing',
+          createdAt: 2,
+          draftJSON: JSON.stringify({ headline: 'B' }),
+        }),
+        job({
+          jobId: 'c',
+          status: 'published',
+          createdAt: 3,
+          draftJSON: JSON.stringify({ headline: 'C' }),
+        }),
         job({ jobId: 'f', status: 'failed', createdAt: 4 }), // excluded
         job({ jobId: 'other', ownerDid: 'did:plc:other', status: 'queued', createdAt: 5 }), // excluded
       ],

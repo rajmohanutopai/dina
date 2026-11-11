@@ -48,7 +48,12 @@ describe('InlineCreditsCard — wall', () => {
 describe('copy rules (3.1.1 + honesty) — both variants', () => {
   it.each(['low-balance', 'wall'] as const)('%s carries no banned phrases', (variant) => {
     const { toJSON } = render(
-      <InlineCreditsCard variant={variant} estConversationsLeft={5} onSetUp={noop} onDismiss={noop} />,
+      <InlineCreditsCard
+        variant={variant}
+        estConversationsLeft={5}
+        onSetUp={noop}
+        onDismiss={noop}
+      />,
     );
     const text = JSON.stringify(toJSON());
     // 3.1.1: no IAP-steering language in-app.

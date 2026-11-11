@@ -17,7 +17,15 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { loadActiveProvider, saveActiveProvider } from '../../ai/active_provider';
 import { getDeviceCheckToken, getPlayIntegrityToken } from '../../ai/attestation';
@@ -47,7 +55,11 @@ export interface AiProviderSetProps {
 // Stable display order for the picker.
 const PROVIDER_ORDER: ProviderType[] = ['gemini', 'openai', 'claude', 'openrouter'];
 
-export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetProps): React.ReactElement {
+export function AiProviderSet({
+  location,
+  onBack,
+  onContinue,
+}: AiProviderSetProps): React.ReactElement {
   const [loading, setLoading] = useState(true);
   // A provider already has a usable key (keychain or dev env) → step satisfied.
   const [configured, setConfigured] = useState<ProviderType | null>(null);
@@ -119,7 +131,7 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
         // seam so the dev fake-attest override still previews as available.
         const attest =
           platform === 'android'
-            ? (await getPlayIntegrityToken()) ?? (await getDeviceCheckToken())
+            ? ((await getPlayIntegrityToken()) ?? (await getDeviceCheckToken()))
             : await getDeviceCheckToken();
         const cfg = await fetchCreditsConfig(platform);
         if (!cancelled) setCreditsAvailable(cfg.enabled && attest !== null);
@@ -238,8 +250,8 @@ export function AiProviderSet({ location, onBack, onContinue }: AiProviderSetPro
           <Text style={styles.creditsTitle}>Your first conversations are free.</Text>
           <Text style={styles.creditsBody}>Just start talking to Dina.</Text>
           <Text style={styles.creditsSmall}>
-            Starter conversations run directly through OpenRouter. Dina&apos;s servers never
-            proxy or store them.
+            Starter conversations run directly through OpenRouter. Dina&apos;s servers never proxy
+            or store them.
           </Text>
           <Pressable
             testID="onboarding-credits-start"
@@ -324,8 +336,18 @@ const styles = StyleSheet.create({
   },
   creditsButtonDisabled: { opacity: 0.6 },
   creditsButtonText: { ...textStyles.body, color: colors.bgPrimary, fontWeight: '600' },
-  creditsErrorText: { ...textStyles.caption, color: colors.error, marginTop: 10, textAlign: 'center' },
-  creditsOr: { ...textStyles.caption, color: colors.textSecondary, textAlign: 'center', marginTop: 12 },
+  creditsErrorText: {
+    ...textStyles.caption,
+    color: colors.error,
+    marginTop: 10,
+    textAlign: 'center',
+  },
+  creditsOr: {
+    ...textStyles.caption,
+    color: colors.textSecondary,
+    textAlign: 'center',
+    marginTop: 12,
+  },
   center: { paddingVertical: spacing.xl, alignItems: 'center' },
   connectedCard: {
     flexDirection: 'row',

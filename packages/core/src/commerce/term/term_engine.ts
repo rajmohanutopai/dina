@@ -594,7 +594,10 @@ export class TermEngine {
     const resources = policy.resources.map((r) =>
       r.resource_ref !== resourceRef
         ? r
-        : { ...r, floors: { ...r.floors, [term]: { ...r.floors[term], auto: value.toString(10) } } },
+        : {
+            ...r,
+            floors: { ...r.floors, [term]: { ...r.floors[term], auto: value.toString(10) } },
+          },
     );
     if (!resources.some((r) => r.resource_ref === resourceRef)) return false;
     const next = { ...policy, resources };
@@ -658,13 +661,17 @@ export class TermEngine {
   }): { outcome: string } {
     // The brand keeps a negotiation row for its requests; the store does not.
     return this.ctx.atomically('strategy_move', () => {
-      const kind = this.ctx.store.getNegotiation(args.requestId) !== null ? SHELF_VENDOR_KIND : SHELF_HOST_KIND;
+      const kind =
+        this.ctx.store.getNegotiation(args.requestId) !== null
+          ? SHELF_VENDOR_KIND
+          : SHELF_HOST_KIND;
       // §15 step 11: a turn waiting on the owner's answer takes no move (a
       // replayed commit of the move that asked lands here), and a move from
       // a brief before the owner's latest answer is stale: the turn was asked
       // again with that answer.
       const questions = this.ctx.store.questions();
-      if (questions.openFor(kind, args.requestId, args.turn) !== null) return { outcome: 'waiting_owner' };
+      if (questions.openFor(kind, args.requestId, args.turn) !== null)
+        return { outcome: 'waiting_owner' };
       if (
         args.answersSeen !== undefined &&
         args.answersSeen !== questions.answered(kind, args.requestId).length
@@ -1162,7 +1169,13 @@ export class TermEngine {
         this.ctx.atomically('hold_expired', () => {
           this.ctx.store.removeHeld(row.recordDigest);
           const body = readStoredTermBody(row.bodyJson);
-          this.answer(row.senderDid, row.kind, row.recordDigest, 'refused', protocolVersionOf(body));
+          this.answer(
+            row.senderDid,
+            row.kind,
+            row.recordDigest,
+            'refused',
+            protocolVersionOf(body),
+          );
           this.afterRefusal(row.kind, body);
         });
         continue;

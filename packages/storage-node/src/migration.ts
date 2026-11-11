@@ -82,10 +82,10 @@ export function runMigrations(
         for (const stmt of m.up) {
           adapter.execute(stmt);
         }
-        adapter.execute(
-          'INSERT INTO schema_version (version, applied_at) VALUES (?, ?)',
-          [m.id, nowMsFn()],
-        );
+        adapter.execute('INSERT INTO schema_version (version, applied_at) VALUES (?, ?)', [
+          m.id,
+          nowMsFn(),
+        ]);
       });
       applied = m.id;
     } catch (err) {
@@ -111,9 +111,7 @@ export function getSchemaVersion(adapter: DatabaseAdapter): number {
 
 // ── Internals ──────────────────────────────────────────────────────────
 
-function validateMigrations(
-  migrations: readonly Migration[],
-): Migration[] {
+function validateMigrations(migrations: readonly Migration[]): Migration[] {
   const sorted = [...migrations].sort((a, b) => a.id - b.id);
   let lastId = -Infinity;
   for (const m of sorted) {
@@ -121,16 +119,25 @@ function validateMigrations(
       throw new MigrationError('invalid_migration', 'migration must be an object');
     }
     if (!Number.isInteger(m.id) || m.id < 1) {
-      throw new MigrationError('invalid_migration', `migration id ${String(m.id)} must be a positive integer`);
+      throw new MigrationError(
+        'invalid_migration',
+        `migration id ${String(m.id)} must be a positive integer`,
+      );
     }
     if (m.id === lastId) {
       throw new MigrationError('duplicate_id', `duplicate migration id ${m.id}`);
     }
     if (typeof m.description !== 'string') {
-      throw new MigrationError('invalid_migration', `migration ${m.id} description must be a string`);
+      throw new MigrationError(
+        'invalid_migration',
+        `migration ${m.id} description must be a string`,
+      );
     }
     if (!Array.isArray(m.up) || m.up.length === 0) {
-      throw new MigrationError('invalid_migration', `migration ${m.id} up must be a non-empty array`);
+      throw new MigrationError(
+        'invalid_migration',
+        `migration ${m.id} up must be a non-empty array`,
+      );
     }
     for (const stmt of m.up) {
       if (typeof stmt !== 'string' || stmt.trim().length === 0) {
@@ -155,9 +162,7 @@ function ensureSchemaVersionTable(adapter: DatabaseAdapter): void {
 }
 
 function currentVersion(adapter: DatabaseAdapter): number {
-  const rows = adapter.query<{ v: number | null }>(
-    'SELECT MAX(version) AS v FROM schema_version',
-  );
+  const rows = adapter.query<{ v: number | null }>('SELECT MAX(version) AS v FROM schema_version');
   const v = rows[0]?.v;
   return typeof v === 'number' ? v : 0;
 }

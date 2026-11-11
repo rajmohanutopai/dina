@@ -10,7 +10,10 @@
 
 import { brainFetch } from '../services/web_runtime';
 
-async function postQuarantineAction(action: 'accept' | 'block', senderDID: string): Promise<boolean> {
+async function postQuarantineAction(
+  action: 'accept' | 'block',
+  senderDID: string,
+): Promise<boolean> {
   try {
     const res = await brainFetch(`/api/v1/d2d/quarantine/${action}`, {
       method: 'POST',

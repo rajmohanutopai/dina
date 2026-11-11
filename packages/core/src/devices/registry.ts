@@ -817,7 +817,9 @@ export async function revokeDeviceByDidDurable(deviceDid: string): Promise<Devic
  * left to revoke, so not-found counts as durable — otherwise the install would be
  * retained forever as a retry anchor for a revoke that can never happen.
  */
-export async function revokePluginDeviceForTeardown(deviceDid: string): Promise<{ durable: boolean }> {
+export async function revokePluginDeviceForTeardown(
+  deviceDid: string,
+): Promise<{ durable: boolean }> {
   const revoked = await revokeDeviceByDidDurable(deviceDid);
   return { durable: revoked.durable || !revoked.found };
 }

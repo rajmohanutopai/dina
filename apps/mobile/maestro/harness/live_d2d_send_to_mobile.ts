@@ -65,7 +65,7 @@ process.on('SIGINT', () => {
   process.exit(130);
 });
 
-function genKey(): { seed: Uint8Array; did: string } {
+function _genKey(): { seed: Uint8Array; did: string } {
   const seed = new Uint8Array(randomBytes(32));
   return { seed, did: deriveDIDKey(getPublicKey(seed)) };
 }
@@ -174,7 +174,8 @@ async function main(): Promise<void> {
 
   await waitFor('sender healthz', () => healthz(TX_CORE), 60_000);
   await waitFor('sender DID provisioned', async () => readDID(txVault) !== null, 60_000);
-  const senderDID = readDID(txVault)!;
+  const senderDID = readDID(txVault);
+  if (senderDID === null) throw new Error('sender DID missing after provisioning');
   log('setup', `SENDER_DID=${senderDID}`);
   if (didFile !== '') writeFileSync(didFile, senderDID);
   // Let the MsgBox WS settle before sending.

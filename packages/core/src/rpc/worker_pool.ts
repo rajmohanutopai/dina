@@ -69,7 +69,7 @@ export class RPCWorkerPool {
     // Wrap cleanup inside the scheduled work so there's only ONE promise
     // visible to callers — avoids dangling `.finally()` chains that
     // would surface as unhandled rejections when the job throws.
-    let promise!: Promise<T>;
+    let promise: Promise<T> | undefined = undefined;
     const wrapped = async () => {
       try {
         return await work();

@@ -124,9 +124,7 @@ describe('clearOrphanKeychainState', () => {
       service: 'dina.verification_status',
     });
     await clearOrphanKeychainState();
-    expect(
-      await Keychain.getGenericPassword({ service: 'dina.verification_status' }),
-    ).toBeFalsy();
+    expect(await Keychain.getGenericPassword({ service: 'dina.verification_status' })).toBeFalsy();
   });
 
   it('does not throw when individual services are missing', async () => {
@@ -156,14 +154,8 @@ describe('wipeOrphanVaultFiles', () => {
     expect(__getEntries()).toEqual([]);
   });
 
-  it("leaves non-SQLite files alone (Expo cache, fonts, install marker)", () => {
-    __setEntries([
-      'identity.sqlite',
-      'fonts.ttf',
-      'cache.dat',
-      '.dina_install',
-      'README.md',
-    ]);
+  it('leaves non-SQLite files alone (Expo cache, fonts, install marker)', () => {
+    __setEntries(['identity.sqlite', 'fonts.ttf', 'cache.dat', '.dina_install', 'README.md']);
     wipeOrphanVaultFiles();
     expect(__getDeletedEntries()).toEqual(['identity.sqlite']);
     // The other four should still be present.
@@ -197,9 +189,7 @@ describe('wipeOrphanVaultFiles', () => {
 describe('boot orchestration scenarios', () => {
   it('fresh install: no marker, no seed → write marker, no clear needed', async () => {
     expect(installMarkerExists()).toBe(false);
-    expect(
-      await Keychain.getGenericPassword({ service: 'dina.vault.wrapped_seed' }),
-    ).toBeFalsy();
+    expect(await Keychain.getGenericPassword({ service: 'dina.vault.wrapped_seed' })).toBeFalsy();
     writeInstallMarker();
     expect(__hasFile(MARKER)).toBe(true);
   });
@@ -235,15 +225,9 @@ describe('boot orchestration scenarios', () => {
       writeInstallMarker(1_700_000_000_000);
     }
 
-    expect(
-      await Keychain.getGenericPassword({ service: 'dina.vault.wrapped_seed' }),
-    ).toBeFalsy();
-    expect(
-      await Keychain.getGenericPassword({ service: 'dina.startup.mode' }),
-    ).toBeFalsy();
-    expect(
-      await Keychain.getGenericPassword({ service: 'dina.startup.passphrase' }),
-    ).toBeFalsy();
+    expect(await Keychain.getGenericPassword({ service: 'dina.vault.wrapped_seed' })).toBeFalsy();
+    expect(await Keychain.getGenericPassword({ service: 'dina.startup.mode' })).toBeFalsy();
+    expect(await Keychain.getGenericPassword({ service: 'dina.startup.passphrase' })).toBeFalsy();
     expect(installMarkerExists()).toBe(true);
   });
 });
@@ -278,9 +262,7 @@ describe('KEYCHAIN_SERVICES stays in step with the code (PH-11)', () => {
       }
     };
     walk(join(__dirname, '../../src'));
-    const missing = [...found].filter(
-      (s) => !KEYCHAIN_SERVICES.includes(s) && !EXCEPTIONS.has(s),
-    );
+    const missing = [...found].filter((s) => !KEYCHAIN_SERVICES.includes(s) && !EXCEPTIONS.has(s));
     expect(missing).toEqual([]);
   });
 });

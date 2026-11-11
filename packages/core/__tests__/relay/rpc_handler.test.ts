@@ -12,7 +12,6 @@ import { deriveDIDKey } from '../../src/identity/did';
 import { buildRPCRequest, sealRPCRequest } from '../../src/relay/rpc_envelope';
 import { handleRPCRequest, resetRPCHandler } from '../../src/relay/rpc_handler';
 
-
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);
 const senderDID = deriveDIDKey(senderPub);

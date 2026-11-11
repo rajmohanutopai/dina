@@ -7,9 +7,7 @@
 import { setPeopleRepository } from '@dina/core';
 
 import { createFindPersonTool } from '../../src/reasoning/people_tool';
-import {
-  setPeopleReadBackend,
-} from '../../src/vault_context/assembly';
+import { setPeopleReadBackend } from '../../src/vault_context/assembly';
 
 import type {
   ApplyExtractionResponse,
@@ -189,10 +187,7 @@ describe('createFindPersonTool — in-process repo (mobile path)', () => {
     const out = (await tool.execute({ name: 'Alex' })) as {
       matches: { canonicalName: string }[];
     };
-    expect(out.matches.map((m) => m.canonicalName).sort()).toEqual([
-      'Alex Garcia',
-      'Alex Lee',
-    ]);
+    expect(out.matches.map((m) => m.canonicalName).sort()).toEqual(['Alex Garcia', 'Alex Lee']);
   });
 
   it('honours maxResults', async () => {

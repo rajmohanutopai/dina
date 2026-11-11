@@ -30,13 +30,7 @@ import { tradeRelationshipReaders } from '../../src/commerce/trade_readers';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-import {
-  hash,
-  makeAcknowledgement,
-  makeOrder,
-  makeQuoteRequest,
-  makeSignedQuote,
-} from './helpers';
+import { hash, makeAcknowledgement, makeOrder, makeQuoteRequest, makeSignedQuote } from './helpers';
 
 const SUPPLIER = 'did:plc:supplierS';
 const B1 = 'did:plc:buyerOne';
@@ -372,7 +366,10 @@ describe('COM-10: authoring is idempotent', () => {
       lines: [{ line_id: 'l1', delivered_quantity: qty('10') }],
       dispatched_at: new Date().toISOString(),
     };
-    const note = { ...draft, note_digest: tradeRecordDigest('delivery_note', draft as never, hash) };
+    const note = {
+      ...draft,
+      note_digest: tradeRecordDigest('delivery_note', draft as never, hash),
+    };
     expect(
       applyInboundTradeDocument({
         senderDid: SUPPLIER,
@@ -470,7 +467,10 @@ describe('COM-13: a delivery note on an order the supplier rejected', () => {
       lines: [{ line_id: 'l1', delivered_quantity: qty('10') }],
       dispatched_at: new Date().toISOString(),
     };
-    const note = { ...draft, note_digest: tradeRecordDigest('delivery_note', draft as never, hash) };
+    const note = {
+      ...draft,
+      note_digest: tradeRecordDigest('delivery_note', draft as never, hash),
+    };
     const verdict = applyInboundTradeDocument({
       senderDid: SUPPLIER,
       body: { kind: 'delivery_note', document: note },

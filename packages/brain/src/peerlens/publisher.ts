@@ -25,8 +25,7 @@ export class AttestationLexiconError extends Error {
   readonly validationErrors: readonly string[];
 
   constructor(validationErrors: readonly string[] | string) {
-    const normalized =
-      typeof validationErrors === 'string' ? [validationErrors] : validationErrors;
+    const normalized = typeof validationErrors === 'string' ? [validationErrors] : validationErrors;
     super(`PeerLens attestation is invalid: ${normalized.join('; ')}`);
     this.name = 'AttestationLexiconError';
     this.validationErrors = normalized;

@@ -28,7 +28,10 @@ import {
   pruneStaleReviewReceipts,
   retryReviewPublishJob,
 } from '../../src/peerlens/review_publish_actions';
-import { canDrainReviewPublish, drainReviewPublishNow } from '../../src/peerlens/review_publish_autodrain';
+import {
+  canDrainReviewPublish,
+  drainReviewPublishNow,
+} from '../../src/peerlens/review_publish_autodrain';
 
 const mockGetBootedNode = getBootedNode as jest.MockedFunction<typeof getBootedNode>;
 const mockCanDrain = canDrainReviewPublish as jest.MockedFunction<typeof canDrainReviewPublish>;
@@ -36,7 +39,14 @@ const mockDrain = drainReviewPublishNow as jest.MockedFunction<typeof drainRevie
 
 function failedRepo(): InMemoryReviewPublishRepository {
   const repo = new InMemoryReviewPublishRepository();
-  repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+  repo.create({
+    jobId: 'f1',
+    ownerDid: DID,
+    rkey: 'rk',
+    recordJSON: '{}',
+    draftJSON: '{}',
+    createdAt: 1,
+  });
   repo.claim('f1', 1, 60_000);
   repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2, 1);
   return repo;
@@ -78,7 +88,14 @@ describe('retryReviewPublishJob', () => {
     const repo = new InMemoryReviewPublishRepository();
     // A QUEUED job: retry() refuses (it only resets failed→queued), so a
     // double-tap / stale UI must not drain or report a reset that never happened.
-    repo.create({ jobId: 'q1', ownerDid: DID, rkey: 'r', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+    repo.create({
+      jobId: 'q1',
+      ownerDid: DID,
+      rkey: 'r',
+      recordJSON: '{}',
+      draftJSON: '{}',
+      createdAt: 1,
+    });
     setReviewPublishRepository(repo);
     mockCanDrain.mockReturnValue(true);
 
@@ -114,7 +131,14 @@ describe('retryReviewPublishJob', () => {
 /** A repo holding one `published` receipt (claimed → completed), updated at `at`. */
 function publishedRepo(at: number): InMemoryReviewPublishRepository {
   const repo = new InMemoryReviewPublishRepository();
-  repo.create({ jobId: 'p1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+  repo.create({
+    jobId: 'p1',
+    ownerDid: DID,
+    rkey: 'rk',
+    recordJSON: '{}',
+    draftJSON: '{}',
+    createdAt: 1,
+  });
   repo.claim('p1', 1, 60_000);
   repo.complete('p1', 'at://x', 'cid', at, 1); // publishing → published, updatedAt = at
   return repo;

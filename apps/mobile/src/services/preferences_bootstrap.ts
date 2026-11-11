@@ -19,15 +19,8 @@ import { Platform } from 'react-native';
 
 import { listVaultItemsUI } from '../hooks/useVaultItems';
 
-import {
-  inferPreferences,
-  type InferenceContext,
-  type VaultEvidence,
-} from './preferences_inferer';
-import {
-  hydrateUserPreferences,
-  type UserPreferences,
-} from './user_preferences';
+import { inferPreferences, type InferenceContext, type VaultEvidence } from './preferences_inferer';
+import { hydrateUserPreferences, type UserPreferences } from './user_preferences';
 
 /**
  * Run inference + hydrate. Designed for the root layout's unlock
@@ -71,9 +64,7 @@ function runInference(
     | undefined,
 ): Partial<UserPreferences> {
   const locale = (opts?.resolveLocale ?? defaultResolveLocale)();
-  const vaultItems = opts?.readVault
-    ? opts.readVault()
-    : safeReadVault(personaName, limit);
+  const vaultItems = opts?.readVault ? opts.readVault() : safeReadVault(personaName, limit);
   return inferPreferences({
     vaultItems,
     localeRegion: locale.region,
@@ -104,10 +95,7 @@ function resolvePlatform(): InferenceContext['platform'] {
   }
 }
 
-function safeReadVault(
-  personaName: string,
-  limit: number,
-): readonly VaultEvidence[] {
+function safeReadVault(personaName: string, limit: number): readonly VaultEvidence[] {
   try {
     const items = listVaultItemsUI(personaName, limit);
     return items.map((it) => ({

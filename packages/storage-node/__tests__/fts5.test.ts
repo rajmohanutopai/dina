@@ -26,7 +26,11 @@ function tempPath(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   }
 });
 
@@ -41,7 +45,9 @@ describe('adapter → FTS5', () => {
       );
     `);
   });
-  afterEach(() => { a.close(); });
+  afterEach(() => {
+    a.close();
+  });
 
   it('unicode61 remove_diacritics 1 strips diacritics on ingest and query', () => {
     a.run('INSERT INTO docs(body) VALUES (?)', ['Café résumé']);
@@ -65,10 +71,7 @@ describe('adapter → FTS5', () => {
       'SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank',
       ['alpha'],
     );
-    expect(hits).toEqual([
-      { body: 'alpha alpha beta' },
-      { body: 'alpha beta gamma' },
-    ]);
+    expect(hits).toEqual([{ body: 'alpha alpha beta' }, { body: 'alpha beta gamma' }]);
   });
 
   it('phrase queries work across a multi-word column', () => {
@@ -85,10 +88,9 @@ describe('adapter → FTS5', () => {
 
   it('unicode61 is case-insensitive by default', () => {
     a.run('INSERT INTO docs(body) VALUES (?)', ['MixedCASE Text']);
-    const hits = a.query<{ body: string }>(
-      'SELECT body FROM docs WHERE docs MATCH ?',
-      ['mixedcase'],
-    );
+    const hits = a.query<{ body: string }>('SELECT body FROM docs WHERE docs MATCH ?', [
+      'mixedcase',
+    ]);
     expect(hits).toHaveLength(1);
   });
 
@@ -98,10 +100,7 @@ describe('adapter → FTS5', () => {
     const deleted = a.run('DELETE FROM docs WHERE body = ?', ['first doc']);
     expect(deleted).toBe(1);
 
-    const hits = a.query<{ body: string }>(
-      'SELECT body FROM docs WHERE docs MATCH ?',
-      ['doc'],
-    );
+    const hits = a.query<{ body: string }>('SELECT body FROM docs WHERE docs MATCH ?', ['doc']);
     expect(hits).toEqual([{ body: 'second doc' }]);
   });
 });

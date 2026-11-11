@@ -13,7 +13,12 @@ export const TALK_SEND = '/v1/talk/send';
 
 export function registerTalkSendRoute(router: CoreRouter): void {
   router.post(TALK_SEND, async (req) => {
-    if (!(req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined))) {
+    if (
+      !(
+        req.callerType === 'brain' ||
+        (req.trustedInProcess === true && req.callerType === undefined)
+      )
+    ) {
       return { status: 403, body: { error: 'brain only' } };
     }
     const b = (req.body as Record<string, unknown> | undefined) ?? {};
@@ -27,7 +32,10 @@ export function registerTalkSendRoute(router: CoreRouter): void {
       typeof contact !== 'string' ||
       typeof b.proposed_text !== 'string'
     ) {
-      return { status: 400, body: { error: 'a span proof, contact and proposed_text are required' } };
+      return {
+        status: 400,
+        body: { error: 'a span proof, contact and proposed_text are required' },
+      };
     }
     const out = await ownerSendToContact({
       proof: { releaseSession: rs, turnId, turnText, start, end },

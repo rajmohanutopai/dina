@@ -15,7 +15,11 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { normalizePluginManifest, validatePluginManifest, type PluginManifest } from '@dina/protocol';
+import {
+  normalizePluginManifest,
+  validatePluginManifest,
+  type PluginManifest,
+} from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { resetCallerTypeState } from '../../src/auth/caller_type';
@@ -40,7 +44,10 @@ import { getDeviceByDID, resetDeviceRegistry } from '../../src/devices/registry'
 import { publicKeyToMultibase } from '../../src/identity/did';
 import { clearPairingState, completePairing, setNodeDID } from '../../src/pairing/ceremony';
 import { confirmConsent, setPluginDeviceVerifier } from '../../src/plugins/install_service';
-import { SQLitePluginInstallRepository, setPluginInstallRepository } from '../../src/plugins/registry';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
 import { issueRunnerPairingCode } from '../../src/plugins/runner_pairing';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -81,7 +88,9 @@ afterEach(() => {
 });
 
 /** The notice rails share one result shape (`delivered`); used to tell a notice from a filing. */
-const NOTIFY_RESULT_SHAPE = INDIA_PACK_MANIFEST.capabilities.find((c) => c.id.endsWith('-reminder'))?.result_schema;
+const NOTIFY_RESULT_SHAPE = INDIA_PACK_MANIFEST.capabilities.find((c) =>
+  c.id.endsWith('-reminder'),
+)?.result_schema;
 
 const PACKS: [CountryPack, PluginManifest][] = [
   ['in', INDIA_PACK_MANIFEST],
@@ -94,62 +103,85 @@ describe('the country pack manifests (§5.D)', () => {
     expect(verdict.ok).toBe(true);
   });
 
-  it.each(PACKS)('%s: declares only rails a plugin may hold — status READS, filings/notices as WRITES, never payment', (_name, manifest) => {
-    for (const cap of manifest.capabilities) {
-      expect(['read', 'write']).toContain(cap.action_class);
-      expect(cap.action_class).not.toBe('payment');
-      expect(cap.kinds).toBeDefined();
-      // Every effectful capability declares idempotency so a retry is safe.
-      expect(cap.effects?.idempotency).toBe('supported');
-      // Every rail names what may ride its params (§11.5) — without a data
-      // scope no invocation could ever clear egress, so even a granted read
-      // would card forever.
-      expect(cap.data_scope?.categories.length ?? 0).toBeGreaterThan(0);
-    }
-    // Payment-status lookups are regulated data; a rail must never be 'public'.
-    const status = manifest.capabilities.find((c) => c.id.endsWith('-status'));
-    expect(status?.privacy_class).toBe('regulated');
-    expect(status?.action_class).toBe('read');
-    // The notification rail (D5) is an effectful tool Dina invokes — an outward
-    // message meets the approval gate; the substrate's `notify` kind is unshipped.
-    const notice = manifest.capabilities.filter((c) => c.id.endsWith('-reminder') || c.id.endsWith('.notice'));
-    expect(notice).toHaveLength(1);
-    expect(notice[0]?.action_class).toBe('write');
-    expect(notice[0]?.kinds).toEqual(['tool']);
-  });
-
-  it.each(PACKS)('%s: every WRITE rail is bound to a retained khata document, and a notice can carry no free text', (_pack, manifest) => {
-    const writes = manifest.capabilities.filter((c) => c.action_class === 'write');
-    expect(writes.length).toBeGreaterThanOrEqual(2);
-    for (const cap of writes) {
-      const schema = cap.params_schema as { required?: string[]; properties?: Record<string, { type?: string; enum?: unknown[] }> };
-      const required = schema.required ?? [];
-      const props = schema.properties ?? {};
-      if (cap.result_schema === NOTIFY_RESULT_SHAPE || cap.id.endsWith('-reminder') || cap.id.endsWith('.notice')) {
-        // A notice names the khata document it is about and a template Dina
-        // chose — never a message body the runner composed.
-        expect(required).toEqual(expect.arrayContaining(['to', 'template', 'subject_digest']));
-        expect(props.template?.enum?.length ?? 0).toBeGreaterThan(0);
-        const freeText = Object.entries(props)
-          .filter(([name, p]) => p.type === 'string' && p.enum === undefined && !['to', 'subject_digest', 'due_at'].includes(name))
-          .map(([name]) => name);
-        expect(freeText).toEqual([]);
-      } else {
-        // A filing (e-way bill, invoice) is bound to the delivery note it describes.
-        expect(required).toContain('delivery_note_digest');
+  it.each(PACKS)(
+    '%s: declares only rails a plugin may hold — status READS, filings/notices as WRITES, never payment',
+    (_name, manifest) => {
+      for (const cap of manifest.capabilities) {
+        expect(['read', 'write']).toContain(cap.action_class);
+        expect(cap.action_class).not.toBe('payment');
+        expect(cap.kinds).toBeDefined();
+        // Every effectful capability declares idempotency so a retry is safe.
+        expect(cap.effects?.idempotency).toBe('supported');
+        // Every rail names what may ride its params (§11.5) — without a data
+        // scope no invocation could ever clear egress, so even a granted read
+        // would card forever.
+        expect(cap.data_scope?.categories.length ?? 0).toBeGreaterThan(0);
       }
-    }
-  });
+      // Payment-status lookups are regulated data; a rail must never be 'public'.
+      const status = manifest.capabilities.find((c) => c.id.endsWith('-status'));
+      expect(status?.privacy_class).toBe('regulated');
+      expect(status?.action_class).toBe('read');
+      // The notification rail (D5) is an effectful tool Dina invokes — an outward
+      // message meets the approval gate; the substrate's `notify` kind is unshipped.
+      const notice = manifest.capabilities.filter(
+        (c) => c.id.endsWith('-reminder') || c.id.endsWith('.notice'),
+      );
+      expect(notice).toHaveLength(1);
+      expect(notice[0]?.action_class).toBe('write');
+      expect(notice[0]?.kinds).toEqual(['tool']);
+    },
+  );
 
-  it.each(PACKS)('%s: every manifest passes the shared validator, card templates included (§15.6)', (_pack, manifest) => {
-    // The first-party door mints these from source rather than fetching them,
-    // so nothing else proves they would survive the validator a third-party
-    // manifest meets. A card slot naming a field the result schema does not
-    // declare is exactly the typo that would otherwise ship a card rendering
-    // permanently short.
-    const result = validatePluginManifest(normalizePluginManifest(manifest));
-    expect(result.ok ? [] : result.errors).toEqual([]);
-  });
+  it.each(PACKS)(
+    '%s: every WRITE rail is bound to a retained khata document, and a notice can carry no free text',
+    (_pack, manifest) => {
+      const writes = manifest.capabilities.filter((c) => c.action_class === 'write');
+      expect(writes.length).toBeGreaterThanOrEqual(2);
+      for (const cap of writes) {
+        const schema = cap.params_schema as {
+          required?: string[];
+          properties?: Record<string, { type?: string; enum?: unknown[] }>;
+        };
+        const required = schema.required ?? [];
+        const props = schema.properties ?? {};
+        if (
+          cap.result_schema === NOTIFY_RESULT_SHAPE ||
+          cap.id.endsWith('-reminder') ||
+          cap.id.endsWith('.notice')
+        ) {
+          // A notice names the khata document it is about and a template Dina
+          // chose — never a message body the runner composed.
+          expect(required).toEqual(expect.arrayContaining(['to', 'template', 'subject_digest']));
+          expect(props.template?.enum?.length ?? 0).toBeGreaterThan(0);
+          const freeText = Object.entries(props)
+            .filter(
+              ([name, p]) =>
+                p.type === 'string' &&
+                p.enum === undefined &&
+                !['to', 'subject_digest', 'due_at'].includes(name),
+            )
+            .map(([name]) => name);
+          expect(freeText).toEqual([]);
+        } else {
+          // A filing (e-way bill, invoice) is bound to the delivery note it describes.
+          expect(required).toContain('delivery_note_digest');
+        }
+      }
+    },
+  );
+
+  it.each(PACKS)(
+    '%s: every manifest passes the shared validator, card templates included (§15.6)',
+    (_pack, manifest) => {
+      // The first-party door mints these from source rather than fetching them,
+      // so nothing else proves they would survive the validator a third-party
+      // manifest meets. A card slot naming a field the result schema does not
+      // declare is exactly the typo that would otherwise ship a card rendering
+      // permanently short.
+      const result = validatePluginManifest(normalizePluginManifest(manifest));
+      expect(result.ok ? [] : result.errors).toEqual([]);
+    },
+  );
 
   it('ids live in the reserved first-party namespace and the map is complete', () => {
     expect(INDIA_PACK_MANIFEST.plugin_id).toBe(COUNTRY_PACK_IDS.in);
@@ -164,30 +196,41 @@ describe('the country pack manifests (§5.D)', () => {
     }
   });
 
-  it.each(PACKS)('%s: installs through the first-party door and the runner pairing ceremony', (pack, manifest) => {
-    const begun = beginFirstPartyInstall({ pluginId: COUNTRY_PACK_IDS[pack], publisherDid: SUPPLIER_DID, nowMs: T0 });
-    expect(begun.ok).toBe(true);
-    if (!begun.ok) throw new Error(JSON.stringify(begun));
-    // The consent card lists every rail the pack asks for, computed locally.
-    expect(begun.consent.capabilities.map((c) => c.display_name).sort()).toEqual(
-      manifest.capabilities.map((c) => c.display_name).sort(),
-    );
-    const install = installs.getById(begun.installId);
-    expect(install?.status).toBe('pending');
-    expect(install?.trustAnchor.kind).toBe('local_publisher_key');
+  it.each(PACKS)(
+    '%s: installs through the first-party door and the runner pairing ceremony',
+    (pack, manifest) => {
+      const begun = beginFirstPartyInstall({
+        pluginId: COUNTRY_PACK_IDS[pack],
+        publisherDid: SUPPLIER_DID,
+        nowMs: T0,
+      });
+      expect(begun.ok).toBe(true);
+      if (!begun.ok) throw new Error(JSON.stringify(begun));
+      // The consent card lists every rail the pack asks for, computed locally.
+      expect(begun.consent.capabilities.map((c) => c.display_name).sort()).toEqual(
+        manifest.capabilities.map((c) => c.display_name).sort(),
+      );
+      const install = installs.getById(begun.installId);
+      expect(install?.status).toBe('pending');
+      expect(install?.trustAnchor.kind).toBe('local_publisher_key');
 
-    // The operator's runner pairs with its own key on the install's code (§15.3).
-    if (install === null) throw new Error('unreachable');
-    const { code } = issueRunnerPairingCode(install);
-    completePairing(code, 'rails-runner', RUNNER_KEY, 'plugin', 'runner');
-    const runnerDid = `did:key:${RUNNER_KEY}`;
-    expect(installs.getById(begun.installId)?.deviceDid).toBe(runnerDid);
-    expect(confirmConsent(begun.installId, runnerDid, T0 + 1)).toBe(true);
-    expect(installs.getById(begun.installId)?.status).toBe('active');
-  });
+      // The operator's runner pairs with its own key on the install's code (§15.3).
+      if (install === null) throw new Error('unreachable');
+      const { code } = issueRunnerPairingCode(install);
+      completePairing(code, 'rails-runner', RUNNER_KEY, 'plugin', 'runner');
+      const runnerDid = `did:key:${RUNNER_KEY}`;
+      expect(installs.getById(begun.installId)?.deviceDid).toBe(runnerDid);
+      expect(confirmConsent(begun.installId, runnerDid, T0 + 1)).toBe(true);
+      expect(installs.getById(begun.installId)?.status).toBe('active');
+    },
+  );
 
   it('an active country pack does NOT open the money line — only the commerce packs do', () => {
-    const begun = beginFirstPartyInstall({ pluginId: COUNTRY_PACK_IDS.in, publisherDid: SUPPLIER_DID, nowMs: T0 });
+    const begun = beginFirstPartyInstall({
+      pluginId: COUNTRY_PACK_IDS.in,
+      publisherDid: SUPPLIER_DID,
+      nowMs: T0,
+    });
     if (!begun.ok) throw new Error(JSON.stringify(begun));
     installs.bindPendingDevice(begun.installId, 'did:key:zrails', T0);
     installs.activate(begun.installId, 'did:key:zrails', T0);

@@ -53,7 +53,10 @@ class SubjectUnderTest {
   }
 
   /** Store a note + notify the user as engagement-priority. */
-  async storeAndNotify(persona: string, note: string): Promise<{ itemId: string; notificationId: string }> {
+  async storeAndNotify(
+    persona: string,
+    note: string,
+  ): Promise<{ itemId: string; notificationId: string }> {
     const stored = await this.core.vaultStore(persona, {
       type: 'note',
       content: { text: note },
@@ -137,7 +140,9 @@ describe('Brain ↔ MockCoreClient exemplar (task 1.35)', () => {
 
       // Call is still recorded — matches the dispatch contract documented
       // in test-harness/src/mocks/core_client.ts (log-before-throw).
-      expect(core.calls).toEqual([{ method: 'vaultQuery', args: ['financial', { text: 'invoice' }] }]);
+      expect(core.calls).toEqual([
+        { method: 'vaultQuery', args: ['financial', { text: 'invoice' }] },
+      ]);
     });
 
     it('resets cleanly between tests', async () => {

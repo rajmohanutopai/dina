@@ -34,11 +34,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6d task 6.11.
  */
 
-export type TrustContext =
-  | 'before-transaction'
-  | 'share-pii'
-  | 'autonomous-action'
-  | 'read';
+export type TrustContext = 'before-transaction' | 'share-pii' | 'autonomous-action' | 'read';
 
 export interface TrustResolveRequest {
   did: string;
@@ -109,9 +105,7 @@ export interface XrpcFetchResult {
   status: number;
 }
 
-export type TrustResolveFetchFn = (
-  input: TrustResolveRequest,
-) => Promise<XrpcFetchResult>;
+export type TrustResolveFetchFn = (input: TrustResolveRequest) => Promise<XrpcFetchResult>;
 
 export interface TrustResolveClientOptions {
   fetchFn: TrustResolveFetchFn;
@@ -143,9 +137,7 @@ export function createTrustResolveClient(
   const fetchFn = opts.fetchFn;
   const onEvent = opts.onEvent;
 
-  return async function resolve(
-    input: TrustResolveRequest,
-  ): Promise<TrustResolveOutcome> {
+  return async function resolve(input: TrustResolveRequest): Promise<TrustResolveOutcome> {
     if (typeof input?.did !== 'string' || !DID_RE.test(input.did)) {
       const didStr = String(input?.did ?? '');
       onEvent?.({ kind: 'rejected', did: didStr, reason: 'invalid_did' });
@@ -170,9 +162,10 @@ export function createTrustResolveClient(
       return { ok: false, reason: 'not_found' };
     }
     if (result.status < 200 || result.status >= 300) {
-      const msg = typeof (result.body as { error?: unknown })?.error === 'string'
-        ? ((result.body as { error: string }).error)
-        : `status ${result.status}`;
+      const msg =
+        typeof (result.body as { error?: unknown })?.error === 'string'
+          ? (result.body as { error: string }).error
+          : `status ${result.status}`;
       onEvent?.({
         kind: 'rejected',
         did: input.did,
@@ -205,8 +198,15 @@ export function createTrustResolveClient(
 
 // ── Internals ──────────────────────────────────────────────────────────
 
-interface ParseOk { ok: true; response: TrustResolveResponse }
-interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
+interface ParseOk {
+  ok: true;
+  response: TrustResolveResponse;
+}
+interface ParseFail {
+  ok: false;
+  reason: 'malformed_response';
+  detail: string;
+}
 
 function parseResponse(
   body: Record<string, unknown>,
@@ -295,9 +295,7 @@ function parseGraph(v: unknown): PeerlensGraphContext | null {
 function parseAuthenticity(v: unknown): TrustAuthenticityView | null {
   if (v === null || typeof v !== 'object' || Array.isArray(v)) return null;
   const a = v as Record<string, unknown>;
-  const assessment = typeof a.predominantAssessment === 'string'
-    ? a.predominantAssessment
-    : '';
+  const assessment = typeof a.predominantAssessment === 'string' ? a.predominantAssessment : '';
   if (assessment === '') return null;
   return {
     predominantAssessment: assessment,

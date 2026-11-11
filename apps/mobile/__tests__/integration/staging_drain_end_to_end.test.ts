@@ -30,7 +30,6 @@ import { buildStagingEnrichment } from '../../src/services/staging_enrichment';
 import type { StagingDrainCoreClient } from '../../../brain/src/staging/drain';
 import type { CoreClient } from '@dina/core';
 
-
 type TestCoreClient = StagingDrainCoreClient & Pick<CoreClient, 'memoryTouch' | 'updateContact'>;
 
 describe('staging drain end-to-end — GAP-RT-02 / PC-BRAIN-13', () => {

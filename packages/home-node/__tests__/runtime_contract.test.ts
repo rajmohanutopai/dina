@@ -53,22 +53,20 @@ describe('@dina/home-node runtime contract', () => {
   });
 
   it('derives the handle host from the selected PDS endpoint', () => {
-    expect(pdsHostForEndpoints(resolveHostedDinaEndpoints('test'))).toBe(
-      'test-pds.dinakernel.com',
-    );
-    expect(pdsHostForEndpoints(resolveHostedDinaEndpoints('release'))).toBe(
-      'pds.dinakernel.com',
-    );
+    expect(pdsHostForEndpoints(resolveHostedDinaEndpoints('test'))).toBe('test-pds.dinakernel.com');
+    expect(pdsHostForEndpoints(resolveHostedDinaEndpoints('release'))).toBe('pds.dinakernel.com');
   });
 
   it('fails loud on invalid endpoint env', () => {
+    expect(() => resolveServerHostedDinaEndpoints({ DINA_ENDPOINT_MODE: 'prod' })).toThrow(
+      /DINA_ENDPOINT_MODE/,
+    );
+    expect(() => resolveMobileHostedDinaEndpoints({ EXPO_PUBLIC_DINA_PDS_URL: 'pds' })).toThrow(
+      /EXPO_PUBLIC_DINA_PDS_URL/,
+    );
     expect(() =>
-      resolveServerHostedDinaEndpoints({ DINA_ENDPOINT_MODE: 'prod' }),
-    ).toThrow(/DINA_ENDPOINT_MODE/);
-    expect(() => resolveMobileHostedDinaEndpoints({ EXPO_PUBLIC_DINA_PDS_URL: 'pds' }))
-      .toThrow(/EXPO_PUBLIC_DINA_PDS_URL/);
-    expect(() => resolveServerHostedDinaEndpoints({ DINA_MSGBOX_URL: 'https://msgbox.test' }))
-      .toThrow(/DINA_MSGBOX_URL protocol/);
+      resolveServerHostedDinaEndpoints({ DINA_MSGBOX_URL: 'https://msgbox.test' }),
+    ).toThrow(/DINA_MSGBOX_URL protocol/);
   });
 
   it('delegates lifecycle and feature handlers through one runtime context', async () => {
@@ -141,8 +139,9 @@ describe('@dina/home-node runtime contract', () => {
     await expect(runtime.remember({ text: 'hello' })).rejects.toThrow(
       HomeNodeFeatureUnavailableError,
     );
-    await expect(runtime.queryService({ toDid: 'did:plc:p', capability: 'eta', params: {} }))
-      .rejects.toMatchObject({ feature: 'service_query' });
+    await expect(
+      runtime.queryService({ toDid: 'did:plc:p', capability: 'eta', params: {} }),
+    ).rejects.toMatchObject({ feature: 'service_query' });
   });
 
   it('rejects an empty node id', () => {

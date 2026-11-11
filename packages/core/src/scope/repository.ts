@@ -21,12 +21,13 @@ import { currentDataScope, type DataScope } from './data_scope';
 
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
-
 /** Column name carrying the scope. Single source of truth for the SQL string. */
 export const DATA_SCOPE_COLUMN = 'data_scope';
 
 /** Insert field: `{ data_scope: <scope> }`, defaulting to the current scope. */
-export function scopedInsertFields(scope: DataScope = currentDataScope()): { data_scope: DataScope } {
+export function scopedInsertFields(scope: DataScope = currentDataScope()): {
+  data_scope: DataScope;
+} {
   return { data_scope: scope };
 }
 

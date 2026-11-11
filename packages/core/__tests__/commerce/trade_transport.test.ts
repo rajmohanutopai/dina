@@ -104,7 +104,9 @@ function installNode(
       createdAt: T0,
     });
   }
-  installCommerceRuntime(nodeRuntime(nodeDid, receipts, tradeDocs, money, new InMemoryTradeSpoolRepository()));
+  installCommerceRuntime(
+    nodeRuntime(nodeDid, receipts, tradeDocs, money, new InMemoryTradeSpoolRepository()),
+  );
   return tradeDocs;
 }
 
@@ -119,7 +121,9 @@ function nodeRuntime(
   return {
     money: () => {
       const line = money();
-      return line.available ? { ...line, stores: { ...line.stores, tradeDocuments: tradeDocs } } : line;
+      return line.available
+        ? { ...line, stores: { ...line.stores, tradeDocuments: tradeDocs } }
+        : line;
     },
     receipts,
     buyerOrders: { get: () => null },
@@ -181,7 +185,10 @@ describe('the send leg: an authored note leaves as commerce.trade', () => {
 });
 
 describe('the receive leg: the REAL pipeline lands the document in the ledger', () => {
-  function sealedTrade(bodyJson: string, overrides?: Partial<DinaMessage>): ReturnType<typeof sealMessage> {
+  function sealedTrade(
+    bodyJson: string,
+    overrides?: Partial<DinaMessage>,
+  ): ReturnType<typeof sealMessage> {
     const msg: DinaMessage = {
       id: `trade-${Math.random().toString(36).slice(2)}`,
       type: 'commerce.trade',
@@ -247,7 +254,9 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const replay = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
     expect(replay.action).toBe('bypassed');
     expect(replay.reason).toContain('duplicate');
-    expect(buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+    expect(
+      buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(1);
   });
 
   it('with no active Commerce Pack the push is SPOOLED, not retained; it lands once the pack is active (§5.B1 Cut 3)', async () => {
@@ -269,7 +278,13 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const spool = new InMemoryTradeSpoolRepository();
     const line = { open: false };
     installCommerceRuntime(
-      nodeRuntime(BUYER_DID, receipts, tradeDocs, () => (line.open ? moneyOpen()() : moneyClosed('pack_paused')()), spool),
+      nodeRuntime(
+        BUYER_DID,
+        receipts,
+        tradeDocs,
+        () => (line.open ? moneyOpen()() : moneyClosed('pack_paused')()),
+        spool,
+      ),
     );
     addContact(SUPPLIER_DID);
 
@@ -277,7 +292,9 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const closed = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
     expect(closed.action).toBe('bypassed');
     expect(closed.reason).toContain('spooled');
-    expect(tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
+    expect(
+      tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(0);
     expect(spool.count()).toBe(1);
 
     // The pack comes back: the next ingress replays the mail through the
@@ -294,7 +311,9 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const rows = tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.counterpartyDid).toBe(SUPPLIER_DID);
-    const evidence = JSON.parse(rows[0]?.evidenceJson ?? '{}') as { envelope: { body: string; from: string } };
+    const evidence = JSON.parse(rows[0]?.evidenceJson ?? '{}') as {
+      envelope: { body: string; from: string };
+    };
     expect(evidence.envelope.from).toBe(SUPPLIER_DID);
     expect(evidence.envelope.body).toBe(wireBody);
   });
@@ -317,7 +336,13 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const spool = new InMemoryTradeSpoolRepository();
     const line = { open: false };
     const runtime = {
-      ...nodeRuntime(BUYER_DID, receipts, tradeDocs, () => (line.open ? moneyOpen()() : moneyClosed()()), spool),
+      ...nodeRuntime(
+        BUYER_DID,
+        receipts,
+        tradeDocs,
+        () => (line.open ? moneyOpen()() : moneyClosed()()),
+        spool,
+      ),
       orderDrafts: { list: () => [] },
       tenders: { listTenders: () => [] },
       pendingDecisions: { list: () => [] },
@@ -350,12 +375,20 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     });
     const spool = new InMemoryTradeSpoolRepository();
     const ARRIVED = T0 + 5_000;
-    spool.put({ senderDid: SUPPLIER_DID, bodyJson: wireBody, evidenceJson: '{}', receivedAt: ARRIVED });
+    spool.put({
+      senderDid: SUPPLIER_DID,
+      bodyJson: wireBody,
+      evidenceJson: '{}',
+      receivedAt: ARRIVED,
+    });
     installCommerceRuntime(nodeRuntime(BUYER_DID, receipts, tradeDocs, moneyOpen(), spool));
     const line = moneyOpen()();
     if (!line.available) throw new Error('unreachable');
     // The pack reopens much later.
-    drainTradeSpool(getCommerceRuntime() as CommerceRuntime, { ...line.stores, tradeDocuments: tradeDocs });
+    drainTradeSpool(getCommerceRuntime() as CommerceRuntime, {
+      ...line.stores,
+      tradeDocuments: tradeDocs,
+    });
     const rows = tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note');
     expect(rows).toHaveLength(1);
     expect(rows[0]?.createdAt).toBe(ARRIVED);
@@ -380,7 +413,12 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     // The same well-formed note twice: the FIRST replay hits a receipt store
     // whose order reader throws (a corrupt row); the second must still land.
     spool.put({ senderDid: SUPPLIER_DID, bodyJson: wireBody, evidenceJson: '{}', receivedAt: T0 });
-    spool.put({ senderDid: SUPPLIER_DID, bodyJson: wireBody, evidenceJson: '{}', receivedAt: T0 + 1 });
+    spool.put({
+      senderDid: SUPPLIER_DID,
+      bodyJson: wireBody,
+      evidenceJson: '{}',
+      receivedAt: T0 + 1,
+    });
     let throwOnce = true;
     const poisonedReceipts = new Proxy(receipts, {
       get(target, prop, receiver) {
@@ -400,10 +438,15 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
 
     const line = moneyOpen()();
     if (!line.available) throw new Error('unreachable');
-    const summary = drainTradeSpool(getCommerceRuntime() as CommerceRuntime, { ...line.stores, tradeDocuments: tradeDocs });
+    const summary = drainTradeSpool(getCommerceRuntime() as CommerceRuntime, {
+      ...line.stores,
+      tradeDocuments: tradeDocs,
+    });
     expect(summary).toMatchObject({ replayed: 2, faulted: 1, applied: 1 });
     expect(spool.count()).toBe(0);
-    expect(tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+    expect(
+      tradeDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(1);
   });
 
   it('a full spool refuses the newest document and keeps the oldest', async () => {
@@ -414,7 +457,13 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
       spool.put({ senderDid: SUPPLIER_DID, bodyJson: '{}', evidenceJson: '{}', receivedAt: T0 });
     }
     installCommerceRuntime(
-      nodeRuntime(BUYER_DID, new InMemoryCommerceReceiptRepository(), new InMemoryTradeDocumentRepository(), moneyClosed(), spool),
+      nodeRuntime(
+        BUYER_DID,
+        new InMemoryCommerceReceiptRepository(),
+        new InMemoryTradeDocumentRepository(),
+        moneyClosed(),
+        spool,
+      ),
     );
     addContact(SUPPLIER_DID);
     const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'trusted');
@@ -431,7 +480,9 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'unknown');
     expect(result.action).toBe('dropped');
     expect(result.reason).toContain('neither a known contact nor a trading counterparty');
-    expect(buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(0);
+    expect(
+      buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(0);
   });
 
   it('the supplier of an order this node holds is admitted though never a contact (review item 8)', async () => {
@@ -440,7 +491,9 @@ describe('the receive leg: the REAL pipeline lands the document in the ledger', 
     const buyerDocs = installNode(BUYER_DID);
     const result = receiveD2D(sealedTrade(wireBody), buyerPub, buyerPriv, [supplierPub], 'unknown');
     expect(result.action).toBe('bypassed');
-    expect(buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(1);
+    expect(
+      buyerDocs.listByOrder(SUPPLIER_DID, ORDER.purchase_order_id, 'delivery_note'),
+    ).toHaveLength(1);
   });
 
   it('an unreadable body and an unbindable document drop with named outcomes', async () => {

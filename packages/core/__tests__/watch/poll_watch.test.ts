@@ -52,8 +52,7 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
   describe(label, () => {
     let repo: WorkflowRepository;
     let clockMs: number;
-    const svc = (): WatchService =>
-      new WatchService({ repository: repo, nowMsFn: () => clockMs });
+    const svc = (): WatchService => new WatchService({ repository: repo, nowMsFn: () => clockMs });
 
     beforeEach(() => {
       repo = makeRepo();
@@ -112,7 +111,11 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         const second = svc().createPollWatch(input());
         expect(second.id).not.toBe(first.id);
         expect(second.status).toBe(WorkflowTaskState.Running);
-        expect(svc().listActive().map((t) => t.id)).toEqual([second.id]);
+        expect(
+          svc()
+            .listActive()
+            .map((t) => t.id),
+        ).toEqual([second.id]);
       });
 
       it('createPollWatch round-trips the wake filter into the payload (R2-04)', () => {
@@ -127,7 +130,10 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
 
       it('deliveryPolicyFor: an active watch is {active:true} and carries its filter (R3-02/R2-04)', () => {
         svc().createPollWatch(input({ filter: { contains: 'delayed' } }));
-        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true, filter: { contains: 'delayed' } });
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({
+          active: true,
+          filter: { contains: 'delayed' },
+        });
       });
 
       it('deliveryPolicyFor: an active UNFILTERED watch omits filter (R3-02)', () => {
@@ -137,7 +143,10 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
 
       it('deliveryPolicyFor: a cancelled watch reverts to {active:false} — fail closed (R3-02)', () => {
         const w = svc().createPollWatch(input({ filter: { contains: 'delayed' } }));
-        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true, filter: { contains: 'delayed' } });
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({
+          active: true,
+          filter: { contains: 'delayed' },
+        });
         svc().cancel(w.id);
         // A delivery arriving after cancel must NOT fire-always; it fails closed.
         expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: false });
@@ -150,7 +159,10 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         // resume restores the active policy (with its filter)
         clockMs = NOW_MS + 60_000;
         svc().resume(w.id);
-        expect(svc().deliveryPolicyFor('sub-1')).toEqual({ active: true, filter: { contains: 'delayed' } });
+        expect(svc().deliveryPolicyFor('sub-1')).toEqual({
+          active: true,
+          filter: { contains: 'delayed' },
+        });
       });
 
       it('setWatchNextRun never perturbs a non-watch task', () => {
@@ -175,7 +187,10 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
     });
 
     describe('WatchPollSweeper', () => {
-      function sweeper(onPoll?: WatchPollHandler, over: Partial<{ onError: (e: unknown) => void }> = {}) {
+      function sweeper(
+        onPoll?: WatchPollHandler,
+        over: Partial<{ onError: (e: unknown) => void }> = {},
+      ) {
         return new WatchPollSweeper({
           repository: repo,
           onPoll,
@@ -235,7 +250,9 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         const sw = sweeper(() => void fires++);
         await sw.runTick();
         expect(fires).toBe(1); // ONE fire on wake, not ten
-        expect(need(repo.getById(w.id)).next_run_at).toBe(Math.floor(clockMs / 1000) + INTERVAL_SEC);
+        expect(need(repo.getById(w.id)).next_run_at).toBe(
+          Math.floor(clockMs / 1000) + INTERVAL_SEC,
+        );
       });
 
       it('is single-flight: timer fires during a slow poll coalesce onto one tick (81B-08)', async () => {
@@ -290,7 +307,9 @@ function runSuite(label: string, makeRepo: () => WorkflowRepository): void {
         expect(r.polled).toHaveLength(0); // the fire failed
         expect(errors).toHaveLength(1);
         // but the watch was rescheduled, so the next interval retries
-        expect(need(repo.getById(w.id)).next_run_at).toBe(Math.floor(clockMs / 1000) + INTERVAL_SEC);
+        expect(need(repo.getById(w.id)).next_run_at).toBe(
+          Math.floor(clockMs / 1000) + INTERVAL_SEC,
+        );
       });
 
       it('R4-04: a pause during an in-flight poll is NOT undone by the post-poll reschedule', async () => {

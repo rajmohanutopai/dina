@@ -97,7 +97,10 @@ describe('the store’s terms form', () => {
     expect(validateTermPolicy(stored)).toBeNull();
     // The owner opens the form and changes only the notice period.
     const form = policyToForm(stored);
-    const edited = { ...form, slots: form.slots.map((slot) => ({ ...slot, exitNoticeDays: '45' })) };
+    const edited = {
+      ...form,
+      slots: form.slots.map((slot) => ({ ...slot, exitNoticeDays: '45' })),
+    };
     const saved = formToPolicy(edited, stored);
     if (!saved.ok) throw new Error(saved.problem);
     const [slot] = saved.policy.resources;

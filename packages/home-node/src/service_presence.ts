@@ -181,7 +181,9 @@ export class ServicePresenceWriter {
         try {
           if (profiles.length === 0) {
             if (cid !== null) {
-              await this.repo.deleteRecord(SERVICE_PRESENCE_COLLECTION, SERVICE_PRESENCE_RKEY, { swapRecord: cid });
+              await this.repo.deleteRecord(SERVICE_PRESENCE_COLLECTION, SERVICE_PRESENCE_RKEY, {
+                swapRecord: cid,
+              });
             }
             await this.store.set({ lastOkAt: this.nowMs(), cid: null });
             return cid !== null ? { status: 'deleted' } : { status: 'none' };
@@ -205,7 +207,9 @@ export class ServicePresenceWriter {
         } catch (err) {
           if (!isSwapLost(err)) throw err;
           // The record is not what this writer last saw: adopt what is there.
-          cid = (await this.repo.getRecord(SERVICE_PRESENCE_COLLECTION, SERVICE_PRESENCE_RKEY))?.cid ?? null;
+          cid =
+            (await this.repo.getRecord(SERVICE_PRESENCE_COLLECTION, SERVICE_PRESENCE_RKEY))?.cid ??
+            null;
         }
       }
       return { status: 'failed', error: 'swap kept failing' };
@@ -218,7 +222,9 @@ export class ServicePresenceWriter {
   private async knownCid(): Promise<string | null> {
     const state = await this.store.get().catch(() => null);
     if (state !== null) return state.cid;
-    return (await this.repo.getRecord(SERVICE_PRESENCE_COLLECTION, SERVICE_PRESENCE_RKEY))?.cid ?? null;
+    return (
+      (await this.repo.getRecord(SERVICE_PRESENCE_COLLECTION, SERVICE_PRESENCE_RKEY))?.cid ?? null
+    );
   }
 }
 

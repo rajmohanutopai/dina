@@ -83,7 +83,9 @@ export function matchLineAgainstCatalog(
   if (hintTokens.size === 0) return [];
   const candidates: ResolutionCandidate[] = [];
   pages.items.forEach((item, index) => {
-    const haystack = tokens(`${item.name} ${String((item as { description?: string }).description ?? '')}`);
+    const haystack = tokens(
+      `${item.name} ${String((item as { description?: string }).description ?? '')}`,
+    );
     if (haystack.length === 0) return;
     let matched = 0;
     for (const token of hintTokens) {

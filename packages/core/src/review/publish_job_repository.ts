@@ -27,7 +27,6 @@ import {
 
 import type { DatabaseAdapter, DBRow } from '../storage/db_adapter';
 
-
 export interface ReviewPublishRepository {
   /** Insert a fresh `queued` job. */
   create(job: NewPublishJob): void;
@@ -46,7 +45,13 @@ export interface ReviewPublishRepository {
   // A reclaim only happens after the lease lapses (≥ lease ms), so `claimed_at`
   // strictly differs between successive claims and is a sound fence token.
   /** CAS `publishing → published`, fenced by the claim lease (the service prunes in the same txn). */
-  complete(jobId: string, uri: string, cid: string, nowMs: number, expectedClaimedAt: number): boolean;
+  complete(
+    jobId: string,
+    uri: string,
+    cid: string,
+    nowMs: number,
+    expectedClaimedAt: number,
+  ): boolean;
   /** CAS `publishing → queued` on a retryable failure (backoff), fenced by the claim lease. */
   requeue(
     jobId: string,
@@ -241,7 +246,13 @@ export class InMemoryReviewPublishRepository implements ReviewPublishRepository 
     return n;
   }
 
-  complete(jobId: string, uri: string, cid: string, nowMs: number, expectedClaimedAt: number): boolean {
+  complete(
+    jobId: string,
+    uri: string,
+    cid: string,
+    nowMs: number,
+    expectedClaimedAt: number,
+  ): boolean {
     const j = this.jobs.get(jobId);
     if (!j || j.status !== 'publishing' || j.claimedAt !== expectedClaimedAt) return false;
     j.status = 'published';
@@ -533,7 +544,13 @@ export class SQLiteReviewPublishRepository implements ReviewPublishRepository {
     return affected;
   }
 
-  complete(jobId: string, uri: string, cid: string, nowMs: number, expectedClaimedAt: number): boolean {
+  complete(
+    jobId: string,
+    uri: string,
+    cid: string,
+    nowMs: number,
+    expectedClaimedAt: number,
+  ): boolean {
     const affected = this.db.run(
       `UPDATE peerlens_publish_jobs
           SET status='published', published_uri=?, published_cid=?,

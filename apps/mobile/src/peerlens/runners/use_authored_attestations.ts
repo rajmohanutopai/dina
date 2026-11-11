@@ -13,10 +13,7 @@
 
 import { useEffect, useState } from 'react';
 
-import {
-  searchAttestationsByAuthor,
-  type SearchAttestationHit,
-} from '../appview_runtime';
+import { searchAttestationsByAuthor, type SearchAttestationHit } from '../appview_runtime';
 import {
   deriveAuthoredAttestationRows,
   type AuthoredAttestationRow,
@@ -63,9 +60,7 @@ export function useAuthoredAttestations(
       .catch((err: unknown) => {
         if (cancelled) return;
         const msg =
-          err instanceof Error
-            ? err.message
-            : "Couldn't load reviews. Try again in a moment.";
+          err instanceof Error ? err.message : "Couldn't load reviews. Try again in a moment.";
         setState({ rows: EMPTY, isLoading: false, error: msg });
       });
     return () => {

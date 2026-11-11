@@ -42,7 +42,11 @@ export type InboundActionClass = Exclude<ActionClass, 'payment'>;
  * these runs under a permit its claim consumes, and once it has run, a lost
  * result is reported as `outcome_unknown`, never as a plain failure.
  */
-export const INBOUND_EFFECTFUL_CLASSES: ReadonlySet<InboundActionClass> = new Set(['write', 'booking', 'agentic']);
+export const INBOUND_EFFECTFUL_CLASSES: ReadonlySet<InboundActionClass> = new Set([
+  'write',
+  'booking',
+  'agentic',
+]);
 
 export const INBOUND_CLASSIFICATION_FAILURES = [
   'custom_capability',

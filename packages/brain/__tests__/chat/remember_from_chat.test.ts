@@ -12,7 +12,11 @@ import {
   setRememberCoreClient,
   setRememberDrainHook,
 } from '../../src/chat/orchestrator';
-import { getOwnerWordsRememberer, proveOwnerWords, resetOwnerTurns } from '../../src/chat/owner_turns';
+import {
+  getOwnerWordsRememberer,
+  proveOwnerWords,
+  resetOwnerTurns,
+} from '../../src/chat/owner_turns';
 import { resetThreads } from '../../src/chat/thread';
 import { createRememberChatTool } from '../../src/reasoning/remember_chat_tool';
 

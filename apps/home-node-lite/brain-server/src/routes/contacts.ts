@@ -24,10 +24,12 @@ function wireToUpdateParams(body: Record<string, unknown>): UpdateContactParams 
   if (Array.isArray(body.preferred_for)) params.preferredFor = body.preferred_for as string[];
   if (typeof body.legal_name === 'string') params.legalName = body.legal_name;
   if (Array.isArray(body.registrations)) {
-    params.registrations = (body.registrations as { scheme?: unknown; value?: unknown }[]).map((row) => ({
-      scheme: String(row.scheme ?? ''),
-      value: String(row.value ?? ''),
-    }));
+    params.registrations = (body.registrations as { scheme?: unknown; value?: unknown }[]).map(
+      (row) => ({
+        scheme: String(row.scheme ?? ''),
+        value: String(row.value ?? ''),
+      }),
+    );
   }
   if (body.billing_address !== undefined) {
     const wire = body.billing_address as Record<string, unknown> | null;
@@ -38,7 +40,9 @@ function wireToUpdateParams(body: Record<string, unknown>): UpdateContactParams 
             line1: String(wire.line1 ?? ''),
             ...(typeof wire.line2 === 'string' && wire.line2 !== '' ? { line2: wire.line2 } : {}),
             city: String(wire.city ?? ''),
-            ...(typeof wire.region === 'string' && wire.region !== '' ? { region: wire.region } : {}),
+            ...(typeof wire.region === 'string' && wire.region !== ''
+              ? { region: wire.region }
+              : {}),
             ...(typeof wire.postal_code === 'string' && wire.postal_code !== ''
               ? { postalCode: wire.postal_code }
               : {}),
@@ -70,9 +74,7 @@ export function registerContactApiRoutes(
       const contacts: Contact[] = await core.listContacts();
       return reply.status(200).send({ contacts });
     } catch (err) {
-      return reply
-        .status(502)
-        .send({ error: err instanceof Error ? err.message : String(err) });
+      return reply.status(502).send({ error: err instanceof Error ? err.message : String(err) });
     }
   });
 
@@ -132,9 +134,7 @@ export function registerContactApiRoutes(
         const deleted = await core.removeContact(did);
         return reply.status(200).send({ deleted });
       } catch (err) {
-        return reply
-          .status(502)
-          .send({ error: err instanceof Error ? err.message : String(err) });
+        return reply.status(502).send({ error: err instanceof Error ? err.message : String(err) });
       }
     },
   );

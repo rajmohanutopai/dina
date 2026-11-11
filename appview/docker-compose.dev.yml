@@ -1,13 +1,4 @@
 services:
-  # Local Dina Core PDS for testing
-  dina-core-dev:
-    build: ../dina-core
-    environment:
-      PDS_HOSTNAME: localhost:3001
-      RELAY_URL: http://relay-dev:2470
-    ports:
-      - "3001:3001"
-
   # Local relay (Bluesky's open-source indigo BGS)
   relay-dev:
     image: ghcr.io/bluesky-social/indigo:latest

@@ -10,23 +10,16 @@
 
 import { TEST_ED25519_SEED } from '@dina/test-harness';
 
-import { resetAuditState, queryAudit, auditCount } from '../../src/audit/service';
+import { resetAuditState, auditCount } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
-import { sealMessage, unsealMessage, type DinaMessage } from '../../src/d2d/envelope';
+import { sealMessage, type DinaMessage } from '../../src/d2d/envelope';
 import { addContact, setScenarioDeny, clearGatesState } from '../../src/d2d/gates';
-import {
-  resetQuarantineState,
-  quarantineSize,
-  listQuarantined,
-  unquarantineSender,
-} from '../../src/d2d/quarantine';
+import { resetQuarantineState, quarantineSize, unquarantineSender } from '../../src/d2d/quarantine';
 import { receiveD2D } from '../../src/d2d/receive_pipeline';
 import { sendD2D } from '../../src/d2d/send';
-import { signMessage, verifyMessage } from '../../src/d2d/signature';
 import { getItem as getStagingItem, resetStagingState } from '../../src/staging/service';
 import { setDeliveryFetchFn, resetDeliveryDeps } from '../../src/transport/delivery';
 import { clearOutbox, outboxCount } from '../../src/transport/outbox';
-
 
 // Alice (sender) and Bob (recipient) key pairs
 const alicePriv = TEST_ED25519_SEED;
@@ -196,7 +189,7 @@ describe('D2D End-to-End Integration', () => {
     it('message with wrong signing key is rejected', () => {
       addContact(aliceDID);
       const wrongPriv = new Uint8Array(32).fill(0x99);
-      const wrongPub = getPublicKey(wrongPriv);
+      const _wrongPub = getPublicKey(wrongPriv);
 
       const msg: DinaMessage = {
         id: 'msg-forged',

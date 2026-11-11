@@ -63,7 +63,11 @@ describe('an ask waiting on approval, across a restart', () => {
     await after.restoreOnStartup();
 
     const restored = await after.get('ask-1');
-    expect(restored).toMatchObject({ status: 'pending_approval', approvalId: 'appr-1', conversation: 'thread-1' });
+    expect(restored).toMatchObject({
+      status: 'pending_approval',
+      approvalId: 'appr-1',
+      conversation: 'thread-1',
+    });
     expect(restored?.pausedStateJson).toBeUndefined();
 
     // The owner says yes: the question runs again (Pattern B).

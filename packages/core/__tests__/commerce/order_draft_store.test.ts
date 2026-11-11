@@ -234,7 +234,9 @@ describe('fail-closed hydration (sqlite rows edited after writing)', () => {
   });
 
   it('a half-written vouch entry reads as no draft, never as vouched', () => {
-    const line = makeLine({ vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } });
+    const line = makeLine({
+      vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
+    });
     (line.vouch as unknown as Record<string, unknown>).receiptDigest = 'not-hex';
     corrupt('lines_json', JSON.stringify([line]));
     expect(repo.get('odr-1')).toBeNull();

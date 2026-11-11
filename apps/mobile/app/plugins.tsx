@@ -301,7 +301,8 @@ export default function PluginsScreen(): React.ReactElement {
   // The install the owner is still deciding on lives on the card below, not in
   // the manage list; an older pending (a ceremony the app was closed on) stays
   // listed so it can be removed by hand ahead of the sweeper.
-  const listed = pending === null ? installed : installed.filter((p) => p.installId !== pending.installId);
+  const listed =
+    pending === null ? installed : installed.filter((p) => p.installId !== pending.installId);
 
   return (
     <>
@@ -349,7 +350,11 @@ export default function PluginsScreen(): React.ReactElement {
               </View>
             ))
           )}
-          <Pressable testID="plugins-refresh" onPress={() => void refresh()} style={styles.refreshButton}>
+          <Pressable
+            testID="plugins-refresh"
+            onPress={() => void refresh()}
+            style={styles.refreshButton}
+          >
             <Text style={styles.refreshText}>Refresh</Text>
           </Pressable>
         </Section>
@@ -369,8 +374,8 @@ export default function PluginsScreen(): React.ReactElement {
         ) : (
           <Section title="COUNTRY PACKS">
             <Text style={styles.help}>
-              The rails a market runs on — payment status, tax registries, filings, reminders —
-              as a plugin Dina ships. Installing shows a setup code for the runner that holds the
+              The rails a market runs on — payment status, tax registries, filings, reminders — as a
+              plugin Dina ships. Installing shows a setup code for the runner that holds the
               provider account; nothing runs until you confirm what it may do.
             </Text>
             {COUNTRY_PACKS.map((pack) => {
@@ -404,9 +409,9 @@ export default function PluginsScreen(): React.ReactElement {
         ) : (
           <Section title="INSTALL A PLUGIN">
             <Text style={styles.help}>
-              A plugin is a signed contract, never code inside Dina. Enter the publisher’s
-              identity and the release you were given; Dina fetches and verifies it, then shows you
-              exactly what it can do before anything runs.
+              A plugin is a signed contract, never code inside Dina. Enter the publisher’s identity
+              and the release you were given; Dina fetches and verifies it, then shows you exactly
+              what it can do before anything runs.
             </Text>
 
             <Text style={styles.label}>Publisher DID</Text>
@@ -464,7 +469,8 @@ function uninstallRefusal(
     case 'obligations_open':
       return [
         'Orders still open',
-        detail ?? 'Resolve the orders this plugin is serving (deliver, cancel, or reconcile them), then uninstall.',
+        detail ??
+          'Resolve the orders this plugin is serving (deliver, cancel, or reconcile them), then uninstall.',
       ];
     case 'teardown_incomplete':
       return [

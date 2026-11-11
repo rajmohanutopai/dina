@@ -6,7 +6,10 @@
 import { isAuthorized } from '../../src/auth/authz';
 import { registerDevice, resetDeviceRegistry, revokeDevice } from '../../src/devices/registry';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
-import { installCoreServiceDid, registerBrainCallerRoutes } from '../../src/server/routes/brain_callers';
+import {
+  installCoreServiceDid,
+  registerBrainCallerRoutes,
+} from '../../src/server/routes/brain_callers';
 
 const router = new CoreRouter();
 registerBrainCallerRoutes(router);
@@ -36,7 +39,10 @@ it('tells Brain Core’s service DID and the owner’s active devices, nothing e
   registerDevice('Runner', 'z6MkRunner', 'agent', 'runner');
   revokeDevice(old.deviceId);
   const res = await get('brain');
-  expect(res).toEqual({ status: 200, body: { core: 'did:key:z6MkCoreService', owner_devices: [browser.did] } });
+  expect(res).toEqual({
+    status: 200,
+    body: { core: 'did:key:z6MkCoreService', owner_devices: [browser.did] },
+  });
 });
 
 it('answers no one but Brain', async () => {

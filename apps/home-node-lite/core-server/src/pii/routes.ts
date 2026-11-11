@@ -37,10 +37,7 @@
 import { detectPII, rehydratePII } from '@dina/core';
 
 import { AllowList, filterMatches } from './allow_list';
-import {
-  type RehydrationSessionRegistry,
-  type RehydrationEntity,
-} from './rehydration_sessions';
+import { type RehydrationSessionRegistry, type RehydrationEntity } from './rehydration_sessions';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -78,10 +75,7 @@ export interface ScrubResponseBody {
 }
 
 /** Structural Fastify subset — matches the pattern in `src/pair/routes.ts`. */
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   post(path: string, handler: RouteHandler): unknown;
@@ -97,9 +91,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
   const maxTextLength = opts.maxTextLength ?? DEFAULT_MAX_TEXT_LENGTH;
   const rehydrationSessions = opts.rehydrationSessions;
   if (!Number.isFinite(maxTextLength) || maxTextLength <= 0) {
-    throw new Error(
-      `registerPiiRoutes: maxTextLength must be > 0 (got ${maxTextLength})`,
-    );
+    throw new Error(`registerPiiRoutes: maxTextLength must be > 0 (got ${maxTextLength})`);
   }
 
   app.post('/v1/pii/scrub', async (req, reply) => {
@@ -110,9 +102,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
     }
     const text = body.text;
     if (text.length > maxTextLength) {
-      await reply
-        .code(413)
-        .send({ error: `text exceeds ${maxTextLength}-character limit` });
+      await reply.code(413).send({ error: `text exceeds ${maxTextLength}-character limit` });
       return;
     }
 
@@ -159,7 +149,8 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
     // rehydrate flow depends on).
     let scrubbed = text;
     for (let i = entities.length - 1; i >= 0; i--) {
-      const e = entities[i]!;
+      const e = entities[i];
+      if (e === undefined) throw new Error('pii scrub: entity index out of range');
       scrubbed = scrubbed.slice(0, e.start) + e.token + scrubbed.slice(e.end);
     }
 
@@ -199,9 +190,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
     }
     const text = body.text;
     if (text.length > maxTextLength) {
-      await reply
-        .code(413)
-        .send({ error: `text exceeds ${maxTextLength}-character limit` });
+      await reply.code(413).send({ error: `text exceeds ${maxTextLength}-character limit` });
       return;
     }
 
@@ -209,9 +198,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
     const hasEntities = Array.isArray(body.entities);
 
     if (hasSessionId && hasEntities) {
-      await reply
-        .code(400)
-        .send({ error: 'provide either session_id or entities, not both' });
+      await reply.code(400).send({ error: 'provide either session_id or entities, not both' });
       return;
     }
     if (!hasSessionId && !hasEntities) {
@@ -246,7 +233,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
           e === null ||
           typeof (e as { token?: unknown }).token !== 'string' ||
           typeof (e as { value?: unknown }).value !== 'string' ||
-          ((e as { token: string }).token).length === 0
+          (e as { token: string }).token.length === 0
         ) {
           await reply
             .code(400)
@@ -301,7 +288,7 @@ export function registerPiiRoutes(app: FastifyAppShape, opts: PiiRoutesOptions =
           e === null ||
           typeof (e as { token?: unknown }).token !== 'string' ||
           typeof (e as { value?: unknown }).value !== 'string' ||
-          ((e as { token: string }).token).length === 0
+          (e as { token: string }).token.length === 0
         ) {
           await reply
             .code(400)

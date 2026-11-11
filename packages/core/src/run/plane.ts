@@ -23,7 +23,11 @@ import { PersonaLockedError } from '../errors';
 
 import { AdmissionService, setFetchEligibilityProbe } from './admission';
 import { renderRunPayloadView } from './card';
-import { RunClassifyService, getClassificationJobRepository, type ClassificationJobRepository } from './classification';
+import {
+  RunClassifyService,
+  getClassificationJobRepository,
+  type ClassificationJobRepository,
+} from './classification';
 import { setCommandTxRunner } from './command_receipt';
 import {
   CompletionService,
@@ -48,11 +52,14 @@ import { getMessageRepository, type MessageRecord, type MessageRepository } from
 import { PayloadStore, type PersonaCipher } from './payload_store';
 import { setHeldReplayHook } from './replay_registry';
 import { getRunRepository, type RunRepository } from './repository';
-import { getReservationRepository, type ReservationRecord, type ReservationRepository } from './reservation';
+import {
+  getReservationRepository,
+  type ReservationRecord,
+  type ReservationRepository,
+} from './reservation';
 import { RunService, setRunService } from './service';
 import { RunSweeper, RunTerminationService } from './termination';
 import { tier0TxRunner, type TxRunner } from './tx';
-
 
 import type { RunRecord } from './domain';
 import type { DatabaseAdapter } from '../storage/db_adapter';
@@ -195,7 +202,8 @@ export interface RunPlane {
 }
 
 function need<T>(v: T | null, what: string): T {
-  if (v === null) throw new Error(`wireRunPlane: ${what} must be wired before composing the run plane`);
+  if (v === null)
+    throw new Error(`wireRunPlane: ${what} must be wired before composing the run plane`);
   return v;
 }
 
@@ -238,10 +246,14 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
   };
 
   const runs = deps.runRepo ?? need(getRunRepository(), 'run repository');
-  const reservations = deps.reservationRepo ?? need(getReservationRepository(), 'reservation repository');
+  const reservations =
+    deps.reservationRepo ?? need(getReservationRepository(), 'reservation repository');
   const messages = deps.messageRepo ?? need(getMessageRepository(), 'message repository');
-  const jobs = deps.jobRepo ?? need(getClassificationJobRepository(), 'classification job repository');
-  const receipts = deps.completionReceiptRepo ?? need(getCompletionReceiptRepository(), 'completion receipt repository');
+  const jobs =
+    deps.jobRepo ?? need(getClassificationJobRepository(), 'classification job repository');
+  const receipts =
+    deps.completionReceiptRepo ??
+    need(getCompletionReceiptRepository(), 'completion receipt repository');
 
   // The barrier hook is mutually recursive: RunService/Admission fire it the
   // instant a barrier row is set, and it invalidates outstanding reservations +
@@ -348,7 +360,8 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
   ): { title: string; body: string; content_digest: string } => {
     const digest = m.content_digest ?? '';
     const run = runs.getById(m.run_id);
-    if (run === null || m.payload_ref === null) return { title: '', body: '', content_digest: digest };
+    if (run === null || m.payload_ref === null)
+      return { title: '', body: '', content_digest: digest };
     const plaintext = payloads.getPayload(m.message_id, run.persona);
     if (plaintext === null) return { title: '', body: '', content_digest: digest };
     const { title, body } = renderRunPayloadView(plaintext);
@@ -466,7 +479,10 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     setIntervalFn: deps.setIntervalFn,
     clearIntervalFn: deps.clearIntervalFn,
     onError: (err) =>
-      log({ evt: 'run_plane.engine_tick_failed', error: err instanceof Error ? err.message : String(err) }),
+      log({
+        evt: 'run_plane.engine_tick_failed',
+        error: err instanceof Error ? err.message : String(err),
+      }),
   });
 
   const sweeper = new RunSweeper({
@@ -481,7 +497,10 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     setIntervalFn: deps.setIntervalFn,
     clearIntervalFn: deps.clearIntervalFn,
     onError: (err) =>
-      log({ evt: 'run_plane.sweeper_tick_failed', error: err instanceof Error ? err.message : String(err) }),
+      log({
+        evt: 'run_plane.sweeper_tick_failed',
+        error: err instanceof Error ? err.message : String(err),
+      }),
   });
 
   let classifyTimer: Interval | null = null;
@@ -606,7 +625,8 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
           // spool row NAMES its staging key, so the GC destroys the key BEFORE
           // deleting the blob (never an ack that leaves a live key behind).
           for (const e of deps.runSpool.listStaleEntries(now() - 86_400_000, 200)) {
-            if (!live.has(e.spool_id)) lockedArrival.discardOrphanSpool(e.spool_id, e.staged_key_id);
+            if (!live.has(e.spool_id))
+              lockedArrival.discardOrphanSpool(e.spool_id, e.staged_key_id);
           }
         }
       }
@@ -628,7 +648,12 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
       }
       const swept = payloads.sweepMaintenance();
       if (residue > 0 || swept.reclaimed_prepared > 0 || swept.gc_blobs > 0 || msgShred > 0) {
-        log({ evt: 'run_plane.storage_maintenance', staged_residue: residue, msg_shred: msgShred, ...swept });
+        log({
+          evt: 'run_plane.storage_maintenance',
+          staged_residue: residue,
+          msg_shred: msgShred,
+          ...swept,
+        });
       }
       // A-04 — attach (open persona) or discard (terminal run) staged cards.
       replayStagedCards(null);
@@ -745,7 +770,10 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
       // prepared pins, and physically GC inert blobs.
       runStorageMaintenance();
     } catch (err) {
-      log({ evt: 'run_plane.recover_failed', error: err instanceof Error ? err.message : String(err) });
+      log({
+        evt: 'run_plane.recover_failed',
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   };
 
@@ -760,14 +788,20 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
       try {
         classify.sweepTimeouts();
       } catch (err) {
-        log({ evt: 'run_plane.classify_sweep_failed', error: err instanceof Error ? err.message : String(err) });
+        log({
+          evt: 'run_plane.classify_sweep_failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
     }, classifyMs);
     completionTimer = timers.setIntervalFn(() => {
       try {
         completion.recoverAdvance();
       } catch (err) {
-        log({ evt: 'run_plane.completion_recover_failed', error: err instanceof Error ? err.message : String(err) });
+        log({
+          evt: 'run_plane.completion_recover_failed',
+          error: err instanceof Error ? err.message : String(err),
+        });
       }
       // A-01/A-05 — the storage-maintenance pass shares the completion cadence
       // (30s default): staged residue from an ambient-tx barrier is shredded
@@ -776,7 +810,11 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
     }, completionMs);
     (classifyTimer as { unref?: () => void }).unref?.();
     (completionTimer as { unref?: () => void }).unref?.();
-    log({ evt: 'run_plane.started', engine_ms: deps.engineIntervalMs ?? 5000, classify_ms: classifyMs });
+    log({
+      evt: 'run_plane.started',
+      engine_ms: deps.engineIntervalMs ?? 5000,
+      classify_ms: classifyMs,
+    });
   };
 
   const stop = async (): Promise<void> => {
@@ -820,7 +858,8 @@ export function wireRunPlane(deps: RunPlaneDeps): RunPlane {
   setFetchEligibilityProbe((runId) => admission.gateReason(runId));
 
   return {
-    ingestPullResponse: (correlationId, message) => ingest.ingestPullResponse(correlationId, message),
+    ingestPullResponse: (correlationId, message) =>
+      ingest.ingestPullResponse(correlationId, message),
     ingestExhausted: (correlationId) => ingest.ingestExhausted(correlationId),
     ingestCompletion: (input) => completion.ingestCompletion(input),
     recoverOnBoot,

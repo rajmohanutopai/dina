@@ -7,7 +7,15 @@
 
 import { Stack, useRouter } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 
 import { pairStaffDevice } from '@dina/core';
 
@@ -33,7 +41,10 @@ export default function StaffJoinScreen(): React.ReactElement {
           timeoutMs: 30_000,
         });
         await saveStaffIdentity(identity);
-        showMessage('Joined', `This phone is now a staff device for ${identity.deviceName || 'the business'}.`);
+        showMessage(
+          'Joined',
+          `This phone is now a staff device for ${identity.deviceName || 'the business'}.`,
+        );
         router.replace('/staff-home');
       } catch (err) {
         showMessage('Could not join', ownerErrorText(err));

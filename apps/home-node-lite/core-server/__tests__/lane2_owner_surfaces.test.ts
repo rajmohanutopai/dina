@@ -20,7 +20,10 @@ import {
 } from '@dina/core';
 import { resetKVStore } from '@dina/core/kv';
 
-import { runPhoneApprovalSyncTick, type PhoneApprovalClient } from '../src/approval/phone_approval_sync';
+import {
+  runPhoneApprovalSyncTick,
+  type PhoneApprovalClient,
+} from '../src/approval/phone_approval_sync';
 import { registerOwnerConsoleRoute } from '../src/server/owner_console';
 
 const NOW = Date.now();
@@ -98,7 +101,11 @@ describe('the server console draws an inbound review card from its payload', () 
       `${source('el')}\n${source('btn')}\n${source('payloadOf')}\n${source('approvalCard')}\nreturn approvalCard;`,
     )(document) as (task: { id: string; payload: string; description: string }) => FakeNode;
     const payload = reviewPayload('d'.repeat(64));
-    const card = approvalCard({ id: 'a2a-in-review-op-1', payload: JSON.stringify(payload), description: 'A2A call' });
+    const card = approvalCard({
+      id: 'a2a-in-review-op-1',
+      payload: JSON.stringify(payload),
+      description: 'A2A call',
+    });
     const [title, detail, row] = card.children;
     // The words are Core's, exactly as Core wrote them.
     expect(title?.textContent).toBe(payload.display.title);
@@ -157,7 +164,18 @@ describe('a phone decision binds to the card’s post_hash', () => {
       id,
       kind: 'approval',
       description: 'A2A call under review',
-      payload: JSON.stringify({ ...reviewPayload(postHash), params: { slot: '9am' }, display: inboundReviewDisplay({ client_name: 'Acme', skill: 'appointment_book@clinic', action_class: 'booking', params: { slot: '9am' }, service_name: 'Dr. Lee', proof: { kind: 'bearer' } }) }),
+      payload: JSON.stringify({
+        ...reviewPayload(postHash),
+        params: { slot: '9am' },
+        display: inboundReviewDisplay({
+          client_name: 'Acme',
+          skill: 'appointment_book@clinic',
+          action_class: 'booking',
+          params: { slot: '9am' },
+          service_name: 'Dr. Lee',
+          proof: { kind: 'bearer' },
+        }),
+      }),
       expiresAtSec: Math.floor(NOW / 1000) + 600,
       origin: 'system',
       initialState: 'pending_approval',
@@ -186,12 +204,17 @@ describe('a phone decision binds to the card’s post_hash', () => {
     const [wanted] = await proposalBodies();
     expect(wanted?.source_payload_hash).toBe('d'.repeat(64));
     // The phone holds a mirror of this card with every field the same but the hash, and its owner said yes.
-    const forged = await phone.request('POST', '/v1/agent/approval-sync/v1/proposals', { ...wanted, source_payload_hash: 'e'.repeat(64) });
+    const forged = await phone.request('POST', '/v1/agent/approval-sync/v1/proposals', {
+      ...wanted,
+      source_payload_hash: 'e'.repeat(64),
+    });
     expect(forged.status).toBe(201);
     getWorkflowService()?.approve(remoteApprovalProposalId(PHONE, 'a2a-in-review-x:w1'));
     const tick = await runPhoneApprovalSyncTick({ client: phone, nowMs: NOW });
     expect(tick.approved).toBe(0);
-    expect(getWorkflowService()?.store().getById('a2a-in-review-x')?.status).toBe('pending_approval');
+    expect(getWorkflowService()?.store().getById('a2a-in-review-x')?.status).toBe(
+      'pending_approval',
+    );
   });
 
   // Extra X-6 (the phone, control)

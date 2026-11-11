@@ -85,8 +85,7 @@ function makeFetchStub(opts: {
   // Fake "PDS rotation key" — content doesn't matter, only that it's
   // a valid did:key string and present alongside ours so the merge
   // logic preserves it on update.
-  const fakePdsRotationKey =
-    'did:key:zQ3shFakePdsRotationKeyForTesting1234567890abcdefXY';
+  const fakePdsRotationKey = 'did:key:zQ3shFakePdsRotationKeyForTesting1234567890abcdefXY';
 
   const genesisOp: Record<string, unknown> = {
     type: 'plc_operation',
@@ -398,7 +397,7 @@ describe('provisionExternalAtprotoIdentity (link, do not take over)', () => {
   const LINKED_HANDLE = 'alice.bsky.social';
   const DINA_OWN_DID = 'did:plc:dinaown555';
 
-  it('links the Bluesky identity read-only, mints Dina\'s OWN did:plc, stores the link, and NEVER touches the linked account', async () => {
+  it("links the Bluesky identity read-only, mints Dina's OWN did:plc, stores the link, and NEVER touches the linked account", async () => {
     const mnemonic = generateNewMnemonic();
     // makeFetchStub serves only Dina's OWN provisioning (createAccount +
     // audit log + PLC update POST) for DINA_OWN_DID. Anything touching the
@@ -464,7 +463,7 @@ describe('provisionExternalAtprotoIdentity (link, do not take over)', () => {
     expect(infra.pdsPassword).not.toBe('');
   });
 
-  it('with an OAuth verifiedLink: skips the resolve, mints Dina\'s own did, stores a VERIFIED link', async () => {
+  it("with an OAuth verifiedLink: skips the resolve, mints Dina's own did, stores a VERIFIED link", async () => {
     const mnemonic = generateNewMnemonic();
     makeFetchStub({
       mnemonic,
@@ -511,27 +510,29 @@ describe('provisionExternalAtprotoIdentity (link, do not take over)', () => {
     // Wrap the own-stub so the linked /data GET is also served, and record
     // every URL + method to assert the linked account is only ever read.
     const seen: { url: string; method: string }[] = [];
-    const combined = jest.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-      const url = String(input);
-      seen.push({ url, method: (init?.method ?? 'GET').toUpperCase() });
-      if (url === linkedDataUrl) {
-        return new Response(
-          JSON.stringify({
-            rotationKeys: ['did:key:zQ3linkedRotation'],
-            alsoKnownAs: [`at://${LINKED_HANDLE}`],
-            verificationMethods: { atproto: 'did:key:zQ3atproto' },
-            services: {
-              atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: 'https://bsky.social' },
-            },
-          }),
-          { status: 200, headers: { 'Content-Type': 'application/json' } },
+    const combined = jest.fn(
+      async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+        const url = String(input);
+        seen.push({ url, method: (init?.method ?? 'GET').toUpperCase() });
+        if (url === linkedDataUrl) {
+          return new Response(
+            JSON.stringify({
+              rotationKeys: ['did:key:zQ3linkedRotation'],
+              alsoKnownAs: [`at://${LINKED_HANDLE}`],
+              verificationMethods: { atproto: 'did:key:zQ3atproto' },
+              services: {
+                atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: 'https://bsky.social' },
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
+        return (ownStub as unknown as (i: RequestInfo | URL, n?: RequestInit) => Promise<Response>)(
+          input,
+          init,
         );
-      }
-      return (ownStub as unknown as (i: RequestInfo | URL, n?: RequestInit) => Promise<Response>)(
-        input,
-        init,
-      );
-    }) as unknown as jest.Mock<Promise<Response>, [RequestInfo | URL, RequestInit?]>;
+      },
+    ) as unknown as jest.Mock<Promise<Response>, [RequestInfo | URL, RequestInit?]>;
     (globalThis as unknown as { fetch: typeof globalThis.fetch }).fetch =
       combined as unknown as typeof globalThis.fetch;
 
@@ -635,7 +636,9 @@ describe('recoverIdentity', () => {
         restoreBackup: true,
       });
       expect(recovered.restoredItems).toBe(0);
-      expect(asked).toEqual([`https://test-backup.dinakernel.com/v1/backups/${id.backupId}/latest`]);
+      expect(asked).toEqual([
+        `https://test-backup.dinakernel.com/v1/backups/${id.backupId}/latest`,
+      ]);
       // Backing up carries on from this phone.
       expect(await kvBackupStore.get('enabled')).toBe('1');
       expect(isUnlocked()).toBe(true);

@@ -117,9 +117,9 @@ describe('cosig validators (TN-PROTO-002)', () => {
     });
 
     it('rejects wrong type literal', () => {
-      expect(validateCosigAccept({ ...makeAccept(), type: 'something' }).some((e) => e.includes('type'))).toBe(
-        true,
-      );
+      expect(
+        validateCosigAccept({ ...makeAccept(), type: 'something' }).some((e) => e.includes('type')),
+      ).toBe(true);
     });
 
     it('rejects missing endorsementUri', () => {

@@ -108,10 +108,21 @@ describe('through the router', () => {
     expect(res.headers?.['www-authenticate']).toBe('Bearer realm="dina-a2a"');
     expect(res.body).toEqual({ jsonrpc: '2.0', id, error: dinaRefusal('unauthenticated') });
     // At the endpoint's trailing-slash form too.
-    const slash = await post(getTask, iw.request('GetTask', { id: 't-1' }, { path: `${A2A_RPC_PATH}/` }, null));
+    const slash = await post(
+      getTask,
+      iw.request('GetTask', { id: 't-1' }, { path: `${A2A_RPC_PATH}/` }, null),
+    );
     expect((slash.body as { error: { code: number } }).error.code).toBe(-32000);
     // Control: the REST binding's refusal is a google.rpc.Status.
-    const rest = await post(getTask, iw.request('GetTask', { id: 't-1' }, { path: '/a2a/rest/tasks/t-1', method: 'GET', body: '' }, null));
+    const rest = await post(
+      getTask,
+      iw.request(
+        'GetTask',
+        { id: 't-1' },
+        { path: '/a2a/rest/tasks/t-1', method: 'GET', body: '' },
+        null,
+      ),
+    );
     expect(rest.status).toBe(401);
     expect((rest.body as { error: { status: string } }).error.status).toBe('UNAUTHENTICATED');
   });
@@ -139,7 +150,9 @@ describe('through the router', () => {
     // The claim is held under the DID that made it, through the route.
     const [first] = items;
     if (first === undefined) throw new Error('no item');
-    expect(iw.world.store.getOutboxRow(first.id)).toEqual(expect.objectContaining({ status: 'claimed', claimed_by: 'did:key:z6MkGateway' }));
+    expect(iw.world.store.getOutboxRow(first.id)).toEqual(
+      expect.objectContaining({ status: 'claimed', claimed_by: 'did:key:z6MkGateway' }),
+    );
     // Cold audit C6-13: another gateway key cannot report a claim it does not hold, even with its
     // claim id; asked while the claim is live, so only the claimant binding can refuse it.
     const foreign = await post(

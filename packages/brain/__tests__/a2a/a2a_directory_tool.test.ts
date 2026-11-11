@@ -8,7 +8,10 @@
 import { A2A_DIRECTORY_QUERY_MAX_LENGTH, MAX_ID_LENGTH } from '@dina/a2a';
 
 import { AppViewError, type A2ADirectoryAgent } from '../../src/appview_client/http';
-import { createSearchA2AAgentsTool, type A2ADirectorySearchResult } from '../../src/reasoning/a2a_tools';
+import {
+  createSearchA2AAgentsTool,
+  type A2ADirectorySearchResult,
+} from '../../src/reasoning/a2a_tools';
 
 const SELF = 'did:plc:selfaaaaaaaaaaaaaaaaaaaa';
 let n = 0;
@@ -28,7 +31,10 @@ const agent = (over: Partial<A2ADirectoryAgent> = {}): A2ADirectoryAgent => {
   };
 };
 
-function tool(found: A2ADirectoryAgent[] | Error, over: { resultLimit?: number; self?: string | null } = {}) {
+function tool(
+  found: A2ADirectoryAgent[] | Error,
+  over: { resultLimit?: number; self?: string | null } = {},
+) {
   const calls: unknown[] = [];
   const { self = SELF, ...rest } = over;
   const t = createSearchA2AAgentsTool({
@@ -43,11 +49,20 @@ function tool(found: A2ADirectoryAgent[] | Error, over: { resultLimit?: number; 
     core: { a2aSelfDid: async () => self },
     ...rest,
   });
-  return { run: async (args: Record<string, unknown>) => (await t.execute(args)) as A2ADirectorySearchResult, calls };
+  return {
+    run: async (args: Record<string, unknown>) =>
+      (await t.execute(args)) as A2ADirectorySearchResult,
+    calls,
+  };
 }
 
 it('asks the directory and hands back candidates with the card URL to register, framed as candidates', async () => {
-  const a = agent({ endpoint: 'https://bus.example/a2a/v1', skills: ['eta_query'], trustScore: 0.9, recommendation: 'proceed' });
+  const a = agent({
+    endpoint: 'https://bus.example/a2a/v1',
+    skills: ['eta_query'],
+    trustScore: 0.9,
+    recommendation: 'proceed',
+  });
   const { run, calls } = tool([a]);
   const out = await run({ skill: 'eta_query', q: 'bus' });
   expect(calls).toEqual([{ skill: 'eta_query', q: 'bus', limit: 20 }]);
@@ -96,9 +111,15 @@ it('keeps only cards that offer what was asked: the exact id, or any skill of th
     agent({ displayName: 'Other shop', skills: ['price_check@other'] }),
     agent({ displayName: 'Bus', skills: ['eta_query'] }),
   ];
-  expect((await tool(found).run({ skill: 'price_check@shop' })).candidates.map((c) => c.name)).toEqual(['Shop']);
-  expect((await tool(found).run({ skill: 'price_check' })).candidates.map((c) => c.name).sort()).toEqual(['Other shop', 'Shop']);
-  expect((await tool(found).run({ skill: 'bus_eta' })).candidates.map((c) => c.name)).toEqual(['Bus']);
+  expect(
+    (await tool(found).run({ skill: 'price_check@shop' })).candidates.map((c) => c.name),
+  ).toEqual(['Shop']);
+  expect(
+    (await tool(found).run({ skill: 'price_check' })).candidates.map((c) => c.name).sort(),
+  ).toEqual(['Other shop', 'Shop']);
+  expect((await tool(found).run({ skill: 'bus_eta' })).candidates.map((c) => c.name)).toEqual([
+    'Bus',
+  ]);
 });
 
 it('orders as the contract says, whatever order arrived: fresh before stale, then trust; ties keep the directory’s order', async () => {
@@ -109,7 +130,13 @@ it('orders as the contract says, whatever order arrived: fresh before stale, the
     agent({ displayName: 'Tie A', trustScore: 0.5 }),
     agent({ displayName: 'Tie B', trustScore: 0.5 }),
   ];
-  expect((await tool(found).run({})).candidates.map((c) => c.name)).toEqual(['High', 'Tie A', 'Tie B', 'Low', 'Stale, trusted']);
+  expect((await tool(found).run({})).candidates.map((c) => c.name)).toEqual([
+    'High',
+    'Tie A',
+    'Tie B',
+    'Low',
+    'Stale, trusted',
+  ]);
 });
 
 it('caps what reaches the model', async () => {
@@ -128,29 +155,53 @@ it('a skill Dina does not know is never sent to the directory', async () => {
 });
 
 it('a closed or unreachable directory is said plainly; anything else is a fault and surfaces', async () => {
-  const closed = await tool(new AppViewError('AppView responded 503', 503, '/xrpc/com.dinakernel.a2a.searchAgents')).run({ skill: 'eta_query' });
-  expect(closed).toEqual({ candidates: [], note: 'The agent directory is not available right now.' });
+  const closed = await tool(
+    new AppViewError('AppView responded 503', 503, '/xrpc/com.dinakernel.a2a.searchAgents'),
+  ).run({ skill: 'eta_query' });
+  expect(closed).toEqual({
+    candidates: [],
+    note: 'The agent directory is not available right now.',
+  });
   await expect(tool(new TypeError('bug')).run({})).rejects.toThrow('bug');
-  const unreachable = await tool(new AppViewError('network error: ECONNREFUSED', null, '/xrpc/com.dinakernel.a2a.searchAgents')).run({});
+  const unreachable = await tool(
+    new AppViewError('network error: ECONNREFUSED', null, '/xrpc/com.dinakernel.a2a.searchAgents'),
+  ).run({});
   expect(unreachable.note).toBe('The agent directory is not available right now.');
   // A request AppView refuses, or AppView failing, is not an outage.
   for (const status of [400, 500]) {
-    await expect(tool(new AppViewError(`AppView responded ${status}`, status, '/xrpc/com.dinakernel.a2a.searchAgents')).run({})).rejects.toMatchObject({ status });
+    await expect(
+      tool(
+        new AppViewError(
+          `AppView responded ${status}`,
+          status,
+          '/xrpc/com.dinakernel.a2a.searchAgents',
+        ),
+      ).run({}),
+    ).rejects.toMatchObject({ status });
   }
 });
 
 it('holds the directory’s own limits: the model hears what to change, and nothing is asked', async () => {
   const { run, calls } = tool([agent()]);
   const longQ = await run({ q: 'q'.repeat(A2A_DIRECTORY_QUERY_MAX_LENGTH + 1) });
-  expect(longQ).toEqual({ candidates: [], note: `Use at most ${A2A_DIRECTORY_QUERY_MAX_LENGTH} characters of words to match.` });
+  expect(longQ).toEqual({
+    candidates: [],
+    note: `Use at most ${A2A_DIRECTORY_QUERY_MAX_LENGTH} characters of words to match.`,
+  });
   // A known capability whose id is too long: the note names the limit, not an unknown capability.
   const longSkill = await run({ skill: `eta_query@${'r'.repeat(MAX_ID_LENGTH)}` });
-  expect(longSkill).toEqual({ candidates: [], note: `Use a skill id of at most ${MAX_ID_LENGTH} characters.` });
+  expect(longSkill).toEqual({
+    candidates: [],
+    note: `Use a skill id of at most ${MAX_ID_LENGTH} characters.`,
+  });
   expect(calls).toEqual([]);
   await run({ q: 'q'.repeat(A2A_DIRECTORY_QUERY_MAX_LENGTH) });
   expect(calls).toHaveLength(1);
 });
 
 it('an empty directory says so', async () => {
-  expect(await tool([]).run({ skill: 'eta_query' })).toEqual({ candidates: [], note: 'No agent in the directory offers that.' });
+  expect(await tool([]).run({ skill: 'eta_query' })).toEqual({
+    candidates: [],
+    note: 'No agent in the directory offers that.',
+  });
 });

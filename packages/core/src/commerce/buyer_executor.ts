@@ -55,7 +55,6 @@ import {
   type StaffGrant,
 } from './staff_authority';
 
-
 import type { OrderAcknowledgement, PurchaseOrderProposal } from '@dina/commerce-protocol';
 
 /**

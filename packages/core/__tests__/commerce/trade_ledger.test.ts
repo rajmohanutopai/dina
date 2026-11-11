@@ -22,7 +22,6 @@ import {
 } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-
 import {
   InMemoryTradeDocumentRepository,
   SQLiteTradeDocumentRepository,
@@ -55,7 +54,11 @@ function retainedOrder(overrides: Partial<PurchaseOrderProposal> = {}): Purchase
     supplier_did: SUPPLIER,
     order_digest: 'd'.repeat(64),
     accepted_lines: [
-      { line_id: 'line-1', product: { scheme: 'custom', value: 'CHAIR', issuer_did: SUPPLIER }, quantity: { value: '10', unit_code: 'each' } },
+      {
+        line_id: 'line-1',
+        product: { scheme: 'custom', value: 'CHAIR', issuer_did: SUPPLIER },
+        quantity: { value: '10', unit_code: 'each' },
+      },
     ],
     ...overrides,
   } as PurchaseOrderProposal;
@@ -75,7 +78,10 @@ function sealedNote(overrides: Partial<DeliveryNote> = {}): DeliveryNote {
   return { ...draft, note_digest: tradeRecordDigest('delivery_note', draft, hash) } as DeliveryNote;
 }
 
-function sealedReceipt(note: DeliveryNote, overrides: Partial<DeliveryReceipt> = {}): DeliveryReceipt {
+function sealedReceipt(
+  note: DeliveryNote,
+  overrides: Partial<DeliveryReceipt> = {},
+): DeliveryReceipt {
   const draft = {
     protocol_version: note.protocol_version,
     delivery_receipt_id: `dr-${randomBytes(4).toString('hex')}`,
@@ -174,7 +180,10 @@ describe.each(backends)('trade ledger ($name)', ({ make }) => {
   });
   afterEach(() => close());
 
-  const ingestNote = (note: DeliveryNote, extra: Partial<Parameters<typeof verifyInboundDeliveryNote>[0]> = {}) =>
+  const ingestNote = (
+    note: DeliveryNote,
+    extra: Partial<Parameters<typeof verifyInboundDeliveryNote>[0]> = {},
+  ) =>
     verifyInboundDeliveryNote({
       senderDid: SUPPLIER,
       selfDid: BUYER,
@@ -391,5 +400,4 @@ describe.each(backends)('trade ledger ($name)', ({ make }) => {
       expect(result.detail).toContain('authored');
     });
   });
-
 });

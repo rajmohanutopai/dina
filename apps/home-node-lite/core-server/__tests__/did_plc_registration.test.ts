@@ -238,9 +238,9 @@ describe('ensureDIDPLC (task 4.56)', () => {
   describe('input validation', () => {
     it('rejects empty vaultDir', async () => {
       const { seed, identity } = fixedIdentity();
-      await expect(
-        ensureDIDPLC({ vaultDir: '', identity, masterSeed: seed }),
-      ).rejects.toThrow(/vaultDir is required/);
+      await expect(ensureDIDPLC({ vaultDir: '', identity, masterSeed: seed })).rejects.toThrow(
+        /vaultDir is required/,
+      );
     });
 
     it('rejects too-short masterSeed', async () => {

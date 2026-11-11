@@ -121,7 +121,9 @@ const projectionInput = (listings: ProjectionListing[]): CardProjectionInput => 
 const baseCard = (): Record<string, unknown> => ({
   name: 'Agent',
   description: 'Does things',
-  supportedInterfaces: [{ url: 'https://a.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+  supportedInterfaces: [
+    { url: 'https://a.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+  ],
   version: '1',
   capabilities: {},
   defaultInputModes: ['application/json'],
@@ -138,8 +140,23 @@ describe('pinned A2A facts (plan §2)', () => {
   it('serves the public card at /.well-known/agent-card.json, the path the gateway routes (spec §8.2; plan §2 row 2)', () => {
     expect(AGENT_CARD_WELL_KNOWN_PATH).toBe('/.well-known/agent-card.json');
     // The gateway keeps its own name for the path; it must be this one, and the route it serves.
-    const server = readFileSync(join(__dirname, '..', '..', '..', 'apps', 'home-node-lite', 'a2a-gateway', 'src', 'server.ts'), 'utf8');
-    expect(/export const AGENT_CARD_PATH = '([^']*)'/.exec(server)?.[1]).toBe(AGENT_CARD_WELL_KNOWN_PATH);
+    const server = readFileSync(
+      join(
+        __dirname,
+        '..',
+        '..',
+        '..',
+        'apps',
+        'home-node-lite',
+        'a2a-gateway',
+        'src',
+        'server.ts',
+      ),
+      'utf8',
+    );
+    expect(/export const AGENT_CARD_PATH = '([^']*)'/.exec(server)?.[1]).toBe(
+      AGENT_CARD_WELL_KNOWN_PATH,
+    );
     expect(server).toMatch(/app\.get\(AGENT_CARD_PATH,/);
   });
 
@@ -154,7 +171,8 @@ describe('pinned A2A facts (plan §2)', () => {
     expect(entry).toMatchObject({ uri: DINA_A2A_EXTENSION_URI });
     expect(entry).not.toHaveProperty('version');
     // Only the members AgentExtension has (a2a.proto v1.0.1); Dina's extension is never required (design §7.6).
-    for (const k of Object.keys(entry)) expect(['uri', 'description', 'required', 'params']).toContain(k);
+    for (const k of Object.keys(entry))
+      expect(['uri', 'description', 'required', 'params']).toContain(k);
     expect((entry as { required?: unknown }).required).not.toBe(true);
   });
 });
@@ -164,7 +182,8 @@ describe('pinned A2A facts (plan §2)', () => {
 // ---------------------------------------------------------------------------
 
 describe('JSON-RPC ids and response text', () => {
-  const request = (id: string) => `{"jsonrpc":"2.0","id":${id},"method":"GetTask","params":{"id":"t1"}}`;
+  const request = (id: string) =>
+    `{"jsonrpc":"2.0","id":${id},"method":"GetTask","params":{"id":"t1"}}`;
 
   // Plan A22
   it.each([
@@ -194,11 +213,18 @@ describe('JSON-RPC ids and response text', () => {
 
   // Plan A34
   it('reads a peer response strictly: two result members, or a __proto__ member, make it malformed', () => {
-    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{"ok":true},"result":{"ok":false}}', 1)).toEqual({
+    expect(
+      parseJsonRpcResponseText(
+        '{"jsonrpc":"2.0","id":1,"result":{"ok":true},"result":{"ok":false}}',
+        1,
+      ),
+    ).toEqual({
       ok: false,
       malformed: 'json_duplicate_member',
     });
-    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{"__proto__":{"x":1}}}', 1)).toEqual({
+    expect(
+      parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{"__proto__":{"x":1}}}', 1),
+    ).toEqual({
       ok: false,
       malformed: 'json_forbidden_member',
     });
@@ -206,9 +232,18 @@ describe('JSON-RPC ids and response text', () => {
 
   // Plan A34
   it('matches a response id by type and value: "1" does not answer request 1', () => {
-    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":"1","result":{}}', 1)).toEqual({ ok: false, malformed: 'id_mismatch' });
-    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{}}', '1')).toEqual({ ok: false, malformed: 'id_mismatch' });
-    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{}}', 1)).toEqual({ ok: true, result: {} });
+    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":"1","result":{}}', 1)).toEqual({
+      ok: false,
+      malformed: 'id_mismatch',
+    });
+    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{}}', '1')).toEqual({
+      ok: false,
+      malformed: 'id_mismatch',
+    });
+    expect(parseJsonRpcResponseText('{"jsonrpc":"2.0","id":1,"result":{}}', 1)).toEqual({
+      ok: true,
+      result: {},
+    });
   });
 });
 
@@ -230,8 +265,14 @@ describe('strict I-JSON parsing (RFC 7493)', () => {
   // Plan A44
   it('refuses a 200,000-deep text as too deep, with no stack overflow', () => {
     const n = 200_000;
-    expect(parseStrictJson('['.repeat(n) + ']'.repeat(n))).toEqual({ ok: false, reason: 'too_deep' });
-    expect(parseStrictJson('{"a":'.repeat(n) + '1' + '}'.repeat(n))).toEqual({ ok: false, reason: 'too_deep' });
+    expect(parseStrictJson('['.repeat(n) + ']'.repeat(n))).toEqual({
+      ok: false,
+      reason: 'too_deep',
+    });
+    expect(parseStrictJson('{"a":'.repeat(n) + '1' + '}'.repeat(n))).toEqual({
+      ok: false,
+      reason: 'too_deep',
+    });
     let deep: unknown = 1;
     for (let i = 0; i < n; i += 1) deep = [deep];
     expect(untrustedJsonProblem(deep)).toBe('too_deep');
@@ -248,10 +289,22 @@ describe('strict I-JSON parsing (RFC 7493)', () => {
 
   // Plan A44
   it('keeps members named after Object.prototype members as plain data', () => {
-    const parsed = parseStrictJson('{"constructor":1,"toString":"x","hasOwnProperty":null,"valueOf":[]}');
+    const parsed = parseStrictJson(
+      '{"constructor":1,"toString":"x","hasOwnProperty":null,"valueOf":[]}',
+    );
     if (!parsed.ok) throw new Error(parsed.reason);
-    expect(parsed.value).toEqual({ constructor: 1, toString: 'x', hasOwnProperty: null, valueOf: [] });
-    expect(Object.keys(parsed.value as object).sort()).toEqual(['constructor', 'hasOwnProperty', 'toString', 'valueOf']);
+    expect(parsed.value).toEqual({
+      constructor: 1,
+      toString: 'x',
+      hasOwnProperty: null,
+      valueOf: [],
+    });
+    expect(Object.keys(parsed.value as object).sort()).toEqual([
+      'constructor',
+      'hasOwnProperty',
+      'toString',
+      'valueOf',
+    ]);
   });
 });
 
@@ -304,7 +357,9 @@ describe('RFC 8785 number form (Appendix B)', () => {
 describe('card validator: no __proto__, no excess depth', () => {
   // Plan A62
   it('refuses a card carrying a __proto__ member anywhere', () => {
-    const top = JSON.parse(`{"__proto__":{"x":1},${JSON.stringify(baseCard()).slice(1)}`) as unknown;
+    const top = JSON.parse(
+      `{"__proto__":{"x":1},${JSON.stringify(baseCard()).slice(1)}`,
+    ) as unknown;
     expect(validateAgentCardShape(top)).toBe('card_forbidden_member');
     const inSkill = JSON.parse(
       JSON.stringify(baseCard()).replace('"tags":["t"]', '"tags":["t"],"__proto__":{"admin":true}'),
@@ -339,10 +394,17 @@ type ProtoField =
   | { kind: 'struct' };
 
 const str = (flag?: 'required' | 'optional'): ProtoField =>
-  flag === 'required' ? { kind: 'string', required: true } : flag === 'optional' ? { kind: 'string', optional: true } : { kind: 'string' };
-const bool = (flag?: 'optional'): ProtoField => (flag === 'optional' ? { kind: 'bool', optional: true } : { kind: 'bool' });
-const list = (required?: 'required'): ProtoField => (required ? { kind: 'repeated', required: true } : { kind: 'repeated' });
-const map = (required?: 'required'): ProtoField => (required ? { kind: 'map', required: true } : { kind: 'map' });
+  flag === 'required'
+    ? { kind: 'string', required: true }
+    : flag === 'optional'
+      ? { kind: 'string', optional: true }
+      : { kind: 'string' };
+const bool = (flag?: 'optional'): ProtoField =>
+  flag === 'optional' ? { kind: 'bool', optional: true } : { kind: 'bool' };
+const list = (required?: 'required'): ProtoField =>
+  required ? { kind: 'repeated', required: true } : { kind: 'repeated' };
+const map = (required?: 'required'): ProtoField =>
+  required ? { kind: 'map', required: true } : { kind: 'map' };
 const msg = (of: string, required?: 'required'): ProtoField =>
   required ? { kind: 'message', of, required: true } : { kind: 'message', of };
 
@@ -362,10 +424,20 @@ const PROTO: Readonly<Record<string, Readonly<Record<string, ProtoField>>>> = {
     skills: list('required'),
     iconUrl: str('optional'),
   },
-  AgentInterface: { url: str('required'), protocolBinding: str('required'), tenant: str(), protocolVersion: str('required') },
+  AgentInterface: {
+    url: str('required'),
+    protocolBinding: str('required'),
+    tenant: str(),
+    protocolVersion: str('required'),
+  },
   AgentProvider: { url: str('required'), organization: str('required') },
   AgentExtension: { uri: str(), description: str(), required: bool(), params: { kind: 'struct' } },
-  AgentCapabilities: { streaming: bool('optional'), pushNotifications: bool('optional'), extensions: list(), extendedAgentCard: bool('optional') },
+  AgentCapabilities: {
+    streaming: bool('optional'),
+    pushNotifications: bool('optional'),
+    extensions: list(),
+    extendedAgentCard: bool('optional'),
+  },
   AgentSkill: {
     id: str('required'),
     name: str('required'),
@@ -385,7 +457,11 @@ const PROTO: Readonly<Record<string, Readonly<Record<string, ProtoField>>>> = {
   },
   APIKeySecurityScheme: { description: str(), location: str('required'), name: str('required') },
   HTTPAuthSecurityScheme: { description: str(), scheme: str('required'), bearerFormat: str() },
-  OAuth2SecurityScheme: { description: str(), flows: msg('OAuthFlows', 'required'), oauth2MetadataUrl: str() },
+  OAuth2SecurityScheme: {
+    description: str(),
+    flows: msg('OAuthFlows', 'required'),
+    oauth2MetadataUrl: str(),
+  },
   OpenIdConnectSecurityScheme: { description: str(), openIdConnectUrl: str('required') },
   MutualTlsSecurityScheme: { description: str() },
   OAuthFlows: {
@@ -402,10 +478,19 @@ const PROTO: Readonly<Record<string, Readonly<Record<string, ProtoField>>>> = {
     scopes: map('required'),
     pkceRequired: bool(),
   },
-  ClientCredentialsOAuthFlow: { tokenUrl: str('required'), refreshUrl: str(), scopes: map('required') },
+  ClientCredentialsOAuthFlow: {
+    tokenUrl: str('required'),
+    refreshUrl: str(),
+    scopes: map('required'),
+  },
   ImplicitOAuthFlow: { authorizationUrl: str(), refreshUrl: str(), scopes: map() },
   PasswordOAuthFlow: { tokenUrl: str(), refreshUrl: str(), scopes: map() },
-  DeviceCodeOAuthFlow: { deviceAuthorizationUrl: str('required'), tokenUrl: str('required'), refreshUrl: str(), scopes: map('required') },
+  DeviceCodeOAuthFlow: {
+    deviceAuthorizationUrl: str('required'),
+    tokenUrl: str('required'),
+    refreshUrl: str(),
+    scopes: map('required'),
+  },
   SecurityRequirement: { schemes: map() },
   StringList: { list: list() },
 };
@@ -477,13 +562,24 @@ function expectedAtDefaults(name: string): JsonObject {
     } else if (rule.kind === 'struct') {
       out[field] = {};
     } else if (rule.required === true || ('optional' in rule && rule.optional === true)) {
-      out[field] = rule.kind === 'string' ? '' : rule.kind === 'bool' ? false : rule.kind === 'repeated' ? [] : {};
+      out[field] =
+        rule.kind === 'string'
+          ? ''
+          : rule.kind === 'bool'
+            ? false
+            : rule.kind === 'repeated'
+              ? []
+              : {};
     }
   }
   return out;
 }
 
-function setIn(root: Record<string, unknown>, path: readonly (string | number)[], value: unknown): Record<string, unknown> {
+function setIn(
+  root: Record<string, unknown>,
+  path: readonly (string | number)[],
+  value: unknown,
+): Record<string, unknown> {
   if (path.length === 0) return value as Record<string, unknown>;
   let node: Record<string | number, unknown> = root;
   for (let i = 0; i < path.length - 1; i += 1) {
@@ -529,9 +625,14 @@ describe('card canonical form follows a2a.proto v1.0.1 field by field (spec §8.
         .filter(([, rule]) => rule.kind === 'message')
         .map(([field, rule]) => [name, field, path, (rule as { of: string }).of] as const),
     ),
-  )('%s.%s, set but empty, is kept as a present message with its own REQUIRED fields', (_name, field, path, of) => {
-    expect((canonicalAt(path, { [field]: {} }) as Record<string, unknown>)[field]).toEqual(blank(of));
-  });
+  )(
+    '%s.%s, set but empty, is kept as a present message with its own REQUIRED fields',
+    (_name, field, path, of) => {
+      expect((canonicalAt(path, { [field]: {} }) as Record<string, unknown>)[field]).toEqual(
+        blank(of),
+      );
+    },
+  );
 
   // Plan A70
   it.each(PLACES.map(([name, path]) => [name, path.join('.') || '(root)', path] as const))(
@@ -559,8 +660,10 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
 
   /** The node's key set: ed-1 is the Ed25519 key, p256-1 the P-256 key. */
   const verify: JwsVerifyFn = ({ header, signingInputs, signature }) => {
-    if (header.alg === 'EdDSA' && header.kid === 'ed-1') return signingInputs.some((input) => ed25519.verify(signature, input, edPublic));
-    if (header.alg === 'ES256' && header.kid === 'p256-1') return signingInputs.some((input) => p256.verify(signature, input, p256Public));
+    if (header.alg === 'EdDSA' && header.kid === 'ed-1')
+      return signingInputs.some((input) => ed25519.verify(signature, input, edPublic));
+    if (header.alg === 'ES256' && header.kid === 'p256-1')
+      return signingInputs.some((input) => p256.verify(signature, input, p256Public));
     return false;
   };
   const counting = (inner: JwsVerifyFn = verify) => {
@@ -586,10 +689,16 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     expect(MAX_CARD_SIGNATURES).toBe(8);
     const sig = await edSign(baseCard());
     const nine = counting();
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: Array(9).fill(sig) }, nine.fn)).state).toBe('invalid');
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: Array(9).fill(sig) }, nine.fn))
+        .state,
+    ).toBe('invalid');
     expect(nine.seen).toEqual([]);
     const eight = counting();
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: Array(8).fill(sig) }, eight.fn)).state).toBe('verified');
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: Array(8).fill(sig) }, eight.fn))
+        .state,
+    ).toBe('verified');
   });
 
   // Plan A86
@@ -598,9 +707,14 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     // last-wins parse would hand ES256 to the verifier, so either way the verifier would see it.
     const twice = '{"alg":"EdDSA","kid":"ed-1","alg":"ES256"}';
     expect(parseProtectedHeader(base64urlEncodeUtf8(twice))).toBeNull();
-    expect(parseProtectedHeader(base64urlEncodeUtf8('{"alg":"EdDSA","kid":"other","kid":"ed-1"}'))).toBeNull();
+    expect(
+      parseProtectedHeader(base64urlEncodeUtf8('{"alg":"EdDSA","kid":"other","kid":"ed-1"}')),
+    ).toBeNull();
     const probe = counting();
-    const report = await verifyAgentCardSignatures({ ...baseCard(), signatures: [handSigned(baseCard(), twice)] }, probe.fn);
+    const report = await verifyAgentCardSignatures(
+      { ...baseCard(), signatures: [handSigned(baseCard(), twice)] },
+      probe.fn,
+    );
     expect(report.state).toBe('invalid');
     expect(probe.seen).toEqual([]);
   });
@@ -610,15 +724,29 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     const sig = await edSign(baseCard());
     const probe = counting();
     const report = await verifyAgentCardSignatures(
-      { ...baseCard(), signatures: [{ ...sig, header: { alg: 'ES256', kid: 'p256-1', jku: 'https://evil.example/jwks.json' } }] },
+      {
+        ...baseCard(),
+        signatures: [
+          {
+            ...sig,
+            header: { alg: 'ES256', kid: 'p256-1', jku: 'https://evil.example/jwks.json' },
+          },
+        ],
+      },
       probe.fn,
     );
     expect(probe.seen).toEqual(['ed-1']);
-    expect(report).toEqual({ state: 'verified', verifiedKids: ['ed-1'], verifiedSigners: ['#ed-1'] });
+    expect(report).toEqual({
+      state: 'verified',
+      verifiedKids: ['ed-1'],
+      verifiedSigners: ['#ed-1'],
+    });
     // A kid only in the unprotected header names no key: the signature is not checked.
     const kidless = { ...handSigned(baseCard(), '{"alg":"EdDSA"}'), header: { kid: 'ed-1' } };
     const second = counting();
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: [kidless] }, second.fn)).state).toBe('invalid');
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: [kidless] }, second.fn)).state,
+    ).toBe('invalid');
     expect(second.seen).toEqual([]);
   });
 
@@ -629,8 +757,11 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     const fixedSecret = new Uint8Array(32).fill(2);
     const fixedPublic = ed25519.getPublicKey(fixedSecret);
     const fixedVerify: JwsVerifyFn = ({ header, signingInputs, signature }) =>
-      header.kid === 'fixed-1' && signingInputs.some((input) => ed25519.verify(signature, input, fixedPublic));
-    const sig = await signAgentCard(baseCard(), { alg: 'EdDSA', kid: 'fixed-1' }, (input) => ed25519.sign(input, fixedSecret));
+      header.kid === 'fixed-1' &&
+      signingInputs.some((input) => ed25519.verify(signature, input, fixedPublic));
+    const sig = await signAgentCard(baseCard(), { alg: 'EdDSA', kid: 'fixed-1' }, (input) =>
+      ed25519.sign(input, fixedSecret),
+    );
     const padded = `${sig.signature}==`;
     const standard = sig.signature.replace(/-/g, '+').replace(/_/g, '/');
     expect(standard).not.toBe(sig.signature);
@@ -642,11 +773,16 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     expect(Buffer.from(standard, 'base64')).toEqual(signed);
     // The canonical spelling reaches the verifier and verifies.
     const genuine = counting(fixedVerify);
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: [sig] }, genuine.fn)).state).toBe('verified');
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: [sig] }, genuine.fn)).state,
+    ).toBe('verified');
     expect(genuine.seen).toEqual(['fixed-1']);
     for (const spelling of [padded, standard]) {
       const probe = counting(fixedVerify);
-      const report = await verifyAgentCardSignatures({ ...baseCard(), signatures: [{ ...sig, signature: spelling }] }, probe.fn);
+      const report = await verifyAgentCardSignatures(
+        { ...baseCard(), signatures: [{ ...sig, signature: spelling }] },
+        probe.fn,
+      );
       expect([spelling, report.state]).toEqual([spelling, 'invalid']);
       expect(probe.seen).toEqual([]);
     }
@@ -658,13 +794,17 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     const throwing: JwsVerifyFn = () => {
       throw new Error('key set unreachable');
     };
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: [sig] }, throwing)).state).toBe('invalid');
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: [sig] }, throwing)).state,
+    ).toBe('invalid');
     const retired = await edSign(baseCard(), 'retired');
     const partly: JwsVerifyFn = (args) => {
       if (args.header.kid === 'retired') throw new Error('unknown key');
       return verify(args);
     };
-    expect(await verifyAgentCardSignatures({ ...baseCard(), signatures: [retired, sig] }, partly)).toEqual({
+    expect(
+      await verifyAgentCardSignatures({ ...baseCard(), signatures: [retired, sig] }, partly),
+    ).toEqual({
       state: 'verified',
       verifiedKids: ['ed-1'],
       verifiedSigners: ['#ed-1'],
@@ -674,10 +814,18 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
   // Plan A89 (Core's own key-set verifier meets the same forgery in packages/core/__tests__/a2a/contract_wire_A.test.ts)
   it('fails a signature made by another key under the expected kid once the verifier refuses it', async () => {
     const intruder = p256.utils.randomSecretKey();
-    const forged = await signAgentCard(baseCard(), { alg: 'ES256', kid: 'p256-1' }, (input) => p256.sign(input, intruder));
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: [forged] }, verify)).state).toBe('invalid');
-    const genuine = await signAgentCard(baseCard(), { alg: 'ES256', kid: 'p256-1' }, (input) => p256.sign(input, p256Secret));
-    expect((await verifyAgentCardSignatures({ ...baseCard(), signatures: [genuine] }, verify)).state).toBe('verified');
+    const forged = await signAgentCard(baseCard(), { alg: 'ES256', kid: 'p256-1' }, (input) =>
+      p256.sign(input, intruder),
+    );
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: [forged] }, verify)).state,
+    ).toBe('invalid');
+    const genuine = await signAgentCard(baseCard(), { alg: 'ES256', kid: 'p256-1' }, (input) =>
+      p256.sign(input, p256Secret),
+    );
+    expect(
+      (await verifyAgentCardSignatures({ ...baseCard(), signatures: [genuine] }, verify)).state,
+    ).toBe('verified');
   });
 
   // Plan A72
@@ -685,7 +833,8 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     const otherSecret = p256.utils.randomSecretKey();
     const otherPublic = p256.getPublicKey(otherSecret);
     const byThumbprint: JwsVerifyFn = ({ header, signingInputs, signature }): JwsVerdict => {
-      const by = (key: Uint8Array) => signingInputs.some((input) => p256.verify(signature, input, key));
+      const by = (key: Uint8Array) =>
+        signingInputs.some((input) => p256.verify(signature, input, key));
       if (header.kid === 'p256-1' && by(p256Public)) return { signer: 'thumb-1' };
       if (header.kid === 'p256-2' && by(otherPublic)) return { signer: 'thumb-2' };
       return false;
@@ -693,7 +842,9 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     const pinOf = async (card: Record<string, unknown>) =>
       cardPinText(card, (await verifyAgentCardSignatures(card, byThumbprint)).verifiedSigners);
     const reSign = (content: Record<string, unknown>, kid: string, secret: Uint8Array) =>
-      signAgentCard(content, { alg: 'ES256', kid }, (input) => p256.sign(input, secret, { extraEntropy: true }));
+      signAgentCard(content, { alg: 'ES256', kid }, (input) =>
+        p256.sign(input, secret, { extraEntropy: true }),
+      );
 
     const first = await reSign(baseCard(), 'p256-1', p256Secret);
     const second = await reSign(baseCard(), 'p256-1', p256Secret);
@@ -705,7 +856,9 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
     expect(await pinOf({ ...baseCard(), signatures: [newKey] })).not.toBe(pinned);
     expect(await pinOf(baseCard())).not.toBe(pinned);
     const changed = { ...baseCard(), description: 'Does other things' };
-    expect(await pinOf({ ...changed, signatures: [await reSign(changed, 'p256-1', p256Secret)] })).not.toBe(pinned);
+    expect(
+      await pinOf({ ...changed, signatures: [await reSign(changed, 'p256-1', p256Secret)] }),
+    ).not.toBe(pinned);
   });
 });
 
@@ -716,16 +869,25 @@ describe('card JWS: caps, strict headers, one key per kid', () => {
 describe('card projection: commerce and examples', () => {
   // Plan A93
   it('leaves commerce off the card when a listing names it by an alias (plan D2, §3.6)', () => {
-    const alias = cap({ capability: 'quote_please', canonical: 'com.dinakernel.commerce.request_quote' });
+    const alias = cap({
+      capability: 'quote_please',
+      canonical: 'com.dinakernel.commerce.request_quote',
+    });
     const pub = listing({ capabilities: [alias] });
     expect(exclusionReason(pub, alias)).toBe('commerce_capability');
-    expect(projectAgentCard(projectionInput([pub]))).toEqual({ ok: false, reason: 'no_projectable_skills' });
+    expect(projectAgentCard(projectionInput([pub]))).toEqual({
+      ok: false,
+      reason: 'no_projectable_skills',
+    });
     // A grant on a known_only listing opens no commerce skill either.
     const known = listing({ discoverability: 'known_only', capabilities: [alias] });
     expect(exclusionReason(known, alias, 'granted')).toBe('commerce_capability');
     const extended = projectAgentCard({
       ...projectionInput([known]),
-      audience: { scope: [], grants: [{ grantId: 'g-1', rkey: 'self', capability: 'quote_please' }] },
+      audience: {
+        scope: [],
+        grants: [{ grantId: 'g-1', rkey: 'self', capability: 'quote_please' }],
+      },
     });
     expect(extended).toEqual({ ok: false, reason: 'no_projectable_skills' });
   });
@@ -733,7 +895,10 @@ describe('card projection: commerce and examples', () => {
   // Plan A104
   it('writes each example as the RFC 8785 text of its call, on the public and the extended card', () => {
     const pub = projectAgentCard(projectionInput([listing()]));
-    const ext = projectAgentCard({ ...projectionInput([listing()]), audience: { scope: [], grants: [] } });
+    const ext = projectAgentCard({
+      ...projectionInput([listing()]),
+      audience: { scope: [], grants: [] },
+    });
     for (const out of [pub, ext]) {
       if (!out.ok) throw new Error(out.reason);
       const example = out.card.skills[0]?.examples?.[0];
@@ -750,10 +915,17 @@ describe('card projection: commerce and examples', () => {
 describe('invocation envelope: prototype names and bounded selectors', () => {
   // Plan A126
   it('treats params named after Object.prototype members as plain data', () => {
-    const params = JSON.parse('{"constructor":"c","toString":1,"hasOwnProperty":true,"valueOf":{}}') as JsonObject;
+    const params = JSON.parse(
+      '{"constructor":"c","toString":1,"hasOwnProperty":true,"valueOf":{}}',
+    ) as JsonObject;
     const parsed = parseInvocationEnvelope([{ data: { skill: 'eta_query@self', params } }]);
     if (!parsed.ok) throw new Error(parsed.reason);
-    expect(parsed.envelope.params).toEqual({ constructor: 'c', toString: 1, hasOwnProperty: true, valueOf: {} });
+    expect(parsed.envelope.params).toEqual({
+      constructor: 'c',
+      toString: 1,
+      hasOwnProperty: true,
+      valueOf: {},
+    });
     expect(envelopeObject(parsed.envelope)).toEqual({ skill: 'eta_query@self', params });
   });
 
@@ -769,7 +941,9 @@ describe('invocation envelope: prototype names and bounded selectors', () => {
 
   // Plan A122
   it('refuses a top-level __proto__ member of the envelope', () => {
-    const data = JSON.parse('{"skill":"eta_query","params":{},"__proto__":{"grant_id":"g-1"}}') as unknown;
+    const data = JSON.parse(
+      '{"skill":"eta_query","params":{},"__proto__":{"grant_id":"g-1"}}',
+    ) as unknown;
     expect(parseEnvelopeData(data)).toEqual({ ok: false, reason: 'unknown_envelope_member' });
   });
 
@@ -781,7 +955,10 @@ describe('invocation envelope: prototype names and bounded selectors', () => {
     ['an empty schema hash', { schema_hash: '' }, 'schema_hash_malformed'],
     ['a schema hash one digit short', { schema_hash: 'a'.repeat(63) }, 'schema_hash_malformed'],
   ])('refuses %s', (_name, extra, reason) => {
-    expect(parseEnvelopeData({ skill: 'eta_query', params: {}, ...extra })).toEqual({ ok: false, reason });
+    expect(parseEnvelopeData({ skill: 'eta_query', params: {}, ...extra })).toEqual({
+      ok: false,
+      reason,
+    });
   });
 
   // Plan A124
@@ -791,7 +968,14 @@ describe('invocation envelope: prototype names and bounded selectors', () => {
   });
 
   // Plan A129
-  it.each(['eta_query@a:b', 'eta_query@.', 'eta_query@..', 'eta_query@a/b', 'eta_query@a b', `eta_query@${'k'.repeat(513)}`])(
+  it.each([
+    'eta_query@a:b',
+    'eta_query@.',
+    'eta_query@..',
+    'eta_query@a/b',
+    'eta_query@a b',
+    `eta_query@${'k'.repeat(513)}`,
+  ])(
     'refuses the skill name %p: its listing key fails Dina’s listing-rkey grammar (@dina/protocol)',
     (raw) => {
       expect(parseQualifiedSkill(raw)).toBeNull();
@@ -799,13 +983,18 @@ describe('invocation envelope: prototype names and bounded selectors', () => {
   );
 
   // Plan A129
-  it.each(['eta_query@self', 'eta_query@Az09._~-', 'eta_query@...', `eta_query@${'k'.repeat(512)}`])(
-    'accepts the skill name %p: its listing key fits the grammar',
-    (raw) => {
-      const at = raw.indexOf('@');
-      expect(parseQualifiedSkill(raw)).toEqual({ capability: raw.slice(0, at), rkey: raw.slice(at + 1) });
-    },
-  );
+  it.each([
+    'eta_query@self',
+    'eta_query@Az09._~-',
+    'eta_query@...',
+    `eta_query@${'k'.repeat(512)}`,
+  ])('accepts the skill name %p: its listing key fits the grammar', (raw) => {
+    const at = raw.indexOf('@');
+    expect(parseQualifiedSkill(raw)).toEqual({
+      capability: raw.slice(0, at),
+      rkey: raw.slice(at + 1),
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -897,7 +1086,9 @@ describe('delivery claims are dropped whole when malformed (design §7.5)', () =
     target: 'sse',
     task_id: 't',
     seq: 1,
-    event: { statusUpdate: { taskId: 't', contextId: 'c', status: { state: 'TASK_STATE_WORKING' } } },
+    event: {
+      statusUpdate: { taskId: 't', contextId: 'c', status: { state: 'TASK_STATE_WORKING' } },
+    },
     credential_gen: 0,
     ...over,
   });
@@ -905,14 +1096,26 @@ describe('delivery claims are dropped whole when malformed (design §7.5)', () =
   // Plan A166
   it('reads the base claim the cases below start from', () => {
     expect(parseDeliveryClaim({ items: [item()], closed: [], fenced: [] })).not.toBeNull();
-    expect(parseDeliveryClaim({ items: [item()], closed: ['t'], fenced: [{ client: 'f'.repeat(32), before_gen: 1 }] })).not.toBeNull();
+    expect(
+      parseDeliveryClaim({
+        items: [item()],
+        closed: ['t'],
+        fenced: [{ client: 'f'.repeat(32), before_gen: 1 }],
+      }),
+    ).not.toBeNull();
   });
 
   // Plan A166
   it.each([
-    ['an event with a member beside its payload', { items: [item({ event: { ...item().event, extra: 1 } })], closed: [], fenced: [] }],
+    [
+      'an event with a member beside its payload',
+      { items: [item({ event: { ...item().event, extra: 1 } })], closed: [], fenced: [] },
+    ],
     ['closed tasks that are not a list', { items: [item()], closed: 't', fenced: [] }],
-    ['fences that are not a list', { items: [item()], closed: [], fenced: { client: 'f'.repeat(32), before_gen: 1 } }],
+    [
+      'fences that are not a list',
+      { items: [item()], closed: [], fenced: { client: 'f'.repeat(32), before_gen: 1 } },
+    ],
     ['items that are not a list', { items: item(), closed: [], fenced: [] }],
     ['a zero sequence number', { items: [item({ seq: 0 })], closed: [], fenced: [] }],
   ])('drops a claim with %s', (_name, value) => {
@@ -933,7 +1136,12 @@ describe('REST errors follow A2A’s mapping (spec §5.4, §11.6)', () => {
     ['unsupportedOperation', 400, 'FAILED_PRECONDITION', 'UNSUPPORTED_OPERATION'],
     ['contentTypeNotSupported', 400, 'INVALID_ARGUMENT', 'CONTENT_TYPE_NOT_SUPPORTED'],
     ['invalidAgentResponse', 500, 'INTERNAL', 'INVALID_AGENT_RESPONSE'],
-    ['extendedAgentCardNotConfigured', 400, 'FAILED_PRECONDITION', 'EXTENDED_AGENT_CARD_NOT_CONFIGURED'],
+    [
+      'extendedAgentCardNotConfigured',
+      400,
+      'FAILED_PRECONDITION',
+      'EXTENDED_AGENT_CARD_NOT_CONFIGURED',
+    ],
     ['extensionSupportRequired', 400, 'FAILED_PRECONDITION', 'EXTENSION_SUPPORT_REQUIRED'],
     ['versionNotSupported', 400, 'FAILED_PRECONDITION', 'VERSION_NOT_SUPPORTED'],
   ] as const)('%s answers %i %s with A2A’s reason %s first', (kind, http, status, reason) => {
@@ -944,7 +1152,14 @@ describe('REST errors follow A2A’s mapping (spec §5.4, §11.6)', () => {
         code: http,
         status,
         message: a2aError(kind).message,
-        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, domain: 'a2a-protocol.org', metadata: {} }],
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason,
+            domain: 'a2a-protocol.org',
+            metadata: {},
+          },
+        ],
       },
     });
   });
@@ -971,7 +1186,11 @@ describe('DID binding: nothing can add a line to the signing input', () => {
     ['a DID with a newline inside', 'did:plc:abc\nevil', CHALLENGE],
     ['a DID ending in a carriage return', 'did:plc:abc\r', CHALLENGE],
     ['a challenge ending in a newline', 'did:plc:abc', `${CHALLENGE}\n`],
-    ['a challenge with a newline inside', 'did:plc:abc', `dch_${'A'.repeat(21)}\n${'A'.repeat(21)}`],
+    [
+      'a challenge with a newline inside',
+      'did:plc:abc',
+      `dch_${'A'.repeat(21)}\n${'A'.repeat(21)}`,
+    ],
   ])('refuses %s', (_name, did, challenge) => {
     expect(parseDidBindingRequest(JSON.stringify({ did, challenge, signature: SIG }))).toBeNull();
   });
@@ -981,14 +1200,23 @@ describe('DID binding: nothing can add a line to the signing input', () => {
     ['did:plc', 'did:plc:ewvi7nxzyoun6zhxrhs64oiz', CHALLENGE],
     ['did:web with a port', 'did:web:a.example%3A8443', CHALLENGE],
     ['did:web with a path', 'did:web:a.example:users:alice', CHALLENGE],
-    ['did:key', `did:key:${ed25519Multikey(ed25519.getPublicKey(new Uint8Array(32).fill(5)))}`, CHALLENGE],
+    [
+      'did:key',
+      `did:key:${ed25519Multikey(ed25519.getPublicKey(new Uint8Array(32).fill(5)))}`,
+      CHALLENGE,
+    ],
     ['a challenge using - and _', 'did:plc:ewvi7nxzyoun6zhxrhs64oiz', `dch_${'-_'.repeat(21)}A`],
     // The DID and challenge the refusals above start from, accepted as they are.
     ['the DID the refusals start from', 'did:plc:abc', CHALLENGE],
   ])('builds a five-line signing input from an accepted request: %s', (_name, did, challenge) => {
     const req = parseDidBindingRequest(JSON.stringify({ did, challenge, signature: SIG }));
     if (req === null) throw new Error('expected a request');
-    const lines = didBindingSigningInput({ nodeDid: 'did:plc:n', clientId: 'ac_1', did: req.did, challenge: req.challenge }).split('\n');
+    const lines = didBindingSigningInput({
+      nodeDid: 'did:plc:n',
+      clientId: 'ac_1',
+      did: req.did,
+      challenge: req.challenge,
+    }).split('\n');
     expect(lines).toEqual([DID_BINDING_DOMAIN, 'did:plc:n', 'ac_1', did, challenge]);
   });
 });
@@ -998,7 +1226,12 @@ describe('DID binding: nothing can add a line to the signing input', () => {
 // ---------------------------------------------------------------------------
 
 describe('directory envelope vectors', () => {
-  const V = JSON.parse(readFileSync(join(__dirname, '..', 'conformance', 'vectors', 'directory_envelope.json'), 'utf8')) as {
+  const V = JSON.parse(
+    readFileSync(
+      join(__dirname, '..', 'conformance', 'vectors', 'directory_envelope.json'),
+      'utf8',
+    ),
+  ) as {
     envelope: { value: Record<string, unknown>; signing_text: string };
     signing_text_sha256: string;
   };
@@ -1068,24 +1301,32 @@ describe('external ids are fresh lower-case UUIDv4s (A2A-I5)', () => {
 describe('base64 and base64url: one spelling per byte string (design §8.2)', () => {
   const URL_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
   const STD_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
-  const same = (a: Uint8Array | null, b: Uint8Array): boolean => a !== null && a.length === b.length && a.every((x, i) => x === b[i]);
+  const same = (a: Uint8Array | null, b: Uint8Array): boolean =>
+    a !== null && a.length === b.length && a.every((x, i) => x === b[i]);
 
   // Plan A206
   it.each([
     ['base64url', base64urlEncode, base64urlDecode, URL_ALPHABET],
     ['base64', base64Encode, base64Decode, STD_ALPHABET],
-  ] as const)('%s: of the 64 characters that could end the text, only the canonical one decodes to the same bytes', (_name, encode, decode, alphabet) => {
-    for (const bytes of [Uint8Array.of(0xab), Uint8Array.of(0xab, 0xcd), Uint8Array.of(1, 2, 3, 0xff)]) {
-      const text = encode(bytes);
-      const unpadded = text.replace(/=+$/, '');
-      const padding = text.slice(unpadded.length);
-      const last = unpadded.length - 1;
-      const spellings = [...alphabet]
-        .map((c) => `${unpadded.slice(0, last)}${c}${padding}`)
-        .filter((t) => same(decode(t), bytes));
-      expect(spellings).toEqual([text]);
-    }
-  });
+  ] as const)(
+    '%s: of the 64 characters that could end the text, only the canonical one decodes to the same bytes',
+    (_name, encode, decode, alphabet) => {
+      for (const bytes of [
+        Uint8Array.of(0xab),
+        Uint8Array.of(0xab, 0xcd),
+        Uint8Array.of(1, 2, 3, 0xff),
+      ]) {
+        const text = encode(bytes);
+        const unpadded = text.replace(/=+$/, '');
+        const padding = text.slice(unpadded.length);
+        const last = unpadded.length - 1;
+        const spellings = [...alphabet]
+          .map((c) => `${unpadded.slice(0, last)}${c}${padding}`)
+          .filter((t) => same(decode(t), bytes));
+        expect(spellings).toEqual([text]);
+      }
+    },
+  );
 
   // Plan A206
   it.each([

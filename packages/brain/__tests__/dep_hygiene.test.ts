@@ -57,10 +57,7 @@ const FORBIDDEN_SPECIFIERS: readonly string[] = [
 ];
 
 /** Forbidden prefixes — an import that starts with `PREFIX/` also fails. */
-const FORBIDDEN_PREFIXES: readonly string[] = [
-  '@fastify/',
-  '@whatwg-node/',
-];
+const FORBIDDEN_PREFIXES: readonly string[] = ['@fastify/', '@whatwg-node/'];
 
 function* walkTs(dir: string): Generator<string> {
   for (const name of readdirSync(dir)) {
@@ -137,7 +134,10 @@ describe('@dina/brain dependency hygiene (task 1.33)', () => {
       { spec: 'ws', snippet: `import WebSocket from 'ws';` },
       { spec: 'node:http', snippet: `import http from 'node:http';` },
       { spec: 'node:https', snippet: `import https from 'node:https';` },
-      { spec: 'node:async_hooks', snippet: `import { AsyncLocalStorage } from 'node:async_hooks';` },
+      {
+        spec: 'node:async_hooks',
+        snippet: `import { AsyncLocalStorage } from 'node:async_hooks';`,
+      },
       { spec: 'node:crypto', snippet: `import { randomBytes } from 'node:crypto';` },
       { spec: '@fastify/cors', snippet: `import cors from '@fastify/cors';` },
       { spec: 'fastify', snippet: `import Fastify from 'fastify';` },
@@ -163,11 +163,11 @@ describe('@dina/brain dependency hygiene (task 1.33)', () => {
 
     it('does NOT flag portable patterns Brain is allowed to use', () => {
       const allowed = [
-        `const f = globalThis.fetch;`,                         // runtime global, not an import
-        `import type { CoreClient } from '@dina/core';`,       // Brain's only Core entry
-        `import { TYPE_TOPIC_ENTRY } from '@dina/protocol';`,  // shared wire types
-        `import { MockCoreClient } from '@dina/test-harness';`,// test-only mock
-        `import { readFileSync } from 'node:fs';`,             // filesystem stdlib is fine
+        `const f = globalThis.fetch;`, // runtime global, not an import
+        `import type { CoreClient } from '@dina/core';`, // Brain's only Core entry
+        `import { TYPE_TOPIC_ENTRY } from '@dina/protocol';`, // shared wire types
+        `import { MockCoreClient } from '@dina/test-harness';`, // test-only mock
+        `import { readFileSync } from 'node:fs';`, // filesystem stdlib is fine
         `import { signRequest } from '../../core/src/auth/canonical';`, // relative
       ];
       const specs = allowed.flatMap(collectImportSpecifiers);

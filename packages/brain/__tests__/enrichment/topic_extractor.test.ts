@@ -10,7 +10,7 @@
  *   - fail-open on LLM / scrub / JSON errors
  */
 
-import { TopicExtractor, type TopicExtractorLLM } from '../../src/enrichment/topic_extractor';
+import { TopicExtractor } from '../../src/enrichment/topic_extractor';
 import { sanitiseList } from '../../src/llm/output_parser';
 import { EntityVault } from '../../src/pii/entity_vault';
 
@@ -252,7 +252,7 @@ describe('TopicExtractor.extract', () => {
 
 describe('TOPIC_EXTRACTOR_SYSTEM_PROMPT — pinned exclusions (GAP-PROMPT-01)', () => {
   // Re-imported inline so the assertion reads self-contained.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
   const { TOPIC_EXTRACTOR_SYSTEM_PROMPT } = require('../../src/enrichment/topic_extractor') as {
     TOPIC_EXTRACTOR_SYSTEM_PROMPT: string;
   };

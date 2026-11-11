@@ -291,12 +291,10 @@ function boundJsonValue(value: unknown, dropped: { any: boolean }, depth = 0): u
   const entries = Object.entries(value);
   if (entries.length > MAX_DETAIL_ENTRIES) dropped.any = true;
   return Object.fromEntries(
-    entries
-      .slice(0, MAX_DETAIL_ENTRIES)
-      .map(([key, entry]) => {
-        if (key.length > MAX_DETAIL_FIELD) dropped.any = true;
-        return [key.slice(0, MAX_DETAIL_FIELD), boundJsonValue(entry, dropped, depth + 1)];
-      }),
+    entries.slice(0, MAX_DETAIL_ENTRIES).map(([key, entry]) => {
+      if (key.length > MAX_DETAIL_FIELD) dropped.any = true;
+      return [key.slice(0, MAX_DETAIL_FIELD), boundJsonValue(entry, dropped, depth + 1)];
+    }),
   );
 }
 

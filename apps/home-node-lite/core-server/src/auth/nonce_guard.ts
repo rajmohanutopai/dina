@@ -23,11 +23,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4c task 4.23.
  */
 
-import {
-  NonceReplayCache,
-  DEFAULT_NONCE_TTL_MS,
-  type NonceReplayCacheOptions,
-} from '@dina/core';
+import { NonceReplayCache, DEFAULT_NONCE_TTL_MS, type NonceReplayCacheOptions } from '@dina/core';
 
 export interface NonceGuardOptions {
   /** Home node's own DID — bound as the "recipient" for every observe. */
@@ -39,9 +35,7 @@ export interface NonceGuardOptions {
   nowMsFn?: () => number;
 }
 
-export type NonceObservation =
-  | { ok: true }
-  | { ok: false; reason: 'replay' };
+export type NonceObservation = { ok: true } | { ok: false; reason: 'replay' };
 
 /**
  * Thin facade over `NonceReplayCache` that binds `recipientDid` to the

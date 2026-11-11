@@ -10,11 +10,7 @@
 
 export { writeServiceKey, loadServiceKey } from './src/identity/keypair_node';
 
-export {
-  writeWrappedSeed,
-  readWrappedSeed,
-  wrappedSeedExists,
-} from './src/storage/seed_file_node';
+export { writeWrappedSeed, readWrappedSeed, wrappedSeedExists } from './src/storage/seed_file_node';
 
 export { DeadDropSpool } from './src/storage/spool_node';
 export type { SpoolMessage } from './src/storage/spool_node';

@@ -135,11 +135,21 @@ export function resolveCallerType(authenticatedDID: string, agentDID?: string): 
     const role = deviceRoleResolver?.(authenticatedDID) ?? null;
     if (role === 'agent') {
       const scope = deviceScopeResolver?.(authenticatedDID) ?? undefined;
-      return { did: authenticatedDID, callerType: 'agent', name: deviceName, ...(scope != null ? { scope } : {}) };
+      return {
+        did: authenticatedDID,
+        callerType: 'agent',
+        name: deviceName,
+        ...(scope != null ? { scope } : {}),
+      };
     }
     if (role === 'plugin') {
       const scope = deviceScopeResolver?.(authenticatedDID) ?? undefined;
-      return { did: authenticatedDID, callerType: 'plugin', name: deviceName, ...(scope != null ? { scope } : {}) };
+      return {
+        did: authenticatedDID,
+        callerType: 'plugin',
+        name: deviceName,
+        ...(scope != null ? { scope } : {}),
+      };
     }
     if (role === 'staff') {
       // TRADE_FIRST_STRATEGY §6.2 — staff is its OWN caller class,

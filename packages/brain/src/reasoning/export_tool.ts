@@ -8,7 +8,9 @@
 import type { AgentTool } from './tool_registry';
 import type { CoreClient } from '@dina/core';
 
-export function createExportTool(opts: { core: Pick<CoreClient, 'ownerExportPrepare'> }): AgentTool {
+export function createExportTool(opts: {
+  core: Pick<CoreClient, 'ownerExportPrepare'>;
+}): AgentTool {
   return {
     name: 'export_my_data',
     description:
@@ -16,11 +18,15 @@ export function createExportTool(opts: { core: Pick<CoreClient, 'ownerExportPrep
     parameters: { type: 'object', properties: {}, required: [] },
     async execute() {
       const out = await opts.core.ownerExportPrepare();
-      const excluded = out.manifest.personas.filter((p) => !p.included).map((p) => `${p.persona} (${p.why ?? 'closed'})`);
+      const excluded = out.manifest.personas
+        .filter((p) => !p.included)
+        .map((p) => `${p.persona} (${p.why ?? 'closed'})`);
       return {
         export_id: out.id,
         manifest: out.manifest,
-        included: out.manifest.personas.filter((p) => p.included).map((p) => `${p.persona}: ${p.items} notes`),
+        included: out.manifest.personas
+          .filter((p) => p.included)
+          .map((p) => `${p.persona}: ${p.items} notes`),
         not_included: excluded,
       };
     },

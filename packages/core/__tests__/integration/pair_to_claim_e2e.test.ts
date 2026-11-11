@@ -32,10 +32,10 @@ import { signRequest } from '../../src/auth/canonical';
 import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
 import { getPublicKey, sign } from '../../src/crypto/ed25519';
 import { sealEncrypt } from '../../src/crypto/nacl';
-import { deriveDIDKey, publicKeyToMultibase } from '../../src/identity/did';
-import { setNodeDID, clearPairingState } from '../../src/pairing/ceremony';
 import { resetDeviceRegistry, getDeviceByDID } from '../../src/devices/registry';
 import { setDeviceRepository, type DeviceRepository } from '../../src/devices/repository';
+import { deriveDIDKey, publicKeyToMultibase } from '../../src/identity/did';
+import { setNodeDID, clearPairingState } from '../../src/pairing/ceremony';
 import { setRPCRouter, handleInboundRPC, resetHandlerState } from '../../src/relay/msgbox_handlers';
 import {
   setIdentity,
@@ -48,8 +48,6 @@ import { createCoreRouter } from '../../src/server/core_server';
 import { createInProcessDispatch } from '../../src/server/in_process_dispatch';
 import { setWorkflowRepository, InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { setWorkflowService, WorkflowService } from '../../src/workflow/service';
-
-import type { CoreRequest } from '../../src/server/router';
 
 const HOME_SEED = randomBytes(32);
 const HOME_PUB = getPublicKey(HOME_SEED);

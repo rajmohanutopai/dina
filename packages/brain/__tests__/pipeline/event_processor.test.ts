@@ -4,12 +4,7 @@
  * Source: ARCHITECTURE.md Task 3.26
  */
 
-import {
-  processEvent,
-  processEvents,
-  type EventInput,
-  type EventResult,
-} from '../../src/pipeline/event_processor';
+import { processEvent, processEvents, type EventInput } from '../../src/pipeline/event_processor';
 
 describe('Event Processor', () => {
   describe('approval_needed', () => {

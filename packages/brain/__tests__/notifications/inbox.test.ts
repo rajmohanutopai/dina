@@ -348,7 +348,7 @@ describe('Notifications inbox (5.66)', () => {
         id: 'x',
         kind: 'briefing',
         title: 'Daily',
-        body: 'Today\'s items',
+        body: "Today's items",
         firedAt: 1000,
         readAt: null,
         sourceId: 'b-1',
@@ -428,7 +428,11 @@ describe('Notifications inbox (5.66)', () => {
       appendNotification({ kind: 'nudge', title: 'live', body: '' });
       // Without force, hydrate is a no-op since items.length > 0.
       expect(await hydrateNotifications()).toBe(0);
-      expect(listNotifications().map((i) => i.kind).sort()).toEqual(['nudge', 'reminder']);
+      expect(
+        listNotifications()
+          .map((i) => i.kind)
+          .sort(),
+      ).toEqual(['nudge', 'reminder']);
     });
   });
 
@@ -486,9 +490,31 @@ describe('Notifications inbox (5.66)', () => {
 
       const merged = mergeNotifications([
         // Already-present row: updated in place, NOT re-appended.
-        { id: 'seen', kind: 'run', title: 'seen', body: '', firedAt: 1, readAt: null, sourceId: 'seen', deepLink: null, expiresAt: null, dataScope: 'real' },
+        {
+          id: 'seen',
+          kind: 'run',
+          title: 'seen',
+          body: '',
+          firedAt: 1,
+          readAt: null,
+          sourceId: 'seen',
+          deepLink: null,
+          expiresAt: null,
+          dataScope: 'real',
+        },
         // NEW row (appended by the CORE process after Brain boot on lite).
-        { id: 'fresh', kind: 'run', title: 'fresh', body: '', firedAt: 2, readAt: null, sourceId: 'fresh', deepLink: null, expiresAt: null, dataScope: 'real' },
+        {
+          id: 'fresh',
+          kind: 'run',
+          title: 'fresh',
+          body: '',
+          firedAt: 2,
+          readAt: null,
+          sourceId: 'fresh',
+          deepLink: null,
+          expiresAt: null,
+          dataScope: 'real',
+        },
       ]);
       expect(merged).toBe(2);
       const appended = events.filter((e) => e.type === 'appended');

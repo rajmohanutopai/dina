@@ -108,7 +108,9 @@ export function buildComparisonCardSpec(raw: unknown): CardSpec | null {
       if (supplierDid === '') continue;
       // The owner's own name for the seller, when the card carries one.
       const label =
-        typeof link.sellerName === 'string' && link.sellerName !== '' ? `${link.sellerName} (${supplierDid})` : supplierDid;
+        typeof link.sellerName === 'string' && link.sellerName !== ''
+          ? `${link.sellerName} (${supplierDid})`
+          : supplierDid;
       const httpsUrl =
         typeof link.sourceUrl === 'string' && /^https:\/\//i.test(link.sourceUrl)
           ? link.sourceUrl
@@ -119,7 +121,9 @@ export function buildComparisonCardSpec(raw: unknown): CardSpec | null {
       } else {
         const sub =
           httpsUrl ??
-          (typeof link.serviceUri === 'string' && link.serviceUri !== '' ? link.serviceUri : undefined);
+          (typeof link.serviceUri === 'string' && link.serviceUri !== ''
+            ? link.serviceUri
+            : undefined);
         listed.push(sub !== undefined ? { text: label, sub } : { text: label });
       }
     }

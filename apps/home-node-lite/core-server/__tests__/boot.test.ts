@@ -2,11 +2,7 @@
  * Task 4.3 — ordered boot sequence tests.
  */
 
-import {
-  deriveDIDKey,
-  getPublicKey,
-  signRequest,
-} from '@dina/core';
+import { deriveDIDKey, getPublicKey, signRequest } from '@dina/core';
 import {
   registerPublicKeyResolver,
   registerService,
@@ -113,10 +109,10 @@ describe('ordered boot (task 4.3)', () => {
   afterEach(async () => {
     const fs = await import('node:fs/promises');
     const tmpDir = process.env['DINA_VAULT_DIR'];
-    if (tmpDir && tmpDir.startsWith('/tmp') || tmpDir && tmpDir.includes('boot-test-')) {
+    if ((tmpDir && tmpDir.startsWith('/tmp')) || (tmpDir && tmpDir.includes('boot-test-'))) {
       await fs.rm(tmpDir, { recursive: true, force: true }).catch(() => undefined);
     }
-    for (const k of Object.keys(process.env)) delete process.env[k];
+    for (const k of Object.keys(process.env)) Reflect.deleteProperty(process.env, k);
     for (const [k, v] of Object.entries(originalEnv)) {
       if (typeof v === 'string') process.env[k] = v;
     }

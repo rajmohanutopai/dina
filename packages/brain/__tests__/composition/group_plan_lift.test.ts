@@ -33,7 +33,9 @@ const OPENED = {
 describe('translateLoopResult — group plan lift', () => {
   it('lifts the opened plan onto answer.groupPlan and keeps the narrative', () => {
     const out = translateLoopResult(
-      completed([{ name: 'coordinate_group', arguments: {}, outcome: { success: true, result: OPENED } }]),
+      completed([
+        { name: 'coordinate_group', arguments: {}, outcome: { success: true, result: OPENED } },
+      ]),
       "plan Emma's birthday with the Garcias",
     );
     expect(out.kind).toBe('answer');
@@ -45,8 +47,20 @@ describe('translateLoopResult — group plan lift', () => {
 
   it('lifts nothing when the call failed, opened no plan, or never happened', () => {
     for (const calls of [
-      [{ name: 'coordinate_group', arguments: {}, outcome: { success: false as const, error: 'refused' } }],
-      [{ name: 'coordinate_group', arguments: {}, outcome: { success: true as const, result: { ...OPENED, plan_id: '' } } }],
+      [
+        {
+          name: 'coordinate_group',
+          arguments: {},
+          outcome: { success: false as const, error: 'refused' },
+        },
+      ],
+      [
+        {
+          name: 'coordinate_group',
+          arguments: {},
+          outcome: { success: true as const, result: { ...OPENED, plan_id: '' } },
+        },
+      ],
       [],
     ]) {
       const out = translateLoopResult(completed(calls), 'x');

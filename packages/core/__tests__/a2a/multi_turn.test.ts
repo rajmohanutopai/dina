@@ -33,9 +33,20 @@ import {
 } from '../../src/a2a';
 import { CoreRouter } from '../../src/server/router';
 import { registerWorkflowRoutes } from '../../src/server/routes/workflow';
-import { CapabilityInputRequired, LocalDelegationRunner } from '../../src/workflow/local_delegation_runner';
+import {
+  CapabilityInputRequired,
+  LocalDelegationRunner,
+} from '../../src/workflow/local_delegation_runner';
 
-import { InboundWorld, bookingListing, errorOf, listing, resultOf, save, sentTask } from './inbound_fixture';
+import {
+  InboundWorld,
+  bookingListing,
+  errorOf,
+  listing,
+  resultOf,
+  save,
+  sentTask,
+} from './inbound_fixture';
 
 import type { CoreRequest, CoreResponse } from '../../src/server/router';
 import type { CapabilityTurn } from '../../src/workflow/local_delegation_runner';
@@ -53,7 +64,8 @@ beforeEach(async () => {
 });
 afterEach(() => iw.close());
 
-const eta = () => sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42' } })).id as string;
+const eta = () =>
+  sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42' } })).id as string;
 const view = (id: string) => resultOf(ingressGetTask(iw.rt, iw.request('GetTask', { id }), id));
 const stateOf = (id: string) => (view(id).status as { state: string }).state;
 /** What each stream event says: a status state, or `artifact`. */
@@ -69,7 +81,16 @@ function claimAndAsk(id: string, ask: unknown = ASK) {
   const { verdict, taskId } = iw.claimChild(id);
   if (verdict !== 'admitted') throw new Error(`claim ${verdict}`);
   const claimId = iw.world.workflow.store().getById(taskId)?.claim_id;
-  return { taskId, claimId, out: requestInboundInputWith(iw.rt, { taskId, claimantDid: iw.runnerDid, claimId, request: ask }) };
+  return {
+    taskId,
+    claimId,
+    out: requestInboundInputWith(iw.rt, {
+      taskId,
+      claimantDid: iw.runnerDid,
+      claimId,
+      request: ask,
+    }),
+  };
 }
 
 let msg = 0;
@@ -78,7 +99,15 @@ function answer(id: string, data: unknown, over: Record<string, unknown> = {}) {
   msg += 1;
   return ingressSendMessage(
     iw.rt,
-    iw.request('SendMessage', { message: { messageId: `ans-${msg}`, role: 'ROLE_USER', taskId: id, parts: [{ data }], ...over } }),
+    iw.request('SendMessage', {
+      message: {
+        messageId: `ans-${msg}`,
+        role: 'ROLE_USER',
+        taskId: id,
+        parts: [{ data }],
+        ...over,
+      },
+    }),
   );
 }
 
@@ -90,7 +119,9 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
     const child = iw.world.workflow.store().getById(taskId);
     expect(child).toEqual(expect.objectContaining({ status: 'awaiting' }));
     expect(child?.lease_expires_at).toBeUndefined();
-    expect(child?.expires_at).toBe(Math.floor(iw.world.clock / 1000) + INBOUND_INPUT_DEADLINE_SECONDS);
+    expect(child?.expires_at).toBe(
+      Math.floor(iw.world.clock / 1000) + INBOUND_INPUT_DEADLINE_SECONDS,
+    );
     const status = view(id).status as Record<string, unknown>;
     expect(status).toEqual(
       expect.objectContaining({
@@ -100,7 +131,10 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
           contextId: view(id).contextId,
           taskId: id,
           role: 'ROLE_AGENT',
-          parts: [{ text: ASK.prompt }, { data: STOP_SCHEMA, mediaType: 'application/schema+json' }],
+          parts: [
+            { text: ASK.prompt },
+            { data: STOP_SCHEMA, mediaType: 'application/schema+json' },
+          ],
         },
       }),
     );
@@ -114,7 +148,10 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
     ['a prompt too long', { ...ASK, prompt: 'x'.repeat(2_001) }],
     ['a control character in the prompt', { ...ASK, prompt: 'stop\u0007' }],
     ['a schema that is not for an object', { ...ASK, input_schema: { type: 'string' } }],
-    ['a schema keyword Core cannot enforce', { ...ASK, input_schema: { type: 'object', patternProperties: { '^x': {} } } }],
+    [
+      'a schema keyword Core cannot enforce',
+      { ...ASK, input_schema: { type: 'object', patternProperties: { '^x': {} } } },
+    ],
     [
       'a schema too large',
       { ...ASK, input_schema: { type: 'object', description: 'd'.repeat(17_000) } },
@@ -133,7 +170,9 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
     const ask = (claimantDid: string, claimId: string | undefined) =>
       requestInboundInputWith(iw.rt, { taskId, claimantDid, claimId, request: ASK });
     expect(ask(iw.runnerDid, 'stale-claim')).toEqual({ kind: 'refused', reason: 'claim_lost' });
-    expect(ask('did:key:z6MkSomeoneElse', iw.world.workflow.store().getById(taskId)?.claim_id)).toEqual({
+    expect(
+      ask('did:key:z6MkSomeoneElse', iw.world.workflow.store().getById(taskId)?.claim_id),
+    ).toEqual({
       kind: 'refused',
       reason: 'not_the_pinned_runner',
     });
@@ -141,7 +180,12 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
 
   it('refuses a task that is not an inbound A2A round', () => {
     expect(
-      requestInboundInputWith(iw.rt, { taskId: 'no-such-task', claimantDid: iw.runnerDid, claimId: 'c', request: ASK }),
+      requestInboundInputWith(iw.rt, {
+        taskId: 'no-such-task',
+        claimantDid: iw.runnerDid,
+        claimId: 'c',
+        request: ASK,
+      }),
     ).toEqual({ kind: 'not_inbound' });
   });
 
@@ -149,8 +193,16 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
     const id = eta();
     const { taskId } = iw.claimChild(id);
     const claimId = iw.world.workflow.store().getById(taskId)?.claim_id;
-    iw.world.workflow.complete(taskId, JSON.stringify({ eta_minutes: 3 }), 'done', iw.runnerDid, claimId);
-    expect(requestInboundInputWith(iw.rt, { taskId, claimantDid: iw.runnerDid, claimId, request: ASK })).toEqual({
+    iw.world.workflow.complete(
+      taskId,
+      JSON.stringify({ eta_minutes: 3 }),
+      'done',
+      iw.runnerDid,
+      claimId,
+    );
+    expect(
+      requestInboundInputWith(iw.rt, { taskId, claimantDid: iw.runnerDid, claimId, request: ASK }),
+    ).toEqual({
       kind: 'refused',
       reason: 'operation_settled',
     });
@@ -158,7 +210,8 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
 
   it('refuses an external runner of an effectful call: its claim consumed the permit', async () => {
     await save(bookingListing(), 'bus');
-    const id = sentTask(iw.call({ skill: 'appointment_book', params: { slot: '9am' } })).id as string;
+    const id = sentTask(iw.call({ skill: 'appointment_book', params: { slot: '9am' } }))
+      .id as string;
     iw.world.workflow.approve(iw.childOf(id).id);
     const { taskId, out } = claimAndAsk(id);
     expect(out).toEqual({ kind: 'refused', reason: 'effect_started' });
@@ -184,9 +237,16 @@ describe('asking (§7.7): only the round holding the claim, only before any effe
     const snapshot = readInboundSnapshot(op);
     if (snapshot === null) throw new Error('snapshot');
     const plugin = { kind: 'plugin', installId: 'i', manifestCid: 'c', capabilityId: 'k' };
-    iw.world.store.updateTask(op.id, ['open'], { snapshot_json: JSON.stringify({ ...snapshot, executor: plugin }) }, iw.world.clock);
+    iw.world.store.updateTask(
+      op.id,
+      ['open'],
+      { snapshot_json: JSON.stringify({ ...snapshot, executor: plugin }) },
+      iw.world.clock,
+    );
     const claimId = iw.world.workflow.store().getById(taskId)?.claim_id;
-    expect(requestInboundInputWith(iw.rt, { taskId, claimantDid: iw.runnerDid, claimId, request: ASK })).toEqual({
+    expect(
+      requestInboundInputWith(iw.rt, { taskId, claimantDid: iw.runnerDid, claimId, request: ASK }),
+    ).toEqual({
       kind: 'refused',
       reason: 'executor_cannot_ask',
     });
@@ -200,15 +260,21 @@ describe('answering (§7.7): the caller continues its own task', () => {
     const first = claimAndAsk(id);
     const answered = answer(id, { stop: 'Elm' });
     expect(answered.status).toBe(200);
-    expect((resultOf(answered).task as { status: { state: string } }).status.state).toBe('TASK_STATE_WORKING');
+    expect((resultOf(answered).task as { status: { state: string } }).status.state).toBe(
+      'TASK_STATE_WORKING',
+    );
     expect(iw.world.workflow.store().getById(first.taskId)?.status).toBe('cancelled');
     const next = iw.childOf(id);
     expect(next.id).not.toBe(first.taskId);
     expect(iw.world.store.getChild(next.id)?.generation).toBe(1);
     const payload = JSON.parse(next.payload) as Record<string, unknown>;
     expect(payload.params).toEqual({ route_id: '42' });
-    expect(payload.continuation).toEqual({ turns: [{ prompt: ASK.prompt, input_schema: STOP_SCHEMA, input: { stop: 'Elm' } }] });
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ continuation_generation: 1, input_required_json: null }));
+    expect(payload.continuation).toEqual({
+      turns: [{ prompt: ASK.prompt, input_schema: STOP_SCHEMA, input: { stop: 'Elm' } }],
+    });
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ continuation_generation: 1, input_required_json: null }),
+    );
     // The call goes on to finish on the next round.
     iw.runChild(id, { eta_minutes: 4 });
     expect(stateOf(id)).toBe('TASK_STATE_COMPLETED');
@@ -226,9 +292,13 @@ describe('answering (§7.7): the caller continues its own task', () => {
     claimAndAsk(id);
     answer(id, { stop: 'Elm' });
     expect(claimAndAsk(id, { ...ASK, prompt: 'Which platform?' }).out.kind).toBe('parked');
-    expect((view(id).status as { message: { messageId: string } }).message.messageId).toBe(`${id}-input-1`);
+    expect((view(id).status as { message: { messageId: string } }).message.messageId).toBe(
+      `${id}-input-1`,
+    );
     answer(id, { stop: 'Platform 2' });
-    const turns = (JSON.parse(iw.childOf(id).payload) as { continuation: { turns: { input: unknown }[] } }).continuation.turns;
+    const turns = (
+      JSON.parse(iw.childOf(id).payload) as { continuation: { turns: { input: unknown }[] } }
+    ).continuation.turns;
     expect(turns.map((t) => t.input)).toEqual([{ stop: 'Elm' }, { stop: 'Platform 2' }]);
     expect(story(id).filter((s) => s === 'TASK_STATE_INPUT_REQUIRED')).toHaveLength(2);
   });
@@ -236,7 +306,12 @@ describe('answering (§7.7): the caller continues its own task', () => {
   it('answers the same message again with the same task; one answer moves one round', () => {
     const id = eta();
     claimAndAsk(id);
-    const message = { messageId: 'ans-same', role: 'ROLE_USER', taskId: id, parts: [{ data: { stop: 'Elm' } }] };
+    const message = {
+      messageId: 'ans-same',
+      role: 'ROLE_USER',
+      taskId: id,
+      parts: [{ data: { stop: 'Elm' } }],
+    };
     const send = () => ingressSendMessage(iw.rt, iw.request('SendMessage', { message }));
     expect(send().status).toBe(200);
     const after = iw.childOf(id).id;
@@ -247,16 +322,24 @@ describe('answering (§7.7): the caller continues its own task', () => {
       errorOf(
         ingressSendMessage(
           iw.rt,
-          iw.request('SendMessage', { message: { ...message, parts: [{ data: { stop: 'Oak' } }] } }),
+          iw.request('SendMessage', {
+            message: { ...message, parts: [{ data: { stop: 'Oak' } }] },
+          }),
         ),
       ),
     ).toEqual({ code: -32602, reason: 'message_id_reused' });
     // A second answer to the same question finds the task no longer asking.
-    expect(errorOf(answer(id, { stop: 'Oak' }))).toEqual({ code: -32004, reason: 'task_not_awaiting_input' });
+    expect(errorOf(answer(id, { stop: 'Oak' }))).toEqual({
+      code: -32004,
+      reason: 'task_not_awaiting_input',
+    });
   });
 
   it('refuses an answer to a task that is not asking', () => {
-    expect(errorOf(answer(eta(), { stop: 'Elm' }))).toEqual({ code: -32004, reason: 'task_not_awaiting_input' });
+    expect(errorOf(answer(eta(), { stop: 'Elm' }))).toEqual({
+      code: -32004,
+      reason: 'task_not_awaiting_input',
+    });
   });
 
   it('refuses an answer in another context, and keeps asking', () => {
@@ -272,7 +355,11 @@ describe('answering (§7.7): the caller continues its own task', () => {
   });
 
   it.each([
-    ['two parts', { parts: [{ data: { stop: 'a' } }, { data: { stop: 'b' } }] }, 'input_not_one_data_part'],
+    [
+      'two parts',
+      { parts: [{ data: { stop: 'a' } }, { data: { stop: 'b' } }] },
+      'input_not_one_data_part',
+    ],
     ['a text part', { parts: [{ text: 'Elm' }] }, 'input_not_one_data_part'],
     ['data that is not an object', { parts: [{ data: ['Elm'] }] }, 'input_not_one_data_part'],
     ['an answer the schema refuses', { parts: [{ data: { stop: '' } }] }, 'input_invalid'],
@@ -292,7 +379,14 @@ describe('answering (§7.7): the caller continues its own task', () => {
       iw.rt,
       iw.request(
         'SendMessage',
-        { message: { messageId: 'x-1', role: 'ROLE_USER', taskId: id, parts: [{ data: { stop: 'Elm' } }] } },
+        {
+          message: {
+            messageId: 'x-1',
+            role: 'ROLE_USER',
+            taskId: id,
+            parts: [{ data: { stop: 'Elm' } }],
+          },
+        },
         {},
         `Bearer ${other.token}`,
       ),
@@ -307,7 +401,12 @@ describe('answering (§7.7): the caller continues its own task', () => {
     const sent = ingressSendMessage(
       iw.rt,
       iw.request('SendMessage', {
-        message: { messageId: 'ans-hook', role: 'ROLE_USER', taskId: id, parts: [{ data: { stop: 'Elm' } }] },
+        message: {
+          messageId: 'ans-hook',
+          role: 'ROLE_USER',
+          taskId: id,
+          parts: [{ data: { stop: 'Elm' } }],
+        },
         configuration: { taskPushNotificationConfig: { url: 'https://hooks.example/a2a' } },
       }),
     );
@@ -324,7 +423,9 @@ describe('the end of a question', () => {
     iw.world.workflow.store().expireTasks(Math.floor(iw.world.clock / 1000), iw.world.clock);
     expect(iw.world.workflow.store().getById(taskId)?.status).toBe('failed');
     expect(stateOf(id)).toBe('TASK_STATE_FAILED');
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'input_not_received' }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'failed', reason_code: 'input_not_received' }),
+    );
   });
 
   it('the caller may cancel while asked', () => {
@@ -339,7 +440,10 @@ describe('the end of a question', () => {
     const id = eta();
     claimAndAsk(id);
     ingressCancelTask(iw.rt, iw.request('CancelTask', { id }), id);
-    expect(errorOf(answer(id, { stop: 'Elm' }))).toEqual({ code: -32004, reason: 'task_not_awaiting_input' });
+    expect(errorOf(answer(id, { stop: 'Elm' }))).toEqual({
+      code: -32004,
+      reason: 'task_not_awaiting_input',
+    });
   });
 });
 
@@ -354,7 +458,9 @@ describe('a question is egress (§7.3): shown only while the call’s authority 
       timestamp: expect.any(String),
     });
     expect(sweepA2AInbound(iw.rt)).toEqual(expect.objectContaining({ settled: 1 }));
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'authority_revoked' }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'failed', reason_code: 'authority_revoked' }),
+    );
     expect(iw.world.workflow.store().getById(taskId)?.status).toBe('cancelled');
   });
 
@@ -368,7 +474,11 @@ describe('a question is egress (§7.3): shown only while the call’s authority 
     );
     if (!issued.ok) throw new Error(issued.reason);
     const id = sentTask(
-      iw.call({ skill: 'eta_query@private', params: { route_id: '42' }, grant_id: issued.grant.grantId }),
+      iw.call({
+        skill: 'eta_query@private',
+        params: { route_id: '42' },
+        grant_id: issued.grant.grantId,
+      }),
     ).id as string;
     claimAndAsk(id);
     expect(stateOf(id)).toBe('TASK_STATE_INPUT_REQUIRED');
@@ -376,8 +486,13 @@ describe('a question is egress (§7.3): shown only while the call’s authority 
     const status = view(id).status as Record<string, unknown>;
     expect(status.state).toBe('TASK_STATE_FAILED');
     expect(status.message).toBeUndefined();
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'authority_revoked' }));
-    expect(errorOf(answer(id, { stop: 'Elm' }))).toEqual({ code: -32004, reason: 'task_not_awaiting_input' });
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'failed', reason_code: 'authority_revoked' }),
+    );
+    expect(errorOf(answer(id, { stop: 'Elm' }))).toEqual({
+      code: -32004,
+      reason: 'task_not_awaiting_input',
+    });
   });
 });
 
@@ -386,7 +501,8 @@ describe('which rounds may ask (may_ask on the payload)', () => {
     const read = eta();
     expect((JSON.parse(iw.childOf(read).payload) as { may_ask?: boolean }).may_ask).toBe(true);
     await save(bookingListing(), 'bus');
-    const booking = sentTask(iw.call({ skill: 'appointment_book', params: { slot: '9am' } })).id as string;
+    const booking = sentTask(iw.call({ skill: 'appointment_book', params: { slot: '9am' } }))
+      .id as string;
     iw.world.workflow.approve(iw.childOf(booking).id);
     expect('may_ask' in (JSON.parse(iw.childOf(booking).payload) as object)).toBe(false);
   });
@@ -398,13 +514,18 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
     await save(
       listing({
         capabilities: {
-          appointment_book: { instruction: 'Book the slot.', responsePolicy: 'review', category: 'appointments' },
+          appointment_book: {
+            instruction: 'Book the slot.',
+            responsePolicy: 'review',
+            category: 'appointments',
+          },
         },
         capabilitySchemas: bookingListing().capabilitySchemas,
       }),
       'bus',
     );
-    const id = sentTask(iw.call({ skill: 'appointment_book', params: { slot: '9am' } })).id as string;
+    const id = sentTask(iw.call({ skill: 'appointment_book', params: { slot: '9am' } }))
+      .id as string;
     iw.world.workflow.approve(iw.childOf(id).id);
     return id;
   }
@@ -435,22 +556,35 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
   it('asks before its effect, then the next round gets one fresh permit under the same approval', async () => {
     const id = await approvedTier1Booking();
     const r = runner([
-      async () => new CapabilityInputRequired('Which name is the booking under?', { type: 'object', required: ['name'], properties: { name: { type: 'string' } } }),
+      async () =>
+        new CapabilityInputRequired('Which name is the booking under?', {
+          type: 'object',
+          required: ['name'],
+          properties: { name: { type: 'string' } },
+        }),
       async (turn) => (turn.authorizeEffect() ? { booked: true } : { booked: false }),
     ]);
     await r.runTick();
     expect(stateOf(id)).toBe('TASK_STATE_INPUT_REQUIRED');
     const [voided] = permits(id);
-    expect(voided).toEqual(expect.objectContaining({ state: 'void', void_reason: 'input_required' }));
+    expect(voided).toEqual(
+      expect.objectContaining({ state: 'void', void_reason: 'input_required' }),
+    );
     expect(iw.opOf(id).effect_phase).toBe('pre_effect');
 
     expect(answer(id, { name: 'Ada' }).status).toBe(200);
     // A duplicate continuation is refused.
-    expect(errorOf(answer(id, { name: 'Ada' }))).toEqual({ code: -32004, reason: 'task_not_awaiting_input' });
+    expect(errorOf(answer(id, { name: 'Ada' }))).toEqual({
+      code: -32004,
+      reason: 'task_not_awaiting_input',
+    });
     const fresh = permits(id).filter((p) => p.state === 'minted');
     expect(fresh).toHaveLength(1);
     expect(fresh[0]).toEqual(
-      expect.objectContaining({ approval_task_id: voided?.approval_task_id, execution_child_id: iw.childOf(id).id }),
+      expect.objectContaining({
+        approval_task_id: voided?.approval_task_id,
+        execution_child_id: iw.childOf(id).id,
+      }),
     );
     const snapshot = readInboundSnapshot(iw.opOf(id));
     if (snapshot === null) throw new Error('snapshot');
@@ -482,7 +616,9 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
       },
     ]).runTick();
     expect(acted).toBe(false);
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'authority_revoked' }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'failed', reason_code: 'authority_revoked' }),
+    );
     expect(permits(id).map((p) => p.state)).toEqual(['void']);
   });
 
@@ -522,7 +658,13 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
           await save(
             listing({
               name: 'Bus 42, renamed',
-              capabilities: { appointment_book: { instruction: 'Book the slot.', responsePolicy: 'review', category: 'appointments' } },
+              capabilities: {
+                appointment_book: {
+                  instruction: 'Book the slot.',
+                  responsePolicy: 'review',
+                  category: 'appointments',
+                },
+              },
               capabilitySchemas: bookingListing().capabilitySchemas,
             }),
             'bus',
@@ -541,10 +683,16 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
       expect(admitInboundClaimWith(iw.rt, { id: child }, NODE, 'deferred')).toBe('admitted');
       expect(authorizeInboundEffectWith(iw.rt, { id: child }, NODE)).toBe('authorized');
       // The round's permit gone by other means, after its effect began: no shortcut applies.
-      iw.world.store.db.run(`UPDATE a2a_permits SET state = 'void' WHERE execution_child_id = ?`, [child]);
-      iw.world.store.db.run(`UPDATE a2a_tasks SET snapshot_json = '{' WHERE id = ?`, [iw.opOf(id).id]);
+      iw.world.store.db.run(`UPDATE a2a_permits SET state = 'void' WHERE execution_child_id = ?`, [
+        child,
+      ]);
+      iw.world.store.db.run(`UPDATE a2a_tasks SET snapshot_json = '{' WHERE id = ?`, [
+        iw.opOf(id).id,
+      ]);
       expect(authorizeInboundEffectWith(iw.rt, { id: child }, NODE)).toBe('refused');
-      expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'outcome_unknown', reason_code: 'snapshot_unreadable' }));
+      expect(iw.opOf(id)).toEqual(
+        expect.objectContaining({ state: 'outcome_unknown', reason_code: 'snapshot_unreadable' }),
+      );
     });
   });
 
@@ -563,7 +711,12 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
   it('a lease lost before the boundary requeues the round', async () => {
     const id = await approvedTier1Booking();
     const child = iw.childOf(id).id;
-    const claimed = iw.world.repo.claimDelegationTask(NODE, iw.world.clock, 30_000, LOCAL_RUNNER_NAME);
+    const claimed = iw.world.repo.claimDelegationTask(
+      NODE,
+      iw.world.clock,
+      30_000,
+      LOCAL_RUNNER_NAME,
+    );
     expect(claimed?.id).toBe(child);
     expect(admitInboundClaimWith(iw.rt, { id: child }, NODE, 'deferred')).toBe('admitted');
     iw.world.clock += 31_000;
@@ -591,7 +744,10 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
   it('a capability not declared as authorizing its effects stays at its claim on the same runner', async () => {
     const id = await approvedTier1Booking();
     // The runner defers only some other capability; this one's claim starts its effect.
-    await runner([async () => new CapabilityInputRequired('Name?', STOP_SCHEMA)], new Set(['other_capability'])).runTick();
+    await runner(
+      [async () => new CapabilityInputRequired('Name?', STOP_SCHEMA)],
+      new Set(['other_capability']),
+    ).runTick();
     expect(permits(id).map((p) => p.state)).toEqual(['consumed']);
     settleInbound(iw.rt, iw.opOf(id));
     expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'outcome_unknown' }));
@@ -600,17 +756,29 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
   it('refuses a payload changed after its permit was minted', async () => {
     const id = await approvedTier1Booking();
     const r = runner([
-      async () => new CapabilityInputRequired('Name?', { type: 'object', properties: { name: { type: 'string' } } }),
+      async () =>
+        new CapabilityInputRequired('Name?', {
+          type: 'object',
+          properties: { name: { type: 'string' } },
+        }),
       async () => ({ booked: true }),
     ]);
     await r.runTick();
     answer(id, { name: 'Ada' });
     const next = iw.childOf(id);
     const payload = JSON.parse(next.payload) as { continuation: { turns: { input: unknown }[] } };
-    payload.continuation.turns[0] = { ...payload.continuation.turns[0], input: { name: 'Mallory' } } as never;
-    iw.world.store.db.run('UPDATE workflow_tasks SET payload = ? WHERE id = ?', [JSON.stringify(payload), next.id]);
+    payload.continuation.turns[0] = {
+      ...payload.continuation.turns[0],
+      input: { name: 'Mallory' },
+    } as never;
+    iw.world.store.db.run('UPDATE workflow_tasks SET payload = ? WHERE id = ?', [
+      JSON.stringify(payload),
+      next.id,
+    ]);
     await r.runTick();
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'permit_mismatch' }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'failed', reason_code: 'permit_mismatch' }),
+    );
   });
 
   // Cold audit C5-10: round 0 too, claimed as the runner claims it, so the permit check is what decides
@@ -619,7 +787,12 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
     async function claimedRound0() {
       const id = await approvedTier1Booking();
       const child = iw.childOf(id).id;
-      const claimed = iw.world.repo.claimDelegationTask(NODE, iw.world.clock, 30_000, LOCAL_RUNNER_NAME);
+      const claimed = iw.world.repo.claimDelegationTask(
+        NODE,
+        iw.world.clock,
+        30_000,
+        LOCAL_RUNNER_NAME,
+      );
       expect(claimed?.id).toBe(child);
       const task = { id: child, claim_id: claimed?.claim_id ?? null };
       expect(admitInboundClaimWith(iw.rt, task, NODE, 'deferred')).toBe('admitted');
@@ -630,9 +803,18 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
 
     it('a permit naming another payload is refused: the call fails permit_mismatch, the permit unspent', async () => {
       const { id, task, permit } = await claimedRound0();
-      iw.world.store.db.run('UPDATE a2a_permits SET payload_hash = ? WHERE permit_id = ?', ['0'.repeat(64), permit.permit_id]);
+      iw.world.store.db.run('UPDATE a2a_permits SET payload_hash = ? WHERE permit_id = ?', [
+        '0'.repeat(64),
+        permit.permit_id,
+      ]);
       expect(authorizeInboundEffectWith(iw.rt, task, NODE)).toBe('refused');
-      expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'permit_mismatch', effect_phase: 'pre_effect' }));
+      expect(iw.opOf(id)).toEqual(
+        expect.objectContaining({
+          state: 'failed',
+          reason_code: 'permit_mismatch',
+          effect_phase: 'pre_effect',
+        }),
+      );
       expect(permits(id).map((p) => p.state)).not.toContain('consumed');
     });
 
@@ -643,7 +825,9 @@ describe('an in-process round under review, its effect boundary deferred (§7.3,
       expect(permit.payload_hash).toBe(inboundRoundHash(snapshot, undefined));
       expect(authorizeInboundEffectWith(iw.rt, task, NODE)).toBe('authorized');
       expect(permits(id).map((p) => p.state)).toEqual(['consumed']);
-      expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'open', effect_phase: 'effect_started' }));
+      expect(iw.opOf(id)).toEqual(
+        expect.objectContaining({ state: 'open', effect_phase: 'effect_started' }),
+      );
     });
   });
 });
@@ -671,7 +855,11 @@ describe('the executor route', () => {
     const claimId = iw.world.workflow.store().getById(taskId)?.claim_id ?? '';
     const out = await post(taskId, iw.runnerDid, { claim_id: claimId, ...ASK });
     expect(out.status).toBe(200);
-    expect(out.body).toEqual({ status: 'awaiting_input', task_id: taskId, expires_at: expect.any(Number) });
+    expect(out.body).toEqual({
+      status: 'awaiting_input',
+      task_id: taskId,
+      expires_at: expect.any(Number),
+    });
     expect(stateOf(id)).toBe('TASK_STATE_INPUT_REQUIRED');
   });
 
@@ -704,13 +892,20 @@ describe('the executor route', () => {
       updated_at: iw.world.clock,
     });
     const out = await post('plain', iw.runnerDid, { claim_id: 'c', ...ASK });
-    expect(out).toEqual(expect.objectContaining({ status: 409, body: expect.objectContaining({ error: 'not_an_a2a_call' }) }));
+    expect(out).toEqual(
+      expect.objectContaining({
+        status: 409,
+        body: expect.objectContaining({ error: 'not_an_a2a_call' }),
+      }),
+    );
   });
 });
 
 describe('the question parser', () => {
   it('keeps the schema in canonical form', () => {
-    expect(parseInputRequest({ prompt: 'p', input_schema: { required: ['a'], type: 'object' } })).toEqual({
+    expect(
+      parseInputRequest({ prompt: 'p', input_schema: { required: ['a'], type: 'object' } }),
+    ).toEqual({
       prompt: 'p',
       input_schema: { required: ['a'], type: 'object' },
     });

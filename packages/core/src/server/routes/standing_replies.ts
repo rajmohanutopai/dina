@@ -9,7 +9,11 @@
  */
 
 import { verifySpanProof } from '../../a2a/span_proof';
-import { listStandingReplies, proposeStandingReply, revokeStandingReply } from '../../standing/standing_replies';
+import {
+  listStandingReplies,
+  proposeStandingReply,
+  revokeStandingReply,
+} from '../../standing/standing_replies';
 
 import { ownerDidForRequest } from './owner_guard';
 
@@ -18,12 +22,20 @@ import type { CoreRouter, CoreRequest } from '../router';
 const CANCEL_WORDS = /\b(cancel|stop|turn off|switch off|end|remove|delete)\b/i;
 
 function isBrain(req: CoreRequest): boolean {
-  return req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  return (
+    req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined)
+  );
 }
 
 function proofOf(b: Record<string, unknown>) {
   const { release_session: rs, turn_id: turnId, turn_text: turnText, start, end } = b;
-  if (typeof rs !== 'string' || typeof turnId !== 'string' || typeof turnText !== 'string' || typeof start !== 'number' || typeof end !== 'number') {
+  if (
+    typeof rs !== 'string' ||
+    typeof turnId !== 'string' ||
+    typeof turnText !== 'string' ||
+    typeof start !== 'number' ||
+    typeof end !== 'number'
+  ) {
     return null;
   }
   return { releaseSession: rs, turnId, turnText, start, end };
@@ -34,11 +46,29 @@ export function registerStandingReplyRoutes(router: CoreRouter, ownerCapability?
     if (!isBrain(req)) return { status: 403, body: { error: 'brain only' } };
     const b = (req.body as Record<string, unknown> | undefined) ?? {};
     const proof = proofOf(b);
-    const contacts = Array.isArray(b.contacts) ? b.contacts.filter((x): x is string => typeof x === 'string') : null;
-    if (proof === null || contacts === null || typeof b.reply_text !== 'string' || typeof b.until !== 'string') {
-      return { status: 400, body: { error: 'a span proof, contacts, reply_text and until are required' } };
+    const contacts = Array.isArray(b.contacts)
+      ? b.contacts.filter((x): x is string => typeof x === 'string')
+      : null;
+    if (
+      proof === null ||
+      contacts === null ||
+      typeof b.reply_text !== 'string' ||
+      typeof b.until !== 'string'
+    ) {
+      return {
+        status: 400,
+        body: { error: 'a span proof, contacts, reply_text and until are required' },
+      };
     }
-    return { status: 200, body: await proposeStandingReply({ proof, contacts, replyText: b.reply_text, until: b.until }) };
+    return {
+      status: 200,
+      body: await proposeStandingReply({
+        proof,
+        contacts,
+        replyText: b.reply_text,
+        until: b.until,
+      }),
+    };
   });
 
   router.get('/v1/standing-replies', async (req) => {
@@ -60,7 +90,8 @@ export function registerStandingReplyRoutes(router: CoreRouter, ownerCapability?
     if (!owner) {
       if (!isBrain(req)) return { status: 403, body: { error: 'owner or brain only' } };
       const proof = proofOf((req.body as Record<string, unknown> | undefined) ?? {});
-      if (proof === null) return { status: 400, body: { error: "a proof of the owner's turn is required" } };
+      if (proof === null)
+        return { status: 400, body: { error: "a proof of the owner's turn is required" } };
       const checked = verifySpanProof(proof, 'standing_reply');
       if (!checked.ok || !CANCEL_WORDS.test(checked.turnText)) {
         return { status: 403, body: { error: 'the owner did not ask to stop a standing reply' } };

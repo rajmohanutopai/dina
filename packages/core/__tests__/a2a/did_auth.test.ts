@@ -40,7 +40,16 @@ import { DIDResolver } from '../../src/d2d/resolver';
 import { deriveDIDKey, publicKeyToMultibase } from '../../src/identity/did';
 import { clearPairingState } from '../../src/pairing/ceremony';
 
-import { INBOUND_NODE_DID, InboundWorld, bookingListing, didRequestSignature, errorOf, resultOf, save, sentTask } from './inbound_fixture';
+import {
+  INBOUND_NODE_DID,
+  InboundWorld,
+  bookingListing,
+  didRequestSignature,
+  errorOf,
+  resultOf,
+  save,
+  sentTask,
+} from './inbound_fixture';
 
 const NODE_DID = 'did:plc:ewvi7nxzyoun6zhxrhs64oiz';
 /** A secp256k1 Multikey, as PLC lists a DID's `#atproto` key: it cannot sign a Dina request. */
@@ -113,7 +122,13 @@ async function bindAs(did: string, signer: Signer, clientId = iw.clientId): Prom
   });
 }
 
-function didSignature(method: string, path: string, body: string, signer: Signer, did = signer.did) {
+function didSignature(
+  method: string,
+  path: string,
+  body: string,
+  signer: Signer,
+  did = signer.did,
+) {
   return didRequestSignature({ method, path, body, signer, did });
 }
 
@@ -159,8 +174,12 @@ describe('the owner challenge', () => {
       [iw.clientId],
     );
     // Kept as its sha256 (design §9), never in clear.
-    expect(rows).toEqual([{ challenge_hash: bytesToHex(sha256(new TextEncoder().encode(second))), did: ALICE.did }]);
-    expect(JSON.stringify(iw.world.store.db.query('SELECT * FROM a2a_did_challenges'))).not.toContain(second);
+    expect(rows).toEqual([
+      { challenge_hash: bytesToHex(sha256(new TextEncoder().encode(second))), did: ALICE.did },
+    ]);
+    expect(
+      JSON.stringify(iw.world.store.db.query('SELECT * FROM a2a_did_challenges')),
+    ).not.toContain(second);
     expect(first).not.toBe(second);
   });
 
@@ -180,13 +199,16 @@ describe('the owner challenge', () => {
       ok: false,
       reason: 'did_not_expected',
     });
-    expect(issueDidChallenge(iw.world.store, pinned.clientId, MALLORY.did, iw.world.clock).ok).toBe(true);
+    expect(issueDidChallenge(iw.world.store, pinned.clientId, MALLORY.did, iw.world.clock).ok).toBe(
+      true,
+    );
   });
 });
 
 describe('binding', () => {
   it('trades the bearer for the DID in one commit; the principal and its tasks carry over', async () => {
-    const before = sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42' } })).id as string;
+    const before = sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42' } }))
+      .id as string;
     await bindAs(ALICE.did, ALICE);
     expect(getA2AClient(iw.world.store, iw.clientId)).toEqual(
       expect.objectContaining({
@@ -209,8 +231,12 @@ describe('binding', () => {
 
   it('a challenge is single use, belongs to one client, and expires', async () => {
     const c = challenge(ALICE.did);
-    expect((await bind(bindingBody({ did: ALICE.did, challenge: c, signer: ALICE.privateKey }))).status).toBe(200);
-    expect(await bind(bindingBody({ did: ALICE.did, challenge: c, signer: ALICE.privateKey }))).toEqual({
+    expect(
+      (await bind(bindingBody({ did: ALICE.did, challenge: c, signer: ALICE.privateKey }))).status,
+    ).toBe(200);
+    expect(
+      await bind(bindingBody({ did: ALICE.did, challenge: c, signer: ALICE.privateKey })),
+    ).toEqual({
       status: 400,
       body: { error: 'challenge_invalid' },
     });
@@ -219,14 +245,20 @@ describe('binding', () => {
     const other = newClient();
     const theirs = challenge(MALLORY.did, other.clientId);
     expect(
-      (await bind(bindingBody({ did: MALLORY.did, challenge: theirs, signer: MALLORY.privateKey }))).body,
+      (await bind(bindingBody({ did: MALLORY.did, challenge: theirs, signer: MALLORY.privateKey })))
+        .body,
     ).toEqual({ error: 'signature_invalid' });
     const late = challenge(MALLORY.did, other.clientId);
     iw.world.clock += DID_CHALLENGE_TTL_MS;
     expect(
       (
         await bind(
-          bindingBody({ did: MALLORY.did, challenge: late, signer: MALLORY.privateKey, clientId: other.clientId }),
+          bindingBody({
+            did: MALLORY.did,
+            challenge: late,
+            signer: MALLORY.privateKey,
+            clientId: other.clientId,
+          }),
         )
       ).body,
     ).toEqual({ error: 'challenge_invalid' });
@@ -236,30 +268,52 @@ describe('binding', () => {
   it('a challenge binds only the DID it names: the bearer and the challenge without that key bind nothing', async () => {
     // What a thief holding the bearer and the owner's message has.
     const c = challenge(ALICE.did);
-    expect((await bind(bindingBody({ did: ALICE.did, challenge: c, signer: MALLORY.privateKey }))).body).toEqual({
+    expect(
+      (await bind(bindingBody({ did: ALICE.did, challenge: c, signer: MALLORY.privateKey }))).body,
+    ).toEqual({
       error: 'signature_invalid',
     });
-    expect((await bind(bindingBody({ did: MALLORY.did, challenge: c, signer: MALLORY.privateKey }))).body).toEqual({
+    expect(
+      (await bind(bindingBody({ did: MALLORY.did, challenge: c, signer: MALLORY.privateKey })))
+        .body,
+    ).toEqual({
       error: 'challenge_invalid',
     });
     expect(getA2AClient(iw.world.store, iw.clientId)).toEqual(
       expect.objectContaining({ bound_did: null, credential: 'bearer' }),
     );
     // The failed tries spent nothing: the rightful holder still binds.
-    expect((await bind(bindingBody({ did: ALICE.did, challenge: c, signer: ALICE.privateKey }))).status).toBe(200);
+    expect(
+      (await bind(bindingBody({ did: ALICE.did, challenge: c, signer: ALICE.privateKey }))).status,
+    ).toBe(200);
   });
 
   it.each([
-    ['a body that is not the three members', () => JSON.stringify({ did: ALICE.did }), 'request_malformed', 400],
+    [
+      'a body that is not the three members',
+      () => JSON.stringify({ did: ALICE.did }),
+      'request_malformed',
+      400,
+    ],
     [
       'an unknown challenge',
-      () => bindingBody({ did: ALICE.did, challenge: `dch_${'A'.repeat(43)}`, signer: ALICE.privateKey }),
+      () =>
+        bindingBody({
+          did: ALICE.did,
+          challenge: `dch_${'A'.repeat(43)}`,
+          signer: ALICE.privateKey,
+        }),
       'challenge_invalid',
       400,
     ],
     [
       'a signature by another key',
-      () => bindingBody({ did: ALICE.did, challenge: challenge(ALICE.did), signer: MALLORY.privateKey }),
+      () =>
+        bindingBody({
+          did: ALICE.did,
+          challenge: challenge(ALICE.did),
+          signer: MALLORY.privateKey,
+        }),
       'signature_invalid',
       403,
     ],
@@ -281,11 +335,18 @@ describe('binding', () => {
   });
 
   it('refuses a request on any other door than the binding path, and answers 503 with no node DID', async () => {
-    const body = bindingBody({ did: ALICE.did, challenge: challenge(ALICE.did), signer: ALICE.privateKey });
+    const body = bindingBody({
+      did: ALICE.did,
+      challenge: challenge(ALICE.did),
+      signer: ALICE.privateKey,
+    });
     const at = (over: Partial<GatewayEnvelope['request']>, nodeDid: string | null = NODE_DID) =>
       ingressCompleteDidBinding(
         iw.rt,
-        { request: { method: 'POST', path: A2A_DID_BINDING_PATH, query: '', body, ...over }, client_auth: {} },
+        {
+          request: { method: 'POST', path: A2A_DID_BINDING_PATH, query: '', body, ...over },
+          client_auth: {},
+        },
         nodeDid,
       );
     expect((await at({ path: A2A_RPC_PATH })).status).toBe(400);
@@ -300,7 +361,11 @@ describe('binding', () => {
       ...iw.rt,
       budgets: new PrincipalBudgets({ perMinute: 2, replayPerMinute: 10, readPerMinute: 10 }),
     };
-    const wrong = bindingBody({ did: ALICE.did, challenge: challenge(ALICE.did), signer: MALLORY.privateKey });
+    const wrong = bindingBody({
+      did: ALICE.did,
+      challenge: challenge(ALICE.did),
+      signer: MALLORY.privateKey,
+    });
     const envelope: GatewayEnvelope = {
       request: { method: 'POST', path: A2A_DID_BINDING_PATH, query: '', body: wrong },
       client_auth: {},
@@ -347,7 +412,12 @@ describe('binding', () => {
     const other = newClient();
     const c = challenge(MALLORY.did, other.clientId);
     revokeA2AClient(iw.world.store, iw.grants, other.clientId, iw.world.clock);
-    const body = bindingBody({ did: MALLORY.did, challenge: c, signer: MALLORY.privateKey, clientId: other.clientId });
+    const body = bindingBody({
+      did: MALLORY.did,
+      challenge: c,
+      signer: MALLORY.privateKey,
+      clientId: other.clientId,
+    });
     expect((await bind(body)).body).toEqual({ error: 'challenge_invalid' });
     expect(issueDidChallenge(iw.world.store, other.clientId, MALLORY.did, iw.world.clock)).toEqual({
       ok: false,
@@ -364,7 +434,12 @@ function plcDocument(ed25519Keys: Uint8Array[], over: Record<string, unknown> = 
     id: PLC,
     alsoKnownAs: ['at://alice.example'],
     verificationMethod: [
-      { id: `${PLC}#atproto`, type: 'Multikey', controller: PLC, publicKeyMultibase: SECP256K1_MULTIKEY },
+      {
+        id: `${PLC}#atproto`,
+        type: 'Multikey',
+        controller: PLC,
+        publicKeyMultibase: SECP256K1_MULTIKEY,
+      },
       ...ed25519Keys.map((key, i) => ({
         id: `${PLC}#dina_signing${i === 0 ? '' : `_${i}`}`,
         type: 'Multikey',
@@ -372,7 +447,9 @@ function plcDocument(ed25519Keys: Uint8Array[], over: Record<string, unknown> = 
         publicKeyMultibase: publicKeyToMultibase(key),
       })),
     ],
-    service: [{ id: '#dina-messaging', type: 'DinaMsgBox', serviceEndpoint: 'wss://msgbox.example' }],
+    service: [
+      { id: '#dina-messaging', type: 'DinaMsgBox', serviceEndpoint: 'wss://msgbox.example' },
+    ],
     ...over,
   };
 }
@@ -415,7 +492,10 @@ describe('a DID the host resolves (did:plc)', () => {
       plcDocument([ALICE.publicKey], { authentication: [`${PLC}#atproto`] }),
     ],
     ['an empty authentication member', plcDocument([ALICE.publicKey], { authentication: [] })],
-    ['a document for another DID', plcDocument([ALICE.publicKey], { id: 'did:plc:someoneelse00000000000000' })],
+    [
+      'a document for another DID',
+      plcDocument([ALICE.publicKey], { id: 'did:plc:someoneelse00000000000000' }),
+    ],
   ])('refuses %s', async (_name, document) => {
     installA2ADidResolver(async () => found(document));
     const body = bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey });
@@ -424,7 +504,10 @@ describe('a DID the host resolves (did:plc)', () => {
 
   it.each([
     ['no resolver is installed', null],
-    ['the directory has no such DID', async (): Promise<A2ADidResolution> => ({ kind: 'not_found' })],
+    [
+      'the directory has no such DID',
+      async (): Promise<A2ADidResolution> => ({ kind: 'not_found' }),
+    ],
     ['the DID is deactivated', async (): Promise<A2ADidResolution> => ({ kind: 'deactivated' })],
     ['the directory is down', async (): Promise<A2ADidResolution> => ({ kind: 'unavailable' })],
     ['the resolver throws', async () => Promise.reject(new Error('down'))],
@@ -444,13 +527,25 @@ describe('a DID the host resolves (did:plc)', () => {
           type: 'Ed25519VerificationKey2020',
           publicKeyMultibase: publicKeyToMultibase(ALICE.publicKey),
         },
-        { id: '#unnamed', type: 'Multikey', publicKeyMultibase: publicKeyToMultibase(ALICE_NEXT.publicKey) },
-        { id: '#jwk', type: 'JsonWebKey2020', publicKeyMultibase: publicKeyToMultibase(ALICE_NEXT.publicKey) },
+        {
+          id: '#unnamed',
+          type: 'Multikey',
+          publicKeyMultibase: publicKeyToMultibase(ALICE_NEXT.publicKey),
+        },
+        {
+          id: '#jwk',
+          type: 'JsonWebKey2020',
+          publicKeyMultibase: publicKeyToMultibase(ALICE_NEXT.publicKey),
+        },
       ],
       authentication: [
         '#ref',
         '#jwk',
-        { id: '#embedded', type: 'Multikey', publicKeyMultibase: publicKeyToMultibase(MALLORY.publicKey) },
+        {
+          id: '#embedded',
+          type: 'Multikey',
+          publicKeyMultibase: publicKeyToMultibase(MALLORY.publicKey),
+        },
       ],
     };
     expect(didAuthenticationKeys(doc, PLC)).toEqual([ALICE.publicKey, MALLORY.publicKey]);
@@ -496,7 +591,12 @@ describe("through D2D's resolver, looking the DID up as it stands", () => {
 
   it.each([
     ['a tombstone (410) suspends', 410, { checked: 1, suspended: 1, unresolved: 0 }, 401],
-    ['a 404 for a DID that bound is the directory\'s fault: left alone', 404, { checked: 1, suspended: 0, unresolved: 1 }, 200],
+    [
+      "a 404 for a DID that bound is the directory's fault: left alone",
+      404,
+      { checked: 1, suspended: 0, unresolved: 1 },
+      200,
+    ],
     ['a 500 is an outage: left alone', 500, { checked: 1, suspended: 0, unresolved: 1 }, 200],
   ])('%s', async (_name, status, counts, after) => {
     directory([{ status: 200, body: plcDocument([ALICE.publicKey]) }, { status }]);
@@ -506,7 +606,12 @@ describe("through D2D's resolver, looking the DID up as it stands", () => {
   });
 
   it('reads an answer that is not a document for this DID as unavailable', async () => {
-    directory([{ status: 200, body: plcDocument([ALICE.publicKey], { id: 'did:plc:someoneelse00000000000000' }) }]);
+    directory([
+      {
+        status: 200,
+        body: plcDocument([ALICE.publicKey], { id: 'did:plc:someoneelse00000000000000' }),
+      },
+    ]);
     const body = bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey });
     expect((await bind(body)).body).toEqual({ error: 'did_unresolvable' });
   });
@@ -529,7 +634,9 @@ describe('what moves while a DID resolves', () => {
 
   it('a challenge the owner reissued meanwhile', async () => {
     const held = heldResolver(() => plcDocument([ALICE.publicKey]));
-    const pending = bind(bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }));
+    const pending = bind(
+      bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }),
+    );
     await settle();
     challenge(PLC);
     held.release();
@@ -538,7 +645,9 @@ describe('what moves while a DID resolves', () => {
 
   it('a client the owner revoked meanwhile', async () => {
     const held = heldResolver(() => plcDocument([ALICE.publicKey]));
-    const pending = bind(bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }));
+    const pending = bind(
+      bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }),
+    );
     await settle();
     revokeA2AClient(iw.world.store, iw.grants, iw.clientId, iw.world.clock);
     held.release();
@@ -549,7 +658,9 @@ describe('what moves while a DID resolves', () => {
   it('another client that took the DID meanwhile', async () => {
     const other = newClient();
     const held = heldResolver(() => plcDocument([ALICE.publicKey]));
-    const mine = bind(bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }));
+    const mine = bind(
+      bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }),
+    );
     const theirs = bind(
       bindingBody({
         did: PLC,
@@ -565,7 +676,9 @@ describe('what moves while a DID resolves', () => {
 
   it('a challenge that expired meanwhile', async () => {
     const held = heldResolver(() => plcDocument([ALICE.publicKey]));
-    const pending = bind(bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }));
+    const pending = bind(
+      bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE.privateKey }),
+    );
     await settle();
     iw.world.clock += DID_CHALLENGE_TTL_MS;
     held.release();
@@ -640,7 +753,9 @@ describe("the host's re-check of bound keys", () => {
     installA2ADidResolver(() => {
       calls += 1;
       const doc = found(plcDocument([ALICE_NEXT.publicKey]));
-      return calls === 1 ? new Promise((resolve) => (release = () => resolve(doc))) : Promise.resolve(doc);
+      return calls === 1
+        ? new Promise((resolve) => (release = () => resolve(doc)))
+        : Promise.resolve(doc);
     });
     const pending = refresh();
     await settle();
@@ -656,7 +771,9 @@ describe("the host's re-check of bound keys", () => {
     const held = heldResolver(() => plcDocument([ALICE_NEXT.publicKey]));
     const pending = refresh();
     await settle();
-    const binding = bind(bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE_NEXT.privateKey }));
+    const binding = bind(
+      bindingBody({ did: PLC, challenge: challenge(PLC), signer: ALICE_NEXT.privateKey }),
+    );
     await settle();
     held.release();
     expect((await pending).suspended).toBe(1);
@@ -677,9 +794,9 @@ describe('a DID-signed request', () => {
   const eta = () => iw.message({ skill: 'eta_query', params: { route_id: '42' } });
 
   it('runs a call', () => {
-    expect(sentTask(ingressSendMessage(iw.rt, signedCall('SendMessage', eta(), ALICE))).status).toEqual(
-      expect.objectContaining({ state: 'TASK_STATE_SUBMITTED' }),
-    );
+    expect(
+      sentTask(ingressSendMessage(iw.rt, signedCall('SendMessage', eta(), ALICE))).status,
+    ).toEqual(expect.objectContaining({ state: 'TASK_STATE_SUBMITTED' }));
   });
 
   it.each([
@@ -692,7 +809,10 @@ describe('a DID-signed request', () => {
     ],
     [
       'a body changed after signing',
-      (e: GatewayEnvelope) => ({ ...e, request: { ...e.request, body: e.request.body.replace('42', '43') } }),
+      (e: GatewayEnvelope) => ({
+        ...e,
+        request: { ...e.request, body: e.request.body.replace('42', '43') },
+      }),
     ],
     [
       'another path than the one signed',
@@ -730,34 +850,65 @@ describe('a DID-signed request', () => {
   it('a DID-bound client’s review card names the DID whose key signed the call, and no token', async () => {
     await save(bookingListing(), 'bus');
     await bindAs(ALICE.did, ALICE);
-    const params = iw.message({ skill: 'appointment_book', params: { slot: '9am' } }, { messageId: 'did-review-1' });
+    const params = iw.message(
+      { skill: 'appointment_book', params: { slot: '9am' } },
+      { messageId: 'did-review-1' },
+    );
     const task = sentTask(ingressSendMessage(iw.rt, signedCall('SendMessage', params, ALICE)));
     const card = parseInboundReviewCard(iw.childOf(task.id as string).payload);
-    expect(card?.display.detail).toContain(`The agent proved only that it holds the key of ${ALICE.did}, the DID it bound.`);
+    expect(card?.display.detail).toContain(
+      `The agent proved only that it holds the key of ${ALICE.did}, the DID it bound.`,
+    );
     expect(card?.display.detail).not.toMatch(/token/);
   });
 
   // Cold audit C3-2: one DID may be a client of many nodes, and every gateway serves the same paths
   it('refuses a request signed for another node, the same client, body, time and nonce otherwise', () => {
     rpcId += 1;
-    const body = JSON.stringify({ jsonrpc: '2.0', id: rpcId, method: 'SendMessage', params: eta() });
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: rpcId,
+      method: 'SendMessage',
+      params: eta(),
+    });
     const at = (nodeDid: string, nonce: string): GatewayEnvelope => ({
       request: { method: 'POST', path: A2A_RPC_PATH, query: '', body, version: '1.0' },
       client_auth: { did_signature: didRequestSignature({ body, signer: ALICE, nodeDid, nonce }) },
     });
     // Signed for node X, as node X's operator, gateway or TLS terminator could pass it on.
-    expect(ingressSendMessage(iw.rt, at('did:plc:anotherdinanode', 'x'.repeat(32))).status).toBe(401);
+    expect(ingressSendMessage(iw.rt, at('did:plc:anotherdinanode', 'x'.repeat(32))).status).toBe(
+      401,
+    );
     // The same request signed for this node goes through: the audience was the only fault.
     expect(ingressSendMessage(iw.rt, at(INBOUND_NODE_DID, 'y'.repeat(32))).status).toBe(200);
   });
 
   it('refuses Dina’s plain request signature, which names no audience', () => {
     rpcId += 1;
-    const body = JSON.stringify({ jsonrpc: '2.0', id: rpcId, method: 'SendMessage', params: eta() });
-    const h = signRequest('POST', A2A_RPC_PATH, '', new TextEncoder().encode(body), ALICE.privateKey, ALICE.did);
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: rpcId,
+      method: 'SendMessage',
+      params: eta(),
+    });
+    const h = signRequest(
+      'POST',
+      A2A_RPC_PATH,
+      '',
+      new TextEncoder().encode(body),
+      ALICE.privateKey,
+      ALICE.did,
+    );
     const envelope: GatewayEnvelope = {
       request: { method: 'POST', path: A2A_RPC_PATH, query: '', body, version: '1.0' },
-      client_auth: { did_signature: { did: h['X-DID'], timestamp: h['X-Timestamp'], nonce: h['X-Nonce'], signature: h['X-Signature'] } },
+      client_auth: {
+        did_signature: {
+          did: h['X-DID'],
+          timestamp: h['X-Timestamp'],
+          nonce: h['X-Nonce'],
+          signature: h['X-Signature'],
+        },
+      },
     };
     expect(ingressSendMessage(iw.rt, envelope).status).toBe(401);
   });
@@ -776,19 +927,31 @@ describe('a DID-signed request', () => {
 
   it('refuses a request signed — validly — at a time outside the window, either side', () => {
     rpcId += 1;
-    const body = JSON.stringify({ jsonrpc: '2.0', id: rpcId, method: 'SendMessage', params: eta() });
+    const body = JSON.stringify({
+      jsonrpc: '2.0',
+      id: rpcId,
+      method: 'SendMessage',
+      params: eta(),
+    });
     const signedAt = (at: Date, nonce: string): GatewayEnvelope => ({
       request: { method: 'POST', path: A2A_RPC_PATH, query: '', body, version: '1.0' },
       client_auth: {
-        did_signature: didRequestSignature({ body, signer: ALICE, timestamp: at.toISOString().replace(/\.\d{3}Z$/, 'Z'), nonce }),
+        did_signature: didRequestSignature({
+          body,
+          signer: ALICE,
+          timestamp: at.toISOString().replace(/\.\d{3}Z$/, 'Z'),
+          nonce,
+        }),
       },
     });
-    expect(ingressSendMessage(iw.rt, signedAt(new Date(Date.now() - 10 * 60_000), 'a'.repeat(32))).status).toBe(
-      401,
-    );
-    expect(ingressSendMessage(iw.rt, signedAt(new Date(Date.now() + 10 * 60_000), 'b'.repeat(32))).status).toBe(
-      401,
-    );
+    expect(
+      ingressSendMessage(iw.rt, signedAt(new Date(Date.now() - 10 * 60_000), 'a'.repeat(32)))
+        .status,
+    ).toBe(401);
+    expect(
+      ingressSendMessage(iw.rt, signedAt(new Date(Date.now() + 10 * 60_000), 'b'.repeat(32)))
+        .status,
+    ).toBe(401);
     // The same request at the right time goes through: the window was the only fault.
     expect(ingressSendMessage(iw.rt, signedAt(new Date(), 'c'.repeat(32))).status).toBe(200);
   });

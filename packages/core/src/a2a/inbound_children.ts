@@ -38,7 +38,8 @@ export const INBOUND_REVIEW_DEADLINE_SECONDS = 24 * 60 * 60;
 
 export const inboundExecutionTaskId = (externalId: string, generation: number): string =>
   `${A2A_TASK_NAMESPACE}in-exec-${externalId}-g${generation}`;
-export const inboundReviewTaskId = (externalId: string): string => `${A2A_TASK_NAMESPACE}in-review-${externalId}`;
+export const inboundReviewTaskId = (externalId: string): string =>
+  `${A2A_TASK_NAMESPACE}in-review-${externalId}`;
 
 /** A commit that cannot go on: the call is refused with this reason instead. */
 export class InboundCommitRefused extends Error {
@@ -54,10 +55,16 @@ export class InboundCommitRefused extends Error {
  * hash covers both, and a payload changed after the permit was minted fails
  * the claim's check.
  */
-export function inboundRoundHash(snapshot: InboundSnapshot, continuation: ServiceExecutionContinuation | undefined): string {
+export function inboundRoundHash(
+  snapshot: InboundSnapshot,
+  continuation: ServiceExecutionContinuation | undefined,
+): string {
   if (continuation === undefined) return snapshot.post_hash;
   return sha256HexOfText(
-    canonicalize({ post_hash: snapshot.post_hash, turns: continuation.turns } as unknown as JsonValue),
+    canonicalize({
+      post_hash: snapshot.post_hash,
+      turns: continuation.turns,
+    } as unknown as JsonValue),
   );
 }
 
@@ -70,7 +77,12 @@ export function inboundRoundHash(snapshot: InboundSnapshot, continuation: Servic
 export function endInboundOperation(
   rt: InboundCore,
   op: A2ATaskRow,
-  patch: { state: InboundOperationState; reason_code?: string; result_json?: string; effect_phase?: string },
+  patch: {
+    state: InboundOperationState;
+    reason_code?: string;
+    result_json?: string;
+    effect_phase?: string;
+  },
 ): A2ATaskRow | null {
   const now = rt.a2a.nowMs();
   if (op.direction !== 'inbound') return null;
@@ -87,7 +99,8 @@ export function endInboundOperation(
   );
   if (!changed) return null;
   for (const permit of rt.a2a.store.permitsOf(op.id)) {
-    if (permit.state === 'minted') rt.a2a.store.voidPermit(permit.permit_id, `operation_${patch.state}`);
+    if (permit.state === 'minted')
+      rt.a2a.store.voidPermit(permit.permit_id, `operation_${patch.state}`);
   }
   recordInboundChange(rt, op.id);
   return rt.a2a.store.getTask(op.id);
@@ -112,10 +125,17 @@ export function mintExecutionChild(
 ): string {
   const now = rt.a2a.nowMs();
   const nowSec = Math.floor(now / 1000);
-  const snapshotForRunner = { params: snapshot.schemas.params, result: snapshot.schemas.result, schema_hash: snapshot.schema_hash };
+  const snapshotForRunner = {
+    params: snapshot.schemas.params,
+    result: snapshot.schemas.result,
+    schema_hash: snapshot.schema_hash,
+  };
   const executor = snapshot.executor;
   const effectful = INBOUND_EFFECTFUL_CLASSES.has(snapshot.action_class);
-  if (effectful && rt.a2a.store.permitsOf(op.id).some((p) => p.state === 'minted' || p.state === 'consumed')) {
+  if (
+    effectful &&
+    rt.a2a.store.permitsOf(op.id).some((p) => p.state === 'minted' || p.state === 'consumed')
+  ) {
     // Unreachable: the interruption voided its round's permit in the same
     // commit that parked the round. If it is ever reached, the commit
     // rolls back rather than leave two rounds holding effect authority.
@@ -188,7 +208,14 @@ export function mintExecutionChild(
       initialState: WorkflowTaskState.Queued,
     });
   }
-  rt.a2a.store.insertChild({ child_task_id: childId, operation_ref: op.id, generation, role: 'execution', created_at: now, pep_did: pep });
+  rt.a2a.store.insertChild({
+    child_task_id: childId,
+    operation_ref: op.id,
+    generation,
+    role: 'execution',
+    created_at: now,
+    pep_did: pep,
+  });
   rt.a2a.store.updateTask(op.id, ['open'], { internal_id: childId }, now);
   if (effectful) {
     rt.a2a.store.insertPermit({
@@ -197,7 +224,8 @@ export function mintExecutionChild(
       operation_ref: op.id,
       execution_child_id: childId,
       // A later round runs under the same approval as the first (§7.7).
-      approval_task_id: snapshot.response_policy === 'review' ? inboundReviewTaskId(op.external_id) : null,
+      approval_task_id:
+        snapshot.response_policy === 'review' ? inboundReviewTaskId(op.external_id) : null,
       payload_hash: inboundRoundHash(snapshot, continuation),
       action_class: snapshot.action_class,
       pep_did: pep,

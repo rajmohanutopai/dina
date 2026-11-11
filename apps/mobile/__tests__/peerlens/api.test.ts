@@ -270,9 +270,8 @@ describe('subscribeTrustSearch', () => {
     registerTrustQueryClient(new FakeQueryClient((d) => profile(d, 0.7)));
 
     const seen: (PeerlensSearchResult | null)[] = [];
-    subscribeTrustSearch(
-      { type: 'identity_attestations', query: 'did:plc:abc' },
-      (r) => seen.push(r),
+    subscribeTrustSearch({ type: 'identity_attestations', query: 'did:plc:abc' }, (r) =>
+      seen.push(r),
     );
     await flushAsync();
     expect(seen).toHaveLength(1);
@@ -281,10 +280,7 @@ describe('subscribeTrustSearch', () => {
 
   it('returns idempotent unsubscribe', async () => {
     registerTrustQueryClient(new FakeQueryClient(() => null));
-    const unsub = subscribeTrustSearch(
-      { type: 'entity_reviews', query: 'acme' },
-      () => undefined,
-    );
+    const unsub = subscribeTrustSearch({ type: 'entity_reviews', query: 'acme' }, () => undefined);
     await flushAsync();
     expect(_trustApiSubscriberCounts().searchKeys).toBe(1);
     unsub();
@@ -338,9 +334,8 @@ describe('invalidateAll', () => {
     const searchSeen: (PeerlensSearchResult | null)[] = [];
     subscribeTrust('did:plc:bulk1', (s) => trustSeen.push(s));
     subscribeTrust('did:plc:bulk2', (s) => trustSeen.push(s));
-    subscribeTrustSearch(
-      { type: 'identity_attestations', query: 'did:plc:bulk1' },
-      (r) => searchSeen.push(r),
+    subscribeTrustSearch({ type: 'identity_attestations', query: 'did:plc:bulk1' }, (r) =>
+      searchSeen.push(r),
     );
     await flushAsync();
 
@@ -368,10 +363,7 @@ describe('_trustApiSubscriberCounts', () => {
   it('drops the DID/key entry entirely when the last listener unsubscribes', async () => {
     registerTrustQueryClient(new FakeQueryClient(() => null));
     const u1 = subscribeTrust('did:plc:gc', () => undefined);
-    const u2 = subscribeTrustSearch(
-      { type: 'entity_reviews', query: 'gc' },
-      () => undefined,
-    );
+    const u2 = subscribeTrustSearch({ type: 'entity_reviews', query: 'gc' }, () => undefined);
     await flushAsync();
     expect(_trustApiSubscriberCounts()).toMatchObject({
       trustDids: 1,

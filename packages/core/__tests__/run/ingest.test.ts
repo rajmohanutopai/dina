@@ -13,7 +13,10 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import { aeadDecrypt, aeadEncrypt, generateAeadKey } from '../../src/crypto/aead';
 import { AdmissionService } from '../../src/run/admission';
-import { RunClassifyService , SQLiteClassificationJobRepository } from '../../src/run/classification';
+import {
+  RunClassifyService,
+  SQLiteClassificationJobRepository,
+} from '../../src/run/classification';
 import { RunDispatchService } from '../../src/run/dispatch';
 import { RunEngine } from '../../src/run/engine';
 import { InMemoryErasureKeyStore } from '../../src/run/erasure_store';
@@ -146,7 +149,18 @@ function setup(): Harness {
     nowMsFn: () => NOW,
     tx: (fn) => adapter.transaction(fn),
   });
-  return { runService, runs, reservations, messages, jobs, admission, classify, payloads, cipher, ingest };
+  return {
+    runService,
+    runs,
+    reservations,
+    messages,
+    jobs,
+    admission,
+    classify,
+    payloads,
+    cipher,
+    ingest,
+  };
 }
 
 afterEach(() => {
@@ -155,7 +169,11 @@ afterEach(() => {
 });
 
 /** Reserve a slot on a fresh run and tag it with a correlation id. */
-function reserveAndTag(h: Harness, correlationId: string, over: Partial<CreateRunParams> = {}): string {
+function reserveAndTag(
+  h: Harness,
+  correlationId: string,
+  over: Partial<CreateRunParams> = {},
+): string {
   const run = h.runService.create(runParams(over));
   const res = h.admission.reserve(run.run_id);
   if (!res.ok) throw new Error(`reserve failed: ${JSON.stringify(res)}`);
@@ -218,7 +236,12 @@ describe('RunResponseIngest.ingestPullResponse (§7)', () => {
     h.reservations.setQueryCorrelation(r1.reservation_id, 'corr-a', NOW);
     h.ingest.ingestPullResponse(
       'corr-a',
-      verifiedMsg({ message_id: 'm1', dedup_key: 'dk', content_digest: 'a'.repeat(64), sequence: 0 }),
+      verifiedMsg({
+        message_id: 'm1',
+        dedup_key: 'dk',
+        content_digest: 'a'.repeat(64),
+        sequence: 0,
+      }),
     );
     // A retry under the SAME dedup_key but a DIFFERENT content digest.
     const r2 = h.admission.reserve(run.run_id);
@@ -226,7 +249,12 @@ describe('RunResponseIngest.ingestPullResponse (§7)', () => {
     h.reservations.setQueryCorrelation(r2.reservation_id, 'corr-b', NOW);
     const out = h.ingest.ingestPullResponse(
       'corr-b',
-      verifiedMsg({ message_id: 'm2', dedup_key: 'dk', content_digest: 'b'.repeat(64), sequence: 1 }),
+      verifiedMsg({
+        message_id: 'm2',
+        dedup_key: 'dk',
+        content_digest: 'b'.repeat(64),
+        sequence: 1,
+      }),
     );
     expect(out.outcome).toBe('content_mismatch');
     expect(h.messages.getById('m2')).toBeNull();
@@ -265,8 +293,10 @@ describe('RunResponseIngest.ingestPullResponse (§7)', () => {
     if (!r1.ok) throw new Error('reserve r1 failed');
     expect(h.reservations.setQueryCorrelation(r1.reservation_id, 'corr-1', NOW)).toBe(true);
     expect(
-      h.ingest.ingestPullResponse('corr-1', verifiedMsg({ message_id: 'orig', dedup_key: 'dk-shared' }))
-        .outcome,
+      h.ingest.ingestPullResponse(
+        'corr-1',
+        verifiedMsg({ message_id: 'orig', dedup_key: 'dk-shared' }),
+      ).outcome,
     ).toBe('enqueued');
     const cursorAfter = h.runs.getById(run.run_id)?.fetch_cursor;
     const producedAfter = h.runs.getById(run.run_id)?.produced_count;
@@ -426,7 +456,11 @@ describe('RunResponseIngest.ingestPullResponse (§7)', () => {
     // The engine's pacer reserves + stamps the correlation id itself; we capture
     // the id the egress effect is handed — nothing calls setQueryCorrelation.
     let capturedCorrelation = '';
-    const dispatch = new RunDispatchService({ messageRepo: h.messages, runRepo: h.runs, nowMsFn: () => NOW });
+    const dispatch = new RunDispatchService({
+      messageRepo: h.messages,
+      runRepo: h.runs,
+      nowMsFn: () => NOW,
+    });
     const engine = new RunEngine({
       runRepo: h.runs,
       messageRepo: h.messages,

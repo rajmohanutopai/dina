@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 10.4
  */
 
-import { addContact, resetContactDirectory, setPeopleRepository , addAlias } from '@dina/core';
+import { addContact, resetContactDirectory, setPeopleRepository, addAlias } from '@dina/core';
 import { makeFakePeopleRepo } from '@dina/test-harness';
 
 import { registerPersonLinkProvider, resetPersonLinkProvider } from '../../src/person/linking';

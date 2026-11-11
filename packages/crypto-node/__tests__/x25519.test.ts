@@ -44,10 +44,7 @@ describe('NodeCryptoAdapter — X25519 (task 3.22)', () => {
       // Alice + Bob each derive an Ed25519 keypair, convert to X25519,
       // exchange publics, scalar-mult with their own private.
       const alice = await adapter.ed25519DerivePath(seed, "m/100'");
-      const bob = await adapter.ed25519DerivePath(
-        new Uint8Array(32).fill(0x88),
-        "m/101'",
-      );
+      const bob = await adapter.ed25519DerivePath(new Uint8Array(32).fill(0x88), "m/101'");
 
       const alicePriv = await adapter.x25519FromEd25519Private(alice.privateKey);
       const alicePub = await adapter.x25519FromEd25519Public(alice.publicKey);

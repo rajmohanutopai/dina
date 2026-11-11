@@ -70,7 +70,8 @@ function isOwnerCaller(req: CoreRequest): boolean {
 }
 function writeOriginFor(req: CoreRequest): VaultOrigin {
   if (isOwnerCaller(req)) return 'owner_request';
-  if (req.callerType !== undefined && APPEND_CALLER_TYPES.has(req.callerType)) return 'staging_item';
+  if (req.callerType !== undefined && APPEND_CALLER_TYPES.has(req.callerType))
+    return 'staging_item';
   return 'agent_ask';
 }
 function deleteOriginFor(req: CoreRequest): VaultOrigin {
@@ -159,7 +160,8 @@ function agentGate(
  */
 function releaseFor(req: CoreRequest, raw: unknown): ReleaseContext | CoreResponse | undefined {
   if (raw === undefined || raw === '') return undefined;
-  const brain = req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  const brain =
+    req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
   if (!brain) return { status: 403, body: { error: 'release_session_brain_only' } };
   const sessionId = parseReleaseSession(raw);
   if (sessionId === null) return { status: 400, body: { error: 'release_session_invalid' } };
@@ -185,7 +187,9 @@ export function registerVaultRoutes(router: CoreRouter): void {
 
     try {
       const embedding =
-        Array.isArray(body.embedding) && body.embedding.length > 0 && body.embedding.every((n) => typeof n === 'number')
+        Array.isArray(body.embedding) &&
+        body.embedding.length > 0 &&
+        body.embedding.every((n) => typeof n === 'number')
           ? new Float32Array(body.embedding as number[])
           : undefined;
       const results = queryVault(
@@ -265,7 +269,11 @@ export function registerVaultRoutes(router: CoreRouter): void {
       // separate full count.
       const release = releaseFor(req, req.query.release_session);
       if (isResponse(release)) return release;
-      const page = listRecentPage(persona, { offset, limit, ...(type !== undefined ? { type } : {}) }, release);
+      const page = listRecentPage(
+        persona,
+        { offset, limit, ...(type !== undefined ? { type } : {}) },
+        release,
+      );
       return { status: 200, body: { items: page.items, count: page.items.length } };
     } catch (err) {
       return { status: 400, body: { error: errMsg(err) } };

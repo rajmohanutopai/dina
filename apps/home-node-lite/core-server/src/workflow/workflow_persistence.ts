@@ -36,11 +36,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4l task 4.82.
  */
 
-export type WorkflowTaskStatus =
-  | 'pending'
-  | 'running'
-  | 'completed'
-  | 'failed';
+export type WorkflowTaskStatus = 'pending' | 'running' | 'completed' | 'failed';
 
 export interface WorkflowTask {
   readonly id: string;
@@ -96,18 +92,14 @@ export class InMemoryWorkflowAdapter implements WorkflowPersistenceAdapter {
 
   async insert(task: WorkflowTask): Promise<void> {
     if (this.rows.has(task.id)) {
-      throw new Error(
-        `InMemoryWorkflowAdapter.insert: duplicate id ${JSON.stringify(task.id)}`,
-      );
+      throw new Error(`InMemoryWorkflowAdapter.insert: duplicate id ${JSON.stringify(task.id)}`);
     }
     this.rows.set(task.id, cloneTask(task));
   }
 
   async update(task: WorkflowTask): Promise<void> {
     if (!this.rows.has(task.id)) {
-      throw new Error(
-        `InMemoryWorkflowAdapter.update: unknown id ${JSON.stringify(task.id)}`,
-      );
+      throw new Error(`InMemoryWorkflowAdapter.update: unknown id ${JSON.stringify(task.id)}`);
     }
     this.rows.set(task.id, cloneTask(task));
   }
@@ -176,9 +168,7 @@ export class WorkflowTaskRegistry {
       throw new Error('WorkflowTaskRegistry.enqueue: kind is required');
     }
     if (typeof input.payload !== 'string') {
-      throw new Error(
-        'WorkflowTaskRegistry.enqueue: payload must be a string (JSON-encoded)',
-      );
+      throw new Error('WorkflowTaskRegistry.enqueue: payload must be a string (JSON-encoded)');
     }
     const now = this.nowMsFn();
     const task: WorkflowTask = {
@@ -330,9 +320,7 @@ export class WorkflowTaskRegistry {
   private async requireTask(id: string): Promise<WorkflowTask> {
     const task = await this.adapter.get(id);
     if (task === null) {
-      throw new Error(
-        `WorkflowTaskRegistry: task ${JSON.stringify(id)} not found`,
-      );
+      throw new Error(`WorkflowTaskRegistry: task ${JSON.stringify(id)} not found`);
     }
     return task;
   }

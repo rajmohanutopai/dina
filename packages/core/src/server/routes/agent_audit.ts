@@ -6,9 +6,9 @@
  * known metadata fields and never returns the raw audit detail blob.
  */
 
-import { isScopeAuthorized } from '../../auth/agent_scope';
 import { getAuditRepository } from '../../audit/repository';
 import { parseAuditDetail, queryAudit } from '../../audit/service';
+import { isScopeAuthorized } from '../../auth/agent_scope';
 
 import type { AuditEntry } from '../../audit/hash_chain';
 import type { CoreRouter } from '../router';

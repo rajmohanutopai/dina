@@ -51,8 +51,7 @@ export function InlineMissingCapabilityCard({
         Dina found zero live providers for this capability on the Dina Services Network.
       </Text>
       <Text style={styles.body}>
-        This is open network space: claim it by publishing a provider profile for the
-        namespace.
+        This is open network space: claim it by publishing a provider profile for the namespace.
       </Text>
 
       <View style={styles.steps}>

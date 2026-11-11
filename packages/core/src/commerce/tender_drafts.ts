@@ -33,7 +33,6 @@ import { getCommerceRuntime, type CommerceRuntime } from './runtime';
 import { getSupplierDirectory, trustIsGood, type SupplierFinding } from './supplier_directory';
 import { DEFAULT_TENDER_FANOUT } from './tender';
 
-
 export const TENDER_DRAFT_TYPE = 'tender_draft';
 
 /** How long a draft waits for the owner before it lapses. */
@@ -97,7 +96,6 @@ export interface TenderDraft {
   createdAt: number;
   expiresAt: number;
 }
-
 
 /**
  * The café's suppliers: first the ones the owner listed (HOSTED_DINA §6), then

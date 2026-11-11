@@ -109,9 +109,7 @@ describe('validateWriteForm — required fields', () => {
   it('empty form fails on headline + sentiment (confidence is auto-seeded so does NOT error)', () => {
     const v = validateWriteForm(emptyWriteFormState());
     expect(v.canPublish).toBe(false);
-    expect(v.errors).toEqual(
-      expect.arrayContaining(['headline_empty', 'sentiment_required']),
-    );
+    expect(v.errors).toEqual(expect.arrayContaining(['headline_empty', 'sentiment_required']));
     // Confidence is silently seeded to 'moderate' by the form; the
     // empty state is no longer null. The validator's
     // `confidence_required` rule still fires when a caller explicitly
@@ -121,9 +119,7 @@ describe('validateWriteForm — required fields', () => {
   });
 
   it('headline + body filled but no sentiment still fails on sentiment alone', () => {
-    const v = validateWriteForm(
-      withState({ headline: 'Great chair', body: '' }),
-    );
+    const v = validateWriteForm(withState({ headline: 'Great chair', body: '' }));
     expect(v.canPublish).toBe(false);
     expect(v.errors).toEqual(expect.arrayContaining(['sentiment_required']));
     expect(v.errors).not.toContain('headline_empty');
@@ -293,12 +289,7 @@ describe('option lists are stable', () => {
   });
 
   it('CONFIDENCE_OPTIONS = [certain, high, moderate, speculative]', () => {
-    expect(CONFIDENCE_OPTIONS).toEqual([
-      'certain',
-      'high',
-      'moderate',
-      'speculative',
-    ]);
+    expect(CONFIDENCE_OPTIONS).toEqual(['certain', 'high', 'moderate', 'speculative']);
   });
 });
 
@@ -329,9 +320,7 @@ describe('LAST_USED_BUCKETS — closed enum', () => {
   });
 
   it('label keys are exactly the bucket enum (no extras, no missing)', () => {
-    expect(Object.keys(LAST_USED_BUCKET_LABEL).sort()).toEqual(
-      [...LAST_USED_BUCKETS].sort(),
-    );
+    expect(Object.keys(LAST_USED_BUCKET_LABEL).sort()).toEqual([...LAST_USED_BUCKETS].sort());
   });
 });
 
@@ -442,15 +431,11 @@ describe('emptyWriteFormState — lastUsedBucket field (TN-V2-REV-007)', () => {
 
 describe('useCasesForCategory — vocabulary lookup', () => {
   it('returns the tech vocabulary for tech/* categories', () => {
-    expect(useCasesForCategory('tech/laptop')).toEqual(
-      USE_CASE_BY_CATEGORY['tech'],
-    );
+    expect(useCasesForCategory('tech/laptop')).toEqual(USE_CASE_BY_CATEGORY['tech']);
   });
 
   it('returns the books vocabulary for books/* categories', () => {
-    expect(useCasesForCategory('books/fiction')).toEqual(
-      USE_CASE_BY_CATEGORY['books'],
-    );
+    expect(useCasesForCategory('books/fiction')).toEqual(USE_CASE_BY_CATEGORY['books']);
   });
 
   it('falls back to default for unknown categories', () => {
@@ -466,16 +451,12 @@ describe('useCasesForCategory — vocabulary lookup', () => {
 
   it('uses ONLY the first slash-segment for lookup', () => {
     // 'tech/anything/deeper' should still resolve to 'tech'.
-    expect(useCasesForCategory('tech/anything/deeper')).toEqual(
-      USE_CASE_BY_CATEGORY['tech'],
-    );
+    expect(useCasesForCategory('tech/anything/deeper')).toEqual(USE_CASE_BY_CATEGORY['tech']);
   });
 
   it('lowercases the head segment before lookup', () => {
     // 'TECH/something' → 'tech' → tech vocabulary.
-    expect(useCasesForCategory('TECH/something')).toEqual(
-      USE_CASE_BY_CATEGORY['tech'],
-    );
+    expect(useCasesForCategory('TECH/something')).toEqual(USE_CASE_BY_CATEGORY['tech']);
   });
 
   it('every entry in the table has a non-empty list', () => {
@@ -520,30 +501,18 @@ describe('toggleUseCase — tap-to-toggle mutator', () => {
   });
 
   it('preserves order when removing from the middle', () => {
-    const out = toggleUseCase(
-      ['everyday', 'professional', 'travel'],
-      'professional',
-      VOCAB,
-    );
+    const out = toggleUseCase(['everyday', 'professional', 'travel'], 'professional', VOCAB);
     expect(out).toEqual(['everyday', 'travel']);
   });
 
   it('rejects (no-op) when at the cap and adding a new tag', () => {
     expect(MAX_USE_CASES).toBe(3);
-    const out = toggleUseCase(
-      ['everyday', 'professional', 'travel'],
-      'gaming',
-      VOCAB,
-    );
+    const out = toggleUseCase(['everyday', 'professional', 'travel'], 'gaming', VOCAB);
     expect(out).toEqual(['everyday', 'professional', 'travel']);
   });
 
   it('still allows REMOVE at the cap (toggle off works regardless of length)', () => {
-    const out = toggleUseCase(
-      ['everyday', 'professional', 'travel'],
-      'everyday',
-      VOCAB,
-    );
+    const out = toggleUseCase(['everyday', 'professional', 'travel'], 'everyday', VOCAB);
     expect(out).toEqual(['professional', 'travel']);
   });
 
@@ -853,15 +822,13 @@ describe('priceFromForm', () => {
   const now = () => FROZEN_NOW;
 
   it('returns unset when priceLow is empty (the field is optional)', () => {
-    expect(
-      priceFromForm({ priceLow: '', priceHigh: '50', priceCurrency: 'USD' }, now),
-    ).toEqual({ kind: 'unset' });
+    expect(priceFromForm({ priceLow: '', priceHigh: '50', priceCurrency: 'USD' }, now)).toEqual({
+      kind: 'unset',
+    });
   });
 
   it('builds a point price when priceHigh is empty', () => {
-    expect(
-      priceFromForm({ priceLow: '29.99', priceHigh: '', priceCurrency: 'usd' }, now),
-    ).toEqual({
+    expect(priceFromForm({ priceLow: '29.99', priceHigh: '', priceCurrency: 'usd' }, now)).toEqual({
       kind: 'ok',
       price: {
         low_e7: 299_900_000,
@@ -874,10 +841,7 @@ describe('priceFromForm', () => {
 
   it('builds a range when priceHigh > priceLow', () => {
     expect(
-      priceFromForm(
-        { priceLow: '19.99', priceHigh: '49.99', priceCurrency: 'GBP' },
-        now,
-      ),
+      priceFromForm({ priceLow: '19.99', priceHigh: '49.99', priceCurrency: 'GBP' }, now),
     ).toEqual({
       kind: 'ok',
       price: {
@@ -891,43 +855,34 @@ describe('priceFromForm', () => {
 
   it('rejects priceHigh below priceLow', () => {
     expect(
-      priceFromForm(
-        { priceLow: '49.99', priceHigh: '19.99', priceCurrency: 'USD' },
-        now,
-      ),
+      priceFromForm({ priceLow: '49.99', priceHigh: '19.99', priceCurrency: 'USD' }, now),
     ).toEqual({ kind: 'invalid', error: 'price_high_below_low' });
   });
 
   it('rejects unparseable priceLow', () => {
-    expect(
-      priceFromForm({ priceLow: 'abc', priceHigh: '', priceCurrency: 'USD' }, now),
-    ).toEqual({ kind: 'invalid', error: 'price_low_invalid' });
+    expect(priceFromForm({ priceLow: 'abc', priceHigh: '', priceCurrency: 'USD' }, now)).toEqual({
+      kind: 'invalid',
+      error: 'price_low_invalid',
+    });
   });
 
   it('rejects unparseable priceHigh', () => {
-    expect(
-      priceFromForm(
-        { priceLow: '10', priceHigh: 'abc', priceCurrency: 'USD' },
-        now,
-      ),
-    ).toEqual({ kind: 'invalid', error: 'price_high_invalid' });
+    expect(priceFromForm({ priceLow: '10', priceHigh: 'abc', priceCurrency: 'USD' }, now)).toEqual({
+      kind: 'invalid',
+      error: 'price_high_invalid',
+    });
   });
 
   it('rejects malformed currency', () => {
-    expect(
-      priceFromForm({ priceLow: '10', priceHigh: '', priceCurrency: '$' }, now),
-    ).toEqual({ kind: 'invalid', error: 'price_currency_invalid' });
+    expect(priceFromForm({ priceLow: '10', priceHigh: '', priceCurrency: '$' }, now)).toEqual({
+      kind: 'invalid',
+      error: 'price_currency_invalid',
+    });
   });
 
   it('lastSeenMs reflects injectable now (deterministic)', () => {
-    const r1 = priceFromForm(
-      { priceLow: '1', priceHigh: '', priceCurrency: 'USD' },
-      () => 1000,
-    );
-    const r2 = priceFromForm(
-      { priceLow: '1', priceHigh: '', priceCurrency: 'USD' },
-      () => 2000,
-    );
+    const r1 = priceFromForm({ priceLow: '1', priceHigh: '', priceCurrency: 'USD' }, () => 1000);
+    const r2 = priceFromForm({ priceLow: '1', priceHigh: '', priceCurrency: 'USD' }, () => 2000);
     expect(r1.kind === 'ok' ? r1.price.lastSeenMs : null).toBe(1000);
     expect(r2.kind === 'ok' ? r2.price.lastSeenMs : null).toBe(2000);
   });
@@ -1015,9 +970,7 @@ describe('toggleTagInVocabulary', () => {
   });
 
   it('removes a tag when present', () => {
-    expect(toggleTagInVocabulary(['halal', 'kosher'], 'halal', VOCAB, 5)).toEqual([
-      'kosher',
-    ]);
+    expect(toggleTagInVocabulary(['halal', 'kosher'], 'halal', VOCAB, 5)).toEqual(['kosher']);
   });
 
   it('no-ops when tag is not in vocabulary (closed-vocab)', () => {
@@ -1025,21 +978,18 @@ describe('toggleTagInVocabulary', () => {
   });
 
   it('no-ops when at cap and tag is absent', () => {
-    expect(
-      toggleTagInVocabulary(['halal', 'kosher', 'vegan'], 'halal', VOCAB, 3).slice(),
-    ).toEqual(['kosher', 'vegan']); // remove still works
-    expect(
-      toggleTagInVocabulary(['halal', 'kosher', 'vegan'], 'halal', VOCAB, 1).slice(),
-    ).toEqual(['kosher', 'vegan']);
+    expect(toggleTagInVocabulary(['halal', 'kosher', 'vegan'], 'halal', VOCAB, 3).slice()).toEqual([
+      'kosher',
+      'vegan',
+    ]); // remove still works
+    expect(toggleTagInVocabulary(['halal', 'kosher', 'vegan'], 'halal', VOCAB, 1).slice()).toEqual([
+      'kosher',
+      'vegan',
+    ]);
   });
 
   it('respects the per-call cap', () => {
-    const out = toggleTagInVocabulary(
-      ['halal', 'kosher'],
-      'vegan',
-      VOCAB,
-      2,
-    );
+    const out = toggleTagInVocabulary(['halal', 'kosher'], 'vegan', VOCAB, 2);
     expect(out).toEqual(['halal', 'kosher']); // at cap → no-op
   });
 });
@@ -1278,9 +1228,7 @@ describe('serializeFormToV2Extras — populated', () => {
   });
 
   it('omits reviewerExperience when null', () => {
-    expect(
-      serializeFormToV2Extras(emptyWriteFormState(), now).reviewerExperience,
-    ).toBeUndefined();
+    expect(serializeFormToV2Extras(emptyWriteFormState(), now).reviewerExperience).toBeUndefined();
   });
 
   it('includes lastUsedMs from bucket midpoint', () => {

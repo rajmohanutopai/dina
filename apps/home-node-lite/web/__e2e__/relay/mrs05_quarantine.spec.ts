@@ -19,7 +19,14 @@
 import { test, expect } from '@playwright/test';
 
 import { attachHygiene } from './relay_hygiene';
-import { NODES, debugHeaders, dispatch, nodeDid, openAsOwner, relaySkipReason } from './relay_nodes';
+import {
+  NODES,
+  debugHeaders,
+  dispatch,
+  nodeDid,
+  openAsOwner,
+  relaySkipReason,
+} from './relay_nodes';
 
 interface SeedResult {
   quarantined: { id: string; senderDID: string };
@@ -38,7 +45,7 @@ async function seedQuarantine(senderDid: string, body: string): Promise<string> 
 
 async function stillQuarantined(senderDid: string): Promise<boolean> {
   const { body } = await dispatch(NODES.sancho, 'GET', '/v1/d2d/quarantine');
-  const msgs = ((body as { messages?: { senderDID: string }[] }).messages ?? []);
+  const msgs = (body as { messages?: { senderDID: string }[] }).messages ?? [];
   return msgs.some((m) => m.senderDID === senderDid);
 }
 

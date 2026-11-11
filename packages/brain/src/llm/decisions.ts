@@ -103,10 +103,12 @@ export function parseAnswers(request: DecisionRequest, raw: unknown): DecisionAn
     const a = (raw as Record<string, unknown>)[key] as Record<string, unknown> | undefined;
     if (a === undefined || a === null) throw new Error('jev: an answer is missing');
     if (question.type === 'noul') {
-      if (typeof a.noul !== 'number' || !Number.isFinite(a.noul)) throw new Error('jev: bad noul answer');
+      if (typeof a.noul !== 'number' || !Number.isFinite(a.noul))
+        throw new Error('jev: bad noul answer');
       out[key] = { type: 'noul', noul: a.noul };
     } else {
-      if (typeof a.choice !== 'string' || !(a.choice in question.criteria)) throw new Error('jev: bad choice answer');
+      if (typeof a.choice !== 'string' || !(a.choice in question.criteria))
+        throw new Error('jev: bad choice answer');
       const probabilities = (a.probabilities ?? {}) as Record<string, number>;
       out[key] = {
         type: 'choice',

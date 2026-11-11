@@ -11,7 +11,9 @@ const NOW = Date.parse('2026-10-08T12:00:00Z');
 
 describe('availability notes', () => {
   it('says nothing for a fresh provider or an older AppView', () => {
-    expect(availabilityNote({ liveness: 'fresh', lastSeenAt: '2026-10-08T11:00:00Z' }, NOW)).toBeUndefined();
+    expect(
+      availabilityNote({ liveness: 'fresh', lastSeenAt: '2026-10-08T11:00:00Z' }, NOW),
+    ).toBeUndefined();
     expect(availabilityNote({}, NOW)).toBeUndefined();
   });
 
@@ -42,14 +44,30 @@ describe('fallbacks prefer live providers', () => {
       orchestrator: {
         issueQueryToDID: async (req: { fallbacks?: { toDID: string }[] }) => {
           issued.push(req);
-          return { taskId: 't', queryId: 'q', toDID: 'did:plc:chosen', serviceName: 'x', deduped: false };
+          return {
+            taskId: 't',
+            queryId: 'q',
+            toDID: 'did:plc:chosen',
+            serviceName: 'x',
+            deduped: false,
+          };
         },
       } as never,
       appViewClient: {
-        searchServices: async () => [p('did:plc:chosen', 'fresh'), p('did:plc:old', 'stale'), p('did:plc:live2', 'fresh'), p('did:plc:legacy', 'unknown')],
+        searchServices: async () => [
+          p('did:plc:chosen', 'fresh'),
+          p('did:plc:old', 'stale'),
+          p('did:plc:live2', 'fresh'),
+          p('did:plc:legacy', 'unknown'),
+        ],
       },
     });
-    await tool.execute({ operator_did: 'did:plc:chosen', capability: 'eta_query', params: {}, service_uri: 'at://did:plc:chosen/com.dinakernel.service.profile/self' });
+    await tool.execute({
+      operator_did: 'did:plc:chosen',
+      capability: 'eta_query',
+      params: {},
+      service_uri: 'at://did:plc:chosen/com.dinakernel.service.profile/self',
+    });
     expect(issued[0]?.fallbacks?.map((f) => f.toDID)).toEqual(['did:plc:live2']);
   });
 
@@ -59,12 +77,25 @@ describe('fallbacks prefer live providers', () => {
       orchestrator: {
         issueQueryToDID: async (req: { fallbacks?: { toDID: string }[] }) => {
           issued.push(req);
-          return { taskId: 't', queryId: 'q', toDID: 'did:plc:chosen', serviceName: 'x', deduped: false };
+          return {
+            taskId: 't',
+            queryId: 'q',
+            toDID: 'did:plc:chosen',
+            serviceName: 'x',
+            deduped: false,
+          };
         },
       } as never,
-      appViewClient: { searchServices: async () => [p('did:plc:chosen', 'fresh'), p('did:plc:old', 'stale')] },
+      appViewClient: {
+        searchServices: async () => [p('did:plc:chosen', 'fresh'), p('did:plc:old', 'stale')],
+      },
     });
-    await tool.execute({ operator_did: 'did:plc:chosen', capability: 'eta_query', params: {}, service_uri: 'at://did:plc:chosen/com.dinakernel.service.profile/self' });
+    await tool.execute({
+      operator_did: 'did:plc:chosen',
+      capability: 'eta_query',
+      params: {},
+      service_uri: 'at://did:plc:chosen/com.dinakernel.service.profile/self',
+    });
     expect(issued[0]?.fallbacks?.map((f) => f.toDID)).toEqual(['did:plc:old']);
   });
 });

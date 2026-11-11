@@ -14,8 +14,6 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   InMemoryNotificationLogRepository,
   SqliteNotificationLogRepository,
@@ -24,6 +22,8 @@ import {
   type NotificationLogRepository,
   type StoredNotificationItem,
 } from '../../src/notifications/repository';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
 function mkItem(overrides: Partial<StoredNotificationItem> = {}): StoredNotificationItem {
   return {
@@ -319,4 +319,3 @@ describe('SqliteNotificationLogRepository (durable, migration v27)', () => {
     adapter = reopened;
   });
 });
-

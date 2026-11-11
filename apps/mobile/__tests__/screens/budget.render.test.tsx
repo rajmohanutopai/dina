@@ -80,13 +80,7 @@ describe('BUDGET_CATEGORIES — list shape', () => {
 
   it('contains the canonical anchor categories', () => {
     const keys = new Set(BUDGET_CATEGORIES.map((c) => c.key));
-    for (const expected of [
-      'food',
-      'electronics',
-      'home',
-      'travel',
-      'clothing',
-    ]) {
+    for (const expected of ['food', 'electronics', 'home', 'travel', 'clothing']) {
       expect(keys.has(expected)).toBe(true);
     }
   });
@@ -136,16 +130,14 @@ describe('BudgetScreen — render', () => {
         getByTestId('budget-segment-electronics-tier-2').props.accessibilityState.selected,
       ).toBe(true);
     });
-    expect(
-      getByTestId('budget-segment-electronics-none').props.accessibilityState.selected,
-    ).toBe(false);
-    expect(
-      getByTestId('budget-segment-food-tier-3').props.accessibilityState.selected,
-    ).toBe(true);
+    expect(getByTestId('budget-segment-electronics-none').props.accessibilityState.selected).toBe(
+      false,
+    );
+    expect(getByTestId('budget-segment-food-tier-3').props.accessibilityState.selected).toBe(true);
     // A category with no stored tier is None-selected.
-    expect(
-      getByTestId('budget-segment-clothing-none').props.accessibilityState.selected,
-    ).toBe(true);
+    expect(getByTestId('budget-segment-clothing-none').props.accessibilityState.selected).toBe(
+      true,
+    );
   });
 });
 
@@ -301,12 +293,12 @@ describe('BudgetScreen — accessibility', () => {
     expect(getByTestId('budget-segment-electronics-none').props.accessibilityLabel).toBe(
       'No filter',
     );
-    expect(
-      getByTestId('budget-segment-electronics-tier-1').props.accessibilityLabel,
-    ).toBe('Tier $');
-    expect(
-      getByTestId('budget-segment-electronics-tier-3').props.accessibilityLabel,
-    ).toBe('Tier $$$');
+    expect(getByTestId('budget-segment-electronics-tier-1').props.accessibilityLabel).toBe(
+      'Tier $',
+    );
+    expect(getByTestId('budget-segment-electronics-tier-3').props.accessibilityLabel).toBe(
+      'Tier $$$',
+    );
   });
 });
 

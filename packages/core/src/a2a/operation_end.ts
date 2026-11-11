@@ -47,7 +47,8 @@ export const A2A_RESULT_HELD_EVENT = 'a2a_result_held';
 function anchorTaskId(runtime: A2ARuntime, op: A2ATaskRow): string | null {
   for (const role of ['dispatch', 'approval'] as const) {
     const child = runtime.store.childrenOf(op.id, role)[0];
-    if (child !== undefined && runtime.repository.getById(child.child_task_id) !== null) return child.child_task_id;
+    if (child !== undefined && runtime.repository.getById(child.child_task_id) !== null)
+      return child.child_task_id;
   }
   return null;
 }
@@ -84,13 +85,17 @@ export function appendA2AOwnerEvent(runtime: A2ARuntime, op: A2ATaskRow, kind: s
  * ended, with their A2A rows, workflow children and (inbound) receipts.
  * Returns how many went.
  */
-export function purgeEndedA2AOperations(runtime: A2ARuntime, retentionMs = A2A_ENDED_RETENTION_MS): number {
+export function purgeEndedA2AOperations(
+  runtime: A2ARuntime,
+  retentionMs = A2A_ENDED_RETENTION_MS,
+): number {
   // Originals go first and sooner: 7 days after their operation ends.
   purgeEndedEntities(runtime);
   const cutoff = runtime.nowMs() - retentionMs;
   let purged = 0;
   for (const direction of ['outbound', 'inbound'] as const) {
-    const ended: ReadonlySet<string> = direction === 'outbound' ? TERMINAL_OUTBOUND_STATES : TERMINAL_INBOUND_STATES;
+    const ended: ReadonlySet<string> =
+      direction === 'outbound' ? TERMINAL_OUTBOUND_STATES : TERMINAL_INBOUND_STATES;
     for (const op of runtime.store.listEndedTasksBefore(direction, cutoff, PURGE_BATCH)) {
       const gone = runtime.store.transaction((): boolean => {
         const now = runtime.store.getTask(op.id);

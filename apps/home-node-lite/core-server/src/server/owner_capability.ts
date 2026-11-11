@@ -100,9 +100,7 @@ export function resolveOwnerCapability(
   const fromEnv = env.DINA_OWNER_CAPABILITY?.trim() ?? '';
   if (fromEnv !== '') {
     if (fromEnv.length < MIN_CAPABILITY_LENGTH) {
-      throw new Error(
-        `DINA_OWNER_CAPABILITY must be at least ${MIN_CAPABILITY_LENGTH} characters`,
-      );
+      throw new Error(`DINA_OWNER_CAPABILITY must be at least ${MIN_CAPABILITY_LENGTH} characters`);
     }
     return { capability: fromEnv, source: 'env' };
   }
