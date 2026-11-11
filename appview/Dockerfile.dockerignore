@@ -25,3 +25,5 @@ packages/protocol/
 packages/managed-runtime/
 packages/*-expo/
 packages/*-node/
+# AppView's merchant index needs this one node package.
+!packages/net-socket-node/

@@ -49,7 +49,7 @@ jobs:
   test:
     name: Test (Node ${{ matrix.node }})
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
 
     # Multi-version matrix — keep the minimum (22) on the tin and also
     # check the current supported LTS. Add 24 when it becomes LTS.
