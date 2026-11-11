@@ -130,11 +130,9 @@ export function loadPersonaConfig(opts: LoadPersonaConfigOptions): LoadedPersona
     // Node's fs throws an Error with `.code = 'ENOENT'` for missing files.
     const code = (err as NodeJS.ErrnoException).code;
     if (code === 'ENOENT') {
-      throw new PersonaConfigError(
-        'missing_file',
-        `persona config not found at ${opts.path}`,
-        { path: opts.path },
-      );
+      throw new PersonaConfigError('missing_file', `persona config not found at ${opts.path}`, {
+        path: opts.path,
+      });
     }
     throw new PersonaConfigError(
       'invalid_json',
@@ -226,7 +224,5 @@ export function serializePersonaConfig(loaded: LoadedPersonaConfig): PersonaConf
 }
 
 export function isCanonicalTier(tier: string): tier is PersonaTier {
-  return (
-    tier === 'default' || tier === 'standard' || tier === 'sensitive' || tier === 'locked'
-  );
+  return tier === 'default' || tier === 'standard' || tier === 'sensitive' || tier === 'locked';
 }

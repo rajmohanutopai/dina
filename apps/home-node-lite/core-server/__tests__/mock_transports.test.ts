@@ -12,8 +12,10 @@ const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 
 describe('MockPdsTransport (task 6.25)', () => {
   it('dispatches to registered handler', async () => {
-    const mock = new MockPdsTransport()
-      .respond('createSession', { status: 200, body: { did: DID } });
+    const mock = new MockPdsTransport().respond('createSession', {
+      status: 200,
+      body: { did: DID },
+    });
     const result = await mock.fetchFn('createSession', { handle: 'alice' });
     expect(result.status).toBe(200);
     expect((result.body as { did: string }).did).toBe(DID);
@@ -185,8 +187,10 @@ describe('MockPlcTransport (task 6.25)', () => {
 
 describe('MockAppViewTransport (task 6.25)', () => {
   it('dispatches per-method', async () => {
-    const mock = new MockAppViewTransport()
-      .respond('trust.resolve', { status: 200, body: { did: DID } });
+    const mock = new MockAppViewTransport().respond('trust.resolve', {
+      status: 200,
+      body: { did: DID },
+    });
     const fetcher = mock.fetcher('trust.resolve');
     const r = await fetcher({ did: DID });
     expect(r.status).toBe(200);
@@ -256,9 +260,8 @@ describe('MockAppViewTransport (task 6.25)', () => {
 describe('integration: mock transports drive real clients', () => {
   it('MockPdsTransport wires cleanly into SessionManager', async () => {
     const { SessionManager } = await import('../src/appview/session_manager');
-    const { SessionTokenStore, InMemoryKeystoreAdapter } = await import(
-      '../src/appview/session_token_store'
-    );
+    const { SessionTokenStore, InMemoryKeystoreAdapter } =
+      await import('../src/appview/session_token_store');
     const mock = new MockPdsTransport().respond('createSession', {
       status: 200,
       body: {
@@ -283,9 +286,7 @@ describe('integration: mock transports drive real clients', () => {
   });
 
   it('MockAppViewTransport wires cleanly into trust.resolve client', async () => {
-    const { createTrustResolveClient } = await import(
-      '../src/appview/peerlens_resolve_client'
-    );
+    const { createTrustResolveClient } = await import('../src/appview/peerlens_resolve_client');
     const mock = new MockAppViewTransport().respond('trust.resolve', {
       status: 200,
       body: {

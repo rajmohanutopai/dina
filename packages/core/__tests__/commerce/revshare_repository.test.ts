@@ -100,13 +100,23 @@ describe.each(backends)('revshare document store ($name)', ({ make }) => {
     });
     for (const entry of [proposal, note, ack]) expect(repo.put(entry)).toBe(true);
 
-    expect(repo.listByProposal(proposal.recordDigest, 'settlement_note').map((r) => r.recordDigest)).toEqual([note.recordDigest]);
-    expect(repo.listByProposal(proposal.recordDigest, 'settlement_ack').map((r) => r.recordDigest)).toEqual([ack.recordDigest]);
-    expect(repo.answersTo(note.recordDigest, 'settlement_ack').map((r) => r.recordDigest)).toEqual([ack.recordDigest]);
+    expect(
+      repo.listByProposal(proposal.recordDigest, 'settlement_note').map((r) => r.recordDigest),
+    ).toEqual([note.recordDigest]);
+    expect(
+      repo.listByProposal(proposal.recordDigest, 'settlement_ack').map((r) => r.recordDigest),
+    ).toEqual([ack.recordDigest]);
+    expect(repo.answersTo(note.recordDigest, 'settlement_ack').map((r) => r.recordDigest)).toEqual([
+      ack.recordDigest,
+    ]);
     expect(repo.answersTo(note.recordDigest, 'settlement_note')).toEqual([]);
     expect(
-      repo.listByCounterparty('did:plc:vendor000000000000000000', 'agreement_proposal').map((r) => r.recordDigest),
+      repo
+        .listByCounterparty('did:plc:vendor000000000000000000', 'agreement_proposal')
+        .map((r) => r.recordDigest),
     ).toEqual([proposal.recordDigest]);
-    expect(repo.listByCounterparty('did:plc:nobody0000000000000000000', 'agreement_proposal')).toEqual([]);
+    expect(
+      repo.listByCounterparty('did:plc:nobody0000000000000000000', 'agreement_proposal'),
+    ).toEqual([]);
   });
 });

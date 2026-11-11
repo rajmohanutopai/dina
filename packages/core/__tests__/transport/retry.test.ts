@@ -133,7 +133,12 @@ describe('SQL-backed restart drain', () => {
     const dbPath = path.join(dir, 'identity.sqlite');
     const passphraseHex = randomBytes(32).toString('hex');
     const open = () => {
-      const a = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+      const a = new NodeSQLiteAdapter({
+        path: dbPath,
+        passphraseHex,
+        journalMode: 'WAL',
+        synchronous: 'NORMAL',
+      });
       applyMigrations(a, IDENTITY_MIGRATIONS);
       return a;
     };

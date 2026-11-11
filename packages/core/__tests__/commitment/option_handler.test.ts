@@ -71,7 +71,11 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, composeWorkflowHooks, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  composeWorkflowHooks,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 import type { NegotiationBrief } from '../../src/commitment/strategy_submit';
 
@@ -312,7 +316,9 @@ describe('the option family on two nodes', () => {
     await runOptionLinkTick(graceEnd + 3600_000); // a status query now
     // The buyer's node: the notice is checked against its own order.
     installFallbackNoticeCheck(({ supplierDid, notice }) =>
-      supplierDid === SELLER && notice.purchase_order_id === 'po-1' ? { buyerDid: BUYER, exitRight: false } : null,
+      supplierDid === SELLER && notice.purchase_order_id === 'po-1'
+        ? { buyerDid: BUYER, exitRight: false }
+        : null,
     );
     const buyer = openNode(BUYER);
     try {
@@ -376,7 +382,8 @@ describe('the option family on two nodes', () => {
     installExitRightPort({
       sellerOrderHoldsExit: (buyerDid, po) => buyerDid === BUYER && po === 'po-1',
       quoteGrantsExit: (quoteId) => quoteId === 'q-1',
-      buyerCancellation: (supplierDid, po) => (supplierDid === SELLER && po === 'po-1' ? cancellation : null),
+      buyerCancellation: (supplierDid, po) =>
+        supplierDid === SELLER && po === 'po-1' ? cancellation : null,
       cancelForExit: (buyerDid, c) => {
         cancelled.push({ buyer: buyerDid, cancellation: c });
         return 'cancelled';
@@ -392,12 +399,16 @@ describe('the option family on two nodes', () => {
     const later = Date.parse(link?.option?.hold_until ?? '') + 48 * 3600_000 + 3600_000;
     // An exit before any fallback is refused: the right holds only once the run fell through.
     as(seller);
-    expect(await handleOptionMessage(BUYER, { v: 1, kind: 'exit', cancellation }, NOW)).toBe('refused');
+    expect(await handleOptionMessage(BUYER, { v: 1, kind: 'exit', cancellation }, NOW)).toBe(
+      'refused',
+    );
     await runOptionLinkTick(NOW + 3600_000);
     wire = [];
     await runOptionLinkTick(later);
     installFallbackNoticeCheck(({ supplierDid, notice }) =>
-      supplierDid === SELLER && notice.purchase_order_id === 'po-1' ? { buyerDid: BUYER, exitRight: true } : null,
+      supplierDid === SELLER && notice.purchase_order_id === 'po-1'
+        ? { buyerDid: BUYER, exitRight: true }
+        : null,
     );
     const buyer = openNode(BUYER);
     const deliverAll = async (): Promise<void> => {
@@ -428,7 +439,10 @@ describe('the option family on two nodes', () => {
     try {
       const { card, buyer, deliverAll, cancellation } = await toExitCard(cancelled);
       try {
-        expect(JSON.parse(card?.payload ?? '{}')).toMatchObject({ type: 'option_exit', supplier_did: SELLER });
+        expect(JSON.parse(card?.payload ?? '{}')).toMatchObject({
+          type: 'option_exit',
+          supplier_did: SELLER,
+        });
         expect(workflow.store().getById(`option-fallback-${SELLER}-po-1`)).toBeNull();
         workflow.approve(card?.id ?? '');
         await settleSends();
@@ -509,7 +523,9 @@ describe('the option family on two nodes', () => {
           [SELLER, 'po-1', JSON.stringify(cancellation), later],
         );
         if (stage === 'running')
-          workflow.store().transition(card?.id ?? '', WorkflowTaskState.Queued, WorkflowTaskState.Running, later);
+          workflow
+            .store()
+            .transition(card?.id ?? '', WorkflowTaskState.Queued, WorkflowTaskState.Running, later);
         await runOptionLinkTick(later + 60_000);
         await settleSends();
         expect(workflow.store().getById(card?.id ?? '')?.status).toBe('completed');
@@ -635,7 +651,10 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
   const offers = () => wire.filter((m) => m.body.kind === 'option');
   const feeMove = (requestId: string, fee: string, seller = SELLER) =>
     commitShipperFeeMove({
-      input: { kind: 'delivery.shipper', ref: { negotiationId: shipperTurnId(seller, requestId), turn: 0 } },
+      input: {
+        kind: 'delivery.shipper',
+        ref: { negotiationId: shipperTurnId(seller, requestId), turn: 0 },
+      },
       result: { move: { kind: 'propose', versions: [{ terms: [{ name: 'fee', value: fee }] }] } },
     });
 
@@ -729,9 +748,9 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
       shipperTurnId(other, requestId),
     ]);
     expect((await feeMove(requestId, '26000', other)).receipt).toEqual({ outcome: 'answered' });
-    expect(wire.filter((m) => m.to === other && m.body.kind === 'option').map((m) => m.body.fee_minor)).toEqual([
-      '26000',
-    ]);
+    expect(
+      wire.filter((m) => m.to === other && m.body.kind === 'option').map((m) => m.body.fee_minor),
+    ).toEqual(['26000']);
     // The first seller's turn is untouched.
     expect(offers().filter((m) => m.to === SELLER)).toEqual([]);
   });
@@ -741,21 +760,41 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
     as(shipper);
     await handleOptionMessage(
       SELLER,
-      { v: 1, kind: 'request', request_id: 'req-full', service_at: RUN_AT, crates: 11, postal_code: '560001' },
+      {
+        v: 1,
+        kind: 'request',
+        request_id: 'req-full',
+        service_at: RUN_AT,
+        crates: 11,
+        postal_code: '560001',
+      },
       NOW,
     );
-    expect(wire.map((m) => m.body)).toEqual([expect.objectContaining({ kind: 'decline', reason: 'full' })]);
+    expect(wire.map((m) => m.body)).toEqual([
+      expect.objectContaining({ kind: 'decline', reason: 'full' }),
+    ]);
     // A run whose hold would no longer fit after Brain's wait: the asking fee, at once.
     // The run is 98 h 20 min away: the hold (ending 72 h before it, at least
     // 26 h long) fits now, but not after 50 minutes.
     const late = Date.parse(RUN_AT) - (98 * 3600_000 + 20 * 60_000);
     await handleOptionMessage(
       SELLER,
-      { v: 1, kind: 'request', request_id: 'req-soon', service_at: RUN_AT, crates: 1, postal_code: '560001' },
+      {
+        v: 1,
+        kind: 'request',
+        request_id: 'req-soon',
+        service_at: RUN_AT,
+        crates: 1,
+        postal_code: '560001',
+      },
       late,
     );
     expect(briefs).toEqual([]);
-    expect(wire.at(-1)?.body).toMatchObject({ kind: 'option', request_id: 'req-soon', fee_minor: '30000' });
+    expect(wire.at(-1)?.body).toMatchObject({
+      kind: 'option',
+      request_id: 'req-soon',
+      fee_minor: '30000',
+    });
   });
 
   it('H-16: a run whose hold would not fit by the seller’s next resend never waits for Brain', async () => {
@@ -764,7 +803,14 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
     as(shipper);
     await handleOptionMessage(
       SELLER,
-      { v: 1, kind: 'request', request_id: 'req-hour', service_at: RUN_AT, crates: 1, postal_code: '560001' },
+      {
+        v: 1,
+        kind: 'request',
+        request_id: 'req-hour',
+        service_at: RUN_AT,
+        crates: 1,
+        postal_code: '560001',
+      },
       late,
     );
     expect(briefs).toEqual([]);
@@ -795,14 +841,19 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
       workflow = new WorkflowService({
         repository: repo,
         nowMsFn: () => NOW,
-        ...composeWorkflowHooks(optionWorkflowHooks({ nowMs: () => NOW }), ownerQuestionWorkflowHooks({ nowMs: () => NOW })),
+        ...composeWorkflowHooks(
+          optionWorkflowHooks({ nowMs: () => NOW }),
+          ownerQuestionWorkflowHooks({ nowMs: () => NOW }),
+        ),
       });
       setWorkflowService(workflow);
     });
     afterEach(() => installOwnerQuestions(null));
 
     const seen = (n: number) =>
-      n === 0 ? {} : { ownerAnswers: Array.from({ length: n }, () => ({ question: 'q', answer: 'yes' })) };
+      n === 0
+        ? {}
+        : { ownerAnswers: Array.from({ length: n }, () => ({ question: 'q', answer: 'yes' })) };
     const askOwner = (requestId: string, question: string, answersSeen = 0) =>
       commitShipperFeeMove({
         input: {
@@ -827,13 +878,17 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
     it('H-18: a question waits on its card across the seller’s resends; a yes goes back to Brain, whose fee then goes', async () => {
       const requestId = await ask();
       as(shipper);
-      expect((await askOwner(requestId, 'This seller paid late twice. Ask ₹50 more?')).receipt).toEqual({
+      expect(
+        (await askOwner(requestId, 'This seller paid late twice. Ask ₹50 more?')).receipt,
+      ).toEqual({
         outcome: 'asked_owner',
       });
       const cardId = openCard(requestId);
       const card = workflow.store().getById(cardId);
       expect(card?.status).toBe('pending_approval');
-      expect(card?.description).toBe('Brain asks, on a delivery run: This seller paid late twice. Ask ₹50 more?');
+      expect(card?.description).toBe(
+        'Brain asks, on a delivery run: This seller paid late twice. Ask ₹50 more?',
+      );
       expect(card?.payload).not.toMatch(new RegExp(`${SELLER}|${requestId}`));
       // The run is a week away: the card stays open a day.
       expect(card?.expires_at).toBe(Math.floor((NOW + 24 * 3600_000) / 1000));
@@ -886,7 +941,9 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
       await askOwner(requestId, 'Offer Tuesday below the usual?');
       workflow.cancel(openCard(requestId), 'no');
       await settle();
-      expect(briefs[1]?.ownerAnswers).toEqual([{ question: 'Offer Tuesday below the usual?', answer: 'no' }]);
+      expect(briefs[1]?.ownerAnswers).toEqual([
+        { question: 'Offer Tuesday below the usual?', answer: 'no' },
+      ]);
 
       // 99 h 40 min before the run: 100 minutes of slack, room to wait for
       // Brain but not for the owner's answer and Brain's fee after it.
@@ -900,13 +957,26 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
       );
       await handleOptionMessage(
         SELLER,
-        { v: 1, kind: 'request', request_id: 'req-near', service_at: RUN_AT, crates: 1, postal_code: '560001' },
+        {
+          v: 1,
+          kind: 'request',
+          request_id: 'req-near',
+          service_at: RUN_AT,
+          crates: 1,
+          postal_code: '560001',
+        },
         late,
       );
       expect(briefs.at(-1)?.ref.negotiationId).toBe(shipperTurnId(SELLER, 'req-near'));
-      expect((await askOwner('req-near', 'Ask the owner?')).receipt).toEqual({ outcome: 'fixed_style' });
+      expect((await askOwner('req-near', 'Ask the owner?')).receipt).toEqual({
+        outcome: 'fixed_style',
+      });
       expect(questions.countFor('delivery.shipper', shipperTurnId(SELLER, 'req-near'))).toBe(0);
-      expect(wire.at(-1)?.body).toMatchObject({ kind: 'option', request_id: 'req-near', fee_minor: '30000' });
+      expect(wire.at(-1)?.body).toMatchObject({
+        kind: 'option',
+        request_id: 'req-near',
+        fee_minor: '30000',
+      });
     });
 
     it('H-22: the owner turns shipping off Brain while a card is open: the question is withdrawn before the asking fee goes', async () => {
@@ -931,16 +1001,29 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
       as(shipper);
       await askOwner(requestId, `Charge ${SELLER} more for ${requestId}?`);
       const card = workflow.store().getById(openCard(requestId));
-      expect(card?.description).toBe('Brain asks, on a delivery run: Charge this deal more for this deal?');
+      expect(card?.description).toBe(
+        'Brain asks, on a delivery run: Charge this deal more for this deal?',
+      );
       expect(card?.payload).not.toMatch(new RegExp(`${SELLER}|${requestId}`));
       // A turn the seller's resend already closed takes no question.
       const other = 'req-other';
-      const body = { v: 1, kind: 'request', request_id: other, service_at: RUN_AT, crates: 1, postal_code: '560001' };
+      const body = {
+        v: 1,
+        kind: 'request',
+        request_id: other,
+        service_at: RUN_AT,
+        crates: 1,
+        postal_code: '560001',
+      };
       as(shipper);
       await handleOptionMessage(SELLER, body, NOW);
       expect(briefs.at(-1)?.ref.negotiationId).toBe(shipperTurnId(SELLER, other));
       await handleOptionMessage(SELLER, body, NOW + SHIPPER_FEE_WAIT_MS + 3600_000);
-      expect(wire.at(-1)?.body).toMatchObject({ kind: 'option', request_id: other, fee_minor: '30000' });
+      expect(wire.at(-1)?.body).toMatchObject({
+        kind: 'option',
+        request_id: other,
+        fee_minor: '30000',
+      });
       expect((await askOwner(other, 'Too late?')).receipt).toEqual({ outcome: 'already_applied' });
       expect(questions.countFor('delivery.shipper', shipperTurnId(SELLER, other))).toBe(0);
     });
@@ -952,7 +1035,9 @@ describe('Brain picks the shipper’s fee (§15 step 11)', () => {
       const cardId = openCard(requestId);
       // The yes lands with no handler wired.
       setWorkflowService(new WorkflowService({ repository: repo, nowMsFn: () => NOW }));
-      workflow.store().transition(cardId, WorkflowTaskState.PendingApproval, WorkflowTaskState.Queued, NOW);
+      workflow
+        .store()
+        .transition(cardId, WorkflowTaskState.PendingApproval, WorkflowTaskState.Queued, NOW);
       setWorkflowService(workflow);
       // Boot runs before the reasoning broker is up: with no door to Brain
       // the answer must still not be used up.

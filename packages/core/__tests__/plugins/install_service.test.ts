@@ -396,9 +396,7 @@ describe('compatibility gate (§14: derived ∪ declared ⊆ supported)', () => 
     const base = runnerManifest();
     const m: PluginManifest = {
       ...base,
-      capabilities: [
-        { ...base.capabilities[0]!, host_operations: ['commerce.reserve_stock'] },
-      ],
+      capabilities: [{ ...base.capabilities[0]!, host_operations: ['commerce.reserve_stock'] }],
     };
     const { rkey, verifier } = fakeVerifier(m);
     setRepoProofVerifier(verifier);
@@ -442,9 +440,7 @@ describe('compatibility gate (§14: derived ∪ declared ⊆ supported)', () => 
     const base = runnerManifest();
     const m: PluginManifest = {
       ...base,
-      capabilities: [
-        { ...base.capabilities[0]!, host_operations: ['commerce.reserve_stock'] },
-      ],
+      capabilities: [{ ...base.capabilities[0]!, host_operations: ['commerce.reserve_stock'] }],
     };
     const { rkey, verifier } = fakeVerifier(m);
     setRepoProofVerifier(verifier);
@@ -930,7 +926,9 @@ describe('lifecycle: consent → activation → uninstall (§14)', () => {
     expect(swept.map((ref) => ref.installId)).toContain(id);
     expect(installs.getById(id)).toBeNull();
     // The owner's decision closes in the log exactly as an inline uninstall would.
-    const log = getPluginDecisionRepository()!.listByInstall(id, 10).map((d) => d.decision);
+    const log = getPluginDecisionRepository()!
+      .listByInstall(id, 10)
+      .map((d) => d.decision);
     expect(log).toContain('uninstalled');
   });
 
@@ -1705,9 +1703,16 @@ describe('startAbandonedInstallSweeper — the cadence both hosts run', () => {
   async function stalePendingWithDevice(): Promise<string> {
     const { rkey, verifier } = fakeVerifier(runnerManifest());
     setRepoProofVerifier(verifier);
-    const r = await beginInstall({ publisherDid: PUBLISHER, rkey, trustAnchor: { kind: 'repo_proof' }, nowMs: T0 });
+    const r = await beginInstall({
+      publisherDid: PUBLISHER,
+      rkey,
+      trustAnchor: { kind: 'repo_proof' },
+      nowMs: T0,
+    });
     if (!r.ok) throw new Error('expected pending');
-    expect(getPluginInstallRepository()!.bindPendingDevice(r.installId, 'did:key:zabandoned', T0 + 1)).toBe(true);
+    expect(
+      getPluginInstallRepository()!.bindPendingDevice(r.installId, 'did:key:zabandoned', T0 + 1),
+    ).toBe(true);
     return r.installId;
   }
 

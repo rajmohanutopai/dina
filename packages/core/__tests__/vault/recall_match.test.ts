@@ -1,8 +1,8 @@
 /** REAL_LIFE_FIXES_2 §9.2 — recall matches word forms both ways; exact lookups do not. */
 
+import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
 import { recallFTSMatch, queryVault, storeItem } from '../../src/vault/crud';
 import { InMemoryVaultRepository, setVaultRepository } from '../../src/vault/repository';
-import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
 
 describe('recallFTSMatch', () => {
   it('turns words into prefix terms with one ending stripped', () => {
@@ -24,11 +24,21 @@ describe('queries', () => {
     createPersona('general', 'default');
     openPersona('general');
     setVaultRepository('general', new InMemoryVaultRepository());
-    storeItem('general', { type: 'note', summary: 'Rent receipt for April', body: 'Rent receipt for April' });
-    storeItem('general', { type: 'note', summary: 'Annabel likes jazz', body: 'Annabel likes jazz' });
+    storeItem('general', {
+      type: 'note',
+      summary: 'Rent receipt for April',
+      body: 'Rent receipt for April',
+    });
+    storeItem('general', {
+      type: 'note',
+      summary: 'Annabel likes jazz',
+      body: 'Annabel likes jazz',
+    });
   });
 
   it('a recall search for "receipts" finds the stored "receipt"', () => {
-    expect(queryVault('general', { mode: 'fts5', text: 'rent receipts', limit: 10, wordForms: true })).toHaveLength(1);
+    expect(
+      queryVault('general', { mode: 'fts5', text: 'rent receipts', limit: 10, wordForms: true }),
+    ).toHaveLength(1);
   });
 });

@@ -18,13 +18,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Redirect, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
 import React, { useCallback, useState } from 'react';
-import {
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import {
@@ -33,11 +27,7 @@ import {
   updateDescription,
   type PersonaUIState,
 } from '../../src/hooks/usePersonas';
-import {
-  deleteVaultItem,
-  listVaultItemsUI,
-  type VaultItemUI,
-} from '../../src/hooks/useVaultItems';
+import { deleteVaultItem, listVaultItemsUI, type VaultItemUI } from '../../src/hooks/useVaultItems';
 import { confirmDecision } from '../../src/services/confirm_decision';
 import { showMessage } from '../../src/services/show_message';
 import { colors, radius, shadows, spacing, textStyles } from '../../src/theme';
@@ -169,9 +159,9 @@ export default function VaultDetail(): React.ReactElement {
         bottomOffset={24}
       >
         {/* Tier badge — compact inline pill rather than a full-width
-          * card. The persona name lives in the Stack title above.
-          * Single badge keeps the vertical rhythm tight; the full
-          * card was wasted real estate on something this small. */}
+         * card. The persona name lives in the Stack title above.
+         * Single badge keeps the vertical rhythm tight; the full
+         * card was wasted real estate on something this small. */}
         <View style={styles.tierRow}>
           <View style={styles.tierBadge}>
             <Ionicons
@@ -310,8 +300,7 @@ function ItemCard({
 }): React.ReactElement {
   const [expanded, setExpanded] = useState(false);
   const { cleanHeadline, hasUnverifiedSuffix } = splitUnverifiedSuffix(item.headline);
-  const hasMoreBody =
-    item.bodyPreview.length > 0 && item.bodyPreview !== cleanHeadline;
+  const hasMoreBody = item.bodyPreview.length > 0 && item.bodyPreview !== cleanHeadline;
   // Tap toggles expanded state — when collapsed, headline + body are
   // truncated; when expanded, they wrap fully. This is the "drill-in"
   // affordance: vault rows used to be plain Views with no tap target,
@@ -327,10 +316,7 @@ function ItemCard({
     <Pressable
       onPress={isPressable ? onTogglePress : undefined}
       testID={`vault-detail-item-${item.id}`}
-      style={({ pressed }) => [
-        styles.itemCard,
-        pressed && isPressable && styles.itemCardPressed,
-      ]}
+      style={({ pressed }) => [styles.itemCard, pressed && isPressable && styles.itemCardPressed]}
       accessibilityRole={isPressable ? 'button' : 'text'}
       accessibilityLabel={
         isPressable
@@ -340,10 +326,7 @@ function ItemCard({
       accessibilityState={isPressable ? { expanded } : undefined}
     >
       <View style={styles.itemHeader}>
-        <Text
-          style={styles.itemHeadline}
-          numberOfLines={expanded ? 0 : 2}
-        >
+        <Text style={styles.itemHeadline} numberOfLines={expanded ? 0 : 2}>
           {cleanHeadline}
         </Text>
         <Pressable
@@ -363,10 +346,7 @@ function ItemCard({
         </View>
       )}
       {hasMoreBody ? (
-        <Text
-          style={styles.itemBody}
-          numberOfLines={expanded ? 0 : 3}
-        >
+        <Text style={styles.itemBody} numberOfLines={expanded ? 0 : 3}>
           {item.bodyPreview}
         </Text>
       ) : null}

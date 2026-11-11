@@ -20,10 +20,7 @@ export function scrubTier1(text: string): ScrubResult {
 /**
  * Rehydrate scrubbed text — restore PII from a previous scrub result.
  */
-export function rehydrate(
-  scrubbed: string,
-  entities: { token: string; value: string }[],
-): string {
+export function rehydrate(scrubbed: string, entities: { token: string; value: string }[]): string {
   return rehydratePII(scrubbed, entities);
 }
 

@@ -156,4 +156,3 @@ export function projectionPincode(projection: {
   if (projection.postal_code !== undefined) return projection.postal_code;
   return projection.region.scheme === 'postal_area' ? projection.region.value : undefined;
 }
-

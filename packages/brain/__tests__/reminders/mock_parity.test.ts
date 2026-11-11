@@ -14,7 +14,6 @@ import {
   snoozeReminder,
   fireMissedReminders,
   listByPersona,
-  listPending,
   getReminder,
   resetReminderState,
 } from '@dina/core/reminders';
@@ -35,8 +34,16 @@ describe('MockCoreClient ⇄ real reminder service parity', () => {
     // Mock
     const mock = new MockCoreClient();
     return (async () => {
-      const m1 = await mock.reminderCreate({ message: 'call mom', due_at: due, persona: 'general' });
-      const m2 = await mock.reminderCreate({ message: 'take meds', due_at: due, persona: 'general' });
+      const m1 = await mock.reminderCreate({
+        message: 'call mom',
+        due_at: due,
+        persona: 'general',
+      });
+      const m2 = await mock.reminderCreate({
+        message: 'take meds',
+        due_at: due,
+        persona: 'general',
+      });
       const mockDistinct = m1.id !== m2.id;
       const mockCount = (await mock.reminderListByPersona('general')).length;
 
@@ -71,7 +78,11 @@ describe('MockCoreClient ⇄ real reminder service parity', () => {
     const realNewDue = getReminder(real.id)!.due_at;
 
     const mock = new MockCoreClient();
-    const m = await mock.reminderCreate({ message: 'overdue', due_at: pastDue, persona: 'general' });
+    const m = await mock.reminderCreate({
+      message: 'overdue',
+      due_at: pastDue,
+      persona: 'general',
+    });
     await mock.reminderSnooze(m.id, snoozeMs);
     const mockNewDue = (await mock.reminderListByPersona('general'))[0]!.due_at;
 
@@ -90,7 +101,11 @@ describe('MockCoreClient ⇄ real reminder service parity', () => {
     const realFired = fireMissedReminders(now).map((r) => r.id);
 
     const mock = new MockCoreClient();
-    const m = await mock.reminderCreate({ message: 'ring', due_at: now - 10_000, persona: 'general' });
+    const m = await mock.reminderCreate({
+      message: 'ring',
+      due_at: now - 10_000,
+      persona: 'general',
+    });
     await mock.reminderSnooze(m.id, -5_000);
     const mockFired = (await mock.reminderFireMissed(now)).map((r) => r.id);
 

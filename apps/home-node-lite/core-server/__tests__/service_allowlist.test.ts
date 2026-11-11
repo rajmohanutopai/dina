@@ -51,7 +51,7 @@ describe('ServiceAllowlist (task 4.24)', () => {
   });
 
   describe('unknown DID', () => {
-    it('returns unknown_did for a DID that isn\'t in any list', () => {
+    it("returns unknown_did for a DID that isn't in any list", () => {
       const al = new ServiceAllowlist({ brainDid: BRAIN });
       expect(al.lookup('did:plc:random')).toEqual({ ok: false, reason: 'unknown_did' });
     });

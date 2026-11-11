@@ -52,10 +52,7 @@ describe('CosigInboxRowView — per-state rendering', () => {
 
   it('renders accepted state without actions or expiry', () => {
     const { getByText, queryByTestId } = render(
-      <CosigInboxRowView
-        rowId="r1"
-        display={makeDisplay({ state: 'accepted', actions: [] })}
-      />,
+      <CosigInboxRowView rowId="r1" display={makeDisplay({ state: 'accepted', actions: [] })} />,
     );
     expect(getByText('Endorsed')).toBeTruthy();
     expect(queryByTestId('cosig-inbox-endorse-r1')).toBeNull();
@@ -65,10 +62,7 @@ describe('CosigInboxRowView — per-state rendering', () => {
 
   it('renders declined state without actions or expiry', () => {
     const { getByText, queryByTestId } = render(
-      <CosigInboxRowView
-        rowId="r1"
-        display={makeDisplay({ state: 'declined', actions: [] })}
-      />,
+      <CosigInboxRowView rowId="r1" display={makeDisplay({ state: 'declined', actions: [] })} />,
     );
     expect(getByText('Declined')).toBeTruthy();
     expect(queryByTestId('cosig-inbox-endorse-r1')).toBeNull();
@@ -92,10 +86,7 @@ describe('CosigInboxRowView — per-state rendering', () => {
 
   it('renders body preview when present', () => {
     const { getByText } = render(
-      <CosigInboxRowView
-        rowId="r1"
-        display={makeDisplay({ bodyPreview: 'A quick reason' })}
-      />,
+      <CosigInboxRowView rowId="r1" display={makeDisplay({ bodyPreview: 'A quick reason' })} />,
     );
     expect(getByText(/A quick reason/)).toBeTruthy();
   });
@@ -111,10 +102,7 @@ describe('CosigInboxRowView — per-state rendering', () => {
 
   it('renders only Endorse when actions = ["endorse"]', () => {
     const { getByTestId, queryByTestId } = render(
-      <CosigInboxRowView
-        rowId="r1"
-        display={makeDisplay({ actions: ['endorse'] })}
-      />,
+      <CosigInboxRowView rowId="r1" display={makeDisplay({ actions: ['endorse'] })} />,
     );
     expect(getByTestId('cosig-inbox-endorse-r1')).toBeTruthy();
     expect(queryByTestId('cosig-inbox-decline-r1')).toBeNull();
@@ -122,10 +110,7 @@ describe('CosigInboxRowView — per-state rendering', () => {
 
   it('renders only Decline when actions = ["decline"]', () => {
     const { queryByTestId, getByTestId } = render(
-      <CosigInboxRowView
-        rowId="r1"
-        display={makeDisplay({ actions: ['decline'] })}
-      />,
+      <CosigInboxRowView rowId="r1" display={makeDisplay({ actions: ['decline'] })} />,
     );
     expect(queryByTestId('cosig-inbox-endorse-r1')).toBeNull();
     expect(getByTestId('cosig-inbox-decline-r1')).toBeTruthy();
@@ -176,16 +161,12 @@ describe('CosigInboxRowView — accessibility (TN-TEST-061 surface)', () => {
   });
 
   it('Endorse button has accessibilityLabel="Endorse"', () => {
-    const { getByLabelText } = render(
-      <CosigInboxRowView rowId="r1" display={makeDisplay()} />,
-    );
+    const { getByLabelText } = render(<CosigInboxRowView rowId="r1" display={makeDisplay()} />);
     expect(getByLabelText('Endorse')).toBeTruthy();
   });
 
   it('Decline button has accessibilityLabel="Decline"', () => {
-    const { getByLabelText } = render(
-      <CosigInboxRowView rowId="r1" display={makeDisplay()} />,
-    );
+    const { getByLabelText } = render(<CosigInboxRowView rowId="r1" display={makeDisplay()} />);
     expect(getByLabelText('Decline')).toBeTruthy();
   });
 });

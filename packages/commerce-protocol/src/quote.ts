@@ -204,7 +204,8 @@ export function validateQuoteRequest(request: unknown, sha256: Sha256Fn): string
   if (request.onward_sharing !== undefined) {
     const err = validateOnwardSharing(request.onward_sharing, request.protocol_version);
     if (err) return err;
-    const projection = (request.delivery as Record<string, unknown>).projection as DeliveryProjection;
+    const projection = (request.delivery as Record<string, unknown>)
+      .projection as DeliveryProjection;
     if (projectionPincode(projection) === undefined) {
       return 'quoteRequest.onward_sharing: grants a pincode the projection does not carry';
     }
@@ -393,7 +394,12 @@ export interface SignedQuote {
 export function quoteVersion(
   quote: SignedQuote,
   alternativeId?: string,
-): { total: Money; terms_digest: string; charges: Charge[]; estimated_delivery_at?: string } | null {
+): {
+  total: Money;
+  terms_digest: string;
+  charges: Charge[];
+  estimated_delivery_at?: string;
+} | null {
   if (alternativeId === undefined)
     return {
       total: quote.total,
@@ -718,7 +724,8 @@ function validateQuoteAlternatives(
       'alternative_id,charges,estimated_delivery_at,exit_if_run_fails,offer_ends_at,partner_run,terms_digest,total';
     const partnerRun =
       exitRight ||
-      keys === 'alternative_id,charges,estimated_delivery_at,offer_ends_at,partner_run,terms_digest,total';
+      keys ===
+        'alternative_id,charges,estimated_delivery_at,offer_ends_at,partner_run,terms_digest,total';
     if (keys !== 'alternative_id,charges,estimated_delivery_at,terms_digest,total' && !partnerRun) {
       return `${path}: exactly alternative_id, charges, estimated_delivery_at, total, terms_digest (and from 1.4, partner_run with offer_ends_at; from 1.5, exit_if_run_fails with them)`;
     }

@@ -2,12 +2,15 @@
 
 import { changePassphrase, generateMnemonic, mnemonicToSeed, wrapSeed } from '@dina/core';
 
-import { __getRenamedEntries, __resetFileSystemMock, __setEntries } from '../../__mocks__/expo-file-system';
+import {
+  __getRenamedEntries,
+  __resetFileSystemMock,
+  __setEntries,
+} from '../../__mocks__/expo-file-system';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { getUnlockState, resetUnlockState, unlock } from '../../src/hooks/useUnlock';
 import { saveWrappedSeed } from '../../src/services/wrapped_seed_store';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Keychain = require('react-native-keychain');
 
 jest.mock('../../src/storage/init', () => {
@@ -26,7 +29,7 @@ jest.mock('../../src/storage/init', () => {
     },
   };
 });
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const init = require('../../src/storage/init');
 
 it('never keys the databases from the wrong salt, and sets nothing aside', async () => {

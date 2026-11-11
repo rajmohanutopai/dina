@@ -6,9 +6,13 @@ import React from 'react';
 import { InlineExportCard } from '../../src/components/InlineExportCard';
 
 const mockDispatch = jest.fn();
-jest.mock('../../src/services/owner_dispatcher', () => ({ getOwnerDispatcher: () => ({ dispatch: mockDispatch }) }));
+jest.mock('../../src/services/owner_dispatcher', () => ({
+  getOwnerDispatcher: () => ({ dispatch: mockDispatch }),
+}));
 const mockShare = jest.fn();
-jest.mock('../../src/hooks/useShareExport', () => ({ shareReadableExport: (json: string) => mockShare(json) }));
+jest.mock('../../src/hooks/useShareExport', () => ({
+  shareReadableExport: (json: string) => mockShare(json),
+}));
 
 const message = {
   id: 'm1',
@@ -24,7 +28,13 @@ const message = {
       manifest: {
         personas: [
           { persona: 'general', tier: 'default', included: true, items: 12 },
-          { persona: 'finance', tier: 'locked', included: false, why: 'locked: unlock finance with your passphrase and ask again', items: 0 },
+          {
+            persona: 'finance',
+            tier: 'locked',
+            included: false,
+            why: 'locked: unlock finance with your passphrase and ask again',
+            items: 0,
+          },
         ],
         people: 4,
         contacts: 2,

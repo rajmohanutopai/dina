@@ -35,11 +35,9 @@ describe('src/polyfills — Buffer', () => {
     expect(g.Buffer).toBeUndefined();
 
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../src/polyfills');
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { Buffer: polyfill } = require('buffer') as { Buffer: unknown };
     expect(g.Buffer).toBe(polyfill);
     // What `@atproto/repo`'s CAR reader actually calls.
@@ -51,7 +49,6 @@ describe('src/polyfills — Buffer', () => {
     const own = { marker: 'existing' };
     g.Buffer = own;
     jest.isolateModules(() => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
       require('../src/polyfills');
     });
     expect(g.Buffer).toBe(own);
@@ -60,8 +57,10 @@ describe('src/polyfills — Buffer', () => {
   it('runs on the web build too — a browser has no Buffer either', () => {
     delete g.Buffer;
     jest.isolateModules(() => {
-      jest.doMock('react-native', () => ({ Platform: { OS: 'web', select: (o: Record<string, unknown>) => o.web } }));
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      jest.doMock('react-native', () => ({
+        Platform: { OS: 'web', select: (o: Record<string, unknown>) => o.web },
+      }));
+
       require('../src/polyfills');
     });
     expect(g.Buffer).toBeDefined();

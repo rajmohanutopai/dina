@@ -514,7 +514,12 @@ function resultForExisting(record: AskRecord): AskSubmitResult {
     return {
       kind: 'fast_path',
       status: 200,
-      body: { request_id: id, status: 'complete', answer, ...(text !== '' ? { content: text } : {}) },
+      body: {
+        request_id: id,
+        status: 'complete',
+        answer,
+        ...(text !== '' ? { content: text } : {}),
+      },
     };
   }
   const error: AskFailure =
@@ -534,11 +539,7 @@ async function applyOutcome(
       return await registry.markComplete(id, JSON.stringify(outcome.answer));
     }
     if (outcome.kind === 'approval') {
-      return await registry.markPendingApproval(
-        id,
-        outcome.approvalId,
-        outcome.pausedStateJson,
-      );
+      return await registry.markPendingApproval(id, outcome.approvalId, outcome.pausedStateJson);
     }
     return await registry.markFailed(id, JSON.stringify(outcome.failure));
   } catch {
@@ -561,8 +562,7 @@ function bodyForOutcome(
     // `result.content` / `result.response`) renders the answer instead
     // of falling through to its stock "no information" message. The
     // structured `answer` object stays untouched for newer consumers.
-    const text =
-      typeof outcome.answer.text === 'string' ? outcome.answer.text : '';
+    const text = typeof outcome.answer.text === 'string' ? outcome.answer.text : '';
     return {
       request_id: id,
       status: 'complete',

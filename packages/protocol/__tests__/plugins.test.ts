@@ -657,13 +657,18 @@ describe('validatePluginManifest — the card template’s slots (§15.6)', () =
     });
     const result = validatePluginManifest(normalize(m));
     expect(result.ok).toBe(false);
-    expect((result.ok ? [] : result.errors).map((e) => e.code)).toContain('card_slot_without_schema');
+    expect((result.ok ? [] : result.errors).map((e) => e.code)).toContain(
+      'card_slot_without_schema',
+    );
   });
 
   it('a template of literal text names no slots and needs no schema', () => {
     const m = mutate(runnerManifest(), (mm) => {
       delete mm.capabilities[0].result_schema;
-      mm.capabilities[0].card = { version: 1, blocks: [{ kind: 'body', text: 'A flight was watched.' }] };
+      mm.capabilities[0].card = {
+        version: 1,
+        blocks: [{ kind: 'body', text: 'A flight was watched.' }],
+      };
     });
     expectOk(validatePluginManifest(normalize(m)));
   });

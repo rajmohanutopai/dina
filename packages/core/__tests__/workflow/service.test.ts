@@ -2,11 +2,7 @@
  * CORE-P2-F01-F06 — WorkflowService tests.
  */
 
-import {
-  WorkflowTaskKind,
-  WorkflowTaskPriority,
-  WorkflowTaskState,
-} from '../../src/workflow/domain';
+import { WorkflowTaskKind, WorkflowTaskState } from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository, WorkflowConflictError } from '../../src/workflow/repository';
 import {
   WorkflowService,

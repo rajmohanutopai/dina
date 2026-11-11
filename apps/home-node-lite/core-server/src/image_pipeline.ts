@@ -138,8 +138,10 @@ export function createOpenAiVisionBroker(args: {
           throw new Error('vision provider returned non-JSON content');
         }
         const pageRows =
-          parsed !== null && typeof parsed === 'object' && Array.isArray((parsed as { rows?: unknown }).rows)
-            ? ((parsed as { rows: unknown[] }).rows)
+          parsed !== null &&
+          typeof parsed === 'object' &&
+          Array.isArray((parsed as { rows?: unknown }).rows)
+            ? (parsed as { rows: unknown[] }).rows
             : [];
         for (const candidate of pageRows) {
           if (candidate === null || typeof candidate !== 'object') continue;

@@ -499,9 +499,7 @@ function toDraft(row: DBRow): CatalogDraft | null {
             digest: receiptDigest,
             revision: Number(row.receipt_revision ?? -1),
             vouchedBy:
-              String(row.receipt_vouched_by ?? '') === ''
-                ? null
-                : String(row.receipt_vouched_by),
+              String(row.receipt_vouched_by ?? '') === '' ? null : String(row.receipt_vouched_by),
           },
     held,
     approval:
@@ -509,9 +507,7 @@ function toDraft(row: DBRow): CatalogDraft | null {
         ? null
         : { digest: approvedDigest, revision: Number(row.approved_revision ?? -1) },
     publication:
-      publicationRaw === ''
-        ? null
-        : parseJson<CatalogDraft['publication']>(publicationRaw, null),
+      publicationRaw === '' ? null : parseJson<CatalogDraft['publication']>(publicationRaw, null),
     createdAtMs: Number(row.created_at_ms),
     updatedAtMs: Number(row.updated_at_ms),
   };
@@ -543,9 +539,9 @@ export class SQLiteCatalogDraftRepository implements CatalogDraftRepository {
     // whose JSON columns are corrupt — such a receipt is still a v1 fact
     // the boundary must grandfather, and the full mapper would drop it.
     return this.db
-      .query<{ receipt_digest: string }>(
-        `SELECT receipt_digest FROM commerce_catalog_drafts WHERE receipt_digest != ''`,
-      )
+      .query<{
+        receipt_digest: string;
+      }>(`SELECT receipt_digest FROM commerce_catalog_drafts WHERE receipt_digest != ''`)
       .map((row) => String(row.receipt_digest));
   }
 

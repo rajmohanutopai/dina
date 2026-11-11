@@ -27,7 +27,6 @@ import {
 import { resetStagingState } from '../../src/staging/service';
 import { clearReplayCache } from '../../src/transport/adversarial';
 
-
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);
 const recipientPriv = new Uint8Array(32).fill(0x42);
@@ -94,7 +93,13 @@ describe('receive_pipeline — service.offer ingress', () => {
   it('accepts + persists an offer from an established contact', () => {
     const { repo, stored } = stubRepo();
     setServiceOfferRepository(repo);
-    const result = receiveD2D(buildSealed(offerBody), recipientPub, recipientPriv, [senderPub], 'verified');
+    const result = receiveD2D(
+      buildSealed(offerBody),
+      recipientPub,
+      recipientPriv,
+      [senderPub],
+      'verified',
+    );
 
     expect(result.action).toBe('bypassed');
     expect(result.messageType).toBe('service.offer');
@@ -164,7 +169,13 @@ describe('receive_pipeline — service.offer ingress', () => {
   it('REJECTS an offer from a non-contact (known_only is contacts-only)', () => {
     const { repo, stored } = stubRepo();
     setServiceOfferRepository(repo);
-    const result = receiveD2D(buildSealed(offerBody), recipientPub, recipientPriv, [senderPub], 'unknown');
+    const result = receiveD2D(
+      buildSealed(offerBody),
+      recipientPub,
+      recipientPriv,
+      [senderPub],
+      'unknown',
+    );
 
     expect(result.action).toBe('dropped');
     expect(result.reason).toMatch(/not a known contact/);
@@ -176,7 +187,13 @@ describe('receive_pipeline — service.offer ingress', () => {
     setServiceOfferRepository(repo);
     // missing service_uri (required)
     const bad = { grant_id: 'x', capability: 'eta_query', service_name: 'X' };
-    const result = receiveD2D(buildSealed(bad), recipientPub, recipientPriv, [senderPub], 'verified');
+    const result = receiveD2D(
+      buildSealed(bad),
+      recipientPub,
+      recipientPriv,
+      [senderPub],
+      'verified',
+    );
 
     expect(result.action).toBe('dropped');
     expect(result.reason).toMatch(/service\.offer invalid/);
@@ -185,12 +202,18 @@ describe('receive_pipeline — service.offer ingress', () => {
 
   it('DROPS when no offer store is wired (forward-compat: node ignores offers)', () => {
     setServiceOfferRepository(null);
-    const result = receiveD2D(buildSealed(offerBody), recipientPub, recipientPriv, [senderPub], 'verified');
+    const result = receiveD2D(
+      buildSealed(offerBody),
+      recipientPub,
+      recipientPriv,
+      [senderPub],
+      'verified',
+    );
     expect(result.action).toBe('dropped');
     expect(result.reason).toMatch(/offer store not wired/);
   });
 
-  it("DROPS an offer whose service_uri belongs to a DIFFERENT did than the sender", () => {
+  it('DROPS an offer whose service_uri belongs to a DIFFERENT did than the sender', () => {
     // A (bad/misconfigured) provider must not push an offer pointing at someone
     // else's listing into our trusted contact-service surface. The service_uri
     // authority must equal the sender DID.
@@ -200,7 +223,13 @@ describe('receive_pipeline — service.offer ingress', () => {
       ...offerBody,
       service_uri: 'at://did:plc:someoneelse/com.dinakernel.service.profile/x',
     };
-    const result = receiveD2D(buildSealed(spoofed), recipientPub, recipientPriv, [senderPub], 'verified');
+    const result = receiveD2D(
+      buildSealed(spoofed),
+      recipientPub,
+      recipientPriv,
+      [senderPub],
+      'verified',
+    );
     expect(result.action).toBe('dropped');
     expect(result.reason).toMatch(/service_uri authority/);
     expect(stored).toHaveLength(0);

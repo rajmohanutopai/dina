@@ -38,7 +38,6 @@ import {
 } from '../../src/reasoning/service_tools';
 
 import type { ServiceProfile } from '../../src/appview_client/http';
-import type { ServiceQueryOrchestrator } from '../../src/service/service_query_orchestrator';
 
 function mockFetchOnce(body: unknown, status = 200): typeof globalThis.fetch {
   return (async () =>
@@ -250,17 +249,17 @@ describe('mobile Scenario 5 — Service-query end-to-end', () => {
     // search result's per-capability block breaks the retry loop
     // documented in docs/designs/SF_TRANSIT_DEMO.md.
     const search = createSearchProviderServicesTool({
-      appViewClient: { async searchServices() {
-        return [DEMO_PROVIDER_PROFILE];
-      } },
+      appViewClient: {
+        async searchServices() {
+          return [DEMO_PROVIDER_PROFILE];
+        },
+      },
     });
     const [profile] = (await search.execute({ capability: 'eta_query' })) as {
       capability_schemas: Record<string, { schema_hash: string }>;
     }[];
 
-    expect(profile.capability_schemas.eta_query!.schema_hash).toBe(
-      'sha256:demoprovider-eta-v1',
-    );
+    expect(profile.capability_schemas.eta_query!.schema_hash).toBe('sha256:demoprovider-eta-v1');
   });
 
   it('no candidates → search_provider_services returns empty array (not throw)', async () => {
@@ -268,9 +267,11 @@ describe('mobile Scenario 5 — Service-query end-to-end', () => {
     // LLM can tell the user "no transit service in range" instead of
     // crashing the agentic loop with an exception.
     const search = createSearchProviderServicesTool({
-      appViewClient: { async searchServices() {
-        return [];
-      } },
+      appViewClient: {
+        async searchServices() {
+          return [];
+        },
+      },
     });
     const result = await search.execute({ capability: 'eta_query', lat: 0, lng: 0 });
     expect(result).toEqual([]);

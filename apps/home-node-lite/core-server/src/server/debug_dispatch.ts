@@ -40,7 +40,6 @@ import { quarantineMessage, type CoreRouter, type CoreRequest } from '@dina/core
 import type { Logger } from '../logger';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-
 /**
  * Minimal structural type for the Fastify app — avoids the
  * `FastifyInstance` logger-generic mismatch with the server's custom

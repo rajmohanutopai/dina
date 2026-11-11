@@ -105,12 +105,9 @@ export function deriveAuthoredAttestationRows(
   for (const hit of hits) {
     if (!hit.subjectId) continue;
     const ref = hit.subjectRefRaw ?? { type: 'claim' };
-    const subjectTitle =
-      pickFirstNonEmpty(ref.name, ref.did, ref.uri, ref.domain) ?? hit.subjectId;
+    const subjectTitle = pickFirstNonEmpty(ref.name, ref.did, ref.uri, ref.domain) ?? hit.subjectId;
     const category = isNonEmpty(hit.category) ? hit.category : null;
-    const { headline, body } = splitHeadlineBody(
-      typeof hit.text === 'string' ? hit.text : '',
-    );
+    const { headline, body } = splitHeadlineBody(typeof hit.text === 'string' ? hit.text : '');
     out.push({
       uri: hit.uri,
       subjectId: hit.subjectId,
@@ -134,9 +131,7 @@ export function deriveAuthoredAttestationRows(
   return out;
 }
 
-function pickFirstNonEmpty(
-  ...candidates: (string | undefined)[]
-): string | null {
+function pickFirstNonEmpty(...candidates: (string | undefined)[]): string | null {
   for (const c of candidates) {
     if (typeof c === 'string' && c.trim().length > 0) return c;
   }

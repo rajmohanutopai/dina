@@ -145,12 +145,8 @@ const emma = personFixture('p-emma', 'Emma', 'daughter', [
   surface('p-emma', 'Emma'),
   surface('p-emma', 'Em'),
 ]);
-const alex1 = personFixture('p-alex-1', 'Alex Lee', 'colleague', [
-  surface('p-alex-1', 'Alex'),
-]);
-const alex2 = personFixture('p-alex-2', 'Alex Garcia', 'cousin', [
-  surface('p-alex-2', 'Alex'),
-]);
+const alex1 = personFixture('p-alex-1', 'Alex Lee', 'colleague', [surface('p-alex-1', 'Alex')]);
+const alex2 = personFixture('p-alex-2', 'Alex Garcia', 'cousin', [surface('p-alex-2', 'Alex')]);
 const rejected = personFixture('p-r', 'Old Name', '', [
   surface('p-r', 'Emma', { status: 'rejected' }),
 ]);

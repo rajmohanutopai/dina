@@ -4,7 +4,13 @@
  * gateway drives it — a forwarded raw request and its bearer.
  */
 
-import { DINA_A2A_EXTENSION_URI, canonicalize, exclusionReason, type JsonObject, type JsonValue } from '@dina/a2a';
+import {
+  DINA_A2A_EXTENSION_URI,
+  canonicalize,
+  exclusionReason,
+  type JsonObject,
+  type JsonValue,
+} from '@dina/a2a';
 
 import {
   A2A_ENDED_RETENTION_MS,
@@ -164,20 +170,32 @@ describe('steps 1–4: protocol errors, no durable state', () => {
   // TCK CORE-SEND-003 (spec §3.1.1): content in a media type Dina does not read
   it.each([
     ['a text part only', [{ text: 'when is the next bus?' }], 'no_data_part'],
-    ['a file by URL', [{ url: 'https://example.org/q.json', mediaType: 'application/json' }], 'url_part_refused'],
+    [
+      'a file by URL',
+      [{ url: 'https://example.org/q.json', mediaType: 'application/json' }],
+      'url_part_refused',
+    ],
     ['raw bytes', [{ raw: 'eyJ9', mediaType: 'application/octet-stream' }], 'raw_part_refused'],
-  ])('%s is ContentTypeNotSupportedError, A2A’s reason first and Dina’s after', (_what, parts, reason) => {
-    const answer = ingressSendMessage(rt, request('SendMessage', { message: { messageId: `m-${reason}`, role: 'ROLE_USER', parts } }));
-    const error = (answer.body as { error: { code: number; data: JsonObject[] } }).error;
-    expect(error.code).toBe(-32005);
-    expect(error.data.map((d) => [d.domain, d.reason])).toEqual([
-      ['a2a-protocol.org', 'CONTENT_TYPE_NOT_SUPPORTED'],
-      ['dinakernel.com', reason],
-    ]);
-    // Control: a data part of the wrong shape is still InvalidParams.
-    const wrongShape = request('SendMessage', { message: { messageId: 'm-bad', role: 'ROLE_USER', parts: [{ data: { nope: 1 } }] } });
-    expect(errorOf(ingressSendMessage(rt, wrongShape)).code).toBe(-32602);
-  });
+  ])(
+    '%s is ContentTypeNotSupportedError, A2A’s reason first and Dina’s after',
+    (_what, parts, reason) => {
+      const answer = ingressSendMessage(
+        rt,
+        request('SendMessage', { message: { messageId: `m-${reason}`, role: 'ROLE_USER', parts } }),
+      );
+      const error = (answer.body as { error: { code: number; data: JsonObject[] } }).error;
+      expect(error.code).toBe(-32005);
+      expect(error.data.map((d) => [d.domain, d.reason])).toEqual([
+        ['a2a-protocol.org', 'CONTENT_TYPE_NOT_SUPPORTED'],
+        ['dinakernel.com', reason],
+      ]);
+      // Control: a data part of the wrong shape is still InvalidParams.
+      const wrongShape = request('SendMessage', {
+        message: { messageId: 'm-bad', role: 'ROLE_USER', parts: [{ data: { nope: 1 } }] },
+      });
+      expect(errorOf(ingressSendMessage(rt, wrongShape)).code).toBe(-32602);
+    },
+  );
 
   it('refuses a malformed envelope as a protocol error', () => {
     const twoParts = ingressSendMessage(
@@ -254,10 +272,21 @@ describe('acceptance (step 9): one commit, the executor frozen', () => {
   it('a skill whose contract is too large for a card is refused at the call too: no call reaches what no card shows', async () => {
     await saveUnchecked(
       listing({
-        capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+        capabilities: {
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
         capabilitySchemas: {
           eta_query: {
-            params: { type: 'object', required: ['n'], properties: { n: { type: 'array', const: Array(20_000).fill(0) } } },
+            params: {
+              type: 'object',
+              required: ['n'],
+              properties: { n: { type: 'array', const: Array(20_000).fill(0) } },
+            },
             result: ETA_RESULT,
             schemaHash: 'h-big',
           },
@@ -288,7 +317,9 @@ describe('acceptance (step 9): one commit, the executor frozen', () => {
     // Control: an id of exactly MAX_ID_LENGTH fits, on the card and at the call.
     const fits = 'r'.repeat(246);
     await saveUnchecked(listing({}), fits);
-    expect(sentStateOf(call({ skill: `eta_query@${fits}`, params: { route_id: '42' } }))).not.toBe('TASK_STATE_REJECTED');
+    expect(sentStateOf(call({ skill: `eta_query@${fits}`, params: { route_id: '42' } }))).not.toBe(
+      'TASK_STATE_REJECTED',
+    );
   });
 
   it('a capability the catalog never allows in public is refused on a public listing, named or bare', async () => {
@@ -637,19 +668,27 @@ describe('GetTask, CancelTask, ListTasks', () => {
     expect((second.tasks as { id: string }[]).map((t) => t.id)).toEqual([ids[1]]);
     expect(second.nextPageToken).toBe('');
     // The cursor holds a time and the id the client already has, never a row id (§10, A2A-I5).
-    const cursor = JSON.parse(Buffer.from(first.nextPageToken as string, 'base64url').toString('utf8')) as unknown[];
+    const cursor = JSON.parse(
+      Buffer.from(first.nextPageToken as string, 'base64url').toString('utf8'),
+    ) as unknown[];
     expect(cursor).toEqual([expect.any(Number), ids[2]]);
     const rowId = opOf(ids[2] as string).id;
     expect(cursor.filter((f) => f === rowId)).toEqual([]);
     // Tasks that change in the same millisecond still page without loss or repeat.
     const sameTime = world.clock;
     const ties: string[] = [];
-    for (let i = 0; i < 3; i += 1) ties.push(sentTask(call({ skill: 'eta_query', params: { route_id: `t${i}` } })).id as string);
+    for (let i = 0; i < 3; i += 1)
+      ties.push(sentTask(call({ skill: 'eta_query', params: { route_id: `t${i}` } })).id as string);
     expect(world.clock).toBe(sameTime);
     const seen: string[] = [];
     let token = '';
     do {
-      const page = resultOf(ingressListTasks(rt, request('ListTasks', { pageSize: 1, ...(token === '' ? {} : { pageToken: token }) })));
+      const page = resultOf(
+        ingressListTasks(
+          rt,
+          request('ListTasks', { pageSize: 1, ...(token === '' ? {} : { pageToken: token }) }),
+        ),
+      );
       seen.push(...(page.tasks as { id: string }[]).map((t) => t.id));
       token = page.nextPageToken as string;
     } while (token !== '');
@@ -660,7 +699,13 @@ describe('GetTask, CancelTask, ListTasks', () => {
   it('every method refuses a tenant alike (Dina serves none, plan D5); an empty one is no tenant', () => {
     const id = sentTask(call({ skill: 'eta_query', params: { route_id: '1' } })).id as string;
     const named = [
-      ingressSendMessage(rt, request('SendMessage', { ...message({ skill: 'eta_query', params: { route_id: '2' } }), tenant: 'acme' })),
+      ingressSendMessage(
+        rt,
+        request('SendMessage', {
+          ...message({ skill: 'eta_query', params: { route_id: '2' } }),
+          tenant: 'acme',
+        }),
+      ),
       ingressGetTask(rt, request('GetTask', { id, tenant: 'acme' }), id),
       ingressListTasks(rt, request('ListTasks', { tenant: 'acme' })),
       ingressCancelTask(rt, request('CancelTask', { id, tenant: 'acme' }), id),
@@ -669,12 +714,20 @@ describe('GetTask, CancelTask, ListTasks', () => {
       expect(errorOf(answer)).toMatchObject({ code: -32602 });
       expect(JSON.stringify(errorOf(answer))).toContain('tenant_unsupported');
     }
-    expect(resultOf(ingressGetTask(rt, request('GetTask', { id, tenant: '' }), id))).toMatchObject({ id });
+    expect(resultOf(ingressGetTask(rt, request('GetTask', { id, tenant: '' }), id))).toMatchObject({
+      id,
+    });
   });
 
   it('refuses a cursor it did not make, the old time:row form included', () => {
-    for (const pageToken of [Buffer.from('1000:3').toString('base64url'), Buffer.from('[1000]').toString('base64url'), 'not base64 at all']) {
-      expect(errorOf(ingressListTasks(rt, request('ListTasks', { pageToken })))).toMatchObject({ code: -32602 });
+    for (const pageToken of [
+      Buffer.from('1000:3').toString('base64url'),
+      Buffer.from('[1000]').toString('base64url'),
+      'not base64 at all',
+    ]) {
+      expect(errorOf(ingressListTasks(rt, request('ListTasks', { pageToken })))).toMatchObject({
+        code: -32602,
+      });
     }
   });
 });
@@ -782,7 +835,9 @@ describe('the effect boundary (§7.3): admitted at claim, by the pinned runner o
     // The owner stops the running execution from the task list.
     world.workflow.cancel(childOf(id).id, 'owner');
     settleInbound(rt, opOf(id));
-    expect(opOf(id)).toEqual(expect.objectContaining({ state: 'outcome_unknown', reason_code: 'canceled_after_effect' }));
+    expect(opOf(id)).toEqual(
+      expect.objectContaining({ state: 'outcome_unknown', reason_code: 'canceled_after_effect' }),
+    );
     expect(stateOf(ingressGetTask(rt, request('GetTask', { id }), id))).toBe('TASK_STATE_FAILED');
   });
 
@@ -1058,13 +1113,21 @@ describe('M2 adversarial set (design §10, §12 M2)', () => {
   });
 
   it('a settled task carries the receipt id: the sha256 of the client’s own canonical params, never a row id (§7.6)', async () => {
-    const params = iw.message({ skill: 'eta_query', params: { route_id: '7' } }, { messageId: 'receipt-call' });
+    const params = iw.message(
+      { skill: 'eta_query', params: { route_id: '7' } },
+      { messageId: 'receipt-call' },
+    );
     const id = sentTask(ingressSendMessage(rt, request('SendMessage', params))).id as string;
-    const read = () => resultOf(ingressGetTask(rt, request('GetTask', { id }), id)) as { metadata?: Record<string, { receiptId?: string }> };
+    const read = () =>
+      resultOf(ingressGetTask(rt, request('GetTask', { id }), id)) as {
+        metadata?: Record<string, { receiptId?: string }>;
+      };
     expect(read().metadata).toBeUndefined();
     iw.runChild(id, { eta_minutes: 3 });
     const done = read();
-    expect(done.metadata?.[DINA_A2A_EXTENSION_URI]).toEqual({ receiptId: sha256HexOfText(canonicalize(params as JsonValue)) });
+    expect(done.metadata?.[DINA_A2A_EXTENSION_URI]).toEqual({
+      receiptId: sha256HexOfText(canonicalize(params as JsonValue)),
+    });
   });
 
   it('every refusal looks the same from outside', async () => {
@@ -1545,7 +1608,9 @@ describe('review findings: cancel, order, egress, versions, list filters, read b
       errorOf(ingressListTasks(rt, request('ListTasks', { status: 'TASK_STATE_WORKING' }))),
     ).toEqual({ code: -32602, reason: 'status_filter_unsupported' });
     // Outside-agent run: proto3's default, sent by a client that writes defaults, means no filter.
-    const unfiltered = resultOf(ingressListTasks(rt, request('ListTasks', { status: 'TASK_STATE_UNSPECIFIED' })));
+    const unfiltered = resultOf(
+      ingressListTasks(rt, request('ListTasks', { status: 'TASK_STATE_UNSPECIFIED' })),
+    );
     expect((unfiltered.tasks as unknown[]).length).toBe(2);
   });
 

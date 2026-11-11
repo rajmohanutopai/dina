@@ -106,11 +106,7 @@ describe('safeDbClose (task 4.87)', () => {
       expect(result.checkpointOk).toBe(false);
       expect(result.closeOk).toBe(true);
       expect(result.errors.checkpoint).toMatch(/timeout after 10ms/);
-      expect(
-        events.some(
-          (e) => e.kind === 'stage_timeout' && e.stage === 'checkpoint',
-        ),
-      ).toBe(true);
+      expect(events.some((e) => e.kind === 'stage_timeout' && e.stage === 'checkpoint')).toBe(true);
     });
 
     it('close timeout fires without blocking', async () => {
@@ -150,9 +146,9 @@ describe('safeDbClose (task 4.87)', () => {
 
   describe('validation', () => {
     it('rejects missing handle', async () => {
-      await expect(
-        safeDbClose({ handle: undefined as unknown as DatabaseHandle }),
-      ).rejects.toThrow(/handle is required/);
+      await expect(safeDbClose({ handle: undefined as unknown as DatabaseHandle })).rejects.toThrow(
+        /handle is required/,
+      );
     });
   });
 
@@ -172,9 +168,10 @@ describe('safeDbClose (task 4.87)', () => {
         nowMsFn: () => now,
         onEvent: (e) => events.push(e),
       });
-      const cpOk = events.find(
-        (e) => e.kind === 'stage_ok' && e.stage === 'checkpoint',
-      ) as Extract<DbCloseEvent, { kind: 'stage_ok' }>;
+      const cpOk = events.find((e) => e.kind === 'stage_ok' && e.stage === 'checkpoint') as Extract<
+        DbCloseEvent,
+        { kind: 'stage_ok' }
+      >;
       expect(cpOk.durationMs).toBe(50);
     });
   });

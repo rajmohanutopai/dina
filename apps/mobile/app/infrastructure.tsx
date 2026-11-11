@@ -7,14 +7,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { IdentityModal } from '../src/components/identity/identity_modal';
@@ -122,8 +115,8 @@ export default function InfrastructureScreen(): React.ReactElement {
       bottomOffset={24}
     >
       <Text style={styles.subtitle}>
-        Dina uses hosted defaults automatically. Change these only when you are using a
-        different PDS or AppView.
+        Dina uses hosted defaults automatically. Change these only when you are using a different
+        PDS or AppView.
       </Text>
 
       <View style={styles.section}>

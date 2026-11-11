@@ -204,7 +204,7 @@ export function computeSentimentV1(input: ScoreV1Input, nowMs: number): number {
     // AppView contract: an unvouched author contributes zero weight,
     // even if they have a non-null PeerLens rating. Catches cold-start
     // self-promotion attempts.
-    const authorWeight = a.authorHasInboundVouch ? a.authorTrustScore ?? 0.0 : 0.0;
+    const authorWeight = a.authorHasInboundVouch ? (a.authorTrustScore ?? 0.0) : 0.0;
 
     const weight = recency * evidence * verified * bilateral * authorWeight;
 
@@ -243,9 +243,7 @@ export function computeReviewerV1(input: ScoreV1Input): number {
   const evidenceRate = input.withEvidenceCount / total;
   const helpfulTotal = input.helpfulReactions + input.unhelpfulReactions;
   const helpfulRatio =
-    helpfulTotal > 0
-      ? input.helpfulReactions / helpfulTotal
-      : C.REVIEWER_HELPFUL_DEFAULT;
+    helpfulTotal > 0 ? input.helpfulReactions / helpfulTotal : C.REVIEWER_HELPFUL_DEFAULT;
 
   let score = C.REVIEWER_BASE;
   score += helpfulRatio * C.REVIEWER_HELPFUL_WEIGHT;

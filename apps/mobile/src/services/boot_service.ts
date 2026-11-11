@@ -541,8 +541,7 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
       new UpdateRebindCoordinator({
         installs: () => getPluginInstallRepository(),
         drains: () => getDrainAuthorizationRepository(),
-        rebindListings: (rebindArgs) =>
-          rebindListingsForUpdate(rebindDb, rebindArgs),
+        rebindListings: (rebindArgs) => rebindListingsForUpdate(rebindDb, rebindArgs),
         // §9.13 — a prior manifest's lifecycle lane stays open while it still
         // serves an order. Absent commerce reads as zero.
         countOpenOrders: (cid) =>
@@ -858,7 +857,9 @@ export async function bootAppNode(inputs: BootServiceInputs): Promise<BootResult
     pdsPublisher: inputs.pdsPublisher,
     pdsSessionReachable: inputs.pdsSessionReachable,
     ...(inputs.isAppActive !== undefined ? { isAppActive: inputs.isAppActive } : {}),
-    ...(inputs.subscribeAppActive !== undefined ? { subscribeAppActive: inputs.subscribeAppActive } : {}),
+    ...(inputs.subscribeAppActive !== undefined
+      ? { subscribeAppActive: inputs.subscribeAppActive }
+      : {}),
     workflowRepository,
     serviceConfigRepository,
     reviewPublishRepository,

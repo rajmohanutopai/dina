@@ -37,7 +37,11 @@ import {
 } from '@dina/core';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { A2ACardPublisher, type A2ACardPublisherDeps, type CardRepoClient } from '../src/appview/a2a_card_publisher';
+import {
+  A2ACardPublisher,
+  type A2ACardPublisherDeps,
+  type CardRepoClient,
+} from '../src/appview/a2a_card_publisher';
 
 export const NODE = 'did:plc:nodeaaaaaaaaaaaaaaaaaaaa';
 export const KEY_A = new Uint8Array(32).fill(7);
@@ -106,7 +110,10 @@ export class FakeRepo implements CardRepoClient {
   /** Another writer: lands with no precondition, moving the head. */
   writeDirect(col: string, value: Record<string, unknown>): void {
     this.move();
-    this.records.set(this.key(col, 'self'), { cid: `r${this.seq}`, value: { $type: col, ...value } });
+    this.records.set(this.key(col, 'self'), {
+      cid: `r${this.seq}`,
+      value: { $type: col, ...value },
+    });
   }
   /** Another writer removes a record, moving the head. */
   deleteDirect(col: string): void {
@@ -132,15 +139,23 @@ export class FakeRepo implements CardRepoClient {
     if (this.failReadsOf === col) throw new Error('ExpiredToken');
     this.reads += 1;
     const r = this.records.get(this.key(col, rkey));
-    return r === undefined ? null : { uri: `at://${NODE}/${col}/${rkey}`, cid: r.cid, value: structuredClone(r.value) };
+    return r === undefined
+      ? null
+      : { uri: `at://${NODE}/${col}/${rkey}`, cid: r.cid, value: structuredClone(r.value) };
   }
-  async putRecord(col: string, rkey: string, record: Record<string, unknown>, options: { swapCommit: string; swapRecord?: string | null }) {
+  async putRecord(
+    col: string,
+    rkey: string,
+    record: Record<string, unknown>,
+    options: { swapCommit: string; swapRecord?: string | null },
+  ) {
     this.check();
     this.attempted.push({ op: 'put', collection: col, options: { ...options } });
     await this.before();
     if (options.swapCommit !== this.head) throw new LostSwap('head moved');
     const current = this.records.get(this.key(col, rkey))?.cid ?? null;
-    if ('swapRecord' in options && options.swapRecord !== current) throw new LostSwap('record moved');
+    if ('swapRecord' in options && options.swapRecord !== current)
+      throw new LostSwap('record moved');
     if (col === A2A_CARD_COLLECTION) this.onCardPut?.(record);
     this.move();
     const cid = `r${this.seq}`;
@@ -181,10 +196,15 @@ export const CARD = (name = 'Bus 42', skills = ['eta_query']): AgentCard =>
   ({
     name,
     description: 'Arrival times.',
-    supportedInterfaces: [{ url: 'https://dina.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+    supportedInterfaces: [
+      { url: 'https://dina.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+    ],
     version: '1.0.0',
     // A card the directory would take: the Dina extension names the node's own DID.
-    capabilities: { streaming: true, extensions: [{ uri: DINA_A2A_EXTENSION_URI, params: { did: NODE } }] },
+    capabilities: {
+      streaming: true,
+      extensions: [{ uri: DINA_A2A_EXTENSION_URI, params: { did: NODE } }],
+    },
     defaultInputModes: ['application/json'],
     defaultOutputModes: ['application/json'],
     skills: skills.map(SKILL),
@@ -336,8 +356,16 @@ export class PublishWorld {
     return card === null ? null : (JSON.parse(card.card as string) as { name: string }).name;
   }
 
-  envelopeInRepo(): { freshness_epoch: number; publisher_epoch: number; publisher_instance: string } {
-    return this.repo.card()?.directory_envelope as { freshness_epoch: number; publisher_epoch: number; publisher_instance: string };
+  envelopeInRepo(): {
+    freshness_epoch: number;
+    publisher_epoch: number;
+    publisher_instance: string;
+  } {
+    return this.repo.card()?.directory_envelope as {
+      freshness_epoch: number;
+      publisher_epoch: number;
+      publisher_instance: string;
+    };
   }
 
   envelopeVerifiesUnder(key: Uint8Array): boolean {
@@ -345,7 +373,12 @@ export class PublishWorld {
     if (record === null) return false;
     return verifyDirectoryEnvelope(
       record.directory_envelope,
-      { repoDid: NODE, collection: A2A_CARD_COLLECTION, rkey: 'self', cardText: record.card as string },
+      {
+        repoDid: NODE,
+        collection: A2A_CARD_COLLECTION,
+        rkey: 'self',
+        cardText: record.card as string,
+      },
       (b) => sha256(b),
       (m, s) => verify(getPublicKey(key), m, s),
     ).ok;
@@ -358,7 +391,10 @@ export class PublishWorld {
 
   /** A fence another writer puts in the repository, signed with `key`. */
   async writeFence(key: Uint8Array, epoch: number, instance: string): Promise<void> {
-    const fence = await signFence({ did: NODE, publisher_epoch: epoch, publisher_instance: instance }, (m) => sign(key, m));
+    const fence = await signFence(
+      { did: NODE, publisher_epoch: epoch, publisher_instance: instance },
+      (m) => sign(key, m),
+    );
     this.repo.writeDirect(A2A_FENCE_COLLECTION, fence as unknown as Record<string, unknown>);
   }
 }
@@ -389,7 +425,10 @@ export class WirePds {
   readonly failNext = new Map<string, { status: number; error: string }>();
 
   private json(status: number, body: unknown): Response {
-    return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify(body), {
+      status,
+      headers: { 'Content-Type': 'application/json' },
+    });
   }
   private move(): string {
     this.seq += 1;
@@ -400,7 +439,8 @@ export class WirePds {
   readonly fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = new URL(String(input));
     const method = init?.method ?? 'GET';
-    const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null;
+    const body =
+      typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : null;
     const xrpc = url.pathname.replace('/xrpc/', '');
     this.calls.push({ method, path: xrpc, body, query: Object.fromEntries(url.searchParams) });
     const forced = this.failNext.get(xrpc);
@@ -413,7 +453,8 @@ export class WirePds {
       case 'com.atproto.server.createSession':
         return this.json(200, { accessJwt: 'jwt', did: this.sessionAs });
       case 'com.atproto.sync.getLatestCommit':
-        if (url.searchParams.get('did') !== NODE) return this.json(200, { cid: 'bafyotherhead', rev: 'rother' });
+        if (url.searchParams.get('did') !== NODE)
+          return this.json(200, { cid: 'bafyotherhead', rev: 'rother' });
         return this.json(200, { cid: this.head, rev: `rev${this.seq}` });
       case 'com.atproto.repo.getRecord': {
         const key = `${url.searchParams.get('collection')}/${url.searchParams.get('rkey')}`;
@@ -428,9 +469,11 @@ export class WirePds {
           return this.json(200, { uri: `at://${String(b.repo)}/x`, cid: 'bafyforeign' });
         }
         const key = `${String(b.collection)}/${String(b.rkey)}`;
-        if (b.swapCommit !== undefined && b.swapCommit !== this.head) return this.json(400, { error: 'InvalidSwap' });
+        if (b.swapCommit !== undefined && b.swapCommit !== this.head)
+          return this.json(400, { error: 'InvalidSwap' });
         const current = this.records.get(key)?.cid ?? null;
-        if ('swapRecord' in b && b.swapRecord !== current) return this.json(400, { error: 'InvalidSwap' });
+        if ('swapRecord' in b && b.swapRecord !== current)
+          return this.json(400, { error: 'InvalidSwap' });
         const cid = this.move();
         this.records.set(key, { cid, value: b.record as Record<string, unknown> });
         return this.json(200, { uri: `at://${NODE}/${key}`, cid });
@@ -441,7 +484,8 @@ export class WirePds {
           this.foreignWrites.push({ method, path: xrpc, body, query: {} });
           return this.json(200, {});
         }
-        if (b.swapCommit !== undefined && b.swapCommit !== this.head) return this.json(400, { error: 'InvalidSwap' });
+        if (b.swapCommit !== undefined && b.swapCommit !== this.head)
+          return this.json(400, { error: 'InvalidSwap' });
         this.move();
         this.records.delete(`${String(b.collection)}/${String(b.rkey)}`);
         return this.json(200, {});

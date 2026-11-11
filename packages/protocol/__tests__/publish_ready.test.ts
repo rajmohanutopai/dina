@@ -171,9 +171,7 @@ describe('@dina/protocol npm-publish readiness (task 10.18 prep)', () => {
       // — which is fine; it's the pre-wire for task 10.19's activation.
       // The key invariant: the URL must address `@dina/protocol` so
       // the badge switches on the right package.
-      expect(readme).toMatch(
-        /https:\/\/img\.shields\.io\/npm\/v\/@dina\/protocol\.svg/,
-      );
+      expect(readme).toMatch(/https:\/\/img\.shields\.io\/npm\/v\/@dina\/protocol\.svg/);
       // Crosslink to the npmjs.com package page — so a reader clicking
       // the badge lands on the canonical registry entry, not a 404.
       expect(readme).toMatch(/npmjs\.com\/package\/@dina\/protocol/);
@@ -184,9 +182,7 @@ describe('@dina/protocol npm-publish readiness (task 10.18 prep)', () => {
       // shields.io `npm/dm` = monthly downloads. Starts at 0 after
       // publish, auto-updates. Separate from version badge so either
       // can be removed independently without breaking the other.
-      expect(readme).toMatch(
-        /https:\/\/img\.shields\.io\/npm\/dm\/@dina\/protocol\.svg/,
-      );
+      expect(readme).toMatch(/https:\/\/img\.shields\.io\/npm\/dm\/@dina\/protocol\.svg/);
     });
   });
 
@@ -204,7 +200,7 @@ describe('@dina/protocol npm-publish readiness (task 10.18 prep)', () => {
         // `require` is synchronous + survives the CJS-in-TS-jest
         // environment. If the build emits ESM-only output, this fails
         // loud — that'd mean `tsconfig.build.json::module` drifted.
-        // eslint-disable-next-line @typescript-eslint/no-require-imports
+
         const built = require(distIndex) as Record<string, unknown>;
         // Spot-check a handful of known-public exports from src/index.ts.
         expect(typeof built.buildCanonicalPayload).toBe('function');

@@ -456,11 +456,11 @@ describe('§17.4: a hosted runner multiplexing tenants', () => {
         buildPluginEnvelope({
           install: record,
           // A TOOL capability. The supplier pack declares its lot as
-      // `provider`-only, and a task with no `service_ingress` requires `tool`
-      // consent — so a supplier fixture here would terminalize on the kind
-      // check and prove nothing about tenants. §17.4 names a hosted Buyer
-      // runner in the same breath, which is what this is.
-      capabilityId: 'com.dinakernel.commerce.track-order',
+          // `provider`-only, and a task with no `service_ingress` requires `tool`
+          // consent — so a supplier fixture here would terminalize on the kind
+          // check and prove nothing about tenants. §17.4 names a hosted Buyer
+          // runner in the same breath, which is what this is.
+          capabilityId: 'com.dinakernel.commerce.track-order',
           params: { purchase_order_id: executionId },
           context: [],
           executionId,
@@ -512,10 +512,13 @@ describe('§17.4: a hosted runner multiplexing tenants', () => {
     enqueueIn(chairmaker, 'po-chairmaker-1');
     enqueueIn(rival, 'po-rival-1');
 
-    expect(claimIn(chairmaker, { installId: chairmaker.installId, from: chairmaker }, VENDOR_RUNNER)
-      .task?.id).toBe('po-chairmaker-1');
-    expect(claimIn(rival, { installId: rival.installId, from: rival }, VENDOR_RUNNER)
-      .task?.id).toBe('po-rival-1');
+    expect(
+      claimIn(chairmaker, { installId: chairmaker.installId, from: chairmaker }, VENDOR_RUNNER).task
+        ?.id,
+    ).toBe('po-chairmaker-1');
+    expect(
+      claimIn(rival, { installId: rival.installId, from: rival }, VENDOR_RUNNER).task?.id,
+    ).toBe('po-rival-1');
   });
 
   it('a vendor identity CANNOT claim a tenant it holds no install in', () => {
@@ -547,11 +550,7 @@ describe('§17.4: a hosted runner multiplexing tenants', () => {
     // missing.
     const rival = openTenant('rival', 'did:key:zRivalOwnRunner');
     enqueueIn(rival, 'po-rival-1');
-    const claimed = claimIn(
-      rival,
-      { installId: rival.installId, from: rival },
-      VENDOR_RUNNER,
-    );
+    const claimed = claimIn(rival, { installId: rival.installId, from: rival }, VENDOR_RUNNER);
     expect(claimed.task).toBeNull();
   });
 
@@ -566,7 +565,9 @@ describe('§17.4: a hosted runner multiplexing tenants', () => {
     // Claim in the RIVAL's store while presenting the rival's own valid
     // authority: the queue is empty there, and ChairMaker's task is not
     // reachable from it however the lane happens to be named.
-    expect(claimIn(rival, { installId: rival.installId, from: rival }, VENDOR_RUNNER).task).toBeNull();
+    expect(
+      claimIn(rival, { installId: rival.installId, from: rival }, VENDOR_RUNNER).task,
+    ).toBeNull();
     expect(
       claimIn(chairmaker, { installId: chairmaker.installId, from: chairmaker }, VENDOR_RUNNER).task
         ?.id,

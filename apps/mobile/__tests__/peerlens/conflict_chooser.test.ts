@@ -27,11 +27,7 @@ import {
 
 import type { SubjectRef } from '@dina/protocol';
 
-function candidate(
-  subjectId: string,
-  reviewCount: number,
-  name = subjectId,
-): ConflictCandidate {
+function candidate(subjectId: string, reviewCount: number, name = subjectId): ConflictCandidate {
   const subject: SubjectRef = { type: 'product', name };
   return { subjectId, subject, reviewCount };
 }
@@ -80,9 +76,7 @@ describe('buildConflictChooser — auto_match', () => {
   });
 
   it('autoMatch.reviewCount clamps NaN/negative to 0 (sort-key consistency)', () => {
-    const c = buildConflictChooser(
-      resolveResult({ subjectId: 'subj:x', reviewCount: Number.NaN }),
-    );
+    const c = buildConflictChooser(resolveResult({ subjectId: 'subj:x', reviewCount: Number.NaN }));
     expect(c.autoMatch?.reviewCount).toBe(0);
   });
 });
@@ -170,9 +164,7 @@ describe('buildConflictChooser — pick_one', () => {
 
   it('preserves the candidate object identity (no copying — screen reads subject directly)', () => {
     const original = candidate('a', 3);
-    const c = buildConflictChooser(
-      resolveResult({ subjectId: null, conflicts: [original] }),
-    );
+    const c = buildConflictChooser(resolveResult({ subjectId: null, conflicts: [original] }));
     const first = c.items[0];
     expect(first?.kind).toBe('candidate');
     if (first?.kind === 'candidate') {
@@ -188,11 +180,7 @@ describe('buildConflictChooser — malformed reviewCount', () => {
     const c = buildConflictChooser(
       resolveResult({
         subjectId: null,
-        conflicts: [
-          candidate('good', 5),
-          candidate('bad', Number.NaN),
-          candidate('also_good', 2),
-        ],
+        conflicts: [candidate('good', 5), candidate('bad', Number.NaN), candidate('also_good', 2)],
       }),
     );
     const candidates = c.items
@@ -221,10 +209,7 @@ describe('buildConflictChooser — malformed reviewCount', () => {
     const c = buildConflictChooser(
       resolveResult({
         subjectId: null,
-        conflicts: [
-          candidate('finite', 100),
-          candidate('infinite', Number.POSITIVE_INFINITY),
-        ],
+        conflicts: [candidate('finite', 100), candidate('infinite', Number.POSITIVE_INFINITY)],
       }),
     );
     const candidates = c.items
@@ -252,9 +237,7 @@ describe('buildConflictChooser — malformed reviewCount', () => {
 
 describe('buildConflictChooser — frozen invariants', () => {
   it('auto_match: chooser + autoMatch are frozen', () => {
-    const c = buildConflictChooser(
-      resolveResult({ subjectId: 'subj:abc', reviewCount: 5 }),
-    );
+    const c = buildConflictChooser(resolveResult({ subjectId: 'subj:abc', reviewCount: 5 }));
     expect(Object.isFrozen(c)).toBe(true);
     expect(Object.isFrozen(c.items)).toBe(true);
     expect(c.autoMatch).toBeDefined();

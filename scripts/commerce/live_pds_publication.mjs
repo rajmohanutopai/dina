@@ -22,9 +22,8 @@
  * `Unknown method` for `com.dinakernel.commerce.searchCatalog`, so that step
  * needs a redeploy and is NOT claimed here.
  *
- * CREDENTIALS. The test actors are fixtures the repository already commits, in
- * `scripts/register_test_actors.py`, alongside their `03…` seeds. They are
- * throwaway identities on a throwaway PDS, provisioned once for exactly this.
+ * CREDENTIALS. The test actor below is a fixture committed in this script. It
+ * is a throwaway identity on a throwaway PDS, provisioned once for exactly this.
  * Nothing here reads a real user's secret, and the script refuses to run
  * against any host but the test PDS.
  *
@@ -55,7 +54,7 @@ if (!/^https:\/\/test-[a-z0-9-]+\.dinakernel\.com$/.test(PDS_URL)) {
 const CHAIRMAKER = {
   did: 'did:plc:h4en7flpfoqpnzlh7np6erwm',
   email: 'chairmaker-test@dina.local',
-  // Fixture credential, committed in `scripts/register_test_actors.py`.
+  // Fixture credential for a throwaway test-PDS account.
   password: 'dina-test-chairmaker-2026',
 }
 

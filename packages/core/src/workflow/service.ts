@@ -15,6 +15,9 @@
 
 import { parseServiceQueryExecutionPayload } from '@dina/protocol';
 
+// The SAME recogniser the completion handler uses. Asking the question here
+// as well is what stops a proposal being answered as a result — see
+// `complete()`.
 import { carriesHostOperationMarker } from '../plugins/host_operation_lane';
 import { failoverExpiringServiceQueries } from '../service/provider_failover';
 import { recordProviderOutcome } from '../service/provider_outcomes';
@@ -29,11 +32,6 @@ import {
   type WorkflowTask,
 } from './domain';
 import { parsePluginEnvelope } from './plugin_envelope';
-
-// The SAME recogniser the completion handler uses. Asking the question here
-// as well is what stops a proposal being answered as a result — see
-// `complete()`.
-
 import { WorkflowConflictError, type RequeueObserver, type WorkflowRepository } from './repository';
 
 import type { PluginCompletionHandler } from '../plugins/host_operation_completion';
@@ -601,7 +599,8 @@ export class WorkflowService {
     });
     const expired = this.repo.expireTasks(nowSec, nowMs);
     for (const task of expired) {
-      if (task.status === WorkflowTaskState.PendingApproval) this.noticeApprovalDecision(task, 'lapsed');
+      if (task.status === WorkflowTaskState.PendingApproval)
+        this.noticeApprovalDecision(task, 'lapsed');
       // A query that was handed off and never answered counts against its
       // provider (only with the relay link up — see provider_outcomes).
       if (task.kind === WorkflowTaskKind.ServiceQuery) {
@@ -746,7 +745,15 @@ export class WorkflowService {
       // outcome_unknown after its lease lapsed, may hold the only record of what
       // it did. The repository keeps it as a late_report and changes nothing.
       if (claimId !== undefined) {
-        this.repo.completeWithDetails(id, agentDID, resultSummary, resultJSON, '{}', this.nowMsFn(), claimId);
+        this.repo.completeWithDetails(
+          id,
+          agentDID,
+          resultSummary,
+          resultJSON,
+          '{}',
+          this.nowMsFn(),
+          claimId,
+        );
       }
       throw err;
     }

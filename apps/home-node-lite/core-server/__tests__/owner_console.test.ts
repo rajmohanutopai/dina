@@ -22,7 +22,9 @@ describe('Core owner console (B-02)', () => {
     const app = await makeApp(true);
     try {
       const res = await app.inject({ method: 'GET', url: '/owner' });
-      const scripts = [...res.body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((m) => m[1] ?? '');
+      const scripts = [...res.body.matchAll(/<script>([\s\S]*?)<\/script>/g)].map(
+        (m) => m[1] ?? '',
+      );
       expect(scripts.length).toBeGreaterThan(0);
       for (const script of scripts) expect(() => new Function(script)).not.toThrow();
     } finally {
@@ -53,7 +55,8 @@ describe('Core owner console (B-02)', () => {
       expect(body).toContain('"ucp_search_review"');
       expect(body).toContain('Send this search');
       expect(body).toContain('Dina held this search before it left:');
-      for (const words of Object.values(REVIEW_REASON_WORDS)) expect(body).toContain(JSON.stringify(words));
+      for (const words of Object.values(REVIEW_REASON_WORDS))
+        expect(body).toContain(JSON.stringify(words));
       // The Shopping section reads and saves the owner's UCP settings.
       expect(body).toContain('/v1/owner/ucp/settings');
       expect(body).toContain('id="ucpMerchants"');
@@ -65,7 +68,10 @@ describe('Core owner console (B-02)', () => {
   it('runs the page’s own UCP code: the review card as text, and a save that trims, drops blanks, and names a refused field', async () => {
     const app = await makeApp(true);
     try {
-      const script = (await app.inject({ method: 'GET', url: '/owner' })).body.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+      const script =
+        (await app.inject({ method: 'GET', url: '/owner' })).body.match(
+          /<script>([\s\S]*?)<\/script>/,
+        )?.[1] ?? '';
       // A function or `var` statement lifted out of the served page, braces balanced.
       const lift = (head: string): string => {
         const start = script.indexOf(head);
@@ -73,11 +79,21 @@ describe('Core owner console (B-02)', () => {
         let depth = 0;
         for (let i = script.indexOf('{', start); i < script.length; i += 1) {
           if (script[i] === '{') depth += 1;
-          else if (script[i] === '}' && (depth -= 1) === 0) return script.slice(start, script[i + 1] === ';' ? i + 2 : i + 1);
+          else if (script[i] === '}' && (depth -= 1) === 0)
+            return script.slice(start, script[i + 1] === ';' ? i + 2 : i + 1);
         }
         throw new Error(`unbalanced ${head}`);
       };
-      interface Node { tag: string; className: string; textContent: string; value: string; checked?: boolean; children: Node[]; appendChild(c: Node): void; setAttribute(k: string, v: string): void }
+      interface Node {
+        tag: string;
+        className: string;
+        textContent: string;
+        value: string;
+        checked?: boolean;
+        children: Node[];
+        appendChild(c: Node): void;
+        setAttribute(k: string, v: string): void;
+      }
       const make = (tag: string): Node => {
         const node: Node = {
           tag,
@@ -90,9 +106,24 @@ describe('Core owner console (B-02)', () => {
         };
         return node;
       };
-      const ids = ['ucpSettingsNote', 'ucpMerchants', 'ucpCountry', 'ucpRegion', 'ucpLanguage', 'ucpPostal', 'ucpOrderWebhooks', 'ucpWebhookNote'] as const;
-      const byId = Object.fromEntries(ids.map((id) => [id, make('input')])) as Record<(typeof ids)[number], Node>;
-      const document = { createElement: make, getElementById: (id: string) => (byId as Record<string, Node | undefined>)[id] };
+      const ids = [
+        'ucpSettingsNote',
+        'ucpMerchants',
+        'ucpCountry',
+        'ucpRegion',
+        'ucpLanguage',
+        'ucpPostal',
+        'ucpOrderWebhooks',
+        'ucpWebhookNote',
+      ] as const;
+      const byId = Object.fromEntries(ids.map((id) => [id, make('input')])) as Record<
+        (typeof ids)[number],
+        Node
+      >;
+      const document = {
+        createElement: make,
+        getElementById: (id: string) => (byId as Record<string, Node | undefined>)[id],
+      };
       const sent: { method: string; path: string; body: unknown }[] = [];
       let answer: { status: number; body: unknown } = { status: 200, body: {} };
       const call = (method: string, path: string, body: unknown) => {
@@ -110,7 +141,11 @@ describe('Core owner console (B-02)', () => {
         lift('function saveUcpSettings('),
         lift('function loadUcpSettings('),
       ].join('\n');
-      const page = new Function('document', 'call', `${code}\nreturn { ucpSearchReviewCard, saveUcpSettings, loadUcpSettings };`)(document, call) as {
+      const page = new Function(
+        'document',
+        'call',
+        `${code}\nreturn { ucpSearchReviewCard, saveUcpSettings, loadUcpSettings };`,
+      )(document, call) as {
         ucpSearchReviewCard: (card: Node, payload: unknown) => void;
         saveUcpSettings: () => void;
         loadUcpSettings: () => void;
@@ -154,7 +189,11 @@ describe('Core owner console (B-02)', () => {
       expect(sent.at(-1)).toEqual({
         method: 'PUT',
         path: '/v1/owner/ucp/settings',
-        body: { merchants: ['https://a-shop.example', 'https://b-shop.example'], context: { address_country: 'DE' }, order_webhooks: true },
+        body: {
+          merchants: ['https://a-shop.example', 'https://b-shop.example'],
+          context: { address_country: 'DE' },
+          order_webhooks: true,
+        },
       });
       expect(byId.ucpSettingsNote.textContent).toBe('Saved.');
       expect(byId.ucpWebhookNote.textContent).toBe(
@@ -164,26 +203,46 @@ describe('Core owner console (B-02)', () => {
       byId.ucpOrderWebhooks.checked = false;
       answer = {
         status: 200,
-        body: { merchants: ['https://a-shop.example', 'https://b-shop.example'], context: {}, order_webhooks: false, order_webhook_url: null },
+        body: {
+          merchants: ['https://a-shop.example', 'https://b-shop.example'],
+          context: {},
+          order_webhooks: false,
+          order_webhook_url: null,
+        },
       };
       page.saveUcpSettings();
       await Promise.resolve();
       expect((sent.at(-1)?.body as { order_webhooks: boolean }).order_webhooks).toBe(false);
       expect(byId.ucpOrderWebhooks.checked).toBe(false);
-      expect(byId.ucpWebhookNote.textContent).toBe('Off: Dina asks each shop for order updates itself.');
+      expect(byId.ucpWebhookNote.textContent).toBe(
+        'Off: Dina asks each shop for order updates itself.',
+      );
       expect(byId.ucpMerchants.value).toBe('https://a-shop.example\nhttps://b-shop.example');
 
       answer = { status: 400, body: { error: 'invalid_settings', field: 'address_country' } };
       byId.ucpCountry.value = 'Germany';
       page.saveUcpSettings();
       await Promise.resolve();
-      expect(byId.ucpSettingsNote.textContent).toBe('Use the two-letter country code, in capitals (e.g. DE).');
+      expect(byId.ucpSettingsNote.textContent).toBe(
+        'Use the two-letter country code, in capitals (e.g. DE).',
+      );
 
       // Loaded where search is off: the section says so.
-      answer = { status: 200, body: { merchants: ['https://a-shop.example'], context: {}, searching: false, order_webhooks: true, order_webhook_url: null } };
+      answer = {
+        status: 200,
+        body: {
+          merchants: ['https://a-shop.example'],
+          context: {},
+          searching: false,
+          order_webhooks: true,
+          order_webhook_url: null,
+        },
+      };
       page.loadUcpSettings();
       await Promise.resolve();
-      expect(byId.ucpWebhookNote.textContent).toBe('This node has no public address, so Dina asks each shop for order updates itself.');
+      expect(byId.ucpWebhookNote.textContent).toBe(
+        'This node has no public address, so Dina asks each shop for order updates itself.',
+      );
       expect(byId.ucpSettingsNote.textContent).toBe(
         '1 shop(s). Shop search is not switched on for this node yet; these settings apply once it is.',
       );
@@ -277,9 +336,20 @@ describe('Core owner console (B-02)', () => {
         }
         throw new Error(`unbalanced ${name}`);
       };
-      interface FakeNode { tag: string; className: string; textContent: string; children: FakeNode[]; attrs: Record<string, string> }
+      interface FakeNode {
+        tag: string;
+        className: string;
+        textContent: string;
+        children: FakeNode[];
+        attrs: Record<string, string>;
+      }
       const document = {
-        createElement: (tag: string): FakeNode & { appendChild(c: FakeNode): void; setAttribute(k: string, v: string): void } => {
+        createElement: (
+          tag: string,
+        ): FakeNode & {
+          appendChild(c: FakeNode): void;
+          setAttribute(k: string, v: string): void;
+        } => {
           const node = {
             tag,
             className: '',
@@ -328,7 +398,9 @@ describe('Core owner console (B-02)', () => {
       const pre = card.children.find((c) => c.tag === 'pre');
       expect(pre?.textContent).toBe(`Summarize: ${hostile}\n\n{\n  "total": 3\n}`);
       // Text only: no node carries markup or event attributes.
-      expect(card.children.every((c) => Object.keys(c.attrs).length === 0 && c.children.length === 0)).toBe(true);
+      expect(
+        card.children.every((c) => Object.keys(c.attrs).length === 0 && c.children.length === 0),
+      ).toBe(true);
     } finally {
       await app.close();
     }
@@ -337,7 +409,10 @@ describe('Core owner console (B-02)', () => {
   it('shows the directory’s PeerLens evidence beside a remote agent, and only when it is this agent’s (§6.1, §8.4)', async () => {
     const app = await makeApp(true);
     try {
-      const script = (await app.inject({ method: 'GET', url: '/owner' })).body.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+      const script =
+        (await app.inject({ method: 'GET', url: '/owner' })).body.match(
+          /<script>([\s\S]*?)<\/script>/,
+        )?.[1] ?? '';
       const start = script.indexOf('function a2aEvidenceText(');
       let end = -1;
       for (let i = script.indexOf('{', start), depth = 0; i < script.length; i += 1) {
@@ -347,9 +422,21 @@ describe('Core owner console (B-02)', () => {
           break;
         }
       }
-      const text = new Function(`${script.slice(start, end)}\nreturn a2aEvidenceText;`)() as (r: unknown) => string;
+      const text = new Function(`${script.slice(start, end)}\nreturn a2aEvidenceText;`)() as (
+        r: unknown,
+      ) => string;
       const did = 'did:plc:abcdefghijklmnopqrstuvwx';
-      const listed = text({ status: 200, body: { status: 'listed', did, trust_score: 0.8123, recommendation: 'proceed', indexed_at: '2026-10-01T00:00:00.000Z', stale: true } });
+      const listed = text({
+        status: 200,
+        body: {
+          status: 'listed',
+          did,
+          trust_score: 0.8123,
+          recommendation: 'proceed',
+          indexed_at: '2026-10-01T00:00:00.000Z',
+          stale: true,
+        },
+      });
       expect(listed).toBe(
         `PeerLens: proceed (trust 0.81) for ${did}, listed 2026-10-01; the listing may be behind the live card. Evidence informs your review; it allows nothing.`,
       );
@@ -357,9 +444,15 @@ describe('Core owner console (B-02)', () => {
       const other = text({ status: 200, body: { status: 'other_endpoint', did } });
       expect(other).toContain('is not this agent');
       expect(other).not.toMatch(/trust|proceed/);
-      expect(text({ status: 200, body: { status: 'not_listed', did } })).toBe(`PeerLens: ${did} is not in the agent directory.`);
-      expect(text({ status: 200, body: { status: 'not_dina' } })).toBe('PeerLens: no record. This agent’s card names no Dina node.'.replace('’', "'"));
-      expect(text({ status: 503, body: { error: 'a2a_unavailable' } })).toBe('PeerLens: the agent directory is not available right now.');
+      expect(text({ status: 200, body: { status: 'not_listed', did } })).toBe(
+        `PeerLens: ${did} is not in the agent directory.`,
+      );
+      expect(text({ status: 200, body: { status: 'not_dina' } })).toBe(
+        'PeerLens: no record. This agent’s card names no Dina node.'.replace('’', "'"),
+      );
+      expect(text({ status: 503, body: { error: 'a2a_unavailable' } })).toBe(
+        'PeerLens: the agent directory is not available right now.',
+      );
       // The agent's card asks for it.
       expect(script).toContain('call("GET", base + "/evidence")');
     } finally {
@@ -415,7 +508,10 @@ async function consoleFunctions(
   const app = await makeApp(true);
   let script: string;
   try {
-    script = (await app.inject({ method: 'GET', url: '/owner' })).body.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+    script =
+      (await app.inject({ method: 'GET', url: '/owner' })).body.match(
+        /<script>([\s\S]*?)<\/script>/,
+      )?.[1] ?? '';
   } finally {
     await app.close();
   }
@@ -426,9 +522,14 @@ async function consoleFunctions(
     const start = fn >= 0 ? fn : table;
     if (start < 0) throw new Error(`no function or table ${name}`);
     let depth = 0;
-    for (let i = script.indexOf('{', fn >= 0 ? start : start + `var ${name} = `.length - 1); i < script.length; i += 1) {
+    for (
+      let i = script.indexOf('{', fn >= 0 ? start : start + `var ${name} = `.length - 1);
+      i < script.length;
+      i += 1
+    ) {
       if (script[i] === '{') depth += 1;
-      else if (script[i] === '}' && (depth -= 1) === 0) return script.slice(start, i + 1) + (fn >= 0 ? '' : ';');
+      else if (script[i] === '}' && (depth -= 1) === 0)
+        return script.slice(start, i + 1) + (fn >= 0 ? '' : ';');
     }
     throw new Error(`unbalanced ${name}`);
   };
@@ -462,7 +563,9 @@ async function consoleFunctions(
     },
   };
   const stubNames = Object.keys(stubs);
-  const lifted = [...new Set(['el', 'clear', 'btn', ...names])].filter((n) => !stubNames.includes(n));
+  const lifted = [...new Set(['el', 'clear', 'btn', ...names])].filter(
+    (n) => !stubNames.includes(n),
+  );
   return new Function(
     'document',
     ...stubNames,
@@ -500,7 +603,9 @@ function pageNode(tag = 'div'): PageNode & { appendChild(c: PageNode): void } {
 /** The button labelled `label` under `node`. */
 function buttonOf(node: PageNode, label: string): PageNode {
   const find = (n: PageNode): PageNode | undefined =>
-    n.tag === 'button' && n.textContent === label ? n : n.children.map(find).find((b) => b !== undefined);
+    n.tag === 'button' && n.textContent === label
+      ? n
+      : n.children.map(find).find((b) => b !== undefined);
   const found = find(node);
   if (found === undefined) throw new Error(`no button ${label}`);
   return found;
@@ -513,7 +618,10 @@ function textsOf(node: PageNode): string[] {
 
 /** The buttons a node holds, by label. */
 function buttonsOf(node: PageNode): string[] {
-  return [...(node.tag === 'button' ? [node.textContent] : []), ...node.children.flatMap(buttonsOf)];
+  return [
+    ...(node.tag === 'button' ? [node.textContent] : []),
+    ...node.children.flatMap(buttonsOf),
+  ];
 }
 
 describe('the owner console’s A2A operation row: the owner’s cancel (A2A §6.4)', () => {
@@ -530,15 +638,33 @@ describe('the owner console’s A2A operation row: the owner’s cancel (A2A §6
 
   it.each([
     ['running, never cancelled: the Cancel button', {}, null, ['Cancel']],
-    ['cancel asked, waiting: no second button', { cancel: 'attempting' }, 'Cancel asked. Waiting for the agent\'s answer.', []],
-    ['cancel requested, not yet asked: no second button', { cancel: 'requested' }, 'Cancel asked. Waiting for the agent\'s answer.', []],
-    ['cancel refused by the agent: said so, no button', { cancel: 'refused' }, 'The agent refused to cancel. The task runs on to its own end.', []],
+    [
+      'cancel asked, waiting: no second button',
+      { cancel: 'attempting' },
+      "Cancel asked. Waiting for the agent's answer.",
+      [],
+    ],
+    [
+      'cancel requested, not yet asked: no second button',
+      { cancel: 'requested' },
+      "Cancel asked. Waiting for the agent's answer.",
+      [],
+    ],
+    [
+      'cancel refused by the agent: said so, no button',
+      { cancel: 'refused' },
+      'The agent refused to cancel. The task runs on to its own end.',
+      [],
+    ],
     ['queued: the Cancel button', { state: 'queued' }, null, ['Cancel']],
   ])('%s', async (_name, over, notice, buttons) => {
-    const { a2aOpRow } = await consoleFunctions(['a2aOpRow', 'partText'], { call: () => new Promise(() => undefined) });
+    const { a2aOpRow } = await consoleFunctions(['a2aOpRow', 'partText'], {
+      call: () => new Promise(() => undefined),
+    });
     const row = (a2aOpRow as (op: unknown) => PageNode)(op(over));
     const texts = textsOf(row);
-    if (notice === null) expect(texts.filter((t) => /cancel/i.test(t) && t !== 'Cancel')).toEqual([]);
+    if (notice === null)
+      expect(texts.filter((t) => /cancel/i.test(t) && t !== 'Cancel')).toEqual([]);
     else expect(texts).toContain(notice);
     expect(buttonsOf(row)).toEqual(buttons);
   });
@@ -559,10 +685,14 @@ describe('the owner console’s agent directory panel (A2A §8.2, cold audit C3-
     notice: null,
     ...over,
   });
-  async function panel(v: Record<string, unknown>): Promise<{ node: PageNode; acts: [string, unknown][] }> {
+  async function panel(
+    v: Record<string, unknown>,
+  ): Promise<{ node: PageNode; acts: [string, unknown][] }> {
     const acts: [string, unknown][] = [];
     const { a2aDirectoryPanel } = await consoleFunctions(PANEL);
-    const node = (a2aDirectoryPanel as (v: unknown, act: (p: string, b: unknown) => void) => PageNode)(v, (path, body) => acts.push([path, body]));
+    const node = (
+      a2aDirectoryPanel as (v: unknown, act: (p: string, b: unknown) => void) => PageNode
+    )(v, (path, body) => acts.push([path, body]));
     return { node, acts };
   }
 
@@ -570,19 +700,26 @@ describe('the owner console’s agent directory panel (A2A §8.2, cold audit C3-
     ['another_server_publishing', 'Another server now publishes this node’s card'],
     ['fence_missing', 'publishing fence is gone'],
     ['fence_unverifiable', 'could not verify the publishing fence'],
-  ])('a node that stood down (%s) says why in words, and offers to start publishing again', async (notice, words) => {
-    const { node, acts } = await panel(view({ state: 'stood_down', active: false, eligible: false, notice }));
-    const texts = textsOf(node).join(' | ');
-    expect(texts).toContain('Stopped publishing.');
-    expect(texts.replace(/'/g, '’')).toContain(words);
-    expect(texts).not.toContain(notice);
-    expect(buttonsOf(node)).toEqual(['Turn listing off', 'Start publishing']);
-    buttonOf(node, 'Start publishing').clicks.forEach((fn) => fn());
-    expect(acts).toEqual([['/v1/owner/a2a/publisher/activate', {}]]);
-  });
+  ])(
+    'a node that stood down (%s) says why in words, and offers to start publishing again',
+    async (notice, words) => {
+      const { node, acts } = await panel(
+        view({ state: 'stood_down', active: false, eligible: false, notice }),
+      );
+      const texts = textsOf(node).join(' | ');
+      expect(texts).toContain('Stopped publishing.');
+      expect(texts.replace(/'/g, '’')).toContain(words);
+      expect(texts).not.toContain(notice);
+      expect(buttonsOf(node)).toEqual(['Turn listing off', 'Start publishing']);
+      buttonOf(node, 'Start publishing').clicks.forEach((fn) => fn());
+      expect(acts).toEqual([['/v1/owner/a2a/publisher/activate', {}]]);
+    },
+  );
 
   it('listing off: one switch turns it on', async () => {
-    const { node, acts } = await panel(view({ listing_enabled: false, active: false, state: 'not_published', published_at: null }));
+    const { node, acts } = await panel(
+      view({ listing_enabled: false, active: false, state: 'not_published', published_at: null }),
+    );
     expect(textsOf(node)).toContain('Listing is off.');
     buttonOf(node, 'Turn listing on').clicks.forEach((fn) => fn());
     expect(acts).toEqual([['/v1/owner/a2a/directory-listing', { enabled: true }]]);
@@ -590,7 +727,9 @@ describe('the owner console’s agent directory panel (A2A §8.2, cold audit C3-
 
   it('publishing: says when and where, and stops on the owner’s word', async () => {
     const { node, acts } = await panel(view({}));
-    expect(textsOf(node)).toContain('Last published 2026-10-04T10:00:00.000Z as at://did:plc:node/com.dinakernel.a2a.card/self.');
+    expect(textsOf(node)).toContain(
+      'Last published 2026-10-04T10:00:00.000Z as at://did:plc:node/com.dinakernel.a2a.card/self.',
+    );
     buttonOf(node, 'Stop publishing').clicks.forEach((fn) => fn());
     buttonOf(node, 'Turn listing off').clicks.forEach((fn) => fn());
     expect(acts).toEqual([
@@ -602,7 +741,10 @@ describe('the owner console’s agent directory panel (A2A §8.2, cold audit C3-
   it('replacing an unverifiable fence is offered only after activation found one, and sends refence', async () => {
     const box = pageNode();
     const posted: [string, unknown][] = [];
-    let answer: { status: number; body: unknown } = { status: 409, body: { error: 'fence_unverifiable' } };
+    let answer: { status: number; body: unknown } = {
+      status: 409,
+      body: { error: 'fence_unverifiable' },
+    };
     const { directoryAct } = await consoleFunctions(
       ['directoryAct', 'a2aRefenceOffer'],
       {
@@ -682,15 +824,19 @@ describe('shop orders on the console (UCP plan §3.14)', () => {
         permalink_url: 'javascript:alert(1)',
       },
     ];
-    const page = await consoleFunctions(['loadShopOrders', 'shopOrderCard'], {
-      call: (method: string, path: string, body: unknown) => {
-        sent.push([method, path, body]);
-        return Promise.resolve({ status: 200, body: { orders } });
+    const page = await consoleFunctions(
+      ['loadShopOrders', 'shopOrderCard'],
+      {
+        call: (method: string, path: string, body: unknown) => {
+          sent.push([method, path, body]);
+          return Promise.resolve({ status: 200, body: { orders } });
+        },
+        money: (m: string, c: string) => `${c} ${m}`,
+        alert: () => undefined,
+        refusal: (e: string) => e,
       },
-      money: (m: string, c: string) => `${c} ${m}`,
-      alert: () => undefined,
-      refusal: (e: string) => e,
-    }, { shopOrders: box });
+      { shopOrders: box },
+    );
     (page.loadShopOrders as () => void)();
     await new Promise((r) => setImmediate(r));
     const [first, second] = box.children;
@@ -698,46 +844,76 @@ describe('shop orders on the console (UCP plan §3.14)', () => {
     expect(textOf(first as PageNode)).not.toContain('Gone');
     expect(textOf(first as PageNode)).toContain('A refund: completed');
     expect(buttonsOf(first as PageNode)).toEqual([]);
-    const links = (n: PageNode): PageNode[] => [...(n.tag === 'a' ? [n] : []), ...n.children.flatMap(links)];
-    expect(links(first as PageNode)[0]?.attrs).toMatchObject({ href: 'https://tea.example/orders/ord_1', rel: 'noopener noreferrer' });
+    const links = (n: PageNode): PageNode[] => [
+      ...(n.tag === 'a' ? [n] : []),
+      ...n.children.flatMap(links),
+    ];
+    expect(links(first as PageNode)[0]?.attrs).toMatchObject({
+      href: 'https://tea.example/orders/ord_1',
+      rel: 'noopener noreferrer',
+    });
     expect(links(second as PageNode)).toEqual([]);
     expect(buttonsOf(second as PageNode)).toEqual(['Mark as done']);
     buttonOf(second as PageNode, 'Mark as done').clicks.forEach((fn) => fn());
     await new Promise((r) => setImmediate(r));
-    expect(sent).toContainEqual(['POST', '/v1/owner/ucp/orders/done', { merchant_origin: 'https://tea.example', order_id: 'ord_2' }]);
+    expect(sent).toContainEqual([
+      'POST',
+      '/v1/owner/ucp/orders/done',
+      { merchant_origin: 'https://tea.example', order_id: 'ord_2' },
+    ]);
   });
 });
 
 describe('linked accounts on the console (UCP plan §3.17)', () => {
   const textOf = (n: PageNode): string => [n.textContent, ...n.children.map(textOf)].join('\n');
-  const anchors = (n: PageNode): PageNode[] => [...(n.tag === 'a' ? [n] : []), ...n.children.flatMap(anchors)];
+  const anchors = (n: PageNode): PageNode[] => [
+    ...(n.tag === 'a' ? [n] : []),
+    ...n.children.flatMap(anchors),
+  ];
 
   it('lists each link with its state, offers Link for the owner’s other shops, and Unlink only after a confirm', async () => {
     const box = pageNode();
     const sent: [string, string, unknown][] = [];
     let confirmed = false;
-    const page = await consoleFunctions(['loadLinks', 'linkCard', 'startLink', 'linkRefusal'], {
-      call: (method: string, path: string, body: unknown) => {
-        sent.push([method, path, body]);
-        if (path === '/v1/owner/ucp/links')
-          return Promise.resolve({
-            status: 200,
-            body: {
-              links: [
-                { merchant_origin: 'https://tea.example', merchant_host: 'tea.example', state: 'active', scopes: ['dev.ucp.shopping.order:read'] },
-                { merchant_origin: 'https://rice.example', merchant_host: 'rice.example', state: 'needs_relink', scopes: [] },
-              ],
-            },
-          });
-        if (path === '/v1/owner/ucp/settings')
-          return Promise.resolve({ status: 200, body: { merchants: ['https://tea.example', 'https://bread.example'] } });
-        return Promise.resolve({ status: 200, body: { unlinked: true } });
+    const page = await consoleFunctions(
+      ['loadLinks', 'linkCard', 'startLink', 'linkRefusal'],
+      {
+        call: (method: string, path: string, body: unknown) => {
+          sent.push([method, path, body]);
+          if (path === '/v1/owner/ucp/links')
+            return Promise.resolve({
+              status: 200,
+              body: {
+                links: [
+                  {
+                    merchant_origin: 'https://tea.example',
+                    merchant_host: 'tea.example',
+                    state: 'active',
+                    scopes: ['dev.ucp.shopping.order:read'],
+                  },
+                  {
+                    merchant_origin: 'https://rice.example',
+                    merchant_host: 'rice.example',
+                    state: 'needs_relink',
+                    scopes: [],
+                  },
+                ],
+              },
+            });
+          if (path === '/v1/owner/ucp/settings')
+            return Promise.resolve({
+              status: 200,
+              body: { merchants: ['https://tea.example', 'https://bread.example'] },
+            });
+          return Promise.resolve({ status: 200, body: { unlinked: true } });
+        },
+        confirm: () => confirmed,
+        alert: () => undefined,
+        refusal: (e: string) => e,
+        loadApprovals: () => undefined,
       },
-      confirm: () => confirmed,
-      alert: () => undefined,
-      refusal: (e: string) => e,
-      loadApprovals: () => undefined,
-    }, { links: box, linkLinks: pageNode() });
+      { links: box, linkLinks: pageNode() },
+    );
     (page.loadLinks as () => void)();
     await new Promise((r) => setImmediate(r));
     const [tea, rice, bread] = box.children;
@@ -753,38 +929,69 @@ describe('linked accounts on the console (UCP plan §3.17)', () => {
     confirmed = true;
     buttonOf(tea as PageNode, 'Unlink').clicks.forEach((fn) => fn());
     await new Promise((r) => setImmediate(r));
-    expect(sent).toContainEqual(['POST', '/v1/owner/ucp/links/unlink', { merchant_origin: 'https://tea.example' }]);
+    expect(sent).toContainEqual([
+      'POST',
+      '/v1/owner/ucp/links/unlink',
+      { merchant_origin: 'https://tea.example' },
+    ]);
   });
 
   it('access Dina could not take back is shown until the owner removes it; a shop that asked is offered with its scopes; a failed attempt says why', async () => {
     const box = pageNode();
     const sent: [string, string, unknown][] = [];
     const started: unknown[][] = [];
-    const page = await consoleFunctions(['loadLinks', 'linkCard', 'linkOutcome'], {
-      call: (method: string, path: string, body: unknown) => {
-        sent.push([method, path, body]);
-        if (path === '/v1/owner/ucp/links')
-          return Promise.resolve({
-            status: 200,
-            body: {
-              links: [],
-              wanted: [{ merchant_origin: 'https://rice.example', merchant_host: 'rice.example', scopes: ['a:b'], at: 1 }],
-              unrevoked: [{ merchant_origin: 'https://old.example', merchant_host: 'old.example', since: 1 }],
-              failed: [{ merchant_origin: 'https://tea.example', merchant_host: 'tea.example', outcome: 'denied', at: 1 }],
-            },
-          });
-        if (path === '/v1/owner/ucp/settings') return Promise.resolve({ status: 200, body: { merchants: [] } });
-        return Promise.resolve({ status: 200, body: { dismissed: true } });
+    const page = await consoleFunctions(
+      ['loadLinks', 'linkCard', 'linkOutcome'],
+      {
+        call: (method: string, path: string, body: unknown) => {
+          sent.push([method, path, body]);
+          if (path === '/v1/owner/ucp/links')
+            return Promise.resolve({
+              status: 200,
+              body: {
+                links: [],
+                wanted: [
+                  {
+                    merchant_origin: 'https://rice.example',
+                    merchant_host: 'rice.example',
+                    scopes: ['a:b'],
+                    at: 1,
+                  },
+                ],
+                unrevoked: [
+                  {
+                    merchant_origin: 'https://old.example',
+                    merchant_host: 'old.example',
+                    since: 1,
+                  },
+                ],
+                failed: [
+                  {
+                    merchant_origin: 'https://tea.example',
+                    merchant_host: 'tea.example',
+                    outcome: 'denied',
+                    at: 1,
+                  },
+                ],
+              },
+            });
+          if (path === '/v1/owner/ucp/settings')
+            return Promise.resolve({ status: 200, body: { merchants: [] } });
+          return Promise.resolve({ status: 200, body: { dismissed: true } });
+        },
+        startLink: (...a: unknown[]) => started.push(a),
+        confirm: () => true,
+        alert: () => undefined,
+        refusal: (e: string) => e,
       },
-      startLink: (...a: unknown[]) => started.push(a),
-      confirm: () => true,
-      alert: () => undefined,
-      refusal: (e: string) => e,
-    }, { links: box, linkLinks: pageNode() });
+      { links: box, linkLinks: pageNode() },
+    );
     (page.loadLinks as () => void)();
     await new Promise((r) => setImmediate(r));
     const text = textOf(box);
-    expect(text).toContain('Dina could not cancel its access at old.example. Remove Dina from your account settings there.');
+    expect(text).toContain(
+      'Dina could not cancel its access at old.example. Remove Dina from your account settings there.',
+    );
     expect(text).toContain('rice.example asks you to link your account');
     expect(text).toContain('Linking at tea.example did not finish: you said no at the shop.');
     const [unrevoked, wanted] = box.children;
@@ -792,27 +999,45 @@ describe('linked accounts on the console (UCP plan §3.17)', () => {
     expect(started).toEqual([['https://rice.example', ['a:b']]]);
     buttonOf(unrevoked as PageNode, 'I removed it').clicks.forEach((fn) => fn());
     await new Promise((r) => setImmediate(r));
-    expect(sent).toContainEqual(['POST', '/v1/owner/ucp/links/dismiss', { merchant_origin: 'https://old.example' }]);
+    expect(sent).toContainEqual([
+      'POST',
+      '/v1/owner/ucp/links/dismiss',
+      { merchant_origin: 'https://old.example' },
+    ]);
   });
 
   it('Link: a sign-in this node takes back is a link to click; one for the phone says so; a refusal is said in words', async () => {
     const linkLinks = pageNode();
     const alerts: string[] = [];
     let approvalsLoaded = 0;
-    let answer: unknown = { started: true, opens: 'here', url: 'https://tea.example/auth/authorize?state=s', scopes: [], expires_at: 1 };
+    let answer: unknown = {
+      started: true,
+      opens: 'here',
+      url: 'https://tea.example/auth/authorize?state=s',
+      scopes: [],
+      expires_at: 1,
+    };
     const sent: unknown[] = [];
-    const page = await consoleFunctions(['startLink', 'linkRefusal'], {
-      call: (_m: string, _p: string, body: unknown) => {
-        sent.push(body);
-        return Promise.resolve({ status: 200, body: answer });
+    const page = await consoleFunctions(
+      ['startLink', 'linkRefusal'],
+      {
+        call: (_m: string, _p: string, body: unknown) => {
+          sent.push(body);
+          return Promise.resolve({ status: 200, body: answer });
+        },
+        alert: (t: string) => alerts.push(t),
+        refusal: (e: string) => e,
+        loadApprovals: () => (approvalsLoaded += 1),
       },
-      alert: (t: string) => alerts.push(t),
-      refusal: (e: string) => e,
-      loadApprovals: () => (approvalsLoaded += 1),
-    }, { linkLinks });
-    (page.startLink as (o: string, s: string[]) => void)('https://tea.example', ['dev.ucp.shopping.order:read']);
+      { linkLinks },
+    );
+    (page.startLink as (o: string, s: string[]) => void)('https://tea.example', [
+      'dev.ucp.shopping.order:read',
+    ]);
     await new Promise((r) => setImmediate(r));
-    expect(sent).toEqual([{ merchant_origin: 'https://tea.example', scopes: ['dev.ucp.shopping.order:read'] }]);
+    expect(sent).toEqual([
+      { merchant_origin: 'https://tea.example', scopes: ['dev.ucp.shopping.order:read'] },
+    ]);
     expect(anchors(linkLinks)[0]?.attrs).toMatchObject({
       href: 'https://tea.example/auth/authorize?state=s',
       target: '_blank',
@@ -821,17 +1046,25 @@ describe('linked accounts on the console (UCP plan §3.17)', () => {
     answer = { started: true, opens: 'phone', card_id: 'ucp-link-1', scopes: [], expires_at: 1 };
     (page.startLink as (o: string, s: string[]) => void)('https://tea.example', []);
     await new Promise((r) => setImmediate(r));
-    expect(textOf(linkLinks)).toContain('Sent to your phone: approve the card there to sign in at tea.example.');
+    expect(textOf(linkLinks)).toContain(
+      'Sent to your phone: approve the card there to sign in at tea.example.',
+    );
     expect(approvalsLoaded).toBe(1);
     answer = { started: false, reason: 'no_public_client' };
     (page.startLink as (o: string, s: string[]) => void)('https://tea.example', []);
     await new Promise((r) => setImmediate(r));
-    expect(alerts).toEqual(['tea.example\'s sign-in lacks what Dina needs to link safely.']);
+    expect(alerts).toEqual(["tea.example's sign-in lacks what Dina needs to link safely."]);
     answer = { started: false, reason: 'no_phone' };
     (page.startLink as (o: string, s: string[]) => void)('https://tea.example', []);
     await new Promise((r) => setImmediate(r));
     expect(alerts.at(-1)).toContain("Pair your phone as this server's node");
-    answer = { started: true, opens: 'here', url: 'javascript:alert(1)', scopes: [], expires_at: 1 };
+    answer = {
+      started: true,
+      opens: 'here',
+      url: 'javascript:alert(1)',
+      scopes: [],
+      expires_at: 1,
+    };
     (page.startLink as (o: string, s: string[]) => void)('https://tea.example', []);
     await new Promise((r) => setImmediate(r));
     expect(anchors(linkLinks)).toHaveLength(1);
@@ -840,31 +1073,35 @@ describe('linked accounts on the console (UCP plan §3.17)', () => {
   it('a shop order waiting for a link offers it, with the scopes its challenge named', async () => {
     const box = pageNode();
     const started: unknown[][] = [];
-    const page = await consoleFunctions(['loadShopOrders', 'shopOrderCard'], {
-      call: () =>
-        Promise.resolve({
-          status: 200,
-          body: {
-            orders: [
-              {
-                merchant_origin: 'https://tea.example',
-                merchant_host: 'tea.example',
-                order_id: 'ord_1',
-                state: 'open',
-                headline: 'Link your account at tea.example to follow this order',
-                summary: null,
-                notes: [],
-                permalink_url: 'https://tea.example/orders/ord_1',
-                link_scopes: ['dev.ucp.shopping.order:read'],
-              },
-            ],
-          },
-        }),
-      money: (m: string) => m,
-      alert: () => undefined,
-      refusal: (e: string) => e,
-      startLink: (...a: unknown[]) => started.push(a),
-    }, { shopOrders: box });
+    const page = await consoleFunctions(
+      ['loadShopOrders', 'shopOrderCard'],
+      {
+        call: () =>
+          Promise.resolve({
+            status: 200,
+            body: {
+              orders: [
+                {
+                  merchant_origin: 'https://tea.example',
+                  merchant_host: 'tea.example',
+                  order_id: 'ord_1',
+                  state: 'open',
+                  headline: 'Link your account at tea.example to follow this order',
+                  summary: null,
+                  notes: [],
+                  permalink_url: 'https://tea.example/orders/ord_1',
+                  link_scopes: ['dev.ucp.shopping.order:read'],
+                },
+              ],
+            },
+          }),
+        money: (m: string) => m,
+        alert: () => undefined,
+        refusal: (e: string) => e,
+        startLink: (...a: unknown[]) => started.push(a),
+      },
+      { shopOrders: box },
+    );
     (page.loadShopOrders as () => void)();
     await new Promise((r) => setImmediate(r));
     const card = box.children[0] as PageNode;
@@ -888,7 +1125,11 @@ describe('linked accounts on the console (UCP plan §3.17)', () => {
     const card = page.approvalCard?.({
       id: 'ucp-link-1',
       description: 'Link your account at tea.example?\nDina may read your orders.\n<b>x</b>',
-      payload: JSON.stringify({ type: 'ucp_link_handoff', merchant: 'https://tea.example', url: 'https://tea.example/auth' }),
+      payload: JSON.stringify({
+        type: 'ucp_link_handoff',
+        merchant: 'https://tea.example',
+        url: 'https://tea.example/auth',
+      }),
     }) as PageNode;
     expect(card.children.find((c) => c.tag === 'pre')?.textContent).toContain('<b>x</b>');
     expect(textOf(card)).toContain('Approve this on your phone');
@@ -917,7 +1158,13 @@ describe('the shopping profile and key on the console (UCP plan §3.5, §4.8)', 
     const sent: [string, string, unknown][] = [];
     const presence: (() => void)[] = [];
     return consoleFunctions(
-      ['loadPublication', 'renderPublication', 'publicationAct', 'publicationText', 'publicationDetail'],
+      [
+        'loadPublication',
+        'renderPublication',
+        'publicationAct',
+        'publicationText',
+        'publicationDetail',
+      ],
       {
         call: (method: string, path: string, body: unknown) => {
           sent.push([method, path, body]);
@@ -939,7 +1186,11 @@ describe('the shopping profile and key on the console (UCP plan §3.5, §4.8)', 
       {
         status: 200,
         body: view({
-          key: { generation: 2, next: { generation: 3, signs_from: at }, retiring: [{ generation: 1, until: at }] },
+          key: {
+            generation: 2,
+            next: { generation: 3, signs_from: at },
+            retiring: [{ generation: 1, until: at }],
+          },
         }),
       },
     ]);
@@ -957,16 +1208,27 @@ describe('the shopping profile and key on the console (UCP plan §3.5, §4.8)', 
   it('rotate sends the action and shows the ring Core returns; a stood-down device offers to take shopping back', async () => {
     const { page, box, sent } = await rig([
       { status: 200, body: view() },
-      { status: 200, body: view({ key: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] } }) },
+      {
+        status: 200,
+        body: view({
+          key: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] },
+        }),
+      },
     ]);
     (page.loadPublication as () => void)();
     await settle();
-    expect(buttonsOf(box)).toEqual(['Rotate my shopping key', 'Turn shopping off', 'My key may be compromised']);
+    expect(buttonsOf(box)).toEqual([
+      'Rotate my shopping key',
+      'Turn shopping off',
+      'My key may be compromised',
+    ]);
     buttonOf(box, 'Rotate my shopping key').clicks.forEach((fn) => fn());
     await settle();
     expect(sent).toContainEqual(['POST', '/v1/owner/ucp/publication', { action: 'rotate' }]);
     expect(textOf(box)).toContain('Dina is checking the host serves it');
-    (page.renderPublication as (v: unknown) => void)(view({ role: 'stood_down', status: 'stood_down' }));
+    (page.renderPublication as (v: unknown) => void)(
+      view({ role: 'stood_down', status: 'stood_down' }),
+    );
     expect(textOf(box)).toContain('Another of your devices handles shopping.');
     expect(buttonsOf(box)[0]).toBe('Use this device for shopping');
   });
@@ -982,7 +1244,13 @@ describe('the shopping profile and key on the console (UCP plan §3.5, §4.8)', 
     const sent: [string, string, unknown][] = [];
     const presence: (() => void)[] = [];
     const page = await consoleFunctions(
-      ['loadPublication', 'renderPublication', 'publicationAct', 'publicationText', 'publicationDetail'],
+      [
+        'loadPublication',
+        'renderPublication',
+        'publicationAct',
+        'publicationText',
+        'publicationDetail',
+      ],
       {
         call: (method: string, path: string, body: unknown) => {
           sent.push([method, path, body]);
@@ -1022,7 +1290,12 @@ describe('the shopping profile and key on the console (UCP plan §3.5, §4.8)', 
     expect(textOf(box)).toContain("The host could not check this Dina's signature.");
     expect(buttonsOf(box)).toContain('Turn shopping off');
     (page.renderPublication as (v: unknown) => void)(
-      view({ status: 'refused', compromise_pending: true, pending_control: 'retire', detail: 'label_owned' }),
+      view({
+        status: 'refused',
+        compromise_pending: true,
+        pending_control: 'retire',
+        detail: 'label_owned',
+      }),
     );
     expect(textOf(box)).toContain('refused to retire your key');
     expect(textOf(box)).not.toContain('keeps trying');
@@ -1066,7 +1339,10 @@ describe('the A2A card key on the console (UCP plan §4.8)', () => {
     const { fns, box, sent, presence } = await page([
       { status: 200, body: { generation: 0, next: null, retiring: [] } },
       { status: 403, body: { error: 'no_user_presence' } },
-      { status: 200, body: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] } },
+      {
+        status: 200,
+        body: { generation: 0, next: { generation: 1, signs_from: null }, retiring: [] },
+      },
     ]);
     (fns.loadCardKey as () => void)();
     await settle();
@@ -1085,7 +1361,9 @@ describe('the A2A card key on the console (UCP plan §4.8)', () => {
   });
 
   it('a node still reading its DID document says so; a node with no card says so', async () => {
-    const reading = await page([{ status: 200, body: { generation: null, next: null, retiring: [] } }]);
+    const reading = await page([
+      { status: 200, body: { generation: null, next: null, retiring: [] } },
+    ]);
     (reading.fns.loadCardKey as () => void)();
     await settle();
     expect(reading.box.textContent).toMatch(/reading which card key is in use/);
@@ -1100,7 +1378,11 @@ describe('the UCP order notice card on the console (UCP plan §3.14)', () => {
   const noticeTask = (permalink: string) => ({
     id: 'ucp-order-notice-1',
     description: 'A delivery attempt failed on your order at tea.example. <b>x</b>',
-    payload: JSON.stringify({ type: 'ucp_order_notice', merchant_host: 'tea.example', permalink_url: permalink }),
+    payload: JSON.stringify({
+      type: 'ucp_order_notice',
+      merchant_host: 'tea.example',
+      permalink_url: permalink,
+    }),
   });
   const linkOf = (box: PageNode): PageNode | undefined => {
     const find = (n: PageNode): PageNode | undefined =>
@@ -1140,7 +1422,8 @@ describe('the UCP order notice card on the console (UCP plan §3.14)', () => {
 describe('the UCP checkout cards on the console (UCP plan §3.7)', () => {
   const handoffTask = (url: string) => ({
     id: 'ucp-checkout-handoff-1',
-    description: 'Review and pay at shop.example\n2 each × Sencha — EUR 56.00\n<img src=x onerror=alert(1)>',
+    description:
+      'Review and pay at shop.example\n2 each × Sencha — EUR 56.00\n<img src=x onerror=alert(1)>',
     payload: JSON.stringify({ type: 'ucp_checkout_handoff', handoff: { url } }),
   });
   const linkOf = (box: PageNode): PageNode | undefined => {
@@ -1173,8 +1456,12 @@ describe('the UCP checkout cards on the console (UCP plan §3.7)', () => {
       },
       { handoffLinks: links },
     );
-    const card = page.approvalCard?.(handoffTask('https://shop.example/checkout/chk_1')) as PageNode;
-    expect(card.children.find((c) => c.tag === 'pre')?.textContent).toContain('<img src=x onerror=alert(1)>');
+    const card = page.approvalCard?.(
+      handoffTask('https://shop.example/checkout/chk_1'),
+    ) as PageNode;
+    expect(card.children.find((c) => c.tag === 'pre')?.textContent).toContain(
+      '<img src=x onerror=alert(1)>',
+    );
     buttonOf(card, "Approve and get the merchant's link").clicks.forEach((fn) => fn());
     await new Promise((r) => setImmediate(r));
     expect(linkOf(links)).toBeUndefined();
@@ -1215,7 +1502,9 @@ describe('the UCP checkout cards on the console (UCP plan §3.7)', () => {
       description: 'Start checkout at shop.example?\nNo personal data is sent.',
       payload: JSON.stringify({ type: 'ucp_checkout_start' }),
     }) as PageNode;
-    expect(start.children.find((c) => c.tag === 'pre')?.textContent).toContain('No personal data is sent.');
+    expect(start.children.find((c) => c.tag === 'pre')?.textContent).toContain(
+      'No personal data is sent.',
+    );
     expect(buttonOf(start, 'Start checkout')).toBeTruthy();
     expect(buttonOf(start, "Don't start")).toBeTruthy();
   });
@@ -1225,7 +1514,10 @@ describe('the console script', () => {
   it('declares each top-level function once: a second declaration would silently replace the first', async () => {
     const app = await makeApp(true);
     try {
-      const script = (await app.inject({ method: 'GET', url: '/owner' })).body.match(/<script>([\s\S]*?)<\/script>/)?.[1] ?? '';
+      const script =
+        (await app.inject({ method: 'GET', url: '/owner' })).body.match(
+          /<script>([\s\S]*?)<\/script>/,
+        )?.[1] ?? '';
       const names = [...script.matchAll(/^ {2}function (\w+)\(/gm)].map((m) => m[1]);
       expect(names.length).toBeGreaterThan(20);
       expect(names.filter((n, i) => names.indexOf(n) !== i)).toEqual([]);
@@ -1240,7 +1532,13 @@ describe('the owner console’s tender-draft card (OPENAI_DOTS_INTEGRATION §6.4
   const DRAFT = {
     draft_id: 'tdr_1',
     agent_did: 'did:key:z6MkDot',
-    lines: [{ line_id: 'l1', requirement: { text: 'butter croissants' }, quantity: { value: '200', unit_code: 'each' } }],
+    lines: [
+      {
+        line_id: 'l1',
+        requirement: { text: 'butter croissants' },
+        quantity: { value: '200', unit_code: 'each' },
+      },
+    ],
     required_by: '2036-01-09T07:00:00.000Z',
     suppliers: [
       { supplier_did: 'did:plc:a', service_rkey: 'self', name: "Rosa's Bakery" },
@@ -1360,7 +1658,6 @@ describe('the owner console’s tender-draft card (OPENAI_DOTS_INTEGRATION §6.4
   });
 });
 
-
 describe('signing with this browser as the owner key (HOSTED_DINA §5)', () => {
   it('signs exactly the canonical request Core verifies, query and body included', async () => {
     const pair = (await crypto.subtle.generateKey({ name: 'Ed25519' }, false, [
@@ -1418,12 +1715,13 @@ describe('signing with this browser as the owner key (HOSTED_DINA §5)', () => {
       DEVICE: null,
       getCap: () => 'typed-capability',
     });
-    const h = await (page.authHeaders as (m: string, p: string, b: string) => Promise<Record<string, string>>)(
-      'GET',
-      '/v1/owner/setup/status',
-      '',
-    );
-    expect(h).toEqual({ 'content-type': 'application/json', 'x-dina-owner-capability': 'typed-capability' });
+    const h = await (
+      page.authHeaders as (m: string, p: string, b: string) => Promise<Record<string, string>>
+    )('GET', '/v1/owner/setup/status', '');
+    expect(h).toEqual({
+      'content-type': 'application/json',
+      'x-dina-owner-capability': 'typed-capability',
+    });
   });
 });
 

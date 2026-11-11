@@ -23,6 +23,7 @@ jest.mock('../../src/services/web_runtime_config', () => ({
   loadWebRuntimeConfig: async () => mockConfig,
 }));
 
+import { appViewFetch } from '../../src/peerlens/appview_base.web';
 import {
   OwnerDeviceError,
   connectOwnerDevice,
@@ -32,7 +33,6 @@ import {
   ownerAccessState,
   subscribeOwnerAccess,
 } from '../../src/services/owner_device.web';
-import { appViewFetch } from '../../src/peerlens/appview_base.web';
 import { brainFetch } from '../../src/services/web_runtime';
 
 import type { WebRuntimeConfig } from '../../src/services/web_runtime_config';

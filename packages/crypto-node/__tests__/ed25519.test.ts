@@ -46,9 +46,7 @@ describe('NodeCryptoAdapter — Ed25519 (task 3.21)', () => {
     });
 
     it('rejects non-hardened paths', async () => {
-      await expect(adapter.ed25519DerivePath(seed, 'm/0/0')).rejects.toThrow(
-        /non-hardened/,
-      );
+      await expect(adapter.ed25519DerivePath(seed, 'm/0/0')).rejects.toThrow(/non-hardened/);
     });
 
     it('rejects BIP-44 purpose 44 prime', async () => {
@@ -69,15 +67,15 @@ describe('NodeCryptoAdapter — Ed25519 (task 3.21)', () => {
     });
 
     it('rejects too-short seeds', async () => {
-      await expect(
-        adapter.ed25519DerivePath(new Uint8Array(8), "m/0'"),
-      ).rejects.toThrow(/seed too short/);
+      await expect(adapter.ed25519DerivePath(new Uint8Array(8), "m/0'")).rejects.toThrow(
+        /seed too short/,
+      );
     });
 
     it('rejects all-zero seeds (fail-closed)', async () => {
-      await expect(
-        adapter.ed25519DerivePath(new Uint8Array(32), "m/0'"),
-      ).rejects.toThrow(/all-zero/);
+      await expect(adapter.ed25519DerivePath(new Uint8Array(32), "m/0'")).rejects.toThrow(
+        /all-zero/,
+      );
     });
   });
 

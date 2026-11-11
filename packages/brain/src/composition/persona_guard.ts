@@ -59,7 +59,12 @@ import type { CreateWorkflowTaskInput, CreateWorkflowTaskResult, WorkflowTask } 
 export interface VaultApprovalWorkflowClient {
   createWorkflowTask(input: CreateWorkflowTaskInput): Promise<CreateWorkflowTaskResult>;
   getWorkflowTask(id: string): Promise<WorkflowTask | null>;
-  completeWorkflowTask(id: string, result: string, resultSummary: string, agentDID?: string): Promise<WorkflowTask>;
+  completeWorkflowTask(
+    id: string,
+    result: string,
+    resultSummary: string,
+    agentDID?: string,
+  ): Promise<WorkflowTask>;
 }
 
 /**

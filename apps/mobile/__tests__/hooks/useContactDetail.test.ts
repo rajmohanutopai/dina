@@ -22,7 +22,6 @@ import {
   resetContactDetail,
 } from '../../src/hooks/useContactDetail';
 
-
 const DID = 'did:key:z6MkAlice000000000000000000000000000000000000';
 
 describe('Contact Detail Hook (6.17)', () => {
@@ -151,7 +150,13 @@ describe('Contact Detail Hook (6.17)', () => {
     it('getSharingTierOptions returns 5, pincode_only last', () => {
       const opts = getSharingTierOptions();
       expect(opts).toHaveLength(5);
-      expect(opts.map((o) => o.value)).toEqual(['none', 'summary', 'full', 'locked', 'pincode_only']);
+      expect(opts.map((o) => o.value)).toEqual([
+        'none',
+        'summary',
+        'full',
+        'locked',
+        'pincode_only',
+      ]);
     });
   });
 });

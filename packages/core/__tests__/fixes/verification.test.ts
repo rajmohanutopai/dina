@@ -9,13 +9,6 @@
  *         fix_verification_batch8_test.go
  */
 
-import {
-  NotImplementedError,
-  PersonaLockedError,
-  NotFoundError,
-  ForbiddenError,
-} from '@dina/test-harness';
-
 describe('Cross-Subsystem Fix Verification', () => {
   describe('signature replay prevention', () => {
     it('rejects replayed nonce within 5-minute window', () => {

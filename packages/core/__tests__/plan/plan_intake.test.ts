@@ -78,7 +78,10 @@ describe('agent intake', () => {
       held: 2,
       duplicate_batch: false,
     });
-    expect(store.getFeed(OFFICE, 'work')).toMatchObject({ state: 'pending', agentName: 'Office Claude' });
+    expect(store.getFeed(OFFICE, 'work')).toMatchObject({
+      state: 'pending',
+      agentName: 'Office Claude',
+    });
     expect(store.listTasks({ statuses: ['open'] })).toHaveLength(0);
 
     expect(decideFeed(store, OFFICE, 'work', true, T0 + 1)).toEqual({ released: 2, removed: 0 });
@@ -92,13 +95,21 @@ describe('agent intake', () => {
     });
 
     // Allowed from now on: the next batch goes straight in.
-    expect(send(OFFICE, 'b2', [item('m3')])).toEqual({ accepted: 1, held: 0, duplicate_batch: false });
+    expect(send(OFFICE, 'b2', [item('m3')])).toEqual({
+      accepted: 1,
+      held: 0,
+      duplicate_batch: false,
+    });
   });
 
   it('Block deletes the held tasks and drops later batches without saying so', () => {
     send(OFFICE, 'b1', [item('m1')]);
     expect(decideFeed(store, OFFICE, 'work', false, T0 + 1)).toEqual({ released: 0, removed: 1 });
-    expect(send(OFFICE, 'b2', [item('m2')])).toEqual({ accepted: 0, held: 0, duplicate_batch: false });
+    expect(send(OFFICE, 'b2', [item('m2')])).toEqual({
+      accepted: 0,
+      held: 0,
+      duplicate_batch: false,
+    });
     expect(store.listTasks()).toHaveLength(0);
   });
 
@@ -121,17 +132,31 @@ describe('agent intake', () => {
     expect(send(OFFICE, 'b3', [item('m1', { title: 'older copy' })]).accepted).toBe(0);
     expect(store.listTasks()[0].title).toBe('Reply about m1');
     // Seen later: the update lands.
-    send(OFFICE, 'b4', [item('m1', { title: 'Reply to Priya', observed_at: '2026-11-03T09:00:00Z' })]);
+    send(OFFICE, 'b4', [
+      item('m1', { title: 'Reply to Priya', observed_at: '2026-11-03T09:00:00Z' }),
+    ]);
     expect(store.listTasks()[0].title).toBe('Reply to Priya');
   });
 
   it('closed at the source marks an open task done; the agent never reopens it', () => {
     send(OFFICE, 'b1', [item('m1')]);
     decideFeed(store, OFFICE, 'work', true, T0 + 1);
-    send(OFFICE, 'b2', [item('m1', { state: 'closed', observed_at: '2026-11-03T08:00:00Z' })], 'work', T0 + 2);
+    send(
+      OFFICE,
+      'b2',
+      [item('m1', { state: 'closed', observed_at: '2026-11-03T08:00:00Z' })],
+      'work',
+      T0 + 2,
+    );
     const [t] = store.listTasks();
     expect(t.status).toBe('done');
-    send(OFFICE, 'b3', [item('m1', { state: 'open', observed_at: '2026-11-03T09:00:00Z' })], 'work', T0 + 3);
+    send(
+      OFFICE,
+      'b3',
+      [item('m1', { state: 'open', observed_at: '2026-11-03T09:00:00Z' })],
+      'work',
+      T0 + 3,
+    );
     expect(store.listTasks()[0].status).toBe('done');
   });
 
@@ -167,11 +192,22 @@ describe('agent intake', () => {
     ).toThrow(/https/);
     expect(() => parseBatch({ batch_id: 'b', persona: '../x', items: [] }, T0)).toThrow(/persona/);
     expect(() =>
-      parseBatch({ batch_id: 'b', items: Array.from({ length: PLAN_MAX_BATCH_ITEMS + 1 }, (_, i) => item(`m${i}`)) }, T0),
+      parseBatch(
+        {
+          batch_id: 'b',
+          items: Array.from({ length: PLAN_MAX_BATCH_ITEMS + 1 }, (_, i) => item(`m${i}`)),
+        },
+        T0,
+      ),
     ).toThrow(/at most/);
-    expect(() => parseBatch({ batch_id: 'b', items: [item('m1', { title: ' ' })] }, T0)).toThrow(/title/);
+    expect(() => parseBatch({ batch_id: 'b', items: [item('m1', { title: ' ' })] }, T0)).toThrow(
+      /title/,
+    );
     // A time from the future is capped at now.
-    const parsed = parseBatch({ batch_id: 'b', items: [item('m1', { observed_at: '2030-01-01T00:00:00Z' })] }, T0);
+    const parsed = parseBatch(
+      { batch_id: 'b', items: [item('m1', { observed_at: '2030-01-01T00:00:00Z' })] },
+      T0,
+    );
     expect(parsed.items[0].observedAt).toBe(T0);
     expect(parsed.persona).toBe('general');
   });
@@ -182,7 +218,12 @@ describe('goals and days', () => {
     const a = store.addOwnerTask({ title: 'Renew car insurance' }, T0);
     const b = store.addOwnerTask({ title: 'Book the dentist' }, T0);
     const goal = store.addGoal('Stay on top of admin', '', T0);
-    store.putDay('2026-11-03', [{ taskId: a.id, reason: 'Due Friday', goalId: goal.id }], '', T0 + 1);
+    store.putDay(
+      '2026-11-03',
+      [{ taskId: a.id, reason: 'Due Friday', goalId: goal.id }],
+      '',
+      T0 + 1,
+    );
     expect(store.getTask(a.id)).toMatchObject({ plannedFor: '2026-11-03', goalId: goal.id });
     expect(store.getTask(b.id)?.plannedFor).toBe('');
 

@@ -69,9 +69,7 @@ export function installMetricsHook(app: FastifyAppShape, opts: MetricsHookOption
     const ms = typeof reply.elapsedTime === 'number' ? reply.elapsedTime : NaN;
     if (!Number.isFinite(ms) || ms < 0) return;
 
-    const route =
-      (typeof req.routeOptions?.url === 'string' && req.routeOptions.url) ||
-      'unknown';
+    const route = (typeof req.routeOptions?.url === 'string' && req.routeOptions.url) || 'unknown';
     const method = (req.method ?? 'UNKNOWN').toUpperCase();
     registry.record(route, method, reply.statusCode, ms / 1000);
   });

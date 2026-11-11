@@ -224,7 +224,7 @@ describe('sealOutboundRpc (task 4.47)', () => {
       expect(response).toEqual(json);
     });
 
-    it('signature verifies against Core\'s public key', () => {
+    it("signature verifies against Core's public key", () => {
       const core = identityFromFresh().root;
       const sender = identityFromFresh().root;
       const { response } = sealOutboundRpc({
@@ -369,10 +369,7 @@ describe('round-trip: sealRPCRequest → unsealInboundRpc → sealOutboundRpc �
     const sender = identityFromFresh().root;
 
     // Sender side: seal the request with Core's pub key.
-    const sealedReq = sealRPCRequest(
-      validRequest({ request_id: 'req-roundtrip' }),
-      core.publicKey,
-    );
+    const sealedReq = sealRPCRequest(validRequest({ request_id: 'req-roundtrip' }), core.publicKey);
 
     // Core side: unseal.
     const inbound = unsealInboundRpc({

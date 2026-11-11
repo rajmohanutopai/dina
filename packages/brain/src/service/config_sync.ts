@@ -183,7 +183,7 @@ export class ConfigSync {
   async flush(): Promise<void> {
     while (this.inFlight !== null) {
       const current = this.inFlight;
-       
+
       await current.catch(() => {
         /* swallowed — propagated via onError */
       });

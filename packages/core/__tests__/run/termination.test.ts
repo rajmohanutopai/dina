@@ -18,7 +18,11 @@ import {
 } from '../../src/run/command_receipt';
 import { InMemoryMessageRepository, type MessageRecord } from '../../src/run/message';
 import { InMemoryRunRepository, SQLiteRunRepository } from '../../src/run/repository';
-import { InMemoryReservationRepository, SQLiteReservationRepository, type ReservationRecord } from '../../src/run/reservation';
+import {
+  InMemoryReservationRepository,
+  SQLiteReservationRepository,
+  type ReservationRecord,
+} from '../../src/run/reservation';
 import { RunService } from '../../src/run/service';
 import { RunSweeper, RunTerminationService } from '../../src/run/termination';
 import { applyMigrations } from '../../src/storage/migration';
@@ -81,10 +85,21 @@ describe('forceTerminate (§5.1)', () => {
     messages.create(makeMsg({ message_id: 'undecided', run_id: run.run_id, state: 'classified' }));
     messages.create(makeMsg({ message_id: 'claimed', run_id: run.run_id, state: 'dispatched' }));
     reservations.create({
-      reservation_id: 'held', run_id: run.run_id, cursor: 0, state: 'held_by_lock',
-      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1', held_message_json: null,
-      error_reason: null, error_at: null, lease_expires_at: null, query_correlation_id: null,
-      created_at: NOW, updated_at: NOW,
+      reservation_id: 'held',
+      run_id: run.run_id,
+      cursor: 0,
+      state: 'held_by_lock',
+      message_id: null,
+      dedup_key: 'd',
+      content_digest: null,
+      sealed_response_ref: 'spool-1',
+      held_message_json: null,
+      error_reason: null,
+      error_at: null,
+      lease_expires_at: null,
+      query_correlation_id: null,
+      created_at: NOW,
+      updated_at: NOW,
     });
 
     const fencedJobs: string[] = [];
@@ -166,16 +181,31 @@ describe('onBarrier — atomic invalidation/fence at barrier SET (RR-01b/R2-02/�
     messages.create(makeMsg({ message_id: 'undecided', run_id: run.run_id, state: 'classified' }));
     messages.create(makeMsg({ message_id: 'claimed', run_id: run.run_id, state: 'dispatched' }));
     reservations.create({
-      reservation_id: 'held', run_id: run.run_id, cursor: 0, state: 'held_by_lock',
-      message_id: null, dedup_key: 'd', content_digest: null, sealed_response_ref: 'spool-1', held_message_json: null,
-      error_reason: null, error_at: null, lease_expires_at: null, query_correlation_id: null,
-      created_at: NOW, updated_at: NOW,
+      reservation_id: 'held',
+      run_id: run.run_id,
+      cursor: 0,
+      state: 'held_by_lock',
+      message_id: null,
+      dedup_key: 'd',
+      content_digest: null,
+      sealed_response_ref: 'spool-1',
+      held_message_json: null,
+      error_reason: null,
+      error_at: null,
+      lease_expires_at: null,
+      query_correlation_id: null,
+      created_at: NOW,
+      updated_at: NOW,
     });
 
     const fencedJobs: string[] = [];
     const discarded: string[] = [];
     const termination = new RunTerminationService({
-      runRepo: runs, runService, messageRepo: messages, reservationRepo: reservations, nowMsFn: () => NOW,
+      runRepo: runs,
+      runService,
+      messageRepo: messages,
+      reservationRepo: reservations,
+      nowMsFn: () => NOW,
       fenceClassificationJob: (id) => fencedJobs.push(id),
       discardHeld: (r: ReservationRecord) => discarded.push(r.reservation_id),
     });
@@ -210,15 +240,30 @@ describe('onBarrier — atomic invalidation/fence at barrier SET (RR-01b/R2-02/�
     const run = runService.create(params({ on_stop: 'finish_pending' }));
     messages.create(makeMsg({ message_id: 'undecided', run_id: run.run_id, state: 'classified' }));
     reservations.create({
-      reservation_id: 'ahead', run_id: run.run_id, cursor: 1, state: 'reserved',
-      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null, held_message_json: null,
-      error_reason: null, error_at: null, lease_expires_at: NOW + 60_000, query_correlation_id: null,
-      created_at: NOW, updated_at: NOW,
+      reservation_id: 'ahead',
+      run_id: run.run_id,
+      cursor: 1,
+      state: 'reserved',
+      message_id: null,
+      dedup_key: null,
+      content_digest: null,
+      sealed_response_ref: null,
+      held_message_json: null,
+      error_reason: null,
+      error_at: null,
+      lease_expires_at: NOW + 60_000,
+      query_correlation_id: null,
+      created_at: NOW,
+      updated_at: NOW,
     });
 
     const fencedJobs: string[] = [];
     const termination = new RunTerminationService({
-      runRepo: runs, runService, messageRepo: messages, reservationRepo: reservations, nowMsFn: () => NOW,
+      runRepo: runs,
+      runService,
+      messageRepo: messages,
+      reservationRepo: reservations,
+      nowMsFn: () => NOW,
       fenceClassificationJob: (id) => fencedJobs.push(id),
     });
     runService.setOnBarrier((r) => termination.onBarrier(r.run_id));
@@ -261,7 +306,9 @@ describe('produced-basis count barrier at commit (§5.1)', () => {
       tx: (fn) => adapter.transaction(fn),
       nowMsFn: () => NOW,
     });
-    const run = runService.create(params({ max_count: 1, max_count_basis: 'produced', drain_deadline_ms: 5_000 }));
+    const run = runService.create(
+      params({ max_count: 1, max_count_basis: 'produced', drain_deadline_ms: 5_000 }),
+    );
     const r = admission.reserve(run.run_id);
     if (!r.ok) throw new Error('reserve failed');
     admission.commit(r.reservation_id, { message_id: 'm1', dedup_key: 'd1', content_digest: 'c1' });
@@ -281,7 +328,11 @@ describe('durable command receipts (§12.5)', () => {
     let executions = 0;
     const run = () =>
       recordOrReplayCommand({
-        ownerPrincipal: 'owner', runId: 'r1', route: 'resume', idempotencyKey: 'k1', requestBody: { a: 1 },
+        ownerPrincipal: 'owner',
+        runId: 'r1',
+        route: 'resume',
+        idempotencyKey: 'k1',
+        requestBody: { a: 1 },
         compute: () => {
           executions++;
           return { state: 'active' };
@@ -297,12 +348,20 @@ describe('durable command receipts (§12.5)', () => {
   it('rejects a key reused with a different request body', () => {
     setCommandReceiptRepository(new InMemoryCommandReceiptRepository());
     recordOrReplayCommand({
-      ownerPrincipal: 'o', runId: 'r', route: 'update', idempotencyKey: 'k', requestBody: { x: 1 },
+      ownerPrincipal: 'o',
+      runId: 'r',
+      route: 'update',
+      idempotencyKey: 'k',
+      requestBody: { x: 1 },
       compute: () => ({ ok: true }),
     });
     expect(() =>
       recordOrReplayCommand({
-        ownerPrincipal: 'o', runId: 'r', route: 'update', idempotencyKey: 'k', requestBody: { x: 2 },
+        ownerPrincipal: 'o',
+        runId: 'r',
+        route: 'update',
+        idempotencyKey: 'k',
+        requestBody: { x: 2 },
         compute: () => ({ ok: true }),
       }),
     ).toThrow(/different request body/);
@@ -315,12 +374,24 @@ describe('RunSweeper', () => {
     const reservations = new InMemoryReservationRepository();
     const messages = new InMemoryMessageRepository();
     let nowMs = NOW;
-    const runService = new RunService({ repository: runs, nowMsFn: () => nowMs, idFn: () => `run-${Math.random()}` });
+    const runService = new RunService({
+      repository: runs,
+      nowMsFn: () => nowMs,
+      idFn: () => `run-${Math.random()}`,
+    });
     const termination = new RunTerminationService({
-      runRepo: runs, runService, messageRepo: messages, reservationRepo: reservations, nowMsFn: () => nowMs,
+      runRepo: runs,
+      runService,
+      messageRepo: messages,
+      reservationRepo: reservations,
+      nowMsFn: () => nowMs,
     });
     const sweeper = new RunSweeper({
-      runRepo: runs, reservationRepo: reservations, runService, termination, nowMsFn: () => nowMs,
+      runRepo: runs,
+      reservationRepo: reservations,
+      runService,
+      termination,
+      nowMsFn: () => nowMs,
     });
     return { runs, reservations, runService, sweeper, setNow: (v: number) => (nowMs = v) };
   }
@@ -379,10 +450,21 @@ describe('RunSweeper', () => {
     const h = setup();
     const run = h.runService.create(params());
     h.reservations.create({
-      reservation_id: 'stale', run_id: run.run_id, cursor: 0, state: 'reserved',
-      message_id: null, dedup_key: null, content_digest: null, sealed_response_ref: null, held_message_json: null,
-      error_reason: null, error_at: null, lease_expires_at: NOW + 100, query_correlation_id: null,
-      created_at: NOW, updated_at: NOW,
+      reservation_id: 'stale',
+      run_id: run.run_id,
+      cursor: 0,
+      state: 'reserved',
+      message_id: null,
+      dedup_key: null,
+      content_digest: null,
+      sealed_response_ref: null,
+      held_message_json: null,
+      error_reason: null,
+      error_at: null,
+      lease_expires_at: NOW + 100,
+      query_correlation_id: null,
+      created_at: NOW,
+      updated_at: NOW,
     });
     h.setNow(NOW + 200);
     expect(h.sweeper.runTick().reservations_reclaimed).toBe(1);

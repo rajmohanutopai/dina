@@ -27,14 +27,13 @@
  * labels in the numbered response block.
  */
 
+import { SMALL_TASK_MAX_TOKENS } from '../constants';
 import { peoplePointerLine } from '../guardian/anti_her';
 import { isTrustTool } from '../guardian/peerlens_tools';
-import { SMALL_TASK_MAX_TOKENS } from '../constants';
 import { GUARD_SCAN } from '../llm/prompts';
 
-import type { DecisionAnswers, DecisionRequest } from '../llm/decisions';
-
 import type { LLMProvider } from '../llm/adapters/provider';
+import type { DecisionAnswers, DecisionRequest } from '../llm/decisions';
 
 export interface GuardScanViolations {
   anti_her_sentences: number[];
@@ -72,7 +71,7 @@ export interface GuardScanDecision {
  * `_build_anti_her_redirect()` in `guardian.py`.
  */
 export const ANTI_HER_REDIRECT_MESSAGE =
-  "This sounds like something to share with someone who knows you. " +
+  'This sounds like something to share with someone who knows you. ' +
   "Is there a friend or family member you'd like to reach out to? " +
   "I can help you draft a message if you'd like.";
 
@@ -82,8 +81,7 @@ export const ANTI_HER_REDIRECT_MESSAGE =
  * Matches Python's "I don't have relevant information stored for that
  * query."
  */
-export const NEUTRAL_EMPTY_MESSAGE =
-  "I don't have relevant information stored for that query.";
+export const NEUTRAL_EMPTY_MESSAGE = "I don't have relevant information stored for that query.";
 
 export interface GuardScannerOptions {
   /**
@@ -166,7 +164,9 @@ export function createGuardScanner(
     let decided: GuardScanViolations | null = null;
     if (options.decide !== undefined) {
       try {
-        const answers = await options.decide(guardDecisionRequest(userPrompt, sentences, !trustToolUsedEarly));
+        const answers = await options.decide(
+          guardDecisionRequest(userPrompt, sentences, !trustToolUsedEarly),
+        );
         decided = answers === null ? null : violationsFromDecisions(answers, sentences.length);
       } catch (err) {
         console.log('[guard_scanner] decision backend failed; using the model prompt', {
@@ -179,16 +179,33 @@ export function createGuardScanner(
     let violations: GuardScanViolations;
     if (decided !== null) {
       violations = decided;
-    } else try {
-      const resp = await provider.chat(
-        [{ role: 'user', content: promptText }],
-        // The shared small-task budget: a reasoning model spent 1024 tokens
-        // thinking and returned nothing, so every scan failed open unseen.
-        { temperature: 0, maxTokens: SMALL_TASK_MAX_TOKENS },
-      );
-      const parsed = parseGuardScanResponse(resp.content);
-      if (parsed === null) {
-        console.log('[guard_scanner] unparsable', { contentLen: resp.content.length, finishReason: resp.finishReason });
+    } else
+      try {
+        const resp = await provider.chat(
+          [{ role: 'user', content: promptText }],
+          // The shared small-task budget: a reasoning model spent 1024 tokens
+          // thinking and returned nothing, so every scan failed open unseen.
+          { temperature: 0, maxTokens: SMALL_TASK_MAX_TOKENS },
+        );
+        const parsed = parseGuardScanResponse(resp.content);
+        if (parsed === null) {
+          console.log('[guard_scanner] unparsable', {
+            contentLen: resp.content.length,
+            finishReason: resp.finishReason,
+          });
+          return {
+            content: response,
+            mutated: false,
+            reason: 'scan_failed',
+            flagged: {},
+          };
+        }
+        violations = parsed;
+      } catch (err) {
+        console.log('[guard_scanner] call failed', {
+          message: err instanceof Error ? err.message.slice(0, 200) : '',
+        });
+        // LLM outage, timeout — fail-open. Python does the same.
         return {
           content: response,
           mutated: false,
@@ -196,17 +213,6 @@ export function createGuardScanner(
           flagged: {},
         };
       }
-      violations = parsed;
-    } catch (err) {
-      console.log('[guard_scanner] call failed', { message: err instanceof Error ? err.message.slice(0, 200) : '' });
-      // LLM outage, timeout — fail-open. Python does the same.
-      return {
-        content: response,
-        mutated: false,
-        reason: 'scan_failed',
-        flagged: {},
-      };
-    }
 
     // Decide which categories to strip. Anti-Her is ALWAYS enforced
     // (Law 4, non-negotiable). The rest only fires when the reasoning
@@ -313,9 +319,9 @@ export function splitSentences(text: string): string[] {
  */
 export function removeSentences(sentences: string[], indices: Set<number>): string {
   const kept: string[] = [];
-  for (let i = 0; i < sentences.length; i++) {
+  for (const [i, sentence] of sentences.entries()) {
     if (indices.has(i + 1)) continue;
-    kept.push(sentences[i]!);
+    kept.push(sentence);
   }
   return kept.join(' ').replace(/ {2,}/g, ' ').trim();
 }
@@ -360,9 +366,7 @@ export function parseGuardScanResponse(raw: string): GuardScanViolations | null 
 
 function indexArrayOrEmpty(value: unknown): number[] {
   if (!Array.isArray(value)) return [];
-  return value.filter(
-    (v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1,
-  );
+  return value.filter((v): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 1);
 }
 
 // ---------------------------------------------------------------------------
@@ -383,13 +387,13 @@ const DECISION_CHECKS = {
     key: 'unsolicited_sentences',
     ask: 'Does sentence {n} of the assistant response push a product, vendor or service the user did not ask for?',
     yes: 'Cross-sell, "you might also like", trending picks, or products or services unrelated to the question.',
-    no: 'It answers the user\'s question, the user asked for suggestions, or it suggests contacting a real person (family, a friend, a doctor, a helpline).',
+    no: "It answers the user's question, the user asked for suggestions, or it suggests contacting a real person (family, a friend, a doctor, a helpline).",
   },
   fa: {
     key: 'fabricated_sentences',
     ask: 'Does sentence {n} of the assistant response state invented trust or review data?',
     yes: 'A numeric rating (4.2/5, 9/10), an attestation count or a "community review" claim with no source in the conversation.',
-    no: 'Anything else, including personal facts (names, dates, amounts) recalled from the user\'s own records.',
+    no: "Anything else, including personal facts (names, dates, amounts) recalled from the user's own records.",
   },
   co: {
     key: 'consensus_sentences',
@@ -430,7 +434,10 @@ export function guardDecisionRequest(
 }
 
 /** Turn per-sentence answers back into the scanner's violation lists. */
-export function violationsFromDecisions(answers: DecisionAnswers, sentenceCount: number): GuardScanViolations {
+export function violationsFromDecisions(
+  answers: DecisionAnswers,
+  sentenceCount: number,
+): GuardScanViolations {
   const out: GuardScanViolations = {
     anti_her_sentences: [],
     unsolicited_sentences: [],
@@ -440,9 +447,9 @@ export function violationsFromDecisions(answers: DecisionAnswers, sentenceCount:
   for (let i = 1; i <= sentenceCount; i++) {
     for (const c of ['ah', 'un', 'fa', 'co'] as const) {
       const a = answers[`${c}_${i}`];
-      if (a?.type === 'noul' && a.noul >= DECISION_FLAG_THRESHOLD) out[DECISION_CHECKS[c].key].push(i);
+      if (a?.type === 'noul' && a.noul >= DECISION_FLAG_THRESHOLD)
+        out[DECISION_CHECKS[c].key].push(i);
     }
   }
   return out;
 }
-

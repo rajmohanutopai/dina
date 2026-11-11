@@ -116,7 +116,8 @@ export const DELIVERY_LIMITS = Object.freeze({
 const CLAIM_ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
 const isId = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v > 0;
-const isGen = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
+const isGen = (v: unknown): v is number =>
+  typeof v === 'number' && Number.isSafeInteger(v) && v >= 0;
 
 /** Core reads the gateway's report with this; anything malformed refuses the whole ack. */
 export function parseDeliveryAcks(value: unknown): DeliveryAck[] | null {
@@ -188,13 +189,24 @@ function parseItem(raw: unknown): DeliveryItem | null {
   const kinds = ['statusUpdate', 'artifactUpdate'].filter((k) => isPlainObject(event[k]));
   if (kinds.length !== 1 || Object.keys(event).length !== 1) return null;
   // Parsed from JSON text, so every value in it is JSON.
-  const base = { id: raw.id, claim_id: raw.claim_id, task_id: raw.task_id, seq: raw.seq, event: event as JsonObject };
+  const base = {
+    id: raw.id,
+    claim_id: raw.claim_id,
+    task_id: raw.task_id,
+    seq: raw.seq,
+    event: event as JsonObject,
+  };
   if (raw.target === 'sse') {
     if (raw.webhook !== undefined || !isGen(raw.credential_gen)) return null;
     return { ...base, target: 'sse', credential_gen: raw.credential_gen };
   }
   const hook = raw.webhook;
-  if (raw.credential_gen !== undefined || !isPlainObject(hook) || typeof hook.url !== 'string' || !isPlainObject(hook.headers))
+  if (
+    raw.credential_gen !== undefined ||
+    !isPlainObject(hook) ||
+    typeof hook.url !== 'string' ||
+    !isPlainObject(hook.headers)
+  )
     return null;
   const headers: Record<string, string> = {};
   for (const [name, v] of Object.entries(hook.headers)) {
@@ -207,7 +219,13 @@ function parseItem(raw: unknown): DeliveryItem | null {
 const STREAM_CLIENT_RE = /^[0-9a-f]{32}$/;
 
 function parseFence(raw: unknown): StreamFence | null {
-  if (!isPlainObject(raw) || typeof raw.client !== 'string' || !STREAM_CLIENT_RE.test(raw.client) || !isId(raw.before_gen)) return null;
+  if (
+    !isPlainObject(raw) ||
+    typeof raw.client !== 'string' ||
+    !STREAM_CLIENT_RE.test(raw.client) ||
+    !isId(raw.before_gen)
+  )
+    return null;
   return { client: raw.client, before_gen: raw.before_gen };
 }
 

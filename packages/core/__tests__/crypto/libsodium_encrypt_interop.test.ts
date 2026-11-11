@@ -51,7 +51,7 @@ function openSealedWithBlake2AndStdKey(
   // ed25519_sk_to_curve25519 is equivalent to sha512(seed)[:32] + clamping.
   // Mobile's `ed25519SecToX25519` does this; re-import it via sealDecrypt
   // for brevity, but we need the X25519 priv explicitly here, so inline:
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
   const { sha512 } = require('@noble/hashes/sha2.js');
   const digest: Uint8Array = sha512(recipientEd25519Seed);
   const privX: Uint8Array = digest.slice(0, 32);

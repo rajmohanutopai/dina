@@ -84,11 +84,7 @@ export default function RegionScreen(): React.ReactElement {
 
   const renderItem: ListRenderItem<Country> = useCallback(
     ({ item }) => (
-      <CountryRow
-        country={item}
-        isSelected={profile.region === item.code}
-        onSelect={onSelect}
-      />
+      <CountryRow country={item} isSelected={profile.region === item.code} onSelect={onSelect} />
     ),
     [profile.region, onSelect],
   );

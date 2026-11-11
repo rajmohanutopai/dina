@@ -47,12 +47,14 @@ function seed(len: number, byte: number): number[] {
 
 const NODE_DID = 'did:plc:homenode-abc';
 
-async function buildApp(opts: {
-  codeSeeds?: number[][];
-  tokenSeeds?: number[][];
-  codeTtlMs?: number;
-  nowMsFn?: () => number;
-} = {}) {
+async function buildApp(
+  opts: {
+    codeSeeds?: number[][];
+    tokenSeeds?: number[][];
+    codeTtlMs?: number;
+    nowMsFn?: () => number;
+  } = {},
+) {
   const pairingCodes = new PairingCodeRegistry({
     randomBytesFn: opts.codeSeeds ? scriptedRandom(opts.codeSeeds) : undefined,
     ttlMs: opts.codeTtlMs,
@@ -458,9 +460,7 @@ describe('DELETE /v1/pair/devices/:deviceId (task 4.66)', () => {
     const body = list.json() as {
       devices: { device_id: string; revoked: boolean }[];
     };
-    const entries = Object.fromEntries(
-      body.devices.map((d) => [d.device_id, d.revoked]),
-    );
+    const entries = Object.fromEntries(body.devices.map((d) => [d.device_id, d.revoked]));
     expect(entries[kept.deviceId]).toBe(false);
     expect(entries[revoked.deviceId]).toBe(true);
     await app.close();
@@ -472,9 +472,9 @@ describe('registerPairRoutes validation', () => {
     const app = await createServer({ config: baseConfig(), logger: silentLogger() });
     const pairingCodes = new PairingCodeRegistry();
     const deviceTokens = new DeviceTokenRegistry();
-    expect(() =>
-      registerPairRoutes(app, { pairingCodes, deviceTokens, nodeDid: '' }),
-    ).toThrow(/nodeDid is required/);
+    expect(() => registerPairRoutes(app, { pairingCodes, deviceTokens, nodeDid: '' })).toThrow(
+      /nodeDid is required/,
+    );
     await app.close();
   });
 });

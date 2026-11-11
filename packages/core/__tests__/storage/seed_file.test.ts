@@ -24,7 +24,6 @@ import {
   wrappedSeedExists,
 } from '../../src/storage/seed_file_node';
 
-
 import type { WrappedSeed } from '../../src/crypto/aesgcm';
 
 // Argon2id is needed for wrapSeed

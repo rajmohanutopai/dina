@@ -90,27 +90,21 @@ describe('decideCosigNotification — permission gate', () => {
 
 describe('decideCosigNotification — expiry guard', () => {
   it('past expiry → silence(request_expired)', () => {
-    const r = decideCosigNotification(
-      input({ request: request({ expiresAt: PAST_EXPIRY }) }),
-    );
+    const r = decideCosigNotification(input({ request: request({ expiresAt: PAST_EXPIRY }) }));
     expect(r.kind).toBe('silence');
     if (r.kind !== 'silence') throw new Error('expected silence');
     expect(r.reason).toBe('request_expired');
   });
 
   it('AT expiry boundary → silence(request_expired) — `>=` closes the window', () => {
-    const r = decideCosigNotification(
-      input({ nowMs: Date.parse(FUTURE_EXPIRY) }),
-    );
+    const r = decideCosigNotification(input({ nowMs: Date.parse(FUTURE_EXPIRY) }));
     expect(r.kind).toBe('silence');
     if (r.kind !== 'silence') throw new Error('expected silence');
     expect(r.reason).toBe('request_expired');
   });
 
   it('1 ms before expiry boundary → fire', () => {
-    const r = decideCosigNotification(
-      input({ nowMs: Date.parse(FUTURE_EXPIRY) - 1 }),
-    );
+    const r = decideCosigNotification(input({ nowMs: Date.parse(FUTURE_EXPIRY) - 1 }));
     expect(r.kind).toBe('fire');
   });
 });
@@ -305,9 +299,9 @@ describe('decideCosigNotification — malformed input', () => {
   });
 
   it('throws on empty expiresAt', () => {
-    expect(() =>
-      decideCosigNotification(input({ request: request({ expiresAt: '' }) })),
-    ).toThrow(/ISO-8601/);
+    expect(() => decideCosigNotification(input({ request: request({ expiresAt: '' }) }))).toThrow(
+      /ISO-8601/,
+    );
   });
 
   it('throws on empty subjectId (would build a broken deep link)', () => {

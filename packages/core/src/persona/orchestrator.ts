@@ -27,12 +27,11 @@ import { hkdf } from '@noble/hashes/hkdf.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 
 import { aeadEncrypt, aeadDecrypt } from '../crypto/aead';
-import { derivePersonaDEK , deriveDEKHash } from '../crypto/hkdf';
+import { derivePersonaDEK, deriveDEKHash } from '../crypto/hkdf';
 import { buildIndex, destroyIndex, hasIndex } from '../embedding/persona_index';
 import { requiresApproval, requiresPassphrase } from '../vault/lifecycle';
 
 import { openPersona, closePersona, getPersona, isPersonaOpen } from './service';
-
 
 export interface UnlockResult {
   success: boolean;
@@ -171,9 +170,8 @@ export async function unlockPersona(
   const dekHash = deriveDEKHash(dek);
 
   // 3. Open vault
-  let vaultItemCount = 0;
   if (vaultOpener) {
-    vaultItemCount = await vaultOpener(name, dek);
+    await vaultOpener(name, dek);
   }
 
   // Store DEK in memory (will be zeroed on lock)

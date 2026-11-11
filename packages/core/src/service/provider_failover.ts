@@ -64,7 +64,8 @@ export function readFallbacks(raw: unknown, chosenDid: string): ServiceFallback[
   for (const f of raw) {
     if (f === null || typeof f !== 'object') continue;
     const r = f as Record<string, unknown>;
-    if (typeof r.to_did !== 'string' || !r.to_did.startsWith('did:') || r.to_did === chosenDid) continue;
+    if (typeof r.to_did !== 'string' || !r.to_did.startsWith('did:') || r.to_did === chosenDid)
+      continue;
     if (out.some((x) => x.to_did === r.to_did)) continue;
     out.push({
       to_did: r.to_did,
@@ -107,7 +108,11 @@ export function failoverExpiringServiceQueries(
   const out: string[] = [];
   let running: WorkflowTask[];
   try {
-    running = repo.listByKindAndState(WorkflowTaskKind.ServiceQuery, WorkflowTaskState.Running, 200);
+    running = repo.listByKindAndState(
+      WorkflowTaskKind.ServiceQuery,
+      WorkflowTaskState.Running,
+      200,
+    );
   } catch {
     return [];
   }
@@ -160,8 +165,12 @@ export function failoverExpiringServiceQueries(
       capability: p.capability,
       params: p.params,
       ttl_seconds: ttl,
-      ...(next.schema_hash !== undefined && next.schema_hash !== '' ? { schema_hash: next.schema_hash } : {}),
-      ...(next.service_uri !== undefined && next.service_uri !== '' ? { service_uri: next.service_uri } : {}),
+      ...(next.schema_hash !== undefined && next.schema_hash !== ''
+        ? { schema_hash: next.schema_hash }
+        : {}),
+      ...(next.service_uri !== undefined && next.service_uri !== ''
+        ? { service_uri: next.service_uri }
+        : {}),
     };
     void send(next.to_did, 'service.query', body).catch((err: unknown) => {
       failTask(task.id, `send_failed: ${err instanceof Error ? err.message : String(err)}`);

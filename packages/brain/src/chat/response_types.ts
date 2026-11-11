@@ -173,10 +173,7 @@ export const errorResponse = (text: string): ErrorResponse => ({
   format: 'plain',
 });
 
-export const confirmResponse = (
-  text: string,
-  options: ConfirmOption[],
-): ConfirmResponse => ({
+export const confirmResponse = (text: string, options: ConfirmOption[]): ConfirmResponse => ({
   kind: 'confirm',
   text,
   format: 'rich',
@@ -244,9 +241,7 @@ export const sendResponse = (args: {
 
 function defaultContactListText(contacts: ContactListEntry[]): string {
   if (contacts.length === 0) return 'No contacts.';
-  const lines = contacts
-    .slice(0, 20)
-    .map((c) => `- ${c.displayName} (${c.did.slice(0, 16)}…)`);
+  const lines = contacts.slice(0, 20).map((c) => `- ${c.displayName} (${c.did.slice(0, 16)}…)`);
   const extra = contacts.length > 20 ? `\n… and ${contacts.length - 20} more.` : '';
   return `${contacts.length} contact${contacts.length === 1 ? '' : 's'}:\n${lines.join('\n')}${extra}`;
 }

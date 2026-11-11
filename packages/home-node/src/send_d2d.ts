@@ -88,7 +88,9 @@ export function makeSendD2D(opts: MakeSendD2DOptions): SendD2D {
     const resolved = await resolver.resolve(to);
     const vm = pickEd25519VerificationMethod(resolved.document.verificationMethod);
     if (vm === null || typeof vm.publicKeyMultibase !== 'string') {
-      throw new PermanentSendError(`sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`);
+      throw new PermanentSendError(
+        `sendD2D: recipient ${to} has no Ed25519 signing key in its DID doc`,
+      );
     }
     const recipientPublicKey = multibaseToPublicKey(vm.publicKeyMultibase);
     const endpoint = resolved.messagingService?.endpoint ?? opts.defaultMsgboxEndpoint;

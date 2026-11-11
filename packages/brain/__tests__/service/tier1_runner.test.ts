@@ -6,6 +6,7 @@
  */
 
 import { AppointmentAvailabilityResultSchema } from '@dina/core';
+
 import { makeTier1CapabilityRunner } from '../../src/service/tier1_runner';
 
 import type { ChatOptions, ChatResponse, LLMProvider } from '../../src/llm/adapters/provider';
@@ -143,10 +144,14 @@ describe('makeTier1CapabilityRunner', () => {
         return salonConfig();
       },
     });
-    for (const serviceUri of ['at://did:plc:salon123/app.bsky.feed.post/branch-2', 'branch-2', 'at://did:plc:salon123/com.dinakernel.service.profile/..']) {
-      await expect(runner('appointment_availability', {}, task('t2b', { service_uri: serviceUri }))).rejects.toThrow(
-        /names a listing that is not a listing reference/,
-      );
+    for (const serviceUri of [
+      'at://did:plc:salon123/app.bsky.feed.post/branch-2',
+      'branch-2',
+      'at://did:plc:salon123/com.dinakernel.service.profile/..',
+    ]) {
+      await expect(
+        runner('appointment_availability', {}, task('t2b', { service_uri: serviceUri })),
+      ).rejects.toThrow(/names a listing that is not a listing reference/);
     }
     expect(seenRkeys).toEqual([]);
   });
@@ -161,7 +166,7 @@ describe('makeTier1CapabilityRunner', () => {
     await expect(runner('appointment_slots', {}, task('t3', {}))).resolves.toEqual(VALID);
   });
 
-  it('prefers the listing\'s PUBLISHED result schema over the registry default', async () => {
+  it("prefers the listing's PUBLISHED result schema over the registry default", async () => {
     // Published schema demands a field the registry schema doesn't —
     // a registry-validated answer must now FAIL, proving the published
     // schema was the one enforced.
@@ -272,9 +277,8 @@ describe('makeTier1CapabilityRunner — per-listing vault pin', () => {
     // searched set. (Personas registered via the registry so the tier
     // intersection has something to intersect with.)
     const { clearVaults, storeItem, createPersona, resetPersonaState } = await import('@dina/core');
-    const { setAccessiblePersonas, resetReasoningProvider } = await import(
-      '../../src/vault_context/assembly'
-    );
+    const { setAccessiblePersonas, resetReasoningProvider } =
+      await import('../../src/vault_context/assembly');
     clearVaults(['general', 'work']);
     resetPersonaState();
     resetReasoningProvider();

@@ -88,19 +88,6 @@ Active Home Node work should normally happen in the shared TypeScript tree:
 | [`cli/`](./cli/) | Python `dina-agent` source used for agent/CLI compatibility work. |
 | [`config/`](./config/) | Shared repo-level runtime configuration, including model defaults. |
 
-Legacy runtime references live under [`legacy/`](./legacy/):
-
-| Path | Purpose |
-|---|---|
-| [`legacy/go-core/`](./legacy/go-core/) | Original Go `dina-core`, kept as a behavior oracle and runnable reference. |
-| [`legacy/python-brain/`](./legacy/python-brain/) | Original Python `dina-brain`, kept as a behavior oracle and runnable reference. |
-| [`legacy/bin/`](./legacy/bin/) | Legacy installer, runtime wrapper, and `dina-admin` wrapper. |
-| [`legacy/admin-cli/`](./legacy/admin-cli/) | Legacy admin CLI package bundled into the Go/Python stack. |
-| [`legacy/compose/`](./legacy/compose/) | Docker Compose files for the legacy stack. |
-
-Do not add new product behavior to `legacy/` unless the work is explicitly
-maintaining the reference stack or a parity test.
-
 ---
 
 # Part I: The Vision
@@ -458,7 +445,7 @@ Dina is one TypeScript codebase with two form factors. The same `@dina/core`, `@
 
 **The product is the TypeScript Home Node.** On the phone (`apps/mobile`, Expo / React Native) the whole node runs on the device, with no server to stand up. On a server (`apps/home-node-lite`, Fastify) the same node splits into two processes: Core, which keeps the vault and the signing keys, and Brain, which reasons and never holds a key. They talk over the transport-agnostic `CoreClient`, which is in-process on the phone and signed HTTP on the server. The web build is a thin client of a server node and runs no node of its own.
 
-**The Go/Python stack under `legacy/` is a behavior reference, not the product.** The original `legacy/go-core/` and `legacy/python-brain/` implementation is kept as a runnable oracle while the TypeScript runtime is finished. It is useful for parity tests, not for new product work. Do not build new behavior there.
+Dina began as a Go Core and a Python Brain. That stack has been removed from the tree; it remains in git history.
 
 See [`apps/home-node-lite/README.md`](./apps/home-node-lite/README.md)
 for the Lite quickstart and [`docs/try-lite.md`](./docs/try-lite.md)

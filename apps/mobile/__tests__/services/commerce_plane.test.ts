@@ -16,7 +16,6 @@ import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
 
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 import {
   applyMigrations,
   commerceAvailability,
@@ -32,6 +31,7 @@ import {
   installCatalogRecordReader,
   installCatalogRecordWriter,
 } from '@dina/core';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
   startMobileCommercePlane,

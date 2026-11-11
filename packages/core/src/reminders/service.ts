@@ -295,9 +295,7 @@ export async function createReminderDurable(input: CreateReminderInput): Promise
 }
 
 /** Subscribe to reminder-creation events. Returns a disposer. */
-export function subscribeReminderCreated(
-  listener: (reminder: Reminder) => void,
-): () => void {
+export function subscribeReminderCreated(listener: (reminder: Reminder) => void): () => void {
   createListeners.add(listener);
   return () => {
     createListeners.delete(listener);

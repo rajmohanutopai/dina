@@ -79,7 +79,10 @@ export interface TenderMember {
  * review of the supplier, or a low score over enough reviews.
  */
 export type NotAskedReason = 'own_poor_review' | 'low_peerlens_trust';
-export const NOT_ASKED_REASONS: readonly NotAskedReason[] = ['own_poor_review', 'low_peerlens_trust'];
+export const NOT_ASKED_REASONS: readonly NotAskedReason[] = [
+  'own_poor_review',
+  'low_peerlens_trust',
+];
 /** At most this many set-aside suppliers ride along with one tender. */
 export const MAX_NOT_ASKED = 20;
 /** A note (the owner's review, or the score in words) is cut to this length. */
@@ -176,10 +179,9 @@ export class SQLiteTenderRepository implements TenderRepository {
 
   listMembers(tenderId: string): TenderMember[] {
     return this.db
-      .query(
-        `SELECT * FROM commerce_tender_members WHERE tender_id = ? ORDER BY supplier_did`,
-        [tenderId],
-      )
+      .query(`SELECT * FROM commerce_tender_members WHERE tender_id = ? ORDER BY supplier_did`, [
+        tenderId,
+      ])
       .map(memberFromRow);
   }
 
@@ -215,10 +217,9 @@ export class SQLiteTenderRepository implements TenderRepository {
 
   listNotAsked(tenderId: string): TenderNotAsked[] {
     return this.db
-      .query(
-        `SELECT * FROM commerce_tender_not_asked WHERE tender_id = ? ORDER BY supplier_did`,
-        [tenderId],
-      )
+      .query(`SELECT * FROM commerce_tender_not_asked WHERE tender_id = ? ORDER BY supplier_did`, [
+        tenderId,
+      ])
       .map((row) => ({
         tenderId: String(row.tender_id),
         supplierDid: String(row.supplier_did),
@@ -243,7 +244,10 @@ function memberFromRow(row: DBRow): TenderMember {
     requestId: String(row.request_id),
     requestDigest: String(row.request_digest),
     quoteId: String(row.quote_id),
-    serviceRkey: row.service_rkey === undefined || row.service_rkey === null ? 'self' : String(row.service_rkey),
+    serviceRkey:
+      row.service_rkey === undefined || row.service_rkey === null
+        ? 'self'
+        : String(row.service_rkey),
   };
 }
 
@@ -383,7 +387,8 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
   const setAside = new Set(notAsked.map((n) => n.supplierDid));
   if (setAside.size !== notAsked.length) return { ok: false, refusal: 'duplicate_not_asked' };
   // Asked and set aside at once is a surface bug: the owner chose one or the other.
-  if ([...setAside].some((did) => seen.has(did))) return { ok: false, refusal: 'asked_and_not_asked' };
+  if ([...setAside].some((did) => seen.has(did)))
+    return { ok: false, refusal: 'asked_and_not_asked' };
   if (notAsked.some((n) => !NOT_ASKED_REASONS.includes(n.reason))) {
     return { ok: false, refusal: 'not_asked_reason_unknown' };
   }
@@ -434,7 +439,12 @@ export async function createTender(input: CreateTenderInput): Promise<CreateTend
     });
     if (outcome.kind === 'refused') {
       runtime.tenders.removeMember(requestId);
-      members.push({ supplierDid: supplier.supplierDid, requestId, sent: false, reason: outcome.reason });
+      members.push({
+        supplierDid: supplier.supplierDid,
+        requestId,
+        sent: false,
+        reason: outcome.reason,
+      });
       continue;
     }
     const request = outcome.request;
@@ -527,10 +537,7 @@ export function financingBenefitMinor(
   creditDays: number,
 ): bigint {
   if (creditDays <= 0 || rateBps <= 0) return 0n;
-  return roundRationalHalfEven(
-    totalMinor * BigInt(rateBps) * BigInt(creditDays),
-    10_000n * 365n,
-  );
+  return roundRationalHalfEven(totalMinor * BigInt(rateBps) * BigInt(creditDays), 10_000n * 365n);
 }
 
 /**
@@ -644,4 +651,3 @@ export function tenderSubject(linesJson: string): string | null {
   const more = labels.length > 1 ? ` and ${String(labels.length - 1)} more` : '';
   return `“${shown}”${more}`;
 }
-

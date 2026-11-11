@@ -44,10 +44,7 @@ export type RequestIdValidationResult =
   | { ok: true; value: string }
   | { ok: false; reason: RequestIdRejectionReason };
 
-export type RequestIdRejectionReason =
-  | 'empty'
-  | 'too_long'
-  | 'bad_characters';
+export type RequestIdRejectionReason = 'empty' | 'too_long' | 'bad_characters';
 
 /**
  * Validate an inbound `X-Request-Id` header value for preservation.
@@ -62,9 +59,7 @@ export type RequestIdRejectionReason =
  * character + length checks because some tracing schemes (W3C
  * traceparent) are case-sensitive.
  */
-export function validateRequestId(
-  raw: string | undefined | null,
-): RequestIdValidationResult {
+export function validateRequestId(raw: string | undefined | null): RequestIdValidationResult {
   if (raw === undefined || raw === null || raw.length === 0) {
     return { ok: false, reason: 'empty' };
   }

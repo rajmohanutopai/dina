@@ -17,11 +17,7 @@
  * Pure function — runs under plain Jest, no RN deps.
  */
 
-import {
-  DEFAULT_MAX_PRIMARY,
-  deriveFacets,
-  type FacetBar,
-} from '../../src/peerlens/facets';
+import { DEFAULT_MAX_PRIMARY, deriveFacets, type FacetBar } from '../../src/peerlens/facets';
 
 interface SearchHit {
   category?: string;
@@ -98,11 +94,7 @@ describe('deriveFacets — value cleanup', () => {
   });
 
   it('drops empty / whitespace-only values', () => {
-    const results: SearchHit[] = [
-      { category: 'Furniture' },
-      { category: '' },
-      { category: '   ' },
-    ];
+    const results: SearchHit[] = [{ category: 'Furniture' }, { category: '' }, { category: '   ' }];
     const bar = deriveFacets({ results, key: (r) => r.category ?? null });
     expect(toMap(bar)).toEqual({ Furniture: 1 });
   });
@@ -110,7 +102,9 @@ describe('deriveFacets — value cleanup', () => {
   it('skips non-string entries inside a multi-valued result (defensive)', () => {
     // Forced via cast — real data shouldn't contain non-strings, but
     // the wire format is JSON and a future field could go through here.
-    const results = [{ tags: ['office', 42 as unknown as string, null as unknown as string, 'home'] }];
+    const results = [
+      { tags: ['office', 42 as unknown as string, null as unknown as string, 'home'] },
+    ];
     const bar = deriveFacets({ results, key: (r) => r.tags });
     expect(toMap(bar)).toEqual({ office: 1, home: 1 });
   });
@@ -215,12 +209,8 @@ describe('deriveFacets — primary/overflow split', () => {
   });
 
   it('rejects negative or non-finite maxPrimary', () => {
-    expect(() =>
-      deriveFacets({ results: [], key: () => null, maxPrimary: -1 }),
-    ).toThrow();
-    expect(() =>
-      deriveFacets({ results: [], key: () => null, maxPrimary: Number.NaN }),
-    ).toThrow();
+    expect(() => deriveFacets({ results: [], key: () => null, maxPrimary: -1 })).toThrow();
+    expect(() => deriveFacets({ results: [], key: () => null, maxPrimary: Number.NaN })).toThrow();
   });
 });
 

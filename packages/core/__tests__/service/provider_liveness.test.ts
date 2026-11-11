@@ -32,7 +32,8 @@ afterEach(() => {
 });
 
 describe('outcome record', () => {
-  const expire = (did: string, now: number) => recordProviderOutcome(did, 'expired', { handedOff: true, now });
+  const expire = (did: string, now: number) =>
+    recordProviderOutcome(did, 'expired', { handedOff: true, now });
 
   it('three expiries in a row eject; the ejection then lapses', () => {
     expire(A, 1);
@@ -81,7 +82,14 @@ describe('outcome record', () => {
 describe('fallbacks from a request', () => {
   it('keeps well-formed public candidates, at most two, never the chosen one', () => {
     const out = readFallbacks(
-      [{ to_did: A }, { to_did: B, service_uri: 'at://b/x' }, { to_did: 'nope' }, { to_did: B }, { to_did: C }, { to_did: 'did:plc:d' }],
+      [
+        { to_did: A },
+        { to_did: B, service_uri: 'at://b/x' },
+        { to_did: 'nope' },
+        { to_did: B },
+        { to_did: C },
+        { to_did: 'did:plc:d' },
+      ],
       A,
     );
     expect(out).toEqual([{ to_did: B, service_uri: 'at://b/x' }, { to_did: C }]);
@@ -98,7 +106,12 @@ describe('failover and unknown outcomes', () => {
     });
     return { repo, service, sent };
   }
-  function query(service: WorkflowService, capability: string, fallbacks: unknown[], nowSec: number) {
+  function query(
+    service: WorkflowService,
+    capability: string,
+    fallbacks: unknown[],
+    nowSec: number,
+  ) {
     service.create({
       id: `sq-${capability}`,
       kind: WorkflowTaskKind.ServiceQuery,
@@ -115,22 +128,41 @@ describe('failover and unknown outcomes', () => {
       expiresAtSec: nowSec + 60,
       origin: 'api',
     });
-    service.store().transition(`sq-${capability}`, WorkflowTaskState.Created, WorkflowTaskState.Running, 1);
+    service
+      .store()
+      .transition(`sq-${capability}`, WorkflowTaskState.Created, WorkflowTaskState.Running, 1);
     return `sq-${capability}`;
   }
 
   it('a read-only query moves to the next provider on the same task, and the card says so', () => {
     const { repo, service, sent } = setup();
-    const id = query(service, 'eta_query', [{ to_did: B, service_name: 'Provider B', schema_hash: 'h-b' }], 1000);
+    const id = query(
+      service,
+      'eta_query',
+      [{ to_did: B, service_name: 'Provider B', schema_hash: 'h-b' }],
+      1000,
+    );
     service.expireTasks(1061, 1_061_000);
     const task = repo.getById(id)!;
     expect(task.status).toBe('running');
     expect(JSON.parse(task.payload)).toMatchObject({ to_did: B, attempts: [A], fallbacks: [] });
     expect(sent).toEqual([
-      { to: B, body: { query_id: 'q-eta_query', capability: 'eta_query', params: { route: '42' }, ttl_seconds: 60, schema_hash: 'h-b' } },
+      {
+        to: B,
+        body: {
+          query_id: 'q-eta_query',
+          capability: 'eta_query',
+          params: { route: '42' },
+          ttl_seconds: 60,
+          schema_hash: 'h-b',
+        },
+      },
     ]);
     const ev = repo.listEventsForTask(id).find((e) => e.event_kind === 'retargeted');
-    expect(JSON.parse(ev!.details)).toMatchObject({ previous_service_name: 'Provider A', service_name: 'Provider B' });
+    expect(JSON.parse(ev!.details)).toMatchObject({
+      previous_service_name: 'Provider A',
+      service_name: 'Provider B',
+    });
   });
 
   it('when every candidate is spent, the query expires as before', () => {

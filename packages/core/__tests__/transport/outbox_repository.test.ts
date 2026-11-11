@@ -25,17 +25,31 @@ import {
   type D2DOutboxRepository,
 } from '../../src/transport/outbox_repository';
 
-function sqliteHarness(): { repo: SQLiteD2DOutboxRepository; reopen: () => SQLiteD2DOutboxRepository; cleanup: () => void } {
+function sqliteHarness(): {
+  repo: SQLiteD2DOutboxRepository;
+  reopen: () => SQLiteD2DOutboxRepository;
+  cleanup: () => void;
+} {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dina-outbox-'));
   const dbPath = path.join(dir, 'identity.sqlite');
   const passphraseHex = randomBytes(32).toString('hex');
-  let adapter = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+  let adapter = new NodeSQLiteAdapter({
+    path: dbPath,
+    passphraseHex,
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(adapter, IDENTITY_MIGRATIONS);
   return {
     repo: new SQLiteD2DOutboxRepository(adapter),
     reopen: () => {
       adapter.close();
-      adapter = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+      adapter = new NodeSQLiteAdapter({
+        path: dbPath,
+        passphraseHex,
+        journalMode: 'WAL',
+        synchronous: 'NORMAL',
+      });
       // Migrations are idempotent (CREATE … IF NOT EXISTS); re-running is a no-op.
       applyMigrations(adapter, IDENTITY_MIGRATIONS);
       return new SQLiteD2DOutboxRepository(adapter);
@@ -66,7 +80,10 @@ function ins(over: Partial<D2DOutboxInsert> = {}): D2DOutboxInsert {
 
 // ── Contract run against both implementations ──────────────────────────
 
-interface Factory { name: string; make: () => { repo: D2DOutboxRepository; cleanup: () => void } }
+interface Factory {
+  name: string;
+  make: () => { repo: D2DOutboxRepository; cleanup: () => void };
+}
 
 const factories: Factory[] = [
   {

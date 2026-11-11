@@ -6,7 +6,13 @@
  * binding named, whatever characters its id holds.
  */
 
-import { activateRemoteAgent, bindRemoteSkill, createNoneCredential, liveRemoteBindings, registerRemoteAgent } from '../../src/a2a';
+import {
+  activateRemoteAgent,
+  bindRemoteSkill,
+  createNoneCredential,
+  liveRemoteBindings,
+  registerRemoteAgent,
+} from '../../src/a2a';
 import { CoreRouter } from '../../src/server/router';
 import { registerA2ARoutes } from '../../src/server/routes/a2a';
 
@@ -25,7 +31,14 @@ beforeEach(async () => {
   world = new LaneWorld();
   world.cards.set(
     CARD_URL,
-    agentCard({ skills: IDS.map((id) => ({ id, name: `Skill ${id}`, description: 'A skill with an unusual id.', tags: ['text'] })) }),
+    agentCard({
+      skills: IDS.map((id) => ({
+        id,
+        name: `Skill ${id}`,
+        description: 'A skill with an unusual id.',
+        tags: ['text'],
+      })),
+    }),
   );
   const deps = { store: world.store, nowMs: () => world.clock };
   const reg = await registerRemoteAgent(deps, CARD_URL);
@@ -34,7 +47,11 @@ beforeEach(async () => {
   const cred = createNoneCredential(deps, agentId);
   if (!cred.ok) throw new Error(cred.reason);
   for (const skill of IDS) {
-    const bound = bindRemoteSkill(deps, agentId, { skill, actionClass: 'read', credentialRef: cred.credential.credential_ref });
+    const bound = bindRemoteSkill(deps, agentId, {
+      skill,
+      actionClass: 'read',
+      credentialRef: cred.credential.credential_ref,
+    });
     if (!bound.ok) throw new Error(`bind ${skill}: ${bound.reason}`);
   }
   expect(activateRemoteAgent(deps, agentId)).toEqual({ ok: true });
@@ -61,7 +78,9 @@ const revoke = (skill: string) =>
 const live = () => {
   const agent = world.store.getAgent(agentId);
   if (agent === null) throw new Error('agent');
-  return liveRemoteBindings(world.store, agent).map((b) => b.skill).sort();
+  return liveRemoteBindings(world.store, agent)
+    .map((b) => b.skill)
+    .sort();
 };
 
 it.each(IDS)('revokes the binding named %j, and only it', async (skill) => {

@@ -59,11 +59,9 @@ describe('security_preferences', () => {
     // negatives — fall back to "not set" so the caller picks the
     // safe default.
     const Keychain = await import('react-native-keychain');
-    await Keychain.setGenericPassword(
-      'dina.security.background_timeout_s',
-      'not-a-number',
-      { service: 'dina.security.background_timeout_s' },
-    );
+    await Keychain.setGenericPassword('dina.security.background_timeout_s', 'not-a-number', {
+      service: 'dina.security.background_timeout_s',
+    });
     expect(await loadBackgroundTimeoutPreference()).toBeNull();
   });
 

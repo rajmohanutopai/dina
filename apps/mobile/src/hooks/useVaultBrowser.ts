@@ -10,14 +10,7 @@
  * Source: ARCHITECTURE.md Task 9.12
  */
 
-import { listPersonas, isPersonaOpen, type PersonaState } from '@dina/core';
-import {
-  clearVaults,
-  getItem,
-  queryVault,
-  storeItem,
-  vaultItemCount,
-} from '@dina/core';
+import { listPersonas, isPersonaOpen, getItem, queryVault, vaultItemCount } from '@dina/core';
 
 import type { VaultItem, SearchQuery } from '@dina/test-harness';
 

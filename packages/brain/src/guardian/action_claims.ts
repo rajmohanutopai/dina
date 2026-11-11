@@ -46,18 +46,34 @@ export function receiptsFromToolCalls(calls: readonly LoggedCall[]): ActionRecei
     switch (call.name) {
       case 'send_message': {
         if (r.status === 'sent') {
-          out.push({ action: 'send', status: 'done', targets: [str(r.recipient_name)].filter((t) => t !== ''), object: str(r.text) });
+          out.push({
+            action: 'send',
+            status: 'done',
+            targets: [str(r.recipient_name)].filter((t) => t !== ''),
+            object: str(r.text),
+          });
         } else if (r.status === 'confirm_pending') {
-          out.push({ action: 'send', status: 'waiting', targets: [str(r.to)].filter((t) => t !== ''), object: str(r.text) });
+          out.push({
+            action: 'send',
+            status: 'waiting',
+            targets: [str(r.to)].filter((t) => t !== ''),
+            object: str(r.text),
+          });
         }
         break;
       }
       case 'remember': {
-        const personas = Array.isArray(r.personas) ? r.personas.map(str).filter((p) => p !== '') : [];
+        const personas = Array.isArray(r.personas)
+          ? r.personas.map(str).filter((p) => p !== '')
+          : [];
         const words = str(call.arguments.words);
         if (r.status === 'stored' || r.status === 'duplicate') {
           out.push({ action: 'save', status: 'done', targets: personas, object: words });
-        } else if (r.status === 'pending_approval' || r.status === 'pending_unlock' || r.status === 'parked') {
+        } else if (
+          r.status === 'pending_approval' ||
+          r.status === 'pending_unlock' ||
+          r.status === 'parked'
+        ) {
           out.push({ action: 'save', status: 'waiting', targets: personas, object: words });
         }
         break;
@@ -92,7 +108,10 @@ export function receiptsFromToolCalls(calls: readonly LoggedCall[]): ActionRecei
             action: 'stop',
             status: 'done',
             targets: call.name === 'standing_reply' ? ['reply'] : ['budget', 'allowance'],
-            object: call.name === 'standing_reply' ? 'the automatic reply' : "the agent's spending budget",
+            object:
+              call.name === 'standing_reply'
+                ? 'the automatic reply'
+                : "the agent's spending budget",
           });
         }
         break;
@@ -112,19 +131,51 @@ export function receiptsFromToolCalls(calls: readonly LoggedCall[]): ActionRecei
 const SUBJECT = String.raw`\bI(?:'ve|’ve| have)?(?:\s+(?:just|already|now|also|then|gone ahead and|went ahead and|quickly))*\s+`;
 
 const VERBS: readonly { action: ReceiptAction | 'never'; re: RegExp }[] = [
-  { action: 'send', re: new RegExp(`${SUBJECT}(?:sent|messaged|texted|emailed|told|passed (?:it|this|that) on to)\\b`, 'i') },
-  { action: 'save', re: new RegExp(`${SUBJECT}(?:saved|stored|noted down|remembered that|filed)\\b`, 'i') },
-  { action: 'reminder', re: new RegExp(`${SUBJECT}(?:set|scheduled|added|created)\\s+(?:a|the|your|two|both)?\\s*reminders?\\b`, 'i') },
-  { action: 'forget', re: new RegExp(`${SUBJECT}(?:deleted|erased|forgotten|forgot|archived|cleared out)\\b`, 'i') },
+  {
+    action: 'send',
+    re: new RegExp(
+      `${SUBJECT}(?:sent|messaged|texted|emailed|told|passed (?:it|this|that) on to)\\b`,
+      'i',
+    ),
+  },
+  {
+    action: 'save',
+    re: new RegExp(`${SUBJECT}(?:saved|stored|noted down|remembered that|filed)\\b`, 'i'),
+  },
+  {
+    action: 'reminder',
+    re: new RegExp(
+      `${SUBJECT}(?:set|scheduled|added|created)\\s+(?:a|the|your|two|both)?\\s*reminders?\\b`,
+      'i',
+    ),
+  },
+  {
+    action: 'forget',
+    re: new RegExp(`${SUBJECT}(?:deleted|erased|forgotten|forgot|archived|cleared out)\\b`, 'i'),
+  },
   // Dina can stop her own standing replies and agents' budgets: a stop receipt backs these.
-  { action: 'stop', re: new RegExp(`${SUBJECT}(?:cancelled|canceled|stopped|turned off|revoked|ended)\\b`, 'i') },
+  {
+    action: 'stop',
+    re: new RegExp(`${SUBJECT}(?:cancelled|canceled|stopped|turned off|revoked|ended)\\b`, 'i'),
+  },
   // No tool of Dina's can make these true (Cart Handover; bookings and subscriptions are the provider's).
-  { action: 'never', re: new RegExp(`${SUBJECT}(?:paid|transferred|ordered|bought|purchased|unsubscribed|booked)\\b`, 'i') },
+  {
+    action: 'never',
+    re: new RegExp(
+      `${SUBJECT}(?:paid|transferred|ordered|bought|purchased|unsubscribed|booked)\\b`,
+      'i',
+    ),
+  },
 ];
 
 /** Not a claim about the world: the reply describing itself, a negation, a quote. */
 function notAClaim(sentence: string): boolean {
-  if (/\b(haven't|have not|didn't|did not|not yet|never|can't|cannot|couldn't|won't)\b/i.test(sentence)) return true;
+  if (
+    /\b(haven't|have not|didn't|did not|not yet|never|can't|cannot|couldn't|won't)\b/i.test(
+      sentence,
+    )
+  )
+    return true;
   // "I've ordered the list by date", "I've removed the duplicates from this answer".
   if (/\b(ordered|sorted|grouped|arranged)\b[^.]*\bby\b/i.test(sentence)) return true;
   if (/\bfrom (this|the) (list|answer|reply|summary)\b/i.test(sentence)) return true;
@@ -144,7 +195,7 @@ export interface ClaimCheckResult {
 }
 
 const quote = (s: string): string => `"${s.trim().replace(/\s+/g, ' ').slice(0, 300)}"`;
-const title = (s: string): string => (s === '' ? s : s[0]!.toUpperCase() + s.slice(1));
+const title = (s: string): string => (s === '' ? s : s.charAt(0).toUpperCase() + s.slice(1));
 
 function formatDue(ms: number, timeZone: string | undefined): string {
   try {
@@ -165,11 +216,16 @@ export function receiptLine(r: ActionReceipt, earlier: boolean, timeZone?: strin
   const to = r.targets[0] ?? '';
   switch (r.action) {
     case 'send':
-      if (r.status === 'waiting') return `Waiting for your OK: a message to ${to || 'your contact'}: ${quote(r.object)}`;
-      return earlier ? `Already sent to ${to || 'them'} earlier: ${quote(r.object)}` : `Sent to ${to || 'them'}: ${quote(r.object)}`;
+      if (r.status === 'waiting')
+        return `Waiting for your OK: a message to ${to || 'your contact'}: ${quote(r.object)}`;
+      return earlier
+        ? `Already sent to ${to || 'them'} earlier: ${quote(r.object)}`
+        : `Sent to ${to || 'them'}: ${quote(r.object)}`;
     case 'save':
       if (r.status === 'waiting') return `Waiting for your OK before saving: ${quote(r.object)}`;
-      return earlier ? `Already saved earlier: ${quote(r.object)}` : `Saved to ${title(to) || 'your vault'}: ${quote(r.object)}`;
+      return earlier
+        ? `Already saved earlier: ${quote(r.object)}`
+        : `Saved to ${title(to) || 'your vault'}: ${quote(r.object)}`;
     case 'reminder':
       return `Reminder set: ${r.object}${r.dueAtMs !== undefined ? `, ${formatDue(r.dueAtMs, timeZone)}` : ''}`;
     case 'forget':
@@ -181,7 +237,9 @@ export function receiptLine(r: ActionReceipt, earlier: boolean, timeZone?: strin
 
 function pick(sentence: string, candidates: ActionReceipt[]): ActionReceipt | undefined {
   if (candidates.length === 0) return undefined;
-  const named = candidates.filter((r) => r.targets.some((t) => t !== '' && new RegExp(`\\b${escapeRe(t)}\\b`, 'i').test(sentence)));
+  const named = candidates.filter((r) =>
+    r.targets.some((t) => t !== '' && new RegExp(`\\b${escapeRe(t)}\\b`, 'i').test(sentence)),
+  );
   if (named.length > 0) return named[named.length - 1];
   // A claim that names a recipient no receipt has is unbacked ("sent Omar"
   // when only Priya got a message); with no name, a single receipt fits.
@@ -213,9 +271,12 @@ export function checkActionClaims(
     let line = "I haven't done that.";
     if (verb.action !== 'never') {
       const earlier = REFERS_BACK.test(sentence);
-      const pool = (earlier ? [...receipts.earlier, ...receipts.thisTurn] : receipts.thisTurn).filter((r) => r.action === verb.action);
+      const pool = (
+        earlier ? [...receipts.earlier, ...receipts.thisTurn] : receipts.thisTurn
+      ).filter((r) => r.action === verb.action);
       const backing = pick(sentence, pool);
-      if (backing !== undefined) line = receiptLine(backing, earlier && !receipts.thisTurn.includes(backing), timeZone);
+      if (backing !== undefined)
+        line = receiptLine(backing, earlier && !receipts.thisTurn.includes(backing), timeZone);
     }
     if (line === "I haven't done that.") unbacked++;
     rewritten++;

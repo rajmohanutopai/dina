@@ -21,7 +21,14 @@ beforeEach(() => {
 afterEach(() => resetPersonaState());
 
 it("a contact's message is stored searchable even if Brain says quarantine", () => {
-  const r = receiveAndStage('social.update', 'did:plc:friend', 'contact_ring1', '{"text":"moved to Leeds"}', 'm-1', true);
+  const r = receiveAndStage(
+    'social.update',
+    'did:plc:friend',
+    'contact_ring1',
+    '{"text":"moved to Leeds"}',
+    'm-1',
+    true,
+  );
   claim(10);
   resolve(r.stagingId!, 'general', true, {
     type: 'relationship_note',
@@ -36,10 +43,19 @@ it("a contact's message is stored searchable even if Brain says quarantine", () 
   expect(v?.sender_trust).toBe('contact_ring1');
 });
 
-it('a D2D item without Core\'s stamp stays quarantined, whatever Brain says', () => {
-  const { id } = ingest({ source: 'd2d', source_id: 'm-2', data: { type: 'note', summary: 'hello' } });
+it("a D2D item without Core's stamp stays quarantined, whatever Brain says", () => {
+  const { id } = ingest({
+    source: 'd2d',
+    source_id: 'm-2',
+    data: { type: 'note', summary: 'hello' },
+  });
   claim(10);
-  resolve(id, 'general', true, { type: 'note', summary: 'hello', retrieval_policy: 'normal', sender_trust: 'contact_ring1' });
+  resolve(id, 'general', true, {
+    type: 'note',
+    summary: 'hello',
+    retrieval_policy: 'normal',
+    sender_trust: 'contact_ring1',
+  });
   // Quarantined rows are excluded from normal reads.
   expect(getVaultItem('general', `stg-${id}`)?.retrieval_policy ?? 'quarantine').toBe('quarantine');
 });

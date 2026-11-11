@@ -109,10 +109,17 @@ export function createDraftQuoteRequestTool(): AgentTool {
     name: 'draft_quote_request',
     terminal: true,
     ownerNote: (result) => {
-      const lines = ((result as { draft?: { lines?: { description?: unknown }[] } } | null)?.draft?.lines ?? [])
+      const lines = (
+        (result as { draft?: { lines?: { description?: unknown }[] } } | null)?.draft?.lines ?? []
+      )
         .map((l) => (typeof l.description === 'string' ? l.description : ''))
         .filter((d) => d !== '');
-      const what = lines.length === 0 ? 'what you asked for' : lines.length === 1 ? lines[0] : `${lines.slice(0, -1).join(', ')} and ${lines[lines.length - 1]}`;
+      const what =
+        lines.length === 0
+          ? 'what you asked for'
+          : lines.length === 1
+            ? lines[0]
+            : `${lines.slice(0, -1).join(', ')} and ${lines[lines.length - 1]}`;
       return `I've drafted a request for quotes for ${what}. Open the card to choose suppliers and send it; nothing has been sent yet.`;
     },
     description:

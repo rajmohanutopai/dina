@@ -12,7 +12,6 @@ import {
   addGrant,
   checkGrant,
   listSessions,
-  getSession,
   clearAllSessions,
 } from '../../src/session/lifecycle';
 

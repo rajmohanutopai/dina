@@ -1,9 +1,10 @@
+import { pino } from 'pino';
+
 import {
   InMemoryReviewPublishRepository,
   type ClassifiedError,
   type ReviewRecordWriter,
 } from '@dina/core';
-import { pino } from 'pino';
 
 import { ReviewPublishSupervisor } from '../src/peerlens/review_publish_supervisor';
 

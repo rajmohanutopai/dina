@@ -258,9 +258,7 @@ describe('verifyRecordCommit — closed-default invariant', () => {
       decoderCalled = true;
       return mb === 'z6MkNs0' ? KEY_BYTES : null;
     };
-    verifyRecordCommit(
-      input({ recordCanonicalBytes: new Uint8Array(0), decodeMultikey: decode }),
-    );
+    verifyRecordCommit(input({ recordCanonicalBytes: new Uint8Array(0), decodeMultikey: decode }));
     expect(decoderCalled).toBe(false);
   });
 });

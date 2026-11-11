@@ -173,8 +173,18 @@ describe('useServiceInbox', () => {
   it("shows Core's own words on the owner cards it mints, never 'Unnamed service'", async () => {
     const { client } = stubClient({
       list: [
-        makeTask({ id: 'forget-1', created_at: 1, description: 'Forget everything about Emma:\n- 3 notes', payload: JSON.stringify({ type: 'owner_forget', job_id: 'forget-1' }) }),
-        makeTask({ id: 'allow-1', created_at: 2, description: 'Let pantry-bot buy household items up to INR 5000.00 a month', payload: JSON.stringify({ type: 'owner_spend_allowance', allowance_id: 'allow-1' }) }),
+        makeTask({
+          id: 'forget-1',
+          created_at: 1,
+          description: 'Forget everything about Emma:\n- 3 notes',
+          payload: JSON.stringify({ type: 'owner_forget', job_id: 'forget-1' }),
+        }),
+        makeTask({
+          id: 'allow-1',
+          created_at: 2,
+          description: 'Let pantry-bot buy household items up to INR 5000.00 a month',
+          payload: JSON.stringify({ type: 'owner_spend_allowance', allowance_id: 'allow-1' }),
+        }),
         makeTask({ id: 'odd-1', created_at: 3, payload: JSON.stringify({ type: 'constructor' }) }),
       ],
     });
@@ -241,9 +251,15 @@ describe('useServiceInbox', () => {
         grant_can_silence: false,
       }),
     });
-    const agentDelegation = makeTask({ id: 'agent-1', kind: 'delegation', payload: JSON.stringify({ type: 'agent_task' }) });
+    const agentDelegation = makeTask({
+      id: 'agent-1',
+      kind: 'delegation',
+      payload: JSON.stringify({ type: 'agent_task' }),
+    });
     setInboxCoreClient({
-      listWorkflowTasks: jest.fn(async (q: { kind: string }) => (q.kind === 'delegation' ? [plugin, agentDelegation] : [])),
+      listWorkflowTasks: jest.fn(async (q: { kind: string }) =>
+        q.kind === 'delegation' ? [plugin, agentDelegation] : [],
+      ),
       approveWorkflowTask: jest.fn(),
       cancelWorkflowTask: jest.fn(),
       sendServiceRespond: jest.fn(),
@@ -255,12 +271,18 @@ describe('useServiceInbox', () => {
     expect(entry?.capability).toBe('com.dinakernel.country.in.upi-payment-status');
     // The reason and the level are CORE'S (a regulated read is HIGH there),
     // never re-derived on the phone from the action class.
-    expect(entry?.description).toBe('High-risk action — requires explicit user approval with explanation');
+    expect(entry?.description).toBe(
+      'High-risk action — requires explicit user approval with explanation',
+    );
     expect(entry?.riskLevel).toBe('HIGH');
     // The EXACT outbound params, not a summary.
     expect(entry?.paramsPreview).toContain('314159265358');
     expect(entry?.paramsPreview).toContain('250000');
-    expect(entry?.effect).toEqual({ actionClass: 'read', retryIdempotent: true, installId: 'pli_1' });
+    expect(entry?.effect).toEqual({
+      actionClass: 'read',
+      retryIdempotent: true,
+      installId: 'pli_1',
+    });
     // A regulated read: Core says no grant could ever silence it.
     expect(entry?.grantCanSilence).toBe(false);
   });
@@ -274,7 +296,9 @@ describe('useServiceInbox', () => {
       sendServiceRespond: jest.fn(),
     } as unknown as InboxCoreClient);
     await approvePending('plgx_1', 'plugin_invocation', undefined, 'window_24h');
-    expect(approveSpy).toHaveBeenLastCalledWith('plgx_1', { pluginGrant: { type: 'window', hours: 24 } });
+    expect(approveSpy).toHaveBeenLastCalledWith('plgx_1', {
+      pluginGrant: { type: 'window', hours: 24 },
+    });
     // A non-plugin kind never carries a plugin grant, whatever the caller asked.
     await approvePending('t-1', 'intent_validation', 'single', 'window_24h');
     expect(approveSpy).toHaveBeenLastCalledWith('t-1', { scope: 'single' });
@@ -288,28 +312,56 @@ describe('useServiceInbox', () => {
       pluginResultLines({
         ...base,
         status: 'completed',
-        result: JSON.stringify({ status: 'settled', settled_at: '2026-09-13T10:00:00Z', amount: { currency: 'INR', minor_units: '250000' }, refs: ['a', 'b'], flag: true, missing: null }),
+        result: JSON.stringify({
+          status: 'settled',
+          settled_at: '2026-09-13T10:00:00Z',
+          amount: { currency: 'INR', minor_units: '250000' },
+          refs: ['a', 'b'],
+          flag: true,
+          missing: null,
+        }),
       }),
-    ).toEqual(['status: settled', 'settled_at: 2026-09-13T10:00:00Z', 'amount: details', 'refs: 2 items', 'flag: true', 'missing: —']);
+    ).toEqual([
+      'status: settled',
+      'settled_at: 2026-09-13T10:00:00Z',
+      'amount: details',
+      'refs: 2 items',
+      'flag: true',
+      'missing: —',
+    ]);
     // A long string is cut; a wide object is capped with an ellipsis line.
-    const wide = Object.fromEntries(Array.from({ length: 20 }, (_, i) => [`k${i}`, 'x'.repeat(200)]));
-    const lines = pluginResultLines({ ...base, status: 'completed', result: JSON.stringify(wide) }) ?? [];
+    const wide = Object.fromEntries(
+      Array.from({ length: 20 }, (_, i) => [`k${i}`, 'x'.repeat(200)]),
+    );
+    const lines =
+      pluginResultLines({ ...base, status: 'completed', result: JSON.stringify(wide) }) ?? [];
     expect(lines).toHaveLength(13);
     expect(lines[12]).toBe('…');
     expect(lines[0]?.length).toBeLessThanOrEqual('k0: '.length + 120);
     // Keys are the runner's bytes too: bounded, and control/bidi/newline characters never reach the row.
-    const hostile = pluginResultLines({
-      ...base,
-      status: 'completed',
-      result: JSON.stringify({ ['k'.repeat(80)]: 'v', 'a\u202eb\nc': 'x\u0000y\nz' }),
-    }) ?? [];
+    const hostile =
+      pluginResultLines({
+        ...base,
+        status: 'completed',
+        result: JSON.stringify({ ['k'.repeat(80)]: 'v', 'a\u202eb\nc': 'x\u0000y\nz' }),
+      }) ?? [];
     expect(hostile[0]?.startsWith(`${'k'.repeat(39)}…: v`)).toBe(true);
     expect(hostile[1]).toBe('a b c: x y z');
     // No control or bidi character survives (checked by code point, not a regex).
-    expect([...hostile.join('')].some((ch) => (ch.codePointAt(0) ?? 0x20) < 0x20 || ch === '\u202e')).toBe(false);
+    expect(
+      [...hostile.join('')].some((ch) => (ch.codePointAt(0) ?? 0x20) < 0x20 || ch === '\u202e'),
+    ).toBe(false);
     // Not completed, not a plugin task, or an unreadable result → nothing / no lines.
-    expect(pluginResultLines({ ...base, status: 'failed', result: '{"status":"settled"}' })).toBeUndefined();
-    expect(pluginResultLines({ payload: '{"type":"intent_validation"}', status: 'completed', result: '{}' })).toBeUndefined();
+    expect(
+      pluginResultLines({ ...base, status: 'failed', result: '{"status":"settled"}' }),
+    ).toBeUndefined();
+    expect(
+      pluginResultLines({
+        payload: '{"type":"intent_validation"}',
+        status: 'completed',
+        result: '{}',
+      }),
+    ).toBeUndefined();
     expect(pluginResultLines({ ...base, status: 'completed', result: 'not json' })).toEqual([]);
   });
 
@@ -318,11 +370,19 @@ describe('useServiceInbox', () => {
       id: 'plgx_2',
       kind: 'delegation',
       description: 'plugin invocation com.acme.widget.read',
-      payload: JSON.stringify({ type: 'plugin_invocation', capability_id: 'com.acme.widget.read', install_id: 'pli_2', params: {}, action_class: 'write' }),
+      payload: JSON.stringify({
+        type: 'plugin_invocation',
+        capability_id: 'com.acme.widget.read',
+        install_id: 'pli_2',
+        params: {},
+        action_class: 'write',
+      }),
       policy: '',
     });
     setInboxCoreClient({
-      listWorkflowTasks: jest.fn(async (q: { kind: string }) => (q.kind === 'delegation' ? [plugin] : [])),
+      listWorkflowTasks: jest.fn(async (q: { kind: string }) =>
+        q.kind === 'delegation' ? [plugin] : [],
+      ),
       approveWorkflowTask: jest.fn(),
       cancelWorkflowTask: jest.fn(),
       sendServiceRespond: jest.fn(),
@@ -397,7 +457,13 @@ describe('useServiceInbox', () => {
               ttlSeconds: 120,
               serviceName: "The Millers' Dina",
             },
-            disclosures: [{ kind: 'dietary', text: 'someone in the household is gluten-free', about: 'household' }],
+            disclosures: [
+              {
+                kind: 'dietary',
+                text: 'someone in the household is gluten-free',
+                about: 'household',
+              },
+            ],
           }),
         }),
       ],
@@ -445,16 +511,24 @@ describe('useServiceInbox', () => {
     setInboxCoreClient(client);
     await denyPending('disclosure-review-exec-1', 'denied_by_operator', 'disclosure_review');
     expect(calls.responded).toEqual([]);
-    expect(calls.cancelled).toEqual([{ id: 'disclosure-review-exec-1', reason: 'denied_by_operator' }]);
+    expect(calls.cancelled).toEqual([
+      { id: 'disclosure-review-exec-1', reason: 'denied_by_operator' },
+    ]);
     expect(markNotificationRead).toHaveBeenCalledWith('disclosure-review-exec-1');
   });
 
   it('denyPending(integration_settings_proposal) cancels without service.respond — a proposal has no requester to answer', async () => {
     const { client, calls } = stubClient({});
     setInboxCoreClient(client);
-    await denyPending('integration-settings-abc', 'denied_by_operator', 'integration_settings_proposal');
+    await denyPending(
+      'integration-settings-abc',
+      'denied_by_operator',
+      'integration_settings_proposal',
+    );
     expect(calls.responded).toEqual([]);
-    expect(calls.cancelled).toEqual([{ id: 'integration-settings-abc', reason: 'denied_by_operator' }]);
+    expect(calls.cancelled).toEqual([
+      { id: 'integration-settings-abc', reason: 'denied_by_operator' },
+    ]);
     expect(markNotificationRead).toHaveBeenCalledWith('integration-settings-abc');
   });
 
@@ -463,26 +537,44 @@ describe('useServiceInbox', () => {
       list: [
         makeTask({
           id: 'negotiation-price-abc',
-          description: 'A buyer asks for a lower price on quote q:1 (1 line(s)) below your automatic limit. Offer it?',
+          description:
+            'A buyer asks for a lower price on quote q:1 (1 line(s)) below your automatic limit. Offer it?',
           payload: JSON.stringify({
             type: 'negotiation_price_approval',
             quote_id: 'q:1',
             buyer_did: 'did:plc:buyer',
             currency: 'INR',
-            lines: [{ line_id: 'l1', asked_minor_units: '21000', signed_minor_units: '22000', quoted_minor_units: '24000' }],
+            lines: [
+              {
+                line_id: 'l1',
+                asked_minor_units: '21000',
+                signed_minor_units: '22000',
+                quoted_minor_units: '24000',
+              },
+            ],
           }),
         }),
         makeTask({
           id: 'tender-ready-t1',
           description: 'Tender t1 is ready.',
-          payload: JSON.stringify({ type: 'tender_ready', tender_id: 't1', reason: 'settled', offers: 2, best_total_minor: '43200', currency: 'INR' }),
+          payload: JSON.stringify({
+            type: 'tender_ready',
+            tender_id: 't1',
+            reason: 'settled',
+            offers: 2,
+            best_total_minor: '43200',
+            currency: 'INR',
+          }),
         }),
       ],
     });
     setInboxCoreClient(client);
     const entries = await listPendingApprovals();
     const price = entries.find((e) => e.id === 'negotiation-price-abc');
-    expect(price).toMatchObject({ kind: 'negotiation_price_approval', requesterDID: 'did:plc:buyer' });
+    expect(price).toMatchObject({
+      kind: 'negotiation_price_approval',
+      requesterDID: 'did:plc:buyer',
+    });
     expect(price?.paramsPreview).toBe('l1: asks INR 210.00 (now INR 220.00, quoted INR 240.00)');
     const ready = entries.find((e) => e.id === 'tender-ready-t1');
     expect(ready).toMatchObject({
@@ -508,12 +600,82 @@ describe('useServiceInbox', () => {
     ];
     const { client } = stubClient({
       list: [
-        makeTask({ id: 'term-stranger-1', payload: JSON.stringify({ type: 'term_stranger_request', card_id: 'term-stranger-1', buyer_did: 'did:plc:brand', resource_ref: 'slot-3', tag: 'beverages.juice', start: general.start, end: general.end }) }),
-        makeTask({ id: 'term-floor-1', payload: JSON.stringify({ type: 'term_floor_approval', card_id: 'term-floor-1', buyer_did: 'did:plc:brand', resource_ref: 'slot-3', currency: 'INR', asked: { fee: '210000' }, offered: { fee: '234000', share_bps: '800' } }) }),
-        makeTask({ id: 'term-proposal-1', payload: JSON.stringify({ type: 'term_agreement_proposal', card_id: 'term-proposal-1', seller_did: 'did:plc:store', resource_ref: 'slot-3', general, terms, valid_until: '2027-01-13T09:00:00.000Z' }) }),
-        makeTask({ id: 'term-decision-1', payload: JSON.stringify({ type: 'term_agreement_decision', card_id: 'term-decision-1', vendor_did: 'did:plc:brand', resource_ref: 'slot-3', general: { ...general, cash_handler: 'host', trial: { end: '2027-02-15T00:00:00Z', fee: { currency: 'INR', minor_units: '50000' } }, stock_duties: { min_skus: 4, restock_days: 7 } }, terms, holding: { tag: 'beverages.juice', already_held: 2, premium_bps_per_count: 1500 } }) }),
-        makeTask({ id: 'term-undelivered-1', payload: JSON.stringify({ type: 'term_delivery_failed', card_id: 'term-undelivered-1', counterparty_did: 'did:plc:store', kind: 'term_request', why: 'unanswered' }) }),
-        makeTask({ id: 'term-refused-1', payload: JSON.stringify({ type: 'term_delivery_failed', card_id: 'term-refused-1', counterparty_did: 'did:plc:store', kind: 'term_termination', why: 'refused' }) }),
+        makeTask({
+          id: 'term-stranger-1',
+          payload: JSON.stringify({
+            type: 'term_stranger_request',
+            card_id: 'term-stranger-1',
+            buyer_did: 'did:plc:brand',
+            resource_ref: 'slot-3',
+            tag: 'beverages.juice',
+            start: general.start,
+            end: general.end,
+          }),
+        }),
+        makeTask({
+          id: 'term-floor-1',
+          payload: JSON.stringify({
+            type: 'term_floor_approval',
+            card_id: 'term-floor-1',
+            buyer_did: 'did:plc:brand',
+            resource_ref: 'slot-3',
+            currency: 'INR',
+            asked: { fee: '210000' },
+            offered: { fee: '234000', share_bps: '800' },
+          }),
+        }),
+        makeTask({
+          id: 'term-proposal-1',
+          payload: JSON.stringify({
+            type: 'term_agreement_proposal',
+            card_id: 'term-proposal-1',
+            seller_did: 'did:plc:store',
+            resource_ref: 'slot-3',
+            general,
+            terms,
+            valid_until: '2027-01-13T09:00:00.000Z',
+          }),
+        }),
+        makeTask({
+          id: 'term-decision-1',
+          payload: JSON.stringify({
+            type: 'term_agreement_decision',
+            card_id: 'term-decision-1',
+            vendor_did: 'did:plc:brand',
+            resource_ref: 'slot-3',
+            general: {
+              ...general,
+              cash_handler: 'host',
+              trial: {
+                end: '2027-02-15T00:00:00Z',
+                fee: { currency: 'INR', minor_units: '50000' },
+              },
+              stock_duties: { min_skus: 4, restock_days: 7 },
+            },
+            terms,
+            holding: { tag: 'beverages.juice', already_held: 2, premium_bps_per_count: 1500 },
+          }),
+        }),
+        makeTask({
+          id: 'term-undelivered-1',
+          payload: JSON.stringify({
+            type: 'term_delivery_failed',
+            card_id: 'term-undelivered-1',
+            counterparty_did: 'did:plc:store',
+            kind: 'term_request',
+            why: 'unanswered',
+          }),
+        }),
+        makeTask({
+          id: 'term-refused-1',
+          payload: JSON.stringify({
+            type: 'term_delivery_failed',
+            card_id: 'term-refused-1',
+            counterparty_did: 'did:plc:store',
+            kind: 'term_termination',
+            why: 'refused',
+          }),
+        }),
       ],
     });
     setInboxCoreClient(client);
@@ -523,7 +685,9 @@ describe('useServiceInbox', () => {
       requesterDID: 'did:plc:brand',
       paramsPreview: 'Juice · slot-3 · 2027-02-01 to 2027-08-01',
     });
-    expect(byId.get('term-floor-1')?.paramsPreview).toBe('slot-3: asks rent INR 2100.00 (offered now: rent INR 2340.00, share 8%)');
+    expect(byId.get('term-floor-1')?.paramsPreview).toBe(
+      'slot-3: asks rent INR 2100.00 (offered now: rent INR 2340.00, share 8%)',
+    );
     expect(byId.get('term-proposal-1')).toMatchObject({
       kind: 'term_agreement_proposal',
       requesterDID: 'did:plc:store',
@@ -543,7 +707,8 @@ describe('useServiceInbox', () => {
     // A refused follow-up says so: it took effect on neither side.
     expect(byId.get('term-refused-1')).toMatchObject({
       serviceName: 'Refused by the other side',
-      paramsPreview: 'The other side refused it, so it did not take effect. Send it again if it still stands.',
+      paramsPreview:
+        'The other side refused it, so it did not take effect. Send it again if it still stands.',
     });
   });
 
@@ -560,8 +725,15 @@ describe('useServiceInbox', () => {
     const legibility = {
       binds: [
         { part: 'fee', core: '₹1700 a month, paid by you to the store' },
-        { part: 'share_bps', core: '7% of sales, paid by you to the store', pack: '“a small admin fee” (the pack’s words)' },
-        { part: 'stock_run', core: 'a promise you must keep: stock_run (crates: 2, day: wed, every_days: 7)' },
+        {
+          part: 'share_bps',
+          core: '7% of sales, paid by you to the store',
+          pack: '“a small admin fee” (the pack’s words)',
+        },
+        {
+          part: 'stock_run',
+          core: 'a promise you must keep: stock_run (crates: 2, day: wed, every_days: 7)',
+        },
       ],
       risks: ['You promise: stock_run (crates: 2, day: wed, every_days: 7).'],
       changed: ['stock_run: was day tue; now day wed'],
@@ -589,7 +761,9 @@ describe('useServiceInbox', () => {
     });
     setInboxCoreClient(client);
     const preview = (await listPendingApprovals())[0]?.paramsPreview ?? '';
-    expect(preview).toContain('binds: ₹1700 a month, paid by you to the store; 7% of sales, paid by you to the store “a small admin fee” (the pack’s words); a promise you must keep');
+    expect(preview).toContain(
+      'binds: ₹1700 a month, paid by you to the store; 7% of sales, paid by you to the store “a small admin fee” (the pack’s words); a promise you must keep',
+    );
     expect(preview).toContain('You promise: stock_run (crates: 2, day: wed, every_days: 7).');
     expect(preview).toContain('changed: stock_run: was day tue; now day wed');
   });
@@ -604,12 +778,22 @@ describe('useServiceInbox', () => {
   });
 
   it('the run cards read in Core’s words, whole; a “no” is a plain cancel (COMMITMENT_KERNEL §15 step 7)', async () => {
-    const clear = 'A shipper can run one of your orders on 2026-11-10 for ₹300, held until 2026-11-05 09:00 UTC. Offer the buyer that day, passing on your chosen share of what it saves you? A yes the buyer gives in time binds the run.';
-    const lapsed = 'A shipper’s run for one of your orders ended without fault: your acceptance reached them after the time agreed. The order now stands on the quote’s own terms (standard shipping), and the buyer has been told.';
+    const clear =
+      'A shipper can run one of your orders on 2026-11-10 for ₹300, held until 2026-11-05 09:00 UTC. Offer the buyer that day, passing on your chosen share of what it saves you? A yes the buyer gives in time binds the run.';
+    const lapsed =
+      'A shipper’s run for one of your orders ended without fault: your acceptance reached them after the time agreed. The order now stands on the quote’s own terms (standard shipping), and the buyer has been told.';
     const { client, calls } = stubClient({
       list: [
-        makeTask({ id: 'option-clear-req-1', description: clear, payload: JSON.stringify({ type: 'option_clear', request_id: 'req-1' }) }),
-        makeTask({ id: 'option-link-lapsed-req-1', description: lapsed, payload: JSON.stringify({ type: 'option_link', state: 'lapsed', deal_ref: 'q-1' }) }),
+        makeTask({
+          id: 'option-clear-req-1',
+          description: clear,
+          payload: JSON.stringify({ type: 'option_clear', request_id: 'req-1' }),
+        }),
+        makeTask({
+          id: 'option-link-lapsed-req-1',
+          description: lapsed,
+          payload: JSON.stringify({ type: 'option_link', state: 'lapsed', deal_ref: 'q-1' }),
+        }),
       ],
     });
     setInboxCoreClient(client);
@@ -620,7 +804,10 @@ describe('useServiceInbox', () => {
       serviceName: 'Offer a partner’s delivery run to the buyer?',
       paramsPreview: clear,
     });
-    expect(byId.get('option-link-lapsed-req-1')).toMatchObject({ kind: 'option_link', paramsPreview: lapsed });
+    expect(byId.get('option-link-lapsed-req-1')).toMatchObject({
+      kind: 'option_link',
+      paramsPreview: lapsed,
+    });
     expect(entries.every((e) => e.serviceName !== 'Unnamed service')).toBe(true);
     await denyPending('option-clear-req-1', 'denied_by_operator', 'option_clear');
     expect(calls.responded).toEqual([]);
@@ -745,8 +932,18 @@ describe('useServiceInbox', () => {
     setInboxCoreClient(client);
     const entries = await listPendingApprovals();
     expect(entries.map((e) => [e.kind, e.capability, e.serviceName, e.paramsPreview])).toEqual([
-      ['strategy_question', 'group booking', 'Brain asks you', 'Take the 26th anyway? Approve for yes, deny for no.'],
-      ['strategy_question', 'delivery run', 'Brain asks you', 'Ask ₹50 more? Approve for yes, deny for no.'],
+      [
+        'strategy_question',
+        'group booking',
+        'Brain asks you',
+        'Take the 26th anyway? Approve for yes, deny for no.',
+      ],
+      [
+        'strategy_question',
+        'delivery run',
+        'Brain asks you',
+        'Ask ₹50 more? Approve for yes, deny for no.',
+      ],
     ]);
     await denyPending('sq-1', 'denied_by_operator', 'strategy_question');
     expect(calls.responded).toEqual([]);
@@ -768,27 +965,61 @@ describe('useServiceInbox', () => {
         makeTask({
           id: 'order-checkout-abc',
           description: 'Pay INR 500.00 for order po-1 through clover?',
-          payload: JSON.stringify({ type: 'order_checkout_link', attachment_digest: 'a'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', session_ref: 'cs_1', url: 'https://pay.example.com/s/cs_1', amount: { currency: 'INR', minor_units: '50000' }, expires_at: '2027-02-01T00:00:00.000Z' }),
+          payload: JSON.stringify({
+            type: 'order_checkout_link',
+            attachment_digest: 'a'.repeat(64),
+            purchase_order_id: 'po-1',
+            supplier_did: 'did:plc:supplier5678',
+            provider: 'clover',
+            session_ref: 'cs_1',
+            url: 'https://pay.example.com/s/cs_1',
+            amount: { currency: 'INR', minor_units: '50000' },
+            expires_at: '2027-02-01T00:00:00.000Z',
+          }),
           expires_at: 1_800_100_000,
         }),
         makeTask({
           id: 'payment-evidence-def',
           description: 'Record INR 500.00 as paid for order po-1? clover reports it captured.',
-          payload: JSON.stringify({ type: 'payment_evidence_record', attachment_digest: 'b'.repeat(64), purchase_order_id: 'po-1', supplier_did: 'did:plc:supplier5678', provider: 'clover', provider_ref: 'ch_1', amount: { currency: 'INR', minor_units: '50000' }, method: 'upi' }),
+          payload: JSON.stringify({
+            type: 'payment_evidence_record',
+            attachment_digest: 'b'.repeat(64),
+            purchase_order_id: 'po-1',
+            supplier_did: 'did:plc:supplier5678',
+            provider: 'clover',
+            provider_ref: 'ch_1',
+            amount: { currency: 'INR', minor_units: '50000' },
+            method: 'upi',
+          }),
         }),
       ],
     });
     setInboxCoreClient(client);
     const [link, evidence] = await listPendingApprovals();
-    expect(link).toMatchObject({ kind: 'order_checkout_link', capability: 'clover', serviceName: 'Payment link', requesterDID: 'did:plc:supplier5678', linkUrl: 'https://pay.example.com/s/cs_1', expiresAt: 1_800_100_000 });
+    expect(link).toMatchObject({
+      kind: 'order_checkout_link',
+      capability: 'clover',
+      serviceName: 'Payment link',
+      requesterDID: 'did:plc:supplier5678',
+      linkUrl: 'https://pay.example.com/s/cs_1',
+      expiresAt: 1_800_100_000,
+    });
     expect(link.paramsPreview).toBe('INR 500.00');
-    expect(evidence).toMatchObject({ kind: 'payment_evidence_record', capability: 'clover', serviceName: 'Payment reported', requesterDID: 'did:plc:supplier5678' });
+    expect(evidence).toMatchObject({
+      kind: 'payment_evidence_record',
+      capability: 'clover',
+      serviceName: 'Payment reported',
+      requesterDID: 'did:plc:supplier5678',
+    });
     expect(evidence.paramsPreview).toBe('INR 500.00\nref ch_1');
     expect(evidence.linkUrl).toBeUndefined();
   });
 
   it('denyPending on either attachment card is a plain cancel — there is no requester to answer', async () => {
-    for (const [id, kind] of [['order-checkout-abc', 'order_checkout_link'], ['payment-evidence-def', 'payment_evidence_record']] as const) {
+    for (const [id, kind] of [
+      ['order-checkout-abc', 'order_checkout_link'],
+      ['payment-evidence-def', 'payment_evidence_record'],
+    ] as const) {
       const { client, calls } = stubClient({});
       setInboxCoreClient(client);
       await denyPending(id, 'denied_by_operator', kind);
@@ -853,7 +1084,12 @@ describe('useServiceInbox', () => {
       });
     const { client } = stubClient({
       list: [
-        mirrored('m-out', 'a2a_delegate', 'Send to Summarizer: Summarize', 'Exactly what will be sent:\nThe meeting moved.'),
+        mirrored(
+          'm-out',
+          'a2a_delegate',
+          'Send to Summarizer: Summarize',
+          'Exactly what will be sent:\nThe meeting moved.',
+        ),
         mirrored('m-in', 'a2a_inbound', 'Bus app asks to use eta_query', 'route_id: 42'),
       ],
     });
@@ -868,7 +1104,11 @@ describe('useServiceInbox', () => {
       requesterName: 'Dina laptop approvals',
       riskLevel: 'HIGH',
     });
-    expect(inbound).toMatchObject({ a2aMirror: 'inbound', capability: 'Bus app asks to use eta_query', paramsPreview: 'route_id: 42' });
+    expect(inbound).toMatchObject({
+      a2aMirror: 'inbound',
+      capability: 'Bus app asks to use eta_query',
+      paramsPreview: 'route_id: 42',
+    });
   });
 
   it('reads a held shop search: the phone’s own, from the stored card; the server’s, as mirrored', async () => {
@@ -898,7 +1138,8 @@ describe('useServiceInbox', () => {
         tool_name: 'ucp_search',
         proposal_type: 'facade_action',
         display_title: 'Search 2 shops?',
-        display_detail: 'It goes to:\nhttps://a-shop.example\nhttps://b-shop.example\nExactly what will be sent:\noat milk',
+        display_detail:
+          'It goes to:\nhttps://a-shop.example\nhttps://b-shop.example\nExactly what will be sent:\noat milk',
       }),
     });
     const { client } = stubClient({ list: [own, mirrored] });
@@ -930,14 +1171,25 @@ describe('useServiceInbox', () => {
       session_id: 'ucp-checkout-1',
       merchant: 'https://shop.example',
       status: 'incomplete',
-      lines: [{ title: 'Sencha', quantity: '2', unit: 'each', total: { amount: '5600', currency: 'EUR' } }],
+      lines: [
+        {
+          title: 'Sencha',
+          quantity: '2',
+          unit: 'each',
+          total: { amount: '5600', currency: 'EUR' },
+        },
+      ],
       totals: [{ type: 'total', label: 'Total', amount: { amount: '5600', currency: 'EUR' } }],
       messages: [],
       discounts: [],
       fulfillment: [],
       links: [],
       expires_at: 2_000_000_000_000,
-      handoff: { url: 'https://shop.example/checkout/chk_1', source: 'continue_url', off_host: false },
+      handoff: {
+        url: 'https://shop.example/checkout/chk_1',
+        source: 'continue_url',
+        off_host: false,
+      },
       notes: [],
     };
     const own = makeTask({
@@ -983,7 +1235,11 @@ describe('useServiceInbox', () => {
     expect(fromServer).toMatchObject({
       capability: 'Review and pay at shop.example',
       requesterName: 'a paired device',
-      ucpCheckout: { card: 'handoff', source: 'mirrored', openUrl: 'https://shop.example/checkout/chk_9' },
+      ucpCheckout: {
+        card: 'handoff',
+        source: 'mirrored',
+        openUrl: 'https://shop.example/checkout/chk_9',
+      },
     });
     expect(fromServer?.paramsPreview).toBe('Opens shop.example\n2 each × Sencha — EUR 56.00');
   });
@@ -1073,7 +1329,11 @@ describe('useServiceInbox', () => {
     const { client } = stubClient({ list: [own, mirrored] });
     setInboxCoreClient(client);
     const [a, b] = await listPendingApprovals();
-    expect(a?.ucpOrderNotice).toMatchObject({ source: 'own', checkout: true, linkHost: 'tea.example' });
+    expect(a?.ucpOrderNotice).toMatchObject({
+      source: 'own',
+      checkout: true,
+      linkHost: 'tea.example',
+    });
     expect(b?.ucpOrderNotice).toMatchObject({ source: 'mirrored', checkout: true });
   });
 
@@ -1374,7 +1634,12 @@ describe('useServiceInbox', () => {
       // §15.5: every state is read for approval tasks AND for delegation tasks
       // (a plugin invocation rides a delegation) — one query per kind per state.
       for (const state of states) {
-        expect(calls.filters.filter((f) => f.state === state).map((f) => f.kind).sort()).toEqual(['approval', 'delegation']);
+        expect(
+          calls.filters
+            .filter((f) => f.state === state)
+            .map((f) => f.kind)
+            .sort(),
+        ).toEqual(['approval', 'delegation']);
       }
       // A non-plugin delegation never leaks into the approvals history.
       expect(entries.map((e) => e.id).sort()).toEqual(['c1', 'f1', 'q1', 'r1', 'rec1', 'x1']);

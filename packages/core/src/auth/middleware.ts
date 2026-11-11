@@ -16,8 +16,12 @@
  * Source: ARCHITECTURE.md Section 2.4
  */
 
-
-import { isScopeAuthorized, requiredScopeFor, resolveAgentScope, type AgentScope } from './agent_scope';
+import {
+  isScopeAuthorized,
+  requiredScopeFor,
+  resolveAgentScope,
+  type AgentScope,
+} from './agent_scope';
 import { isAuthorized, type CallerType as AuthzCallerType } from './authz';
 import { resolveCallerType, type CallerIdentity } from './caller_type';
 import { NonceCache } from './nonce';
@@ -164,9 +168,13 @@ function verifySignedIdentity(req: AuthRequest): VerifiedIdentity | AuthResult {
       query: req.query,
       body: req.body,
       ...(did === undefined ? {} : { did }),
-      ...(req.headers['X-Timestamp'] === undefined ? {} : { timestamp: req.headers['X-Timestamp'] }),
+      ...(req.headers['X-Timestamp'] === undefined
+        ? {}
+        : { timestamp: req.headers['X-Timestamp'] }),
       ...(req.headers['X-Nonce'] === undefined ? {} : { nonce: req.headers['X-Nonce'] }),
-      ...(req.headers['X-Signature'] === undefined ? {} : { signature: req.headers['X-Signature'] }),
+      ...(req.headers['X-Signature'] === undefined
+        ? {}
+        : { signature: req.headers['X-Signature'] }),
     },
     {
       nonces: replayGuard,

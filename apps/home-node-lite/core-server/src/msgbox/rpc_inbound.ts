@@ -28,10 +28,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4f task 4.45.
  */
 
-import {
-  sealDecrypt,
-  type CoreRPCRequest,
-} from '@dina/core';
+import { sealDecrypt, type CoreRPCRequest } from '@dina/core';
 import { RPC_REQUEST_TYPE } from '@dina/protocol';
 
 export type UnsealRpcResult =
@@ -76,11 +73,7 @@ export function unsealInboundRpc(input: UnsealRpcInput): UnsealRpcResult {
 
   let plaintext: Uint8Array;
   try {
-    plaintext = sealDecrypt(
-      input.sealed,
-      input.recipientEd25519Pub,
-      input.recipientEd25519Priv,
-    );
+    plaintext = sealDecrypt(input.sealed, input.recipientEd25519Pub, input.recipientEd25519Priv);
   } catch (err) {
     return {
       ok: false,

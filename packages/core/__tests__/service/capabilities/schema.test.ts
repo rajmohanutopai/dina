@@ -28,9 +28,7 @@ describe('serviceSchemaError', () => {
     it('supports type unions', () => {
       expect(serviceSchemaError('x', { type: ['string', 'null'] })).toBeNull();
       expect(serviceSchemaError(null, { type: ['string', 'null'] })).toBeNull();
-      expect(serviceSchemaError(1, { type: ['string', 'null'] })).toMatch(
-        /must be one of types/,
-      );
+      expect(serviceSchemaError(1, { type: ['string', 'null'] })).toMatch(/must be one of types/);
     });
 
     it('rejects non-finite numbers even for number type', () => {
@@ -70,9 +68,7 @@ describe('serviceSchemaError', () => {
     });
 
     it('rejects undefined required values, not just missing keys', () => {
-      expect(serviceSchemaError({ patient_id: undefined }, schema)).toMatch(
-        /patient_id: required/,
-      );
+      expect(serviceSchemaError({ patient_id: undefined }, schema)).toMatch(/patient_id: required/);
     });
   });
 

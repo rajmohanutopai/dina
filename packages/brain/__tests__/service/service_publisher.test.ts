@@ -4,8 +4,9 @@
  * Source parity: brain/src/service/service_publisher.py
  */
 
-import { PDSPublisher, PDSPublisherError } from '../../src/pds/publisher';
 import { capabilitySchemaHash } from '@dina/core';
+
+import { PDSPublisher, PDSPublisherError } from '../../src/pds/publisher';
 import {
   PublisherConfigError,
   PublisherIdentityMismatchError,
@@ -278,7 +279,11 @@ describe('ServicePublisher', () => {
       const params = { type: 'object' };
       const result = { type: 'object' };
       const withoutDesc = capabilitySchemaHash({ params, result, description: '' });
-      const withDesc = capabilitySchemaHash({ params, result, description: 'Returns ETA in minutes' });
+      const withDesc = capabilitySchemaHash({
+        params,
+        result,
+        description: 'Returns ETA in minutes',
+      });
       expect(withoutDesc).not.toBe(withDesc);
 
       const rec = buildRecord(
@@ -485,13 +490,19 @@ describe('ServicePublisher', () => {
   // putRecord/deleteRecord request is the 2nd fetch (calls[1]); session is [0].
   describe('multi-listing rkey', () => {
     it("defaults to 'self' when no rkey is supplied (publish)", async () => {
-      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x/y/z', cid: 'c' })]);
+      const { fetchFn, calls } = makeFetch([
+        sessionOK(),
+        jsonResponse(200, { uri: 'at://x/y/z', cid: 'c' }),
+      ]);
       await makePublisher(fetchFn).publish(validPublishConfig);
       expect((calls[1].body as Record<string, unknown>).rkey).toBe('self');
     });
 
     it('publishes a listing under the supplied rkey', async () => {
-      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c' })]);
+      const { fetchFn, calls } = makeFetch([
+        sessionOK(),
+        jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c' }),
+      ]);
       await makePublisher(fetchFn).publish(validPublishConfig, 'route-42');
       const body = calls[1].body as Record<string, unknown>;
       expect(body.collection).toBe(SERVICE_PROFILE_COLLECTION);
@@ -521,22 +532,27 @@ describe('ServicePublisher', () => {
     });
 
     it('sync(config, rkey) routes the rkey to publish', async () => {
-      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c' })]);
+      const { fetchFn, calls } = makeFetch([
+        sessionOK(),
+        jsonResponse(200, { uri: 'at://x/y/route-42', cid: 'c' }),
+      ]);
       await makePublisher(fetchFn).sync(validPublishConfig, 'route-42');
       expect((calls[1].body as Record<string, unknown>).rkey).toBe('route-42');
     });
 
     it('rejects an invalid rkey BEFORE any PDS call (publish)', async () => {
       const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, {})]);
-      await expect(makePublisher(fetchFn).publish(validPublishConfig, 'bad/rkey')).rejects.toBeInstanceOf(
-        PublisherRkeyError,
-      );
+      await expect(
+        makePublisher(fetchFn).publish(validPublishConfig, 'bad/rkey'),
+      ).rejects.toBeInstanceOf(PublisherRkeyError);
       expect(calls).toHaveLength(0);
     });
 
     it('rejects a path-traversal rkey (unpublish)', async () => {
       const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, {})]);
-      await expect(makePublisher(fetchFn).unpublish('..')).rejects.toBeInstanceOf(PublisherRkeyError);
+      await expect(makePublisher(fetchFn).unpublish('..')).rejects.toBeInstanceOf(
+        PublisherRkeyError,
+      );
       expect(calls).toHaveLength(0);
     });
   });
@@ -545,9 +561,21 @@ describe('ServicePublisher', () => {
 describe('an unchanged listing is not written again (REAL_LIFE_FIXES §14)', () => {
   it('skips the write when only updatedAt would change, and writes a real change', async () => {
     const prior = buildRecord(validPublishConfig, 1_000);
-    existingRecord = { uri: `at://${DID}/${SERVICE_PROFILE_COLLECTION}/self`, cid: 'bafyreiprior', value: prior };
-    const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { uri: 'at://x', cid: 'bafyreinew' })]);
-    const pds = new PDSPublisher({ pdsUrl: PDS, handle: HANDLE, password: PASSWORD, fetch: fetchFn });
+    existingRecord = {
+      uri: `at://${DID}/${SERVICE_PROFILE_COLLECTION}/self`,
+      cid: 'bafyreiprior',
+      value: prior,
+    };
+    const { fetchFn, calls } = makeFetch([
+      sessionOK(),
+      jsonResponse(200, { uri: 'at://x', cid: 'bafyreinew' }),
+    ]);
+    const pds = new PDSPublisher({
+      pdsUrl: PDS,
+      handle: HANDLE,
+      password: PASSWORD,
+      fetch: fetchFn,
+    });
     const pub = new ServicePublisher({ pds, expectedDID: DID, nowFn: () => 9_000 });
     const same = await pub.publish(validPublishConfig);
     expect(same.cid).toBe('bafyreiprior');
@@ -556,4 +584,3 @@ describe('an unchanged listing is not written again (REAL_LIFE_FIXES §14)', () 
     expect(changed.cid).toBe('bafyreinew');
   });
 });
-

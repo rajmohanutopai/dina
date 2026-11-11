@@ -19,13 +19,7 @@
 
 import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
-import {
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { PassphraseField } from '../src/components/PassphraseField';
@@ -118,10 +112,7 @@ export default function ChangePassphraseScreen(): React.ReactElement {
   const busy = mode === 'saving';
 
   return (
-    <KeyboardAvoidingView
-      behavior="padding"
-      style={styles.container}
-    >
+    <KeyboardAvoidingView behavior="padding" style={styles.container}>
       <ScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -162,7 +153,10 @@ export default function ChangePassphraseScreen(): React.ReactElement {
           style={styles.field}
         />
         {strength !== null ? (
-          <Text style={[styles.strength, { color: STRENGTH_COLOR[strength] }]} testID="change-pass-strength">
+          <Text
+            style={[styles.strength, { color: STRENGTH_COLOR[strength] }]}
+            testID="change-pass-strength"
+          >
             Strength: {STRENGTH_LABEL[strength]}
           </Text>
         ) : null}

@@ -55,7 +55,6 @@ import type { SessionGrantRegistry } from './session_grants';
 import type { PersonaTier } from '@dina/core';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
-
 /**
  * Metadata a caller passes to `unlock()` when the tier requires proof.
  * The route extracts each field from its place in the request context —
@@ -82,10 +81,7 @@ export interface PersonaRoutesOptions {
   approvals?: ApprovalRegistry;
 }
 
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   get(path: string, handler: RouteHandler): unknown;
@@ -100,10 +96,7 @@ export interface PersonaListEntry {
   auto_locks_at_ms?: number;
 }
 
-export function registerPersonaRoutes(
-  app: FastifyAppShape,
-  opts: PersonaRoutesOptions,
-): void {
+export function registerPersonaRoutes(app: FastifyAppShape, opts: PersonaRoutesOptions): void {
   const { personaConfig } = opts;
   if (!personaConfig) {
     throw new Error('registerPersonaRoutes: personaConfig is required');
@@ -205,9 +198,7 @@ export function registerPersonaRoutes(
     // `default` + `standard` are auto-open on boot; locking them is a no-op
     // (admin couldn't re-open-without-something anyway).
     if (def.tier !== 'sensitive' && def.tier !== 'locked') {
-      await reply
-        .code(409)
-        .send({ error: `cannot lock ${def.tier}-tier persona` });
+      await reply.code(409).send({ error: `cannot lock ${def.tier}-tier persona` });
       return;
     }
     opts.autoLock?.lock(def.name);
@@ -219,18 +210,12 @@ export function registerPersonaRoutes(
 // Helpers
 // ---------------------------------------------------------------------------
 
-function computeIsOpen(
-  def: PersonaDefinition,
-  opts: PersonaRoutesOptions,
-): boolean {
+function computeIsOpen(def: PersonaDefinition, opts: PersonaRoutesOptions): boolean {
   if (def.tier === 'default' || def.tier === 'standard') return true;
   return opts.autoLock?.isUnlocked(def.name) ?? false;
 }
 
-function buildEntry(
-  def: PersonaDefinition,
-  opts: PersonaRoutesOptions,
-): PersonaListEntry {
+function buildEntry(def: PersonaDefinition, opts: PersonaRoutesOptions): PersonaListEntry {
   const entry: PersonaListEntry = {
     name: def.name,
     tier: def.tier,

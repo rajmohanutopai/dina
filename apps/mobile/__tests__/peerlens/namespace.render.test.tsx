@@ -34,9 +34,7 @@ const PRIOR_WITH_TWO = {
 
 describe('NamespaceScreen — render states', () => {
   it('renders loading state when prior is null', () => {
-    const { getByTestId, queryByTestId } = render(
-      <NamespaceScreen did={DID} prior={null} />,
-    );
+    const { getByTestId, queryByTestId } = render(<NamespaceScreen did={DID} prior={null} />);
     expect(getByTestId('namespace-loading')).toBeTruthy();
     expect(queryByTestId('namespace-empty')).toBeNull();
     // Add CTA is disabled while prior is loading.
@@ -70,17 +68,13 @@ describe('NamespaceScreen — render states', () => {
   });
 
   it('Add CTA label shows the next index for an existing op', () => {
-    const { getByText } = render(
-      <NamespaceScreen did={DID} prior={PRIOR_WITH_TWO} />,
-    );
+    const { getByText } = render(<NamespaceScreen did={DID} prior={PRIOR_WITH_TWO} />);
     // Two namespaces (0 + 1) → next is 2.
     expect(getByText(/Add namespace_2/)).toBeTruthy();
   });
 
   it('renders with isAdding=true: CTA disabled + busy state', () => {
-    const { getByTestId } = render(
-      <NamespaceScreen did={DID} prior={PRIOR_WITH_TWO} isAdding />,
-    );
+    const { getByTestId } = render(<NamespaceScreen did={DID} prior={PRIOR_WITH_TWO} isAdding />);
     const cta = getByTestId('namespace-add-cta');
     expect(cta.props.accessibilityState).toMatchObject({ disabled: true, busy: true });
   });
@@ -131,11 +125,7 @@ describe('NamespaceScreen — accessibility (TN-TEST-061 surface)', () => {
 
   it('namespace rows have descriptive accessibilityLabel', () => {
     const { getByLabelText } = render(
-      <NamespaceScreen
-        did={DID}
-        prior={PRIOR_WITH_TWO}
-        onSelectNamespace={() => undefined}
-      />,
+      <NamespaceScreen did={DID} prior={PRIOR_WITH_TWO} onSelectNamespace={() => undefined} />,
     );
     expect(getByLabelText('Namespace namespace_0')).toBeTruthy();
     expect(getByLabelText('Namespace namespace_1')).toBeTruthy();

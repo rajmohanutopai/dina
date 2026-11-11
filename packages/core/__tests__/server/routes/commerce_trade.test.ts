@@ -196,7 +196,12 @@ describe('a retried request makes one money document (COM-10)', () => {
     counterparty_did: BUYER_DID,
     purchase_order_id: ORDER.purchase_order_id,
     supplier_order_id: 'so-1',
-    lines: [{ line_id: ORDER.accepted_lines[0]?.line_id, delivered_quantity: { value: quantity, unit_code: 'each' } }],
+    lines: [
+      {
+        line_id: ORDER.accepted_lines[0]?.line_id,
+        delivered_quantity: { value: quantity, unit_code: 'each' },
+      },
+    ],
     ...(key === undefined ? {} : { idempotency_key: key }),
   });
   const documentOf = (body: unknown): { note_digest: string } =>
@@ -207,9 +212,9 @@ describe('a retried request makes one money document (COM-10)', () => {
     const again = await router.handle(owner('/v1/commerce/trade/delivery-note', noteBody('tap-1')));
     expect([first.status, again.status]).toEqual([200, 200]);
     expect(documentOf(again.body).note_digest).toBe(documentOf(first.body).note_digest);
-    expect(
-      tradeDocs.listByOrder(BUYER_DID, ORDER.purchase_order_id, 'delivery_note'),
-    ).toHaveLength(1);
+    expect(tradeDocs.listByOrder(BUYER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(
+      1,
+    );
   });
 
   it('one key with a different request is refused, and a new key is a new dispatch', async () => {
@@ -219,16 +224,21 @@ describe('a retried request makes one money document (COM-10)', () => {
     );
     expect(reused.status).toBe(409);
     expect(reused.body).toEqual({ error: 'idempotency_key_reused' });
-    const second = await router.handle(owner('/v1/commerce/trade/delivery-note', noteBody('tap-2')));
+    const second = await router.handle(
+      owner('/v1/commerce/trade/delivery-note', noteBody('tap-2')),
+    );
     expect(second.status).toBe(200);
-    expect(
-      tradeDocs.listByOrder(BUYER_DID, ORDER.purchase_order_id, 'delivery_note'),
-    ).toHaveLength(2);
+    expect(tradeDocs.listByOrder(BUYER_DID, ORDER.purchase_order_id, 'delivery_note')).toHaveLength(
+      2,
+    );
   });
 
   it('refuses a key that is not a short string', async () => {
     const bad = await router.handle(
-      owner('/v1/commerce/trade/delivery-note', { ...noteBody(), idempotency_key: 'x'.repeat(129) }),
+      owner('/v1/commerce/trade/delivery-note', {
+        ...noteBody(),
+        idempotency_key: 'x'.repeat(129),
+      }),
     );
     expect(bad.status).toBe(400);
   });
@@ -249,9 +259,7 @@ describe('the supplier journey: note → buyer receipt → payment → ack → s
     const note = (noteResp.body as { document: { note_digest: string } }).document;
 
     // Unanswered sweep shows it.
-    const pendingBefore = await router.handle(
-      owner(`/v1/commerce/trade/unanswered`, undefined),
-    );
+    const pendingBefore = await router.handle(owner(`/v1/commerce/trade/unanswered`, undefined));
     // GET carries query via the request object:
     const pending = await router.handle({
       ...owner('/v1/commerce/trade/unanswered', undefined),
@@ -401,37 +409,49 @@ describe('the money line (§5.B1 Cut 3): no active Commerce Pack', () => {
 
   it('every khata and revenue-share route refuses with ONE shape', async () => {
     const posts: [string, Record<string, unknown>][] = [
-      ['/v1/commerce/trade/delivery-note', {
-        counterparty_did: BUYER_DID,
-        purchase_order_id: ORDER.purchase_order_id,
-        supplier_order_id: 'so-1',
-        lines: [],
-      }],
+      [
+        '/v1/commerce/trade/delivery-note',
+        {
+          counterparty_did: BUYER_DID,
+          purchase_order_id: ORDER.purchase_order_id,
+          supplier_order_id: 'so-1',
+          lines: [],
+        },
+      ],
       ['/v1/commerce/trade/delivery-receipt', { delivery_note_digest: 'x', lines: [] }],
-      ['/v1/commerce/trade/payment-note', {
-        supplier_did: SUPPLIER_DID,
-        amount: { currency: 'INR', minor_units: '1' },
-        method: 'cash',
-      }],
+      [
+        '/v1/commerce/trade/payment-note',
+        {
+          supplier_did: SUPPLIER_DID,
+          amount: { currency: 'INR', minor_units: '1' },
+          method: 'cash',
+        },
+      ],
       ['/v1/commerce/trade/payment-ack', { payment_note_digest: 'x', kind: 'received' }],
       ['/v1/commerce/trade/resend', { record_digest: 'x' }],
-      ['/v1/commerce/trade/revshare/propose', {
-        counterparty_did: BUYER_DID,
-        self_role: 'host',
-        share_bps: 100,
-        period: 'monthly',
-        cash_handler: 'host',
-        currency: 'INR',
-        effective_from: '2026-01-01',
-      }],
+      [
+        '/v1/commerce/trade/revshare/propose',
+        {
+          counterparty_did: BUYER_DID,
+          self_role: 'host',
+          share_bps: 100,
+          period: 'monthly',
+          cash_handler: 'host',
+          currency: 'INR',
+          effective_from: '2026-01-01',
+        },
+      ],
       ['/v1/commerce/trade/revshare/decide', { proposal_digest: 'x', kind: 'accepted' }],
       ['/v1/commerce/trade/revshare/terminate', { proposal_digest: 'x' }],
-      ['/v1/commerce/trade/revshare/settle', {
-        proposal_digest: 'x',
-        period_start: '2026-01-01',
-        period_end: '2026-01-31',
-        gross_minor_units: '100',
-      }],
+      [
+        '/v1/commerce/trade/revshare/settle',
+        {
+          proposal_digest: 'x',
+          period_start: '2026-01-01',
+          period_end: '2026-01-31',
+          gross_minor_units: '100',
+        },
+      ],
       ['/v1/commerce/trade/revshare/ack-settlement', { settlement_digest: 'x', kind: 'accepted' }],
     ];
     for (const [routePath, body] of posts) {
@@ -446,7 +466,11 @@ describe('the money line (§5.B1 Cut 3): no active Commerce Pack', () => {
       ['/v1/commerce/trade/revshare/statement', { proposal_digest: 'x' }],
     ];
     for (const [routePath, query] of gets) {
-      const res = await router.handle({ ...owner(routePath, {}), method: 'GET', query } as CoreRequest);
+      const res = await router.handle({
+        ...owner(routePath, {}),
+        method: 'GET',
+        query,
+      } as CoreRequest);
       expect({ routePath, status: res.status }).toEqual({ routePath, status: 409 });
       expect(res.body).toMatchObject({ error: 'commerce_pack_inactive', reason: 'pack_paused' });
     }
@@ -462,9 +486,13 @@ describe('the money line (§5.B1 Cut 3): no active Commerce Pack', () => {
       orderDrafts: { list: () => [] },
       // Two money-free items seeded OUT of order: the clerk's queue must not
       // depend on plugin state.
-      tenders: { listTenders: () => [{ tenderId: 't-late', expiresAt: T0 + 60_000, createdAt: T0 }] },
+      tenders: {
+        listTenders: () => [{ tenderId: 't-late', expiresAt: T0 + 60_000, createdAt: T0 }],
+      },
       buyerNegotiation: { getTender: () => null },
-      pendingDecisions: { list: () => [{ buyerDid: BUYER_DID, purchaseOrderId: 'po-early', createdAt: T0 - 100 }] },
+      pendingDecisions: {
+        list: () => [{ buyerDid: BUYER_DID, purchaseOrderId: 'po-early', createdAt: T0 - 100 }],
+      },
       nodeDid: () => SUPPLIER_DID,
       now: () => T0,
     } as unknown as CommerceRuntime);
@@ -659,7 +687,10 @@ describe('GET /v1/commerce/trade/statement — §4.4 one fold per orientation', 
       kind: 'received',
       amount_received: { currency: 'INR', minor_units: '20000' },
     };
-    const inboundAck = { ...ackDraft, ack_digest: tradeRecordDigest('payment_ack', ackDraft, hash) };
+    const inboundAck = {
+      ...ackDraft,
+      ack_digest: tradeRecordDigest('payment_ack', ackDraft, hash),
+    };
     tradeDocs.put({
       recordDigest: inboundAck.ack_digest,
       kind: 'payment_ack',

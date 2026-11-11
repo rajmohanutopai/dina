@@ -38,8 +38,7 @@ const BRAIN_SRC = resolve(__dirname, '..', 'src');
  * compile-time edge still works in the monorepo. This regex catches
  * both flavours.
  */
-const DEEP_CORE_IMPORT_RE =
-  /from\s+['"](?:@dina\/core\/src|(?:\.\.\/)+core\/src)\/[^'"]+['"]/g;
+const DEEP_CORE_IMPORT_RE = /from\s+['"](?:@dina\/core\/src|(?:\.\.\/)+core\/src)\/[^'"]+['"]/g;
 
 /**
  * The same shape inside `import(...)` and `require(...)` calls.

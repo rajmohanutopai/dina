@@ -106,8 +106,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
  *  missing/ill-typed required field (fail-closed). */
 export function validatePushEventBody(value: unknown): PushEventBody | null {
   if (!isRecord(value)) return null;
-  const s = (k: string): string | null => (typeof value[k] === 'string' && value[k] !== '' ? (value[k] as string) : null);
-  const n = (k: string): number | null => (typeof value[k] === 'number' && Number.isFinite(value[k]) ? (value[k] as number) : null);
+  const s = (k: string): string | null =>
+    typeof value[k] === 'string' && value[k] !== '' ? (value[k] as string) : null;
+  const n = (k: string): number | null =>
+    typeof value[k] === 'number' && Number.isFinite(value[k]) ? (value[k] as number) : null;
 
   const event_id = s('event_id');
   const subscription_ref = s('subscription_ref');
@@ -122,23 +124,46 @@ export function validatePushEventBody(value: unknown): PushEventBody | null {
   const sequence = n('sequence');
   const issued_at = n('issued_at');
   const expires_at = n('expires_at');
-  const claimed = typeof value.claimed_priority === 'string' && CLAIMED.has(value.claimed_priority)
-    ? (value.claimed_priority as ClaimedPriority)
-    : null;
+  const claimed =
+    typeof value.claimed_priority === 'string' && CLAIMED.has(value.claimed_priority)
+      ? (value.claimed_priority as ClaimedPriority)
+      : null;
 
   if (
-    event_id === null || subscription_ref === null || provider_did === null ||
-    runtime_issuer_did === null || runtime_key_id === null || service_uri === null ||
-    topic_id === null || condition_ref === null || dedup_key === null || signature === null ||
-    sequence === null || issued_at === null || expires_at === null || claimed === null ||
+    event_id === null ||
+    subscription_ref === null ||
+    provider_did === null ||
+    runtime_issuer_did === null ||
+    runtime_key_id === null ||
+    service_uri === null ||
+    topic_id === null ||
+    condition_ref === null ||
+    dedup_key === null ||
+    signature === null ||
+    sequence === null ||
+    issued_at === null ||
+    expires_at === null ||
+    claimed === null ||
     !('card' in value)
   ) {
     return null;
   }
   return {
-    event_id, subscription_ref, provider_did, runtime_issuer_did, runtime_key_id, service_uri,
-    topic_id, condition_ref, claimed_priority: claimed, card: value.card, dedup_key, sequence,
-    issued_at, expires_at, signature,
+    event_id,
+    subscription_ref,
+    provider_did,
+    runtime_issuer_did,
+    runtime_key_id,
+    service_uri,
+    topic_id,
+    condition_ref,
+    claimed_priority: claimed,
+    card: value.card,
+    dedup_key,
+    sequence,
+    issued_at,
+    expires_at,
+    signature,
     ...(value.trigger_evidence !== undefined ? { trigger_evidence: value.trigger_evidence } : {}),
   };
 }

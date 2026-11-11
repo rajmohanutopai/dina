@@ -6,14 +6,17 @@
 import { act, fireEvent, render } from '@testing-library/react-native';
 import React from 'react';
 
-import { __resetFileSystemMock, __setEntries, __setFileContents } from '../../__mocks__/expo-file-system';
+import {
+  __resetFileSystemMock,
+  __setEntries,
+  __setFileContents,
+} from '../../__mocks__/expo-file-system';
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { UnlockGate } from '../../src/components/unlock_gate';
 import * as marker from '../../src/services/install_marker';
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
 const Keychain = require('react-native-keychain');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const fsMock = require('../../__mocks__/expo-file-system');
 
 jest.mock('expo-router', () => ({ usePathname: () => '/' }));
@@ -56,11 +59,9 @@ describe('reads that fail at launch', () => {
   });
 
   it('a keychain error shows a retry, not onboarding, and the retry reaches the vault', async () => {
-    const spy = jest
-      .spyOn(Keychain, 'getGenericPassword')
-      .mockImplementationOnce(async () => {
-        throw new Error('keychain locked');
-      });
+    const spy = jest.spyOn(Keychain, 'getGenericPassword').mockImplementationOnce(async () => {
+      throw new Error('keychain locked');
+    });
     const ui = render(<UnlockGate>{null}</UnlockGate>);
     await settle();
     expect(ui.queryByTestId('ONBOARDING')).toBeNull();

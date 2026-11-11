@@ -189,11 +189,7 @@ export {
   isValidServiceListingRkey,
   SERVICE_PROFILE_COLLECTION,
 } from './validators';
-export type {
-  ParsedMessage,
-  Ed25519VerifyFn,
-  VerifyMessageSignatureInput,
-} from './validators';
+export type { ParsedMessage, Ed25519VerifyFn, VerifyMessageSignatureInput } from './validators';
 
 // PeerLens wire types (TN-PROTO-001). Pure type declarations
 // for the `com.dinakernel.peerlens.*` AT Protocol record family — Lite, Brain
@@ -307,10 +303,7 @@ export {
 // inline VMs into the underlying `VerificationMethod` objects so
 // AppView's signature gate and the mobile verifier can look up the
 // namespace key referenced by a record's `namespace` field.
-export {
-  resolveAssertionMethods,
-  resolveAssertionMethod,
-} from './identity/did_resolver';
+export { resolveAssertionMethods, resolveAssertionMethod } from './identity/did_resolver';
 
 // Trust-record commit signature verifier (TN-AUTH-002). Pure
 // closed-default verifier — given a record's bytes + signature +
@@ -318,10 +311,7 @@ export {
 // signature verifies under the matching `assertionMethod` key.
 // Crypto + multibase decode are injected (zero-runtime-deps).
 export { verifyRecordCommit } from './identity/verify_record';
-export type {
-  VerifyRecordCommitInput,
-  MultikeyDecodeFn,
-} from './identity/verify_record';
+export type { VerifyRecordCommitInput, MultikeyDecodeFn } from './identity/verify_record';
 
 // PeerLens V1 score formula (TN-PROTO-004 / TN-PROTO-005).
 // Pure, zero-dep, deterministic reference. AppView's wall-clock

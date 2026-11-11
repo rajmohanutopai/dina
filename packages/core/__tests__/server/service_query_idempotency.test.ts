@@ -35,8 +35,20 @@ describe('computeIdempotencyKey', () => {
   });
 
   it('still segregates by service_uri + schema_hash (regression)', () => {
-    const u1 = computeIdempotencyKey(DID, CAP, PARAMS, undefined, 'at://did:plc:provider/com.dinakernel.service.profile/a');
-    const u2 = computeIdempotencyKey(DID, CAP, PARAMS, undefined, 'at://did:plc:provider/com.dinakernel.service.profile/b');
+    const u1 = computeIdempotencyKey(
+      DID,
+      CAP,
+      PARAMS,
+      undefined,
+      'at://did:plc:provider/com.dinakernel.service.profile/a',
+    );
+    const u2 = computeIdempotencyKey(
+      DID,
+      CAP,
+      PARAMS,
+      undefined,
+      'at://did:plc:provider/com.dinakernel.service.profile/b',
+    );
     expect(u1).not.toBe(u2);
     const s1 = computeIdempotencyKey(DID, CAP, PARAMS, 'sha-1');
     const s2 = computeIdempotencyKey(DID, CAP, PARAMS, 'sha-2');

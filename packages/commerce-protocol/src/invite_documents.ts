@@ -20,7 +20,13 @@
  */
 
 import { bytesToHex, canonicalJson, utf8Bytes } from './canonical';
-import { validateDid, validateHex64, validateId, validateIsoUtc, validateProtocolVersionShape } from './common';
+import {
+  validateDid,
+  validateHex64,
+  validateId,
+  validateIsoUtc,
+  validateProtocolVersionShape,
+} from './common';
 
 import type { Sha256Fn } from './digests';
 

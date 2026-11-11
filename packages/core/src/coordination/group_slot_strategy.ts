@@ -60,7 +60,8 @@ export function installGroupSlotStrategy(next: GroupSlotStrategy | null): void {
     subject: 'a group booking',
     // A lapse leaves the pick to the owner, in the answer's own write.
     answered: (q, answer) => {
-      if (answer === 'lapsed') next.turns.close(GROUP_ORGANIZER, q.negotiationId, q.turn, 'fallen_back');
+      if (answer === 'lapsed')
+        next.turns.close(GROUP_ORGANIZER, q.negotiationId, q.turn, 'fallen_back');
     },
     after: (q, answer, nowMs) => {
       if (answer !== 'lapsed') askAgain(q.negotiationId, q.turn, nowMs);
@@ -167,7 +168,12 @@ export function askOwnerAboutSlot(
   if (s === null) return 'owner_picks';
   const turn = s.turns.get(GROUP_ORGANIZER, args.planId, args.turn);
   if (turn === null || turn.state !== 'pending') return 'owner_picks';
-  const standing = moveAgainstAnswers(GROUP_ORGANIZER, args.planId, args.turn, answersSeenIn(args.input));
+  const standing = moveAgainstAnswers(
+    GROUP_ORGANIZER,
+    args.planId,
+    args.turn,
+    answersSeenIn(args.input),
+  );
   if (standing !== 'current') return standing;
   const agreed = plan === null || plan.round !== args.turn ? null : pickable(plan);
   if (
@@ -240,7 +246,10 @@ export function slotFromMove(
   if (turn === null || turn.state !== 'pending') return null;
   // §15 step 14: a turn waiting on the owner takes no move, and a move from a
   // brief before the owner's latest answer is stale; either leaves the turn be.
-  if (moveAgainstAnswers(GROUP_ORGANIZER, args.planId, args.turn, answersSeenIn(args.input)) !== 'current')
+  if (
+    moveAgainstAnswers(GROUP_ORGANIZER, args.planId, args.turn, answersSeenIn(args.input)) !==
+    'current'
+  )
     return null;
   const shown = Array.isArray(turn.result.agreed) ? (turn.result.agreed as MeetingSlot[]) : [];
   const same = (a: MeetingSlot, b: MeetingSlot): boolean =>

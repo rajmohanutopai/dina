@@ -12,11 +12,7 @@ import {
 } from '../../../src';
 import { registerDevice, resetDeviceRegistry } from '../../../src/devices/registry';
 import { setNodeDID } from '../../../src/pairing/ceremony';
-import {
-  createPersona,
-  openPersona,
-  resetPersonaState,
-} from '../../../src/persona/service';
+import { createPersona, openPersona, resetPersonaState } from '../../../src/persona/service';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerReasoningRoutes } from '../../../src/server/routes/reasoning';
 import { SessionRegistry, setSessionRegistry } from '../../../src/session/registry';

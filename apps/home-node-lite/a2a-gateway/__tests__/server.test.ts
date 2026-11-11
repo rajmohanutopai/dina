@@ -114,9 +114,15 @@ beforeEach(() => {
   };
   cardReply = { ok: true, card: { name: 'Bus 42' }, jwks: { keys: [{ kid: 'k' }] } };
   webhooks = [];
-  webhookReply = { ok: true, answer: { status: 200, headers: {}, body: { ucp: { version: '2026-08-25' } } } };
+  webhookReply = {
+    ok: true,
+    answer: { status: 200, headers: {}, body: { ucp: { version: '2026-08-25' } } },
+  };
   callbacks = [];
-  callbackReply = { ok: true, answer: { status: 200, headers: {}, body: { linked: true, merchant_host: 'shop.example' } } };
+  callbackReply = {
+    ok: true,
+    answer: { status: 200, headers: {}, body: { linked: true, merchant_host: 'shop.example' } },
+  };
   app = build();
 });
 
@@ -238,25 +244,48 @@ describe('forwarding', () => {
   // TCK VER-SERVER-002 (spec §3.6.2): a version needs no authority to refuse
   it('answers a version Dina does not speak before anything else, credential or not, on both bindings', async () => {
     const body = '{"jsonrpc":"2.0","id":3,"method":"ListTasks","params":{}}';
-    for (const headers of [{ 'a2a-version': '9.9' }, { 'a2a-version': '9.9', authorization: '' }] as Record<string, string>[]) {
+    for (const headers of [
+      { 'a2a-version': '9.9' },
+      { 'a2a-version': '9.9', authorization: '' },
+    ] as Record<string, string>[]) {
       const res = await rpc(body, headers);
       expect(res.statusCode).toBe(200);
-      expect((res.json() as { id: number; error: { code: number } })).toEqual(expect.objectContaining({ id: 3, error: expect.objectContaining({ code: -32009 }) }));
+      expect(res.json() as { id: number; error: { code: number } }).toEqual(
+        expect.objectContaining({ id: 3, error: expect.objectContaining({ code: -32009 }) }),
+      );
     }
-    const rest = await app.inject({ method: 'GET', url: '/a2a/rest/tasks', headers: { 'a2a-version': '0.3' } });
+    const rest = await app.inject({
+      method: 'GET',
+      url: '/a2a/rest/tasks',
+      headers: { 'a2a-version': '0.3' },
+    });
     expect(rest.statusCode).toBe(400);
-    expect((rest.json() as { error: { details: { reason: string }[] } }).error.details[0]?.reason).toBe('VERSION_NOT_SUPPORTED');
+    expect(
+      (rest.json() as { error: { details: { reason: string }[] } }).error.details[0]?.reason,
+    ).toBe('VERSION_NOT_SUPPORTED');
     expect(forwarded).toEqual([]);
     // Control: 1.0, and no header at all (Core reads the version then), are forwarded.
     await rpc(body, { 'a2a-version': '1.0' });
-    await app.inject({ method: 'POST', url: '/a2a/v1', headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` }, payload: body });
+    await app.inject({
+      method: 'POST',
+      url: '/a2a/v1',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
+      payload: body,
+    });
     expect(forwarded).toHaveLength(2);
   });
 
   // TCK interop: a client built on httpx's base_url posts to the endpoint with a trailing slash
   it('serves the JSON-RPC endpoint with a trailing slash too, forwarding the path the client sent', async () => {
-    coreReply = { ok: true, answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 1, result: { tasks: [] } } } };
-    const res = await rpc('{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}', {}, '/a2a/v1/');
+    coreReply = {
+      ok: true,
+      answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 1, result: { tasks: [] } } },
+    };
+    const res = await rpc(
+      '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}',
+      {},
+      '/a2a/v1/',
+    );
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ jsonrpc: '2.0', id: 1, result: { tasks: [] } });
     // A DID-signed request signed this path; Core checks the signature against it.
@@ -355,19 +384,31 @@ describe('the card', () => {
     const first = await app.inject({ method: 'GET', url: AGENT_CARD_PATH });
     const etag = first.headers.etag as string;
     expect(etag).toMatch(/^"[0-9a-f]{32}"$/);
-    const again = await app.inject({ method: 'GET', url: AGENT_CARD_PATH, headers: { 'if-none-match': etag } });
+    const again = await app.inject({
+      method: 'GET',
+      url: AGENT_CARD_PATH,
+      headers: { 'if-none-match': etag },
+    });
     expect([again.statusCode, again.body, again.headers.etag]).toEqual([304, '', etag]);
     // A changed card is a new tag, and a stale tag gets the card.
     cardReply = { ok: true, card: { name: 'Bus 43' }, jwks: { keys: [] } };
     clock += 30_000;
-    const changed = await app.inject({ method: 'GET', url: AGENT_CARD_PATH, headers: { 'if-none-match': etag } });
+    const changed = await app.inject({
+      method: 'GET',
+      url: AGENT_CARD_PATH,
+      headers: { 'if-none-match': etag },
+    });
     expect(changed.statusCode).toBe(200);
     expect(changed.headers.etag).not.toBe(etag);
     expect(changed.json()).toEqual({ name: 'Bus 43' });
   });
 
   it('serves the card’s canonical bytes, whatever order Core’s object has', async () => {
-    cardReply = { ok: true, card: { name: 'Bus 42', capabilities: { streaming: true, b: 1, a: 2 } }, jwks: { keys: [] } };
+    cardReply = {
+      ok: true,
+      card: { name: 'Bus 42', capabilities: { streaming: true, b: 1, a: 2 } },
+      jwks: { keys: [] },
+    };
     const res = await app.inject({ method: 'GET', url: AGENT_CARD_PATH });
     expect(res.headers['content-type']).toContain('application/json');
     expect(res.body).toBe('{"capabilities":{"a":2,"b":1,"streaming":true},"name":"Bus 42"}');
@@ -394,7 +435,12 @@ describe('logs', () => {
 });
 
 describe('REST (HTTP+JSON, A2A §11)', () => {
-  const restCall = (method: 'GET' | 'POST' | 'DELETE', url: string, payload?: string, headers: Record<string, string> = {}) =>
+  const restCall = (
+    method: 'GET' | 'POST' | 'DELETE',
+    url: string,
+    payload?: string,
+    headers: Record<string, string> = {},
+  ) =>
     app.inject({
       method,
       url: `/a2a/rest${url}`,
@@ -412,29 +458,37 @@ describe('REST (HTTP+JSON, A2A §11)', () => {
     ['GET', '/tasks/a%2Fb', undefined, '/v1/a2a/ingress/tasks/a%2Fb/get'],
     ['POST', '/tasks/t-1:cancel', undefined, '/v1/a2a/ingress/tasks/t-1/cancel'],
     ['GET', '/tasks', undefined, '/v1/a2a/ingress/tasks/list'],
-    ['DELETE', '/tasks/t-1/pushNotificationConfigs/c-2', undefined, '/v1/a2a/ingress/push-configs/t-1/c-2/delete'],
+    [
+      'DELETE',
+      '/tasks/t-1/pushNotificationConfigs/c-2',
+      undefined,
+      '/v1/a2a/ingress/push-configs/t-1/c-2/delete',
+    ],
     ['GET', '/extendedAgentCard', undefined, '/v1/a2a/ingress/extended-card'],
-  ] as const)('%s %s goes to its operation’s Core route, the request as sent', async (method, url, payload, route) => {
-    coreReply = { ok: true, answer: { status: 200, headers: {}, body: { id: 't-1' } } };
-    const res = await restCall(method, `${url}?A2A-Version=1.0`, payload);
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['content-type']).toContain('application/a2a+json');
-    expect(forwarded).toEqual([
-      {
-        path: route,
-        envelope: {
-          request: {
-            method,
-            path: `/a2a/rest${url}`,
-            query: 'A2A-Version=1.0',
-            body: payload ?? '',
-            version: '1.0',
+  ] as const)(
+    '%s %s goes to its operation’s Core route, the request as sent',
+    async (method, url, payload, route) => {
+      coreReply = { ok: true, answer: { status: 200, headers: {}, body: { id: 't-1' } } };
+      const res = await restCall(method, `${url}?A2A-Version=1.0`, payload);
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['content-type']).toContain('application/a2a+json');
+      expect(forwarded).toEqual([
+        {
+          path: route,
+          envelope: {
+            request: {
+              method,
+              path: `/a2a/rest${url}`,
+              query: 'A2A-Version=1.0',
+              body: payload ?? '',
+              version: '1.0',
+            },
+            client_auth: { authorization: `Bearer ${TOKEN}` },
           },
-          client_auth: { authorization: `Bearer ${TOKEN}` },
         },
-      },
-    ]);
-  });
+      ]);
+    },
+  );
 
   it('relays Core’s REST answer as it came: status, headers, body', async () => {
     coreReply = {
@@ -448,13 +502,17 @@ describe('REST (HTTP+JSON, A2A §11)', () => {
     const res = await restCall('GET', '/tasks/none');
     expect(res.statusCode).toBe(404);
     expect(res.headers['x-extra']).toBe('1');
-    expect(res.json()).toEqual({ error: { code: 404, status: 'NOT_FOUND', message: 'Task not found' } });
+    expect(res.json()).toEqual({
+      error: { code: 404, status: 'NOT_FOUND', message: 'Task not found' },
+    });
   });
 
   it('answers what needs no authority itself, as google.rpc.Status: no route, a wrong method', async () => {
     const none = await restCall('GET', '/nothing');
     expect(none.statusCode).toBe(404);
-    expect(none.json()).toEqual({ error: { code: 404, status: 'NOT_FOUND', message: 'not_found' } });
+    expect(none.json()).toEqual({
+      error: { code: 404, status: 'NOT_FOUND', message: 'not_found' },
+    });
     const wrong = await restCall('DELETE', '/message:send');
     expect(wrong.statusCode).toBe(405);
     expect(wrong.headers.allow).toBe('POST');
@@ -464,47 +522,82 @@ describe('REST (HTTP+JSON, A2A §11)', () => {
   it.each([
     [
       'a body over 256 KB',
-      { method: 'POST' as const, url: '/a2a/rest/message:send', headers: { 'content-type': 'application/a2a+json' }, payload: `{"x":"${'a'.repeat(300_000)}"}` },
+      {
+        method: 'POST' as const,
+        url: '/a2a/rest/message:send',
+        headers: { 'content-type': 'application/a2a+json' },
+        payload: `{"x":"${'a'.repeat(300_000)}"}`,
+      },
       413,
       'INVALID_ARGUMENT',
       'payload_too_large',
     ],
     [
       'a content type it does not read',
-      { method: 'POST' as const, url: '/a2a/rest/message:send', headers: { 'content-type': 'text/plain' }, payload: 'hello' },
+      {
+        method: 'POST' as const,
+        url: '/a2a/rest/message:send',
+        headers: { 'content-type': 'text/plain' },
+        payload: 'hello',
+      },
       415,
       'INVALID_ARGUMENT',
       'unsupported_media_type',
     ],
-    ['the bare REST base', { method: 'GET' as const, url: '/a2a/rest' }, 404, 'NOT_FOUND', 'not_found'],
-  ])('answers %s as google.rpc.Status, as the SDK expects', async (_name, req, code, status, message) => {
-    const res = await app.inject(req);
-    expect(res.statusCode).toBe(code);
-    expect(res.headers['content-type']).toContain('application/a2a+json');
-    expect(res.json()).toEqual({ error: { code, status, message } });
-    expect(forwarded).toEqual([]);
-  });
+    [
+      'the bare REST base',
+      { method: 'GET' as const, url: '/a2a/rest' },
+      404,
+      'NOT_FOUND',
+      'not_found',
+    ],
+  ])(
+    'answers %s as google.rpc.Status, as the SDK expects',
+    async (_name, req, code, status, message) => {
+      const res = await app.inject(req);
+      expect(res.statusCode).toBe(code);
+      expect(res.headers['content-type']).toContain('application/a2a+json');
+      expect(res.json()).toEqual({ error: { code, status, message } });
+      expect(forwarded).toEqual([]);
+    },
+  );
 
-  it.each(['PATCH', 'PUT', 'OPTIONS'] as const)('answers %s on a REST path with 405 and the methods served', async (method) => {
-    const res = await app.inject({ method, url: '/a2a/rest/tasks/t-1' });
-    expect(res.statusCode).toBe(405);
-    expect(res.headers.allow).toBe('GET');
-    expect((res.json() as { error: { status: string } }).error.status).toBe('UNIMPLEMENTED');
-  });
+  it.each(['PATCH', 'PUT', 'OPTIONS'] as const)(
+    'answers %s on a REST path with 405 and the methods served',
+    async (method) => {
+      const res = await app.inject({ method, url: '/a2a/rest/tasks/t-1' });
+      expect(res.statusCode).toBe(405);
+      expect(res.headers.allow).toBe('GET');
+      expect((res.json() as { error: { status: string } }).error.status).toBe('UNIMPLEMENTED');
+    },
+  );
 
   it('keeps REST’s answers off the JSON-RPC endpoint, and off paths no binding has', async () => {
-    const res = await app.inject({ method: 'POST', url: '/a2a/v1', headers: { 'content-type': 'text/plain' }, payload: 'x' });
+    const res = await app.inject({
+      method: 'POST',
+      url: '/a2a/v1',
+      headers: { 'content-type': 'text/plain' },
+      payload: 'x',
+    });
     expect(res.statusCode).toBe(415);
     // TCK JSONRPC-SSE-002: a body not sent as JSON is ContentTypeNotSupportedError (-32005).
-    expect(res.json()).toEqual({ jsonrpc: '2.0', id: null, error: a2aError('contentTypeNotSupported', 'unsupported_media_type') });
-    expect((await app.inject({ method: 'GET', url: '/nothing' })).json()).toEqual({ error: 'not_found' });
+    expect(res.json()).toEqual({
+      jsonrpc: '2.0',
+      id: null,
+      error: a2aError('contentTypeNotSupported', 'unsupported_media_type'),
+    });
+    expect((await app.inject({ method: 'GET', url: '/nothing' })).json()).toEqual({
+      error: 'not_found',
+    });
   });
 
   it('a Core it cannot reach is 503 UNAVAILABLE', async () => {
     coreReply = { ok: false, status: 0 };
     const res = await restCall('GET', '/tasks');
     expect(res.statusCode).toBe(503);
-    expect(res.json()).toEqual({ error: { code: 503, status: 'UNAVAILABLE', message: 'unavailable' } });
+    expect(res.json()).toEqual({
+      error: { code: 503, status: 'UNAVAILABLE', message: 'unavailable' },
+    });
   });
 
   it('the edge limit holds for REST too', async () => {
@@ -513,7 +606,9 @@ describe('REST (HTTP+JSON, A2A §11)', () => {
     expect((await restCall('GET', '/tasks')).statusCode).toBe(200);
     const res = await restCall('GET', '/tasks');
     expect(res.statusCode).toBe(429);
-    expect(res.json()).toEqual({ error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'rate_limited' } });
+    expect(res.json()).toEqual({
+      error: { code: 429, status: 'RESOURCE_EXHAUSTED', message: 'rate_limited' },
+    });
     expect(res.headers['retry-after']).toBe('60');
   });
 });
@@ -580,7 +675,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 2, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 2,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const base = await listen();
@@ -607,7 +704,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 2, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 2,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const base = await listen();
@@ -615,7 +714,11 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
     await s.next();
     await settle();
     hub.publish('t-9', { seq: 3, credentialGen: 0 }, status('TASK_STATE_INPUT_REQUIRED'));
-    expect(await s.next()).toEqual({ jsonrpc: '2.0', id: 7, result: status('TASK_STATE_INPUT_REQUIRED') });
+    expect(await s.next()).toEqual({
+      jsonrpc: '2.0',
+      id: 7,
+      result: status('TASK_STATE_INPUT_REQUIRED'),
+    });
     expect(await s.next()).toBe('end');
   });
 
@@ -627,7 +730,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: asking } },
-        eventSeq: 4, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 4,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const base = await listen();
@@ -637,11 +742,25 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
   });
 
   it('over REST: the bare StreamResponse, opening with Core’s answer, ending with the task', async () => {
-    coreReply = { ok: true, answer: { status: 200, headers: {}, body: { task: TASK }, eventSeq: 2, credentialGen: 0, streamClient: STREAM_CLIENT } };
+    coreReply = {
+      ok: true,
+      answer: {
+        status: 200,
+        headers: {},
+        body: { task: TASK },
+        eventSeq: 2,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
+      },
+    };
     const base = await listen();
     const res = await fetch(`${base}/a2a/rest/message:stream`, {
       method: 'POST',
-      headers: { 'content-type': 'application/a2a+json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/a2a+json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
       body: '{"message":{}}',
     });
     const reader = res.body?.getReader();
@@ -688,7 +807,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const held = holdCore();
@@ -722,7 +843,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const base = await listen();
@@ -767,7 +890,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const base = await listen();
@@ -811,41 +936,65 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
       ['a finished task, with its result', finished],
       ['a task asking its client, with its question', asking],
       ['a working task', TASK],
-    ])('%s: 401 and nothing of it, the opening frame included; the slot is free again', async (_name, task) => {
-      fenced();
-      coreReply = answeredUnder(task, 0);
-      const base = await listen();
-      const res = await fetch(`${base}/a2a/v1`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
-        body: streamBody(),
-      });
-      expect(res.status).toBe(401);
-      expect(res.headers.get('www-authenticate')).toBe('Bearer realm="dina-a2a"');
-      expect(res.headers.get('content-type')).not.toBe('text/event-stream');
-      const text = await res.text();
-      expect(text).not.toContain('SECRET');
-      expect(JSON.parse(text)).toEqual({ jsonrpc: '2.0', id: JSON.parse(streamBody()).id, error: dinaRefusal('unauthenticated') });
-      expect([hub.size, hub.awaiting]).toEqual([0, 0]);
-    });
+    ])(
+      '%s: 401 and nothing of it, the opening frame included; the slot is free again',
+      async (_name, task) => {
+        fenced();
+        coreReply = answeredUnder(task, 0);
+        const base = await listen();
+        const res = await fetch(`${base}/a2a/v1`, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            authorization: `Bearer ${TOKEN}`,
+            'a2a-version': '1.0',
+          },
+          body: streamBody(),
+        });
+        expect(res.status).toBe(401);
+        expect(res.headers.get('www-authenticate')).toBe('Bearer realm="dina-a2a"');
+        expect(res.headers.get('content-type')).not.toBe('text/event-stream');
+        const text = await res.text();
+        expect(text).not.toContain('SECRET');
+        expect(JSON.parse(text)).toEqual({
+          jsonrpc: '2.0',
+          id: JSON.parse(streamBody()).id,
+          error: dinaRefusal('unauthenticated'),
+        });
+        expect([hub.size, hub.awaiting]).toEqual([0, 0]);
+      },
+    );
 
     it('over REST the same: 401 in REST’s error shape, and nothing of the task', async () => {
       fenced();
       coreReply = {
         ok: true,
-        answer: { status: 200, headers: {}, body: { task: finished }, eventSeq: 2, credentialGen: 0, streamClient: STREAM_CLIENT },
+        answer: {
+          status: 200,
+          headers: {},
+          body: { task: finished },
+          eventSeq: 2,
+          credentialGen: 0,
+          streamClient: STREAM_CLIENT,
+        },
       };
       const base = await listen();
       const res = await fetch(`${base}/a2a/rest/message:stream`, {
         method: 'POST',
-        headers: { 'content-type': 'application/a2a+json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+        headers: {
+          'content-type': 'application/a2a+json',
+          authorization: `Bearer ${TOKEN}`,
+          'a2a-version': '1.0',
+        },
         body: '{"message":{}}',
       });
       expect(res.status).toBe(401);
       expect(res.headers.get('www-authenticate')).toBe('Bearer realm="dina-a2a"');
       const text = await res.text();
       expect(text).not.toContain('SECRET');
-      expect(JSON.parse(text)).toEqual({ error: { code: 401, status: 'UNAUTHENTICATED', message: 'unauthenticated' } });
+      expect(JSON.parse(text)).toEqual({
+        error: { code: 401, status: 'UNAUTHENTICATED', message: 'unauthenticated' },
+      });
     });
 
     it('the client under its new credential is let through, and its stream opens', async () => {
@@ -860,11 +1009,23 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
     });
 
     it('a Task answer that does not say whose credential it was answered under is not relayed: 503, nothing of it', async () => {
-      coreReply = { ok: true, answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 7, result: { task: finished } }, eventSeq: 2 } };
+      coreReply = {
+        ok: true,
+        answer: {
+          status: 200,
+          headers: {},
+          body: { jsonrpc: '2.0', id: 7, result: { task: finished } },
+          eventSeq: 2,
+        },
+      };
       const base = await listen();
       const res = await fetch(`${base}/a2a/v1`, {
         method: 'POST',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${TOKEN}`,
+          'a2a-version': '1.0',
+        },
         body: streamBody(),
       });
       expect(res.status).toBe(503);
@@ -883,7 +1044,11 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
     coreReply = { ok: true, answer: { status: 200, headers: {}, body: error } };
     const res = await fetch(`${await listen()}/a2a/v1`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
       body: streamBody(),
     });
     expect(res.status).toBe(200);
@@ -900,7 +1065,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: done } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const s = await open(await listen());
@@ -936,7 +1103,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const next = await open(base);
@@ -951,7 +1120,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const s = await open(await listen());
@@ -975,7 +1146,9 @@ describe('streaming calls (JSON-RPC binding §9.4.2)', () => {
         status: 200,
         headers: {},
         body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
-        eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT,
+        eventSeq: 0,
+        credentialGen: 0,
+        streamClient: STREAM_CLIENT,
       },
     };
     const base = await listen();
@@ -1049,8 +1222,14 @@ describe('the UCP OAuth callback (UCP plan §3.17)', () => {
   });
 
   it('a refusal, and a Core it cannot reach, both read as not linked; the merchant host is escaped', async () => {
-    callbackReply = { ok: true, answer: { status: 200, headers: {}, body: { linked: false, reason: 'denied' } } };
-    const denied = await app.inject({ method: 'GET', url: '/ucp/oauth/callback?error=access_denied&state=s1' });
+    callbackReply = {
+      ok: true,
+      answer: { status: 200, headers: {}, body: { linked: false, reason: 'denied' } },
+    };
+    const denied = await app.inject({
+      method: 'GET',
+      url: '/ucp/oauth/callback?error=access_denied&state=s1',
+    });
     expect(denied.statusCode).toBe(200);
     expect(denied.body).toContain('You said no at the shop');
     expect(callbacks.at(-1)).toEqual({ error: 'access_denied', state: 's1' });
@@ -1065,8 +1244,14 @@ describe('the UCP OAuth callback (UCP plan §3.17)', () => {
   });
 
   it('a second load of the same callback (a reload after a link that worked) does not say "not linked"', async () => {
-    callbackReply = { ok: true, answer: { status: 200, headers: {}, body: { linked: false, reason: 'unknown_state' } } };
-    const again = await app.inject({ method: 'GET', url: '/ucp/oauth/callback?code=c&state=s&iss=x' });
+    callbackReply = {
+      ok: true,
+      answer: { status: 200, headers: {}, body: { linked: false, reason: 'unknown_state' } },
+    };
+    const again = await app.inject({
+      method: 'GET',
+      url: '/ucp/oauth/callback?code=c&state=s&iss=x',
+    });
     expect(again.statusCode).toBe(200);
     expect(again.body).toContain('This sign-in was already used or has expired');
     expect(again.body).not.toContain('not linked');
@@ -1075,7 +1260,11 @@ describe('the UCP OAuth callback (UCP plan §3.17)', () => {
 });
 
 describe('UCP order webhooks (UCP plan §3.13)', () => {
-  const post = (body: Buffer | string, headers: Record<string, string> = {}, url = '/ucp/webhooks/orders') =>
+  const post = (
+    body: Buffer | string,
+    headers: Record<string, string> = {},
+    url = '/ucp/webhooks/orders',
+  ) =>
     app.inject({
       method: 'POST',
       url,
@@ -1096,7 +1285,11 @@ describe('UCP order webhooks (UCP plan §3.13)', () => {
 
   it('forwards the exact bytes and only the webhook’s own headers, and relays Core’s 200', async () => {
     // Bytes JSON-decoding would not keep (a lone surrogate escape survives as text; raw bytes as bytes).
-    const bytes = Buffer.concat([Buffer.from('{"id":"o","checkout_id":"c","x":"'), Buffer.from([0xc3, 0xa9]), Buffer.from('"}')]);
+    const bytes = Buffer.concat([
+      Buffer.from('{"id":"o","checkout_id":"c","x":"'),
+      Buffer.from([0xc3, 0xa9]),
+      Buffer.from('"}'),
+    ]);
     const res = await post(bytes, {}, '/ucp/webhooks/orders?probe=1');
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({ ucp: { version: '2026-08-25' } });

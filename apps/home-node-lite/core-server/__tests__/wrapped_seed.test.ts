@@ -105,9 +105,7 @@ describe('wrapped-seed persistence (task 4.53)', () => {
       const dir = await mkTmpDir();
       try {
         await writeWrappedSeed(dir, TEST_SEED, PASSPHRASE);
-        await expect(readWrappedSeed(dir, 'wrong-passphrase')).rejects.toThrow(
-          /unwrap failed/,
-        );
+        await expect(readWrappedSeed(dir, 'wrong-passphrase')).rejects.toThrow(/unwrap failed/);
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
@@ -155,8 +153,14 @@ describe('wrapped-seed persistence (task 4.53)', () => {
       try {
         await writeWrappedSeed(dirA, TEST_SEED, PASSPHRASE);
         await writeWrappedSeed(dirB, TEST_SEED, PASSPHRASE);
-        const rawA = JSON.parse(await fs.readFile(path.join(dirA, WRAPPED_SEED_NAME), 'utf8')) as { wrapped_hex: string; salt_hex: string };
-        const rawB = JSON.parse(await fs.readFile(path.join(dirB, WRAPPED_SEED_NAME), 'utf8')) as { wrapped_hex: string; salt_hex: string };
+        const rawA = JSON.parse(await fs.readFile(path.join(dirA, WRAPPED_SEED_NAME), 'utf8')) as {
+          wrapped_hex: string;
+          salt_hex: string;
+        };
+        const rawB = JSON.parse(await fs.readFile(path.join(dirB, WRAPPED_SEED_NAME), 'utf8')) as {
+          wrapped_hex: string;
+          salt_hex: string;
+        };
         // Different Argon2id salts → different KEKs → different wrapped.
         expect(rawA.salt_hex).not.toBe(rawB.salt_hex);
         expect(rawA.wrapped_hex).not.toBe(rawB.wrapped_hex);
@@ -234,9 +238,7 @@ describe('wrapped-seed persistence (task 4.53)', () => {
     });
 
     it('readWrappedSeed rejects empty passphrase', async () => {
-      await expect(readWrappedSeed('/tmp/any', '')).rejects.toThrow(
-        /passphrase must be non-empty/,
-      );
+      await expect(readWrappedSeed('/tmp/any', '')).rejects.toThrow(/passphrase must be non-empty/);
     });
   });
 });

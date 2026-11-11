@@ -51,7 +51,7 @@ async function main(): Promise<number> {
 main().then(
   (code) => process.exit(code),
   (err: unknown) => {
-    const msg = err instanceof Error ? err.stack ?? err.message : String(err);
+    const msg = err instanceof Error ? (err.stack ?? err.message) : String(err);
     process.stderr.write(`conformance runner failed: ${msg}\n`);
     process.exit(2);
   },

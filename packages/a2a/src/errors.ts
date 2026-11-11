@@ -76,7 +76,12 @@ export const A2A_ERROR_REASONS: Readonly<Record<number, string>> = Object.freeze
 
 /** A2A's own `ErrorInfo` for an error code. */
 export function a2aErrorInfo(code: number): JsonObject {
-  return { '@type': ERROR_INFO_TYPE, reason: A2A_ERROR_REASONS[code] ?? 'INTERNAL_ERROR', domain: A2A_ERROR_DOMAIN, metadata: {} };
+  return {
+    '@type': ERROR_INFO_TYPE,
+    reason: A2A_ERROR_REASONS[code] ?? 'INTERNAL_ERROR',
+    domain: A2A_ERROR_DOMAIN,
+    metadata: {},
+  };
 }
 
 /**
@@ -113,7 +118,11 @@ export function dinaErrorInfo(error: { data?: readonly JsonObject[] }): JsonObje
 
 /** Whether `detail` is A2A's own `ErrorInfo`. */
 export function isA2AErrorInfo(detail: JsonObject | undefined): boolean {
-  return detail !== undefined && detail['@type'] === ERROR_INFO_TYPE && detail.domain === A2A_ERROR_DOMAIN;
+  return (
+    detail !== undefined &&
+    detail['@type'] === ERROR_INFO_TYPE &&
+    detail.domain === A2A_ERROR_DOMAIN
+  );
 }
 
 export interface JsonRpcErrorObject {
@@ -128,7 +137,11 @@ export interface JsonRpcErrorObject {
  * needs to go on, such as the task an unfinished wait is about; it never
  * says why a skill was refused.
  */
-export function a2aError(kind: A2AErrorKind, reason?: string, metadata?: Readonly<Record<string, string>>): JsonRpcErrorObject {
+export function a2aError(
+  kind: A2AErrorKind,
+  reason?: string,
+  metadata?: Readonly<Record<string, string>>,
+): JsonRpcErrorObject {
   const code = JSONRPC_ERROR_CODES[kind];
   return {
     code,
@@ -137,7 +150,14 @@ export function a2aError(kind: A2AErrorKind, reason?: string, metadata?: Readonl
       a2aErrorInfo(code),
       ...(reason === undefined
         ? []
-        : [{ '@type': ERROR_INFO_TYPE, reason, domain: DINA_ERROR_DOMAIN, ...(metadata === undefined ? {} : { metadata: { ...metadata } }) }]),
+        : [
+            {
+              '@type': ERROR_INFO_TYPE,
+              reason,
+              domain: DINA_ERROR_DOMAIN,
+              ...(metadata === undefined ? {} : { metadata: { ...metadata } }),
+            },
+          ]),
     ],
   };
 }

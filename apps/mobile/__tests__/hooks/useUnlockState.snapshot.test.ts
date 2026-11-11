@@ -23,7 +23,7 @@
 // stubbing React's `useSyncExternalStore` to capture the getSnapshot
 // arg, or (b) re-export `getStableSnapshot` for testing. (a) keeps the
 // production surface clean.
-import { resetUnlockState } from '../../src/hooks/useUnlock';
+import { resetUnlockState, useUnlockState } from '../../src/hooks/useUnlock';
 
 interface CapturedArgs {
   getSnapshot: () => unknown;
@@ -48,8 +48,6 @@ jest.mock('react', () => {
     },
   };
 });
-
-import { useUnlockState } from '../../src/hooks/useUnlock';
 
 describe('useUnlockState — snapshot stability', () => {
   beforeEach(() => {

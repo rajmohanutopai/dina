@@ -654,7 +654,6 @@ describe('MsgBox Envelope Handlers', () => {
     const AGENT_PUB = getPublicKey(AGENT_SEED);
     const AGENT_DID = deriveDIDKey(AGENT_PUB);
 
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
     const { publicKeyToMultibase } = require('../../src/identity/did') as {
       publicKeyToMultibase: (pub: Uint8Array) => string;
     };

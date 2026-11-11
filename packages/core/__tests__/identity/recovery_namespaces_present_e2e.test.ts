@@ -96,10 +96,7 @@ function buildGenesis(mnemonic: string): {
     handle: 'recovery.example',
   });
   const rotation = deriveRotationKey(masterSeed, 0);
-  const { signedOperation: genesisSigned } = signOperation(
-    creation.operation,
-    rotation.privateKey,
-  );
+  const { signedOperation: genesisSigned } = signOperation(creation.operation, rotation.privateKey);
   return {
     masterSeed,
     rotationPrivateKey: rotation.privateKey,
@@ -122,10 +119,7 @@ interface NamespaceRow {
   verificationMethodId: string;
   publishedDidKey: string;
 }
-function listNamespaces(
-  did: string,
-  signedOperation: Record<string, unknown>,
-): NamespaceRow[] {
+function listNamespaces(did: string, signedOperation: Record<string, unknown>): NamespaceRow[] {
   const vms = signedOperation.verificationMethods;
   if (!vms || typeof vms !== 'object') return [];
   const rows: NamespaceRow[] = [];
@@ -315,7 +309,8 @@ describe('Recovery → namespaces present (TN-TEST-042)', () => {
       verificationMethods: {
         ...((a.genesisSigned as { verificationMethods?: Record<string, string> })
           .verificationMethods ?? {}),
-        [namespaceFragment(0)]: `did:key:${publicKeyToMultibase(deriveNamespaceKey(a.masterSeed, 0).publicKey)}`,
+        [namespaceFragment(0)]:
+          `did:key:${publicKeyToMultibase(deriveNamespaceKey(a.masterSeed, 0).publicKey)}`,
       },
     };
 

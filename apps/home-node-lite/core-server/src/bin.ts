@@ -43,16 +43,14 @@ main()
   })
   .catch((err: unknown) => {
     if (err instanceof ConfigError) {
-       
       console.error(`[core-server] config error: ${err.message}`);
       for (const issue of err.issues) {
-         
         console.error(`  - ${issue.path}: ${issue.message}`);
       }
       process.exit(78); // EX_CONFIG per sysexits.h
       return;
     }
-     
+
     console.error('[core-server] fatal:', err);
     process.exit(1);
   });

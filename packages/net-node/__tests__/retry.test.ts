@@ -138,9 +138,9 @@ describe('RetryingHttpClient (task 3.36)', () => {
       fake.enqueueError('err-2');
       fake.enqueueError('err-last');
       const retry = new RetryingHttpClient(fake, { sleepMs: noSleep, maxRetries: 2 });
-      await expect(
-        retry.request('http://x', { method: 'GET', headers: {} }),
-      ).rejects.toThrow(/err-last/);
+      await expect(retry.request('http://x', { method: 'GET', headers: {} })).rejects.toThrow(
+        /err-last/,
+      );
       expect(fake.calls).toBe(3);
     });
   });

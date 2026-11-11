@@ -190,19 +190,13 @@ describe('WriteScreen — inline errors', () => {
     // user OBVIOUSLY interacted with the field if its value exceeds
     // the cap, so showing the error immediately matches their action.
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.changeText(
-      getByTestId('write-headline-input'),
-      'a'.repeat(141),
-    );
+    fireEvent.changeText(getByTestId('write-headline-input'), 'a'.repeat(141));
     expect(getByTestId('write-error-headline_too_long')).toBeTruthy();
   });
 
   it('body_too_long error surfaces past the body cap', () => {
     const { getByTestId } = render(<WriteScreen subjectTitle="X" />);
-    fireEvent.changeText(
-      getByTestId('write-body-input'),
-      'a'.repeat(4001),
-    );
+    fireEvent.changeText(getByTestId('write-body-input'), 'a'.repeat(4001));
     expect(getByTestId('write-error-body_too_long')).toBeTruthy();
   });
 
@@ -256,18 +250,14 @@ describe('WriteScreen — submit + cancel', () => {
 
   it('tap Publish on invalid form does NOT fire onPublish', () => {
     const onPublish = jest.fn();
-    const { getByTestId } = render(
-      <WriteScreen subjectTitle="X" onPublish={onPublish} />,
-    );
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" onPublish={onPublish} />);
     fireEvent.press(getByTestId('write-publish'));
     expect(onPublish).not.toHaveBeenCalled();
   });
 
   it('tap Cancel fires onCancel', () => {
     const onCancel = jest.fn();
-    const { getByTestId } = render(
-      <WriteScreen subjectTitle="X" onCancel={onCancel} />,
-    );
+    const { getByTestId } = render(<WriteScreen subjectTitle="X" onCancel={onCancel} />);
     fireEvent.press(getByTestId('write-cancel'));
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
@@ -303,7 +293,6 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
   });
 
   function mockParams(params: Record<string, string>): void {
-     
     const expoRouter = require('expo-router');
     useLocalSearchParamsSpy = jest
       .spyOn(expoRouter, 'useLocalSearchParams')
@@ -323,7 +312,6 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
 
   /** Stand in for the router so a test can see where the screen leaves to. */
   function spyRouter(): { replace: jest.Mock; back: jest.Mock; routerSpy: jest.SpyInstance } {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports -- spy on the module object the screen imports
     const expoRouter = require('expo-router');
     const replace = jest.fn();
     const back = jest.fn();
@@ -373,7 +361,11 @@ describe('WriteScreen — URL-param-driven edit mode', () => {
   });
 
   it('an initialDid that is not a DID is not filled in', () => {
-    mockParams({ createKind: 'organization', initialName: 'Crumb & Co', initialDid: 'crumb.example' });
+    mockParams({
+      createKind: 'organization',
+      initialName: 'Crumb & Co',
+      initialDid: 'crumb.example',
+    });
     const { getByTestId } = render(<WriteScreen />);
     expect(getByTestId('write-subject-name-input').props.value).toBe('Crumb & Co');
     expect(getByTestId('write-subject-did-input').props.value).toBe('');
@@ -622,9 +614,7 @@ describe('WriteScreen — subject anchor card', () => {
   });
 
   it('subject anchor surfaces the subject title in the header (replaces "About:" line)', () => {
-    const { getByTestId, queryByText } = render(
-      <WriteScreen subjectTitle="Aeron chair" />,
-    );
+    const { getByTestId, queryByText } = render(<WriteScreen subjectTitle="Aeron chair" />);
     expect(getByTestId('subject-anchor')).toBeTruthy();
     // The old "About: Aeron chair" line is gone — pin against
     // resurrection. The anchor renders the title in its own card.
@@ -735,9 +725,9 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
   });
 
   it('typing into search input triggers searchAlternatives prop callback', async () => {
-    const search = jest.fn().mockResolvedValue([
-      { kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' },
-    ]);
+    const search = jest
+      .fn()
+      .mockResolvedValue([{ kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' }]);
     const { getByTestId, findByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
@@ -749,9 +739,9 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
   });
 
   it('tapping a result adds it to the chip list and clears the input', async () => {
-    const search = jest.fn().mockResolvedValue([
-      { kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' },
-    ]);
+    const search = jest
+      .fn()
+      .mockResolvedValue([{ kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' }]);
     const { getByTestId, findByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
@@ -768,9 +758,9 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
   });
 
   it('tapping the X on a chip removes the alternative', async () => {
-    const search = jest.fn().mockResolvedValue([
-      { kind: 'product', name: 'A', subjectId: 'sub-a' },
-    ]);
+    const search = jest
+      .fn()
+      .mockResolvedValue([{ kind: 'product', name: 'A', subjectId: 'sub-a' }]);
     const { getByTestId, findByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
     );
@@ -804,14 +794,12 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008)', () => {
   });
 
   it('result row for an already-added alternative is disabled', async () => {
-    const search = jest.fn().mockResolvedValue([
-      { kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' },
-    ]);
+    const search = jest
+      .fn()
+      .mockResolvedValue([{ kind: 'product', name: 'Steelcase Leap', subjectId: 'sub-leap' }]);
     const initial = {
       ...emptyWriteFormState(),
-      alternatives: [
-        { kind: 'product' as const, name: 'Steelcase Leap', subjectId: 'sub-leap' },
-      ],
+      alternatives: [{ kind: 'product' as const, name: 'Steelcase Leap', subjectId: 'sub-leap' }],
     };
     const { getByTestId, findByTestId } = render(
       <WriteScreen subjectTitle="X" initial={initial} searchAlternatives={search} />,
@@ -847,7 +835,9 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008) — stale-response
     // with a "leap" result; 'sea' resolves faster with a "seat"
     // result. The user changed query in between → only 'sea' results
     // should win after the slow promise resolves.
-    let resolveSlow: (v: readonly { kind: 'product'; name: string; subjectId: string }[]) => void = () => undefined;
+    let resolveSlow: (
+      v: readonly { kind: 'product'; name: string; subjectId: string }[],
+    ) => void = () => undefined;
     const search = jest.fn().mockImplementation((q: string) => {
       if (q === 'le') {
         return new Promise<readonly { kind: 'product'; name: string; subjectId: string }[]>(
@@ -856,9 +846,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008) — stale-response
           },
         );
       }
-      return Promise.resolve([
-        { kind: 'product' as const, name: 'Seat', subjectId: 'sub-seat' },
-      ]);
+      return Promise.resolve([{ kind: 'product' as const, name: 'Seat', subjectId: 'sub-seat' }]);
     });
     const { getByTestId, findByTestId, queryByTestId } = render(
       <WriteScreen subjectTitle="X" searchAlternatives={search} />,
@@ -872,9 +860,7 @@ describe('WriteScreen — alternatives picker (TN-V2-REV-008) — stale-response
     expect(await findByTestId('write-alt-result-sub-seat')).toBeTruthy();
     // Now resolve the stale (leap) query — should NOT overwrite the
     // visible results.
-    resolveSlow([
-      { kind: 'product' as const, name: 'Leap', subjectId: 'sub-leap' },
-    ]);
+    resolveSlow([{ kind: 'product' as const, name: 'Leap', subjectId: 'sub-leap' }]);
     // Drain microtasks.
     await Promise.resolve();
     await Promise.resolve();
@@ -899,7 +885,6 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
   });
 
   function mockParams(params: Record<string, string>): void {
-     
     const expoRouter = require('expo-router');
     useLocalSearchParamsSpy = jest
       .spyOn(expoRouter, 'useLocalSearchParams')
@@ -907,7 +892,6 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
   }
 
   it('pre-fills the form from a review-draft lifecycle', async () => {
-     
     const thread = require('@dina/brain/chat');
     thread.resetThreads();
     const lifecycle = {
@@ -936,11 +920,7 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
         useCases: ['professional'],
       },
     };
-    thread.addLifecycleMessage(
-      'main',
-      'Drafted a review of Aeron Chair.',
-      lifecycle,
-    );
+    thread.addLifecycleMessage('main', 'Drafted a review of Aeron Chair.', lifecycle);
 
     mockParams({ draftId: 'draft-abc', threadId: 'main' });
     const { getByDisplayValue } = render(<WriteScreen />);
@@ -949,7 +929,6 @@ describe('WriteScreen — URL-param-driven chat-draft handoff', () => {
   });
 
   it('falls through to the empty form when the draft id is unknown', () => {
-     
     const thread = require('@dina/brain/chat');
     thread.resetThreads();
     mockParams({ draftId: 'draft-missing', threadId: 'main' });

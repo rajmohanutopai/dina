@@ -25,7 +25,13 @@ import type { ServiceConfig } from '@dina/protocol';
 const NOW = 1_800_000_000_000;
 const ME = a2aPrincipal(`ac_${'1'.repeat(32)}`);
 const OTHER = a2aPrincipal(`ac_${'2'.repeat(32)}`);
-const SCHEMAS = { eta_query: { params: { type: 'object', properties: { route_id: { type: 'string' } } }, result: { type: 'object' }, schemaHash: 'h' } };
+const SCHEMAS = {
+  eta_query: {
+    params: { type: 'object', properties: { route_id: { type: 'string' } } },
+    result: { type: 'object' },
+    schemaHash: 'h',
+  },
+};
 
 let dir: string;
 let db: NodeSQLiteAdapter;
@@ -37,7 +43,12 @@ beforeEach(() => {
   resetDeviceRegistry();
   resetServiceConfigState();
   dir = mkdtempSync(path.join(tmpdir(), 'a2a-resolve-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'cc'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: 'cc'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   store = new A2AStore(db);
   grants = new SQLiteServiceGrantRepository(db);
@@ -52,13 +63,23 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-function listing(discoverability: 'public' | 'unlisted' | 'known_only', over: Partial<ServiceConfig> = {}): ServiceConfig {
+function listing(
+  discoverability: 'public' | 'unlisted' | 'known_only',
+  over: Partial<ServiceConfig> = {},
+): ServiceConfig {
   return {
     isDiscoverable: discoverability === 'public',
     discoverability,
     status: 'active',
     name: `Listing ${discoverability}`,
-    capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+    capabilities: {
+      eta_query: {
+        mcpServer: 'transit',
+        mcpTool: 'get_eta',
+        responsePolicy: 'auto',
+        category: 'transit',
+      },
+    },
     capabilitySchemas: SCHEMAS,
     ...over,
   };
@@ -67,7 +88,10 @@ function listing(discoverability: 'public' | 'unlisted' | 'known_only', over: Pa
 function env(skill: string, over: Partial<InvocationEnvelope> = {}): InvocationEnvelope {
   const at = skill.indexOf('@');
   return {
-    skill: at === -1 ? { capability: skill } : { capability: skill.slice(0, at), rkey: skill.slice(at + 1) },
+    skill:
+      at === -1
+        ? { capability: skill }
+        : { capability: skill.slice(0, at), rkey: skill.slice(at + 1) },
     skillText: skill,
     params: { route_id: '42' },
     ...over,
@@ -92,12 +116,14 @@ describe('listing resolution', () => {
     setServiceConfig(listing('public'), 'bus');
     setServiceConfig(listing('unlisted'), 'hidden');
     const out = resolve(env('bus_eta'));
-    expect(out.ok && [out.resolved.rkey, out.resolved.mode, out.resolved.canonical, out.resolved.configuredKey]).toEqual([
-      'bus',
-      'public',
-      'eta_query',
-      'eta_query',
-    ]);
+    expect(
+      out.ok && [
+        out.resolved.rkey,
+        out.resolved.mode,
+        out.resolved.canonical,
+        out.resolved.configuredKey,
+      ],
+    ).toEqual(['bus', 'public', 'eta_query', 'eta_query']);
   });
 
   it('two public listings make a bare capability ambiguous; none makes it unknown', () => {
@@ -114,8 +140,18 @@ describe('listing resolution', () => {
     const both = (discoverability: 'public' | 'known_only' = 'public') =>
       listing(discoverability, {
         capabilities: {
-          eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' },
-          bus_eta: { mcpServer: 'transit', mcpTool: 'get_bus_eta', responsePolicy: 'auto', category: 'transit' },
+          eta_query: {
+            mcpServer: 'transit',
+            mcpTool: 'get_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+          bus_eta: {
+            mcpServer: 'transit',
+            mcpTool: 'get_bus_eta',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
         },
         capabilitySchemas: { ...SCHEMAS, bus_eta: { ...SCHEMAS.eta_query, schemaHash: 'h-bus' } },
       });
@@ -133,16 +169,32 @@ describe('listing resolution', () => {
 
     it('through a grant on a known_only listing too', () => {
       setServiceConfig(both('known_only'), 'private');
-      grants.create({ grantId: 'g-both', granteeDid: ME, serviceRkey: 'private', capability: 'eta_query', grantType: 'standing', createdAt: 1 });
-      expect(resolve(env('eta_query', { grantId: 'g-both' }))).toEqual({ ok: false, reason: 'skill_ambiguous' });
-      expect(resolve(env('bus_eta@private', { grantId: 'g-both' }))).toEqual({ ok: false, reason: 'skill_ambiguous' });
+      grants.create({
+        grantId: 'g-both',
+        granteeDid: ME,
+        serviceRkey: 'private',
+        capability: 'eta_query',
+        grantType: 'standing',
+        createdAt: 1,
+      });
+      expect(resolve(env('eta_query', { grantId: 'g-both' }))).toEqual({
+        ok: false,
+        reason: 'skill_ambiguous',
+      });
+      expect(resolve(env('bus_eta@private', { grantId: 'g-both' }))).toEqual({
+        ok: false,
+        reason: 'skill_ambiguous',
+      });
     });
 
     it('control: the same listing with one name for it resolves every name to that entry', () => {
       setServiceConfig(listing('public'), 'bus');
       for (const skill of ['eta_query@bus', 'bus_eta@bus', 'transit_eta@bus', 'eta_query']) {
         const out = resolve(env(skill));
-        expect(out.ok && [out.resolved.rkey, out.resolved.configuredKey]).toEqual(['bus', 'eta_query']);
+        expect(out.ok && [out.resolved.rkey, out.resolved.configuredKey]).toEqual([
+          'bus',
+          'eta_query',
+        ]);
       }
     });
   });
@@ -163,7 +215,10 @@ describe('access mode (total)', () => {
     expect(resolve(env('eta_query'), []).ok).toBe(true);
     expect(resolve(env('eta_query'), ['eta_query@bus']).ok).toBe(true);
     expect(resolve(env('eta_query'), ['eta_query']).ok).toBe(true);
-    expect(resolve(env('eta_query'), ['appointment_book'])).toEqual({ ok: false, reason: 'not_in_scope' });
+    expect(resolve(env('eta_query'), ['appointment_book'])).toEqual({
+      ok: false,
+      reason: 'not_in_scope',
+    });
   });
 
   it('unlisted by exact reference passes whatever the scope', () => {
@@ -174,29 +229,71 @@ describe('access mode (total)', () => {
 
   it('known_only only through this client’s live grant', () => {
     setServiceConfig(listing('known_only'), 'private');
-    expect(resolve(env('eta_query@private'))).toEqual({ ok: false, reason: 'grant_not_authorized' });
-    grants.create({ grantId: 'g-mine', granteeDid: ME, serviceRkey: 'private', capability: 'eta_query', grantType: 'standing', createdAt: 1 });
-    grants.create({ grantId: 'g-theirs', granteeDid: OTHER, serviceRkey: 'private', capability: 'eta_query', grantType: 'standing', createdAt: 1 });
+    expect(resolve(env('eta_query@private'))).toEqual({
+      ok: false,
+      reason: 'grant_not_authorized',
+    });
+    grants.create({
+      grantId: 'g-mine',
+      granteeDid: ME,
+      serviceRkey: 'private',
+      capability: 'eta_query',
+      grantType: 'standing',
+      createdAt: 1,
+    });
+    grants.create({
+      grantId: 'g-theirs',
+      granteeDid: OTHER,
+      serviceRkey: 'private',
+      capability: 'eta_query',
+      grantType: 'standing',
+      createdAt: 1,
+    });
     const byRef = resolve(env('eta_query@private', { grantId: 'g-mine' }));
-    expect(byRef.ok && [byRef.resolved.mode, byRef.resolved.grantId]).toEqual(['known_only', 'g-mine']);
+    expect(byRef.ok && [byRef.resolved.mode, byRef.resolved.grantId]).toEqual([
+      'known_only',
+      'g-mine',
+    ]);
     const byGrant = resolve(env('eta_query', { grantId: 'g-mine' }));
     expect(byGrant.ok && byGrant.resolved.rkey).toBe('private');
-    expect(resolve(env('eta_query', { grantId: 'g-theirs' }))).toEqual({ ok: false, reason: 'grant_not_authorized' });
+    expect(resolve(env('eta_query', { grantId: 'g-theirs' }))).toEqual({
+      ok: false,
+      reason: 'grant_not_authorized',
+    });
     grants.revoke('g-mine', 2);
-    expect(resolve(env('eta_query@private', { grantId: 'g-mine' }))).toEqual({ ok: false, reason: 'grant_not_authorized' });
+    expect(resolve(env('eta_query@private', { grantId: 'g-mine' }))).toEqual({
+      ok: false,
+      reason: 'grant_not_authorized',
+    });
   });
 });
 
 describe('a grant on a public listing adds nothing', () => {
   it('the public rules and the scope decide, named or bare: a client scoped away is refused either way', () => {
     setServiceConfig(listing('public'), 'bus');
-    grants.create({ grantId: 'g-pub', granteeDid: ME, serviceRkey: 'bus', capability: 'eta_query', grantType: 'standing', createdAt: 1 });
+    grants.create({
+      grantId: 'g-pub',
+      granteeDid: ME,
+      serviceRkey: 'bus',
+      capability: 'eta_query',
+      grantType: 'standing',
+      createdAt: 1,
+    });
     const scopedAway = ['price_check'];
-    expect(resolve(env('eta_query', { grantId: 'g-pub' }), scopedAway)).toEqual({ ok: false, reason: 'not_in_scope' });
-    expect(resolve(env('eta_query@bus', { grantId: 'g-pub' }), scopedAway)).toEqual({ ok: false, reason: 'not_in_scope' });
+    expect(resolve(env('eta_query', { grantId: 'g-pub' }), scopedAway)).toEqual({
+      ok: false,
+      reason: 'not_in_scope',
+    });
+    expect(resolve(env('eta_query@bus', { grantId: 'g-pub' }), scopedAway)).toEqual({
+      ok: false,
+      reason: 'not_in_scope',
+    });
     // In scope, it resolves as public, the grant unused.
     const inScope = resolve(env('eta_query', { grantId: 'g-pub' }), ['eta_query']);
-    expect(inScope.ok && [inScope.resolved.mode, inScope.resolved.grantId]).toEqual(['public', undefined]);
+    expect(inScope.ok && [inScope.resolved.mode, inScope.resolved.grantId]).toEqual([
+      'public',
+      undefined,
+    ]);
   });
 });
 
@@ -204,22 +301,65 @@ describe('executor selection (§7.3)', () => {
   it('an mcpServer lane runs only with a live runner binding, and pins its device as the PEP', () => {
     setServiceConfig(listing('public'), 'bus');
     const out = resolve(env('eta_query'));
-    expect(out.ok && out.resolved.executor).toEqual({ kind: 'mcp_server', lane: 'transit', mcpTool: 'get_eta', pepDid: runnerDid });
+    expect(out.ok && out.resolved.executor).toEqual({
+      kind: 'mcp_server',
+      lane: 'transit',
+      mcpTool: 'get_eta',
+      pepDid: runnerDid,
+    });
     setServiceConfig(
-      listing('public', { capabilities: { eta_query: { mcpServer: 'unbound', mcpTool: 'x', responsePolicy: 'auto', category: 'transit' } } }),
+      listing('public', {
+        capabilities: {
+          eta_query: {
+            mcpServer: 'unbound',
+            mcpTool: 'x',
+            responsePolicy: 'auto',
+            category: 'transit',
+          },
+        },
+      }),
       'bus',
     );
     expect(resolve(env('eta_query'))).toEqual({ ok: false, reason: 'no_executor' });
   });
 
   it('an instruction and no mcpServer runs in-process; a reserved lane or an unsound plugin binding runs nowhere', () => {
-    expect(selectA2AExecutor(store, { responsePolicy: 'auto', instruction: 'Answer.' }, 'read')).toEqual({ kind: 'tier1' });
-    expect(selectA2AExecutor(store, { responsePolicy: 'auto', mcpServer: 'dina.local', mcpTool: 't' }, 'read')).toBeNull();
-    expect(selectA2AExecutor(store, { responsePolicy: 'auto', mcpServer: 'a2a:ra-1', mcpTool: 't', instruction: 'x' }, 'read')).toBeNull();
     expect(
-      selectA2AExecutor(store, { responsePolicy: 'auto', pluginInstallId: 'inst-1', pluginManifestCid: 'bafy', pluginCapabilityId: 'c' }, 'read'),
+      selectA2AExecutor(store, { responsePolicy: 'auto', instruction: 'Answer.' }, 'read'),
+    ).toEqual({ kind: 'tier1' });
+    expect(
+      selectA2AExecutor(
+        store,
+        { responsePolicy: 'auto', mcpServer: 'dina.local', mcpTool: 't' },
+        'read',
+      ),
     ).toBeNull();
-    expect(selectA2AExecutor(store, { responsePolicy: 'auto', pluginInstallId: 'inst-1', instruction: 'x' }, 'read')).toBeNull();
+    expect(
+      selectA2AExecutor(
+        store,
+        { responsePolicy: 'auto', mcpServer: 'a2a:ra-1', mcpTool: 't', instruction: 'x' },
+        'read',
+      ),
+    ).toBeNull();
+    expect(
+      selectA2AExecutor(
+        store,
+        {
+          responsePolicy: 'auto',
+          pluginInstallId: 'inst-1',
+          pluginManifestCid: 'bafy',
+          pluginCapabilityId: 'c',
+        },
+        'read',
+      ),
+    ).toBeNull();
+    expect(
+      selectA2AExecutor(
+        store,
+        { responsePolicy: 'auto', pluginInstallId: 'inst-1', instruction: 'x' },
+        'read',
+      ),
+    ).toBeNull();
   });
 
   it('returns the pinned schema pair, or null when the listing publishes none', () => {

@@ -36,7 +36,4 @@ export {
   setPDSFetchFn,
   resetPDSFetchFn,
 } from '../peerlens/pds_publish';
-export type {
-  Attestation,
-  SignedAttestation,
-} from '../peerlens/pds_publish';
+export type { Attestation, SignedAttestation } from '../peerlens/pds_publish';

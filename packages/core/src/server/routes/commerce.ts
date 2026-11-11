@@ -117,10 +117,7 @@ import {
 import { requestQuote } from '../../commerce/buyer_quote_request';
 import { describeOrderForOwner } from '../../commerce/buyer_reconciliation';
 import { getCommerceServiceQueryDispatch } from '../../commerce/buyer_sender';
-import {
-  makeServiceQueryStatusAsk,
-  type BuyerStatusRepository,
-} from '../../commerce/buyer_status';
+import { makeServiceQueryStatusAsk, type BuyerStatusRepository } from '../../commerce/buyer_status';
 import {
   applyPromotion,
   evaluatePromotion,
@@ -211,10 +208,7 @@ import {
 } from '../../commerce/integration_settings';
 import { getInviteService } from '../../commerce/invite_compose';
 import { recordCommerceEvent } from '../../commerce/observability';
-import {
-  newApprovalId,
-  ORDER_APPROVAL_TTL_MS,
-} from '../../commerce/order_approvals';
+import { newApprovalId, ORDER_APPROVAL_TTL_MS } from '../../commerce/order_approvals';
 import {
   attachOrderEvidence,
   isSuppliedOrder,
@@ -247,10 +241,7 @@ import {
   staffPresenceCanBeEstablished,
   staffPresentNow,
 } from '../../commerce/owner_presence';
-import {
-  MAX_OWNER_SUPPLIERS,
-  parseOwnerSupplier,
-} from '../../commerce/owner_suppliers';
+import { MAX_OWNER_SUPPLIERS, parseOwnerSupplier } from '../../commerce/owner_suppliers';
 import {
   ownerOrderViewWire,
   ownerQuoteViewWire,
@@ -273,7 +264,10 @@ import { askReconcilePolls } from '../../commerce/reconcile_poller';
 import { makeServiceQueryReconcileSend } from '../../commerce/reconcile_sweeper';
 import { buildReconciliationCensus } from '../../commerce/reconciliation_census';
 import { beginReferenceInstall } from '../../commerce/reference_install';
-import { BUYER_REFERENCE_MANIFEST, SUPPLIER_REFERENCE_MANIFEST } from '../../commerce/reference_manifests';
+import {
+  BUYER_REFERENCE_MANIFEST,
+  SUPPLIER_REFERENCE_MANIFEST,
+} from '../../commerce/reference_manifests';
 import {
   rehydratePurchaseOrder,
   rehydrateQuoteRequest,
@@ -332,7 +326,10 @@ import {
   type TenderDraft,
 } from '../../commerce/tender_drafts';
 import { tenderStory } from '../../commerce/tender_story';
-import { getTradeDocumentDispatcher, installTradeDocumentDispatcher } from '../../commerce/trade_dispatch';
+import {
+  getTradeDocumentDispatcher,
+  installTradeDocumentDispatcher,
+} from '../../commerce/trade_dispatch';
 import { buildTradeInbox } from '../../commerce/trade_inbox';
 import { drainTradeSpool } from '../../commerce/trade_ingress';
 import {
@@ -653,7 +650,11 @@ function purchasingCaller(
   if (!('kind' in caller)) return caller;
   const now = Date.now();
   if (caller.kind === 'owner') {
-    if (opts.presence && ownerPresenceCanBeEstablished() && !ownerPresentNow(now, caller.principal)) {
+    if (
+      opts.presence &&
+      ownerPresenceCanBeEstablished() &&
+      !ownerPresentNow(now, caller.principal)
+    ) {
       return {
         status: 403,
         body: {
@@ -724,7 +725,10 @@ function staffPurchaseGate(
     value: order.total,
   });
   if (gate.verdict === 'refuse') {
-    return { kind: 'stop', response: { status: 403, body: { error: 'access_denied', reason: gate.reason } } };
+    return {
+      kind: 'stop',
+      response: { status: 403, body: { error: 'access_denied', reason: gate.reason } },
+    };
   }
   if (gate.verdict !== 'escalate') return { kind: 'go', approvedCard: null };
   const escalated = escalateStaffOperation({
@@ -743,7 +747,10 @@ function staffPurchaseGate(
   if (escalated.kind === 'unavailable') {
     return {
       kind: 'stop',
-      response: { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } },
+      response: {
+        status: 403,
+        body: { error: 'access_denied', reason: 'approval subsystem unavailable' },
+      },
     };
   }
   if (escalated.kind === 'escalated') {
@@ -778,7 +785,10 @@ function clearStaffOrder(
     createdAt: now,
   });
   if (!recorded) {
-    return { status: 403, body: { error: 'access_denied', reason: 'the owner approval was already used' } };
+    return {
+      status: 403,
+      body: { error: 'access_denied', reason: 'the owner approval was already used' },
+    };
   }
   // Best effort: the row above already makes the card spent.
   consumeStaffEscalation(card, approvalId, now);
@@ -1113,7 +1123,11 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // closes: a program holding only the boot-minted owner capability can
     // no longer mint a commercial approval on a node whose owner has a
     // passphrase nobody typed.
-    const absent = ownerPresenceRefusal(req, Date.now(), 'approving an order needs a person present');
+    const absent = ownerPresenceRefusal(
+      req,
+      Date.now(),
+      'approving an order needs a person present',
+    );
     if (absent !== null) return absent;
 
     const body = (req.body ?? {}) as {
@@ -1189,8 +1203,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         (typeof statedPrincipal.authorityDomain === 'string' &&
           statedPrincipal.authorityDomain !== '' &&
           statedPrincipal.authorityDomain !== principal.authorityDomain) ||
-        (statedPrincipal.policyRevision !== undefined &&
-          statedPrincipal.policyRevision !== null))
+        (statedPrincipal.policyRevision !== undefined && statedPrincipal.policyRevision !== null))
     ) {
       // Refused rather than overwritten, for the same reason the install facts
       // are: the surface showed the owner an accountability story, and if it
@@ -1351,7 +1364,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       if (approval.payload.source !== undefined) {
         return {
           status: 409,
-          body: { error: 'use_draft_submit', detail: 'send a draft order through /v1/commerce/orders/drafts/submit' },
+          body: {
+            error: 'use_draft_submit',
+            detail: 'send a draft order through /v1/commerce/orders/drafts/submit',
+          },
         };
       }
       // An order the owner cleared above the cap goes out on that clearance,
@@ -1393,184 +1409,193 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
    * `idempotency_key`; supplier-side absorption is the shipped
    * request_digest derivation, not new work.
    */
-  router.post(
-    '/v1/commerce/orders/drafts/request-quote',
-    async (req): Promise<CoreResponse> => {
-      const denied = ownerOnlyGuard(req);
-      if (denied !== null) return denied;
-      const runtime = getCommerceRuntime();
-      if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
-      const body = (req.body ?? {}) as Record<string, unknown>;
-      const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
-      const supplierDid = typeof body.supplier_did === 'string' ? body.supplier_did : '';
-      const serviceRkey = typeof body.service_rkey === 'string' ? body.service_rkey : 'self';
-      if (draftId === '') return { status: 400, body: { error: 'draft_id_required' } };
-      if (supplierDid === '') return { status: 400, body: { error: 'supplier_did is required' } };
-      // The projection is the BUYER'S OWN configured delivery place — not
-      // machine-read, so it arrives from the surface like any setting, and
-      // Core completes its digest when the surface sent only the fields:
-      // Core builds the request, so Core seals what it built.
-      if (body.projection === null || typeof body.projection !== 'object') {
-        return { status: 400, body: { error: 'projection is required' } };
-      }
-      body.projection = completeProjection(body.projection as Record<string, unknown>);
+  router.post('/v1/commerce/orders/drafts/request-quote', async (req): Promise<CoreResponse> => {
+    const denied = ownerOnlyGuard(req);
+    if (denied !== null) return denied;
+    const runtime = getCommerceRuntime();
+    if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
+    const supplierDid = typeof body.supplier_did === 'string' ? body.supplier_did : '';
+    const serviceRkey = typeof body.service_rkey === 'string' ? body.service_rkey : 'self';
+    if (draftId === '') return { status: 400, body: { error: 'draft_id_required' } };
+    if (supplierDid === '') return { status: 400, body: { error: 'supplier_did is required' } };
+    // The projection is the BUYER'S OWN configured delivery place — not
+    // machine-read, so it arrives from the surface like any setting, and
+    // Core completes its digest when the surface sent only the fields:
+    // Core builds the request, so Core seals what it built.
+    if (body.projection === null || typeof body.projection !== 'object') {
+      return { status: 400, body: { error: 'projection is required' } };
+    }
+    body.projection = completeProjection(body.projection as Record<string, unknown>);
 
-      const draft = runtime.orderDrafts.get(draftId);
-      if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
-      if (draft.abandoned) return { status: 409, body: { error: 'abandoned' } };
+    const draft = runtime.orderDrafts.get(draftId);
+    if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
+    if (draft.abandoned) return { status: 409, body: { error: 'abandoned' } };
 
-      // ONE LIVE CONVERSATION PER SUPPLIER (§5.0): a line resolving to a
-      // supplier whose live conversation has already SENT waits and joins
-      // that supplier's next conversation.
-      const live = draft.conversations.find(
-        (c) =>
-          c.supplierDid === supplierDid &&
-          c.state !== 'draft' &&
-          !['submitted', 'timed_out', 'rejected', 'superseded', 'quote_expired', 'dispatch_refused', 'closed'].includes(c.state),
-      );
-      if (live !== undefined) {
-        return { status: 409, body: { error: 'conversation_in_flight', conversation_id: live.conversationId } };
-      }
+    // ONE LIVE CONVERSATION PER SUPPLIER (§5.0): a line resolving to a
+    // supplier whose live conversation has already SENT waits and joins
+    // that supplier's next conversation.
+    const live = draft.conversations.find(
+      (c) =>
+        c.supplierDid === supplierDid &&
+        c.state !== 'draft' &&
+        ![
+          'submitted',
+          'timed_out',
+          'rejected',
+          'superseded',
+          'quote_expired',
+          'dispatch_refused',
+          'closed',
+        ].includes(c.state),
+    );
+    if (live !== undefined) {
+      return {
+        status: 409,
+        body: { error: 'conversation_in_flight', conversation_id: live.conversationId },
+      };
+    }
 
-      // THE SEND GATE (§5.1): every carried line's vouch entry current at
-      // its generation with NO model-derived field still proposed, and
-      // every requirement decided at its current generation — including
-      // draft-local ones, which are never transmitted but must not sit
-      // unreviewed while the screen calls the page checked.
-      const carried = draft.lines.filter(
-        (line) =>
-          line.resolution.kind === 'resolved' &&
-          line.resolution.supplierDid === supplierDid &&
-          line.submittedIn === null,
-      );
-      if (carried.length === 0) {
-        return { status: 409, body: { error: 'no_lines_for_supplier' } };
-      }
-      const unvouched = carried.filter(
-        (line) => line.vouch === null || line.vouch.generation !== line.generation,
-      );
-      if (unvouched.length > 0) {
+    // THE SEND GATE (§5.1): every carried line's vouch entry current at
+    // its generation with NO model-derived field still proposed, and
+    // every requirement decided at its current generation — including
+    // draft-local ones, which are never transmitted but must not sit
+    // unreviewed while the screen calls the page checked.
+    const carried = draft.lines.filter(
+      (line) =>
+        line.resolution.kind === 'resolved' &&
+        line.resolution.supplierDid === supplierDid &&
+        line.submittedIn === null,
+    );
+    if (carried.length === 0) {
+      return { status: 409, body: { error: 'no_lines_for_supplier' } };
+    }
+    const unvouched = carried.filter(
+      (line) => line.vouch === null || line.vouch.generation !== line.generation,
+    );
+    if (unvouched.length > 0) {
+      return {
+        status: 409,
+        body: { error: 'unvouched_lines', lines: unvouched.map((l) => l.lineId) },
+      };
+    }
+    for (const line of carried) {
+      const proposed = Object.entries(line.provenance)
+        .filter(([, state]) => state === 'proposed')
+        .map(([field]) => field);
+      if (proposed.length > 0) {
         return {
           status: 409,
-          body: { error: 'unvouched_lines', lines: unvouched.map((l) => l.lineId) },
+          body: { error: 'unvouched_lines', lines: [line.lineId], fields: proposed },
         };
       }
-      for (const line of carried) {
-        const proposed = Object.entries(line.provenance)
-          .filter(([, state]) => state === 'proposed')
-          .map(([field]) => field);
-        if (proposed.length > 0) {
-          return {
-            status: 409,
-            body: { error: 'unvouched_lines', lines: [line.lineId], fields: proposed },
-          };
-        }
-      }
-      for (const requirement of draft.requirements) {
-        const current =
-          requirement.vouch !== null && requirement.vouch.generation === requirement.generation;
-        if (!current && !requirement.omitted) {
-          return {
-            status: 409,
-            body: { error: 'unvouched_requirement', key: requirement.key },
-          };
-        }
-      }
-
-      // Core mints ONE identity with the intent, durable on the
-      // conversation, scoped to the buyer↔supplier pair.
-      const conversationId = `conv_${bytesToHex(randomBytes(8))}`;
-      const requestId = `qreq_${bytesToHex(randomBytes(12))}`;
-      const requiredByReq = draft.requirements.find(
-        (r) => r.key === 'required_by' && !r.omitted && r.value !== null,
-      );
-
-      const outcome = await requestQuote({
-        supplierDid,
-        serviceRkey,
-        requestId,
-        idempotencyKey: requestId,
-        lines: carried.map((line) => {
-          const resolution = line.resolution as Extract<
-            (typeof line)['resolution'],
-            { kind: 'resolved' }
-          >;
-          return {
-            lineId: line.lineId,
-            product: resolution.product,
-            quantity: { value: line.fields.quantity ?? '1', unit_code: 'each' },
-          };
-        }),
-        projection: body.projection as DeliveryProjection,
-        ...(requiredByReq?.value != null ? { requiredBy: requiredByReq.value } : {}),
-        nowMs: Date.now(),
-      });
-      if (outcome.kind === 'refused') {
+    }
+    for (const requirement of draft.requirements) {
+      const current =
+        requirement.vouch !== null && requirement.vouch.generation === requirement.generation;
+      if (!current && !requirement.omitted) {
         return {
-          status: outcome.reason === 'commerce_unavailable' || outcome.reason === 'no_dispatch' ? 503 : 409,
-          body: { error: outcome.reason },
+          status: 409,
+          body: { error: 'unvouched_requirement', key: requirement.key },
         };
       }
+    }
 
-      // SNAPSHOT the conversation — what this request MEANT, immutable.
-      const snapshot = {
-        draft_id: draft.draftId,
-        conversation_id: conversationId,
-        supplier_did: supplierDid,
-        request_digest: outcome.request.request_digest,
-        lines: carried.map((line) => ({
-          line_id: line.lineId,
-          generation: line.generation,
-          vouch_receipt_digest: line.vouch?.receiptDigest ?? '',
-        })),
-        requirements: draft.requirements.map((r) => ({
-          key: r.key,
-          omitted: r.omitted,
-          value: r.omitted ? null : r.value,
-          generation: r.generation,
-        })),
-      };
-      const snapshotDigest = conversationSnapshotDigest(snapshot, (data) => sha256(data));
-      draft.conversations.push({
-        conversationId,
-        supplierDid,
-        state: 'sent',
-        lineIds: carried.map((l) => l.lineId),
-        snapshot,
-        snapshotDigest,
-        requestDigest: outcome.request.request_digest,
-        requestId,
-        quoteDigest: null,
-        quoteId: null,
-        quoteValidUntil: null,
-        approvalId: null,
-        purchaseOrderId: null,
-        dispatchIntent: null,
-        outcome: outcome.kind === 'ambiguous' ? 'send_ambiguous' : null,
-      });
-      draft.updatedAtMs = Date.now();
-      runtime.orderDrafts.put(draft);
-      recordCommerceEvent({
-        event: 'send',
-        lane: 'order',
-        draftId: draft.draftId,
-        conversationId,
-        supplierDid,
-        count: carried.length,
-        atMs: Date.now(),
-      });
+    // Core mints ONE identity with the intent, durable on the
+    // conversation, scoped to the buyer↔supplier pair.
+    const conversationId = `conv_${bytesToHex(randomBytes(8))}`;
+    const requestId = `qreq_${bytesToHex(randomBytes(12))}`;
+    const requiredByReq = draft.requirements.find(
+      (r) => r.key === 'required_by' && !r.omitted && r.value !== null,
+    );
+
+    const outcome = await requestQuote({
+      supplierDid,
+      serviceRkey,
+      requestId,
+      idempotencyKey: requestId,
+      lines: carried.map((line) => {
+        const resolution = line.resolution as Extract<
+          (typeof line)['resolution'],
+          { kind: 'resolved' }
+        >;
+        return {
+          lineId: line.lineId,
+          product: resolution.product,
+          quantity: { value: line.fields.quantity ?? '1', unit_code: 'each' },
+        };
+      }),
+      projection: body.projection as DeliveryProjection,
+      ...(requiredByReq?.value != null ? { requiredBy: requiredByReq.value } : {}),
+      nowMs: Date.now(),
+    });
+    if (outcome.kind === 'refused') {
       return {
-        status: 200,
-        body: {
-          ok: true,
-          conversation_id: conversationId,
-          request_id: requestId,
-          request_digest: outcome.request.request_digest,
-          snapshot_digest: snapshotDigest,
-        },
+        status:
+          outcome.reason === 'commerce_unavailable' || outcome.reason === 'no_dispatch' ? 503 : 409,
+        body: { error: outcome.reason },
       };
-    },
-  );
+    }
+
+    // SNAPSHOT the conversation — what this request MEANT, immutable.
+    const snapshot = {
+      draft_id: draft.draftId,
+      conversation_id: conversationId,
+      supplier_did: supplierDid,
+      request_digest: outcome.request.request_digest,
+      lines: carried.map((line) => ({
+        line_id: line.lineId,
+        generation: line.generation,
+        vouch_receipt_digest: line.vouch?.receiptDigest ?? '',
+      })),
+      requirements: draft.requirements.map((r) => ({
+        key: r.key,
+        omitted: r.omitted,
+        value: r.omitted ? null : r.value,
+        generation: r.generation,
+      })),
+    };
+    const snapshotDigest = conversationSnapshotDigest(snapshot, (data) => sha256(data));
+    draft.conversations.push({
+      conversationId,
+      supplierDid,
+      state: 'sent',
+      lineIds: carried.map((l) => l.lineId),
+      snapshot,
+      snapshotDigest,
+      requestDigest: outcome.request.request_digest,
+      requestId,
+      quoteDigest: null,
+      quoteId: null,
+      quoteValidUntil: null,
+      approvalId: null,
+      purchaseOrderId: null,
+      dispatchIntent: null,
+      outcome: outcome.kind === 'ambiguous' ? 'send_ambiguous' : null,
+    });
+    draft.updatedAtMs = Date.now();
+    runtime.orderDrafts.put(draft);
+    recordCommerceEvent({
+      event: 'send',
+      lane: 'order',
+      draftId: draft.draftId,
+      conversationId,
+      supplierDid,
+      count: carried.length,
+      atMs: Date.now(),
+    });
+    return {
+      status: 200,
+      body: {
+        ok: true,
+        conversation_id: conversationId,
+        request_id: requestId,
+        request_digest: outcome.request.request_digest,
+        snapshot_digest: snapshotDigest,
+      },
+    };
+  });
 
   // -------------------------------------------------------------------------
   // §5.0 — the buyer's photographed order: capture, extract, read, and the
@@ -1706,7 +1731,13 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       expiresAtMs: at + IMAGE_EGRESS_AUTHORIZATION_TTL_MS,
       consumedAtMs: null,
     });
-    recordCommerceEvent({ event: 'photo_capture', lane: 'order', draftId, count: manifest.length, atMs: at });
+    recordCommerceEvent({
+      event: 'photo_capture',
+      lane: 'order',
+      draftId,
+      count: manifest.length,
+      atMs: at,
+    });
     recordCommerceEvent({ event: 'egress_authorization', lane: 'order', draftId, atMs: at });
     return {
       status: 200,
@@ -1736,7 +1767,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       return { status: 400, body: { error: 'authorization_id is required (from photo_capture)' } };
     }
     if (runtime.orderDrafts.get(body.draft_id) !== null) {
-      return { status: 409, body: { error: 'draft_exists: extraction already created this draft' } };
+      return {
+        status: 409,
+        body: { error: 'draft_exists: extraction already created this draft' },
+      };
     }
     const artifacts = runtime.imageArtifacts.listByDraft(body.draft_id);
     if (artifacts.length === 0) {
@@ -1773,7 +1807,9 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     if (commitmentShape !== null) {
       return { status: 422, body: { error: `extraction_invalid: ${commitmentShape}` } };
     }
-    const extractionDigest = extractionCommitmentDigest('order', commitment, (data) => sha256(data));
+    const extractionDigest = extractionCommitmentDigest('order', commitment, (data) =>
+      sha256(data),
+    );
 
     const REQUIREMENT_KEYS: Record<string, 'transmitted' | 'draft_local'> = {
       required_by: 'transmitted',
@@ -1954,8 +1990,7 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         return {
           status: 400,
           body: {
-            error:
-              'a resolved line names product, supplier_did and flagged_new_supplier',
+            error: 'a resolved line names product, supplier_did and flagged_new_supplier',
           },
         };
       }
@@ -1980,7 +2015,9 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     if (typeof body.draft_id !== 'string' || typeof body.line_id !== 'string') {
       return { status: 400, body: { error: 'draft_id and line_id are required' } };
     }
-    return orderDraftAnswer(orderDraftService(runtime, ownerCaller(req)).deferLine(body.draft_id, body.line_id));
+    return orderDraftAnswer(
+      orderDraftService(runtime, ownerCaller(req)).deferLine(body.draft_id, body.line_id),
+    );
   });
 
   router.post('/v1/commerce/orders/drafts/accept_fields', async (req): Promise<CoreResponse> => {
@@ -2000,7 +2037,9 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       }
       refs.push({ lineId: named.line_id, field: named.field });
     }
-    return orderDraftAnswer(orderDraftService(runtime, ownerCaller(req)).acceptLineFields(body.draft_id, refs));
+    return orderDraftAnswer(
+      orderDraftService(runtime, ownerCaller(req)).acceptLineFields(body.draft_id, refs),
+    );
   });
 
   router.post('/v1/commerce/orders/drafts/requirement', async (req): Promise<CoreResponse> => {
@@ -2043,7 +2082,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     if (caller.kind === 'owner' && !ownerPresenceCanBeEstablished()) {
       return {
         status: 503,
-        body: { error: 'presence_unavailable', detail: 'photographed orders cannot be vouched on this deployment' },
+        body: {
+          error: 'presence_unavailable',
+          detail: 'photographed orders cannot be vouched on this deployment',
+        },
       };
     }
     if (caller.kind === 'staff') {
@@ -2060,7 +2102,13 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         installRole: 'buyer',
       });
       if (gate.verdict !== 'allow') {
-        return { status: 403, body: { error: 'access_denied', reason: gate.verdict === 'refuse' ? gate.reason : 'escalation is not a confirm outcome' } };
+        return {
+          status: 403,
+          body: {
+            error: 'access_denied',
+            reason: gate.verdict === 'refuse' ? gate.reason : 'escalation is not a confirm outcome',
+          },
+        };
       }
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
@@ -2136,7 +2184,13 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     // stop — for the caller's OWN presence kind (§6.4: attributed).
     if (caller.kind === 'owner') {
       if (!ownerPresenceCanBeEstablished()) {
-        return { status: 503, body: { error: 'presence_unavailable', detail: 'photo-derived orders are unapprovable on this deployment' } };
+        return {
+          status: 503,
+          body: {
+            error: 'presence_unavailable',
+            detail: 'photo-derived orders are unapprovable on this deployment',
+          },
+        };
       }
       if (!ownerPresentNow(Date.now(), caller.principal)) {
         return { status: 403, body: { error: 'no_user_presence' } };
@@ -2153,7 +2207,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       // value gate still runs below, at the bound quote total).
       const live = runtime.staffGrants.get(caller.deviceDid, 'commerce_submit');
       if (live === null || live.revokedAt !== null) {
-        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant for this scope' } };
+        return {
+          status: 403,
+          body: { error: 'access_denied', reason: 'no live staff grant for this scope' },
+        };
       }
     }
 
@@ -2161,7 +2218,8 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     const draftId = typeof body.draft_id === 'string' ? body.draft_id : '';
     const conversationId = typeof body.conversation_id === 'string' ? body.conversation_id : '';
     if (draftId === '') return { status: 400, body: { error: 'draft_id_required' } };
-    if (conversationId === '') return { status: 400, body: { error: 'conversation_id is required' } };
+    if (conversationId === '')
+      return { status: 400, body: { error: 'conversation_id is required' } };
 
     const draft = runtime.orderDrafts.get(draftId);
     if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
@@ -2185,7 +2243,13 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
     const revisions = runtime.buyerQuotes.chain(conversation.supplierDid, quoteId);
     const quote = revisions.find((q) => q.quote_digest === conversation.quoteDigest);
     if (quote === undefined) {
-      return { status: 409, body: { error: 'quote_not_held', detail: 'the accepted revision is not in the verified store' } };
+      return {
+        status: 409,
+        body: {
+          error: 'quote_not_held',
+          detail: 'the accepted revision is not in the verified store',
+        },
+      };
     }
     // The quote must answer THIS conversation's request — a held quote for
     // some other exchange, even from the same supplier, prices different
@@ -2218,7 +2282,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
           nowMs: Date.now(),
         });
         if (escalated.kind === 'unavailable') {
-          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+          return {
+            status: 403,
+            body: { error: 'access_denied', reason: 'approval subsystem unavailable' },
+          };
         }
         if (escalated.kind === 'escalated') {
           return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
@@ -2415,7 +2482,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
       }
       const live = runtime.staffGrants.get(caller.deviceDid, 'commerce_submit');
       if (live === null || live.revokedAt !== null) {
-        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant for this scope' } };
+        return {
+          status: 403,
+          body: { error: 'access_denied', reason: 'no live staff grant for this scope' },
+        };
       }
     }
 
@@ -2474,7 +2544,10 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
           nowMs: Date.now(),
         });
         if (escalated.kind === 'unavailable') {
-          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+          return {
+            status: 403,
+            body: { error: 'access_denied', reason: 'approval subsystem unavailable' },
+          };
         }
         if (escalated.kind === 'escalated') {
           return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
@@ -2833,7 +2906,11 @@ function registerBuyerOrderRoutes(router: CoreRouter, ownerCapability?: string):
         money.available
           ? summarizePlacedOrderProgress(
               money.stores,
-              { orderDigest, supplierDid: order.supplierDid, purchaseOrderId: order.purchaseOrderId },
+              {
+                orderDigest,
+                supplierDid: order.supplierDid,
+                purchaseOrderId: order.purchaseOrderId,
+              },
               nowMs,
             )
           : null,
@@ -3135,7 +3212,8 @@ function holdOrderFromQuote(
     };
   }
   const payload = buildBuyerApprovalPayload(order, resolved.context);
-  if (!payload.ok) return { status: 422, body: { error: 'approval_incomplete', missing: payload.missing } };
+  if (!payload.ok)
+    return { status: 422, body: { error: 'approval_incomplete', missing: payload.missing } };
   const listing = resolveServiceBinding({
     serviceUri: resolved.context.serviceUri,
     supplierDid: order.supplier_did,
@@ -3350,7 +3428,9 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
    */
   router.post('/v1/commerce/install/bind_reference_runner', async (req): Promise<CoreResponse> => {
     // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
-    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'binding a plugin runner needs a person present');
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'binding a plugin runner needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.install_id !== 'string' || body.install_id === '') {
@@ -3360,7 +3440,10 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
     if (!bound.ok) {
       return {
         status: bound.refusal === 'install_not_found' ? 404 : 409,
-        body: { error: bound.refusal, ...(bound.detail !== undefined ? { detail: bound.detail } : {}) },
+        body: {
+          error: bound.refusal,
+          ...(bound.detail !== undefined ? { detail: bound.detail } : {}),
+        },
       };
     }
     return { status: 200, body: { ok: true, device_did: bound.deviceDid } };
@@ -3368,7 +3451,9 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
 
   router.post('/v1/commerce/install/bind_device', async (req): Promise<CoreResponse> => {
     // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
-    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'binding a plugin runner needs a person present');
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'binding a plugin runner needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.install_id !== 'string' || typeof body.device_did !== 'string') {
@@ -3387,7 +3472,9 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
 
   router.post('/v1/commerce/install/confirm', async (req): Promise<CoreResponse> => {
     // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
-    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'consenting to a pack needs a person present');
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'consenting to a pack needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.install_id !== 'string' || body.install_id === '') {
@@ -3404,14 +3491,18 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
         status: 409,
         body: {
           error: 'self_listing_public',
-          detail: 'the self listing is public; move that service to its own rkey, then confirm again',
+          detail:
+            'the self listing is public; move that service to its own rkey, then confirm again',
         },
       };
     }
     const activated = confirmConsent(body.install_id, deviceDid, Date.now());
     if (!activated) return { status: 409, body: { error: 'consent_refused' } };
     if (!isSupplier) return { status: 200, body: { ok: true, status: 'active' } };
-    const listing = await bindSupplierListing({ installId: body.install_id, name: supplierListingName() });
+    const listing = await bindSupplierListing({
+      installId: body.install_id,
+      name: supplierListingName(),
+    });
     return {
       status: 200,
       body: {
@@ -3460,7 +3551,9 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
 
   router.post('/v1/commerce/install/update/confirm', async (req): Promise<CoreResponse> => {
     // WEB_OWNER_SURFACE_PLAN §3.8 — this step hands out authority.
-    const denied = ownerOnlyGuard(req) ?? ownerPresenceRefusal(req, Date.now(), 'updating a pack needs a person present');
+    const denied =
+      ownerOnlyGuard(req) ??
+      ownerPresenceRefusal(req, Date.now(), 'updating a pack needs a person present');
     if (denied !== null) return denied;
     const body = (req.body ?? {}) as {
       install_id?: unknown;
@@ -3499,9 +3592,15 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
     if (install.pluginId !== SUPPLIER_REFERENCE_MANIFEST.plugin_id || install.status !== 'active') {
       return { status: 409, body: { error: 'not_an_active_supplier_install' } };
     }
-    const listing = await bindSupplierListing({ installId: install.installId, name: supplierListingName() });
+    const listing = await bindSupplierListing({
+      installId: install.installId,
+      name: supplierListingName(),
+    });
     return listing.ok
-      ? { status: 200, body: { ok: true, rkey: listing.rkey, discoverability: listing.discoverability } }
+      ? {
+          status: 200,
+          body: { ok: true, rkey: listing.rkey, discoverability: listing.discoverability },
+        }
       : { status: 409, body: { error: listing.refusal, detail: listing.detail } };
   });
 
@@ -3573,12 +3672,15 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
             const orderReceipt = runtime.receipts.get(ref.orderDigest);
             const order =
               orderReceipt === null ? null : rehydratePurchaseOrder(orderReceipt.recordJson, hash);
-            if (order === null || !order.ok || order.value.alternative_id === undefined) return null;
+            if (order === null || !order.ok || order.value.alternative_id === undefined)
+              return null;
             const quoteReceipt = runtime.receipts.get(ref.quoteDigest);
             const quote =
               quoteReceipt === null ? null : rehydrateSignedQuote(quoteReceipt.recordJson, hash);
             const version =
-              quote === null || !quote.ok ? null : quoteVersion(quote.value, order.value.alternative_id);
+              quote === null || !quote.ok
+                ? null
+                : quoteVersion(quote.value, order.value.alternative_id);
             return {
               alternativeId: order.value.alternative_id,
               ...(version?.estimated_delivery_at === undefined
@@ -3744,7 +3846,11 @@ function registerSettingsRoutes(router: CoreRouter, ownerCapability?: string): v
         ownerOnlyGuard(req) ??
         (kind === 'business'
           ? null
-          : ownerPresenceRefusal(req, Date.now(), `changing ${kind} settings needs a person present`));
+          : ownerPresenceRefusal(
+              req,
+              Date.now(),
+              `changing ${kind} settings needs a person present`,
+            ));
       if (denied !== null) return denied;
       const runtime = getCommerceRuntime();
       if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
@@ -4092,7 +4198,10 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
       }
       const live = runtime.staffGrants.get(caller.deviceDid, 'commerce_submit');
       if (live === null || live.revokedAt !== null) {
-        return { status: 403, body: { error: 'access_denied', reason: 'no live staff grant for this scope' } };
+        return {
+          status: 403,
+          body: { error: 'access_denied', reason: 'no live staff grant for this scope' },
+        };
       }
     }
 
@@ -4132,7 +4241,10 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
           nowMs: Date.now(),
         });
         if (escalated.kind === 'unavailable') {
-          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+          return {
+            status: 403,
+            body: { error: 'access_denied', reason: 'approval subsystem unavailable' },
+          };
         }
         if (escalated.kind === 'escalated') {
           return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
@@ -4417,7 +4529,10 @@ function registerEffectRoutes(router: CoreRouter, ownerCapability?: string): voi
       if (result.decision.kind !== 'advance') continue;
       const lines = result.decision.lines?.map((line) => ({
         lineId: line.line_id,
-        fulfilledQuantity: { value: line.fulfilled_quantity.value, unitCode: line.fulfilled_quantity.unit_code },
+        fulfilledQuantity: {
+          value: line.fulfilled_quantity.value,
+          unitCode: line.fulfilled_quantity.unit_code,
+        },
       }));
       // Plan §3.3 — captured payments and started production the connector
       // attached ride the next status as `evidence_refs`. Evidence only: the
@@ -5362,7 +5477,9 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
     scope: IntegrationScope,
   ): CoreResponse | null => {
     const admitted = admitIntegrationCaller(runtime, caller, scope);
-    return admitted.ok ? null : { status: 403, body: { error: 'access_denied', reason: admitted.reason } };
+    return admitted.ok
+      ? null
+      : { status: 403, body: { error: 'access_denied', reason: admitted.reason } };
   };
 
   router.get('/v1/commerce/integration/status', (req): CoreResponse => {
@@ -5411,9 +5528,11 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
     }
     let limit = ORDERS_EXPORT_DEFAULT_LIMIT;
     if (req.query.limit !== undefined) {
-      if (!/^\d{1,4}$/.test(req.query.limit)) return { status: 400, body: { error: 'invalid_limit' } };
+      if (!/^\d{1,4}$/.test(req.query.limit))
+        return { status: 400, body: { error: 'invalid_limit' } };
       limit = Number(req.query.limit);
-      if (limit < 1 || limit > ORDERS_EXPORT_MAX_LIMIT) return { status: 400, body: { error: 'invalid_limit' } };
+      if (limit < 1 || limit > ORDERS_EXPORT_MAX_LIMIT)
+        return { status: 400, body: { error: 'invalid_limit' } };
     }
     const page = listOrderDecisionEvents(runtime, { after, limit });
     return {
@@ -5559,8 +5678,18 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       // the owner took it (a draft the owner deleted answers with its id
       // alone); a different catalogue or precondition under the same id is
       // a conflict, the B3 rule.
-      if (recorded.catalogId !== body.catalog_id || recorded.expectedSourceDigest !== expectedSourceDigest) {
-        return { status: 409, body: { ok: false, error: 'command_conflict', detail: 'this command id was used with different content' } };
+      if (
+        recorded.catalogId !== body.catalog_id ||
+        recorded.expectedSourceDigest !== expectedSourceDigest
+      ) {
+        return {
+          status: 409,
+          body: {
+            ok: false,
+            error: 'command_conflict',
+            detail: 'this command id was used with different content',
+          },
+        };
       }
       const minted = runtime.catalogDrafts.get(recorded.draftId);
       return {
@@ -5614,19 +5743,24 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
         body: { ok: false, error: 'source_digest_mismatch', source_digest: sourceDigest },
       };
     }
-    const created = createCatalogDraft(draftIngressDeps(runtime.catalogDrafts, () => draftId), {
-      catalogId: body.catalog_id,
-      source: loaded.source,
-      defaultScheme: binding.defaultScheme,
-      identity: { supplierDid: owner, catalogId: body.catalog_id },
-      settings: {
-        categoryIds: settings.catalogCategoryIds ?? [],
-        fulfilmentRegions: settings.publicRegions,
-        ...(settings.tradingCurrency === undefined ? {} : { tradingCurrency: settings.tradingCurrency }),
+    const created = createCatalogDraft(
+      draftIngressDeps(runtime.catalogDrafts, () => draftId),
+      {
+        catalogId: body.catalog_id,
+        source: loaded.source,
+        defaultScheme: binding.defaultScheme,
+        identity: { supplierDid: owner, catalogId: body.catalog_id },
+        settings: {
+          categoryIds: settings.catalogCategoryIds ?? [],
+          fulfilmentRegions: settings.publicRegions,
+          ...(settings.tradingCurrency === undefined
+            ? {}
+            : { tradingCurrency: settings.tradingCurrency }),
+        },
+        provenanceClass: 'source_parsed',
+        extraction: null,
       },
-      provenanceClass: 'source_parsed',
-      extraction: null,
-    });
+    );
     // `source_parsed` confirms without a receipt (nothing was inferred) and
     // stops at `prepared`: approve needs the owner's presence, on their route.
     // A refresh that does not reach `prepared` leaves nothing behind: the
@@ -5635,7 +5769,10 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
     const confirmed = svc.confirm(created.draft.draftId);
     if (!confirmed.ok) {
       runtime.catalogDrafts.delete(created.draft.draftId);
-      return { status: 409, body: { ok: false, error: confirmed.refusal, detail: confirmed.error } };
+      return {
+        status: 409,
+        body: { ok: false, error: confirmed.refusal, detail: confirmed.error },
+      };
     }
     const prepared = await svc.prepare(created.draft.draftId, {
       protocolVersion: '1.0',
@@ -5662,7 +5799,12 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
     );
     return {
       status: 200,
-      body: { ok: true, replayed: false, source_digest: sourceDigest, draft: draftView(prepared.value) },
+      body: {
+        ok: true,
+        replayed: false,
+        source_digest: sourceDigest,
+        draft: draftView(prepared.value),
+      },
     };
   };
   router.post('/v1/commerce/integration/catalog/refresh', async (req): Promise<CoreResponse> => {
@@ -5692,17 +5834,32 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
     const refused = admit(runtime, caller, 'integration_trade_evidence');
     if (refused !== null) return refused;
     if (caller.kind !== 'staff') {
-      return { status: 403, body: { error: 'integration_device_required', reason: 'an attachment is a connector’s document; the owner is not one' } };
+      return {
+        status: 403,
+        body: {
+          error: 'integration_device_required',
+          reason: 'an attachment is a connector’s document; the owner is not one',
+        },
+      };
     }
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (typeof body.command_id !== 'string' || !COMMAND_ID_RE.test(body.command_id)) {
-      return { status: 400, body: { error: 'command_id is required (1–128 chars: letters, digits, _ . : -)' } };
+      return {
+        status: 400,
+        body: { error: 'command_id is required (1–128 chars: letters, digits, _ . : -)' },
+      };
     }
     if (typeof body.order_digest !== 'string' || !SHA256_HEX_RE.test(body.order_digest)) {
       return { status: 400, body: { error: 'order_digest must be a sha256 hex digest' } };
     }
-    if (typeof body.kind !== 'string' || !(ORDER_ATTACHMENT_KINDS as readonly string[]).includes(body.kind)) {
-      return { status: 400, body: { error: `kind must be one of ${ORDER_ATTACHMENT_KINDS.join(' | ')}` } };
+    if (
+      typeof body.kind !== 'string' ||
+      !(ORDER_ATTACHMENT_KINDS as readonly string[]).includes(body.kind)
+    ) {
+      return {
+        status: 400,
+        body: { error: `kind must be one of ${ORDER_ATTACHMENT_KINDS.join(' | ')}` },
+      };
     }
     if (body.payload === null || typeof body.payload !== 'object' || Array.isArray(body.payload)) {
       return { status: 400, body: { error: 'payload must be an object' } };
@@ -5711,10 +5868,14 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       return { status: 400, body: { error: 'provider is required' } };
     }
     if (body.expires_at !== undefined && typeof body.expires_at !== 'string') {
-      return { status: 400, body: { error: 'expires_at, when present, must be an ISO-8601 UTC timestamp' } };
+      return {
+        status: 400,
+        body: { error: 'expires_at, when present, must be an ISO-8601 UTC timestamp' },
+      };
     }
     const money = runtime.money();
-    if (!money.available) return { status: 503, body: { error: 'commerce_pack_inactive', reason: money.reason } };
+    if (!money.available)
+      return { status: 503, body: { error: 'commerce_pack_inactive', reason: money.reason } };
     const outcome = attachOrderEvidence(runtime, money.stores, {
       deviceDid: caller.deviceDid,
       provider: body.provider,
@@ -5725,7 +5886,14 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       ...(typeof body.expires_at === 'string' ? { expiresAt: body.expires_at } : {}),
     });
     if (!outcome.ok) {
-      return { status: outcome.status, body: { ok: false, error: outcome.refusal, ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}) } };
+      return {
+        status: outcome.status,
+        body: {
+          ok: false,
+          error: outcome.refusal,
+          ...(outcome.detail !== undefined ? { detail: outcome.detail } : {}),
+        },
+      };
     }
     // Retained first, pushed second, best-effort; a replay is never re-sent.
     const dispatch = getTradeDocumentDispatcher();
@@ -5757,7 +5925,8 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
       return { status: 404, body: { error: 'unknown_order' } };
     }
     const money = runtime.money();
-    if (!money.available) return { status: 503, body: { error: 'commerce_pack_inactive', reason: money.reason } };
+    if (!money.available)
+      return { status: 503, body: { error: 'commerce_pack_inactive', reason: money.reason } };
     return {
       status: 200,
       body: {
@@ -5819,7 +5988,8 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
     if (typeof body.command_id !== 'string' || !COMMAND_ID_RE.test(body.command_id)) {
       return { status: 400, body: { error: 'command_id is required' } };
     }
-    if (body.kind !== 'supplier') return { status: 400, body: { error: "kind must be 'supplier'" } };
+    if (body.kind !== 'supplier')
+      return { status: 400, body: { error: "kind must be 'supplier'" } };
     // A null revision is what the status door reports before the owner has
     // saved supplier settings. A proposal needs a base the owner set, so the
     // answer names that, and names the revision to use if one exists now.
@@ -5831,7 +6001,10 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
         : { status: 409, body: { error: 'revision_conflict', current_revision: current } };
     }
     if (typeof body.expected_revision !== 'string' || !SHA256_HEX_RE.test(body.expected_revision)) {
-      return { status: 400, body: { error: 'expected_revision must be the revision digest last read' } };
+      return {
+        status: 400,
+        body: { error: 'expected_revision must be the revision digest last read' },
+      };
     }
     if (
       body.controls === null ||
@@ -5864,7 +6037,10 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
           body: { state: 'applied', task_id: outcome.taskId, applied_revision: outcome.revision },
         };
       case 'closed':
-        return { status: 200, body: { state: outcome.state, task_id: outcome.taskId, detail: outcome.detail } };
+        return {
+          status: 200,
+          body: { state: outcome.state, task_id: outcome.taskId, detail: outcome.detail },
+        };
       case 'refused':
         switch (outcome.refusal) {
           case 'revision_conflict':
@@ -5875,7 +6051,10 @@ function registerIntegrationRoutes(router: CoreRouter, ownerCapability?: string)
           case 'command_conflict':
             return { status: 409, body: { error: 'command_conflict', detail: outcome.detail } };
           case 'invalid_settings':
-            return { status: 400, body: { error: 'invalid_settings', findings: outcome.findings ?? [] } };
+            return {
+              status: 400,
+              body: { error: 'invalid_settings', findings: outcome.findings ?? [] },
+            };
           case 'unsupported_control':
             return { status: 400, body: { error: 'unsupported_control', detail: outcome.detail } };
           case 'settings_absent':
@@ -5899,31 +6078,34 @@ function mintLetterTail(): string {
  * caller may pin the draft id (a refresh derives it from its command) and
  * never anything else.
  */
-function draftIngressDeps(drafts: CatalogDraftRepository, newDraftId?: () => string): DraftIngressDeps {
+function draftIngressDeps(
+  drafts: CatalogDraftRepository,
+  newDraftId?: () => string,
+): DraftIngressDeps {
   return {
-  drafts,
-  now: () => Date.now(),
-  newDraftId: newDraftId ?? (() => `cdr_${bytesToHex(randomBytes(16))}`),
-  // MINTED ONCE, HERE. `prepare` reads these back off the draft; nothing
-  // re-derives them, because a rebuild that re-mints either moves
-  // `snapshot_digest` out from under the owner's approval (§10 item 8).
-  stamp: () => ({
-    generatedAtIso: new Date().toISOString(),
-    // A CLOCK ALONE IS NOT AN IDENTITY. `item_revision` is what a consumer
-    // compares to decide whether a supplier's items changed, and two drafts
-    // minted in the same millisecond would carry the same one — so a second
-    // publication could read as "nothing moved". The random tail costs
-    // nothing and removes the case.
-    //
-    // SHAPED SO §12.1 CANNOT TRIP ON IT — the same contract as the `P-`
-    // assignment mint. Decimal epoch millis is 13 digits, and the phone
-    // scanner found a valid 10-digit span inside it on the first live
-    // photo-lane publish (model-derived drafts scan every field). Base36
-    // millis plus a letters-only tail caps any digit run at 8, below every
-    // personal-identifier pattern's minimum.
-    itemRevision: `${Date.now().toString(36)}-${mintLetterTail()}`,
-  }),
-};
+    drafts,
+    now: () => Date.now(),
+    newDraftId: newDraftId ?? (() => `cdr_${bytesToHex(randomBytes(16))}`),
+    // MINTED ONCE, HERE. `prepare` reads these back off the draft; nothing
+    // re-derives them, because a rebuild that re-mints either moves
+    // `snapshot_digest` out from under the owner's approval (§10 item 8).
+    stamp: () => ({
+      generatedAtIso: new Date().toISOString(),
+      // A CLOCK ALONE IS NOT AN IDENTITY. `item_revision` is what a consumer
+      // compares to decide whether a supplier's items changed, and two drafts
+      // minted in the same millisecond would carry the same one — so a second
+      // publication could read as "nothing moved". The random tail costs
+      // nothing and removes the case.
+      //
+      // SHAPED SO §12.1 CANNOT TRIP ON IT — the same contract as the `P-`
+      // assignment mint. Decimal epoch millis is 13 digits, and the phone
+      // scanner found a valid 10-digit span inside it on the first live
+      // photo-lane publish (model-derived drafts scan every field). Base36
+      // millis plus a letters-only tail caps any digit run at 8, below every
+      // personal-identifier pattern's minimum.
+      itemRevision: `${Date.now().toString(36)}-${mintLetterTail()}`,
+    }),
+  };
 }
 
 /**
@@ -5961,7 +6143,11 @@ function buildDraftService(presencePrincipal: string | null): CatalogDraftServic
 }
 
 /** The attachment digests a status for this order carries (plan §3.3); none while the money line is closed. */
-function evidenceRefsFor(runtime: CommerceRuntime, buyerDid: string, purchaseOrderId: string): string[] {
+function evidenceRefsFor(
+  runtime: CommerceRuntime,
+  buyerDid: string,
+  purchaseOrderId: string,
+): string[] {
   const money = runtime.money();
   if (!money.available) return [];
   const orderDigest = runtime.orders.load(buyerDid, purchaseOrderId)?.ref.orderDigest;
@@ -5973,7 +6159,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     buildDraftService(ownerPresencePrincipal(req));
 
   const withDraftService = (
-    handler: (svc: CatalogDraftService, body: Record<string, unknown>) => Promise<CoreResponse> | CoreResponse,
+    handler: (
+      svc: CatalogDraftService,
+      body: Record<string, unknown>,
+    ) => Promise<CoreResponse> | CoreResponse,
   ) => {
     return async (req: CoreRequest): Promise<CoreResponse> => {
       const denied = ownerOnlyGuard(req);
@@ -6063,7 +6252,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     withDraftService(async (svc, body) =>
       answer(
         await svc.prepare(String(body.draft_id), {
-          protocolVersion: typeof body.protocol_version === 'string' ? body.protocol_version : '1.0',
+          protocolVersion:
+            typeof body.protocol_version === 'string' ? body.protocol_version : '1.0',
           publishedAt:
             typeof body.published_at === 'string' ? body.published_at : new Date().toISOString(),
           ...(typeof body.service_rkey === 'string' ? { serviceRkey: body.service_rkey } : {}),
@@ -6157,7 +6347,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       if (!stored.ok) {
         return stored.absent
           ? { status: 409, body: { error: 'supplier_settings_absent' } }
-          : { status: 409, body: { error: 'supplier_settings_invalid', findings: stored.findings } };
+          : {
+              status: 409,
+              body: { error: 'supplier_settings_invalid', findings: stored.findings },
+            };
       }
       const settings = stored.settings;
       if (settings.actingBusinessDid !== '' && settings.actingBusinessDid !== owner) {
@@ -6171,60 +6364,64 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       const rollBackRefusal = new Error('repair_refused_rolling_back_claims');
       try {
         runtime.runInTransaction(() => {
-        outcome = svc.repairRow(
-          String(body.draft_id),
-          { row, column: column === null ? null : String(column), value: value === undefined ? null : (value as string | null) },
-          (rows, draft) => {
-            // The MINT PASS, photo-derived drafts only: identifier-less
-            // rows mint, and every identifier claims the issuer ledger
-            // under its row's immutable assignment id. Its findings land
-            // beside the importer's own on the repair screen.
-            const minted =
-              draft.provenanceClass === 'model_derived'
-                ? applySkuMint({
-                    ledger: runtime.skuLedger,
-                    issuerDid: owner,
-                    catalogId: draft.catalogId,
-                    draftId: draft.draftId,
-                    defaultScheme: draft.defaultScheme,
-                    rows,
-                    nowMs: runtime.now(),
-                  })
-                : { rows: [...rows], findings: [], changed: false };
-            const assembled = assembleFromRows({
-              rows: minted.rows,
-              defaultScheme: draft.defaultScheme,
-              identity: { supplierDid: owner, catalogId: draft.catalogId },
-              // CURRENT settings, not the ones ingress used: a seller who has
-              // just set their trading currency is repairing exactly that.
-              settings: {
-                categoryIds: settings.catalogCategoryIds ?? [],
-                fulfilmentRegions: settings.publicRegions,
-                ...(settings.tradingCurrency === undefined
-                  ? {}
-                  : { tradingCurrency: settings.tradingCurrency }),
-                rowCategories: draft.provenanceClass !== 'model_derived',
-                rowImages: draft.provenanceClass !== 'model_derived',
-              },
-              // The draft's OWN stamp. A repair is not a new draft, and
-              // re-minting would move every item's revision and timestamp — and
-              // with them the snapshot digest an owner may already have approved.
-              stamp: { generatedAtIso: draft.generatedAtIso, itemRevision: draft.itemRevision },
-            });
-            return {
-              items: assembled.items,
-              findings: [...minted.findings, ...assembled.findings],
-              rows: minted.rows,
-            };
-          },
-        );
-        // A claim refusal is a FINDING, not a failed operation — but a
-        // refused draft operation (wrong state, unknown row) must not
-        // leave stray claims behind, so the whole body rolls back with it.
-        const decided: ReturnType<typeof svc.repairRow> | null = outcome;
-        if (decided !== null && !decided.ok) {
-          throw rollBackRefusal;
-        }
+          outcome = svc.repairRow(
+            String(body.draft_id),
+            {
+              row,
+              column: column === null ? null : String(column),
+              value: value === undefined ? null : (value as string | null),
+            },
+            (rows, draft) => {
+              // The MINT PASS, photo-derived drafts only: identifier-less
+              // rows mint, and every identifier claims the issuer ledger
+              // under its row's immutable assignment id. Its findings land
+              // beside the importer's own on the repair screen.
+              const minted =
+                draft.provenanceClass === 'model_derived'
+                  ? applySkuMint({
+                      ledger: runtime.skuLedger,
+                      issuerDid: owner,
+                      catalogId: draft.catalogId,
+                      draftId: draft.draftId,
+                      defaultScheme: draft.defaultScheme,
+                      rows,
+                      nowMs: runtime.now(),
+                    })
+                  : { rows: [...rows], findings: [], changed: false };
+              const assembled = assembleFromRows({
+                rows: minted.rows,
+                defaultScheme: draft.defaultScheme,
+                identity: { supplierDid: owner, catalogId: draft.catalogId },
+                // CURRENT settings, not the ones ingress used: a seller who has
+                // just set their trading currency is repairing exactly that.
+                settings: {
+                  categoryIds: settings.catalogCategoryIds ?? [],
+                  fulfilmentRegions: settings.publicRegions,
+                  ...(settings.tradingCurrency === undefined
+                    ? {}
+                    : { tradingCurrency: settings.tradingCurrency }),
+                  rowCategories: draft.provenanceClass !== 'model_derived',
+                  rowImages: draft.provenanceClass !== 'model_derived',
+                },
+                // The draft's OWN stamp. A repair is not a new draft, and
+                // re-minting would move every item's revision and timestamp — and
+                // with them the snapshot digest an owner may already have approved.
+                stamp: { generatedAtIso: draft.generatedAtIso, itemRevision: draft.itemRevision },
+              });
+              return {
+                items: assembled.items,
+                findings: [...minted.findings, ...assembled.findings],
+                rows: minted.rows,
+              };
+            },
+          );
+          // A claim refusal is a FINDING, not a failed operation — but a
+          // refused draft operation (wrong state, unknown row) must not
+          // leave stray claims behind, so the whole body rolls back with it.
+          const decided: ReturnType<typeof svc.repairRow> | null = outcome;
+          if (decided !== null && !decided.ok) {
+            throw rollBackRefusal;
+          }
         });
       } catch (err) {
         // Our own rollback marker carries the refusal in `outcome`;
@@ -6277,7 +6474,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
    * capability can serialise model-extracted rows as CSV and come in through
    * the file route. Core cannot tell that file from one the seller typed.
    */
-  const ingressDeps = (drafts: CatalogDraftRepository): DraftIngressDeps => draftIngressDeps(drafts);
+  const ingressDeps = (drafts: CatalogDraftRepository): DraftIngressDeps =>
+    draftIngressDeps(drafts);
 
   const ingest = (
     provenanceClass: ProvenanceClass,
@@ -6430,7 +6628,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         const model = body.model;
         const schemaVersion = body.schema_version;
         if (typeof model !== 'string' || model === '') {
-          return { ok: false, response: { status: 400, body: { error: 'model is required (§5)' } } };
+          return {
+            ok: false,
+            response: { status: 400, body: { error: 'model is required (§5)' } },
+          };
         }
         if (typeof schemaVersion !== 'string' || schemaVersion === '') {
           return {
@@ -6441,10 +6642,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         return { ok: true, extraction: { model, schemaVersion } };
       },
       (body) => {
-      if (!Array.isArray(body.rows)) {
-        return { ok: false, response: { status: 400, body: { error: 'rows must be an array' } } };
-      }
-      return { ok: true, source: catalogRowsFromRecords(body.rows as Record<string, unknown>[]) };
+        if (!Array.isArray(body.rows)) {
+          return { ok: false, response: { status: 400, body: { error: 'rows must be an array' } } };
+        }
+        return { ok: true, source: catalogRowsFromRecords(body.rows as Record<string, unknown>[]) };
       },
     ),
   );
@@ -6549,7 +6750,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (artifactId === '') return { status: 400, body: { error: 'artifact_id is required' } };
     const meta = runtime.imageArtifacts.getMeta(artifactId);
     const bytes = runtime.imageArtifacts.getBytes(artifactId);
-    if (meta === null || bytes === null) return { status: 404, body: { error: 'unknown_artifact' } };
+    if (meta === null || bytes === null)
+      return { status: 404, body: { error: 'unknown_artifact' } };
     return {
       status: 200,
       body: {
@@ -6581,7 +6783,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 400, body: { error: 'authorization_id is required (from photo_capture)' } };
     }
     if (runtime.catalogDrafts.get(body.draft_id) !== null) {
-      return { status: 409, body: { error: 'draft_exists: extraction already created this draft' } };
+      return {
+        status: 409,
+        body: { error: 'draft_exists: extraction already created this draft' },
+      };
     }
     const owner = ownerDid();
     if (owner === null) return { status: 503, body: { error: 'owner_identity_unavailable' } };
@@ -6633,7 +6838,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (commitmentShape !== null) {
       return { status: 422, body: { error: `extraction_invalid: ${commitmentShape}` } };
     }
-    const extractionDigest = extractionCommitmentDigest('catalog', commitment, (data) => sha256(data));
+    const extractionDigest = extractionCommitmentDigest('catalog', commitment, (data) =>
+      sha256(data),
+    );
     const binding: CatalogExtractionBinding = {
       binding_version: 1,
       draft_id: body.draft_id,
@@ -6774,7 +6981,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
         operation: typeof body.operation === 'string' ? body.operation : 'read_catalog',
         defaultScheme: body.default_scheme,
         serviceRkey:
-          typeof body.service_rkey === 'string' && body.service_rkey !== '' ? body.service_rkey : null,
+          typeof body.service_rkey === 'string' && body.service_rkey !== ''
+            ? body.service_rkey
+            : null,
         boundAt: runtime.now(),
       });
     } else {
@@ -6846,7 +7055,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       ...tradeRelationshipReaders(runtime),
     });
 
-  const tradeAnswer = <T>(outcome: { ok: true; document: T } | { ok: false; refusal: string }): CoreResponse =>
+  const tradeAnswer = <T>(
+    outcome: { ok: true; document: T } | { ok: false; refusal: string },
+  ): CoreResponse =>
     outcome.ok
       ? { status: 200, body: { ok: true, document: outcome.document } }
       : { status: 409, body: { error: outcome.refusal } };
@@ -6918,7 +7129,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return {
         status: 400,
-        body: { error: 'counterparty_did, purchase_order_id, supplier_order_id and lines are required' },
+        body: {
+          error: 'counterparty_did, purchase_order_id, supplier_order_id and lines are required',
+        },
       };
     }
     const authoringKey = authoringKeyOf(body);
@@ -6940,7 +7153,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // outcome is advisory: a note already signed, stored and sent must never
     // be undone by a filing the node could not stage. A replay filed already.
     if (outcome.ok && outcome.replayed !== true) {
-      const priced = service.priceDeliveryNote({ deliveryNoteDigest: outcome.document.note_digest });
+      const priced = service.priceDeliveryNote({
+        deliveryNoteDigest: outcome.document.note_digest,
+      });
       const terms = service.paymentTerms({
         counterpartyDid: body.counterparty_did,
         purchaseOrderId: body.purchase_order_id,
@@ -7015,7 +7230,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
           nowMs: runtime.now(),
         });
         if (escalated.kind === 'unavailable') {
-          return { status: 403, body: { error: 'access_denied', reason: 'approval subsystem unavailable' } };
+          return {
+            status: 403,
+            body: { error: 'access_denied', reason: 'approval subsystem unavailable' },
+          };
         }
         if (escalated.kind === 'escalated') {
           return { status: 202, body: { status: 'pending_approval', task_id: escalated.taskId } };
@@ -7093,7 +7311,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       tradeLedgerService(runtime, money).acknowledgePayment({
         paymentNoteDigest: body.payment_note_digest,
         kind: body.kind,
-        ...(body.amount_received !== undefined ? { amountReceived: body.amount_received as never } : {}),
+        ...(body.amount_received !== undefined
+          ? { amountReceived: body.amount_received as never }
+          : {}),
       }),
       money.tradeDocuments.get(body.payment_note_digest)?.counterpartyDid ?? '',
       'payment_ack',
@@ -7142,7 +7362,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     const counterparty = req.query?.counterparty_did;
     const currency = req.query?.currency;
-    if (typeof counterparty !== 'string' || counterparty === '' || typeof currency !== 'string' || currency === '') {
+    if (
+      typeof counterparty !== 'string' ||
+      counterparty === '' ||
+      typeof currency !== 'string' ||
+      currency === ''
+    ) {
       return { status: 400, body: { error: 'counterparty_did and currency are required' } };
     }
     // §4.4 — one fold per orientation. A statement is a claim retained
@@ -7171,10 +7396,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // exists for the opened statement (Solicited) and the briefing
     // (Engagement), and this route interrupts nobody.
     const now = runtime.now();
-    const dues = service.dues({ counterpartyDid: counterparty, currency, role }).dues.map((due) => ({
-      ...due,
-      overdue: Date.parse(due.due_at) <= now,
-    }));
+    const dues = service
+      .dues({ counterpartyDid: counterparty, currency, role })
+      .dues.map((due) => ({
+        ...due,
+        overdue: Date.parse(due.due_at) <= now,
+      }));
     return { status: 200, body: { ok: true, statement: fold, dues, role } };
   });
 
@@ -7200,7 +7427,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     const body = (req.body ?? {}) as Record<string, unknown>;
     const counterparty = typeof body.counterparty_did === 'string' ? body.counterparty_did : '';
-    const purchaseOrderId = typeof body.purchase_order_id === 'string' ? body.purchase_order_id : '';
+    const purchaseOrderId =
+      typeof body.purchase_order_id === 'string' ? body.purchase_order_id : '';
     const dueAt = typeof body.due_at === 'string' ? body.due_at : '';
     if (counterparty === '' || purchaseOrderId === '' || dueAt === '') {
       return {
@@ -7228,7 +7456,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // ask is bounded by what the ledger still says they owe, and refused when
     // the relationship is settled.
     const fold = service.statement({ counterpartyDid: counterparty, currency, role: 'supplier' });
-    if (!fold.ok) return { status: 409, body: { ok: false, reason: 'unfoldable', detail: fold.error } };
+    if (!fold.ok)
+      return { status: 409, body: { ok: false, reason: 'unfoldable', detail: fold.error } };
     const outstanding =
       fold.balance.direction === 'buyer_owes' ? BigInt(fold.balance.minor_units) : 0n;
     if (outstanding <= 0n) {
@@ -7254,7 +7483,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       askAtMs: runtime.now(),
     });
     return outcome.asked
-      ? { status: 200, body: { ok: true, pack: outcome.pack, task_id: outcome.taskId, mode: outcome.mode } }
+      ? {
+          status: 200,
+          body: { ok: true, pack: outcome.pack, task_id: outcome.taskId, mode: outcome.mode },
+        }
       : { status: 409, body: { ok: false, reason: outcome.reason, detail: outcome.detail } };
   });
 
@@ -7583,7 +7815,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (!ownerPresentNow(nowMs, ownerPresencePrincipal(req))) {
       return {
         status: 403,
-        body: { error: 'no_user_presence', detail: 'opening an agent’s tender needs a person present' },
+        body: {
+          error: 'no_user_presence',
+          detail: 'opening an agent’s tender needs a person present',
+        },
       };
     }
     return openPendingDraft(runtime, (req.body ?? {}) as Record<string, unknown>, null);
@@ -7609,7 +7844,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     agentDid: string | null,
   ): Promise<CoreResponse> {
     const nowMs = runtime.now();
-    const draft = typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
+    const draft =
+      typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
     if (draft === null || (agentDid !== null && draft.agentDid !== agentDid)) {
       return { status: 404, body: { error: 'no_such_draft' } };
     }
@@ -7619,7 +7855,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (typeof body.target_total !== 'string' || typeof body.budget_ceiling !== 'string') {
       return { status: 400, body: { error: 'target_total and budget_ceiling are required' } };
     }
-    const currency = typeof body.currency === 'string' && body.currency !== '' ? body.currency : draft.currency;
+    const currency =
+      typeof body.currency === 'string' && body.currency !== '' ? body.currency : draft.currency;
     if (currency === '') return { status: 400, body: { error: 'currency is required' } };
     const region = body.region !== undefined ? body.region : draft.region;
     if (region === null || region === undefined) {
@@ -7635,7 +7872,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       const keep = new Set(body.suppliers as string[]);
       suppliers = draft.suppliers.filter((s) => keep.has(s.supplier_did));
       if (suppliers.length === 0 || keep.size !== suppliers.length) {
-        return { status: 400, body: { error: 'suppliers must be a non-empty subset of the draft' } };
+        return {
+          status: 400,
+          body: { error: 'suppliers must be a non-empty subset of the draft' },
+        };
       }
     }
     // A supplier the owner blocked after the draft was made ("Not for me")
@@ -7682,22 +7922,28 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     currency: string,
     body: Record<string, unknown>,
   ): Promise<CoreResponse> {
-    const opened = await openTenderFromBody(runtime, {
-      suppliers: suppliers.map((s) => ({
-        supplier_did: s.supplier_did,
-        service_rkey: s.service_rkey,
-      })),
-      lines: draft.lines,
-      projection: { region },
-      currency,
-      ...(draft.requiredBy === '' ? {} : { required_by: draft.requiredBy }),
-      negotiation: {
-        target_total: body.target_total,
-        budget_ceiling: body.budget_ceiling,
-        ...(typeof body.max_rounds === 'number' ? { max_rounds: body.max_rounds } : {}),
-        ...(typeof body.deadline_seconds === 'number' ? { deadline_seconds: body.deadline_seconds } : {}),
+    const opened = await openTenderFromBody(
+      runtime,
+      {
+        suppliers: suppliers.map((s) => ({
+          supplier_did: s.supplier_did,
+          service_rkey: s.service_rkey,
+        })),
+        lines: draft.lines,
+        projection: { region },
+        currency,
+        ...(draft.requiredBy === '' ? {} : { required_by: draft.requiredBy }),
+        negotiation: {
+          target_total: body.target_total,
+          budget_ceiling: body.budget_ceiling,
+          ...(typeof body.max_rounds === 'number' ? { max_rounds: body.max_rounds } : {}),
+          ...(typeof body.deadline_seconds === 'number'
+            ? { deadline_seconds: body.deadline_seconds }
+            : {}),
+        },
       },
-    }, reservedTenderId);
+      reservedTenderId,
+    );
     if (opened.status !== 200) return opened;
     const tenderId = String((opened.body as { tender_id: string }).tender_id);
     if (!runtime.tenderDrafts.move(draft.draftId, 'opened', tenderId)) {
@@ -7706,7 +7952,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       return { status: 409, body: { error: 'draft_not_pending', tender_id: tenderId } };
     }
     retireDraftCard(draft.draftId, 'draft_opened');
-    return { status: 200, body: { ...(opened.body as Record<string, unknown>), draft_id: draft.draftId } };
+    return {
+      status: 200,
+      body: { ...(opened.body as Record<string, unknown>), draft_id: draft.draftId },
+    };
   }
 
   router.post('/v1/commerce/trade/tender-drafts/dismiss', async (req): Promise<CoreResponse> => {
@@ -7715,7 +7964,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     const runtime = getCommerceRuntime();
     if (runtime === null) return { status: 503, body: { error: 'commerce_unavailable' } };
     const body = (req.body ?? {}) as Record<string, unknown>;
-    const draft = typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
+    const draft =
+      typeof body.draft_id === 'string' ? runtime.tenderDrafts.get(body.draft_id) : null;
     if (draft === null) return { status: 404, body: { error: 'no_such_draft' } };
     if (draftsOpening.has(draft.draftId)) return { status: 409, body: { error: 'draft_opening' } };
     // A tender id on a pending draft is a crash's mid-open: it stays on the row.
@@ -8147,7 +8397,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       timeZone: values.timeZone,
     });
     if (!ranked.ok) {
-      return { status: ranked.refusal === 'no_such_tender' ? 404 : 409, body: { error: ranked.refusal } };
+      return {
+        status: ranked.refusal === 'no_such_tender' ? 404 : 409,
+        body: { error: ranked.refusal },
+      };
     }
     const state = runtime.buyerNegotiation.getTender(tenderId);
     return {
@@ -8342,7 +8595,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       // A retry after a lost response gets the award it already made — the
       // same approval and order, never a second award. Naming a DIFFERENT
       // supplier is a new decision, and the tender is closed to that.
-      if (typeof body.supplier_did === 'string' && body.supplier_did !== policy.awardedSupplierDid) {
+      if (
+        typeof body.supplier_did === 'string' &&
+        body.supplier_did !== policy.awardedSupplierDid
+      ) {
         return {
           status: 409,
           body: { error: 'tender_closed', awarded_supplier_did: policy.awardedSupplierDid },
@@ -8429,7 +8685,8 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       typeof body.supplier_did === 'string'
         ? ranked.ranking.ranked.find(
             (offer) =>
-              offer.supplier_did === body.supplier_did && offer.alternative_id === wantedAlternative,
+              offer.supplier_did === body.supplier_did &&
+              offer.alternative_id === wantedAlternative,
           )
         : ranked.ranking.ranked[0];
     if (pick === undefined) {
@@ -8448,7 +8705,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (counterInFlight(pick.supplier_did, pick.quote_id, runtime.now())) {
       return {
         status: 409,
-        body: { error: 'counter_in_flight', detail: 'a counter to this supplier awaits its answer' },
+        body: {
+          error: 'counter_in_flight',
+          detail: 'a counter to this supplier awaits its answer',
+        },
       };
     }
     // A clerk awards inside the cap the owner set; over it, the owner is asked
@@ -8511,11 +8771,18 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       if (moved) recordNotAwardedNotices(runtime, tenderId, pick.supplier_did, now);
     });
     if (!moved) {
-      return { status: 409, body: { error: 'tender_moved', detail: 'the tender changed while awarding' } };
+      return {
+        status: 409,
+        body: { error: 'tender_moved', detail: 'the tender changed while awarding' },
+      };
     }
     // The owner's "tender ready" card asked for this decision; it is made.
     retireTenderReadyCard(tenderId, 'tender_awarded');
-    const notices = await sendNotAwardedNotices({ tenderId, winnerDid: pick.supplier_did, nowMs: now });
+    const notices = await sendNotAwardedNotices({
+      tenderId,
+      winnerDid: pick.supplier_did,
+      nowMs: now,
+    });
     return {
       status: 200,
       body: {
@@ -8543,18 +8810,25 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
       typeof target.currency !== 'string' ||
       typeof target.minor_units !== 'string'
     ) {
-      return { status: 400, body: { error: 'supplier_did, quote_id and target_total are required' } };
+      return {
+        status: 400,
+        body: { error: 'supplier_did, quote_id and target_total are required' },
+      };
     }
     const outcome = await sendCounterOffer({
       supplierDid: body.supplier_did,
       quoteId: body.quote_id,
-      serviceRkey: typeof body.service_rkey === 'string' && body.service_rkey !== '' ? body.service_rkey : 'self',
+      serviceRkey:
+        typeof body.service_rkey === 'string' && body.service_rkey !== ''
+          ? body.service_rkey
+          : 'self',
       targetTotal: { currency: target.currency, minor_units: target.minor_units },
       nowMs: runtime.now(),
     });
     if (outcome.kind === 'refused') {
       return {
-        status: outcome.reason === 'no_such_quote' ? 404 : outcome.reason === 'no_dispatch' ? 503 : 409,
+        status:
+          outcome.reason === 'no_such_quote' ? 404 : outcome.reason === 'no_dispatch' ? 503 : 409,
         body: { error: outcome.reason },
       };
     }
@@ -8648,7 +8922,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return {
         status: 400,
-        body: { error: 'counterparty_did, self_role, share_bps, period, cash_handler, currency and effective_from are required' },
+        body: {
+          error:
+            'counterparty_did, self_role, share_bps, period, cash_handler, currency and effective_from are required',
+        },
       };
     }
     const money = moneyOrRefusal(runtime);
@@ -8687,7 +8964,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (isRefusal(money)) return money;
     const counterparty = money.revshareDocuments.get(body.proposal_digest)?.counterpartyDid ?? '';
     return revshareAnswer(
-      revshareService(runtime, money).decide({ proposalDigest: body.proposal_digest, kind: body.kind }),
+      revshareService(runtime, money).decide({
+        proposalDigest: body.proposal_digest,
+        kind: body.kind,
+      }),
       counterparty,
       'agreement_decision',
     );
@@ -8729,7 +9009,9 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     ) {
       return {
         status: 400,
-        body: { error: 'proposal_digest, period_start, period_end and gross_minor_units are required' },
+        body: {
+          error: 'proposal_digest, period_start, period_end and gross_minor_units are required',
+        },
       };
     }
     const money = moneyOrRefusal(runtime);
@@ -8764,8 +9046,7 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     }
     const money = moneyOrRefusal(runtime);
     if (isRefusal(money)) return money;
-    const counterparty =
-      money.revshareDocuments.get(body.settlement_digest)?.counterpartyDid ?? '';
+    const counterparty = money.revshareDocuments.get(body.settlement_digest)?.counterpartyDid ?? '';
     return revshareAnswer(
       revshareService(runtime, money).acknowledgeSettlement({
         settlementDigest: body.settlement_digest,
@@ -8872,7 +9153,10 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     if (pin === undefined && runtime.staffPins.get(body.device_did) === null) {
       return {
         status: 400,
-        body: { error: 'pin_required', detail: 'the first grant for a device sets its presence PIN (§6.4)' },
+        body: {
+          error: 'pin_required',
+          detail: 'the first grant for a device sets its presence PIN (§6.4)',
+        },
       };
     }
     if (pin !== undefined) {
@@ -8952,7 +9236,11 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     // Minting an offer hands standing authority to whoever redeems it —
     // the staff-grant presence rule applies, fail-open only where no
     // verifier exists at all.
-    const absent = ownerPresenceRefusal(req, runtime.now(), 'creating an invite needs a person present');
+    const absent = ownerPresenceRefusal(
+      req,
+      runtime.now(),
+      'creating an invite needs a person present',
+    );
     if (absent !== null) return absent;
     const body = (req.body ?? {}) as Record<string, unknown>;
     if (
@@ -9006,7 +9294,12 @@ function registerCatalogDraftRoutes(router: CoreRouter, ownerOnlyGuard: OwnerGua
     const service = getInviteService();
     if (service === null) return { status: 503, body: { error: 'invite_unavailable' } };
     const body = (req.body ?? {}) as Record<string, unknown>;
-    if (typeof body.nonce !== 'string' || body.nonce === '' || typeof body.to_did !== 'string' || body.to_did === '') {
+    if (
+      typeof body.nonce !== 'string' ||
+      body.nonce === '' ||
+      typeof body.to_did !== 'string' ||
+      body.to_did === ''
+    ) {
       return { status: 400, body: { error: 'nonce and to_did are required' } };
     }
     const sent = await service.sendOffer({ nonce: body.nonce, toDid: body.to_did });
@@ -9155,7 +9448,12 @@ async function openTenderFromBody(
   /** Set by a draft's open: the id on its row, which a crash's retry resumes. */
   reservedTenderId?: string,
 ): Promise<CoreResponse> {
-  if (!Array.isArray(body.suppliers) || !Array.isArray(body.lines) || body.projection === null || typeof body.projection !== 'object') {
+  if (
+    !Array.isArray(body.suppliers) ||
+    !Array.isArray(body.lines) ||
+    body.projection === null ||
+    typeof body.projection !== 'object'
+  ) {
     return { status: 400, body: { error: 'suppliers, lines and projection are required' } };
   }
   const suppliers: { supplierDid: string; serviceRkey: string }[] = [];
@@ -9235,7 +9533,10 @@ async function openTenderFromBody(
   if (body.negotiation !== undefined) {
     const n = body.negotiation as Record<string, unknown> | null;
     if (n === null || typeof n !== 'object' || typeof body.currency !== 'string') {
-      return { status: 400, body: { error: 'negotiation needs an object and the tender currency' } };
+      return {
+        status: 400,
+        body: { error: 'negotiation needs an object and the tender currency' },
+      };
     }
     negotiation = {
       currency: body.currency,
@@ -9245,7 +9546,8 @@ async function openTenderFromBody(
       ...(typeof n.deadline_seconds === 'number' ? { deadlineSeconds: n.deadline_seconds } : {}),
     };
     const invalid = tenderPolicyError(negotiation);
-    if (invalid !== null) return { status: 400, body: { error: 'negotiation_invalid', detail: invalid } };
+    if (invalid !== null)
+      return { status: 400, body: { error: 'negotiation_invalid', detail: invalid } };
   }
   const created = await createTender({
     ...(reservedTenderId === undefined ? {} : { tenderId: reservedTenderId }),

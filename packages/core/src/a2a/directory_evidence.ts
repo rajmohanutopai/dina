@@ -60,7 +60,8 @@ const NODE_DID = /^did:(?:plc:[a-z2-7]{24}|web:[a-z0-9.:%-]{1,253})$/;
 /** The node DID a pinned card's Dina extension names, or null. */
 export function dinaNodeDidOfCard(cardJson: string): string | null {
   const card = parseStrictJson(cardJson);
-  if (!card.ok || !isPlainObject(card.value) || !isPlainObject(card.value.capabilities)) return null;
+  if (!card.ok || !isPlainObject(card.value) || !isPlainObject(card.value.capabilities))
+    return null;
   const extensions = card.value.capabilities.extensions;
   if (!Array.isArray(extensions)) return null;
   const dina = extensions.find((e) => isPlainObject(e) && e.uri === DINA_A2A_EXTENSION_URI);
@@ -76,7 +77,9 @@ function sameEndpoint(a: string, b: string): boolean {
   }
 }
 
-export async function remoteAgentEvidence(agent: Pick<RemoteAgentRow, 'card_json' | 'endpoint'>): Promise<RemoteAgentEvidence> {
+export async function remoteAgentEvidence(
+  agent: Pick<RemoteAgentRow, 'card_json' | 'endpoint'>,
+): Promise<RemoteAgentEvidence> {
   const did = dinaNodeDidOfCard(agent.card_json);
   if (did === null) return { status: 'not_dina' };
   if (source === null) return { status: 'unavailable' };

@@ -46,7 +46,9 @@ const jwk = {
 };
 
 async function signed(card: JsonObject, jku: string): Promise<JsonObject> {
-  const sig = await signAgentCard(card, { alg: 'ES256', kid: 'k1', jku }, (input) => p256.sign(input, secret, { lowS: false }));
+  const sig = await signAgentCard(card, { alg: 'ES256', kid: 'k1', jku }, (input) =>
+    p256.sign(input, secret, { lowS: false }),
+  );
   return { ...card, signatures: [sig as unknown as JsonObject] };
 }
 
@@ -75,13 +77,19 @@ describe('the interface Dina pins (design §6.6)', () => {
 
   // Plan B10
   it('never pins an endpoint at a literal IP, with credentials in its URL, or with a fragment', async () => {
-    world.cards.set(OTHER_URL, agentCard({ supportedInterfaces: [...BAD, iface('https://other.example/rpc')] }));
+    world.cards.set(
+      OTHER_URL,
+      agentCard({ supportedInterfaces: [...BAD, iface('https://other.example/rpc')] }),
+    );
     const out = await registerRemoteAgent(deps(), OTHER_URL);
     expect(out.ok && out.agent.endpoint).toBe('https://other.example/rpc');
 
     const only = 'https://bad.example/.well-known/agent-card.json';
     world.cards.set(only, agentCard({ supportedInterfaces: BAD }));
-    expect(await registerRemoteAgent(deps(), only)).toEqual({ ok: false, reason: 'card_no_jsonrpc_1_0_interface' });
+    expect(await registerRemoteAgent(deps(), only)).toEqual({
+      ok: false,
+      reason: 'card_no_jsonrpc_1_0_interface',
+    });
     expect(world.store.listAgents().map((a) => a.card_url)).toEqual([OTHER_URL]);
   });
 });
@@ -92,15 +100,18 @@ describe('key sets come only through the outbound policy (design §6.6 "every co
     ['plain HTTP', 'http://other.example/jwks.json'],
     ['a literal IP', 'https://203.0.113.5/jwks.json'],
     ['credentials in the URL', 'https://u:p@other.example/jwks.json'],
-  ])('never fetches a key set named over %s, and its signature verifies nothing', async (_name, jku) => {
-    // Served, so a fetch that slipped past the policy would verify the card.
-    world.cards.set(jku, { keys: [jwk] } as unknown as JsonObject);
-    world.cards.set(OTHER_URL, await signed(agentCard(), jku));
-    const out = await registerRemoteAgent(deps(), OTHER_URL);
-    if (!out.ok) throw new Error(out.reason);
-    expect(out.agent.signature_state).toBe('invalid');
-    expect(world.requests.map((r) => r.url)).toEqual([OTHER_URL]);
-  });
+  ])(
+    'never fetches a key set named over %s, and its signature verifies nothing',
+    async (_name, jku) => {
+      // Served, so a fetch that slipped past the policy would verify the card.
+      world.cards.set(jku, { keys: [jwk] } as unknown as JsonObject);
+      world.cards.set(OTHER_URL, await signed(agentCard(), jku));
+      const out = await registerRemoteAgent(deps(), OTHER_URL);
+      if (!out.ok) throw new Error(out.reason);
+      expect(out.agent.signature_state).toBe('invalid');
+      expect(world.requests.map((r) => r.url)).toEqual([OTHER_URL]);
+    },
+  );
 
   it('fetches a key set the policy allows, so the refusals above are the policy at work', async () => {
     world.cards.set(JKU, { keys: [jwk] } as unknown as JsonObject);
@@ -120,7 +131,14 @@ describe('Core cleans and bounds the card text the owner and Brain see (notes M1
       OTHER_URL,
       agentCard({
         name: longName,
-        skills: [{ id: 'summarize', name: longSkill, description: `Sum\u200Dup ${'D'.repeat(3000)}`, tags: ['t\u202Ax'] }],
+        skills: [
+          {
+            id: 'summarize',
+            name: longSkill,
+            description: `Sum\u200Dup ${'D'.repeat(3000)}`,
+            tags: ['t\u202Ax'],
+          },
+        ],
       }),
     );
     const agentId = await register(OTHER_URL);
@@ -128,10 +146,21 @@ describe('Core cleans and bounds the card text the owner and Brain see (notes M1
     if (agent === null) throw new Error('agent');
     const credential = createNoneCredential(deps(), agentId);
     if (!credential.ok) throw new Error(credential.reason);
-    expect(bindRemoteSkill(deps(), agentId, { skill: 'summarize', actionClass: 'read', credentialRef: credential.credential.credential_ref }).ok).toBe(true);
+    expect(
+      bindRemoteSkill(deps(), agentId, {
+        skill: 'summarize',
+        actionClass: 'read',
+        credentialRef: credential.credential.credential_ref,
+      }).ok,
+    ).toBe(true);
     expect(activateRemoteAgent(deps(), agentId)).toEqual({ ok: true });
     world.turn();
-    const p = proposeDelegation(world.runtime, { agentId, skill: 'summarize', text: 'Summarize the note.', releaseSession: SESSION });
+    const p = proposeDelegation(world.runtime, {
+      agentId,
+      skill: 'summarize',
+      text: 'Summarize the note.',
+      releaseSession: SESSION,
+    });
     if (!p.ok) throw new Error(p.reason);
     const card = parseDelegationConsentCard(world.repo.getById(p.approvalTaskId)?.payload ?? '');
     const brain = brainAgentsView(world.store).find((a) => a.agent_id === agentId) as
@@ -139,7 +168,14 @@ describe('Core cleans and bounds the card text the owner and Brain see (notes M1
       | undefined;
     const skill = pinnedRemoteSkills(agent)[0];
 
-    const shown = [agent.name, skill?.name ?? '', card?.display.agent_name ?? '', card?.display.skill_name ?? '', brain?.name ?? '', brain?.skills[0]?.name ?? ''];
+    const shown = [
+      agent.name,
+      skill?.name ?? '',
+      card?.display.agent_name ?? '',
+      card?.display.skill_name ?? '',
+      brain?.name ?? '',
+      brain?.skills[0]?.name ?? '',
+    ];
     for (const text of shown) {
       expect(text).not.toBe('');
       expect(text).not.toMatch(INVISIBLE);
@@ -156,7 +192,13 @@ describe('Core cleans and bounds the card text the owner and Brain see (notes M1
     world.cards.set(
       OTHER_URL,
       agentCard({
-        supportedInterfaces: [{ url: 'https://agent.example/r\u202Epc\u200B', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+        supportedInterfaces: [
+          {
+            url: 'https://agent.example/r\u202Epc\u200B',
+            protocolBinding: 'JSONRPC',
+            protocolVersion: '1.0',
+          },
+        ],
         skills: [
           { id: 'summarize', name: 'Summarize', description: 'Summarize a text.', tags: ['text'] },
           { id: 'sum\u202Emarize', name: 'Looks like summarize', description: 'x', tags: ['text'] },
@@ -174,11 +216,23 @@ describe('Core cleans and bounds the card text the owner and Brain see (notes M1
     const credential = createNoneCredential(deps(), agentId);
     if (!credential.ok) throw new Error(credential.reason);
     const ref = credential.credential.credential_ref;
-    expect(bindRemoteSkill(deps(), agentId, { skill: 'sum\u202Emarize', actionClass: 'read', credentialRef: ref })).toEqual({
+    expect(
+      bindRemoteSkill(deps(), agentId, {
+        skill: 'sum\u202Emarize',
+        actionClass: 'read',
+        credentialRef: ref,
+      }),
+    ).toEqual({
       ok: false,
       reason: 'skill_not_on_card',
     });
-    expect(bindRemoteSkill(deps(), agentId, { skill: 'summarize', actionClass: 'read', credentialRef: ref }).ok).toBe(true);
+    expect(
+      bindRemoteSkill(deps(), agentId, {
+        skill: 'summarize',
+        actionClass: 'read',
+        credentialRef: ref,
+      }).ok,
+    ).toBe(true);
   });
 });
 
@@ -190,25 +244,50 @@ describe('a card that changes and changes back (design §5.5, interpretation rec
 
     world.cards.set(CARD_URL, agentCard({ version: '2.0.0' }));
     expect((await reverifyRemoteAgent(deps(), agentId)).ok).toBe(true);
-    expect(proposeDelegation(world.runtime, { agentId, skill: 'summarize', text: 'x', releaseSession: SESSION })).toEqual({ ok: false, reason: 'agent_changed' });
+    expect(
+      proposeDelegation(world.runtime, {
+        agentId,
+        skill: 'summarize',
+        text: 'x',
+        releaseSession: SESSION,
+      }),
+    ).toEqual({ ok: false, reason: 'agent_changed' });
 
     world.cards.set(CARD_URL, agentCard());
     const back = await reverifyRemoteAgent(deps(), agentId);
     expect(back.ok && back.changed).toBe(true);
     expect(back.ok && back.agent).toMatchObject({ status: 'changed', card_hash: first });
     // Nothing the owner approved under the first card is callable on its own.
-    expect(proposeDelegation(world.runtime, { agentId, skill: 'summarize', text: 'x', releaseSession: SESSION })).toEqual({ ok: false, reason: 'agent_changed' });
+    expect(
+      proposeDelegation(world.runtime, {
+        agentId,
+        skill: 'summarize',
+        text: 'x',
+        releaseSession: SESSION,
+      }),
+    ).toEqual({ ok: false, reason: 'agent_changed' });
 
     // The owner looks again and activates: the bindings made on that pin serve again.
     expect(activateRemoteAgent(deps(), agentId)).toEqual({ ok: true });
-    expect(proposeDelegation(world.runtime, { agentId, skill: 'summarize', text: 'x', releaseSession: SESSION }).ok).toBe(true);
+    expect(
+      proposeDelegation(world.runtime, {
+        agentId,
+        skill: 'summarize',
+        text: 'x',
+        releaseSession: SESSION,
+      }).ok,
+    ).toBe(true);
   });
 });
 
 describe('a directory candidate (design §6.1, §8.4; A2A-I13)', () => {
   const CAP = 'owner-capability-for-tests';
   const NODE_DID = 'did:plc:abcdefghijklmnopqrstuvwx';
-  const owner = (method: CoreRequest['method'], path: string, body: Record<string, unknown> = {}): CoreRequest => ({
+  const owner = (
+    method: CoreRequest['method'],
+    path: string,
+    body: Record<string, unknown> = {},
+  ): CoreRequest => ({
     method,
     path,
     query: {},
@@ -228,7 +307,10 @@ describe('a directory candidate (design §6.1, §8.4; A2A-I13)', () => {
   it('registers from the live card when the owner hands Core a whole directory candidate, shows the host’s PeerLens evidence, and grants nothing until the owner binds and activates it', async () => {
     world.cards.set(
       OTHER_URL,
-      agentCard({ name: 'Live card', capabilities: { extensions: [{ uri: DINA_A2A_EXTENSION_URI, params: { did: NODE_DID } }] } }),
+      agentCard({
+        name: 'Live card',
+        capabilities: { extensions: [{ uri: DINA_A2A_EXTENSION_URI, params: { did: NODE_DID } }] },
+      }),
     );
     // The directory as this trusted host reads it.
     // The candidate names another DID, whose directory card would vouch for this endpoint at 0.99:
@@ -236,9 +318,21 @@ describe('a directory candidate (design §6.1, §8.4; A2A-I13)', () => {
     const CANDIDATE_DID = 'did:plc:zzzzzzzzzzzzzzzzzzzzzzzz';
     installA2ADirectoryEvidence(async (did) =>
       did === NODE_DID
-        ? { endpoint: 'https://agent.example/rpc', trustScore: 0.42, recommendation: 'caution', indexedAt: '2026-10-01T00:00:00.000Z', stale: false }
+        ? {
+            endpoint: 'https://agent.example/rpc',
+            trustScore: 0.42,
+            recommendation: 'caution',
+            indexedAt: '2026-10-01T00:00:00.000Z',
+            stale: false,
+          }
         : did === CANDIDATE_DID
-          ? { endpoint: 'https://agent.example/rpc', trustScore: 0.99, recommendation: 'proceed', indexedAt: '2026-10-02T00:00:00.000Z', stale: false }
+          ? {
+              endpoint: 'https://agent.example/rpc',
+              trustScore: 0.99,
+              recommendation: 'proceed',
+              indexedAt: '2026-10-02T00:00:00.000Z',
+              stale: false,
+            }
           : null,
     );
     const router = new CoreRouter();
@@ -260,26 +354,52 @@ describe('a directory candidate (design §6.1, §8.4; A2A-I13)', () => {
     const reg = await router.handle(owner('POST', '/v1/owner/a2a/remote-agents', candidate));
     expect(reg.status).toBe(201);
     const view = reg.body as { agent_id: string; skills: { id: string }[] };
-    expect(view).toMatchObject({ status: 'candidate', name: 'Live card', card_url: OTHER_URL, endpoint: 'https://agent.example/rpc' });
+    expect(view).toMatchObject({
+      status: 'candidate',
+      name: 'Live card',
+      card_url: OTHER_URL,
+      endpoint: 'https://agent.example/rpc',
+    });
     expect(view.skills.map((s) => s.id)).toEqual(['summarize', 'extract']);
     expect(world.requests.map((r) => [r.method, r.url])).toEqual([['GET', OTHER_URL]]);
     const agentId = view.agent_id;
 
     // The review shows the directory's evidence as the host reads it, never the candidate's numbers.
-    const evidence = await router.handle(owner('GET', `/v1/owner/a2a/remote-agents/${agentId}/evidence`));
+    const evidence = await router.handle(
+      owner('GET', `/v1/owner/a2a/remote-agents/${agentId}/evidence`),
+    );
     expect(evidence).toEqual({
       status: 200,
-      body: { status: 'listed', did: NODE_DID, trust_score: 0.42, recommendation: 'caution', indexed_at: '2026-10-01T00:00:00.000Z', stale: false },
+      body: {
+        status: 'listed',
+        did: NODE_DID,
+        trust_score: 0.42,
+        recommendation: 'caution',
+        indexed_at: '2026-10-01T00:00:00.000Z',
+        stale: false,
+      },
     });
 
     world.turn();
-    const ask = () => proposeDelegation(world.runtime, { agentId, skill: 'summarize', text: 'Summarize this.', releaseSession: SESSION });
+    const ask = () =>
+      proposeDelegation(world.runtime, {
+        agentId,
+        skill: 'summarize',
+        text: 'Summarize this.',
+        releaseSession: SESSION,
+      });
     expect(ask()).toEqual({ ok: false, reason: 'agent_candidate' });
     expect(brainAgentsView(world.store).map((a) => a.agent_id)).not.toContain(agentId);
 
     const credential = createNoneCredential(deps(), agentId);
     if (!credential.ok) throw new Error(credential.reason);
-    expect(bindRemoteSkill(deps(), agentId, { skill: 'summarize', actionClass: 'read', credentialRef: credential.credential.credential_ref }).ok).toBe(true);
+    expect(
+      bindRemoteSkill(deps(), agentId, {
+        skill: 'summarize',
+        actionClass: 'read',
+        credentialRef: credential.credential.credential_ref,
+      }).ok,
+    ).toBe(true);
     expect(ask()).toEqual({ ok: false, reason: 'agent_candidate' });
     expect(activateRemoteAgent(deps(), agentId)).toEqual({ ok: true });
     expect(ask().ok).toBe(true);
@@ -290,7 +410,11 @@ describe('an OAuth token endpoint must pass the outbound policy (design §5.3 "e
   const oauthCard = (tokenUrl: string) =>
     agentCard({
       securitySchemes: {
-        oauth: { oauth2SecurityScheme: { flows: { clientCredentials: { tokenUrl, scopes: { run: 'Run' } } } } },
+        oauth: {
+          oauth2SecurityScheme: {
+            flows: { clientCredentials: { tokenUrl, scopes: { run: 'Run' } } },
+          },
+        },
       },
       securityRequirements: [{ schemes: { oauth: { list: ['run'] } } }],
     });
@@ -301,22 +425,25 @@ describe('an OAuth token endpoint must pass the outbound policy (design §5.3 "e
     ['a literal IP', 'https://198.51.100.4/token'],
     ['credentials in the URL', 'https://u:p@other.example/token'],
     ['a fragment', 'https://other.example/token#x'],
-  ])('refuses a credential whose token endpoint uses %s, stores nothing, and offers the owner no such choice', async (_name, tokenUrl) => {
-    world.cards.set(OTHER_URL, oauthCard(tokenUrl));
-    const agentId = await register(OTHER_URL);
-    const made = createRemoteCredential(deps(), agentId, {
-      kind: 'oauth2_client',
-      scheme: 'oauth',
-      secret: { client_id: 'client', client_secret: 'CLIENT-SECRET-1' },
-      scopes: ['run'],
-    });
-    expect(made).toEqual({ ok: false, reason: 'token_url_refused' });
-    expect(world.store.listCredentials(agentId)).toEqual([]);
-    expect(cardSchemeChoices(world.store.getAgent(agentId)?.schemes_json ?? '')).toEqual([
-      { name: 'oauth', label: 'oauth', kind: 'unsupported' },
-    ]);
-    expect(world.requests.map((r) => r.url)).toEqual([OTHER_URL]);
-  });
+  ])(
+    'refuses a credential whose token endpoint uses %s, stores nothing, and offers the owner no such choice',
+    async (_name, tokenUrl) => {
+      world.cards.set(OTHER_URL, oauthCard(tokenUrl));
+      const agentId = await register(OTHER_URL);
+      const made = createRemoteCredential(deps(), agentId, {
+        kind: 'oauth2_client',
+        scheme: 'oauth',
+        secret: { client_id: 'client', client_secret: 'CLIENT-SECRET-1' },
+        scopes: ['run'],
+      });
+      expect(made).toEqual({ ok: false, reason: 'token_url_refused' });
+      expect(world.store.listCredentials(agentId)).toEqual([]);
+      expect(cardSchemeChoices(world.store.getAgent(agentId)?.schemes_json ?? '')).toEqual([
+        { name: 'oauth', label: 'oauth', kind: 'unsupported' },
+      ]);
+      expect(world.requests.map((r) => r.url)).toEqual([OTHER_URL]);
+    },
+  );
 
   it('accepts a token endpoint the policy allows, so the refusals above are the policy at work', async () => {
     world.cards.set(OTHER_URL, oauthCard('https://other.example/token'));
@@ -329,7 +456,13 @@ describe('an OAuth token endpoint must pass the outbound policy (design §5.3 "e
     });
     expect(made.ok).toBe(true);
     expect(cardSchemeChoices(world.store.getAgent(agentId)?.schemes_json ?? '')).toEqual([
-      { name: 'oauth', label: 'oauth', kind: 'oauth2_client', token_host: 'other.example', scopes: ['run'] },
+      {
+        name: 'oauth',
+        label: 'oauth',
+        kind: 'oauth2_client',
+        token_host: 'other.example',
+        scopes: ['run'],
+      },
     ]);
   });
 });

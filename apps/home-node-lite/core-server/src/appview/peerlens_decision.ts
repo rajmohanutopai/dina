@@ -65,11 +65,7 @@ export type TrustAction = 'proceed' | 'caution' | 'verify' | 'avoid';
  * One of the four action contexts the caller may evaluate trust in.
  * Each adjusts the score by a fixed multiplier before banding.
  */
-export type TrustContext =
-  | 'read'
-  | 'transaction'
-  | 'share-pii'
-  | 'autonomous-action';
+export type TrustContext = 'read' | 'transaction' | 'share-pii' | 'autonomous-action';
 
 export interface TrustInput {
   /** Weighted PeerLens rating from AppView. `null` = no data. Valid range 0..1. */
@@ -161,11 +157,7 @@ export function decideTrust(input: TrustInput): TrustDecision {
   const flagCount = Math.max(0, input.flagCount ?? 0);
   if (flagCount > 0) {
     score *= FLAG_PENALTY_PER_FLAG ** flagCount;
-    reasons.push(
-      flagCount === 1
-        ? '1 open flag on subject'
-        : `${flagCount} open flags on subject`,
-    );
+    reasons.push(flagCount === 1 ? '1 open flag on subject' : `${flagCount} open flags on subject`);
   }
 
   // 3. Ring boost — only direct + 2-hop get a lift. Strangers (ring=3)

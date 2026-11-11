@@ -74,8 +74,8 @@ function hexToBytes(hex: string): Uint8Array {
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const byte of bytes) {
+    out += byte.toString(16).padStart(2, '0');
   }
   return out;
 }
@@ -126,10 +126,9 @@ describe('NodeCryptoAdapter — cross-runtime fixtures (Go Core parity)', () => 
   const rotationFx = 'crypto/slip0010_rotation_key.json';
   const rotationDescribe = hasFixture(rotationFx) ? describe : describe.skip;
   rotationDescribe('SLIP-0010 secp256k1 rotation key', () => {
-    const vectors = loadVectors<
-      { seed_hex: string; path: string },
-      { private_key_hex: string }
-    >(rotationFx);
+    const vectors = loadVectors<{ seed_hex: string; path: string }, { private_key_hex: string }>(
+      rotationFx,
+    );
 
     for (const v of vectors) {
       it(v.description, async () => {
@@ -221,11 +220,7 @@ describe('NodeCryptoAdapter — cross-runtime fixtures (Go Core parity)', () => 
           expect(bytesToHex(pub)).toBe(v.expected.public_key_hex);
         }
         // Sign vector — deterministic per RFC 8032
-        if (
-          v.inputs.message_hex &&
-          v.inputs.private_key_hex &&
-          v.expected.signature_hex
-        ) {
+        if (v.inputs.message_hex && v.inputs.private_key_hex && v.expected.signature_hex) {
           const sig = await adapter.ed25519Sign(
             hexToBytes(v.inputs.private_key_hex),
             hexToBytes(v.inputs.message_hex),

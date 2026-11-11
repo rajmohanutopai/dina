@@ -10,7 +10,6 @@ import {
   parseLLMResponse,
   registerIdentityExtractor,
   resetIdentityExtractor,
-  type IdentityLink,
 } from '../../src/pipeline/identity_extraction';
 
 describe('Person Identity Extraction', () => {

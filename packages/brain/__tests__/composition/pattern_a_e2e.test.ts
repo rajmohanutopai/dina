@@ -22,24 +22,14 @@
  * No HTTP, no real LLM, no real vault file. Pure in-memory wiring.
  */
 
-import {
-  createPersona,
-  resetPersonaState,
- clearVaults, storeItem } from '@dina/core';
+import { createPersona, resetPersonaState, clearVaults, storeItem } from '@dina/core';
 
-import {
-  AskApprovalGateway,
-  type ApprovalSource,
-} from '../../src/ask/ask_approval_gateway';
+import { AskApprovalGateway, type ApprovalSource } from '../../src/ask/ask_approval_gateway';
 import {
   AskApprovalResumer,
   type AskApprovalResumerEvent,
 } from '../../src/ask/ask_approval_resumer';
-import {
-  AskRegistry,
-  InMemoryAskAdapter,
-  type AskEvent,
-} from '../../src/ask/ask_registry';
+import { AskRegistry, InMemoryAskAdapter, type AskEvent } from '../../src/ask/ask_registry';
 import {
   buildAgenticAskPipeline,
   type AgenticAskPipeline,
@@ -51,10 +41,7 @@ import {
   runAgenticTurn,
   type AgenticLoopResult,
 } from '../../src/reasoning/agentic_loop';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
+import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
 import type {
   ChatMessage,
@@ -186,7 +173,11 @@ function fakeOrchestrator(): BuildAgenticAskPipelineInput['orchestratorHandle'] 
 // Fake workflow-task-backed coreClient — in-memory store.
 // ---------------------------------------------------------------------------
 
-interface FakeTask { id: string; status: string; payload: string }
+interface FakeTask {
+  id: string;
+  status: string;
+  payload: string;
+}
 
 function makeFakeWorkflowCoreClient(): {
   client: BuildAgenticAskPipelineInput['coreClient'];
@@ -194,26 +185,54 @@ function makeFakeWorkflowCoreClient(): {
   setStatus: (id: string, s: string) => void;
 } {
   const tasks = new Map<string, FakeTask>();
-  const setStatus = (id: string, s: string) => { const t = tasks.get(id); if (t) t.status = s; };
+  const setStatus = (id: string, s: string) => {
+    const t = tasks.get(id);
+    if (t) t.status = s;
+  };
   const client = {
-    async findContactsByPreference() { return []; },
-    async contactLookup() { return null; },
+    async findContactsByPreference() {
+      return [];
+    },
+    async contactLookup() {
+      return null;
+    },
     // §6 plugin tools — nothing installed in this fixture; an ask is refused.
-    async listPluginToolCapabilities() { return []; },
-    async invokePluginTool() { return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' }; },
+    async listPluginToolCapabilities() {
+      return [];
+    },
+    async invokePluginTool() {
+      return { ok: false as const, code: 'install_unknown', message: 'no plugins in this fixture' };
+    },
     // GROUP_COORDINATION §11 — no contacts and no plan store in this fixture.
-    async listContacts() { return []; },
-    async openGroupPlan() { return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' }; },
-    async getGroupPlan() { return null; },
-    async listGroupPlanHandles() { return []; },
+    async listContacts() {
+      return [];
+    },
+    async openGroupPlan() {
+      return { ok: false as const, refusal: 'not_wired', detail: 'group plan store' };
+    },
+    async getGroupPlan() {
+      return null;
+    },
+    async listGroupPlanHandles() {
+      return [];
+    },
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
-      const t: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      const t: FakeTask = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
       tasks.set(input.id, t);
       return { task: t as unknown as WorkflowTask, deduped: false };
     },
-    async getWorkflowTask(id: string) { return (tasks.get(id) as unknown as WorkflowTask) ?? null; },
-    async completeWorkflowTask(id: string) { setStatus(id, 'completed'); return tasks.get(id) as unknown as WorkflowTask; },
+    async getWorkflowTask(id: string) {
+      return (tasks.get(id) as unknown as WorkflowTask) ?? null;
+    },
+    async completeWorkflowTask(id: string) {
+      setStatus(id, 'completed');
+      return tasks.get(id) as unknown as WorkflowTask;
+    },
   };
   return { client, tasks, setStatus };
 }
@@ -245,8 +264,12 @@ function workflowTaskSource(
       if (t.status === 'cancelled' || t.status === 'failed') return 'denied';
       return 'expired';
     },
-    approve(id: string) { setStatus(id, 'queued'); },
-    deny(id: string) { setStatus(id, 'cancelled'); },
+    approve(id: string) {
+      setStatus(id, 'queued');
+    },
+    deny(id: string) {
+      setStatus(id, 'cancelled');
+    },
   };
 }
 
@@ -281,7 +304,11 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
     //  - Second chat (after resume): final answer.
     const llm = makeScripted();
     llm.push(
-      toolCallResp({ id: 'call-1', name: 'vault_search', arguments: { query: 'BP', persona: 'health' } }),
+      toolCallResp({
+        id: 'call-1',
+        name: 'vault_search',
+        arguments: { query: 'BP', persona: 'health' },
+      }),
       answerResp('Your blood pressure was 120/80.'),
     );
 
@@ -392,17 +419,23 @@ describe('Pattern A end-to-end (5.21-E capstone)', () => {
     const llm = makeScripted();
     llm.push(
       // Turn 1: ask for health.
-      toolCallResp({ id: 'c1', name: 'vault_search', arguments: { query: 'BP', persona: 'health' } }),
+      toolCallResp({
+        id: 'c1',
+        name: 'vault_search',
+        arguments: { query: 'BP', persona: 'health' },
+      }),
       // Turn 2 (resume after first approve): pivot to financial.
-      toolCallResp({ id: 'c2', name: 'vault_search', arguments: { query: 'balance', persona: 'financial' } }),
+      toolCallResp({
+        id: 'c2',
+        name: 'vault_search',
+        arguments: { query: 'balance', persona: 'financial' },
+      }),
       // Turn 3 (resume after second approve): final answer.
       answerResp('Health: 120/80. Balance: $42.'),
     );
 
     const { client, tasks, setStatus } = makeFakeWorkflowCoreClient();
-    const pipeline = buildAgenticAskPipeline(
-      builderInput(client, llm.provider),
-    );
+    const pipeline = buildAgenticAskPipeline(builderInput(client, llm.provider));
 
     const resumerEvents: AskApprovalResumerEvent[] = [];
     let resumer: AskApprovalResumer | null = null;

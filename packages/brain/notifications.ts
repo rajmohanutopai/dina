@@ -20,8 +20,5 @@ export type {
   NotificationListener,
 } from './src/notifications/inbox';
 export { deliverWatchResult } from './src/notifications/watch_delivery';
-export type {
-  WatchDeliveryInput,
-  WatchDeliveryOutcome,
-} from './src/notifications/watch_delivery';
+export type { WatchDeliveryInput, WatchDeliveryOutcome } from './src/notifications/watch_delivery';
 export { getDND, resetDND, setDND, shouldDeliverNotification } from './src/notifications/dnd';

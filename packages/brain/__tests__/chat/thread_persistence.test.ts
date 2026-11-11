@@ -8,10 +8,7 @@
  * unlock.
  */
 
-import {
-  InMemoryChatMessageRepository,
-  setChatMessageRepository,
-} from '@dina/core';
+import { InMemoryChatMessageRepository, setChatMessageRepository } from '@dina/core';
 
 import {
   addMessage,

@@ -56,21 +56,18 @@
  * 1–2 agentic turns on /ask). 5 scenarios = ~15 calls, a few cents.
  */
 
-import { InProcessTransport } from '@dina/core';
-
-import { createCoreRouter } from '@dina/core';
 import {
   clearVaults,
-  DEFAULT_TEST_PERSONAS,
-  queryVault,
-} from '@dina/core';
-import { resetStagingState } from '@dina/core';
-import {
+  configureRateLimiter,
+  createCoreRouter,
   createPersona,
+  InProcessTransport,
   openPersona,
+  queryVault,
   resetPersonaState,
+  resetStagingState,
 } from '@dina/core';
-import { configureRateLimiter } from '@dina/core';
+
 import {
   handleChat,
   resetAskCommandHandler,
@@ -82,15 +79,9 @@ import { makeAgenticAskHandler } from '../../src/reasoning/ask_handler';
 import { ToolRegistry } from '../../src/reasoning/tool_registry';
 import { createVaultSearchTool } from '../../src/reasoning/vault_tool';
 import { createGeminiClassifier } from '../../src/routing/gemini_classify';
-import {
-  registerPersonaSelector,
-  resetPersonaSelector,
-} from '../../src/routing/persona_selector';
+import { registerPersonaSelector, resetPersonaSelector } from '../../src/routing/persona_selector';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
-import {
-  resetReasoningProvider,
-  setAccessiblePersonas,
-} from '../../src/vault_context/assembly';
+import { resetReasoningProvider, setAccessiblePersonas } from '../../src/vault_context/assembly';
 
 import {
   closeSQLiteVault,
@@ -165,157 +156,151 @@ function buildCoreClient(): InProcessTransport {
 
 const describeReal = GEMINI_API_KEY ? describe : describe.skip;
 
-describeReal(
-  'mobile install-faithful /remember → drain → /ask (strict, only `general`)',
-  () => {
-    let scheduler: StagingDrainScheduler;
-    let generalVault: SQLiteVaultHandle | null = null;
+describeReal('mobile install-faithful /remember → drain → /ask (strict, only `general`)', () => {
+  let scheduler: StagingDrainScheduler;
+  let generalVault: SQLiteVaultHandle | null = null;
 
-    beforeAll(() => {
-      // Strict mobile-install state: only `general` registered + open.
-      // No `clearVaults(DEFAULT_TEST_PERSONAS)` — that would seed 9
-      // in-memory repos and defeat the strictness contract. Instead
-      // start from `clearVaults([])` (empty registry) and explicitly
-      // wire SQLite for `general` only.
-      clearVaults([]);
-      resetStagingState();
-      resetPersonaState();
-      resetReasoningProvider();
-      resetPersonaSelector();
-      configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
+  beforeAll(() => {
+    // Strict mobile-install state: only `general` registered + open.
+    // No `clearVaults(DEFAULT_TEST_PERSONAS)` — that would seed 9
+    // in-memory repos and defeat the strictness contract. Instead
+    // start from `clearVaults([])` (empty registry) and explicitly
+    // wire SQLite for `general` only.
+    clearVaults([]);
+    resetStagingState();
+    resetPersonaState();
+    resetReasoningProvider();
+    resetPersonaSelector();
+    configureRateLimiter({ maxRequests: 10_000, windowSeconds: 60 });
 
-      // Mobile-install persona registry.
-      createPersona('general', 'default', 'Default persona');
-      openPersona('general');
+    // Mobile-install persona registry.
+    createPersona('general', 'default', 'Default persona');
+    openPersona('general');
 
-      // SQLite vault for `general` ONLY. Any drain attempt to write
-      // to another persona will hit the strict `requireRepo` throw —
-      // that's intentional and the test pins behaviour against it.
-      generalVault = openSQLiteVault('general');
+    // SQLite vault for `general` ONLY. Any drain attempt to write
+    // to another persona will hit the strict `requireRepo` throw —
+    // that's intentional and the test pins behaviour against it.
+    generalVault = openSQLiteVault('general');
 
-      // Mobile-faithful accessible-persona list — only `general`.
-      setAccessiblePersonas(['general']);
+    // Mobile-faithful accessible-persona list — only `general`.
+    setAccessiblePersonas(['general']);
 
-      // Real Gemini provider (raw adapter → router → routed wrappers).
-      const rawProvider = new GeminiGenaiAdapter({
-        apiKey: GEMINI_API_KEY,
-        defaultModel: GEMINI_ASK_MODEL,
-      });
-      const router = new LLMRouter({
-        providers: { gemini: rawProvider },
-        config: {
-          localAvailable: false,
-          cloudProviders: ['gemini'],
-          sensitivePersonas: ['health', 'financial'],
-          cloudConsentGranted: true,
-        },
-      });
-
-      // 1) Drain-side classifier — RoutedLLMProvider tagged `classify`
-      //    auto-picks the lite tier. Same shape as
-      //    `boot_capabilities.ts:220-225`.
-      const classifierProvider = new RoutedLLMProvider({
-        router,
-        taskType: 'classify',
-        label: 'routed:classify:strict-test',
-      });
-      registerPersonaSelector(createGeminiClassifier(classifierProvider));
-
-      // 2) Agentic /ask — same composition as
-      //    `mobile_ask_real_llm_15_scenarios.test.ts`.
-      const askProvider = new RoutedLLMProvider({
-        router,
-        taskType: 'reason',
-        label: 'routed:reason:strict-test',
-      });
-      const tools = new ToolRegistry();
-      tools.register(createVaultSearchTool());
-      const askHandler = makeAgenticAskHandler({ provider: askProvider, tools });
-      setAskCommandHandler(askHandler);
-
-      const core = buildCoreClient();
-      scheduler = new StagingDrainScheduler({
-        core,
-        intervalMs: 10_000,
-        setInterval: () => 1,
-        clearInterval: () => {
-          /* noop */
-        },
-      });
+    // Real Gemini provider (raw adapter → router → routed wrappers).
+    const rawProvider = new GeminiGenaiAdapter({
+      apiKey: GEMINI_API_KEY,
+      defaultModel: GEMINI_ASK_MODEL,
     });
-
-    afterAll(() => {
-      resetAskCommandHandler();
-      resetReasoningProvider();
-      resetPersonaSelector();
-      scheduler?.stop();
-      if (generalVault) {
-        closeSQLiteVault(generalVault);
-        generalVault = null;
-      }
-    });
-
-    it.each(SCENARIOS)(
-      '$label',
-      async (scenario: Scenario) => {
-        // 1) /remember through the chat orchestrator (real path).
-        const rememberResp = await handleChat(`/remember ${scenario.remember}`);
-        expect(rememberResp.intent).toBe('remember');
-
-        // 2) Drain — real Gemini classifier picks the persona. With
-        //    only `general` in `availablePersonas`, the LLM is
-        //    constrained: `parseClassificationResponseRich` rejects
-        //    any primary outside the registered list and falls back
-        //    to `general`. Strict-mode `requireRepo` would throw on a
-        //    write to any non-`general` persona, surfacing as
-        //    `tick.failed > 0`.
-        //
-        //    NOTE: `result.persona` on `tick.results` is the *keyword
-        //    classifier's domain output* (informational only — the
-        //    actual write target comes from the LLM-constrained
-        //    `personas` array). Don't assert against it; assert
-        //    against where the row actually landed.
-        const tick = await scheduler.runTick();
-        expect(tick.failed).toBe(0);
-        expect(tick.stored).toBeGreaterThanOrEqual(1);
-
-        // Direct vault check — the row must be in the SQLite
-        // `general` vault (the only persona we registered). If the
-        // LLM hallucinated a different persona AND strict mode let
-        // it through, this query would return 0 hits.
-        const generalHits = queryVault('general', {
-          mode: 'fts5',
-          // Pull the first noun out of the remember text so FTS5 has
-          // something concrete to match. Lower-case so the tokenizer
-          // doesn't care.
-          text: scenario.mustContainAny[0]!.toLowerCase().split(' ')[0]!,
-          limit: 10,
-        });
-        expect(generalHits.length).toBeGreaterThanOrEqual(1);
-
-        // 3) /ask through the chat orchestrator → real Gemini agentic
-        //    loop → vault_search reads the SQLite `general` vault.
-        const askResp = await handleChat(`/ask ${scenario.ask}`);
-        expect(askResp.intent).toBe('ask');
-        expect(askResp.response).not.toBe('');
-
-        // 4) Recall check — case-insensitive substring match.
-        const haystack = askResp.response.toLowerCase();
-        const hit = scenario.mustContainAny.some((needle) =>
-          haystack.includes(needle.toLowerCase()),
-        );
-        if (!hit) {
-           
-          console.log(
-            `[${scenario.label}]\n  remember=${scenario.remember}\n  ask=${scenario.ask}\n  response=${askResp.response}\n  expectedAny=${JSON.stringify(scenario.mustContainAny)}`,
-          );
-        }
-        expect(hit).toBe(true);
+    const router = new LLMRouter({
+      providers: { gemini: rawProvider },
+      config: {
+        localAvailable: false,
+        cloudProviders: ['gemini'],
+        sensitivePersonas: ['health', 'financial'],
+        cloudConsentGranted: true,
       },
-      120_000,
-    );
-  },
-);
+    });
+
+    // 1) Drain-side classifier — RoutedLLMProvider tagged `classify`
+    //    auto-picks the lite tier. Same shape as
+    //    `boot_capabilities.ts:220-225`.
+    const classifierProvider = new RoutedLLMProvider({
+      router,
+      taskType: 'classify',
+      label: 'routed:classify:strict-test',
+    });
+    registerPersonaSelector(createGeminiClassifier(classifierProvider));
+
+    // 2) Agentic /ask — same composition as
+    //    `mobile_ask_real_llm_15_scenarios.test.ts`.
+    const askProvider = new RoutedLLMProvider({
+      router,
+      taskType: 'reason',
+      label: 'routed:reason:strict-test',
+    });
+    const tools = new ToolRegistry();
+    tools.register(createVaultSearchTool());
+    const askHandler = makeAgenticAskHandler({ provider: askProvider, tools });
+    setAskCommandHandler(askHandler);
+
+    const core = buildCoreClient();
+    scheduler = new StagingDrainScheduler({
+      core,
+      intervalMs: 10_000,
+      setInterval: () => 1,
+      clearInterval: () => {
+        /* noop */
+      },
+    });
+  });
+
+  afterAll(() => {
+    resetAskCommandHandler();
+    resetReasoningProvider();
+    resetPersonaSelector();
+    scheduler?.stop();
+    if (generalVault) {
+      closeSQLiteVault(generalVault);
+      generalVault = null;
+    }
+  });
+
+  it.each(SCENARIOS)(
+    '$label',
+    async (scenario: Scenario) => {
+      // 1) /remember through the chat orchestrator (real path).
+      const rememberResp = await handleChat(`/remember ${scenario.remember}`);
+      expect(rememberResp.intent).toBe('remember');
+
+      // 2) Drain — real Gemini classifier picks the persona. With
+      //    only `general` in `availablePersonas`, the LLM is
+      //    constrained: `parseClassificationResponseRich` rejects
+      //    any primary outside the registered list and falls back
+      //    to `general`. Strict-mode `requireRepo` would throw on a
+      //    write to any non-`general` persona, surfacing as
+      //    `tick.failed > 0`.
+      //
+      //    NOTE: `result.persona` on `tick.results` is the *keyword
+      //    classifier's domain output* (informational only — the
+      //    actual write target comes from the LLM-constrained
+      //    `personas` array). Don't assert against it; assert
+      //    against where the row actually landed.
+      const tick = await scheduler.runTick();
+      expect(tick.failed).toBe(0);
+      expect(tick.stored).toBeGreaterThanOrEqual(1);
+
+      // Direct vault check — the row must be in the SQLite
+      // `general` vault (the only persona we registered). If the
+      // LLM hallucinated a different persona AND strict mode let
+      // it through, this query would return 0 hits.
+      const generalHits = queryVault('general', {
+        mode: 'fts5',
+        // Pull the first noun out of the remember text so FTS5 has
+        // something concrete to match. Lower-case so the tokenizer
+        // doesn't care.
+        text: scenario.mustContainAny[0]!.toLowerCase().split(' ')[0]!,
+        limit: 10,
+      });
+      expect(generalHits.length).toBeGreaterThanOrEqual(1);
+
+      // 3) /ask through the chat orchestrator → real Gemini agentic
+      //    loop → vault_search reads the SQLite `general` vault.
+      const askResp = await handleChat(`/ask ${scenario.ask}`);
+      expect(askResp.intent).toBe('ask');
+      expect(askResp.response).not.toBe('');
+
+      // 4) Recall check — case-insensitive substring match.
+      const haystack = askResp.response.toLowerCase();
+      const hit = scenario.mustContainAny.some((needle) => haystack.includes(needle.toLowerCase()));
+      if (!hit) {
+        console.log(
+          `[${scenario.label}]\n  remember=${scenario.remember}\n  ask=${scenario.ask}\n  response=${askResp.response}\n  expectedAny=${JSON.stringify(scenario.mustContainAny)}`,
+        );
+      }
+      expect(hit).toBe(true);
+    },
+    120_000,
+  );
+});
 
 if (!GEMINI_API_KEY) {
   describe('mobile install-faithful E2E (skipped)', () => {

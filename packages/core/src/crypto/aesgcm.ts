@@ -42,8 +42,8 @@ export async function wrapSeed(passphrase: string, seed: Uint8Array): Promise<Wr
 
   // Reject all-zero seed before wrapping
   let allZero = true;
-  for (let i = 0; i < seed.length; i++) {
-    if (seed[i] !== 0) {
+  for (const byte of seed) {
+    if (byte !== 0) {
       allZero = false;
       break;
     }
@@ -112,8 +112,8 @@ export async function unwrapSeed(passphrase: string, wrapped: WrappedSeed): Prom
 
   // Reject all-zero seed after unwrapping (fail-closed)
   let allZero = true;
-  for (let i = 0; i < seed.length; i++) {
-    if (seed[i] !== 0) {
+  for (const byte of seed) {
+    if (byte !== 0) {
       allZero = false;
       break;
     }

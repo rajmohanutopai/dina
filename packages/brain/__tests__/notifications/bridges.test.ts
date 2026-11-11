@@ -8,7 +8,7 @@
  *   - briefing-history → inbox
  */
 
-import { ApprovalManager , InMemoryWorkflowRepository } from '@dina/core';
+import { ApprovalManager, InMemoryWorkflowRepository } from '@dina/core';
 import {
   WorkflowTaskKind,
   WorkflowTaskPriority,

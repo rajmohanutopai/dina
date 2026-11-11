@@ -40,32 +40,56 @@ export interface OwnerSigner {
   headers(method: string, url: string, body?: string): Record<string, string>;
 }
 
-async function postJson(url: string, body: unknown, headers: Record<string, string> = {}): Promise<{ status: number; body: Record<string, unknown> }> {
+async function postJson(
+  url: string,
+  body: unknown,
+  headers: Record<string, string> = {},
+): Promise<{ status: number; body: Record<string, unknown> }> {
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
     body: JSON.stringify(body),
   });
   const text = await res.text();
-  return { status: res.status, body: text === '' ? {} : (JSON.parse(text) as Record<string, unknown>) };
+  return {
+    status: res.status,
+    body: text === '' ? {} : (JSON.parse(text) as Record<string, unknown>),
+  };
 }
 
 /** Pair a new owner device at `coreUrl` with the node's owner key. */
-export async function pairOwnerSigner(coreUrl: string, ownerKey: string, passphrase = ''): Promise<OwnerSigner> {
+export async function pairOwnerSigner(
+  coreUrl: string,
+  ownerKey: string,
+  passphrase = '',
+): Promise<OwnerSigner> {
   const owner = { 'x-dina-owner-capability': ownerKey };
   if (passphrase !== '') {
-    const proved = await postJson(`${coreUrl}/v1/commerce/catalog/drafts/presence`, { passphrase }, owner);
-    if (proved.status !== 200 && proved.status !== 409) throw new Error(`owner signer: presence ${proved.status}`);
+    const proved = await postJson(
+      `${coreUrl}/v1/commerce/catalog/drafts/presence`,
+      { passphrase },
+      owner,
+    );
+    if (proved.status !== 200 && proved.status !== 409)
+      throw new Error(`owner signer: presence ${proved.status}`);
   }
-  const minted = await postJson(`${coreUrl}/v1/owner/setup/owner-device`, { device_name: 'E2E owner signer' }, owner);
+  const minted = await postJson(
+    `${coreUrl}/v1/owner/setup/owner-device`,
+    { device_name: 'E2E owner signer' },
+    owner,
+  );
   const code = typeof minted.body.code === 'string' ? minted.body.code : '';
   if (minted.status !== 201 || code === '') throw new Error(`owner signer: mint ${minted.status}`);
 
   const { publicKey, privateKey } = generateKeyPairSync('ed25519');
   const raw = Buffer.from(publicKey.export({ format: 'jwk' }).x ?? '', 'base64url');
   const did = didKeyOf(raw);
-  const paired = await postJson(`${coreUrl}/v1/pair/complete`, { code, public_key_multibase: did.slice('did:key:'.length) });
-  if (paired.status !== 200 && paired.status !== 201) throw new Error(`owner signer: pair ${paired.status}`);
+  const paired = await postJson(`${coreUrl}/v1/pair/complete`, {
+    code,
+    public_key_multibase: did.slice('did:key:'.length),
+  });
+  if (paired.status !== 200 && paired.status !== 201)
+    throw new Error(`owner signer: pair ${paired.status}`);
   return signerFor(did, privateKey);
 }
 

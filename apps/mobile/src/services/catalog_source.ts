@@ -198,7 +198,10 @@ export async function fetchLiveCatalog(
  * the bundled fallback. The caller holds the result in React state (the picker)
  * and may re-load on focus.
  */
-export async function loadCatalog(appViewUrl: string, fetchImpl: CatalogFetch): Promise<CatalogData> {
+export async function loadCatalog(
+  appViewUrl: string,
+  fetchImpl: CatalogFetch,
+): Promise<CatalogData> {
   const fetched = await fetchLiveCatalog(appViewUrl, fetchImpl);
   return resolveCatalog(fetched);
 }

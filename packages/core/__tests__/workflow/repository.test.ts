@@ -272,7 +272,11 @@ describe('WorkflowRepository — subscribeApprovalCreated', () => {
     r.subscribeApprovalCreated((t) => {
       seen.push(t);
     });
-    const envelope = JSON.stringify({ type: 'plugin_invocation', install_id: 'pli_1', capability_id: 'com.acme.x' });
+    const envelope = JSON.stringify({
+      type: 'plugin_invocation',
+      install_id: 'pli_1',
+      capability_id: 'com.acme.x',
+    });
     // A carded invocation: the owner must decide — the inbox must wake.
     r.create(
       baseTask({

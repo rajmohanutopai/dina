@@ -591,19 +591,36 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
     });
   });
 
-  it('a partner run that ends without fault comes as a later event, priced on the quote\'s own terms', () => {
+  it("a partner run that ends without fault comes as a later event, priced on the quote's own terms", () => {
     const request = makeQuoteRequest({ protocol_version: '1.4' });
     // ₹500 of goods and ₹120 delivery: ₹620 on the quote's own terms.
     const base = makeSignedQuote(request, {
-      charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '12000' }, operation: 'add' }],
+      charges: [
+        {
+          kind: 'delivery',
+          label: 'Delivery',
+          amount: { currency: 'INR', minor_units: '12000' },
+          operation: 'add',
+        },
+      ],
       total: { currency: 'INR', minor_units: '62000' },
     } as never);
     const alternatives = priceQuoteAlternatives(base, [
       {
         alternative_id: 'partner_00112233',
         charges: [
-          { kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '12000' }, operation: 'add' },
-          { kind: 'discount', label: 'Delivery by a partner run', amount: { currency: 'INR', minor_units: '3500' }, operation: 'subtract' },
+          {
+            kind: 'delivery',
+            label: 'Delivery',
+            amount: { currency: 'INR', minor_units: '12000' },
+            operation: 'add',
+          },
+          {
+            kind: 'discount',
+            label: 'Delivery by a partner run',
+            amount: { currency: 'INR', minor_units: '3500' },
+            operation: 'subtract',
+          },
         ],
         estimated_delivery_at: '2026-08-11T10:00:00Z',
         partner_run: true,
@@ -611,7 +628,11 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
       },
     ]);
     if (alternatives === null) throw new Error('fixture: alternatives');
-    const quote = makeSignedQuote(request, { alternatives, charges: base.charges, total: base.total } as never);
+    const quote = makeSignedQuote(request, {
+      alternatives,
+      charges: base.charges,
+      total: base.total,
+    } as never);
     const order = makeOrder(quote, request.delivery.projection, {
       protocol_version: '1.4',
       alternative_id: 'partner_00112233',
@@ -672,7 +693,9 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
       expect(later.events[0]?.order).not.toHaveProperty('version');
       // Read again from there: nothing more.
       const after = later.nextCursor === null ? null : parseOrdersCursor(later.nextCursor);
-      expect(listOrderDecisionEvents({ orders, receipts }, { after, limit: 10 }).events).toEqual([]);
+      expect(listOrderDecisionEvents({ orders, receipts }, { after, limit: 10 }).events).toEqual(
+        [],
+      );
     } finally {
       installOptionStores(null);
       closeDb();
@@ -682,15 +705,28 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
   it('fallback events page one at a time without skipping any', () => {
     const request = makeQuoteRequest({ protocol_version: '1.4' });
     const charges = [
-      { kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '12000' }, operation: 'add' },
+      {
+        kind: 'delivery',
+        label: 'Delivery',
+        amount: { currency: 'INR', minor_units: '12000' },
+        operation: 'add',
+      },
     ];
-    const base = makeSignedQuote(request, { charges, total: { currency: 'INR', minor_units: '62000' } } as never);
+    const base = makeSignedQuote(request, {
+      charges,
+      total: { currency: 'INR', minor_units: '62000' },
+    } as never);
     const alternatives = priceQuoteAlternatives(base, [
       {
         alternative_id: 'partner_00112233',
         charges: [
           ...charges,
-          { kind: 'discount', label: 'Delivery by a partner run', amount: { currency: 'INR', minor_units: '3500' }, operation: 'subtract' },
+          {
+            kind: 'discount',
+            label: 'Delivery by a partner run',
+            amount: { currency: 'INR', minor_units: '3500' },
+            operation: 'subtract',
+          },
         ] as never,
         estimated_delivery_at: '2026-08-11T10:00:00Z',
         partner_run: true,
@@ -729,8 +765,16 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
         evidenceJson: '{}',
         createdAt: T0,
       });
-      orders.createReserved(reservedRef(po, order.order_digest, { quoteId: quote.quote_id, quoteDigest: quote.quote_digest }));
-      loaded(po).decide({ acknowledgementJson: acceptedAck(po, order.order_digest), decidedAt: T0 + 5 });
+      orders.createReserved(
+        reservedRef(po, order.order_digest, {
+          quoteId: quote.quote_id,
+          quoteDigest: quote.quote_digest,
+        }),
+      );
+      loaded(po).decide({
+        acknowledgementJson: acceptedAck(po, order.order_digest),
+        decidedAt: T0 + 5,
+      });
       digests.set(po, order.order_digest);
     };
     place('po-a');
@@ -760,10 +804,17 @@ describe.each(backends)('orders export ($name)', ({ make }) => {
         const page = listOrderDecisionEvents({ orders, receipts }, { after: cursor, limit: 1 });
         if (page.events.length === 0) break;
         for (const e of page.events)
-          seen.push(`${e.purchaseOrderId}:${e.fallbackAppliedAt === undefined ? 'decided' : 'fallback'}`);
+          seen.push(
+            `${e.purchaseOrderId}:${e.fallbackAppliedAt === undefined ? 'decided' : 'fallback'}`,
+          );
         cursor = page.nextCursor === null ? null : parseOrdersCursor(page.nextCursor);
       }
-      expect(seen.sort()).toEqual(['po-a:decided', 'po-a:fallback', 'po-b:decided', 'po-b:fallback']);
+      expect(seen.sort()).toEqual([
+        'po-a:decided',
+        'po-a:fallback',
+        'po-b:decided',
+        'po-b:fallback',
+      ]);
     } finally {
       installOptionStores(null);
       closeDb();

@@ -110,7 +110,11 @@ function setup(
     nowMsFn: () => NOW,
     idFn: () => `lease-${++seq}`,
     isPersonaOpen: () => opts.personaOpen ?? true,
-    buildClassificationView: (m) => ({ title: `t-${m.message_id}`, body: 'b', content_digest: 'cd' }),
+    buildClassificationView: (m) => ({
+      title: `t-${m.message_id}`,
+      body: 'b',
+      content_digest: 'cd',
+    }),
     ...(opts.onClassified !== undefined ? { onClassified: opts.onClassified } : {}),
   });
   return { messages, jobs, runs, svc };

@@ -3,10 +3,7 @@
  * sent through the CoreClient requester lane (NOT raw D2D).
  */
 
-import {
-  buildWatchPollHandler,
-  watchPollToServiceQuery,
-} from '../../src/watch/poll_query';
+import { buildWatchPollHandler, watchPollToServiceQuery } from '../../src/watch/poll_query';
 
 import type { ServiceQueryClientRequest, ServiceQueryResult } from '../../src/client/core-client';
 import type { WatchPollPayload } from '../../src/watch/payload';

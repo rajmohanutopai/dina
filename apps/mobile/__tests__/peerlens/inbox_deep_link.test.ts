@@ -131,9 +131,9 @@ describe('buildAttestationDeepLink — validation', () => {
   it('throws on empty-string attestationUri (when explicitly provided)', () => {
     // Empty string is not the same as null — null = "intentionally
     // no anchor"; "" = "I tried to set an anchor and failed". Loud.
-    expect(() =>
-      buildAttestationDeepLink({ subjectId: 'a', attestationUri: '' }),
-    ).toThrow(/non-empty/);
+    expect(() => buildAttestationDeepLink({ subjectId: 'a', attestationUri: '' })).toThrow(
+      /non-empty/,
+    );
   });
 
   it('throws on a non-string attestationUri value', () => {
@@ -144,9 +144,9 @@ describe('buildAttestationDeepLink — validation', () => {
   });
 
   it('throws on a malformed AT-URI', () => {
-    expect(() =>
-      buildAttestationDeepLink({ subjectId: 'a', attestationUri: 'banana' }),
-    ).toThrow(/AT-URI/);
+    expect(() => buildAttestationDeepLink({ subjectId: 'a', attestationUri: 'banana' })).toThrow(
+      /AT-URI/,
+    );
     expect(() =>
       buildAttestationDeepLink({
         subjectId: 'a',
@@ -252,10 +252,12 @@ describe('parseAttestationDeepLink — graceful degradation', () => {
   it('empty attestation value (?attestation=) → attestationUri: null', () => {
     // Edge case from the OS sometimes shipping `?attestation=` with
     // no value. Should not crash; should not match.
-    expect(parseAttestationDeepLink('/peerlens/x?attestation=')).toEqual<ParsedAttestationDeepLink>({
-      subjectId: 'x',
-      attestationUri: null,
-    });
+    expect(parseAttestationDeepLink('/peerlens/x?attestation=')).toEqual<ParsedAttestationDeepLink>(
+      {
+        subjectId: 'x',
+        attestationUri: null,
+      },
+    );
   });
 
   it('attestation key without "=" (`?attestation`) → attestationUri: null', () => {

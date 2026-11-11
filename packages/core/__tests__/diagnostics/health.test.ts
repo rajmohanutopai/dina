@@ -10,7 +10,7 @@ import { resetLifecycleState } from '../../src/lifecycle/sleep_wake';
 import { createPersona, openPersona, resetPersonaState } from '../../src/persona/service';
 import { resetConnectionState } from '../../src/relay/msgbox_ws';
 import { resetStagingState } from '../../src/staging/service';
-import { clearVaults, storeItem } from '../../src/vault/crud';
+import { clearVaults } from '../../src/vault/crud';
 
 describe('Health Check Diagnostics', () => {
   beforeEach(() => {

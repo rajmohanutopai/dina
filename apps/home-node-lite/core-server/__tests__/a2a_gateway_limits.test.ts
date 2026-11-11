@@ -21,7 +21,9 @@ function config(lane2: boolean): CoreServerConfig {
     runtime: { logLevel: 'silent', rateLimitPerMinute: 60, prettyLogs: false },
     msgbox: {},
     cors: {},
-    ...(lane2 ? { a2a: { publicOrigin: 'https://dina.example.org', gatewayDid: GATEWAY_DID } } : {}),
+    ...(lane2
+      ? { a2a: { publicOrigin: 'https://dina.example.org', gatewayDid: GATEWAY_DID } }
+      : {}),
   } as CoreServerConfig;
 }
 
@@ -44,7 +46,8 @@ async function hits(
   app.post('/v1/workflow/tasks/claim', async () => ({ ok: true }));
   const statuses: number[] = [];
   const headers = did === null ? {} : { 'x-did': did };
-  for (let i = 0; i < n; i += 1) statuses.push((await app.inject({ method, url, headers })).statusCode);
+  for (let i = 0; i < n; i += 1)
+    statuses.push((await app.inject({ method, url, headers })).statusCode);
   await app.close();
   return statuses;
 }

@@ -4,8 +4,6 @@ Dina is your **AI control plane**: your memory, your agent approvals, your servi
 
 This document is the engineering map: the layers, the end-to-end flows (as diagrams), and the design decisions. For the product vision and the Four Laws, see [README.md](README.md); for the threat model and crypto detail, see [SECURITY.md](SECURITY.md). The code is the source of truth — sections below point at the files rather than reproducing them.
 
-> The legacy Go Core (`legacy/go-core/`) and Python Brain (`legacy/python-brain/`) are kept only as a behaviour oracle and runnable reference. They are **not** the implementation described here.
-
 ## Table of Contents
 
 - [System Overview](#system-overview)
@@ -439,7 +437,7 @@ Dina runs as a full Home Node on either form factor — the same `@dina/*` packa
 
 ## Architectural Decisions
 
-- **TypeScript is the product; Go/Python is a reference oracle.** The shipping Home Node is `packages/*` + `apps/mobile` + `apps/home-node-lite`. The legacy Go Core / Python Brain remain under `legacy/` as a behaviour oracle the TS ports were checked against (byte-format and derivation choices were carried over deliberately for cross-runtime vault compatibility). This **replaces** the older "Production (Go/Python) + Lite (TypeScript)" framing, which is now backwards.
+- **TypeScript is the product.** The shipping Home Node is `packages/*` + `apps/mobile` + `apps/home-node-lite`. The first Go Core and Python Brain served as the oracle the TS ports were checked against (byte formats and key derivations were carried over on purpose so vaults stay compatible). That stack has been removed from the tree and remains in git history.
 - **Built on AT Protocol.** Identity is `did:plc`; bring your own PDS. Trust and service records are open AT Protocol records on an open AppView, so other implementations can read and write the same data. AT Proto handles identity + public records; D2D private messaging is Dina's own sealed-box layer over MsgBox.
 - **Not Web3 / IPFS / Ceramic.** Dina needs mutable, private, fast, owner-controlled storage with cheap key rotation — content-addressed immutable stores and on-chain identity fit none of those. Sovereignty is enforced by keys you hold, not by a blockchain.
 - **Thin agent / kernel, not a platform.** No plugins, no untrusted code in-process. Child agents communicate over MsgBox/the protocol and never touch the vault, keys, or personas.
@@ -502,4 +500,4 @@ flowchart TB
 
 ---
 
-*The legacy Go Core + Python Brain stack lives under `legacy/` as a behaviour oracle and runnable reference, not the shipping implementation. See [README.md](README.md) and [SECURITY.md](SECURITY.md).*
+*See [README.md](README.md) and [SECURITY.md](SECURITY.md).*

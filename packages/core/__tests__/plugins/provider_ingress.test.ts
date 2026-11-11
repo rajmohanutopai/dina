@@ -19,26 +19,12 @@ import {
   type CommerceRuntime,
 } from '../../src/commerce';
 import { InMemoryCommerceOrderRefRepository } from '../../src/commerce/order_refs';
-import { InMemoryCommerceQuoteLedgerRepository } from '../../src/commerce/quote_ledger';
-import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
-import { InMemoryCommerceStatusHeadRepository } from '../../src/commerce/status_heads';
-import {
-  BUYER_DID as COMMERCE_BUYER_DID,
-  SUPPLIER_DID as COMMERCE_SUPPLIER_DID,
-  makeAdmission,
-  makeChains,
-  makeFamilies,
-  makeHeldEvidence,
-  makeLifecycle,
-  makeOrder,
-  makeOrders,
-  makeQuoteRequest,
-  makeSignedQuote,
-  realHeldEvidenceVerifier,
-} from '../commerce/helpers';
-import { InMemoryCommerceSettingsRepository } from '../../src/commerce/settings_store';
 import { installQuoteAttemptLedger, QuoteAttemptLedger } from '../../src/commerce/probing_ledger';
 import { DEFAULT_PROBING_POLICY } from '../../src/commerce/probing_resistance';
+import { InMemoryCommerceQuoteLedgerRepository } from '../../src/commerce/quote_ledger';
+import { InMemoryCommerceReceiptRepository } from '../../src/commerce/receipts';
+import { InMemoryCommerceSettingsRepository } from '../../src/commerce/settings_store';
+import { InMemoryCommerceStatusHeadRepository } from '../../src/commerce/status_heads';
 import { claimPluginTask } from '../../src/plugins/claim_guard';
 import { buildPluginEnvelope } from '../../src/plugins/dispatch';
 import {
@@ -63,6 +49,19 @@ import {
   setWorkflowService,
   type ServiceQueryBridgeContext,
 } from '../../src/workflow/service';
+import {
+  SUPPLIER_DID as COMMERCE_SUPPLIER_DID,
+  makeAdmission,
+  makeChains,
+  makeFamilies,
+  makeHeldEvidence,
+  makeLifecycle,
+  makeOrder,
+  makeOrders,
+  makeQuoteRequest,
+  makeSignedQuote,
+  realHeldEvidenceVerifier,
+} from '../commerce/helpers';
 
 /**
  * Name which success a test expects. Since WS-4.6 there are two: a task was
@@ -1396,27 +1395,26 @@ describe('provider ingress bridge (§11.2a)', () => {
     it.each([
       ['processing', { kind: 'processing', retryAfterSeconds: 5 }, 'order_processing'],
       ['conflict', { kind: 'conflict', error: 'keys cannot alias' }, 'order_conflict'],
-    ])('does not dispatch, and has no record to give, when admission answers %s', (
-      _label,
-      admissionOutcome,
-      code,
-    ) => {
-      // These two genuinely have nothing signed to return: `processing` means
-      // the answer does not exist YET, `conflict` means the request cannot be
-      // admitted at all. A typed refusal is the honest reply.
-      outcome = admissionOutcome as typeof outcome;
-      installRuntime();
+    ])(
+      'does not dispatch, and has no record to give, when admission answers %s',
+      (_label, admissionOutcome, code) => {
+        // These two genuinely have nothing signed to return: `processing` means
+        // the answer does not exist YET, `conflict` means the request cannot be
+        // admitted at all. A typed refusal is the honest reply.
+        outcome = admissionOutcome as typeof outcome;
+        installRuntime();
 
-      const result = createProviderIngressTask({
-        workflow,
-        capabilityConfig: binding(),
-        query: submitQuery(),
-        nowMs: T0,
-      });
+        const result = createProviderIngressTask({
+          workflow,
+          capabilityConfig: binding(),
+          query: submitQuery(),
+          nowMs: T0,
+        });
 
-      expect(!result.ok && result.code).toBe(code);
-      expect(workflow.store().getByCorrelationId('q-submit')).toEqual([]);
-    });
+        expect(!result.ok && result.code).toBe(code);
+        expect(workflow.store().getByCorrelationId('q-submit')).toEqual([]);
+      },
+    );
 
     it.each([
       ['replay', 'accepted'],
@@ -1708,7 +1706,11 @@ describe('provider ingress bridge (§11.2a)', () => {
         createProviderIngressTask({
           workflow,
           capabilityConfig: binding(),
-          query: { ...query(`q-spend-${String(i)}`), capability: 'request_quote', fromDid: stranger },
+          query: {
+            ...query(`q-spend-${String(i)}`),
+            capability: 'request_quote',
+            fromDid: stranger,
+          },
           nowMs: T0,
         });
       }
@@ -1729,24 +1731,41 @@ describe('provider ingress bridge (§11.2a)', () => {
 
     it("a counter re-asking while the supplier's owner decides spends no probing budget; once the owner declines it does (NEGOTIATION_PLAN §4.3)", () => {
       const buyer = 'did:plc:competitor4';
-      const waiting = JSON.stringify({ quote: { quote_id: 'q-wait' }, outcome: 'held', pending_owner: true });
+      const waiting = JSON.stringify({
+        quote: { quote_id: 'q-wait' },
+        outcome: 'held',
+        pending_owner: true,
+      });
       let questionState: 'pending' | 'declined' = 'pending';
       setWorkflowService(workflow);
       workflow.create({
         id: 'negotiation-price-q-wait',
         kind: 'approval',
         description: 'A buyer asks for a lower price.',
-        payload: JSON.stringify({ type: 'negotiation_price_approval', quote_id: 'q-wait', lines: [] }),
+        payload: JSON.stringify({
+          type: 'negotiation_price_approval',
+          quote_id: 'q-wait',
+          lines: [],
+        }),
         initialState: 'pending_approval' as never,
       });
       installCommerceRuntime({
         settings: new InMemoryCommerceSettingsRepository(),
         negotiation: {
           getCounter: () => null,
-          listAnswersForQuote: (b: string, q: string) => (b === buyer && q === 'q-wait' ? [waiting] : []),
+          listAnswersForQuote: (b: string, q: string) =>
+            b === buyer && q === 'q-wait' ? [waiting] : [],
           questionsForQuote: (q: string) =>
             q === 'q-wait'
-              ? [{ quoteId: q, lineId: 'l1', buyerDid: buyer, state: questionState, taskId: 'negotiation-price-q-wait' }]
+              ? [
+                  {
+                    quoteId: q,
+                    lineId: 'l1',
+                    buyerDid: buyer,
+                    state: questionState,
+                    taskId: 'negotiation-price-q-wait',
+                  },
+                ]
               : [],
         },
       } as unknown as CommerceRuntime);

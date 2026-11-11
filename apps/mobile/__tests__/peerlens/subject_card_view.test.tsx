@@ -26,10 +26,7 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import React from 'react';
 
-import {
-  SubjectCardView,
-  buildA11yLabel,
-} from '../../src/peerlens/components/subject_card_view';
+import { SubjectCardView, buildA11yLabel } from '../../src/peerlens/components/subject_card_view';
 
 import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 
@@ -65,9 +62,7 @@ function makeDisplay(overrides: Partial<SubjectCardDisplay> = {}): SubjectCardDi
 
 describe('SubjectCardView — render', () => {
   it('renders title + subtitle + score + review count', () => {
-    const { getByText } = render(
-      <SubjectCardView subjectId="sub-1" display={makeDisplay()} />,
-    );
+    const { getByText } = render(<SubjectCardView subjectId="sub-1" display={makeDisplay()} />);
     expect(getByText('Aeron chair')).toBeTruthy();
     expect(getByText('Office furniture')).toBeTruthy();
     expect(getByText('82')).toBeTruthy();
@@ -76,10 +71,7 @@ describe('SubjectCardView — render', () => {
 
   it('renders band label (not numeric) when showNumericScore=false', () => {
     const { getByText, queryByText } = render(
-      <SubjectCardView
-        subjectId="sub-1"
-        display={makeDisplay({ showNumericScore: false })}
-      />,
+      <SubjectCardView subjectId="sub-1" display={makeDisplay({ showNumericScore: false })} />,
     );
     expect(getByText('HIGH')).toBeTruthy();
     // The numeric label "82" must NOT appear when showNumericScore is false.
@@ -121,9 +113,7 @@ describe('SubjectCardView — render', () => {
   });
 
   it('renders friends pill with strangers suffix when strangers > 0', () => {
-    const { getByText } = render(
-      <SubjectCardView subjectId="sub-1" display={makeDisplay()} />,
-    );
+    const { getByText } = render(<SubjectCardView subjectId="sub-1" display={makeDisplay()} />);
     expect(getByText(/2 friends/)).toBeTruthy();
     expect(getByText(/12 strangers/)).toBeTruthy();
   });
@@ -136,9 +126,7 @@ describe('SubjectCardView — render', () => {
   });
 
   it('renders top-reviewer line with quoted headline + attribution', () => {
-    const { getByText } = render(
-      <SubjectCardView subjectId="sub-1" display={makeDisplay()} />,
-    );
+    const { getByText } = render(<SubjectCardView subjectId="sub-1" display={makeDisplay()} />);
     // Quotes are smart quotes around the headline.
     expect(getByText(/Worth every penny for the back/)).toBeTruthy();
     // Attribution line includes name + ring + band.
@@ -159,9 +147,7 @@ describe('SubjectCardView — tap behaviour', () => {
 
   it('does nothing when onPress is omitted', () => {
     // Smoke check — render without onPress; tap shouldn't throw.
-    const { getByTestId } = render(
-      <SubjectCardView subjectId="sub-42" display={makeDisplay()} />,
-    );
+    const { getByTestId } = render(<SubjectCardView subjectId="sub-42" display={makeDisplay()} />);
     expect(() => fireEvent.press(getByTestId('subject-card-sub-42'))).not.toThrow();
   });
 });
@@ -307,10 +293,7 @@ describe('SubjectCardView — context chips (TN-V2-P1-001 + 002 + 003 + RANK-013
     'renders the price chip text verbatim for tier %s',
     (tier) => {
       const { getByTestId, getByText } = render(
-        <SubjectCardView
-          subjectId="sub-1"
-          display={makeDisplay({ priceTier: tier })}
-        />,
+        <SubjectCardView subjectId="sub-1" display={makeDisplay({ priceTier: tier })} />,
       );
       expect(getByTestId('subject-card-price-sub-1')).toBeTruthy();
       expect(getByText(tier)).toBeTruthy();
@@ -359,10 +342,7 @@ describe('SubjectCardView — context chips (TN-V2-P1-001 + 002 + 003 + RANK-013
   // TN-V2-RANK-011 — recency chip on view
   it('renders the recency chip when display.recency is set', () => {
     const { getByTestId, getByText } = render(
-      <SubjectCardView
-        subjectId="sub-1"
-        display={makeDisplay({ recency: '3 years old' })}
-      />,
+      <SubjectCardView subjectId="sub-1" display={makeDisplay({ recency: '3 years old' })} />,
     );
     expect(getByTestId('subject-card-context-sub-1')).toBeTruthy();
     expect(getByTestId('subject-card-recency-sub-1')).toBeTruthy();
@@ -383,10 +363,7 @@ describe('SubjectCardView — context chips (TN-V2-P1-001 + 002 + 003 + RANK-013
   // TN-V2-RANK-012 — region pill on view
   it('renders the region pill when display.regionPill is set', () => {
     const { getByTestId, getByText } = render(
-      <SubjectCardView
-        subjectId="sub-1"
-        display={makeDisplay({ regionPill: '📍 UK only' })}
-      />,
+      <SubjectCardView subjectId="sub-1" display={makeDisplay({ regionPill: '📍 UK only' })} />,
     );
     expect(getByTestId('subject-card-context-sub-1')).toBeTruthy();
     expect(getByTestId('subject-card-region-sub-1')).toBeTruthy();
@@ -539,9 +516,7 @@ describe('buildA11yLabel', () => {
   });
 
   it('uses singular "review" for reviewCount=1', () => {
-    const label = buildA11yLabel(
-      makeDisplay({ reviewCount: 1, friendsPill: null }),
-    );
+    const label = buildA11yLabel(makeDisplay({ reviewCount: 1, friendsPill: null }));
     expect(label).toContain('1 review');
   });
 
@@ -567,9 +542,7 @@ describe('buildA11yLabel', () => {
 
   it('includes language between subtitle and trust band when present', () => {
     const label = buildA11yLabel(makeDisplay({ language: 'EN' }));
-    expect(label).toBe(
-      'Aeron chair, Office furniture, EN, trust HIGH, 14 reviews, 2 friends',
-    );
+    expect(label).toBe('Aeron chair, Office furniture, EN, trust HIGH, 14 reviews, 2 friends');
   });
 
   it('includes host then language when both present', () => {
@@ -611,9 +584,7 @@ describe('buildA11yLabel', () => {
   // verbatim and that matches what sighted users see.
   it('includes price tier after location when present', () => {
     const label = buildA11yLabel(makeDisplay({ priceTier: '$$' }));
-    expect(label).toBe(
-      'Aeron chair, Office furniture, $$, trust HIGH, 14 reviews, 2 friends',
-    );
+    expect(label).toBe('Aeron chair, Office furniture, $$, trust HIGH, 14 reviews, 2 friends');
   });
 
   it('includes price tier last in the chip-row order when all four chips set', () => {
@@ -660,9 +631,7 @@ describe('buildA11yLabel', () => {
   // VoiceOver users decide to stop listening early if the subject
   // isn't sold in their region.
   it('includes region pill first in chip-row order when present', () => {
-    const label = buildA11yLabel(
-      makeDisplay({ regionPill: '📍 UK only', host: 'amazon.de' }),
-    );
+    const label = buildA11yLabel(makeDisplay({ regionPill: '📍 UK only', host: 'amazon.de' }));
     expect(label).toBe(
       'Aeron chair, Office furniture, 📍 UK only, amazon.de, trust HIGH, 14 reviews, 2 friends',
     );
@@ -695,9 +664,7 @@ describe('SubjectCardView — accessibility (TN-TEST-061 surface)', () => {
   });
 
   it('the card has a non-empty composed accessibilityLabel', () => {
-    const { getByTestId } = render(
-      <SubjectCardView subjectId="sub-1" display={makeDisplay()} />,
-    );
+    const { getByTestId } = render(<SubjectCardView subjectId="sub-1" display={makeDisplay()} />);
     const card = getByTestId('subject-card-sub-1');
     expect(typeof card.props.accessibilityLabel).toBe('string');
     expect((card.props.accessibilityLabel as string).length).toBeGreaterThan(0);

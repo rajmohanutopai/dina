@@ -41,7 +41,6 @@ import {
 } from './trade_ledger';
 import { tradeRelationshipReaders } from './trade_readers';
 
-
 /** The §4.2 document kinds a trade push may carry, by direction. */
 export const INBOUND_AT_BUYER = ['delivery_note', 'payment_ack', 'order_attachment'] as const;
 export const INBOUND_AT_SUPPLIER = ['delivery_receipt', 'payment_note'] as const;
@@ -69,7 +68,12 @@ export interface TradePushBody {
 export function readTradePushBody(value: unknown): TradePushBody | string {
   if (value === null || typeof value !== 'object') return 'trade push: body must be an object';
   const b = value as Partial<TradePushBody>;
-  const kinds: readonly string[] = [...INBOUND_AT_BUYER, ...INBOUND_AT_SUPPLIER, ...REVSHARE_KINDS, ...TERM_PUSH_KINDS];
+  const kinds: readonly string[] = [
+    ...INBOUND_AT_BUYER,
+    ...INBOUND_AT_SUPPLIER,
+    ...REVSHARE_KINDS,
+    ...TERM_PUSH_KINDS,
+  ];
   if (typeof b.kind !== 'string' || !kinds.includes(b.kind)) {
     return 'trade push: kind must name a khata document';
   }
@@ -91,7 +95,9 @@ export type TradeIngressOutcome =
 function readTermPush(body: unknown): { kind: TermPushKind; document: unknown } | null {
   if (body === null || typeof body !== 'object') return null;
   const b = body as { kind?: unknown; document?: unknown };
-  return typeof b.kind === 'string' && isTermPushKind(b.kind) ? { kind: b.kind, document: b.document ?? null } : null;
+  return typeof b.kind === 'string' && isTermPushKind(b.kind)
+    ? { kind: b.kind, document: b.document ?? null }
+    : null;
 }
 
 /** How many spooled documents one drain replays at most. */
@@ -151,7 +157,9 @@ export function applyInboundTradeDocument(args: {
       evidenceJson: args.evidenceJson,
       receivedAt: args.nowMs,
     });
-    return held ? { outcome: 'spooled' } : { outcome: 'unavailable', detail: `${money.detail}; spool full` };
+    return held
+      ? { outcome: 'spooled' }
+      : { outcome: 'unavailable', detail: `${money.detail}; spool full` };
   }
   // Older mail first: whatever waited while the line was closed lands before
   // this document, so a receipt never applies ahead of the note it answers.
@@ -200,7 +208,8 @@ export function drainTradeSpool(
       // interrupted never replays the same row twice.
       runtime.tradeSpool.remove(row.spoolId);
       replayed++;
-      if (verdict !== null && (verdict.outcome === 'applied' || verdict.outcome === 'duplicate')) applied++;
+      if (verdict !== null && (verdict.outcome === 'applied' || verdict.outcome === 'duplicate'))
+        applied++;
     }
   }
   return { replayed, applied, faulted };
@@ -323,6 +332,10 @@ function applyOne(
     default:
       // Term documents go to the term engine before the money line and are
       // never spooled; one reaching here was not routed, and is not guessed at.
-      return { outcome: 'unreadable', detail: 'a term document outside the term engine', kind: read.kind };
+      return {
+        outcome: 'unreadable',
+        detail: 'a term document outside the term engine',
+        kind: read.kind,
+      };
   }
 }

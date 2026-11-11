@@ -14,17 +14,13 @@ function mockProcess(
   name: string,
   opts?: { failStart?: boolean; healthURL?: string },
 ): ProcessConfig {
-  let running = false;
   return {
     name,
     healthURL: opts?.healthURL ?? `http://localhost:8100/healthz`,
     startFn: async () => {
       if (opts?.failStart) throw new Error(`${name} failed to start`);
-      running = true;
     },
-    stopFn: async () => {
-      running = false;
-    },
+    stopFn: async () => {},
     healthCheckIntervalMs: 60_000, // long interval — we'll trigger checks manually
     maxRestartAttempts: 3,
     initialBackoffMs: 1, // 1ms for fast tests

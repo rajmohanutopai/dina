@@ -9,12 +9,7 @@
 
 import { makeVaultItem, makeSearchQuery, resetFactoryCounters } from '@dina/test-harness';
 
-import {
-  queryVault,
-  storeItem,
-  clearVaults,
-  DEFAULT_TEST_PERSONAS,
-} from '../../src/vault/crud';
+import { queryVault, storeItem, clearVaults, DEFAULT_TEST_PERSONAS } from '../../src/vault/crud';
 
 describe('Cross-Persona Vault', () => {
   beforeEach(() => {

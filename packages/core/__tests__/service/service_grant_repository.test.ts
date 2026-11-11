@@ -107,17 +107,32 @@ describe('SQLiteServiceGrantRepository', () => {
     const r = h.repo();
     r.create(grant({ grantId: 'g1' }));
     expect(
-      r.isAuthorized({ granteeDid: 'did:plc:emma', serviceRkey: 'other', capability: 'eta_query', nowSec: NOW }),
+      r.isAuthorized({
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'other',
+        capability: 'eta_query',
+        nowSec: NOW,
+      }),
     ).toBe(false);
     expect(
-      r.isAuthorized({ granteeDid: 'did:plc:emma', serviceRkey: 'private-1', capability: 'price_check', nowSec: NOW }),
+      r.isAuthorized({
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'private-1',
+        capability: 'price_check',
+        nowSec: NOW,
+      }),
     ).toBe(false);
   });
 
   it('pins to grant_id when provided', () => {
     const r = h.repo();
     r.create(grant({ grantId: 'g1' }));
-    const base = { granteeDid: 'did:plc:emma', serviceRkey: 'private-1', capability: 'eta_query', nowSec: NOW };
+    const base = {
+      granteeDid: 'did:plc:emma',
+      serviceRkey: 'private-1',
+      capability: 'eta_query',
+      nowSec: NOW,
+    };
     expect(r.isAuthorized({ ...base, grantId: 'g1' })).toBe(true);
     expect(r.isAuthorized({ ...base, grantId: 'nope' })).toBe(false);
   });
@@ -126,7 +141,12 @@ describe('SQLiteServiceGrantRepository', () => {
     const r = h.repo();
     r.create(grant({ grantId: 'g1', expiresAt: NOW - 1 }));
     expect(
-      r.isAuthorized({ granteeDid: 'did:plc:emma', serviceRkey: 'private-1', capability: 'eta_query', nowSec: NOW }),
+      r.isAuthorized({
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'private-1',
+        capability: 'eta_query',
+        nowSec: NOW,
+      }),
     ).toBe(false);
   });
 
@@ -135,7 +155,12 @@ describe('SQLiteServiceGrantRepository', () => {
     r.create(grant({ grantId: 'g1' }));
     expect(r.revoke('g1', NOW)).toBe(true);
     expect(
-      r.isAuthorized({ granteeDid: 'did:plc:emma', serviceRkey: 'private-1', capability: 'eta_query', nowSec: NOW }),
+      r.isAuthorized({
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'private-1',
+        capability: 'eta_query',
+        nowSec: NOW,
+      }),
     ).toBe(false);
     expect(r.revoke('g1', NOW)).toBe(false); // already revoked
   });
@@ -144,7 +169,12 @@ describe('SQLiteServiceGrantRepository', () => {
     h.repo().create(grant({ grantId: 'g1' }));
     const r2 = h.reopen();
     expect(
-      r2.isAuthorized({ granteeDid: 'did:plc:emma', serviceRkey: 'private-1', capability: 'eta_query', nowSec: NOW }),
+      r2.isAuthorized({
+        granteeDid: 'did:plc:emma',
+        serviceRkey: 'private-1',
+        capability: 'eta_query',
+        nowSec: NOW,
+      }),
     ).toBe(true);
   });
 
@@ -154,6 +184,11 @@ describe('SQLiteServiceGrantRepository', () => {
     r.create(grant({ grantId: 'g2', capability: 'price_check' }));
     expect(r.getById('g1')?.capability).toBe('eta_query');
     expect(r.getById('nope')).toBeNull();
-    expect(r.listByGrantee('did:plc:emma').map((g) => g.grantId).sort()).toEqual(['g1', 'g2']);
+    expect(
+      r
+        .listByGrantee('did:plc:emma')
+        .map((g) => g.grantId)
+        .sort(),
+    ).toEqual(['g1', 'g2']);
   });
 });

@@ -36,11 +36,10 @@ export function a2aNonceGuard(store: A2AStore, now: () => number = Date.now): Re
         return false;
       }
       if (!Number.isFinite(signedAt)) return false;
-      const kept = store.db.run('INSERT OR IGNORE INTO a2a_request_nonces (did, nonce, expires_at) VALUES (?, ?, ?)', [
-        did,
-        nonce,
-        Math.max(signedAt, now()) + WINDOW_MS,
-      ]);
+      const kept = store.db.run(
+        'INSERT OR IGNORE INTO a2a_request_nonces (did, nonce, expires_at) VALUES (?, ?, ?)',
+        [did, nonce, Math.max(signedAt, now()) + WINDOW_MS],
+      );
       return kept === 1;
     },
   };

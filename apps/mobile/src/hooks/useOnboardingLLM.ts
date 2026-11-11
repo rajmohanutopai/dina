@@ -17,7 +17,6 @@ import {
   configureProvider,
   validateKeyFormat,
   getProviderStatuses,
-  isProviderAvailable,
   resetProviderConfig,
   type ProviderName,
 } from '@dina/brain/llm';

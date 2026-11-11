@@ -13,6 +13,16 @@
  * Source: ARCHITECTURE.md Task 3.4
  */
 
+import { DEFAULT_EMBEDDING_DIMENSIONS } from '@dina/core';
+
+import {
+  DEFAULT_OPENAI_MODEL,
+  DEFAULT_EMBED_MODEL as EMBED_MODEL,
+  DEFAULT_MAX_TOKENS as MAX_TOKENS,
+} from '../../constants';
+
+import { safeCall } from './safety';
+
 import type {
   LLMProvider,
   ChatMessage,
@@ -21,7 +31,6 @@ import type {
   ChatOptions,
   EmbedOptions,
   EmbedResponse,
-  ToolDefinition,
   ToolCall,
 } from './provider';
 
@@ -91,16 +100,6 @@ export interface OpenAIEmbedResponse {
   data: { embedding: number[]; index: number }[];
   usage: { prompt_tokens: number; total_tokens: number };
 }
-
-import { DEFAULT_EMBEDDING_DIMENSIONS } from '@dina/core';
-
-import {
-  DEFAULT_OPENAI_MODEL,
-  DEFAULT_EMBED_MODEL as EMBED_MODEL,
-  DEFAULT_MAX_TOKENS as MAX_TOKENS,
-} from '../../constants';
-
-import { safeCall } from './safety';
 
 const DEFAULT_CHAT_MODEL = DEFAULT_OPENAI_MODEL;
 const DEFAULT_EMBED_MODEL = EMBED_MODEL;
@@ -297,6 +296,7 @@ function safeParseJSON(str: string): Record<string, unknown> {
  * For testing, use the constructor directly with a mock client.
  */
 export function createOpenAIAdapter(apiKey: string, model?: string): OpenAIAdapter {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports -- optional SDK, not a brain dependency; load only when this adapter is built
   const { default: OpenAI } = require('openai');
   const client = new OpenAI({ apiKey });
   return new OpenAIAdapter(client, model);

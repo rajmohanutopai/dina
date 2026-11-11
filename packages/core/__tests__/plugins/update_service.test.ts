@@ -31,6 +31,7 @@ import {
 } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { clearPairingState, setNodeDID } from '../../src/pairing/ceremony';
 import {
   SQLiteDrainAuthorizationRepository,
   setDrainAuthorizationRepository,
@@ -48,7 +49,6 @@ import {
   setUpdateRebindCoordinator,
   PREPARED_UPDATE_TTL_MS,
 } from '../../src/plugins/update_service';
-import { clearPairingState, setNodeDID } from '../../src/pairing/ceremony';
 import { tier0TxRunner } from '../../src/run/tx';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerPluginUpdateRoutes } from '../../src/server/routes/plugin_updates';
@@ -247,7 +247,11 @@ describe('prepareUpdate — what may be updated at all', () => {
     });
     installs.activate(local, 'did:key:zlocalrunner', T0);
     const repo = repoWith([
-      { did: PUBLISHER, cid: TO_CID, record: manifest({ plugin_id: 'com.dinakernel.commerce.supplier', version: '1.1.0' }) },
+      {
+        did: PUBLISHER,
+        cid: TO_CID,
+        record: manifest({ plugin_id: 'com.dinakernel.commerce.supplier', version: '1.1.0' }),
+      },
     ]);
     setRepoProofVerifier(repo.verifier);
 
@@ -264,7 +268,10 @@ describe('prepareUpdate — what may be updated at all', () => {
     }
     // Refused before the verifier was even asked.
     expect(repo.asked).toEqual([]);
-    expect(installs.getById(local)?.trustAnchor).toEqual({ kind: 'local_publisher_key', keyId: 'dina-kernel-reference' });
+    expect(installs.getById(local)?.trustAnchor).toEqual({
+      kind: 'local_publisher_key',
+      keyId: 'dina-kernel-reference',
+    });
   });
 });
 
@@ -593,7 +600,7 @@ describe('§16.5 — an update cannot silently widen', () => {
   it('shows the owner EVERY widening, not the first', async () => {
     // A card naming one escalation while another rides along is worse than
     // none, so the count matters as much as the contents.
-    const { widening, behaviorHash } = await prepareWide();
+    const { widening, behaviorHash: _behaviorHash } = await prepareWide();
     expect(widening.length).toBeGreaterThanOrEqual(2);
     expect(widening.some((f) => f.capabilityId === 'com.acme.supplier.place-order')).toBe(true);
     expect(widening.some((f) => f.capabilityId === 'com.acme.supplier.catalog')).toBe(true);

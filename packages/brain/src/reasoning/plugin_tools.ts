@@ -36,7 +36,10 @@ import { INVOKE_PLUGIN_RESPONSE_MALFORMED } from '@dina/core';
 import type { AgentTool } from './tool_registry';
 import type { CoreClient } from '@dina/core';
 
-export type PluginToolCoreClient = Pick<CoreClient, 'listPluginToolCapabilities' | 'invokePluginTool'>;
+export type PluginToolCoreClient = Pick<
+  CoreClient,
+  'listPluginToolCapabilities' | 'invokePluginTool'
+>;
 
 export interface PluginToolOptions {
   core: PluginToolCoreClient;
@@ -48,7 +51,7 @@ export function createListPluginCapabilitiesTool(options: PluginToolOptions): Ag
   return {
     name: 'list_plugin_capabilities',
     description:
-      "List the plugin capabilities the owner has installed and consented to (payment-status checks, tax registry lookups, filings, notices, …), each with its params_schema and the data categories that may ride the params. Call this before invoke_plugin to find the right capability and its exact params. Empty when nothing is installed.",
+      'List the plugin capabilities the owner has installed and consented to (payment-status checks, tax registry lookups, filings, notices, …), each with its params_schema and the data categories that may ride the params. Call this before invoke_plugin to find the right capability and its exact params. Empty when nothing is installed.',
     parameters: { type: 'object', properties: {} },
     async execute(): Promise<{ capabilities: unknown[] }> {
       const capabilities = await options.core.listPluginToolCapabilities();
@@ -79,7 +82,9 @@ export function createInvokePluginTool(options: PluginToolOptions): AgentTool {
     terminal: true,
     ownerNote: (result) => {
       const note = (result as { note?: unknown } | null)?.note;
-      return typeof note === 'string' && note !== '' ? note : 'I asked the plugin; its answer will appear in Activity.';
+      return typeof note === 'string' && note !== ''
+        ? note
+        : 'I asked the plugin; its answer will appear in Activity.';
     },
     description:
       'Ask an installed plugin capability to run (from list_plugin_capabilities). Params MUST match its params_schema exactly. Classify every param in param_categories using the capability\'s data categories (e.g. ["payment"]). Fire-and-forget and turn-ending: Core either shows the owner an approval card on their phone or, under a standing grant, runs it; the answer arrives later on the task, never here — so say in one line what you are asking BEFORE calling this. Use once per request. A refusal comes back as an error you can act on.',
@@ -87,8 +92,14 @@ export function createInvokePluginTool(options: PluginToolOptions): AgentTool {
       type: 'object',
       properties: {
         install_id: { type: 'string', description: 'install_id from list_plugin_capabilities.' },
-        capability_id: { type: 'string', description: 'capability_id from list_plugin_capabilities.' },
-        params: { type: 'object', description: "The capability's params, matching its params_schema." },
+        capability_id: {
+          type: 'string',
+          description: 'capability_id from list_plugin_capabilities.',
+        },
+        params: {
+          type: 'object',
+          description: "The capability's params, matching its params_schema.",
+        },
         param_categories: {
           type: 'array',
           items: { type: 'string' },

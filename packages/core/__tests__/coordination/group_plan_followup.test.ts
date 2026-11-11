@@ -3,9 +3,7 @@
  * settled or stopped, and the slot length both sides of a booking agree on.
  */
 
-import {
-  validateBookedBody,
-} from '../../src/coordination/group_booking';
+import { validateBookedBody } from '../../src/coordination/group_booking';
 import {
   GROUP_COORDINATION_CAPABILITY,
   abandonPlan,
@@ -18,11 +16,7 @@ import {
   sweepGroupPlanFollowUps,
   type GroupCoordinationDeps,
 } from '../../src/coordination/group_coordination_service';
-import {
-  MAX_SLOT_CHARS,
-  currentSpoke,
-  type GroupPlan,
-} from '../../src/coordination/group_plan';
+import { MAX_SLOT_CHARS, currentSpoke, type GroupPlan } from '../../src/coordination/group_plan';
 import { InMemoryGroupPlanRepository } from '../../src/coordination/group_plan_repository';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import { submitServiceQuery } from '../../src/server/routes/service_query';
@@ -106,14 +100,20 @@ function ok(r: { ok: boolean; plan?: GroupPlan; refusal?: string }): GroupPlan {
 }
 
 const booked = (h: Harness) => h.sent.filter((s) => s.body.state === 'booked').map((s) => s.to);
-const cancelled = (h: Harness) => h.sent.filter((s) => s.body.state === 'cancelled').map((s) => s.to);
+const cancelled = (h: Harness) =>
+  h.sent.filter((s) => s.body.state === 'cancelled').map((s) => s.to);
 const outcome = (plan: GroupPlan, did: string) =>
   plan.guests.find((g) => g.contactDid === did)?.outcome;
 
 async function settled(h: Harness, s: { start: string } = slot): Promise<GroupPlan> {
   let plan = ok(
     await openGroupPlan(
-      { intent: 'dinner', guests: [{ contactDid: G, required: true }], candidates: [s], windowSeconds: 120 },
+      {
+        intent: 'dinner',
+        guests: [{ contactDid: G, required: true }],
+        candidates: [s],
+        windowSeconds: 120,
+      },
       h.deps,
     ),
   );
@@ -262,7 +262,12 @@ describe('GROUP-4: a fault on one spoke', () => {
     h.deps.offers.findByProviderDidAndCapability = () => [];
     const plan = ok(
       await openGroupPlan(
-        { intent: 'd', guests: [{ contactDid: G, required: true }], candidates: [slot], windowSeconds: 120 },
+        {
+          intent: 'd',
+          guests: [{ contactDid: G, required: true }],
+          candidates: [slot],
+          windowSeconds: 120,
+        },
         h.deps,
       ),
     );

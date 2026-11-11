@@ -594,7 +594,10 @@ describe('the listing survives a republication', () => {
 
     const second = await publish({
       published_at: '2026-08-08T10:00:00.000Z',
-      items: [{ sku: 'CHAIR-1', name: 'Oak chair' }, { sku: 'CHAIR-2', name: 'Ash chair' }],
+      items: [
+        { sku: 'CHAIR-1', name: 'Oak chair' },
+        { sku: 'CHAIR-2', name: 'Ash chair' },
+      ],
     });
 
     expect(second.status).toBe(200);

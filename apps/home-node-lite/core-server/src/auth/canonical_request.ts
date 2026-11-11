@@ -90,9 +90,7 @@ export function splitUrl(rawUrl: string): { path: string; query: string } {
 
 function bytesToHexLower(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    const b = bytes[i];
-    if (b === undefined) continue;
+  for (const b of bytes) {
     out += b.toString(16).padStart(2, '0');
   }
   return out;

@@ -130,7 +130,10 @@ export function renderCardView(card: CardSpec): { title: string; body: string } 
     else if (block.kind === 'body') bodyParts.push(String(block.text ?? ''));
     else if (block.kind === 'section') bodyParts.push(String(block.label ?? ''));
   }
-  return { title: title.slice(0, MAX_VIEW_TITLE), body: bodyParts.join('\n').slice(0, MAX_VIEW_BODY) };
+  return {
+    title: title.slice(0, MAX_VIEW_TITLE),
+    body: bodyParts.join('\n').slice(0, MAX_VIEW_BODY),
+  };
 }
 
 /**

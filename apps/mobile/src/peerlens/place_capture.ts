@@ -139,7 +139,7 @@ const TRANSITIONS: Readonly<Record<string, CaptureMode>> = Object.freeze({
   'error:reset': 'idle',
   'error:start_locating': 'locating',
   'error:start_manual': 'manual',
-})
+});
 
 // ─── Public API ───────────────────────────────────────────────────────────
 
@@ -199,7 +199,10 @@ export function buildPlaceSubjectRef(draft: PlaceSubjectDraft): SubjectRef {
     throw new Error('buildPlaceSubjectRef: name must be a non-empty string');
   }
 
-  if (draft.coordinates === null && (!draft.googlePlaceId || draft.googlePlaceId.trim().length === 0)) {
+  if (
+    draft.coordinates === null &&
+    (!draft.googlePlaceId || draft.googlePlaceId.trim().length === 0)
+  ) {
     throw new Error(
       'buildPlaceSubjectRef: place is unidentifiable — provide coordinates or googlePlaceId',
     );

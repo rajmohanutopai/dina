@@ -151,7 +151,11 @@ export async function beginCountryPackInstall(pack: CountryPack): Promise<BeginC
     result = await plugins().beginCountryPack(pack);
   } catch (err) {
     if (err instanceof OwnerPluginsHttpError && err.errorKey === 'owner_identity_unavailable') {
-      return { state: 'refused', error: 'Node identity not ready yet — wait for boot to finish and retry.', transient: true };
+      return {
+        state: 'refused',
+        error: 'Node identity not ready yet — wait for boot to finish and retry.',
+        transient: true,
+      };
     }
     throw err;
   }
@@ -160,7 +164,11 @@ export async function beginCountryPackInstall(pack: CountryPack): Promise<BeginC
   }
   if (result.ok && 'consent' in result) return { state: 'staged', consent: consentSummary(result) };
   if (!result.ok) {
-    return { state: 'refused', error: `${result.code}: ${result.message}`, transient: result.transient };
+    return {
+      state: 'refused',
+      error: `${result.code}: ${result.message}`,
+      transient: result.transient,
+    };
   }
   return { state: 'refused', error: 'unexpected answer from the node', transient: false };
 }
@@ -180,14 +188,21 @@ export interface RunnerSetupCode {
  * a presence refusal is raised for the screen's sheet. Other refusals raise
  * an error naming what to do.
  */
-export async function issueRunnerSetupCode(consent: PluginConsentSummary): Promise<RunnerSetupCode> {
+export async function issueRunnerSetupCode(
+  consent: PluginConsentSummary,
+): Promise<RunnerSetupCode> {
   let issued;
   try {
     issued = await plugins().runnerCode(consent.installId);
   } catch (err) {
     if (
       err instanceof OwnerPluginsHttpError &&
-      ['install_unknown', 'install_not_pending', 'not_a_runner_install', 'install_expired'].includes(err.errorKey)
+      [
+        'install_unknown',
+        'install_not_pending',
+        'not_a_runner_install',
+        'install_expired',
+      ].includes(err.errorKey)
     ) {
       throw new Error('This install can no longer take a runner — start again.');
     }
@@ -204,7 +219,10 @@ export async function issueRunnerSetupCode(consent: PluginConsentSummary): Promi
  * when the code was used. `expired`: issue a new code. `refused`: the install
  * itself can no longer take a runner.
  */
-export async function checkRunnerPairing(installId: string, code: string): Promise<RunnerPairingState> {
+export async function checkRunnerPairing(
+  installId: string,
+  code: string,
+): Promise<RunnerPairingState> {
   return plugins().pairingState(installId, code);
 }
 
@@ -215,13 +233,16 @@ export type ConfirmPluginInstallOutcome = { ok: true } | { ok: false; error: str
  * device it bound (§15.4: the client never names one) and an interpreted one
  * with none. Needs a person present: a presence refusal is raised.
  */
-export async function confirmPluginInstall(installId: string): Promise<ConfirmPluginInstallOutcome> {
+export async function confirmPluginInstall(
+  installId: string,
+): Promise<ConfirmPluginInstallOutcome> {
   try {
     await plugins().confirm(installId);
     return { ok: true };
   } catch (err) {
     if (!(err instanceof OwnerPluginsHttpError) || err.errorKey === 'no_user_presence') throw err;
-    if (err.errorKey === 'runner_not_paired') return { ok: false, error: 'the runner has not paired yet' };
+    if (err.errorKey === 'runner_not_paired')
+      return { ok: false, error: 'the runner has not paired yet' };
     if (err.errorKey === 'consent_refused') return { ok: false, error: 'consent refused' };
     return { ok: false, error: err.errorKey };
   }
@@ -239,17 +260,29 @@ export async function declinePluginInstall(installId: string): Promise<{ removed
 
 export type UninstallPluginOutcome =
   | { ok: true }
-  | { ok: false; error: 'unknown_install' | 'obligations_open' | 'teardown_incomplete'; detail?: string };
+  | {
+      ok: false;
+      error: 'unknown_install' | 'obligations_open' | 'teardown_incomplete';
+      detail?: string;
+    };
 
 /** Tear down an install (§16.4), revoking its runner device. */
 export async function uninstallPlugin(installId: string): Promise<UninstallPluginOutcome> {
   const answer = await plugins().uninstall(installId);
   if (answer.ok) return { ok: true };
   if (answer.error === 'obligations_open') {
-    return { ok: false, error: 'obligations_open', ...(answer.detail !== undefined ? { detail: answer.detail } : {}) };
+    return {
+      ok: false,
+      error: 'obligations_open',
+      ...(answer.detail !== undefined ? { detail: answer.detail } : {}),
+    };
   }
   if (answer.error === 'teardown_incomplete') {
-    return { ok: false, error: 'teardown_incomplete', detail: 'device revoke not durable; kept for the sweeper' };
+    return {
+      ok: false,
+      error: 'teardown_incomplete',
+      detail: 'device revoke not durable; kept for the sweeper',
+    };
   }
   return { ok: false, error: 'unknown_install' };
 }

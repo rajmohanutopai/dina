@@ -843,10 +843,7 @@ export class CommerceAdmissionEngine {
       }
 
       const nowMs = this.deps.now();
-      if (
-        decision.kind === 'accepted' &&
-        this.deps.takeUpOptionInTx?.(order, nowMs) === 'lapsed'
-      ) {
+      if (decision.kind === 'accepted' && this.deps.takeUpOptionInTx?.(order, nowMs) === 'lapsed') {
         decision = { kind: 'rejected', reasonCode: 'option_lapsed' };
       }
       const acknowledgement = this.buildAcknowledgement(

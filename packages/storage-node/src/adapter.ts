@@ -112,11 +112,22 @@ export class NodeSQLiteAdapter implements DatabaseAdapter {
       throw new NodeSQLiteAdapterError('invalid_path', 'path must be a non-empty string');
     }
     if (!HEX_KEY_REGEX.test(opts.passphraseHex)) {
-      throw new NodeSQLiteAdapterError('invalid_key', 'passphraseHex must be 64 hex chars (32 bytes)');
+      throw new NodeSQLiteAdapterError(
+        'invalid_key',
+        'passphraseHex must be 64 hex chars (32 bytes)',
+      );
     }
     const pageSize = opts.cipherPageSize ?? 4096;
-    if (!Number.isInteger(pageSize) || pageSize < 512 || pageSize > 65536 || (pageSize & (pageSize - 1)) !== 0) {
-      throw new NodeSQLiteAdapterError('invalid_page_size', 'cipherPageSize must be a power-of-two between 512 and 65536');
+    if (
+      !Number.isInteger(pageSize) ||
+      pageSize < 512 ||
+      pageSize > 65536 ||
+      (pageSize & (pageSize - 1)) !== 0
+    ) {
+      throw new NodeSQLiteAdapterError(
+        'invalid_page_size',
+        'cipherPageSize must be a power-of-two between 512 and 65536',
+      );
     }
     const journalMode = opts.journalMode ?? 'WAL';
     if (journalMode !== 'WAL' && journalMode !== 'DELETE') {
@@ -154,7 +165,11 @@ export class NodeSQLiteAdapter implements DatabaseAdapter {
       this._isOpen = true;
     } catch (err) {
       // Clean up the handle so we don't leak the fd on a failed open.
-      try { this.db.close(); } catch { /* swallow — primary error below */ }
+      try {
+        this.db.close();
+      } catch {
+        /* swallow — primary error below */
+      }
       const message = err instanceof Error ? err.message : String(err);
       // SQLCipher/wxSQLite3 surface a wrong key as SqliteError with
       // `code === 'SQLITE_NOTADB'`. Prefer the typed code (stable
@@ -162,8 +177,7 @@ export class NodeSQLiteAdapter implements DatabaseAdapter {
       // library updates) but keep a regex fallback for defensive depth.
       const code = (err as { code?: unknown })?.code;
       const isWrongKey =
-        code === 'SQLITE_NOTADB' ||
-        /not a database|unsupported file format/i.test(message);
+        code === 'SQLITE_NOTADB' || /not a database|unsupported file format/i.test(message);
       if (isWrongKey) {
         throw new NodeSQLiteAdapterError('wrong_key', `SQLCipher decryption failed: ${message}`);
       }
@@ -187,17 +201,16 @@ export class NodeSQLiteAdapter implements DatabaseAdapter {
   query<T extends DBRow = DBRow>(sql: string, params?: unknown[]): T[] {
     this.assertOpen();
     const stmt = this.db.prepare(sql);
-    const rows = params && params.length > 0
-      ? stmt.all(...(params as unknown[]))
-      : stmt.all();
+    const rows = params && params.length > 0 ? stmt.all(...(params as unknown[])) : stmt.all();
     return rows as T[];
   }
 
   run(sql: string, params?: unknown[]): number {
     this.assertOpen();
-    const info = params && params.length > 0
-      ? this.db.prepare(sql).run(...(params as unknown[]))
-      : this.db.prepare(sql).run();
+    const info =
+      params && params.length > 0
+        ? this.db.prepare(sql).run(...(params as unknown[]))
+        : this.db.prepare(sql).run();
     return info.changes;
   }
 
@@ -272,7 +285,11 @@ export class NodeSQLiteAdapter implements DatabaseAdapter {
     // otherwise let SQLite auto-rollback but the in-memory flag would
     // stay stale.
     if (this._inExplicitTransaction) {
-      try { this.db.exec('ROLLBACK'); } catch { /* swallow — closing regardless */ }
+      try {
+        this.db.exec('ROLLBACK');
+      } catch {
+        /* swallow — closing regardless */
+      }
       this._inExplicitTransaction = false;
     }
     this.db.close();

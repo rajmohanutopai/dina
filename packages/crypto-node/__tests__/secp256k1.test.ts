@@ -42,17 +42,12 @@ describe('NodeCryptoAdapter — secp256k1 (task 3.23)', () => {
 
     it('different seeds yield different keys', async () => {
       const a = await adapter.secp256k1DerivePath(seed, "m/0'");
-      const b = await adapter.secp256k1DerivePath(
-        new Uint8Array(32).fill(0x88),
-        "m/0'",
-      );
+      const b = await adapter.secp256k1DerivePath(new Uint8Array(32).fill(0x88), "m/0'");
       expect(Array.from(a.privateKey)).not.toEqual(Array.from(b.privateKey));
     });
 
     it('rejects non-hardened paths (Dina hardened-only rule)', async () => {
-      await expect(adapter.secp256k1DerivePath(seed, 'm/0/0')).rejects.toThrow(
-        /non-hardened/,
-      );
+      await expect(adapter.secp256k1DerivePath(seed, 'm/0/0')).rejects.toThrow(/non-hardened/);
     });
 
     it('rejects all-zero seeds (fail-closed)', async () => {
@@ -62,9 +57,9 @@ describe('NodeCryptoAdapter — secp256k1 (task 3.23)', () => {
     });
 
     it('rejects too-short seeds', async () => {
-      await expect(
-        adapter.secp256k1DerivePath(new Uint8Array(8), "m/0'"),
-      ).rejects.toThrow(/seed too short/);
+      await expect(adapter.secp256k1DerivePath(new Uint8Array(8), "m/0'")).rejects.toThrow(
+        /seed too short/,
+      );
     });
   });
 
@@ -105,16 +100,14 @@ describe('NodeCryptoAdapter — secp256k1 (task 3.23)', () => {
     it('verify fails closed on malformed pubkey length', async () => {
       // Compressed pubkey is 33 bytes; 32-byte input is invalid.
       const sig = new Uint8Array(64);
-      expect(
-        await adapter.secp256k1Verify(new Uint8Array(32), new Uint8Array(1), sig),
-      ).toBe(false);
+      expect(await adapter.secp256k1Verify(new Uint8Array(32), new Uint8Array(1), sig)).toBe(false);
     });
 
     it('verify fails closed on malformed signature length', async () => {
       const { publicKey } = await adapter.secp256k1DerivePath(seed, "m/0'");
-      expect(
-        await adapter.secp256k1Verify(publicKey, new Uint8Array(1), new Uint8Array(63)),
-      ).toBe(false);
+      expect(await adapter.secp256k1Verify(publicKey, new Uint8Array(1), new Uint8Array(63))).toBe(
+        false,
+      );
     });
   });
 });

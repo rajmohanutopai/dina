@@ -15,3 +15,6 @@ packages/a2a/conformance/vectors/
 # Written by packages/ucp/scripts/harvest_spec_examples.mjs from the pinned UCP
 # spec checkout; re-harvesting must reproduce it byte for byte.
 packages/ucp/__tests__/fixtures/
+# Written by `npm run generate` (openapi-typescript); CI regenerates them and
+# diffs the result, so their layout belongs to the generator.
+packages/protocol/src/gen/

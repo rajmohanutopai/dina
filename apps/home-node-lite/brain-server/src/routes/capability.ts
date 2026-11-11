@@ -62,15 +62,16 @@ export function registerCapabilityRoutes(
     // runner's readConfig is sync; close over the passed value (it ignores the
     // rkey arg — Core resolved the right listing already).
     const config = body.config ?? null;
+    const core = options.core;
     const runner = makeTier1CapabilityRunner({
       getLLM: options.getLLM,
       readConfig: () => config,
-      ...(options.core !== undefined
+      ...(core !== undefined
         ? {
             vaultWriter: async (persona: string, fact: { summary: string; body: string }) => {
               // /v1/vault/store reads summary/body (storeItem). VaultItemInput
               // types `content`, which the route ignores — cast to what it reads.
-              await options.core!.vaultStore(persona, {
+              await core.vaultStore(persona, {
                 type: 'note',
                 summary: fact.summary,
                 body: fact.body,

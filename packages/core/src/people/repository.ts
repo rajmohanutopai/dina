@@ -204,8 +204,12 @@ function compareNames(
   existing: string,
   incoming: string,
 ): 'same' | 'existing_fuller' | 'incoming_fuller' | 'different' {
-  const a = normalizeAlias(existing).split(' ').filter((t) => t !== '');
-  const b = normalizeAlias(incoming).split(' ').filter((t) => t !== '');
+  const a = normalizeAlias(existing)
+    .split(' ')
+    .filter((t) => t !== '');
+  const b = normalizeAlias(incoming)
+    .split(' ')
+    .filter((t) => t !== '');
   if (b.length === 0) return 'existing_fuller';
   if (a.length === 0) return 'incoming_fuller';
   const aSet = new Set(a);
@@ -227,12 +231,19 @@ function compareNames(
 function asRoleLink(link: ExtractionPersonLink): ExtractionPersonLink {
   const fromName = parseRelationshipPhrase(link.canonicalName);
   const surfaces = link.surfaces.map((s) => {
-    const rp = s.surfaceType === 'name' || s.surfaceType === 'role_phrase' ? parseRelationshipPhrase(s.surface) : null;
+    const rp =
+      s.surfaceType === 'name' || s.surfaceType === 'role_phrase'
+        ? parseRelationshipPhrase(s.surface)
+        : null;
     return rp !== null ? { ...s, surfaceType: 'role_phrase' as const, surface: rp.phrase } : s;
   });
   if (
     fromName !== null &&
-    !surfaces.some((s) => s.surfaceType === 'role_phrase' && normalizeAlias(s.surface) === normalizeAlias(fromName.phrase))
+    !surfaces.some(
+      (s) =>
+        s.surfaceType === 'role_phrase' &&
+        normalizeAlias(s.surface) === normalizeAlias(fromName.phrase),
+    )
   ) {
     surfaces.push({ surface: fromName.phrase, surfaceType: 'role_phrase', confidence: 'high' });
   }
@@ -242,7 +253,10 @@ function asRoleLink(link: ExtractionPersonLink): ExtractionPersonLink {
   // first linked as "my daughter" (named Emma) and makes a second Emma.
   if (
     canonicalName.trim() !== '' &&
-    !surfaces.some((s) => s.surfaceType === 'name' && normalizeAlias(s.surface) === normalizeAlias(canonicalName))
+    !surfaces.some(
+      (s) =>
+        s.surfaceType === 'name' && normalizeAlias(s.surface) === normalizeAlias(canonicalName),
+    )
   ) {
     surfaces.push({ surface: canonicalName.trim(), surfaceType: 'name', confidence: 'high' });
   }
@@ -315,7 +329,8 @@ export class SQLitePeopleRepository implements PeopleRepository {
           // never replace a fuller name with a shorter one.
           const existingName = this.canonicalNameOf(personId);
           const nameForUpdate =
-            existingName !== '' && compareNames(existingName, link.canonicalName) === 'existing_fuller'
+            existingName !== '' &&
+            compareNames(existingName, link.canonicalName) === 'existing_fuller'
               ? ''
               : link.canonicalName;
           this.db.execute(
@@ -537,7 +552,10 @@ export class SQLitePeopleRepository implements PeopleRepository {
     );
     if (before.length === 0) return false;
     this.db.transaction(() => {
-      this.db.execute(`DELETE FROM person_surfaces WHERE person_id = ? AND ${scopedWhere()}`, [personId, ...scopedParams()]);
+      this.db.execute(`DELETE FROM person_surfaces WHERE person_id = ? AND ${scopedWhere()}`, [
+        personId,
+        ...scopedParams(),
+      ]);
       this.db.execute('DELETE FROM person_identities WHERE person_id = ?', [personId]);
       this.db.execute(
         `UPDATE people SET canonical_name = '', relationship_hint = '', status = ?, updated_at = ?
@@ -560,10 +578,11 @@ export class SQLitePeopleRepository implements PeopleRepository {
       this.upsertIdentityRow(personId, 'did', contactDid, true, true, nowSec);
       // Touch the person so `resolveByIdentity`'s updated_at ordering
       // surfaces the freshly-linked person first.
-      this.db.execute(
-        `UPDATE people SET updated_at = ? WHERE person_id = ? AND ${scopedWhere()}`,
-        [nowSec, personId, ...scopedParams()],
-      );
+      this.db.execute(`UPDATE people SET updated_at = ? WHERE person_id = ? AND ${scopedWhere()}`, [
+        nowSec,
+        personId,
+        ...scopedParams(),
+      ]);
     });
     return true;
   }
@@ -832,7 +851,11 @@ export class SQLitePeopleRepository implements PeopleRepository {
         const byHint = this.ownerRelationHolder(entry.surface);
         if (byHint !== null) {
           const existing = this.canonicalNameOf(byHint);
-          if (link.canonicalName === '' || existing === '' || compareNames(existing, link.canonicalName) !== 'different') {
+          if (
+            link.canonicalName === '' ||
+            existing === '' ||
+            compareNames(existing, link.canonicalName) !== 'different'
+          ) {
             return byHint;
           }
         }
@@ -930,7 +953,14 @@ export class SQLitePeopleRepository implements PeopleRepository {
                   status, confidence, source_item_id, source_excerpt,
                   extractor_version, created_from, created_at, updated_at, data_scope)
                VALUES (?, ?, ?, 'name', 'confirmed', 'high', '', '', 'repair', 'llm', ?, ?, ?)`,
-              [row.person_id, name, normalizeAlias(name), nowSec, nowSec, scopedInsertFields().data_scope],
+              [
+                row.person_id,
+                name,
+                normalizeAlias(name),
+                nowSec,
+                nowSec,
+                scopedInsertFields().data_scope,
+              ],
             );
             repaired++;
           }
@@ -943,7 +973,13 @@ export class SQLitePeopleRepository implements PeopleRepository {
         this.db.execute(
           `UPDATE person_surfaces SET surface_type = 'role_phrase', surface = ?, normalized_surface = ?
            WHERE person_id = ? AND surface_type = 'name' AND normalized_surface = ? AND ${scopedWhere()}`,
-          [rp.phrase, normalizeAlias(rp.phrase), row.person_id, normalizeAlias(name), ...scopedParams()],
+          [
+            rp.phrase,
+            normalizeAlias(rp.phrase),
+            row.person_id,
+            normalizeAlias(name),
+            ...scopedParams(),
+          ],
         );
         repaired++;
       }
@@ -1192,11 +1228,7 @@ export class SQLitePeopleRepository implements PeopleRepository {
     return true;
   }
 
-  private updateSurfaceStatus(
-    personId: string,
-    surfaceId: number,
-    status: SurfaceStatus,
-  ): boolean {
+  private updateSurfaceStatus(personId: string, surfaceId: number, status: SurfaceStatus): boolean {
     const nowSec = Math.floor(this.nowFn() / 1000);
     const before = this.db.query(
       `SELECT 1 AS one FROM person_surfaces WHERE id = ? AND person_id = ? AND ${scopedWhere()} LIMIT 1`,

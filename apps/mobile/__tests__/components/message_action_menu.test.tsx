@@ -20,7 +20,11 @@ const copyAction = (onPress: () => void): MessageAction => ({
 describe('MessageActionMenu', () => {
   it('renders nothing when there is no anchor', () => {
     const { queryByTestId } = render(
-      <MessageActionMenu anchor={null} actions={[copyAction(() => undefined)]} onDismiss={() => undefined} />,
+      <MessageActionMenu
+        anchor={null}
+        actions={[copyAction(() => undefined)]}
+        onDismiss={() => undefined}
+      />,
     );
     expect(queryByTestId('message-action-menu')).toBeNull();
   });

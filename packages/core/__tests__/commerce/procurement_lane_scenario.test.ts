@@ -21,11 +21,11 @@
  */
 
 import { randomBytes } from 'node:crypto';
-
-import { sha256 } from '@noble/hashes/sha2.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import * as path from 'node:path';
+
+import { sha256 } from '@noble/hashes/sha2.js';
 
 import { commerceRecordDigest, validateOrderAcknowledgement } from '@dina/commerce-protocol';
 import { pluginLane, validatePluginManifest } from '@dina/protocol';
@@ -38,6 +38,7 @@ import {
   installCommerceRuntime,
 } from '../../src/commerce';
 import { transformInboundOrderResult } from '../../src/commerce/order_decision';
+import { clearPairingState, setNodeDID } from '../../src/pairing/ceremony';
 import { uninstall } from '../../src/plugins/install_service';
 import { createProviderIngressTask } from '../../src/plugins/provider_ingress';
 import {
@@ -45,11 +46,10 @@ import {
   setPluginInstallRepository,
 } from '../../src/plugins/registry';
 import { PluginRunner } from '../../src/plugins/runner_sdk';
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { clearPairingState, setNodeDID } from '../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerCommerceRoutes } from '../../src/server/routes/commerce';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService } from '../../src/workflow/service';
 
@@ -600,9 +600,7 @@ describe('procurement through the plugin lane: Sancho orders from ChairMaker', (
     expect(rejectedChain?.exists).toBe(true);
     expect(rejectedChain?.head.state).toBe('rejected');
     // And the order no longer counts as work this manifest owes.
-    expect(
-      getCommerceRuntime()?.orders.countUnfinishedByServingManifest(MANIFEST_CID, T0),
-    ).toBe(0);
+    expect(getCommerceRuntime()?.orders.countUnfinishedByServingManifest(MANIFEST_CID, T0)).toBe(0);
     // A refusal REFUNDS the hold, and the proof reads only the PUBLIC
     // surface: the runtime hides the quote ledger on purpose (ARCH-0a), so
     // "did capacity come back" is answered by whether a second order can be

@@ -291,7 +291,6 @@ export class AppViewServiceResolver {
   }
 }
 
-
 /**
  * Match a requested capability against the DID's advertised list, folding
  * alias↔canonical. SERVICES_LAUNCH_ARCHITECTURE.md Part 1, Layer 5 / egress:

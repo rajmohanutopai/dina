@@ -103,14 +103,25 @@ describe('HttpCoreTransport (task 1.31)', () => {
   });
 
   it('a2aSelfDid GETs /v1/a2a/self: the DID on 200, null on anything else', async () => {
-    const answers = [ok({ did: 'did:plc:ewvi7nxzyoun6zhxrhs64oiz' }), ok({ error: 'node_did_unavailable' }, 503), ok({ did: '' }), ok({ did: 7 })];
+    const answers = [
+      ok({ did: 'did:plc:ewvi7nxzyoun6zhxrhs64oiz' }),
+      ok({ error: 'node_did_unavailable' }, 503),
+      ok({ did: '' }),
+      ok({ did: 7 }),
+    ];
     const { client, calls } = makeStubClient(() => answers.shift() as HttpResponse);
-    const t = new HttpCoreTransport({ baseUrl: 'http://core:8100', httpClient: client, signer: makeStubSigner().signer });
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core:8100',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
     expect(await t.a2aSelfDid()).toBe('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
     expect(await t.a2aSelfDid()).toBeNull();
     expect(await t.a2aSelfDid()).toBeNull();
     expect(await t.a2aSelfDid()).toBeNull();
-    expect(calls.map((c) => [c.init.method, c.url])).toEqual(Array(4).fill(['GET', 'http://core:8100/v1/a2a/self']));
+    expect(calls.map((c) => [c.init.method, c.url])).toEqual(
+      Array(4).fill(['GET', 'http://core:8100/v1/a2a/self']),
+    );
   });
 
   it('listContacts GETs /v1/contacts and returns the contacts array', async () => {
@@ -1047,7 +1058,11 @@ describe('HttpCoreTransport (task 1.31)', () => {
       updated_at: 2,
     };
     const { client, calls } = makeStubClient(() => ok({ task: approved }));
-    const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
     const sentBody = (i: number): unknown => {
       const body = calls[i]?.init.body;
       return body === undefined ? undefined : JSON.parse(new TextDecoder().decode(body));
@@ -1062,21 +1077,50 @@ describe('HttpCoreTransport (task 1.31)', () => {
     const table: { status: number; body: string; expect: Record<string, unknown> }[] = [
       {
         status: 202,
-        body: JSON.stringify({ ok: true, mode: 'approval_required', task_id: 't1', execution_id: 't1', card: { risk_level: 'HIGH', reasons: ['r'], params_text: '{}' } }),
-        expect: { ok: true, mode: 'approval_required', taskId: 't1', card: { riskLevel: 'HIGH', reasons: ['r'], paramsText: '{}' } },
+        body: JSON.stringify({
+          ok: true,
+          mode: 'approval_required',
+          task_id: 't1',
+          execution_id: 't1',
+          card: { risk_level: 'HIGH', reasons: ['r'], params_text: '{}' },
+        }),
+        expect: {
+          ok: true,
+          mode: 'approval_required',
+          taskId: 't1',
+          card: { riskLevel: 'HIGH', reasons: ['r'], paramsText: '{}' },
+        },
       },
       {
         status: 202,
-        body: JSON.stringify({ ok: true, mode: 'dispatched', task_id: 't2', execution_id: 't2', grant_id: 'g1' }),
+        body: JSON.stringify({
+          ok: true,
+          mode: 'dispatched',
+          task_id: 't2',
+          execution_id: 't2',
+          grant_id: 'g1',
+        }),
         expect: { ok: true, mode: 'dispatched', taskId: 't2', grantId: 'g1' },
       },
       // Accepted, but the answer is not one of the two shapes: a task exists — never "refused".
       { status: 202, body: 'not json', expect: { ok: false, code: 'response_malformed' } },
-      { status: 202, body: JSON.stringify({ ok: true, mode: 'something_new', task_id: 't3' }), expect: { ok: false, code: 'response_malformed' } },
+      {
+        status: 202,
+        body: JSON.stringify({ ok: true, mode: 'something_new', task_id: 't3' }),
+        expect: { ok: false, code: 'response_malformed' },
+      },
       { status: 202, body: '', expect: { ok: false, code: 'response_malformed' } },
       // Refusals carry Core's typed code, or the error field, or the status.
-      { status: 403, body: JSON.stringify({ ok: false, code: 'blocked', message: 'payment class' }), expect: { ok: false, code: 'blocked', message: 'payment class' } },
-      { status: 503, body: JSON.stringify({ error: 'plugin_registry_unavailable' }), expect: { ok: false, code: 'plugin_registry_unavailable' } },
+      {
+        status: 403,
+        body: JSON.stringify({ ok: false, code: 'blocked', message: 'payment class' }),
+        expect: { ok: false, code: 'blocked', message: 'payment class' },
+      },
+      {
+        status: 503,
+        body: JSON.stringify({ error: 'plugin_registry_unavailable' }),
+        expect: { ok: false, code: 'plugin_registry_unavailable' },
+      },
       { status: 500, body: '', expect: { ok: false, code: 'http_500' } },
     ];
     for (const row of table) {
@@ -1085,8 +1129,17 @@ describe('HttpCoreTransport (task 1.31)', () => {
         headers: {},
         body: new TextEncoder().encode(row.body),
       }));
-      const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });
-      const out = await t.invokePluginTool({ installId: 'pli', capabilityId: 'cap', params: {}, paramCategories: ['payment'] });
+      const t = new HttpCoreTransport({
+        baseUrl: 'http://core',
+        httpClient: client,
+        signer: makeStubSigner().signer,
+      });
+      const out = await t.invokePluginTool({
+        installId: 'pli',
+        capabilityId: 'cap',
+        params: {},
+        paramCategories: ['payment'],
+      });
       expect(out).toMatchObject(row.expect);
     }
   });
@@ -1108,8 +1161,16 @@ describe('HttpCoreTransport (task 1.31)', () => {
       guests: [],
       requirements: [],
     };
-    const opened = makeStubClient(() => ({ status: 201, headers: {}, body: new TextEncoder().encode(JSON.stringify({ plan })) }));
-    const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: opened.client, signer: makeStubSigner().signer });
+    const opened = makeStubClient(() => ({
+      status: 201,
+      headers: {},
+      body: new TextEncoder().encode(JSON.stringify({ plan })),
+    }));
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: opened.client,
+      signer: makeStubSigner().signer,
+    });
     const out = await t.openGroupPlan({
       intent: 'x',
       guests: [{ contactDid: 'did:plc:garcia' }, { contactDid: 'did:plc:miller', required: false }],
@@ -1120,36 +1181,99 @@ describe('HttpCoreTransport (task 1.31)', () => {
     const body = opened.calls[0]?.init.body;
     expect(body === undefined ? undefined : JSON.parse(new TextDecoder().decode(body))).toEqual({
       intent: 'x',
-      guests: [{ contact_did: 'did:plc:garcia' }, { contact_did: 'did:plc:miller', required: false }],
+      guests: [
+        { contact_did: 'did:plc:garcia' },
+        { contact_did: 'did:plc:miller', required: false },
+      ],
       candidates: [{ start: 'Sat 26' }],
       window_seconds: 60,
     });
     expect(out).toEqual({ ok: true, plan });
 
-    const refused = makeStubClient(() => ({ status: 400, headers: {}, body: new TextEncoder().encode(JSON.stringify({ error: 'too_many_guests', detail: '9 guests' })) }));
-    const t2 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: refused.client, signer: makeStubSigner().signer });
-    await expect(t2.openGroupPlan({ intent: 'x', guests: [], candidates: [] })).resolves.toEqual({ ok: false, refusal: 'too_many_guests', detail: '9 guests' });
+    const refused = makeStubClient(() => ({
+      status: 400,
+      headers: {},
+      body: new TextEncoder().encode(
+        JSON.stringify({ error: 'too_many_guests', detail: '9 guests' }),
+      ),
+    }));
+    const t2 = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: refused.client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t2.openGroupPlan({ intent: 'x', guests: [], candidates: [] })).resolves.toEqual({
+      ok: false,
+      refusal: 'too_many_guests',
+      detail: '9 guests',
+    });
 
     const read = makeStubClient((call) =>
       call.url.endsWith('/gp_1')
         ? ok({ plan })
-        : { status: 404, headers: {}, body: new TextEncoder().encode(JSON.stringify({ error: 'not_found' })) },
+        : {
+            status: 404,
+            headers: {},
+            body: new TextEncoder().encode(JSON.stringify({ error: 'not_found' })),
+          },
     );
-    const t3 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: read.client, signer: makeStubSigner().signer });
+    const t3 = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: read.client,
+      signer: makeStubSigner().signer,
+    });
     await expect(t3.getGroupPlan('gp_1')).resolves.toEqual(plan);
     expect(read.calls[0]?.url).toBe('http://core/v1/coordination/plans/gp_1');
     await expect(t3.getGroupPlan('nope')).resolves.toBeNull();
 
-    const handles = makeStubClient(() => ok({ plans: [{ plan_id: 'gp_1', intent: 'x', state: 'settled', round: 2, chosen: { start: 'Sat 26' }, updated_at: 1 }, { bad: true }] }));
-    const t4 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: handles.client, signer: makeStubSigner().signer });
-    await expect(t4.listGroupPlanHandles()).resolves.toEqual([{ plan_id: 'gp_1', intent: 'x', state: 'settled', round: 2, chosen: { start: 'Sat 26' }, updated_at: 1 }]);
+    const handles = makeStubClient(() =>
+      ok({
+        plans: [
+          {
+            plan_id: 'gp_1',
+            intent: 'x',
+            state: 'settled',
+            round: 2,
+            chosen: { start: 'Sat 26' },
+            updated_at: 1,
+          },
+          { bad: true },
+        ],
+      }),
+    );
+    const t4 = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: handles.client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t4.listGroupPlanHandles()).resolves.toEqual([
+      {
+        plan_id: 'gp_1',
+        intent: 'x',
+        state: 'settled',
+        round: 2,
+        chosen: { start: 'Sat 26' },
+        updated_at: 1,
+      },
+    ]);
     expect(handles.calls[0]?.url).toBe('http://core/v1/coordination/handles');
   });
 
   it('invokePluginTool sends the narrow snake_case body; listPluginToolCapabilities reads the list', async () => {
-    const { client, calls } = makeStubClient(() => ok({ ok: true, mode: 'dispatched', task_id: 't', execution_id: 't' }));
-    const t = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: client, signer: makeStubSigner().signer });
-    await t.invokePluginTool({ installId: 'pli', capabilityId: 'cap', params: { utr: '1' }, paramCategories: ['payment'] });
+    const { client, calls } = makeStubClient(() =>
+      ok({ ok: true, mode: 'dispatched', task_id: 't', execution_id: 't' }),
+    );
+    const t = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: client,
+      signer: makeStubSigner().signer,
+    });
+    await t.invokePluginTool({
+      installId: 'pli',
+      capabilityId: 'cap',
+      params: { utr: '1' },
+      paramCategories: ['payment'],
+    });
     const body = calls[0]?.init.body;
     expect(calls[0]?.url).toBe('http://core/v1/plugins/tool-invoke');
     expect(body === undefined ? undefined : JSON.parse(new TextDecoder().decode(body))).toEqual({
@@ -1158,9 +1282,17 @@ describe('HttpCoreTransport (task 1.31)', () => {
       params: { utr: '1' },
       param_categories: ['payment'],
     });
-    const listing = makeStubClient(() => ok({ capabilities: [{ install_id: 'pli', capability_id: 'cap' }] }));
-    const t2 = new HttpCoreTransport({ baseUrl: 'http://core', httpClient: listing.client, signer: makeStubSigner().signer });
-    await expect(t2.listPluginToolCapabilities()).resolves.toEqual([{ install_id: 'pli', capability_id: 'cap' }]);
+    const listing = makeStubClient(() =>
+      ok({ capabilities: [{ install_id: 'pli', capability_id: 'cap' }] }),
+    );
+    const t2 = new HttpCoreTransport({
+      baseUrl: 'http://core',
+      httpClient: listing.client,
+      signer: makeStubSigner().signer,
+    });
+    await expect(t2.listPluginToolCapabilities()).resolves.toEqual([
+      { install_id: 'pli', capability_id: 'cap' },
+    ]);
     expect(listing.calls[0]?.url).toBe('http://core/v1/plugins/tool-capabilities');
   });
 
@@ -1550,7 +1682,10 @@ describe('the release session reaches Core on the wire (A2A §4.2 (b))', () => {
     await t.vaultList('general', { limit: 2, releaseSession: 'chat:main' });
     await t.vaultItemsForPerson('general', 'p1', 3, { releaseSession: 'chat:main' });
     const [query, get, list, subjects] = calls;
-    expect(JSON.parse(new TextDecoder().decode(query?.init.body as Uint8Array))).toMatchObject({ release_session: 'chat:main' });
-    for (const call of [get, list, subjects]) expect(call?.url).toContain('release_session=chat%3Amain');
+    expect(JSON.parse(new TextDecoder().decode(query?.init.body as Uint8Array))).toMatchObject({
+      release_session: 'chat:main',
+    });
+    for (const call of [get, list, subjects])
+      expect(call?.url).toContain('release_session=chat%3Amain');
   });
 });

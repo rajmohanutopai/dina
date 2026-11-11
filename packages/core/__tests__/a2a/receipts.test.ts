@@ -28,7 +28,12 @@ let store: A2AStore;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'a2a-receipts-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'bb'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: 'bb'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   store = new A2AStore(db);
 });
@@ -70,14 +75,17 @@ describe('receipts', () => {
       created_at: 1,
     });
     expect(checkReceipt(store, { ...KEY, principal: 'a2a:ac_2' }, 'h1')).toEqual({ kind: 'miss' });
-    expect(checkReceipt(store, { ...KEY, operation: 'CancelTask' }, 'h1')).toEqual({ kind: 'miss' });
+    expect(checkReceipt(store, { ...KEY, operation: 'CancelTask' }, 'h1')).toEqual({
+      kind: 'miss',
+    });
   });
 });
 
 describe('per-principal budgets', () => {
   it('spends a principal’s own budget only, and refills after a minute', () => {
     const budgets = new PrincipalBudgets();
-    for (let i = 0; i < A2A_PRINCIPAL_BUDGET_PER_MINUTE; i += 1) expect(budgets.chargeMiss('a2a:ac_1', 1_000)).toBe(true);
+    for (let i = 0; i < A2A_PRINCIPAL_BUDGET_PER_MINUTE; i += 1)
+      expect(budgets.chargeMiss('a2a:ac_1', 1_000)).toBe(true);
     expect(budgets.chargeMiss('a2a:ac_1', 1_000)).toBe(false);
     // Another client is untouched: more than 60 calls in aggregate pass.
     expect(budgets.chargeMiss('a2a:ac_2', 1_000)).toBe(true);
@@ -86,9 +94,11 @@ describe('per-principal budgets', () => {
 
   it('counts replays apart, under a ceiling ten times the budget', () => {
     const budgets = new PrincipalBudgets();
-    for (let i = 0; i < A2A_PRINCIPAL_BUDGET_PER_MINUTE; i += 1) budgets.chargeMiss('a2a:ac_1', 1_000);
+    for (let i = 0; i < A2A_PRINCIPAL_BUDGET_PER_MINUTE; i += 1)
+      budgets.chargeMiss('a2a:ac_1', 1_000);
     expect(budgets.chargeReplay('a2a:ac_1', 1_000)).toBe(true);
-    for (let i = 1; i < A2A_REPLAY_CEILING_PER_MINUTE; i += 1) budgets.chargeReplay('a2a:ac_1', 1_000);
+    for (let i = 1; i < A2A_REPLAY_CEILING_PER_MINUTE; i += 1)
+      budgets.chargeReplay('a2a:ac_1', 1_000);
     expect(budgets.chargeReplay('a2a:ac_1', 1_000)).toBe(false);
   });
 });

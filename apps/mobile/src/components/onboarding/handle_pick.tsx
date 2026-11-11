@@ -149,9 +149,7 @@ export function HandlePicker(props: HandlePickProps): React.ReactElement {
         <View style={styles.serverError} testID="handle-server-error">
           <Text style={styles.serverErrorTitle}>We couldn&rsquo;t finish setting up</Text>
           <Text style={styles.serverErrorMsg}>{props.serverError}</Text>
-          <Text style={styles.serverErrorHint}>
-            Try a different handle below, then continue.
-          </Text>
+          <Text style={styles.serverErrorHint}>Try a different handle below, then continue.</Text>
         </View>
       ) : null}
 

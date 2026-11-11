@@ -17,7 +17,6 @@ import {
   deduplicatePersons,
   extractPersonLinks,
   type ResolvedPerson,
-  type PersonLink,
 } from '../person/linking';
 
 export interface PersonMention {

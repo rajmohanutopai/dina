@@ -26,9 +26,14 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 
 import { sha256 } from '@noble/hashes/sha2.js';
-import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { commerceRecordDigest, type Sha256Fn } from '@dina/commerce-protocol';
+import {
+  commerceRecordDigest,
+  type Sha256Fn,
+  CommerceOrderStatus,
+  PurchaseOrderLine,
+} from '@dina/commerce-protocol';
+import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
   SQLiteBuyerStatusRepository,
@@ -37,8 +42,6 @@ import {
 } from '../../src/commerce/buyer_status';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-
-import type { CommerceOrderStatus, PurchaseOrderLine } from '@dina/commerce-protocol';
 
 const PASSHEX = randomBytes(32).toString('hex');
 const BUYER = 'did:plc:alonso';

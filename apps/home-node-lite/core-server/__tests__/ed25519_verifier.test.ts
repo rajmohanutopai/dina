@@ -19,10 +19,7 @@ async function signedPair(canonical: string) {
   const crypto = new Crypto();
   const seed = new Uint8Array(32);
   for (let i = 0; i < 32; i++) seed[i] = i;
-  const { publicKey, privateKey } = await crypto.ed25519DerivePath(
-    seed,
-    "m/9999'/0'/0'",
-  );
+  const { publicKey, privateKey } = await crypto.ed25519DerivePath(seed, "m/9999'/0'/0'");
   const message = new TextEncoder().encode(canonical);
   const sig = await crypto.ed25519Sign(privateKey, message);
   return {
@@ -35,15 +32,14 @@ async function signedPair(canonical: string) {
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, '0');
   }
   return out;
 }
 
 describe('verifySignature (task 4.19)', () => {
-  const canonical =
-    'POST\n/v1/vault/store\npersona=health\n2026-04-21T22:00:00.000Z\nnnnn\naaaa';
+  const canonical = 'POST\n/v1/vault/store\npersona=health\n2026-04-21T22:00:00.000Z\nnnnn\naaaa';
 
   describe('happy path', () => {
     it('returns ok: true for a valid signature', async () => {

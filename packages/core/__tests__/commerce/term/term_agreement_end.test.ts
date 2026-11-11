@@ -192,7 +192,9 @@ describe('the end of a term agreement (§5.5–5.6)', () => {
     const april = { start: '2027-04-15T00:00:00.000Z', end: '2027-05-15T00:00:00.000Z' };
     const first = settle(fleet, parties, { ...april, gross: '600000' }, 'accepted');
     // Then notice that ends the deal on 25 April, inside that period.
-    expect(brand.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-25T00:00:00Z' }).ok).toBe(true);
+    expect(
+      brand.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-25T00:00:00Z' }).ok,
+    ).toBe(true);
     fleet.pump();
     const cut = must(brand.engine.schedule(digest).find((p) => p.start === april.start));
     expect(cut.end).toBe('2027-04-25T00:00:00.000Z');
@@ -222,7 +224,10 @@ describe('the end of a term agreement (§5.5–5.6)', () => {
     fleet.nowMs = Date.parse('2027-03-20T00:00:00Z');
     // The brand's phone is off; the store's notice cannot be delivered yet.
     fleet.unreachable.add(BRAND_DID);
-    const notice = store.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-25T00:00:00Z' });
+    const notice = store.engine.terminate({
+      proposalDigest: digest,
+      effectiveAt: '2027-04-25T00:00:00Z',
+    });
     expect(notice.ok).toBe(true);
     fleet.pump();
     // The store's own record shows the end, but the slot is not free to re-let:
@@ -231,9 +236,9 @@ describe('the end of a term agreement (§5.5–5.6)', () => {
       expect.objectContaining({ endsAt: '2027-04-25T00:00:00.000Z', terminated: true }),
     );
     expect(termResourceFree({ ...mayToAugust, nowMs: fleet.nowMs })).toBe(false);
-    expect(
-      termHoldingCount({ ...mayToAugust, tag: 'beverages.juice', nowMs: fleet.nowMs }),
-    ).toBe(1);
+    expect(termHoldingCount({ ...mayToAugust, tag: 'beverages.juice', nowMs: fleet.nowMs })).toBe(
+      1,
+    );
 
     // Four days later the phone is back; the notice arrives past its window and is refused.
     fleet.advance(4 * DAY);
@@ -250,7 +255,10 @@ describe('the end of a term agreement (§5.5–5.6)', () => {
     expect(termResourceFree({ ...mayToAugust, nowMs: fleet.nowMs })).toBe(false);
 
     // A notice the brand stores frees the slot from its effective date.
-    const again = store.engine.terminate({ proposalDigest: digest, effectiveAt: '2027-04-30T00:00:00Z' });
+    const again = store.engine.terminate({
+      proposalDigest: digest,
+      effectiveAt: '2027-04-30T00:00:00Z',
+    });
     expect(again.ok).toBe(true);
     fleet.pump();
     expect(fleet.outcomes('term_termination').at(-1)).toBe('applied');

@@ -76,7 +76,6 @@ import {
   migrateStandardPersonaGrants,
   MemoryService,
   setMemoryService,
-
   revokeGrantsOnPersonaDelete,
   registerPersonaDEK,
   setAgentGrantRepository,
@@ -128,7 +127,11 @@ import {
   type PersonaTier,
 } from '@dina/core';
 import { getD2DSender } from '@dina/core/d2d';
-import { getDeviceByDID, listActiveDevices, revokePluginDeviceForTeardown } from '@dina/core/devices';
+import {
+  getDeviceByDID,
+  listActiveDevices,
+  revokePluginDeviceForTeardown,
+} from '@dina/core/devices';
 import { hydrateDeviceRegistry } from '@dina/core/runtime';
 import {
   SQLiteAuditRepository,
@@ -403,7 +406,8 @@ export async function initializeStorage(
     // agent pairings keep theirs as audited, revocable standing grants.
     revokeGrantsOnPersonaDelete();
     const baseline = await migrateStandardPersonaGrants(listActiveDevices());
-    if (baseline.created > 0) logger.info({ count: baseline.created }, 'standing grants for existing agent pairings');
+    if (baseline.created > 0)
+      logger.info({ count: baseline.created }, 'standing grants for existing agent pairings');
     // Forgets, purchases, standing replies and budgets a crash cut short are
     // recovered in boot.ts, once the workflow service is installed.
     if (policies.created > 0) {
@@ -616,7 +620,9 @@ export async function initializeStorage(
   // when it is null, so wiring it here is what makes third-party (repo-proof)
   // installs verifiable at all.
   // The verifier's own deadline + no-redirect policy ride through to the platform fetch.
-  setRepoProofVerifier(createRepoProofVerifier({ fetch: (url, init) => globalThis.fetch(url, init) }));
+  setRepoProofVerifier(
+    createRepoProofVerifier({ fetch: (url, init) => globalThis.fetch(url, init) }),
+  );
   // §3.4 / WS-3.5 — the typed host operations a runner may ask Core to
   // perform. REGISTERED HERE because each needs a boundary Core does not own:
   // the credential broker for the connector lane, the leakage gate for a

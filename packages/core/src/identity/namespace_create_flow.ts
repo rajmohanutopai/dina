@@ -38,10 +38,7 @@
 
 import { deriveNamespaceKey } from '../crypto/slip0010';
 
-import {
-  composeAndSignNamespaceUpdate,
-  type SignedNamespaceUpdate,
-} from './plc_namespace_update';
+import { composeAndSignNamespaceUpdate, type SignedNamespaceUpdate } from './plc_namespace_update';
 import {
   submitPlcOperation,
   type SubmitPlcOperationConfig,
@@ -174,9 +171,7 @@ export async function createNamespace(
  * (e.g. `namespace_abc`) as if absent — they can't collide with a
  * numeric slot, so they don't affect index selection.
  */
-export function nextAvailableNamespaceIndex(
-  priorSignedOperation: Record<string, unknown>,
-): number {
+export function nextAvailableNamespaceIndex(priorSignedOperation: Record<string, unknown>): number {
   const vms = priorSignedOperation.verificationMethods;
   if (!vms || typeof vms !== 'object') {
     // Malformed prior op — surface a 0 so the caller can decide what

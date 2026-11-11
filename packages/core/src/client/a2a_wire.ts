@@ -16,7 +16,9 @@ import type {
 } from './core-client';
 
 const record = (raw: unknown): Record<string, unknown> =>
-  raw !== null && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  raw !== null && typeof raw === 'object' && !Array.isArray(raw)
+    ? (raw as Record<string, unknown>)
+    : {};
 
 const errorOf = (raw: unknown): string => {
   const e = record(raw).error;
@@ -47,7 +49,11 @@ export function parseA2ADelegateResponse(status: number, raw: unknown): A2ADeleg
   if (status !== 201) return { ok: false, status, reason: errorOf(raw) };
   const r = record(raw);
   const projection = record(r.projection);
-  if (typeof r.operation_id !== 'string' || typeof r.approval_task_id !== 'string' || !Array.isArray(projection.parts)) {
+  if (
+    typeof r.operation_id !== 'string' ||
+    typeof r.approval_task_id !== 'string' ||
+    !Array.isArray(projection.parts)
+  ) {
     return { ok: false, status, reason: 'response_malformed' };
   }
   return {
@@ -57,7 +63,9 @@ export function parseA2ADelegateResponse(status: number, raw: unknown): A2ADeleg
     consentHash: typeof r.consent_hash === 'string' ? r.consent_hash : '',
     expiresAtMs: typeof r.expires_at_ms === 'number' ? r.expires_at_ms : 0,
     projection: { parts: projection.parts },
-    labels: Array.isArray(r.labels) ? r.labels.filter((l): l is string => typeof l === 'string') : [],
+    labels: Array.isArray(r.labels)
+      ? r.labels.filter((l): l is string => typeof l === 'string')
+      : [],
   };
 }
 
@@ -75,7 +83,9 @@ export function parseA2ASelfResponse(status: number, raw: unknown): string | nul
 export function parseA2AGuardVerdictResponse(status: number, raw: unknown): A2AGuardVerdictResult {
   if (status !== 200) return { ok: false, status, reason: errorOf(raw) };
   const state = record(raw).state;
-  return typeof state === 'string' ? { ok: true, state } : { ok: false, status, reason: 'response_malformed' };
+  return typeof state === 'string'
+    ? { ok: true, state }
+    : { ok: false, status, reason: 'response_malformed' };
 }
 
 export function a2aGuardVerdictBody(input: A2AGuardVerdictInput): Record<string, unknown> {

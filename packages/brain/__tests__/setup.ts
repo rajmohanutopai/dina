@@ -1,14 +1,7 @@
 import { installUnhandledRejectionGuard } from '@dina/test-harness';
 
-
-import {
-  ingest as stagingIngest,
-  getItem as getStagingItem,
-} from '../../core/src/staging/service';
-import {
-  clearVaults,
-  DEFAULT_TEST_PERSONAS,
-} from '../../core/src/vault/crud';
+import { ingest as stagingIngest, getItem as getStagingItem } from '../../core/src/staging/service';
+import { clearVaults, DEFAULT_TEST_PERSONAS } from '../../core/src/vault/crud';
 import {
   InMemoryWorkflowRepository,
   setWorkflowRepository,

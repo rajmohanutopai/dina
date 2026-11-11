@@ -433,7 +433,9 @@ describe.each([
     legacy.requested_runner = undefined;
     ctx.repo.create(legacy);
     const c = ctx.repo.claimDelegationTask('did:key:zagent', T0, LEASE_MS, '');
-    expect(ctx.repo.completeWithDetails(c!.id, 'did:key:zagent', 's', '{}', '{}', T0 + 5)).toBeGreaterThan(0);
+    expect(
+      ctx.repo.completeWithDetails(c!.id, 'did:key:zagent', 's', '{}', '{}', T0 + 5),
+    ).toBeGreaterThan(0);
   });
 });
 

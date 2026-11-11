@@ -105,15 +105,13 @@ describe('AllowedOrigins', () => {
     //
     // We don't import the schema string (it's in storage/schemas.ts);
     // we use the file's text via fs to keep this test cheap.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     const fs = require('fs') as typeof import('fs');
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     const path = require('path') as typeof import('path');
     const schemasPath = path.join(__dirname, '../../src/storage/schemas.ts');
     const schemasSrc = fs.readFileSync(schemasPath, 'utf8');
-    const checkLine = schemasSrc
-      .split('\n')
-      .find((l: string) => l.includes('origin TEXT CHECK'));
+    const checkLine = schemasSrc.split('\n').find((l: string) => l.includes('origin TEXT CHECK'));
     expect(checkLine).toBeDefined();
     for (const origin of AllowedOrigins) {
       expect(checkLine!).toContain(`'${origin}'`);

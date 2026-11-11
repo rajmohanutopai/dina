@@ -208,8 +208,7 @@ OpenClaw connects to Dina via MCP (Model Context Protocol). Dina runs as an MCP 
 # Install Dina CLI
 pip install dina-agent
 
-# Pair with your Dina Home Node
-legacy/bin/dina-admin device pair # generates pairing code
+# Pair with your Dina Home Node: get a setup code in the app (Settings → Agents)
 dina configure --role agent       # pairs the device
 
 # OpenClaw config (openclaw.json)
@@ -537,11 +536,9 @@ Per-persona vault keys:
 
 ### Import to a new machine
 
-```
-(.venv) ~/new-machine % legacy/bin/install.sh
-Enter recovery phrase: word1 word2 ... word24
-(.venv) ~/new-machine % legacy/bin/dina-admin import dina-export.dina --passphrase "my-export-passphrase"
-Imported
-```
+Set up Dina on the new phone with your recovery phrase, then open
+Settings → Admin and restore the `.dina` archive. The archive holds your data,
+not your master seed, so it restores into the identity your recovery phrase
+brings back.
 
 ---

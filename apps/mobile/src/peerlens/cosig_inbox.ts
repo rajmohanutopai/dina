@@ -48,7 +48,6 @@ import { buildAttestationDeepLink } from './inbox_deep_link';
 
 import type { CosigRequest } from '@dina/protocol';
 
-
 // ─── Public types ─────────────────────────────────────────────────────────
 
 /** What the recipient has already done with the request, locally. */

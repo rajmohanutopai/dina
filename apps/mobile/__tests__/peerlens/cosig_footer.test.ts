@@ -249,13 +249,7 @@ describe('deriveCosigFooter — closed-non-success states excluded', () => {
 
   it('mixed pending + accepted + expired + rejected → only pending and accepted surface', () => {
     const r = deriveCosigFooter({
-      states: [
-        pending('p1'),
-        accepted('a1'),
-        expired('e1'),
-        rejected('r1'),
-        accepted('a2'),
-      ],
+      states: [pending('p1'), accepted('a1'), expired('e1'), rejected('r1'), accepted('a2')],
       recipientNames: { a1: 'Sancho', a2: 'Albert' },
     });
     expect(r.pendingCount).toBe(1);
@@ -278,7 +272,9 @@ describe('deriveCosigFooter — accepted detail', () => {
     if (first === undefined) throw new Error('expected one accepted');
     expect(first.requestId).toBe('r1');
     expect(first.name).toBe('Sancho');
-    expect(first.endorsementUri).toBe('at://did:plc:sancho/com.dinakernel.peerlens.endorsement/abc');
+    expect(first.endorsementUri).toBe(
+      'at://did:plc:sancho/com.dinakernel.peerlens.endorsement/abc',
+    );
   });
 
   it('accepted entries follow input order regardless of acceptedAt timestamp', () => {

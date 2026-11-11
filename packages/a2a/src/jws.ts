@@ -23,7 +23,12 @@ import {
   base64urlEncode,
   base64urlEncodeUtf8,
 } from './base64url';
-import { cardFormPayload, cardSdkSigningPayload, cardSigningPayload, type CardSigningForm } from './card';
+import {
+  cardFormPayload,
+  cardSdkSigningPayload,
+  cardSigningPayload,
+  type CardSigningForm,
+} from './card';
 import { isPlainObject, utf8Bytes } from './json';
 import { parseStrictJson } from './strict_json';
 

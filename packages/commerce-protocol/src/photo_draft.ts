@@ -30,7 +30,11 @@
  */
 
 import { bytesToHex, canonicalJson, utf8Bytes } from './canonical';
-import { CATALOG_POINTER_NSID, verifyCatalogPage, verifyCatalogSnapshot } from './catalog_publication';
+import {
+  CATALOG_POINTER_NSID,
+  verifyCatalogPage,
+  verifyCatalogSnapshot,
+} from './catalog_publication';
 import { validateDid, validateHex64, validateId } from './common';
 import { validateProductRef } from './product';
 import { validateQuantity } from './quantity';

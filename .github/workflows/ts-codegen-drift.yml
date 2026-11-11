@@ -34,6 +34,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # onnxruntime-node (pulled in by AppView's embedder) otherwise downloads its
+  # CUDA build from GitHub releases on every Linux install; CI uses the CPU
+  # build, and that download has failed `npm ci` with 504s.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   drift-check:
     name: TS codegen drift

@@ -10,7 +10,13 @@ import * as path from 'node:path';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { dayCandidates, dayPlanMade, finishDay, planOnDay, putOffTask } from '../../src/plan/day_rules';
+import {
+  dayCandidates,
+  dayPlanMade,
+  finishDay,
+  planOnDay,
+  putOffTask,
+} from '../../src/plan/day_rules';
 import { latePhase, moneySummary } from '../../src/plan/goal_rules';
 import { decideFeed, parseBatch, receiveBatch } from '../../src/plan/intake';
 import {
@@ -123,7 +129,10 @@ describe('routineTurnOn', () => {
 
 describe('ensureRoutineTasks', () => {
   it('makes one turn a day, lapses the old one, and keeps finished ones', () => {
-    const r = store.addRoutine({ title: 'Stretch', kind: 'days', weekdays: [1, 2], effortMin: 15 }, MON);
+    const r = store.addRoutine(
+      { title: 'Stretch', kind: 'days', weekdays: [1, 2], effortMin: 15 },
+      MON,
+    );
     expect(ensureRoutineTasks(store, MON)).toBe(1);
     expect(ensureRoutineTasks(store, MON + 1000)).toBe(0);
     const [first] = store.listRoutineTasks(r.id);
@@ -202,7 +211,12 @@ describe('putting off and ending a day', () => {
     store.addRoutine({ title: 'Run', kind: 'days', weekdays: [1] }, MON);
     ensureRoutineTasks(store, MON);
     const ids = dayCandidates(store, MON).map((c) => c.task.id);
-    store.putDay('2026-11-02', ids.map((taskId) => ({ taskId, reason: '' })), '', MON);
+    store.putDay(
+      '2026-11-02',
+      ids.map((taskId) => ({ taskId, reason: '' })),
+      '',
+      MON,
+    );
     store.updateTask(a.id, { status: 'done' }, MON);
     expect(finishDay(store, MON)).toEqual({ done: 1, carried: ['Left one'], skipped: ['Run'] });
     expect(store.getTask(b.id)?.plannedFor).toBe('2026-11-03');
@@ -254,7 +268,10 @@ describe('changes to a live plan', () => {
     const b = store.addPhase(g.id, 'B', '', null, MON);
     const c = store.addPhase(g.id, 'C', '', null, MON);
     const t = store.addOwnerTask({ title: 'x', goalId: g.id, phaseId: b.id }, MON);
-    const cost = store.addCost({ goalId: g.id, phaseId: b.id, label: 'y', kind: 'quote', amountCents: 100 }, MON);
+    const cost = store.addCost(
+      { goalId: g.id, phaseId: b.id, label: 'y', kind: 'quote', amountCents: 100 },
+      MON,
+    );
     expect(store.deletePhase(b.id, MON)).toBe(true);
     expect(store.getTask(t.id)?.phaseId).toBe('');
     expect(store.listCosts(g.id).find((x) => x.id === cost.id)?.phaseId).toBe('');
@@ -292,13 +309,23 @@ describe('changes to a live plan', () => {
     expect(store.getTask(a.id)?.blockedBy).toEqual([]);
   });
 
-  it("removing a payment reopens what its quote still owes", () => {
+  it('removing a payment reopens what its quote still owes', () => {
     const g = store.addGoal('House', '', MON);
     const t = store.addOwnerTask({ title: 'Roof', goalId: g.id }, MON);
-    const q = store.addCost({ goalId: g.id, taskId: t.id, label: 'q', kind: 'quote', amountCents: 100 }, MON);
-    const p1 = store.addCost({ goalId: g.id, taskId: t.id, label: 'p', kind: 'paid', amountCents: 50 }, MON);
-    const p2 = store.addCost({ goalId: g.id, taskId: t.id, label: 'p', kind: 'paid', amountCents: 50 }, MON);
-    const settled = (): boolean | undefined => store.listCosts(g.id).find((c) => c.id === q.id)?.settled;
+    const q = store.addCost(
+      { goalId: g.id, taskId: t.id, label: 'q', kind: 'quote', amountCents: 100 },
+      MON,
+    );
+    const p1 = store.addCost(
+      { goalId: g.id, taskId: t.id, label: 'p', kind: 'paid', amountCents: 50 },
+      MON,
+    );
+    const p2 = store.addCost(
+      { goalId: g.id, taskId: t.id, label: 'p', kind: 'paid', amountCents: 50 },
+      MON,
+    );
+    const settled = (): boolean | undefined =>
+      store.listCosts(g.id).find((c) => c.id === q.id)?.settled;
     expect(settled()).toBe(true);
     expect(store.deleteCost(p1.id)).toBe(true);
     expect(settled()).toBe(false);
@@ -330,18 +357,58 @@ describe('migration v89', () => {
 describe('the review round: rules across personas, money, clocks and batches', () => {
   it('an item cannot reach a task under another persona through a repeat of its source_ref', () => {
     const agent = 'did:key:zAgent';
-    receiveBatch(store, agent, 'A', parseBatch({ batch_id: 'b1', persona: 'work', items: [{ title: 'Work item', source_ref: 'x', observed_at: MON - 2000 }] }, MON), MON);
+    receiveBatch(
+      store,
+      agent,
+      'A',
+      parseBatch(
+        {
+          batch_id: 'b1',
+          persona: 'work',
+          items: [{ title: 'Work item', source_ref: 'x', observed_at: MON - 2000 }],
+        },
+        MON,
+      ),
+      MON,
+    );
     decideFeed(store, agent, 'work', true, MON);
     const before = store.listTasks({ origin: agent })[0];
     // A feed the owner never allowed, then one they blocked.
-    const r = receiveBatch(store, agent, 'A', parseBatch({ batch_id: 'b2', persona: 'general', items: [{ title: 'Changed', source_ref: 'x', observed_at: MON - 1000 }] }, MON), MON);
+    const r = receiveBatch(
+      store,
+      agent,
+      'A',
+      parseBatch(
+        {
+          batch_id: 'b2',
+          persona: 'general',
+          items: [{ title: 'Changed', source_ref: 'x', observed_at: MON - 1000 }],
+        },
+        MON,
+      ),
+      MON,
+    );
     expect(r).toMatchObject({ accepted: 0, held: 0 });
-    expect(store.getTask(before.id)).toMatchObject({ title: 'Work item', persona: 'work', status: 'open' });
+    expect(store.getTask(before.id)).toMatchObject({
+      title: 'Work item',
+      persona: 'work',
+      status: 'open',
+    });
   });
 
   it('a batch that fails part way leaves nothing, and sending it again delivers it all', () => {
     const agent = 'did:key:zAgent';
-    const batch = parseBatch({ batch_id: 'b1', persona: 'work', items: [{ title: 'One', source_ref: 'a' }, { title: 'Two', source_ref: 'b' }] }, MON);
+    const batch = parseBatch(
+      {
+        batch_id: 'b1',
+        persona: 'work',
+        items: [
+          { title: 'One', source_ref: 'a' },
+          { title: 'Two', source_ref: 'b' },
+        ],
+      },
+      MON,
+    );
     const real = store.upsertAgentItem.bind(store);
     let calls = 0;
     const spy = jest.spyOn(store, 'upsertAgentItem').mockImplementation((...args) => {
@@ -352,23 +419,41 @@ describe('the review round: rules across personas, money, clocks and batches', (
     expect(() => receiveBatch(store, agent, 'A', batch, MON)).toThrow('disk full');
     spy.mockRestore();
     expect(store.listTasks({ origin: agent })).toEqual([]);
-    expect(receiveBatch(store, agent, 'A', batch, MON)).toMatchObject({ held: 2, duplicate_batch: false });
+    expect(receiveBatch(store, agent, 'A', batch, MON)).toMatchObject({
+      held: 2,
+      duplicate_batch: false,
+    });
   });
 
   it('a deposit leaves the rest of a quote open; the balance settles it', () => {
     const g = store.addGoal('House', '', MON, { budgetCents: 100_000 });
-    const q = store.addCost({ goalId: g.id, label: 'Roof', kind: 'quote', amountCents: 18_400 }, MON);
-    const dep = store.addCost({ goalId: g.id, label: 'Deposit', kind: 'paid', amountCents: 2_000, quoteId: q.id }, MON);
+    const q = store.addCost(
+      { goalId: g.id, label: 'Roof', kind: 'quote', amountCents: 18_400 },
+      MON,
+    );
+    const dep = store.addCost(
+      { goalId: g.id, label: 'Deposit', kind: 'paid', amountCents: 2_000, quoteId: q.id },
+      MON,
+    );
     expect(moneySummary(100_000, store.listCosts(g.id))).toMatchObject({
       paidCents: 2_000,
       openQuoteCents: 16_400,
       leftCents: 81_600,
     });
-    store.addCost({ goalId: g.id, label: 'Balance', kind: 'paid', amountCents: 16_400, quoteId: q.id }, MON);
-    expect(moneySummary(100_000, store.listCosts(g.id))).toMatchObject({ openQuoteCents: 0, leftCents: 81_600 });
+    store.addCost(
+      { goalId: g.id, label: 'Balance', kind: 'paid', amountCents: 16_400, quoteId: q.id },
+      MON,
+    );
+    expect(moneySummary(100_000, store.listCosts(g.id))).toMatchObject({
+      openQuoteCents: 0,
+      leftCents: 81_600,
+    });
     // Taking the deposit back reopens what it covered.
     store.deleteCost(dep.id);
-    expect(moneySummary(100_000, store.listCosts(g.id))).toMatchObject({ paidCents: 16_400, openQuoteCents: 2_000 });
+    expect(moneySummary(100_000, store.listCosts(g.id))).toMatchObject({
+      paidCents: 16_400,
+      openQuoteCents: 2_000,
+    });
     // A removed quote leaves its payments standing, tied to nothing.
     store.deleteCost(q.id);
     expect(store.listCosts(g.id).map((c) => c.quoteId)).toEqual(['']);
@@ -419,7 +504,12 @@ describe('the review round: rules across personas, money, clocks and batches', (
     const b = store.addOwnerTask({ title: 'b', goalId: g.id, phaseId: p.id }, MON);
     const c = store.addOwnerTask({ title: 'c', goalId: g.id, phaseId: p.id }, MON);
     const d = store.addOwnerTask({ title: 'd', goalId: g.id, phaseId: p.id }, MON);
-    store.putDay('2026-11-02', [a, b, c, d].map((t) => ({ taskId: t.id, reason: '' })), '', MON);
+    store.putDay(
+      '2026-11-02',
+      [a, b, c, d].map((t) => ({ taskId: t.id, reason: '' })),
+      '',
+      MON,
+    );
     store.updateTask(a.id, { waitingOn: 'Mike', waitingUntil: on(3) }, MON);
     store.updateTask(b.id, { phaseId: later.id }, MON);
     store.setTaskBlockedBy(c.id, [d.id], MON);
@@ -434,7 +524,11 @@ describe('the review round: rules across personas, money, clocks and batches', (
 
   it('a wait comes back the day after its promised day', () => {
     const t = store.addOwnerTask({ title: 'Quote' }, MON);
-    store.updateTask(t.id, { waitingOn: 'Mike', waitingUntil: new Date(2026, 10, 3, 23, 59).getTime() }, MON);
+    store.updateTask(
+      t.id,
+      { waitingOn: 'Mike', waitingUntil: new Date(2026, 10, 3, 23, 59).getTime() },
+      MON,
+    );
     expect(dayCandidates(store, new Date(2026, 10, 3, 9).getTime())).toEqual([]);
     expect(dayCandidates(store, new Date(2026, 10, 4, 0, 1).getTime())[0].chase?.on).toBe('Mike');
   });
@@ -444,8 +538,34 @@ describe('the review round: rules across personas, money, clocks and batches', (
     decideFeed(store, agent, 'work', true, MON);
     store.notePendingFeed(agent, 'work', 'A', MON);
     decideFeed(store, agent, 'work', true, MON);
-    receiveBatch(store, agent, 'A', parseBatch({ batch_id: 'b1', persona: 'work', items: [{ title: 'One', source_ref: 'a', observed_at: MON - 5000 }] }, MON), MON);
-    receiveBatch(store, agent, 'A', parseBatch({ batch_id: 'b2', persona: 'work', items: [{ title: 'One', source_ref: 'a', observed_at: MON + 1000 }] }, MON + 9000), MON + 9000);
+    receiveBatch(
+      store,
+      agent,
+      'A',
+      parseBatch(
+        {
+          batch_id: 'b1',
+          persona: 'work',
+          items: [{ title: 'One', source_ref: 'a', observed_at: MON - 5000 }],
+        },
+        MON,
+      ),
+      MON,
+    );
+    receiveBatch(
+      store,
+      agent,
+      'A',
+      parseBatch(
+        {
+          batch_id: 'b2',
+          persona: 'work',
+          items: [{ title: 'One', source_ref: 'a', observed_at: MON + 1000 }],
+        },
+        MON + 9000,
+      ),
+      MON + 9000,
+    );
     const [t] = store.listTasks({ origin: agent });
     expect(t.updatedAt).toBe(MON + 9000);
     expect(t.openedAt).toBe(MON);
@@ -453,7 +573,16 @@ describe('the review round: rules across personas, money, clocks and batches', (
 
   it('a task allowed later opens when it is allowed', () => {
     const agent = 'did:key:zAgent';
-    receiveBatch(store, agent, 'A', parseBatch({ batch_id: 'b1', persona: 'work', items: [{ title: 'One', source_ref: 'a' }] }, MON), MON);
+    receiveBatch(
+      store,
+      agent,
+      'A',
+      parseBatch(
+        { batch_id: 'b1', persona: 'work', items: [{ title: 'One', source_ref: 'a' }] },
+        MON,
+      ),
+      MON,
+    );
     decideFeed(store, agent, 'work', true, MON + 5000);
     expect(store.listTasks({ origin: agent })[0].openedAt).toBe(MON + 5000);
   });
@@ -524,7 +653,11 @@ describe('migration v91', () => {
         'did:key:zA',
         'A',
         parseBatch(
-          { batch_id: id, persona: 'work', items: [{ title: 'RE: quote', source_ref: ref, observed_at: at }] },
+          {
+            batch_id: id,
+            persona: 'work',
+            items: [{ title: 'RE: quote', source_ref: ref, observed_at: at }],
+          },
           MON,
         ),
         MON,

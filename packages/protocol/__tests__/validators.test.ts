@@ -76,23 +76,20 @@ describe('parseMessageJSON (task 1.20)', () => {
   });
 
   it('throws on missing required fields', () => {
-    expect(() => parseMessageJSON('{"id":"m","type":"t","from":"a","to":[],"created_time":0}'))
-      .toThrow('envelope: missing required field "body"');
+    expect(() =>
+      parseMessageJSON('{"id":"m","type":"t","from":"a","to":[],"created_time":0}'),
+    ).toThrow('envelope: missing required field "body"');
   });
 
   it('throws on wrong field types', () => {
     expect(() =>
-      parseMessageJSON(
-        '{"id":1,"type":"t","from":"a","to":[],"created_time":0,"body":""}',
-      ),
+      parseMessageJSON('{"id":1,"type":"t","from":"a","to":[],"created_time":0,"body":""}'),
     ).toThrow('envelope: id must be a string');
   });
 
   it('throws on non-string `to` array elements', () => {
     expect(() =>
-      parseMessageJSON(
-        '{"id":"m","type":"t","from":"a","to":[1,2],"created_time":0,"body":""}',
-      ),
+      parseMessageJSON('{"id":"m","type":"t","from":"a","to":[1,2],"created_time":0,"body":""}'),
     ).toThrow('envelope: to must be a string or string array');
   });
 });
@@ -111,9 +108,7 @@ describe('validateServiceQueryBody (task 1.20)', () => {
 
   it('rejects non-object bodies', () => {
     expect(validateServiceQueryBody(null)).toBe('service.query: body must be a JSON object');
-    expect(validateServiceQueryBody('string')).toBe(
-      'service.query: body must be a JSON object',
-    );
+    expect(validateServiceQueryBody('string')).toBe('service.query: body must be a JSON object');
   });
 
   it('rejects empty query_id / capability', () => {
@@ -176,9 +171,7 @@ describe('validateServiceQueryBody (task 1.20)', () => {
     const expected =
       'service.query: service_uri must be an at://<did>/com.dinakernel.service.profile/<rkey> URI';
     // Wrong scheme.
-    expect(validateServiceQueryBody({ ...validBody, service_uri: 'https://x/y/z' })).toBe(
-      expected,
-    );
+    expect(validateServiceQueryBody({ ...validBody, service_uri: 'https://x/y/z' })).toBe(expected);
     // Authority not a DID.
     expect(validateServiceQueryBody({ ...validBody, service_uri: 'at://x/y/z' })).toBe(expected);
     // Wrong collection.

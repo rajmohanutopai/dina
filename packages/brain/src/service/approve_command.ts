@@ -31,10 +31,7 @@ export type ServiceApproveCoreClient = Pick<CoreClient, 'approveWorkflowTask'>;
  * requester's TTL doesn't elapse silently; `cancelWorkflowTask`
  * (slice D) is the fallback when respond fails.
  */
-export type ServiceDenyCoreClient = Pick<
-  CoreClient,
-  'cancelWorkflowTask' | 'sendServiceRespond'
->;
+export type ServiceDenyCoreClient = Pick<CoreClient, 'cancelWorkflowTask' | 'sendServiceRespond'>;
 
 /**
  * Build a `ServiceApproveCommandHandler` that forwards to Core. The returned

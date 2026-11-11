@@ -19,7 +19,6 @@ import type { WatchPollPayload } from './payload';
 import type { WatchPollHandler } from './poll_sweeper';
 import type { CoreClient, ServiceQueryClientRequest } from '../client/core-client';
 
-
 /** A fresh correlation id for one poll fire. */
 export function newWatchQueryId(): string {
   return `watchq-${bytesToHex(randomBytes(12))}`;

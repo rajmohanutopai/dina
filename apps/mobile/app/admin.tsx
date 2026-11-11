@@ -21,15 +21,7 @@
 
 import { useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState, useSyncExternalStore } from 'react';
-import {
-  Alert,
-  Pressable,
-  Share,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Alert, Pressable, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 
 import { getBootedNode, getBootDegradations } from '../src/hooks/useNodeBootstrap';
@@ -88,17 +80,41 @@ function buildLogLines(
 ): LogLine[] {
   const lines: LogLine[] = [];
   for (const w of runtimeWarnings) {
-    lines.push({ at: w.at, kind: 'warn', code: w.code, message: w.message, key: `rt-${w.code}-${w.at}` });
+    lines.push({
+      at: w.at,
+      kind: 'warn',
+      code: w.code,
+      message: w.message,
+      key: `rt-${w.code}-${w.at}`,
+    });
   }
   for (const rec of history) {
     if (rec.degradations.length === 0 && rec.warnings.length === 0) {
-      lines.push({ at: rec.at, kind: 'clean', code: 'boot', message: 'Clean boot', key: `boot-${rec.at}` });
+      lines.push({
+        at: rec.at,
+        kind: 'clean',
+        code: 'boot',
+        message: 'Clean boot',
+        key: `boot-${rec.at}`,
+      });
     } else {
       rec.degradations.forEach((d, i) =>
-        lines.push({ at: rec.at, kind: 'degraded', code: d.code, message: d.message, key: `dg-${rec.at}-${i}` }),
+        lines.push({
+          at: rec.at,
+          kind: 'degraded',
+          code: d.code,
+          message: d.message,
+          key: `dg-${rec.at}-${i}`,
+        }),
       );
       rec.warnings.forEach((w, i) =>
-        lines.push({ at: rec.at, kind: 'warn', code: w.code, message: w.message, key: `wn-${rec.at}-${i}` }),
+        lines.push({
+          at: rec.at,
+          kind: 'warn',
+          code: w.code,
+          message: w.message,
+          key: `wn-${rec.at}-${i}`,
+        }),
       );
     }
   }
@@ -285,7 +301,9 @@ export default function AdminScreen(): React.ReactElement {
           <Pressable
             testID="admin-copy-diagnostics"
             accessibilityRole="button"
-            onPress={() => copy(JSON.stringify({ degradations, runtimeWarnings, history }, null, 2))}
+            onPress={() =>
+              copy(JSON.stringify({ degradations, runtimeWarnings, history }, null, 2))
+            }
             style={({ pressed }) => [styles.copyAll, pressed && styles.pressed]}
           >
             <Text style={styles.copyAllText}>Copy JSON for support</Text>
@@ -331,12 +349,16 @@ export default function AdminScreen(): React.ReactElement {
             testID="admin-erase-everything"
             accessibilityRole="button"
             onPress={onEraseEverything}
-            style={({ pressed }) => [styles.dangerBtn, styles.dangerBtnDivider, pressed && styles.pressed]}
+            style={({ pressed }) => [
+              styles.dangerBtn,
+              styles.dangerBtnDivider,
+              pressed && styles.pressed,
+            ]}
           >
             <Text style={styles.dangerTitle}>Erase everything on this device</Text>
             <Text style={styles.dangerBody}>
-              Permanently deletes all data on this device: chat, reminders, contacts, vault
-              entries, and keys. Cannot be undone on this device.
+              Permanently deletes all data on this device: chat, reminders, contacts, vault entries,
+              and keys. Cannot be undone on this device.
             </Text>
           </Pressable>
         </Section>
@@ -464,9 +486,9 @@ function BackupRestoreSection(): React.ReactElement {
   return (
     <View style={styles.backupBox}>
       <Text style={styles.backupNote}>
-        An export is an encrypted copy of your data (contacts, memories, reminders, settings).
-        It never includes your keys or API secrets. Restore brings it back onto a device after you’ve set up
-        your identity.
+        An export is an encrypted copy of your data (contacts, memories, reminders, settings). It
+        never includes your keys or API secrets. Restore brings it back onto a device after you’ve
+        set up your identity.
       </Text>
 
       {/* Export */}
@@ -487,7 +509,11 @@ function BackupRestoreSection(): React.ReactElement {
         accessibilityRole="button"
         onPress={onExport}
         disabled={busy !== 'idle'}
-        style={({ pressed }) => [styles.backupBtn, pressed && styles.pressed, busy === 'export' && styles.backupBtnBusy]}
+        style={({ pressed }) => [
+          styles.backupBtn,
+          pressed && styles.pressed,
+          busy === 'export' && styles.backupBtnBusy,
+        ]}
       >
         <Text style={styles.backupBtnText}>
           {busy === 'export' ? 'Preparing…' : 'Export encrypted backup'}
@@ -530,7 +556,11 @@ function BackupRestoreSection(): React.ReactElement {
                 accessibilityRole="button"
                 onPress={onRestore}
                 disabled={busy !== 'idle'}
-                style={({ pressed }) => [styles.backupBtn, pressed && styles.pressed, busy === 'restore' && styles.backupBtnBusy]}
+                style={({ pressed }) => [
+                  styles.backupBtn,
+                  pressed && styles.pressed,
+                  busy === 'restore' && styles.backupBtnBusy,
+                ]}
               >
                 <Text style={styles.backupBtnText}>
                   {busy === 'restore' ? 'Restoring…' : 'Restore from backup'}
@@ -683,10 +713,7 @@ function DisplayNameRow(): React.ReactElement {
       setEditing(false);
       setDraft('');
     } catch (err) {
-      Alert.alert(
-        'Couldn’t save',
-        err instanceof Error ? err.message : String(err),
-      );
+      Alert.alert('Couldn’t save', err instanceof Error ? err.message : String(err));
     } finally {
       setBusy(false);
     }
@@ -717,10 +744,7 @@ function DisplayNameRow(): React.ReactElement {
               accessibilityRole="button"
               onPress={onCancel}
               disabled={busy}
-              style={({ pressed }) => [
-                displayNameStyles.btn,
-                pressed && styles.pressed,
-              ]}
+              style={({ pressed }) => [displayNameStyles.btn, pressed && styles.pressed]}
             >
               <Text style={displayNameStyles.btnTextSecondary}>Cancel</Text>
             </Pressable>
@@ -738,9 +762,7 @@ function DisplayNameRow(): React.ReactElement {
                 busy && styles.pressed,
               ]}
             >
-              <Text style={displayNameStyles.btnTextPrimary}>
-                {busy ? 'Saving…' : 'Save'}
-              </Text>
+              <Text style={displayNameStyles.btnTextPrimary}>{busy ? 'Saving…' : 'Save'}</Text>
             </Pressable>
           </View>
           <Text style={displayNameStyles.hint}>
@@ -761,10 +783,7 @@ function DisplayNameRow(): React.ReactElement {
       <Text style={styles.rowLabel}>Display name</Text>
       <View style={styles.rowValueWrap}>
         <Text
-          style={[
-            styles.rowValue,
-            override === null && displayNameStyles.unset,
-          ]}
+          style={[styles.rowValue, override === null && displayNameStyles.unset]}
           numberOfLines={1}
         >
           {override ?? 'Not set. Tap to edit.'}

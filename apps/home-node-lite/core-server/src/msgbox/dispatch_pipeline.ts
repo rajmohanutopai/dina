@@ -91,9 +91,7 @@ export interface DispatchOptions {
  * `sealOutboundRpc` from task 4.47 with the sender's pubkey).
  * Separation keeps each layer's responsibility clean.
  */
-export async function dispatchTunneledRequest(
-  opts: DispatchOptions,
-): Promise<CoreRPCResponse> {
+export async function dispatchTunneledRequest(opts: DispatchOptions): Promise<CoreRPCResponse> {
   const { app, request, coreDid } = opts;
   if (!coreDid) {
     throw new Error('dispatchTunneledRequest: coreDid is required');
@@ -103,8 +101,7 @@ export async function dispatchTunneledRequest(
   // `query` is a pre-serialised string (no leading `?`) per the
   // CoreRPCRequest contract in `@dina/protocol`. Append verbatim;
   // Fastify's router re-parses.
-  const queryString =
-    typeof request.query === 'string' ? request.query.trim() : '';
+  const queryString = typeof request.query === 'string' ? request.query.trim() : '';
   const url = queryString ? `${request.path}?${queryString}` : request.path;
 
   // ── Build headers ──────────────────────────────────────────────────────

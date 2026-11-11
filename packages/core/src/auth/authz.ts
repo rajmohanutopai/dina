@@ -315,7 +315,12 @@ const AUTHZ_RULES: {
   // UCP (plan §3.11, §3.16): merchant search, its owner card, and the guard over merchant text.
   { prefix: '/v1/ucp/search', method: 'POST', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/ucp/search/review', method: 'POST', exact: true, allowed: new Set(['brain']) },
-  { prefix: '/v1/ucp/search/', method: 'GET', singleSegmentTail: true, allowed: new Set(['brain']) },
+  {
+    prefix: '/v1/ucp/search/',
+    method: 'GET',
+    singleSegmentTail: true,
+    allowed: new Set(['brain']),
+  },
   { prefix: '/v1/ucp/products', method: 'POST', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/ucp/guard/next', method: 'POST', exact: true, allowed: new Set(['brain']) },
   { prefix: '/v1/ucp/guard/verdict', method: 'POST', exact: true, allowed: new Set(['brain']) },
@@ -327,23 +332,93 @@ const AUTHZ_RULES: {
   // two delivery doors; the public card is the one GET. No other path or
   // verb opens to it, and no one else may use these doors.
   { prefix: '/v1/a2a/ingress/message', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/message/stream', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/tasks/list', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/tasks/', suffix: '/get', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/tasks/', suffix: '/cancel', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/tasks/', suffix: '/subscribe', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/create', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/get', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/list', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/push-configs/', suffix: '/delete', method: 'POST', allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/extended-card', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/events/claim', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/events/ack', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/a2a/ingress/did/complete', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  {
+    prefix: '/v1/a2a/ingress/message/stream',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/tasks/list',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/tasks/',
+    suffix: '/get',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/tasks/',
+    suffix: '/cancel',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/tasks/',
+    suffix: '/subscribe',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/push-configs/',
+    suffix: '/create',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/push-configs/',
+    suffix: '/get',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/push-configs/',
+    suffix: '/list',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/push-configs/',
+    suffix: '/delete',
+    method: 'POST',
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/extended-card',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/events/claim',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/events/ack',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
+  {
+    prefix: '/v1/a2a/ingress/did/complete',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
   { prefix: '/v1/a2a/card', method: 'GET', exact: true, allowed: new Set(['gateway']) },
   // UCP plan §3.13: order webhooks, forwarded by the same public gateway; its alone.
   { prefix: '/v1/ucp/ingress/webhook', method: 'POST', exact: true, allowed: new Set(['gateway']) },
-  { prefix: '/v1/ucp/ingress/oauth-callback', method: 'POST', exact: true, allowed: new Set(['gateway']) },
+  {
+    prefix: '/v1/ucp/ingress/oauth-callback',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['gateway']),
+  },
   // Who may call Brain (A2A design §4.1): Brain reads it over its own signed
   // link, and nothing else may (it names the owner's devices).
   { prefix: '/v1/brain/callers', method: 'GET', exact: true, allowed: new Set(['brain']) },
@@ -399,16 +474,61 @@ const AUTHZ_RULES: {
   // UCP (plan §4.2 U1): the owner's merchant and context settings, and a search as the owner sees it.
   { prefix: '/v1/owner/ucp/settings', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
   // §3.14: My Orders for UCP orders, and the owner marking a webhook-only one done.
-  { prefix: '/v1/owner/ucp/orders', method: 'GET', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/orders/done', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  {
+    prefix: '/v1/owner/ucp/orders',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/orders/done',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
   // §3.17: the owner's linked accounts at merchants: list, start, unlink, and a callback the app caught.
-  { prefix: '/v1/owner/ucp/links', method: 'GET', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/links/start', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/links/unlink', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/links/callback', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/links/dismiss', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/publication', method: 'GET', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
-  { prefix: '/v1/owner/ucp/publication', method: 'POST', exact: true, allowed: new Set(['owner', 'admin', 'device']) },
+  {
+    prefix: '/v1/owner/ucp/links',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/links/start',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/links/unlink',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/links/callback',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/links/dismiss',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/publication',
+    method: 'GET',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
+  {
+    prefix: '/v1/owner/ucp/publication',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['owner', 'admin', 'device']),
+  },
   {
     prefix: '/v1/owner/ucp/searches/',
     method: 'GET',
@@ -499,7 +619,11 @@ const AUTHZ_RULES: {
 
   // Owner settings (REAL_LIFE_FIXES_2 §0) — Brain reads guard modes and the
   // owner's time zone; writes are owner-only (checked again on the route).
-  { prefix: '/v1/settings/', method: 'GET', allowed: new Set(['brain', 'owner', 'device', 'admin']) },
+  {
+    prefix: '/v1/settings/',
+    method: 'GET',
+    allowed: new Set(['brain', 'owner', 'device', 'admin']),
+  },
   { prefix: '/v1/settings/', method: 'PUT', allowed: new Set(['owner', 'device', 'admin']) },
 
   // Working Memory — Brain (touch on ingest, read ToC on reasoning).
@@ -534,12 +658,27 @@ const AUTHZ_RULES: {
   { prefix: '/v1/reminders', allowed: new Set(['admin', 'brain', 'device']) },
 
   // Promises and waits (docs/PROMISES_AND_WAITS.md) — read-only; never agents.
-  { prefix: '/v1/promises', allowed: new Set(['admin', 'brain', 'owner', 'device']), method: 'GET', exact: true },
+  {
+    prefix: '/v1/promises',
+    allowed: new Set(['admin', 'brain', 'owner', 'device']),
+    method: 'GET',
+    exact: true,
+  },
 
   // Daily plan (docs/DAILY_PLAN.md §6) — the owner's agents send tasks and
   // read back their own tasks' state. The origin is the signed caller DID.
-  { prefix: '/v1/plan/inbox', allowed: new Set(['admin', 'device', 'agent']), method: 'POST', exact: true },
-  { prefix: '/v1/plan/status', allowed: new Set(['admin', 'device', 'agent']), method: 'GET', exact: true },
+  {
+    prefix: '/v1/plan/inbox',
+    allowed: new Set(['admin', 'device', 'agent']),
+    method: 'POST',
+    exact: true,
+  },
+  {
+    prefix: '/v1/plan/status',
+    allowed: new Set(['admin', 'device', 'agent']),
+    method: 'GET',
+    exact: true,
+  },
 
   // Notification log (R4-03) — the durable inbox backing. Brain dual-writes
   // through it across the split boundary; same caller set as reminders.
@@ -645,7 +784,12 @@ const AUTHZ_RULES: {
   { prefix: '/v1/forget/', allowed: new Set(['brain']) },
   // REAL_LIFE_FIXES_2 §5 — Brain prepares the readable export (manifest + id
   // only); only the owner's device fetches it (checked on the route).
-  { prefix: '/v1/owner-export/prepare', method: 'POST', exact: true, allowed: new Set(['brain', 'owner', 'device', 'admin']) },
+  {
+    prefix: '/v1/owner-export/prepare',
+    method: 'POST',
+    exact: true,
+    allowed: new Set(['brain', 'owner', 'device', 'admin']),
+  },
   { prefix: '/v1/owner-export/', method: 'GET', allowed: new Set(['owner', 'device', 'admin']) },
   // REAL_LIFE_FIXES_2 §14 — standing replies: Brain proposes from the owner's
   // turn (always a card); the owner or Brain-with-proof may list and revoke.

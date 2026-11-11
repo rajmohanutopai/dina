@@ -15,8 +15,6 @@ import {
   lockPersona,
   hasDEK,
   getDEKHash,
-  setVaultOpener,
-  setVaultCloser,
   setEmbeddingLoader,
   resetOrchestratorState,
 } from '../../src/persona/orchestrator';
@@ -27,7 +25,6 @@ import {
   listPersonas,
 } from '../../src/persona/service';
 import { storeItem, queryVault, clearVaults } from '../../src/vault/crud';
-
 
 const userSalt = new Uint8Array(16).fill(0xcd);
 

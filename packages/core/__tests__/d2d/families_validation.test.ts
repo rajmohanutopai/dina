@@ -7,7 +7,6 @@ import { D2D_V1_MESSAGE_TYPES } from '@dina/test-harness';
 import {
   isValidV1Type,
   mapToVaultItemType,
-  shouldStore,
   alwaysPasses,
   msgTypeToScenario,
   validateMessageBody,

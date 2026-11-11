@@ -21,9 +21,9 @@ import {
   InMemoryAgentGrantRepository,
   setAgentGrantRepository,
 } from '../../src/agent/grant_repository';
+import { grantStandingAccess } from '../../src/agent/standing_grants';
 import { queryAudit, resetAuditState } from '../../src/audit/service';
 import { createPersona, resetPersonaState } from '../../src/persona/service';
-import { grantStandingAccess } from '../../src/agent/standing_grants';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import {
@@ -87,7 +87,12 @@ describe('requireAgentPersonaAccess', () => {
 
   it('a standard persona with no grant raises a card (REAL_LIFE_FIXES_2 §7.2)', () => {
     createPersona('work', 'standard');
-    const d = requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'roadmap' });
+    const d = requireAgentPersonaAccess({
+      agentDID: AGENT_A,
+      persona: 'work',
+      mode: 'read',
+      scope: 'roadmap',
+    });
     expect(d.kind).toBe('approval_required');
   });
 
@@ -96,7 +101,14 @@ describe('requireAgentPersonaAccess', () => {
     grantStandingAccess(AGENT_A, 'work', 'pair-2');
     for (const sessionId of ['sess-a', 'sess-b', null]) {
       expect(
-        requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'x', sessionId, now: Date.now() + 400 * 86_400_000 }).kind,
+        requireAgentPersonaAccess({
+          agentDID: AGENT_A,
+          persona: 'work',
+          mode: 'read',
+          scope: 'x',
+          sessionId,
+          now: Date.now() + 400 * 86_400_000,
+        }).kind,
       ).toBe('allow');
     }
   });
@@ -106,7 +118,10 @@ describe('requireAgentPersonaAccess', () => {
     grantStandingAccess(AGENT_A, 'work', 'pair-3');
     resetPersonaState();
     createPersona('work', 'sensitive');
-    expect(requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'x' }).kind).toBe('approval_required');
+    expect(
+      requireAgentPersonaAccess({ agentDID: AGENT_A, persona: 'work', mode: 'read', scope: 'x' })
+        .kind,
+    ).toBe('approval_required');
   });
 
   it('requires approval for a sensitive persona with no grant — and never reads the vault', () => {

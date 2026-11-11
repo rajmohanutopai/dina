@@ -46,12 +46,10 @@ beforeEach(() => {
       status: 202,
       body: { status: 'in_flight', request_id: input.requestIdHeader ?? 'ask-1' },
     })),
-    handleStatus: jest.fn(
-      async (_id: string, _requesterDid?: string, _sessionId?: string) => ({
-        status: 200,
-        body: { status: 'complete', content: 'answer' },
-      }),
-    ),
+    handleStatus: jest.fn(async (_id: string, _requesterDid?: string, _sessionId?: string) => ({
+      status: 200,
+      body: { status: 'complete', content: 'answer' },
+    })),
   };
   router = new CoreRouter();
   registerAskRoutes(router, { handler });
@@ -90,12 +88,7 @@ it('rejects missing, foreign, and ended sessions uniformly', async () => {
 
 it('binds status polling to the authenticated DID and live query session', async () => {
   const res = await router.handle(
-    req(
-      'GET',
-      '/api/v1/ask/ask-1/status',
-      undefined,
-      { session_id: sessionId },
-    ),
+    req('GET', '/api/v1/ask/ask-1/status', undefined, { session_id: sessionId }),
   );
 
   expect(res.status).toBe(200);
@@ -104,12 +97,7 @@ it('binds status polling to the authenticated DID and live query session', async
 
 it('does not call the status handler for an invalid session', async () => {
   const res = await router.handle(
-    req(
-      'GET',
-      '/api/v1/ask/ask-1/status',
-      undefined,
-      { session_id: 'sess-unknown' },
-    ),
+    req('GET', '/api/v1/ask/ask-1/status', undefined, { session_id: 'sess-unknown' }),
   );
 
   expect(res).toMatchObject({ status: 401, body: { error: 'invalid_session' } });

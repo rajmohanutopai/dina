@@ -20,7 +20,6 @@ import type {
   Task,
   Reminder,
   Contact,
-  AuditEntry,
   OutboxMessage,
   ApprovalRequest,
   Intent,
@@ -28,7 +27,6 @@ import type {
   TrustEntry,
   PairedDevice,
   ScrubResult,
-  PIIEntity,
   SearchQuery,
 } from '../ports';
 

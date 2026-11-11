@@ -8,10 +8,7 @@ import { addKnownContact, clearKnownContacts } from '@dina/core';
 import { resetFactoryCounters } from '@dina/test-harness';
 
 import { registerCloudProvider, resetProviders } from '../../src/embedding/generation';
-import {
-  registerEnrichmentLLM,
-  resetEnrichmentPipeline,
-} from '../../src/enrichment/pipeline';
+import { registerEnrichmentLLM, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
 import {
   processPendingItems,
   classifyItem,

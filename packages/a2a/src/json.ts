@@ -23,7 +23,11 @@ export interface JsonObject {
 function isRootObjectPrototype(obj: object): boolean {
   if (Object.getPrototypeOf(obj) !== null) return false;
   const ctor = Object.getOwnPropertyDescriptor(obj, 'constructor')?.value as unknown;
-  return typeof ctor === 'function' && ctor.name === 'Object' && (ctor as { prototype?: unknown }).prototype === obj;
+  return (
+    typeof ctor === 'function' &&
+    ctor.name === 'Object' &&
+    (ctor as { prototype?: unknown }).prototype === obj
+  );
 }
 
 /**
@@ -37,7 +41,9 @@ export function isPlainObject(value: unknown): value is Record<string, unknown> 
   if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
   const proto = Object.getPrototypeOf(value) as object | null;
   if (proto === null) return !isRootObjectPrototype(value);
-  return isRootObjectPrototype(proto) && Object.prototype.toString.call(value) === '[object Object]';
+  return (
+    isRootObjectPrototype(proto) && Object.prototype.toString.call(value) === '[object Object]'
+  );
 }
 
 export function hasOwn(obj: object, key: string): boolean {

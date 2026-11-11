@@ -121,7 +121,16 @@ export class A2AReleaseLog {
            ON CONFLICT (session_id, audience, persona, item_id, content_digest)
            DO UPDATE SET released_at = excluded.released_at, expires_at = excluded.expires_at,
                          persona_tier = ${STRICTER_TIER}`,
-          [ctx.sessionId, ctx.audience, persona, tier, item.id, releasedContentDigest(item), now, now + RELEASE_LOG_TTL_MS],
+          [
+            ctx.sessionId,
+            ctx.audience,
+            persona,
+            tier,
+            item.id,
+            releasedContentDigest(item),
+            now,
+            now + RELEASE_LOG_TTL_MS,
+          ],
         );
       }
     });
@@ -271,7 +280,10 @@ export class A2AReleaseLog {
          ON CONFLICT (session_id, audience, persona, item_id, content_digest) DO NOTHING`,
         [FORGOTTEN_ITEM_ID, persona, FORGOTTEN_ITEM_ID],
       );
-      this.db.run(`DELETE FROM a2a_disclosures WHERE persona = ? AND item_id != ?`, [persona, FORGOTTEN_ITEM_ID]);
+      this.db.run(`DELETE FROM a2a_disclosures WHERE persona = ? AND item_id != ?`, [
+        persona,
+        FORGOTTEN_ITEM_ID,
+      ]);
       this.db.run(`DELETE FROM a2a_entities WHERE persona = ?`, [persona]);
     });
   }

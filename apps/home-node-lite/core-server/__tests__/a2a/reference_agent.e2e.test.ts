@@ -41,17 +41,22 @@ import { A2ADispatchRunner } from '@dina/home-node';
 import { createA2AHostTransport } from '@dina/net-node';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-
 const REFERENCE_DIR = path.join(__dirname, 'reference');
-const PYTHON = process.env.DINA_A2A_REFERENCE_PYTHON ?? path.join(REFERENCE_DIR, '.venv', 'bin', 'python');
+const PYTHON =
+  process.env.DINA_A2A_REFERENCE_PYTHON ?? path.join(REFERENCE_DIR, '.venv', 'bin', 'python');
 const AVAILABLE = existsSync(PYTHON);
 const REQUIRED = process.env.DINA_A2A_REFERENCE_REQUIRED === '1';
-const CERT = readFileSync(path.join(__dirname, '..', 'fixtures', 'a2a_tls', 'localhost.cert.pem'), 'utf8');
+const CERT = readFileSync(
+  path.join(__dirname, '..', 'fixtures', 'a2a_tls', 'localhost.cert.pem'),
+  'utf8',
+);
 const CAP = 'owner-capability-e2e';
 
 /** Start the agent on a port it binds itself; resolves with the port it reports. */
 async function startAgent(): Promise<{ child: ChildProcess; port: number }> {
-  const child = spawn(PYTHON, [path.join(REFERENCE_DIR, 'agent.py'), '0'], { stdio: ['ignore', 'pipe', 'pipe'] });
+  const child = spawn(PYTHON, [path.join(REFERENCE_DIR, 'agent.py'), '0'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
   const port = await new Promise<number>((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('reference agent did not start')), 20_000);
     let out = '';
@@ -92,7 +97,11 @@ if (!AVAILABLE && REQUIRED) {
   let releaseLog: A2AReleaseLog;
   let turns = 0;
 
-  const owner = async (method: CoreRequest['method'], p: string, body: Record<string, unknown> = {}) =>
+  const owner = async (
+    method: CoreRequest['method'],
+    p: string,
+    body: Record<string, unknown> = {},
+  ) =>
     router.handle({
       method,
       path: p,
@@ -109,10 +118,18 @@ if (!AVAILABLE && REQUIRED) {
   beforeAll(async () => {
     ({ child: agent, port } = await startAgent());
     dir = mkdtempSync(path.join(tmpdir(), 'a2a-e2e-'));
-    db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: '9a'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+    db = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: '9a'.repeat(32),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
     applyMigrations(db, IDENTITY_MIGRATIONS);
     const hooks = a2aWorkflowHooks(getA2ARuntime);
-    workflow = new WorkflowService({ repository: new SQLiteWorkflowRepository(db), approvalDecisionHandler: hooks.approvalDecisionHandler });
+    workflow = new WorkflowService({
+      repository: new SQLiteWorkflowRepository(db),
+      approvalDecisionHandler: hooks.approvalDecisionHandler,
+    });
     setWorkflowService(workflow);
     installA2A({ store: new A2AStore(db) });
     releaseLog = new A2AReleaseLog(db);
@@ -126,16 +143,38 @@ if (!AVAILABLE && REQUIRED) {
     );
     router = createCoreRouter({ ownerCapability: CAP });
     brain = new InProcessTransport(router);
-    runner = new A2ADispatchRunner({ runtime: getA2ARuntime, runnerDid: 'did:key:e2e#a2a-runner', pollBackoffMs: [250], pollDeadlineMs: 20_000 });
-    guard = new A2AGuardWorker({ core: brain, llm: async () => '{"verdict":"pass","reason":"plain answer"}' });
+    runner = new A2ADispatchRunner({
+      runtime: getA2ARuntime,
+      runnerDid: 'did:key:e2e#a2a-runner',
+      pollBackoffMs: [250],
+      pollDeadlineMs: 20_000,
+    });
+    guard = new A2AGuardWorker({
+      core: brain,
+      llm: async () => '{"verdict":"pass","reason":"plain answer"}',
+    });
 
-    const registered = await owner('POST', '/v1/owner/a2a/remote-agents', { card_url: `https://agent.test:${port}/.well-known/agent-card.json` });
+    const registered = await owner('POST', '/v1/owner/a2a/remote-agents', {
+      card_url: `https://agent.test:${port}/.well-known/agent-card.json`,
+    });
     expect(registered.status).toBe(201);
     agentId = (registered.body as { agent_id: string }).agent_id;
-    const cred = await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/credentials`, { kind: 'none' });
+    const cred = await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/credentials`, {
+      kind: 'none',
+    });
     credentialRef = (cred.body as { credential_ref: string }).credential_ref;
-    expect((await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/bindings`, { skill: 'echo', action_class: 'read', credential_ref: credentialRef })).status).toBe(200);
-    expect((await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/activate`)).status).toBe(200);
+    expect(
+      (
+        await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/bindings`, {
+          skill: 'echo',
+          action_class: 'read',
+          credential_ref: credentialRef,
+        })
+      ).status,
+    ).toBe(200);
+    expect((await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/activate`)).status).toBe(
+      200,
+    );
   }, 60_000);
 
   afterAll(async () => {
@@ -151,7 +190,9 @@ if (!AVAILABLE && REQUIRED) {
   });
 
   /** Brain proposes, the owner approves, the runner runs, the guard scans. */
-  async function delegate(text: string): Promise<{ operationId: string; state: string; sentence: string | null }> {
+  async function delegate(
+    text: string,
+  ): Promise<{ operationId: string; state: string; sentence: string | null }> {
     // The owner said it, through the chat entry: the turn the proposal belongs to.
     turns += 1;
     await brain.recordOwnerTurn({ releaseSession: 'chat:main', turnId: `turn-${turns}`, text });
@@ -176,10 +217,16 @@ if (!AVAILABLE && REQUIRED) {
     const row = store.getTaskByExternal('outbound', 'owner', proposed.operationId);
     const endings = (row === null ? [] : store.childrenOf(row.id))
       .flatMap((child) => repo.listEventsForTask(child.child_task_id))
-      .filter((e) => ['a2a_operation_ended', 'a2a_result_released', 'a2a_result_blocked'].includes(e.event_kind));
+      .filter((e) =>
+        ['a2a_operation_ended', 'a2a_result_released', 'a2a_result_blocked'].includes(e.event_kind),
+      );
     expect(endings).toHaveLength(1);
     const kind = endings[0]?.event_kind ?? '';
-    return { operationId: proposed.operationId, state: op.state, sentence: a2aDeliveryText(kind, op) };
+    return {
+      operationId: proposed.operationId,
+      state: op.state,
+      sentence: a2aDeliveryText(kind, op),
+    };
   }
 
   it('pinned the live card and its JSON-RPC 1.0 endpoint', async () => {
@@ -225,14 +272,22 @@ if (!AVAILABLE && REQUIRED) {
 
   it('validates against a pinned result schema in force at consent', async () => {
     expect(
-      (await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/bindings`, {
-        skill: 'echo',
-        action_class: 'read',
-        credential_ref: credentialRef,
-        result_schema: { type: 'object', required: ['total'], properties: { total: { type: 'number' } } },
-      })).status,
+      (
+        await owner('POST', `/v1/owner/a2a/remote-agents/${agentId}/bindings`, {
+          skill: 'echo',
+          action_class: 'read',
+          credential_ref: credentialRef,
+          result_schema: {
+            type: 'object',
+            required: ['total'],
+            properties: { total: { type: 'number' } },
+          },
+        })
+      ).status,
     ).toBe(200);
-    expect((await delegate('MODE:data count')).sentence).toBe('Reference Agent answered:\n\n{\n  "total": 3\n}');
+    expect((await delegate('MODE:data count')).sentence).toBe(
+      'Reference Agent answered:\n\n{\n  "total": 3\n}',
+    );
     expect((await delegate('MODE:message not data')).sentence).toMatch(/could not accept/);
   });
 

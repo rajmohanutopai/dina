@@ -390,7 +390,7 @@ describe('buildCosigAcceptFrame — sender-side validation', () => {
 // ─── End-to-end two-phase orchestration ──────────────────────────────────
 
 describe('two-phase orchestration (phase 1 → publish stub → phase 2)', () => {
-  it('round-trips through the screen layer\'s expected shape', () => {
+  it("round-trips through the screen layer's expected shape", () => {
     // Simulate what the screen does:
     //   1. Build endorsement record (from this module).
     //   2. Stub-publish — return a fixed (uri, cid).

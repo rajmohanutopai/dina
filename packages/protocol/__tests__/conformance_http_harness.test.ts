@@ -7,7 +7,6 @@
 
 import * as path from 'node:path';
 
-
 import sodium from 'libsodium-wrappers';
 
 import { createHarness, type Harness } from '../conformance/http_harness';
@@ -39,7 +38,7 @@ describe('HTTP harness (task 10.16)', () => {
   it('GET /healthz → 200 ok', async () => {
     const res = await fetch(`${origin}/healthz`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { status: string; service: string };
+    const body = (await res.json()) as { status: string; service: string };
     expect(body.status).toBe('ok');
     expect(body.service).toContain('conformance-harness');
   });
@@ -52,7 +51,7 @@ describe('HTTP harness (task 10.16)', () => {
   it('GET /vectors → index.json body', async () => {
     const res = await fetch(`${origin}/vectors`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { vectors: { name: string }[] };
+    const body = (await res.json()) as { vectors: { name: string }[] };
     expect(Array.isArray(body.vectors)).toBe(true);
     expect(body.vectors.length).toBeGreaterThan(0);
   });
@@ -70,14 +69,14 @@ describe('HTTP harness (task 10.16)', () => {
   ])('GET /vectors/%s → 200 vector JSON', async (name) => {
     const res = await fetch(`${origin}/vectors/${name}`);
     expect(res.status).toBe(200);
-    const body = await res.json() as { name: string };
+    const body = (await res.json()) as { name: string };
     expect(body.name).toBe(name);
   });
 
   it('GET /vectors/<unknown> → 404', async () => {
     const res = await fetch(`${origin}/vectors/definitely_not_a_vector`);
     expect(res.status).toBe(404);
-    const body = await res.json() as { error: string };
+    const body = (await res.json()) as { error: string };
     expect(body.error).toBe('unknown_vector');
   });
 
@@ -85,7 +84,7 @@ describe('HTTP harness (task 10.16)', () => {
     const res = await fetch(`${origin}/report`);
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('application/json');
-    const report = await res.json() as { summary: { passed: number; failed: number } };
+    const report = (await res.json()) as { summary: { passed: number; failed: number } };
     expect(report.summary.failed).toBe(0);
     expect(report.summary.passed).toBeGreaterThan(0);
   });
@@ -102,7 +101,7 @@ describe('HTTP harness (task 10.16)', () => {
   it('GET /features → count + array of frozen vectors', async () => {
     const res = await fetch(`${origin}/features`);
     expect(res.status).toBe(200);
-    const body = await res.json() as {
+    const body = (await res.json()) as {
       count: number;
       features: { name: string; task: string; level: string }[];
     };
@@ -117,7 +116,7 @@ describe('HTTP harness (task 10.16)', () => {
   it('POST / → 405 (only GET is supported)', async () => {
     const res = await fetch(`${origin}/vectors`, { method: 'POST' });
     expect(res.status).toBe(405);
-    const body = await res.json() as { error: string; allowed: string[] };
+    const body = (await res.json()) as { error: string; allowed: string[] };
     expect(body.error).toBe('method_not_allowed');
     expect(body.allowed).toContain('GET');
   });
@@ -125,7 +124,7 @@ describe('HTTP harness (task 10.16)', () => {
   it('GET /unknown → 404 with discovery path list', async () => {
     const res = await fetch(`${origin}/totally-bogus`);
     expect(res.status).toBe(404);
-    const body = await res.json() as { error: string; available_paths: string[] };
+    const body = (await res.json()) as { error: string; available_paths: string[] };
     expect(body.error).toBe('not_found');
     expect(body.available_paths).toContain('/healthz');
     expect(body.available_paths).toContain('/report');

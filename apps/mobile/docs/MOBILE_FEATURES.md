@@ -579,7 +579,7 @@ per-listing editor (**Service Settings**, `/service-settings?rkey=…`).
 
 - **Role** — `requester` / `provider` / `both`, set on **My Services** (so a
   requester can become a provider without first creating a listing). There is
-  **no explicit "off"**; "requester only" *is* provider-off. **shipped**
+  **no explicit "off"**; "requester only" _is_ provider-off. **shipped**
   - **Caveat:** changing role requires a **force-quit + reopen** to wire the
     runtime (ServicePublisher / ServiceHandler). **shipped (with restart)**
 - **Multi-listing management** — **My Services** lists every listing (one DID,
@@ -699,8 +699,8 @@ These are the honest "partial" items, collected for quick reference:
    row-level done/snooze/delete buttons are future UX. Fired inline reminder
    cards already support Mark done + Snooze 1h.
 9. **Namespaces** — the route exists as a presentational shell, but the live
-    runner that reads PLC state and submits namespace changes is not wired into
-    mobile yet.
+   runner that reads PLC state and submits namespace changes is not wired into
+   mobile yet.
 10. **Co-sign inbox** — co-sign request derivation and row components exist, but
     there is no shipped mobile route/inbox surface where the user can endorse or
     decline requests.

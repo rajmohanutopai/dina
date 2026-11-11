@@ -34,7 +34,14 @@ async function bound(cardUrl: string, skill: string): Promise<string> {
   const agentId = reg.agent.agent_id;
   const cred = createNoneCredential(d, agentId);
   if (!cred.ok) throw new Error(cred.reason);
-  if (!bindRemoteSkill(d, agentId, { skill, actionClass: 'read', credentialRef: cred.credential.credential_ref }).ok) throw new Error('bind');
+  if (
+    !bindRemoteSkill(d, agentId, {
+      skill,
+      actionClass: 'read',
+      credentialRef: cred.credential.credential_ref,
+    }).ok
+  )
+    throw new Error('bind');
   if (!activateRemoteAgent(d, agentId).ok) throw new Error('activate');
   world.turn();
   return agentId;
@@ -45,8 +52,12 @@ function dinaCard() {
     DINA_URL,
     agentCard({
       name: 'Bus 42',
-      supportedInterfaces: [{ url: 'https://bus.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
-      capabilities: { extensions: [{ uri: DINA_A2A_EXTENSION_URI, description: 'Dina invocation contract.' }] },
+      supportedInterfaces: [
+        { url: 'https://bus.example/a2a/v1', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+      ],
+      capabilities: {
+        extensions: [{ uri: DINA_A2A_EXTENSION_URI, description: 'Dina invocation contract.' }],
+      },
       skills: [
         { id: 'eta_query@bus', name: 'ETA', description: 'Arrival times.', tags: ['transit'] },
         { id: 'price_check@bus', name: 'Price', description: 'Fares.', tags: ['transit'] },
@@ -58,7 +69,13 @@ function dinaCard() {
 }
 
 const dataOf = (out: ReturnType<typeof proposeDelegation>) =>
-  out.ok ? (out.projection.parts.find((p) => 'data' in p) as { data: Record<string, unknown> } | undefined)?.data : undefined;
+  out.ok
+    ? (
+        out.projection.parts.find((p) => 'data' in p) as
+          | { data: Record<string, unknown> }
+          | undefined
+      )?.data
+    : undefined;
 
 it('the bound skill goes out as the card writes it; a UPI-like value elsewhere is still a placeholder', async () => {
   dinaCard();
@@ -70,7 +87,10 @@ it('the bound skill goes out as the card writes it; a UPI-like value elsewhere i
     data: { skill: 'eta_query@bus', params: { route_id: '42', pay_to: 'owner@okaxis' } },
   });
   expect(out.ok).toBe(true);
-  expect(dataOf(out)).toEqual({ skill: 'eta_query@bus', params: { route_id: '42', pay_to: '[UPI_1]' } });
+  expect(dataOf(out)).toEqual({
+    skill: 'eta_query@bus',
+    params: { route_id: '42', pay_to: '[UPI_1]' },
+  });
 });
 
 it('a Dina envelope naming a skill the owner did not bind is refused: it is the skill the remote would run', async () => {
@@ -92,25 +112,29 @@ it('with two skills bound, an envelope naming the other one is refused: a read c
   dinaCard();
   const agentId = await bound(DINA_URL, 'eta_query@bus');
   const d = { store: world.store, nowMs: () => world.clock };
-  const [row] = world.store.db.query('SELECT credential_ref FROM a2a_remote_credentials WHERE remote_agent_id = ?', [agentId]) as {
+  const [row] = world.store.db.query(
+    'SELECT credential_ref FROM a2a_remote_credentials WHERE remote_agent_id = ?',
+    [agentId],
+  ) as {
     credential_ref: string;
   }[];
   const credentialRef = row?.credential_ref ?? '';
   for (const other of ['price_check@bus', 'fares']) {
-    expect(bindRemoteSkill(d, agentId, { skill: other, actionClass: 'write', credentialRef }).ok).toBe(true);
+    expect(
+      bindRemoteSkill(d, agentId, { skill: other, actionClass: 'write', credentialRef }).ok,
+    ).toBe(true);
   }
   const propose = (skill: string, data: Record<string, unknown>) =>
     proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill, data });
   for (const other of ['price_check@bus', 'fares']) {
     // Named directly, and through a key that becomes `skill` once cleaned.
-    expect([other, propose('eta_query@bus', { skill: other, params: { route_id: '42' } })]).toEqual([
+    expect([other, propose('eta_query@bus', { skill: other, params: { route_id: '42' } })]).toEqual(
+      [other, { ok: false, reason: 'envelope_skill_not_bound' }],
+    );
+    expect([
       other,
-      { ok: false, reason: 'envelope_skill_not_bound' },
-    ]);
-    expect([other, propose('eta_query@bus', { ['sk\u200Bill']: other, params: { route_id: '42' } })]).toEqual([
-      other,
-      { ok: false, reason: 'envelope_skill_not_bound' },
-    ]);
+      propose('eta_query@bus', { ['sk\u200Bill']: other, params: { route_id: '42' } }),
+    ]).toEqual([other, { ok: false, reason: 'envelope_skill_not_bound' }]);
     // Control: the same envelope under a proposal for that skill goes out.
     const own = propose(other, { skill: other, params: { route_id: '42' } });
     expect(dataOf(own)).toEqual({ skill: other, params: { route_id: '42' } });
@@ -128,7 +152,10 @@ it('a key that becomes `skill` only once cleaned cannot name another skill: the 
       skill: 'eta_query@bus',
       data: { [key]: 'price_check@bus', params: { route_id: '42' } },
     });
-    expect([JSON.stringify(key), out]).toEqual([JSON.stringify(key), { ok: false, reason: 'envelope_skill_not_bound' }]);
+    expect([JSON.stringify(key), out]).toEqual([
+      JSON.stringify(key),
+      { ok: false, reason: 'envelope_skill_not_bound' },
+    ]);
   }
   // Even naming the bound skill: a key not written `skill` is not the envelope's skill, its value is
   // scrubbed like any other, and what would go out names no bound skill. (The plain `skill` member goes
@@ -151,13 +178,26 @@ it('only the envelope’s own skill member is spared: the same id deeper in the 
     skill: 'eta_query@bus',
     data: { skill: 'eta_query@bus', params: { route_id: '42', skill: 'eta_query@bus' } },
   });
-  expect(dataOf(out)).toEqual({ skill: 'eta_query@bus', params: { route_id: '42', skill: '[UPI_1]' } });
+  expect(dataOf(out)).toEqual({
+    skill: 'eta_query@bus',
+    params: { route_id: '42', skill: '[UPI_1]' },
+  });
 });
 
 it('a remote that is not Dina: data is free-form, a skill member is checked against nothing, and only the bound id is spared', async () => {
   const agentId = await bound('https://agent.example/.well-known/agent-card.json', 'summarize');
-  const spared = proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill: 'summarize', data: { skill: 'summarize', n: 1 } });
+  const spared = proposeDelegation(world.runtime, {
+    releaseSession: SESSION,
+    agentId,
+    skill: 'summarize',
+    data: { skill: 'summarize', n: 1 },
+  });
   expect(dataOf(spared)).toEqual({ n: 1, skill: 'summarize' });
-  const other = proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill: 'summarize', data: { skill: 'someone@okaxis' } });
+  const other = proposeDelegation(world.runtime, {
+    releaseSession: SESSION,
+    agentId,
+    skill: 'summarize',
+    data: { skill: 'someone@okaxis' },
+  });
   expect(dataOf(other)).toEqual({ skill: '[UPI_1]' });
 });

@@ -2,12 +2,10 @@ import { redirectSystemPath } from '../../app/+native-intent';
 
 describe('native Dina deep links', () => {
   it('normalizes supported notification and direct-link destinations', () => {
-    expect(
-      redirectSystemPath({ path: 'dina://approvals/appr-1', initial: true }),
-    ).toBe('/notifications?filter=needs_action');
-    expect(redirectSystemPath({ path: 'dina://reminders', initial: false })).toBe(
-      '/reminders',
+    expect(redirectSystemPath({ path: 'dina://approvals/appr-1', initial: true })).toBe(
+      '/notifications?filter=needs_action',
     );
+    expect(redirectSystemPath({ path: 'dina://reminders', initial: false })).toBe('/reminders');
     expect(redirectSystemPath({ path: 'dina://runs', initial: false })).toBe('/runs');
   });
 

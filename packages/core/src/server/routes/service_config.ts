@@ -27,8 +27,8 @@ import {
   ListingLimitError,
   validateServiceConfigForSave,
 } from '../../service/service_config';
-
 import { requireAgentSession } from '../agent_session_guard';
+
 import type { CoreRouter } from '../router';
 
 /**
@@ -84,7 +84,10 @@ export function registerServiceConfigRoutes(router: CoreRouter): void {
   router.get('/v1/service/config/:rkey', async (req) => {
     const rkey = req.params.rkey ?? '';
     if (!isValidServiceListingRkey(rkey)) {
-      return { status: 400, body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` } };
+      return {
+        status: 400,
+        body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` },
+      };
     }
     const cfg = getServiceConfig(rkey);
     if (cfg === null) {
@@ -99,7 +102,10 @@ export function registerServiceConfigRoutes(router: CoreRouter): void {
     if (!session.ok) return session.response;
     const rkey = req.params.rkey ?? '';
     if (!isValidServiceListingRkey(rkey)) {
-      return { status: 400, body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` } };
+      return {
+        status: 400,
+        body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` },
+      };
     }
     return upsertServiceListing(rkey, req.body);
   });
@@ -108,7 +114,10 @@ export function registerServiceConfigRoutes(router: CoreRouter): void {
   router.delete('/v1/service/config/:rkey', async (req) => {
     const rkey = req.params.rkey ?? '';
     if (!isValidServiceListingRkey(rkey)) {
-      return { status: 400, body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` } };
+      return {
+        status: 400,
+        body: { error: `service_config: invalid rkey ${JSON.stringify(rkey)}` },
+      };
     }
     // Durable-first: persist the deletion before reporting 200, so the row
     // can't resurrect on restart (and republish stale data) after a failed

@@ -16,7 +16,8 @@ bootServer()
 
     const shutdown = (signal: NodeJS.Signals): void => {
       logger.info({ signal }, 'brain-server received shutdown signal');
-      app.close()
+      app
+        .close()
         .then(() => {
           logger.info('brain-server closed');
           process.exit(0);
@@ -33,16 +34,14 @@ bootServer()
   })
   .catch((err: unknown) => {
     if (err instanceof ConfigError) {
-       
       console.error(`[brain-server] config error: ${err.message}`);
       for (const issue of err.issues) {
-         
         console.error(`  - ${issue.path}: ${issue.message}`);
       }
       process.exit(78); // EX_CONFIG per sysexits.h
       return;
     }
-     
+
     console.error('[brain-server] fatal:', err);
     process.exit(1);
   });

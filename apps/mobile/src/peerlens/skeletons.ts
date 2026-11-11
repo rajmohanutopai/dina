@@ -111,9 +111,7 @@ const REVIEWER_LIST_SKELETON: readonly ReviewerListSkeletonRow[] = Object.freeze
  * different first-viewport size (e.g., a half-height drawer that
  * only shows 2 placeholders). The default is the plan's tuned value.
  */
-export function buildSubjectListSkeleton(
-  count?: number,
-): readonly SubjectCardSkeletonRow[] {
+export function buildSubjectListSkeleton(count?: number): readonly SubjectCardSkeletonRow[] {
   if (count === undefined) return SUBJECT_LIST_SKELETON;
   validateCount(count, 'buildSubjectListSkeleton');
   return Object.freeze(
@@ -124,9 +122,7 @@ export function buildSubjectListSkeleton(
 }
 
 /** Reviewer-list counterpart — same contract. */
-export function buildReviewerListSkeleton(
-  count?: number,
-): readonly ReviewerListSkeletonRow[] {
+export function buildReviewerListSkeleton(count?: number): readonly ReviewerListSkeletonRow[] {
   if (count === undefined) return REVIEWER_LIST_SKELETON;
   validateCount(count, 'buildReviewerListSkeleton');
   return Object.freeze(

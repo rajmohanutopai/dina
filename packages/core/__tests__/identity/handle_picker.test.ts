@@ -23,15 +23,14 @@ const PDS_HOST = 'test-pds.dinakernel.com';
  * Build a fetch mock that maps `handle` query params to a HTTP status
  * (and optional `did` body). Captures calls for later assertions.
  */
-function buildFetch(
-  responses: Record<string, { status: number; did?: string }>,
-): { fetch: typeof globalThis.fetch; calls: string[] } {
+function buildFetch(responses: Record<string, { status: number; did?: string }>): {
+  fetch: typeof globalThis.fetch;
+  calls: string[];
+} {
   const calls: string[] = [];
-  const fetchFn = (jest.fn(async (input: string | URL | Request) => {
+  const fetchFn = jest.fn(async (input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input.toString();
-    const handleParam = decodeURIComponent(
-      new URL(url).searchParams.get('handle') ?? '',
-    );
+    const handleParam = decodeURIComponent(new URL(url).searchParams.get('handle') ?? '');
     calls.push(handleParam);
     const r = responses[handleParam] ?? { status: 400 };
     return {
@@ -40,7 +39,7 @@ function buildFetch(
       json: async () => (r.did !== undefined ? { did: r.did } : {}),
       text: async () => JSON.stringify(r.did !== undefined ? { did: r.did } : {}),
     } as unknown as Response;
-  }) as unknown) as typeof globalThis.fetch;
+  }) as unknown as typeof globalThis.fetch;
   return { fetch: fetchFn, calls };
 }
 
@@ -87,9 +86,7 @@ describe('sanitizeHandlePrefix', () => {
 
 describe('validateHandleFormat', () => {
   it('accepts a well-formed handle', () => {
-    expect(validateHandleFormat('raju.test-pds.dinakernel.com', PDS_HOST)).toEqual(
-      { ok: true },
-    );
+    expect(validateHandleFormat('raju.test-pds.dinakernel.com', PDS_HOST)).toEqual({ ok: true });
   });
 
   it('rejects empty string', () => {
@@ -236,9 +233,9 @@ describe('checkHandleAvailability', () => {
   });
 
   it('returns "unknown" on network error', async () => {
-    const fetchFn = (jest.fn(async () => {
+    const fetchFn = jest.fn(async () => {
       throw new Error('connect ECONNREFUSED');
-    }) as unknown) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
     const r = await checkHandleAvailability('raju.test-pds.dinakernel.com', {
       pdsURL: PDS_URL,
       pdsHost: PDS_HOST,
@@ -400,14 +397,14 @@ describe('pickHandle', () => {
     // because we don't trust unknown availability for what we suggest.
     const { fetch } = buildFetch({});
     // Override default behaviour: every call returns 500.
-    const fetchFn = (jest.fn(async () => {
+    const fetchFn = jest.fn(async () => {
       return {
         ok: false,
         status: 500,
         json: async () => ({}),
         text: async () => '',
       } as unknown as Response;
-    }) as unknown) as typeof globalThis.fetch;
+    }) as unknown as typeof globalThis.fetch;
     const result = await pickHandle(
       'raju.test-pds.dinakernel.com',
       {

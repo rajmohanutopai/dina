@@ -108,13 +108,14 @@ function refuse(refusal: DraftRefusal, error: string): DraftRefusalOutcome {
 }
 
 /** The state each operation requires, and the one it leaves behind. */
-const TRANSITIONS: Readonly<Record<'confirm' | 'prepare' | 'approve' | 'publish', { from: DraftState; to: DraftState }>> =
-  {
-    confirm: { from: 'created', to: 'confirmed' },
-    prepare: { from: 'confirmed', to: 'prepared' },
-    approve: { from: 'prepared', to: 'approved' },
-    publish: { from: 'approved', to: 'published' },
-  };
+const TRANSITIONS: Readonly<
+  Record<'confirm' | 'prepare' | 'approve' | 'publish', { from: DraftState; to: DraftState }>
+> = {
+  confirm: { from: 'created', to: 'confirmed' },
+  prepare: { from: 'confirmed', to: 'prepared' },
+  approve: { from: 'prepared', to: 'approved' },
+  publish: { from: 'approved', to: 'published' },
+};
 
 export interface DraftServiceDeps {
   drafts: CatalogDraftRepository;
@@ -156,9 +157,7 @@ export interface DraftServiceDeps {
    */
   vouchedBy: () => string | null;
   /** Writes snapshot then pointer. Injected so Core stays free of I/O. */
-  publish: (args: {
-    draft: CatalogDraft;
-  }) => Promise<
+  publish: (args: { draft: CatalogDraft }) => Promise<
     | {
         ok: true;
         pointerCid: string;
@@ -200,7 +199,9 @@ export function unconfirmedFields(draft: CatalogDraft): string[] {
       // depends on another layer having been careful is one layer of care.
       const recordedState: unknown = recorded[field];
       const state: FieldProvenance =
-        recordedState === 'accepted' || recordedState === 'edited' || recordedState === 'not_model_derived'
+        recordedState === 'accepted' ||
+        recordedState === 'edited' ||
+        recordedState === 'not_model_derived'
           ? recordedState
           : 'proposed';
       if (state === 'proposed') out.push(`${String(index)}.${field}`);
@@ -217,7 +218,10 @@ export function unconfirmedFields(draft: CatalogDraft): string[] {
  * someone else claims their identifier space.
  */
 function foreignIssuer(item: Record<string, unknown>, supplierDid: string): string | null {
-  const refs: unknown[] = [item.product, ...(Array.isArray(item.identifiers) ? item.identifiers : [])];
+  const refs: unknown[] = [
+    item.product,
+    ...(Array.isArray(item.identifiers) ? item.identifiers : []),
+  ];
   for (const ref of refs) {
     if (ref === null || typeof ref !== 'object') continue;
     const issuer = (ref as { issuer_did?: unknown }).issuer_did;
@@ -259,8 +263,10 @@ function pointerAgreesWithSnapshot(
   if (pointer.snapshot_rkey !== snapshot.snapshot_digest) {
     return 'the held pointer names a snapshot record key that is not the snapshot digest';
   }
-  if (pointer.supplier_did !== snapshot.supplier_did) return 'pointer and snapshot disagree on the supplier';
-  if (pointer.catalog_id !== snapshot.catalog_id) return 'pointer and snapshot disagree on the catalog';
+  if (pointer.supplier_did !== snapshot.supplier_did)
+    return 'pointer and snapshot disagree on the supplier';
+  if (pointer.catalog_id !== snapshot.catalog_id)
+    return 'pointer and snapshot disagree on the catalog';
   if (pointer.snapshot_sequence !== snapshot.snapshot_sequence) {
     return 'pointer and snapshot disagree on the sequence';
   }
@@ -398,7 +404,8 @@ export class CatalogDraftService {
       protocolVersion: args.protocolVersion,
       publishedAt: args.publishedAt,
       items: draft.items as readonly CatalogItem[],
-      previous: head === null ? null : { pointer: head.pointer, snapshotDigest: head.snapshotDigest },
+      previous:
+        head === null ? null : { pointer: head.pointer, snapshotDigest: head.snapshotDigest },
       ...(args.serviceRkey === undefined ? {} : { serviceRkey: args.serviceRkey }),
       // §4.2: PHOTO-DERIVED drafts lose the identifier-column suppression —
       // a model reads digits off a photographed counter, and a phone number
@@ -679,10 +686,7 @@ export class CatalogDraftService {
     // covered by the snapshot's digest — and a pointer that names the right
     // digest under the wrong rkey sends every consumer to a record that is not
     // there.
-    const pointerDisagreement = pointerAgreesWithSnapshot(
-      draft.held.pointer,
-      draft.held.snapshot,
-    );
+    const pointerDisagreement = pointerAgreesWithSnapshot(draft.held.pointer, draft.held.snapshot);
     if (pointerDisagreement !== null) return refuse('digest_mismatch', pointerDisagreement);
     if (this.deps.publicationFence() !== null) {
       return refuse('fenced', 'this node lost authority to publish (§16.2)');
@@ -795,7 +799,10 @@ export class CatalogDraftService {
     const draft = this.deps.drafts.get(draftId);
     if (draft === null) return refuse('no_such_draft', `no draft ${draftId}`);
     if (draft.state === 'published') {
-      return refuse('wrong_state', 'a published draft is terminal; a republication starts a new one');
+      return refuse(
+        'wrong_state',
+        'a published draft is terminal; a republication starts a new one',
+      );
     }
     if (fields.length === 0) {
       return refuse('nothing_named', 'an acceptance has to say what was accepted');
@@ -859,7 +866,10 @@ export class CatalogDraftService {
      * so one of them blocks the whole draft.
      */
     ref: { row: number; column: string | null; value: string | null },
-    reassemble: (rows: readonly DraftRow[], draft: CatalogDraft) => {
+    reassemble: (
+      rows: readonly DraftRow[],
+      draft: CatalogDraft,
+    ) => {
       items: CatalogItem[];
       findings: unknown[];
       /**
@@ -875,10 +885,14 @@ export class CatalogDraftService {
     const draft = this.deps.drafts.get(draftId);
     if (draft === null) return refuse('no_such_draft', `no draft ${draftId}`);
     if (draft.state === 'published') {
-      return refuse('wrong_state', 'a published draft is terminal; a republication starts a new one');
+      return refuse(
+        'wrong_state',
+        'a published draft is terminal; a republication starts a new one',
+      );
     }
     const target = draft.rows.find((r) => r.row === ref.row);
-    if (target === undefined) return refuse('unknown_field', `no row ${String(ref.row)} on this draft`);
+    if (target === undefined)
+      return refuse('unknown_field', `no row ${String(ref.row)} on this draft`);
     if (ref.column === '') return refuse('unknown_field', 'a repair has to name a column');
 
     let rows: DraftRow[];
@@ -988,7 +1002,10 @@ export class CatalogDraftService {
     const draft = this.deps.drafts.get(draftId);
     if (draft === null) return refuse('no_such_draft', `no draft ${draftId}`);
     if (draft.state === 'published') {
-      return refuse('wrong_state', 'a published draft is terminal; a republication starts a new one');
+      return refuse(
+        'wrong_state',
+        'a published draft is terminal; a republication starts a new one',
+      );
     }
 
     const split = ref.indexOf('.');
@@ -1061,9 +1078,7 @@ export class CatalogDraftService {
       );
     }
 
-    const items = draft.items.map((existing, at) =>
-      at === index ? editedItem : existing,
-    );
+    const items = draft.items.map((existing, at) => (at === index ? editedItem : existing));
     const provenance: CatalogDraft['provenance'] = {};
     for (const [key, byField] of Object.entries(draft.provenance)) {
       provenance[key] = { ...byField };
@@ -1108,7 +1123,10 @@ export class CatalogDraftService {
     const draft = this.deps.drafts.get(draftId);
     if (draft === null) return refuse('no_such_draft', `no draft ${draftId}`);
     if (draft.state === 'published') {
-      return refuse('wrong_state', 'a published draft is terminal; a republication starts a new one');
+      return refuse(
+        'wrong_state',
+        'a published draft is terminal; a republication starts a new one',
+      );
     }
     // THE OTHER HALF OF THE LEASE, AND IT DOES NOT CONSULT THE CLOCK.
     //
@@ -1168,7 +1186,10 @@ export class CatalogDraftService {
       return null;
     }
     if (draft.receipt === null) {
-      return refuse('missing_receipt', 'a model-derived draft publishes only what a person confirmed');
+      return refuse(
+        'missing_receipt',
+        'a model-derived draft publishes only what a person confirmed',
+      );
     }
     if (draft.receipt.revision !== draft.contentRevision) {
       return refuse('stale_revision', 'the draft changed after the receipt was taken');

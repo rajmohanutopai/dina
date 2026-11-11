@@ -216,7 +216,11 @@ function requiredDefault(field: FieldRule): JsonValue | undefined {
   }
 }
 
-function stripField(value: unknown, field: FieldRule, unknown: UnknownMembers): JsonValue | undefined {
+function stripField(
+  value: unknown,
+  field: FieldRule,
+  unknown: UnknownMembers,
+): JsonValue | undefined {
   switch (field.kind) {
     case 'required':
     case 'optional':

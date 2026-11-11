@@ -33,7 +33,11 @@ export interface RunnerBindingRow {
   revoked_at: number | null;
 }
 
-export type RunnerBindingRefusal = 'lane_malformed' | 'lane_reserved' | 'device_not_runner' | 'not_found';
+export type RunnerBindingRefusal =
+  | 'lane_malformed'
+  | 'lane_reserved'
+  | 'device_not_runner'
+  | 'not_found';
 
 function isRunnerDevice(did: string): boolean {
   const device = getDeviceByDID(did);
@@ -47,13 +51,17 @@ function bumpListingsUsing(store: A2AStore, lane: string): number {
   for (const row of rows) {
     let usesLane = false;
     try {
-      const config = JSON.parse(String(row.config_json)) as { capabilities?: Record<string, { mcpServer?: unknown }> };
+      const config = JSON.parse(String(row.config_json)) as {
+        capabilities?: Record<string, { mcpServer?: unknown }>;
+      };
       usesLane = Object.values(config.capabilities ?? {}).some((cap) => cap?.mcpServer === lane);
     } catch {
       usesLane = false;
     }
     if (!usesLane) continue;
-    store.db.execute('UPDATE service_configs SET revision = revision + 1 WHERE rkey = ?', [row.rkey]);
+    store.db.execute('UPDATE service_configs SET revision = revision + 1 WHERE rkey = ?', [
+      row.rkey,
+    ]);
     bumped += 1;
   }
   return bumped;
@@ -91,10 +99,10 @@ export function unbindRunner(
 ): { ok: true } | { ok: false; reason: 'not_found' } {
   let changed = 0;
   store.transaction(() => {
-    changed = store.db.run('UPDATE a2a_runner_bindings SET revoked_at = ? WHERE lane = ? AND revoked_at IS NULL', [
-      nowMs,
-      lane,
-    ]);
+    changed = store.db.run(
+      'UPDATE a2a_runner_bindings SET revoked_at = ? WHERE lane = ? AND revoked_at IS NULL',
+      [nowMs, lane],
+    );
     if (changed > 0) bumpListingsUsing(store, lane);
   });
   return changed > 0 ? { ok: true } : { ok: false, reason: 'not_found' };
@@ -102,7 +110,9 @@ export function unbindRunner(
 
 /** Every binding, live and ended, newest first. */
 export function listRunnerBindings(store: A2AStore): (RunnerBindingRow & { live: boolean })[] {
-  const rows = store.db.query('SELECT * FROM a2a_runner_bindings ORDER BY created_at DESC, lane') as unknown as RunnerBindingRow[];
+  const rows = store.db.query(
+    'SELECT * FROM a2a_runner_bindings ORDER BY created_at DESC, lane',
+  ) as unknown as RunnerBindingRow[];
   return rows.map((r) => ({ ...r, live: r.revoked_at === null && isRunnerDevice(r.device_did) }));
 }
 
@@ -111,9 +121,10 @@ export function listRunnerBindings(store: A2AStore): (RunnerBindingRow & { live:
  * an active paired runner. `null` means the lane is not executable over A2A.
  */
 export function liveRunnerBinding(store: A2AStore, lane: string): RunnerBindingRow | null {
-  const rows = store.db.query('SELECT * FROM a2a_runner_bindings WHERE lane = ? AND revoked_at IS NULL', [
-    lane,
-  ]) as unknown as RunnerBindingRow[];
+  const rows = store.db.query(
+    'SELECT * FROM a2a_runner_bindings WHERE lane = ? AND revoked_at IS NULL',
+    [lane],
+  ) as unknown as RunnerBindingRow[];
   const row = rows[0];
   return row !== undefined && isRunnerDevice(row.device_did) ? row : null;
 }

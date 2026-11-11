@@ -41,11 +41,7 @@
 import * as fs from 'node:fs/promises';
 import * as path from 'node:path';
 
-import {
-  wrapSeed,
-  unwrapSeed,
-  type WrappedSeed,
-} from '@dina/core';
+import { wrapSeed, unwrapSeed, type WrappedSeed } from '@dina/core';
 
 import { WRAPPED_SEED_NAME } from './master_seed';
 
@@ -110,10 +106,7 @@ export async function writeWrappedSeed(
  * Returns the raw master seed. Throws on wrong passphrase (the GCM
  * auth tag fails to verify) or corrupt file.
  */
-export async function readWrappedSeed(
-  vaultDir: string,
-  passphrase: string,
-): Promise<Uint8Array> {
+export async function readWrappedSeed(vaultDir: string, passphrase: string): Promise<Uint8Array> {
   if (!passphrase || passphrase.length === 0) {
     throw new Error('readWrappedSeed: passphrase must be non-empty');
   }
@@ -132,7 +125,9 @@ export async function readWrappedSeed(
     );
   }
   if (!parsed.salt_hex || !parsed.wrapped_hex || !parsed.params) {
-    throw new Error('readWrappedSeed: file is missing required fields (salt_hex, wrapped_hex, params)');
+    throw new Error(
+      'readWrappedSeed: file is missing required fields (salt_hex, wrapped_hex, params)',
+    );
   }
 
   const wrapped: WrappedSeed = {
@@ -159,8 +154,8 @@ export async function readWrappedSeed(
 
 function toHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, '0');
   }
   return out;
 }

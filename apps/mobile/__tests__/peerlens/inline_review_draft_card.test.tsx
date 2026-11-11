@@ -48,7 +48,9 @@ import { InlineReviewDraftCard } from '../../src/components/InlineReviewDraftCar
 import * as appview from '../../src/peerlens/appview_runtime';
 import { emptyWriteFormState } from '../../src/peerlens/write_form_data';
 
-const injectMock = appview.injectAttestation as jest.MockedFunction<typeof appview.injectAttestation>;
+const injectMock = appview.injectAttestation as jest.MockedFunction<
+  typeof appview.injectAttestation
+>;
 
 const THREAD = 'main';
 const DRAFT_ID = 'draft-test-1';
@@ -104,7 +106,10 @@ function requireCall() {
 }
 
 /** Seed a durable job for the card's (thread, draft) at a given status. */
-function seedJob(status: 'queued' | 'publishing' | 'published' | 'failed', code = 'unauthorized'): void {
+function seedJob(
+  status: 'queued' | 'publishing' | 'published' | 'failed',
+  code = 'unauthorized',
+): void {
   const repo = requireRepo();
   repo.create({
     jobId: 'j1',
@@ -195,7 +200,9 @@ describe('InlineReviewDraftCard — ready / publish', () => {
       subject: noSentiment.subject as unknown as Record<string, unknown>,
       values: noSentiment as unknown as Record<string, unknown>,
     };
-    const { getByTestId } = render(<InlineReviewDraftCard message={addLifecycleMessage(THREAD, 'd', lc)} />);
+    const { getByTestId } = render(
+      <InlineReviewDraftCard message={addLifecycleMessage(THREAD, 'd', lc)} />,
+    );
     const btn = getByTestId('review-draft-publish');
     const isDisabled =
       btn.props.disabled === true || btn.props.accessibilityState?.disabled === true;
@@ -218,13 +225,17 @@ describe('InlineReviewDraftCard — job projection', () => {
   it('renders the published receipt from a published job', () => {
     const msg = postReadyDraft();
     seedJob('published');
-    expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-published')).toBeTruthy();
+    expect(
+      render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-published'),
+    ).toBeTruthy();
   });
 
   it('renders the publishing spinner from a publishing job', () => {
     const msg = postReadyDraft();
     seedJob('publishing');
-    expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-publishing')).toBeTruthy();
+    expect(
+      render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-publishing'),
+    ).toBeTruthy();
   });
 
   it('renders the queued state with View pending reviews + Cancel', () => {
@@ -265,7 +276,9 @@ describe('InlineReviewDraftCard — job projection', () => {
       values: null,
     };
     const msg = addLifecycleMessage(THREAD, 'Discarded.', lc);
-    expect(render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-discarded')).toBeTruthy();
+    expect(
+      render(<InlineReviewDraftCard message={msg} />).getByTestId('review-draft-card-discarded'),
+    ).toBeTruthy();
   });
 });
 
@@ -280,7 +293,9 @@ describe('InlineReviewDraftCard — drafting failure (no job)', () => {
       error: 'Draft inference failed.',
     };
     const msg = addLifecycleMessage(THREAD, 'Could not draft.', lc);
-    const { getByTestId, getByText, queryByTestId } = render(<InlineReviewDraftCard message={msg} />);
+    const { getByTestId, getByText, queryByTestId } = render(
+      <InlineReviewDraftCard message={msg} />,
+    );
     expect(getByTestId('review-draft-card-draft-failed')).toBeTruthy();
     expect(getByText('Draft inference failed.')).toBeTruthy(); // surfaced, not dropped
     expect(getByTestId('review-draft-write-in-form')).toBeTruthy();
@@ -296,7 +311,9 @@ describe('InlineReviewDraftCard — drafting failure (no job)', () => {
       values: null,
       error: 'Draft inference failed.',
     };
-    const { getByTestId } = render(<InlineReviewDraftCard message={addLifecycleMessage(THREAD, 'x', lc)} />);
+    const { getByTestId } = render(
+      <InlineReviewDraftCard message={addLifecycleMessage(THREAD, 'x', lc)} />,
+    );
     fireEvent.press(getByTestId('review-draft-draft-failed-discard'));
     const card = getThread(THREAD).find((m) => readLifecycle(m)?.kind === 'review_draft');
     if (card === undefined) throw new Error('no review_draft message');

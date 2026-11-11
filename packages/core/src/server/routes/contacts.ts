@@ -54,7 +54,6 @@ import type { TaxRegistration, TradeIdentityFinding } from '../../commerce/trade
 import type { Contact, TrustLevel } from '../../contacts/directory';
 import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
-
 /**
  * Dependencies for the contacts handlers. All callers resolve the
  * contact state via the module-global directory (set up at boot);
@@ -326,19 +325,28 @@ const UPDATE_BODY_MAX_BYTES = 16 * 1024;
 interface UpdateContactDeps {
   setPreferredFor: (did: string, categories: readonly string[]) => void;
   getContact: (did: string) => Contact | null;
-  setPaperIdentity: (did: string, identity: Parameters<typeof directorySetPaperIdentity>[1]) => TradeIdentityFinding[];
+  setPaperIdentity: (
+    did: string,
+    identity: Parameters<typeof directorySetPaperIdentity>[1],
+  ) => TradeIdentityFinding[];
   setContactChannels: (
     did: string,
     channels: Parameters<typeof directorySetContactChannels>[1],
   ) => TradeIdentityFinding[];
-  checkPaperIdentity: (did: string, identity: Parameters<typeof directorySetPaperIdentity>[1]) => TradeIdentityFinding[];
+  checkPaperIdentity: (
+    did: string,
+    identity: Parameters<typeof directorySetPaperIdentity>[1],
+  ) => TradeIdentityFinding[];
   checkContactChannels: (
     did: string,
     channels: Parameters<typeof directorySetContactChannels>[1],
   ) => TradeIdentityFinding[];
 }
 
-async function handleUpdateContact(req: CoreRequest, deps: UpdateContactDeps): Promise<CoreResponse> {
+async function handleUpdateContact(
+  req: CoreRequest,
+  deps: UpdateContactDeps,
+): Promise<CoreResponse> {
   const setFn = deps.setPreferredFor;
   const getFn = deps.getContact;
   if (req.rawBody.byteLength > UPDATE_BODY_MAX_BYTES) {
@@ -409,7 +417,9 @@ async function handleUpdateContact(req: CoreRequest, deps: UpdateContactDeps): P
   // in ONE domain call: a caller correcting a GSTIN and an address at once gets
   // both findings, and a refusal leaves neither half applied.
   const wantsPaper =
-    body.legal_name !== undefined || body.registrations !== undefined || body.billing_address !== undefined;
+    body.legal_name !== undefined ||
+    body.registrations !== undefined ||
+    body.billing_address !== undefined;
   let paperIdentity: Parameters<typeof directorySetPaperIdentity>[1] | null = null;
   if (wantsPaper) {
     const identity: Parameters<typeof directorySetPaperIdentity>[1] = {};
@@ -436,7 +446,8 @@ async function handleUpdateContact(req: CoreRequest, deps: UpdateContactDeps): P
         identity.billingAddress = null;
       } else {
         const wire = body.billing_address as Record<string, unknown>;
-        if (typeof wire !== 'object') return jsonError(400, 'billing_address must be an object or null');
+        if (typeof wire !== 'object')
+          return jsonError(400, 'billing_address must be an object or null');
         const text = (value: unknown): string => (typeof value === 'string' ? value : '');
         identity.billingAddress = {
           line1: text(wire.line1),

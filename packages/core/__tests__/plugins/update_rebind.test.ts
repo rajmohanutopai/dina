@@ -375,10 +375,12 @@ describe('update-rebind coordinator (§9.13)', () => {
     // would be taking new business rather than draining.
     coordinator.apply({ installId, ...majorUpdate });
 
-    expect(drains.listLive(installId, PRIOR_CID, CAP, T0 + 1).map((e) => e.kind).sort()).toEqual([
-      'drain',
-      'lifecycle_continuity',
-    ]);
+    expect(
+      drains
+        .listLive(installId, PRIOR_CID, CAP, T0 + 1)
+        .map((e) => e.kind)
+        .sort(),
+    ).toEqual(['drain', 'lifecycle_continuity']);
     expect(drains.listLive(installId, PRIOR_CID, CAP2, T0 + 1).map((e) => e.kind)).toEqual([
       'drain',
     ]);
@@ -573,9 +575,9 @@ describe('update-rebind coordinator (§9.13)', () => {
     // only its DRAIN row: `request_quote` is not one of the three lifecycle
     // handlers §9.13 keeps alive across a major, and a superseded major that
     // could still quote would be taking new business rather than draining.
-    expect(
-      drains.listLive(installId, PRIOR_CID, CAP2, T0 + 1).map((e) => e.kind),
-    ).toEqual(['drain']);
+    expect(drains.listLive(installId, PRIOR_CID, CAP2, T0 + 1).map((e) => e.kind)).toEqual([
+      'drain',
+    ]);
   });
 
   it('refuses to release while an order the prior manifest served is still open', () => {

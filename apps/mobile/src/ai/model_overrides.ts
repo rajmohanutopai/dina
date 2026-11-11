@@ -26,12 +26,7 @@ const SERVICE_PREFIX = 'dina.llm.model_override.';
 
 type OverrideKey = `${ProviderType}:${LLMTier}`;
 
-const PROVIDER_TYPES: ProviderType[] = [
-  'openai',
-  'gemini',
-  'claude',
-  'openrouter',
-];
+const PROVIDER_TYPES: ProviderType[] = ['openai', 'gemini', 'claude', 'openrouter'];
 const TIERS: LLMTier[] = ['primary', 'lite', 'heavy'];
 
 let cache: Partial<Record<OverrideKey, string>> = {};
@@ -68,10 +63,7 @@ export async function loadModelOverrides(): Promise<void> {
 }
 
 /** Read the in-memory override. Returns `null` when none is set. */
-export function peekModelOverride(
-  provider: ProviderType,
-  tier: LLMTier,
-): string | null {
+export function peekModelOverride(provider: ProviderType, tier: LLMTier): string | null {
   return cache[keyOf(provider, tier)] ?? null;
 }
 
@@ -88,13 +80,11 @@ export async function setModelOverride(
 }
 
 /** Remove an override so the tier default applies again. */
-export async function clearModelOverride(
-  provider: ProviderType,
-  tier: LLMTier,
-): Promise<void> {
-  const next = { ...cache };
-  delete next[keyOf(provider, tier)];
-  cache = next;
+export async function clearModelOverride(provider: ProviderType, tier: LLMTier): Promise<void> {
+  const drop = keyOf(provider, tier);
+  cache = Object.fromEntries(Object.entries(cache).filter(([key]) => key !== drop)) as Partial<
+    Record<OverrideKey, string>
+  >;
   await Keychain.resetGenericPassword({ service: serviceOf(provider, tier) });
 }
 

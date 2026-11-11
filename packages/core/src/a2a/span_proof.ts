@@ -31,7 +31,13 @@ export interface SpanProof {
   end: number;
 }
 
-export type SpanProofKind = 'remember' | 'send' | 'forget' | 'standing_reply' | 'spend_allowance' | 'value_model';
+export type SpanProofKind =
+  | 'remember'
+  | 'send'
+  | 'forget'
+  | 'standing_reply'
+  | 'spend_allowance'
+  | 'value_model';
 
 export type SpanProofResult =
   | { ok: true; span: string; turnText: string }
@@ -66,12 +72,21 @@ export function verifySpanProof(
   const log = getA2AReleaseLog();
   if (log === null) return { ok: false, reason: 'unavailable' };
   const latest = log.latestUtterance(proof.releaseSession);
-  if (latest === null || latest.turn_id !== proof.turnId) return { ok: false, reason: 'not_newest_turn' };
-  if (utteranceDigest(proof.turnText) !== latest.digest) return { ok: false, reason: 'digest_mismatch' };
-  if (now - Number(latest.recorded_at) > SPAN_PROOF_MAX_AGE_MS) return { ok: false, reason: 'stale_turn' };
+  if (latest === null || latest.turn_id !== proof.turnId)
+    return { ok: false, reason: 'not_newest_turn' };
+  if (utteranceDigest(proof.turnText) !== latest.digest)
+    return { ok: false, reason: 'digest_mismatch' };
+  if (now - Number(latest.recorded_at) > SPAN_PROOF_MAX_AGE_MS)
+    return { ok: false, reason: 'stale_turn' };
   const clean = cleanForProvenance(proof.turnText);
   const { start, end } = proof;
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end > clean.length || start >= end) {
+  if (
+    !Number.isInteger(start) ||
+    !Number.isInteger(end) ||
+    start < 0 ||
+    end > clean.length ||
+    start >= end
+  ) {
     return { ok: false, reason: 'bad_span' };
   }
   const span = clean.slice(start, end).trim();
@@ -116,11 +131,15 @@ export function isPositiveRememberRequest(turnText: string, span: string): boole
   // One sentence only: no sentence break before the end.
   const body = t.replace(/[.!]+\s*$/, '');
   if (/[.!?]\s/.test(body)) return false;
-  const m = /^(?:please[, ]\s*)?(?:remember|save|note|keep in mind|don'?t forget|do not forget)(?:\s*[:,-])?\s+(?:that\s+)?(.+)$/i.exec(
-    body,
-  );
+  const m =
+    /^(?:please[, ]\s*)?(?:remember|save|note|keep in mind|don'?t forget|do not forget)(?:\s*[:,-])?\s+(?:that\s+)?(.+)$/i.exec(
+      body,
+    );
   if (m === null) return false;
-  const operand = m[1]!.replace(/[,\s]+please$/i, '');
+  const operandRaw = m[1];
+  if (operandRaw === undefined)
+    throw new Error('isPositiveRememberRequest: regex matched without its operand group');
+  const operand = operandRaw.replace(/[,\s]+please$/i, '');
   return norm(operand) === norm(span);
 }
 
@@ -131,7 +150,9 @@ export function isPositiveRememberRequest(turnText: string, span: string): boole
  * "let <recipient> know (that) <payload>", "send <recipient> <payload>".
  * Negations, questions and several recipients fail.
  */
-export function parseSendInstruction(turnText: string): { recipient: string; payload: string } | null {
+export function parseSendInstruction(
+  turnText: string,
+): { recipient: string; payload: string } | null {
   const t = turnText.trim();
   if (t === '' || /[?]\s*$/.test(t)) return null;
   const body = t.replace(/[.!]+\s*$/, '');
@@ -142,8 +163,13 @@ export function parseSendInstruction(turnText: string): { recipient: string; pay
   if (m === null) m = /^(?:tell|message|text)\s+(.+?)(?:\s*[:,-])?\s+(?:that\s+)?(.+)$/i.exec(head);
   if (m === null) m = /^send\s+(.+?)\s*[:,-]\s*(.+)$/i.exec(head);
   if (m === null) return null;
-  const recipient = m[1]!.trim();
-  const payload = m[2]!.replace(/[,\s]+please$/i, '').trim();
+  const recipientRaw = m[1];
+  const payloadRaw = m[2];
+  if (recipientRaw === undefined || payloadRaw === undefined) {
+    throw new Error('parseSendInstruction: regex matched without its recipient or payload group');
+  }
+  const recipient = recipientRaw.trim();
+  const payload = payloadRaw.replace(/[,\s]+please$/i, '').trim();
   // One recipient only: no list in the recipient, and a payload that opens
   // with a conjunction means a second recipient ("tell Sam and Juno …").
   if (/\s(?:and|&)\s|,/.test(recipient)) return null;
@@ -163,7 +189,13 @@ export function sameWords(a: string, b: string): boolean {
  * send the owner's words, never the draft (a trim could drop a "not").
  */
 export function drawsOnlyFrom(draft: string, words: string): boolean {
-  const have = new Set(norm(words).split(' ').filter((w) => w !== ''));
-  const want = norm(draft).split(' ').filter((w) => w !== '');
+  const have = new Set(
+    norm(words)
+      .split(' ')
+      .filter((w) => w !== ''),
+  );
+  const want = norm(draft)
+    .split(' ')
+    .filter((w) => w !== '');
   return want.length > 0 && want.every((w) => have.has(w));
 }

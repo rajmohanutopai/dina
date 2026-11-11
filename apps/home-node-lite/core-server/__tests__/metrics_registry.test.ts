@@ -5,10 +5,7 @@
  * rate derivation, and the snapshot wire shape.
  */
 
-import {
-  DEFAULT_HISTOGRAM_BUCKETS_SEC,
-  MetricsRegistry,
-} from '../src/metrics/registry';
+import { DEFAULT_HISTOGRAM_BUCKETS_SEC, MetricsRegistry } from '../src/metrics/registry';
 
 describe('MetricsRegistry (tasks 4.88 + 4.89)', () => {
   describe('constants', () => {
@@ -161,9 +158,7 @@ describe('MetricsRegistry (tasks 4.88 + 4.89)', () => {
       reg.record('/a', 'POST', 200, 0.01);
       reg.record('/a', 'GET', 200, 0.01);
       reg.record('/a', 'GET', 404, 0.01);
-      const ids = reg
-        .snapshot()
-        .counters.map((c) => `${c.route}|${c.method}|${c.status}`);
+      const ids = reg.snapshot().counters.map((c) => `${c.route}|${c.method}|${c.status}`);
       expect(ids).toEqual(['/a|GET|200', '/a|GET|404', '/a|POST|200', '/b|GET|500']);
     });
 
@@ -211,18 +206,12 @@ describe('MetricsRegistry (tasks 4.88 + 4.89)', () => {
       expect(() => new MetricsRegistry({ bucketsSec: [0.1, 0.2, 0.2, 0.5] })).toThrow(
         /strictly ascending/,
       );
-      expect(() => new MetricsRegistry({ bucketsSec: [1, 0.5] })).toThrow(
-        /strictly ascending/,
-      );
+      expect(() => new MetricsRegistry({ bucketsSec: [1, 0.5] })).toThrow(/strictly ascending/);
     });
 
     it('rejects non-positive bucket', () => {
-      expect(() => new MetricsRegistry({ bucketsSec: [0, 1] })).toThrow(
-        /positive finite number/,
-      );
-      expect(() => new MetricsRegistry({ bucketsSec: [-1, 1] })).toThrow(
-        /positive finite number/,
-      );
+      expect(() => new MetricsRegistry({ bucketsSec: [0, 1] })).toThrow(/positive finite number/);
+      expect(() => new MetricsRegistry({ bucketsSec: [-1, 1] })).toThrow(/positive finite number/);
       expect(() => new MetricsRegistry({ bucketsSec: [Infinity] })).toThrow(
         /positive finite number/,
       );

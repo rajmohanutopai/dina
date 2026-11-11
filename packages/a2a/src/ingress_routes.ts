@@ -137,9 +137,16 @@ export function ingressPathFor(
 ): { ok: true; path: string } | { ok: false; reason: 'id_missing' | 'id_unroutable' } {
   const route = A2A_DISPATCH_TABLE[request.method];
   let path = route.path;
-  for (const [param, where] of Object.entries(route.ids) as [string, 'params.id' | 'params.taskId'][]) {
+  for (const [param, where] of Object.entries(route.ids) as [
+    string,
+    'params.id' | 'params.taskId',
+  ][]) {
     const params = request.params;
-    const raw = isPlainObject(params) ? (where === 'params.id' ? params.id : params.taskId) : undefined;
+    const raw = isPlainObject(params)
+      ? where === 'params.id'
+        ? params.id
+        : params.taskId
+      : undefined;
     if (typeof raw !== 'string' || raw.length === 0) return { ok: false, reason: 'id_missing' };
     if (isDotSegmentId(raw)) return { ok: false, reason: 'id_unroutable' };
     path = path.replace(`:${param}`, encodeURIComponent(raw));

@@ -108,7 +108,8 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
   const { visible, onClose, did, initialHandle, fetchPlc } = props;
   const isSelf = props.variant === 'self';
   const showAdvanced = props.showAdvanced === true;
-  const selfName = props.selfName != null && props.selfName.trim() !== '' ? props.selfName.trim() : null;
+  const selfName =
+    props.selfName != null && props.selfName.trim() !== '' ? props.selfName.trim() : null;
   const [doc, setDoc] = useState<PlcLookupResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -160,17 +161,8 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
   };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
-      <Pressable
-        style={styles.backdrop}
-        onPress={onClose}
-        testID="identity-modal-backdrop"
-      >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
+      <Pressable style={styles.backdrop} onPress={onClose} testID="identity-modal-backdrop">
         {/* Inner pressable swallows backdrop taps so a tap inside the
             sheet doesn't dismiss it. */}
         <Pressable style={styles.sheet} onPress={() => undefined}>
@@ -243,9 +235,7 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
                     testIDPrefix="identity-modal-handle-row"
                   />
                   <Text style={styles.fieldHelp}>
-                    {isSelf
-                      ? 'People add you using this handle.'
-                      : 'Their handle on the network.'}
+                    {isSelf ? 'People add you using this handle.' : 'Their handle on the network.'}
                   </Text>
                 </FieldGroup>
 
@@ -318,9 +308,7 @@ export function IdentityModal(props: IdentityModalProps): React.ReactElement {
                     accessibilityLabel="View signing keys and network services"
                     style={({ pressed }) => [styles.advancedLink, pressed && { opacity: 0.6 }]}
                   >
-                    <Text style={styles.advancedLinkText}>
-                      Signing keys &amp; network services
-                    </Text>
+                    <Text style={styles.advancedLinkText}>Signing keys &amp; network services</Text>
                     <Ionicons name="chevron-forward" size={16} color={colors.textMuted} />
                   </Pressable>
                 ) : null}
@@ -363,18 +351,14 @@ function CopyableRow(props: {
   };
   return (
     <View style={styles.fieldRow} testID={props.testIDPrefix}>
-      {props.label !== undefined ? (
-        <Text style={styles.fieldLabel}>{props.label}</Text>
-      ) : null}
+      {props.label !== undefined ? <Text style={styles.fieldLabel}>{props.label}</Text> : null}
       <View style={styles.fieldValueWrap}>
         <Text
           // testID on the value Text (not just the row View) — a bare
           // container View doesn't reliably surface in the iOS
           // accessibility tree, so E2E can't see the row by its prefix.
           // The Text node does, and this also lets tests read the value.
-          testID={
-            props.testIDPrefix !== undefined ? `${props.testIDPrefix}-value` : undefined
-          }
+          testID={props.testIDPrefix !== undefined ? `${props.testIDPrefix}-value` : undefined}
           style={[styles.fieldValue, props.mono === true && styles.fieldValueMono]}
           numberOfLines={2}
           ellipsizeMode="middle"

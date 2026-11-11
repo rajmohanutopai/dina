@@ -8,7 +8,7 @@
  * Source: tests/test_signing.py (26 tests)
  */
 
-import { TEST_ED25519_SEED, bytesToHex } from '@dina/test-harness';
+import { TEST_ED25519_SEED } from '@dina/test-harness';
 
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { canonicalize, signCanonical, verifyCanonical } from '../../src/identity/signing';
@@ -135,7 +135,7 @@ describe('Python Signing Vectors', () => {
     });
 
     it('tampered signature fails', () => {
-      const sig = signCanonical('{"test":true}', TEST_ED25519_SEED);
+      const _sig = signCanonical('{"test":true}', TEST_ED25519_SEED);
       const tampered = 'aa'.repeat(64); // valid hex, wrong signature
       expect(verifyCanonical('{"test":true}', tampered, pubKey)).toBe(false);
     });

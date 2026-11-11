@@ -37,7 +37,12 @@ export function createA2ARuntime(args: {
       'A2A outbound needs the workflow repository and the A2A store on one SQLite connection',
     );
   }
-  return { store: args.store, workflow: args.workflow, repository: repo, nowMs: args.nowMs ?? Date.now };
+  return {
+    store: args.store,
+    workflow: args.workflow,
+    repository: repo,
+    nowMs: args.nowMs ?? Date.now,
+  };
 }
 
 let installed: { store: A2AStore; nowMs: () => number } | null = null;
@@ -67,7 +72,11 @@ export function getA2ARuntime(): A2ARuntime | null {
   if (service === null) return null;
   if (paired !== null && paired.service === service) return paired.runtime;
   paired = null;
-  const runtime = createA2ARuntime({ store: installed.store, workflow: service, nowMs: installed.nowMs });
+  const runtime = createA2ARuntime({
+    store: installed.store,
+    workflow: service,
+    nowMs: installed.nowMs,
+  });
   paired = { service, runtime };
   return runtime;
 }

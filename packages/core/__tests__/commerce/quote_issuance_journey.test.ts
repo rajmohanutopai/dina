@@ -36,8 +36,8 @@ import {
 import { ValueModelStore } from '../../src/commitment/model_store';
 import { StandingChoiceStore } from '../../src/commitment/standing_choices';
 import { StrategyStore } from '../../src/commitment/strategy_store';
-import { setOwnerTimeZone } from '../../src/settings/owner_settings';
 import { validatePluginResult } from '../../src/plugins/dispatch';
+import { setOwnerTimeZone } from '../../src/settings/owner_settings';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -425,31 +425,62 @@ describe('a quote with another delivery day (COMMITMENT_KERNEL §6, §15 step 6)
       { charges: delivery('10000') },
       { estimated_delivery_at: 20260811 },
       { alternatives: { alternative_id: 'tue' } },
-      { alternatives: [{ alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z', extra: 1 }] },
+      {
+        alternatives: [
+          {
+            alternative_id: 'tue',
+            charges: [],
+            estimated_delivery_at: '2026-08-11T10:00:00Z',
+            extra: 1,
+          },
+        ],
+      },
     ]) {
-      const decision = answerQuoteRequest(makeQuoteRequest({ protocol_version: '1.3' }), runnerTerms(bad));
+      const decision = answerQuoteRequest(
+        makeQuoteRequest({ protocol_version: '1.3' }),
+        runnerTerms(bad),
+      );
       expect(decision.kind).not.toBe('replace');
     }
   });
 });
 
-describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, §15 step 6)', () => {
+describe("the seller's own costs make the cheaper day (COMMITMENT_KERNEL §3, §15 step 6)", () => {
   beforeEach(async () => {
     await setOwnerTimeZone('UTC');
   });
 
   /** The seller's day costs, and a Friday quote of ₹650 (₹150 of it delivery). */
-  function quoteWithCosts(costs: readonly (readonly [string, bigint])[], requestId = 'req-1'): SignedQuote {
+  function quoteWithCosts(
+    costs: readonly (readonly [string, bigint])[],
+    requestId = 'req-1',
+  ): SignedQuote {
     const model = new ValueModelStore(adapter);
     for (const [day, rupees] of costs)
       model.putEntry(
-        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees } },
+        {
+          id: day,
+          kind: 'goods.seller',
+          covers: ['delivery_day'],
+          body: { type: 'choice', part: 'delivery_day', option: day, rupees },
+        },
         NOW,
       );
     const issued = answerQuoteRequest(
-      makeQuoteRequest({ protocol_version: '1.3', request_id: requestId, idempotency_key: `idem-${requestId}` }),
+      makeQuoteRequest({
+        protocol_version: '1.3',
+        request_id: requestId,
+        idempotency_key: `idem-${requestId}`,
+      }),
       runnerTerms({
-        charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '15000' }, operation: 'add' }],
+        charges: [
+          {
+            kind: 'delivery',
+            label: 'Delivery',
+            amount: { currency: 'INR', minor_units: '15000' },
+            operation: 'add',
+          },
+        ],
         estimated_delivery_at: '2030-08-16T10:00:00Z', // a Friday
       }),
     );
@@ -459,11 +490,14 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
     return quote;
   }
 
-  it('a persona holding the seller\'s rules is closed: nothing is quoted until it opens (§15 step 10)', () => {
+  it("a persona holding the seller's rules is closed: nothing is quoted until it opens (§15 step 10)", () => {
     // A sealed never-rule may forbid the quote's own day, so Core cannot
     // say the runner's terms are inside the owner's rules: it withholds.
     const real = runtime.goodsSellerModel;
-    runtime.goodsSellerModel = () => ({ model: real?.()?.model ?? null, closedPersonas: ['health'] });
+    runtime.goodsSellerModel = () => ({
+      model: real?.()?.model ?? null,
+      closedPersonas: ['health'],
+    });
     const issued = answerQuoteRequest(
       makeQuoteRequest({ protocol_version: '1.3' }),
       runnerTerms({ estimated_delivery_at: '2030-08-16T10:00:00Z' }),
@@ -473,9 +507,17 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
 
   it('a quote already at the charge limit: the cheaper day is dropped, the quote goes out', () => {
     const model = new ValueModelStore(adapter);
-    for (const [day, rupees] of [['fri', -120n], ['tue', -40n]] as const)
+    for (const [day, rupees] of [
+      ['fri', -120n],
+      ['tue', -40n],
+    ] as const)
       model.putEntry(
-        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees } },
+        {
+          id: day,
+          kind: 'goods.seller',
+          covers: ['delivery_day'],
+          body: { type: 'choice', part: 'delivery_day', option: day, rupees },
+        },
         NOW,
       );
     const charges = Array.from({ length: 20 }, (_, i) => ({
@@ -496,22 +538,40 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
 
   it('a saving larger than the order: the quote still goes out, without that day', () => {
     // Half of ₹4,900 is more than the whole order.
-    const quote = quoteWithCosts([['fri', -5000n], ['tue', -100n]]);
+    const quote = quoteWithCosts([
+      ['fri', -5000n],
+      ['tue', -100n],
+    ]);
     expect(quote.alternatives).toBeUndefined();
   });
 
   it('Friday is quoted; Tuesday, which saves the seller ₹80, is offered ₹40 cheaper', () => {
     const model = new ValueModelStore(adapter);
-    for (const [day, rupees] of [['fri', -120n], ['tue', -40n]] as const)
+    for (const [day, rupees] of [
+      ['fri', -120n],
+      ['tue', -40n],
+    ] as const)
       model.putEntry(
-        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees } },
+        {
+          id: day,
+          kind: 'goods.seller',
+          covers: ['delivery_day'],
+          body: { type: 'choice', part: 'delivery_day', option: day, rupees },
+        },
         NOW,
       );
     const request = makeQuoteRequest({ protocol_version: '1.3' });
     const issued = answerQuoteRequest(
       request,
       runnerTerms({
-        charges: [{ kind: 'delivery', label: 'Delivery', amount: { currency: 'INR', minor_units: '15000' }, operation: 'add' }],
+        charges: [
+          {
+            kind: 'delivery',
+            label: 'Delivery',
+            amount: { currency: 'INR', minor_units: '15000' },
+            operation: 'add',
+          },
+        ],
         // Days ahead of the real clock this seam reads.
         estimated_delivery_at: '2030-08-16T10:00:00Z', // a Friday
       }),
@@ -579,4 +639,3 @@ describe('the seller\'s own costs make the cheaper day (COMMITMENT_KERNEL §3, �
     expect(tuesday('req-o3')).toBe('63000');
   });
 });
-

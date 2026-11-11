@@ -101,9 +101,7 @@ export class IdempotencyCache {
       );
     }
     if (this.maxEntries <= 0) {
-      throw new Error(
-        `IdempotencyCache: maxEntries must be > 0 (got ${this.maxEntries})`,
-      );
+      throw new Error(`IdempotencyCache: maxEntries must be > 0 (got ${this.maxEntries})`);
     }
   }
 

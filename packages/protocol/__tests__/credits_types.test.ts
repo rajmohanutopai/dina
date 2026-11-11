@@ -135,12 +135,15 @@ describe('parseClaimGrantResponse (client side)', () => {
 });
 
 describe('parseClaimGrantRefusal + terminal split', () => {
-  it.each(['already_claimed', 'attestation_failed', 'grants_paused', 'platform_disabled', 'rate_limited'])(
-    'parses known code %s',
-    (code) => {
-      expect(parseClaimGrantRefusal({ error: code })).toEqual({ error: code });
-    },
-  );
+  it.each([
+    'already_claimed',
+    'attestation_failed',
+    'grants_paused',
+    'platform_disabled',
+    'rate_limited',
+  ])('parses known code %s', (code) => {
+    expect(parseClaimGrantRefusal({ error: code })).toEqual({ error: code });
+  });
 
   it('returns null for unknown codes (client treats as transient)', () => {
     expect(parseClaimGrantRefusal({ error: 'cosmic_rays' })).toBeNull();

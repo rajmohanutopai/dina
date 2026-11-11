@@ -266,9 +266,9 @@ describe('the broker settles under a CAS', () => {
     const { broker, registry } = setup(now);
     const id = executing(broker, registry, 'k1');
 
-    expect(broker.settle(id, { kind: 'completed', result: { hits: [] }, resultSchema: {} })).toEqual(
-      { ok: true, value: undefined },
-    );
+    expect(
+      broker.settle(id, { kind: 'completed', result: { hits: [] }, resultSchema: {} }),
+    ).toEqual({ ok: true, value: undefined });
     expect(broker.settle(id, { kind: 'outcome_unknown', detail: 'swept' })).toMatchObject({
       ok: false,
       refusal: 'not_executing',

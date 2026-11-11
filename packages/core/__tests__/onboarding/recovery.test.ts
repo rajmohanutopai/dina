@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 4.3
  */
 
-import { TEST_PASSPHRASE, TEST_PASSPHRASE_WRONG } from '@dina/test-harness';
+import { TEST_PASSPHRASE } from '@dina/test-harness';
 
 import { unwrapSeed } from '../../src/crypto/aesgcm';
 import { runOnboarding } from '../../src/onboarding/portable';

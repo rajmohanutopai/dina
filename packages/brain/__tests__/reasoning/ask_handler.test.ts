@@ -35,7 +35,7 @@ function scriptedProvider(script: Partial<ChatResponse>[]): LLMProvider {
         finishReason: (step.toolCalls?.length ?? 0) > 0 ? 'tool_use' : 'end',
       };
     },
-    async *stream() {
+    stream() {
       throw new Error('nope');
     },
     async embed() {
@@ -380,7 +380,7 @@ describe('makeAgenticAskHandler', () => {
           finishReason: 'end',
         };
       },
-      async *stream() {
+      stream() {
         throw new Error('nope');
       },
       async embed() {
@@ -734,7 +734,7 @@ describe('formatCurrentTimeBlock (MT-15-I3)', () => {
           finishReason: 'end',
         };
       },
-      async *stream() {
+      stream() {
         throw new Error('nope');
       },
       async embed() {
@@ -964,7 +964,10 @@ describe('makeAgenticAskHandler — explicit lane enforcement (Services/Reviews)
     const reminder = recordingTool('schedule_reminder', { ok: true });
     const vault = recordingTool('vault_search', []);
     const peerlens = recordingTool('search_peerlens', {
-      subject: { trustLevel: 'high', attestationSummary: { total: 5, positive: 5, neutral: 0, negative: 0 } },
+      subject: {
+        trustLevel: 'high',
+        attestationSummary: { total: 5, positive: 5, neutral: 0, negative: 0 },
+      },
     });
     const tools = new ToolRegistry();
     tools.register(reminder);
@@ -995,7 +998,10 @@ describe('makeAgenticAskHandler — explicit lane enforcement (Services/Reviews)
     // search_peerlens succeeded as a tool but the AppView call THREW, so it
     // returns a failure `note` (no subject / no search data). That is the
     // network being unreachable — it must NOT be reported as "no reviews exist".
-    const peerlens = recordingTool('search_peerlens', { note: 'PeerLens lookup failed', failed: true });
+    const peerlens = recordingTool('search_peerlens', {
+      note: 'PeerLens lookup failed',
+      failed: true,
+    });
     const tools = new ToolRegistry();
     tools.register(peerlens);
     const handler = makeAgenticAskHandler({

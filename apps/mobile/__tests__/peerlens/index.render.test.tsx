@@ -54,7 +54,7 @@ describe('Network home — review-count subtitle', () => {
   it('0 reviews → a non-count prompt, not "0 reviews written"', () => {
     const { getByText, queryByText } = render(<TrustFeedScreen reviewsWritten={0} />);
     expect(queryByText('0 reviews written')).toBeNull();
-    expect(getByText("Reviews you’ve written")).toBeTruthy();
+    expect(getByText('Reviews you’ve written')).toBeTruthy();
   });
 });
 

@@ -39,7 +39,10 @@ export function tierAdmitsDisclosure(
   return tier === 'summary' || tier === 'full';
 }
 
-export type DisclosureTierResolver = (contactDID: string, category: DisclosureCategory) => SharingTier | undefined;
+export type DisclosureTierResolver = (
+  contactDID: string,
+  category: DisclosureCategory,
+) => SharingTier | undefined;
 
 /**
  * The tier that answers for a contact and a category: the per-category

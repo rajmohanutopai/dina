@@ -13,7 +13,12 @@
 
 import { verifySpanProof } from '../../a2a/span_proof';
 import { listActiveDevices } from '../../devices/registry';
-import { allowanceStatus, listSpendUses, proposeAllowance, revokeAllowance } from '../../spend/allowance';
+import {
+  allowanceStatus,
+  listSpendUses,
+  proposeAllowance,
+  revokeAllowance,
+} from '../../spend/allowance';
 
 import { ownerDidForRequest } from './owner_guard';
 
@@ -22,12 +27,20 @@ import type { CoreRouter, CoreRequest } from '../router';
 const STOP_WORDS = /\b(cancel|stop|end|revoke|remove|no more)\b/i;
 
 function isBrain(req: CoreRequest): boolean {
-  return req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  return (
+    req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined)
+  );
 }
 
 function proofOf(b: Record<string, unknown>) {
   const { release_session: rs, turn_id: turnId, turn_text: turnText, start, end } = b;
-  if (typeof rs !== 'string' || typeof turnId !== 'string' || typeof turnText !== 'string' || typeof start !== 'number' || typeof end !== 'number') {
+  if (
+    typeof rs !== 'string' ||
+    typeof turnId !== 'string' ||
+    typeof turnText !== 'string' ||
+    typeof start !== 'number' ||
+    typeof end !== 'number'
+  ) {
     return null;
   }
   return { releaseSession: rs, turnId, turnText, start, end };
@@ -38,8 +51,19 @@ export function registerSpendAllowanceRoutes(router: CoreRouter, ownerCapability
     if (!isBrain(req)) return { status: 403, body: { error: 'brain only' } };
     const b = (req.body as Record<string, unknown> | undefined) ?? {};
     const proof = proofOf(b);
-    if (proof === null || typeof b.agent !== 'string' || typeof b.currency !== 'string' || typeof b.period !== 'string' || typeof b.category !== 'string') {
-      return { status: 400, body: { error: 'a span proof, agent, amount_minor, currency, period and category are required' } };
+    if (
+      proof === null ||
+      typeof b.agent !== 'string' ||
+      typeof b.currency !== 'string' ||
+      typeof b.period !== 'string' ||
+      typeof b.category !== 'string'
+    ) {
+      return {
+        status: 400,
+        body: {
+          error: 'a span proof, agent, amount_minor, currency, period and category are required',
+        },
+      };
     }
     const out = await proposeAllowance({
       proof,
@@ -48,7 +72,9 @@ export function registerSpendAllowanceRoutes(router: CoreRouter, ownerCapability
       currency: b.currency,
       period: b.period,
       category: b.category,
-      ...(b.per_item_cap_minor !== undefined ? { perItemCapMinor: b.per_item_cap_minor as number } : {}),
+      ...(b.per_item_cap_minor !== undefined
+        ? { perItemCapMinor: b.per_item_cap_minor as number }
+        : {}),
       ...(typeof b.until === 'string' ? { until: b.until } : {}),
     });
     return { status: 200, body: out };
@@ -92,7 +118,8 @@ export function registerSpendAllowanceRoutes(router: CoreRouter, ownerCapability
     if (!owner) {
       if (!isBrain(req)) return { status: 403, body: { error: 'owner or brain only' } };
       const proof = proofOf((req.body as Record<string, unknown> | undefined) ?? {});
-      if (proof === null) return { status: 400, body: { error: "a proof of the owner's turn is required" } };
+      if (proof === null)
+        return { status: 400, body: { error: "a proof of the owner's turn is required" } };
       const checked = verifySpanProof(proof, 'spend_allowance');
       if (!checked.ok || !STOP_WORDS.test(checked.turnText)) {
         return { status: 403, body: { error: 'the owner did not ask to stop an allowance' } };

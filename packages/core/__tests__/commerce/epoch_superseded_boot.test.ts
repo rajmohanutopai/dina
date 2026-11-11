@@ -77,7 +77,11 @@ const boot = (disk: Disk): CommerceEpochService =>
     heldStore: disk.held,
   } as unknown as EpochServiceDeps);
 
-function record(epoch: string, previous: CommerceEpochRecord | null, activatedAt: number): CommerceEpochRecord {
+function record(
+  epoch: string,
+  previous: CommerceEpochRecord | null,
+  activatedAt: number,
+): CommerceEpochRecord {
   const draft = {
     protocol_version: '1.0',
     business_did: BUSINESS,

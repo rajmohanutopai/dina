@@ -32,7 +32,10 @@ function fakeDb() {
     execute: (sql: string, params?: unknown[]): void => {
       const t = tableOf(sql);
       const scope = params?.[0] as string;
-      tables.set(t, (tables.get(t) ?? []).filter((r) => r.data_scope !== scope));
+      tables.set(
+        t,
+        (tables.get(t) ?? []).filter((r) => r.data_scope !== scope),
+      );
     },
   } as unknown as DatabaseAdapter;
   return {

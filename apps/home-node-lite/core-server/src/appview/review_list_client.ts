@@ -95,9 +95,7 @@ export type ReviewListOutcome =
   | { ok: false; reason: 'rejected_by_appview'; status: number; error: string }
   | { ok: false; reason: 'malformed_response'; detail: string };
 
-export type ReviewListFetchFn = (
-  input: ReviewListRequest,
-) => Promise<XrpcFetchResult>;
+export type ReviewListFetchFn = (input: ReviewListRequest) => Promise<XrpcFetchResult>;
 
 export interface ReviewListClientOptions {
   fetchFn: ReviewListFetchFn;
@@ -105,7 +103,13 @@ export interface ReviewListClientOptions {
 }
 
 export type ReviewListEvent =
-  | { kind: 'listed'; subject: string | null; author: string | null; count: number; hasMore: boolean }
+  | {
+      kind: 'listed';
+      subject: string | null;
+      author: string | null;
+      count: number;
+      hasMore: boolean;
+    }
   | { kind: 'rejected'; reason: ReviewListRejectionReason };
 
 export const MAX_REVIEW_LIMIT = 100;
@@ -126,9 +130,7 @@ export function createReviewListClient(
   const fetchFn = opts.fetchFn;
   const onEvent = opts.onEvent;
 
-  return async function list(
-    input: ReviewListRequest,
-  ): Promise<ReviewListOutcome> {
+  return async function list(input: ReviewListRequest): Promise<ReviewListOutcome> {
     const validation = validateInput(input);
     if (validation !== null) {
       onEvent?.({ kind: 'rejected', reason: 'invalid_input' });
@@ -146,9 +148,10 @@ export function createReviewListClient(
     }
 
     if (result.status < 200 || result.status >= 300) {
-      const msg = typeof (result.body as { error?: unknown })?.error === 'string'
-        ? ((result.body as { error: string }).error)
-        : `status ${result.status}`;
+      const msg =
+        typeof (result.body as { error?: unknown })?.error === 'string'
+          ? (result.body as { error: string }).error
+          : `status ${result.status}`;
       onEvent?.({ kind: 'rejected', reason: 'rejected_by_appview' });
       return {
         ok: false,
@@ -202,10 +205,10 @@ function validateInput(input: ReviewListRequest | null | undefined): string | nu
   if (hasSubject && hasAuthor) {
     return 'provide either subject or author, not both';
   }
-  if (hasSubject && !DID_RE.test(input.subject!)) {
+  if (hasSubject && typeof input.subject === 'string' && !DID_RE.test(input.subject)) {
     return 'subject must be a valid DID';
   }
-  if (hasAuthor && !DID_RE.test(input.author!)) {
+  if (hasAuthor && typeof input.author === 'string' && !DID_RE.test(input.author)) {
     return 'author must be a valid DID';
   }
   if (input.limit !== undefined) {
@@ -236,8 +239,15 @@ function normaliseInput(input: ReviewListRequest): ReviewListRequest {
   };
 }
 
-interface ParseOk { ok: true; response: ReviewListResponse }
-interface ParseFail { ok: false; reason: 'malformed_response'; detail: string }
+interface ParseOk {
+  ok: true;
+  response: ReviewListResponse;
+}
+interface ParseFail {
+  ok: false;
+  reason: 'malformed_response';
+  detail: string;
+}
 
 function parseResponse(body: Record<string, unknown>): ParseOk | ParseFail {
   if (!Array.isArray(body.reviews)) {

@@ -142,10 +142,7 @@ export class SwrCache<K, V> {
    * corresponds to one `SwrSource` — tests pin the state machine by
    * exercising all five.
    */
-  async get(
-    key: K,
-    opts: { mustRevalidate?: boolean } = {},
-  ): Promise<SwrResult<V>> {
+  async get(key: K, opts: { mustRevalidate?: boolean } = {}): Promise<SwrResult<V>> {
     const keyStr = this.keyFn(key);
     const now = this.nowMsFn();
     const entry = this.entries.get(keyStr);
@@ -167,7 +164,7 @@ export class SwrCache<K, V> {
         // already surfaced via the `revalidate_failed` event + a
         // later blocking get() will retry.
         this.emit({ kind: 'stale_served', key: keyStr, ageMs });
-        void this.startRefresh(key, keyStr).catch(() => {});
+        void this.startRefresh(key, keyStr).catch(() => undefined);
         return { value: entry.value, source: 'stale-while-revalidate', ageMs };
       }
       // Forced revalidate OR past stale window: block on fresh fetch.
@@ -242,9 +239,7 @@ export class SwrCache<K, V> {
       .then((value) => {
         const ttlMs = this.ttlMsFn(value, key);
         if (!Number.isFinite(ttlMs) || ttlMs < 0) {
-          throw new RangeError(
-            `SwrCache: ttlMsFn returned non-finite / negative value: ${ttlMs}`,
-          );
+          throw new RangeError(`SwrCache: ttlMsFn returned non-finite / negative value: ${ttlMs}`);
         }
         this.entries.set(keyStr, {
           value,

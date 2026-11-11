@@ -8,11 +8,7 @@ import {
   setChatMessageRepository,
 } from '@dina/core';
 
-import {
-  buildTurnHistory,
-  outsideDataRule,
-  recentTurnsBlock,
-} from '../../src/chat/history';
+import { buildTurnHistory, outsideDataRule, recentTurnsBlock } from '../../src/chat/history';
 import {
   addLifecycleMessage,
   addMessage,
@@ -74,7 +70,11 @@ describe('mapping (first rule wins)', () => {
       capability: 'eta_query',
       serviceName: 'Harbour Transit',
     });
-    updateMessageLifecycle('t', 'sq-1', { status: 'resolved', result: { eta_minutes: 7 }, resolvedAt: Date.now() });
+    updateMessageLifecycle('t', 'sq-1', {
+      status: 'resolved',
+      result: { eta_minutes: 7 },
+      resolvedAt: Date.now(),
+    });
     const h = await buildTurnHistory('t', { nonce: N });
     const all = h.map((m) => m.content).join('\n');
     expect(all).toContain('Service reply · Harbour Transit · eta_query');
@@ -182,7 +182,9 @@ describe('recent turns block', () => {
     addMessage('t', 'user', 'Any slots tomorrow?');
     addMessage('t', 'dina', '16:00 and 17:30');
     const block = recentTurnsBlock(await buildTurnHistory('t', { nonce: N }));
-    expect(block).toBe('Recent conversation (oldest first):\nOwner: Any slots tomorrow?\nDina: 16:00 and 17:30');
+    expect(block).toBe(
+      'Recent conversation (oldest first):\nOwner: Any slots tomorrow?\nDina: 16:00 and 17:30',
+    );
   });
 
   it('is empty with no history', () => {

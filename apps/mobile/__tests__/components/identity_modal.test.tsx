@@ -65,18 +65,14 @@ describe('IdentityModal', () => {
         showAdvanced
       />,
     );
-    await waitFor(() =>
-      expect(queryByTestId('identity-modal-loading')).toBeNull(),
-    );
+    await waitFor(() => expect(queryByTestId('identity-modal-loading')).toBeNull());
     // Handle appears as the title (header) AND copyable in the
     // Handle group.
     expect(getAllByText('rajmohanddc9.test-pds.dinakernel.com').length).toBeGreaterThanOrEqual(2);
     // DID appears as the muted header caption AND in the DID group.
     expect(getAllByText(DID).length).toBeGreaterThanOrEqual(2);
     // Technical sections only render with showAdvanced.
-    expect(
-      getByText('z6Mkiup6CNAw2w3t6adaYNv12jd81jNz9XHiExBwpugbeEBN'),
-    ).toBeTruthy();
+    expect(getByText('z6Mkiup6CNAw2w3t6adaYNv12jd81jNz9XHiExBwpugbeEBN')).toBeTruthy();
     expect(getByText('wss://test-mailbox.dinakernel.com')).toBeTruthy();
   });
 
@@ -128,12 +124,7 @@ describe('IdentityModal', () => {
       throw new Error('plc.directory returned HTTP 500');
     });
     const { getByTestId, getByText } = render(
-      <IdentityModal
-        visible
-        onClose={() => undefined}
-        did={DID}
-        fetchPlc={fetchPlc}
-      />,
+      <IdentityModal visible onClose={() => undefined} did={DID} fetchPlc={fetchPlc} />,
     );
     await waitFor(() => expect(getByTestId('identity-modal-error')).toBeTruthy());
     expect(getByText('plc.directory returned HTTP 500')).toBeTruthy();
@@ -144,12 +135,7 @@ describe('IdentityModal', () => {
     // no fetch target. Show the error rather than spin forever.
     const fetchPlc = jest.fn(async () => makeDoc());
     const { getByTestId } = render(
-      <IdentityModal
-        visible
-        onClose={() => undefined}
-        did=""
-        fetchPlc={fetchPlc}
-      />,
+      <IdentityModal visible onClose={() => undefined} did="" fetchPlc={fetchPlc} />,
     );
     expect(getByTestId('identity-modal-error')).toBeTruthy();
     expect(fetchPlc).not.toHaveBeenCalled();
@@ -162,12 +148,7 @@ describe('IdentityModal', () => {
     // would warm a PLC fetch the user might never trigger.
     const fetchPlc = jest.fn(async () => makeDoc());
     render(
-      <IdentityModal
-        visible={false}
-        onClose={() => undefined}
-        did={DID}
-        fetchPlc={fetchPlc}
-      />,
+      <IdentityModal visible={false} onClose={() => undefined} did={DID} fetchPlc={fetchPlc} />,
     );
     expect(fetchPlc).not.toHaveBeenCalled();
   });
@@ -177,12 +158,7 @@ describe('IdentityModal', () => {
     // that contract holds so the surrounding screen tree is clean.
     const fetchPlc = jest.fn(async () => makeDoc());
     const { queryByTestId } = render(
-      <IdentityModal
-        visible={false}
-        onClose={() => undefined}
-        did={DID}
-        fetchPlc={fetchPlc}
-      />,
+      <IdentityModal visible={false} onClose={() => undefined} did={DID} fetchPlc={fetchPlc} />,
     );
     expect(queryByTestId('identity-modal-handle')).toBeNull();
   });
@@ -190,16 +166,9 @@ describe('IdentityModal', () => {
   it('handle row is hidden when there is no published handle', async () => {
     const fetchPlc = jest.fn(async () => makeDoc({ handle: null, alsoKnownAs: [] }));
     const { getByText, getAllByText, queryByTestId } = render(
-      <IdentityModal
-        visible
-        onClose={() => undefined}
-        did={DID}
-        fetchPlc={fetchPlc}
-      />,
+      <IdentityModal visible onClose={() => undefined} did={DID} fetchPlc={fetchPlc} />,
     );
-    await waitFor(() =>
-      expect(queryByTestId('identity-modal-loading')).toBeNull(),
-    );
+    await waitFor(() => expect(queryByTestId('identity-modal-loading')).toBeNull());
     // Em-dash placeholder used for the canonical row when there's
     // nothing to copy. The DID and services still render so the user
     // can still inspect the identity.

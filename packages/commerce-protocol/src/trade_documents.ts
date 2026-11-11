@@ -62,7 +62,12 @@ export const MAX_PAYMENT_ORDER_REFS = 50;
  * authors the field; supplier-policy codes have no place in a
  * buyer-signed document.
  */
-export const KNOWN_DELIVERY_RECEIPT_REASONS = ['damaged', 'short', 'wrong_item', 'refused'] as const;
+export const KNOWN_DELIVERY_RECEIPT_REASONS = [
+  'damaged',
+  'short',
+  'wrong_item',
+  'refused',
+] as const;
 
 export const PAYMENT_METHODS = ['cash', 'upi', 'cheque', 'transfer', 'other'] as const;
 export type PaymentMethod = (typeof PAYMENT_METHODS)[number];
@@ -93,7 +98,7 @@ export type DeliveryNote = {
   dispatched_at: string;
   expected_by?: string;
   note_digest: string;
-}
+};
 
 export type ReadDeliveryNote = { ok: true; note: DeliveryNote } | { ok: false; error: string };
 
@@ -169,7 +174,7 @@ export type DeliveryReceipt = {
   lines: DeliveryReceiptLine[];
   received_at: string;
   receipt_digest: string;
-}
+};
 
 export type ReadDeliveryReceipt =
   | { ok: true; receipt: DeliveryReceipt }
@@ -259,7 +264,7 @@ export type PaymentNote = {
   /** Advisory display data ONLY — allocation is never a wire fact (§4.4). */
   order_refs?: string[];
   note_digest: string;
-}
+};
 
 export type ReadPaymentNote = { ok: true; note: PaymentNote } | { ok: false; error: string };
 
@@ -375,9 +380,7 @@ export function readPaymentAcknowledgement(
   sha256: Sha256Fn,
 ): ReadPaymentAcknowledgement {
   const error = validatePaymentAcknowledgement(ack, sha256);
-  return error === null
-    ? { ok: true, ack: ack as PaymentAcknowledgement }
-    : { ok: false, error };
+  return error === null ? { ok: true, ack: ack as PaymentAcknowledgement } : { ok: false, error };
 }
 
 /**

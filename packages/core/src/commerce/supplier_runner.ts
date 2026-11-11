@@ -115,7 +115,11 @@ export async function bindReferenceRunner(installId: string): Promise<BindRefere
   // runner device for; the install's own trust anchor (checked by the money
   // line and the claim guard) decides whether this install IS that pack.
   const entry = firstPartyPack(install.pluginId);
-  if (entry === null || !entry.bindsRunnerDevice || install.trustAnchor.kind !== 'local_publisher_key') {
+  if (
+    entry === null ||
+    !entry.bindsRunnerDevice ||
+    install.trustAnchor.kind !== 'local_publisher_key'
+  ) {
     return { ok: false, refusal: 'not_a_first_party_pack' };
   }
   const supplier = entry.role === 'commerce_supplier';

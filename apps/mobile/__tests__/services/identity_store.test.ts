@@ -15,7 +15,7 @@ import {
 
 // The mock at __mocks__/react-native-keychain.ts exports resetKeychainMock —
 // the real package doesn't, so bypass the type checker via require.
- 
+
 const { resetKeychainMock } = require('react-native-keychain') as {
   resetKeychainMock: () => void;
 };

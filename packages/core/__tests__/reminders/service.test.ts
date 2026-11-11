@@ -34,7 +34,11 @@ describe('Reminder Service', () => {
       const fired: string[] = [];
       const dispose = subscribeReminderCreated((r) => fired.push(r.id));
       try {
-        const a = createReminder({ message: 'before', due_at: Date.now() + 1000, persona: 'general' });
+        const a = createReminder({
+          message: 'before',
+          due_at: Date.now() + 1000,
+          persona: 'general',
+        });
         expect(fired).toEqual([a.id]);
         expect(getReminder(a.id)).not.toBeNull();
 
@@ -44,7 +48,11 @@ describe('Reminder Service', () => {
         expect(getReminder(a.id)).toBeNull();
         // …but the listener is still attached, so a reminder created in the new
         // scope still reaches the OS-push bridge.
-        const b = createReminder({ message: 'after', due_at: Date.now() + 1000, persona: 'general' });
+        const b = createReminder({
+          message: 'after',
+          due_at: Date.now() + 1000,
+          persona: 'general',
+        });
         expect(fired).toEqual([a.id, b.id]);
       } finally {
         dispose();
@@ -126,7 +134,11 @@ describe('Reminder Service', () => {
 
     it('persists (awaits create) then returns the reminder', async () => {
       const persisted: Reminder[] = [];
-      setReminderRepository(stubRepo(async (r) => { persisted.push(r); }));
+      setReminderRepository(
+        stubRepo(async (r) => {
+          persisted.push(r);
+        }),
+      );
       const r = await createReminderDurable({
         message: 'Pay rent',
         due_at: Date.now() + 60_000,
@@ -138,7 +150,11 @@ describe('Reminder Service', () => {
     });
 
     it('leaves nothing in memory + throws when the SQL write fails', async () => {
-      setReminderRepository(stubRepo(async () => { throw new Error('disk full'); }));
+      setReminderRepository(
+        stubRepo(async () => {
+          throw new Error('disk full');
+        }),
+      );
       await expect(
         createReminderDurable({ message: 'x', due_at: Date.now() + 1000, persona: 'general' }),
       ).rejects.toThrow(/durable create failed: disk full/);
@@ -174,7 +190,11 @@ describe('Reminder Service', () => {
     });
 
     it('a concurrent duplicate also fails when the single shared write fails (#2)', async () => {
-      setReminderRepository(stubRepo(async () => { throw new Error('disk full'); }));
+      setReminderRepository(
+        stubRepo(async () => {
+          throw new Error('disk full');
+        }),
+      );
       const input = { message: 'x', due_at: Date.now() + 1000, persona: 'general' };
       const results = await Promise.allSettled([
         createReminderDurable(input),
@@ -742,9 +762,7 @@ describe('Reminder Service', () => {
           return rows.find((r) => r.id === id) ?? null;
         },
         async listPending(now) {
-          return rows.filter(
-            (r) => r.completed === 0 && r.status === 'pending' && r.due_at <= now,
-          );
+          return rows.filter((r) => r.completed === 0 && r.status === 'pending' && r.due_at <= now);
         },
         async listByPersona(p) {
           return rows.filter((r) => r.persona === p);

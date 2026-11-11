@@ -17,7 +17,6 @@ import {
 
 import type { CoreRPCRequest } from '../../src/relay/rpc_envelope';
 
-
 describe('Core RPC Identity Binding', () => {
   const pubKey = getPublicKey(TEST_ED25519_SEED);
   const realDID = deriveDIDKey(pubKey);

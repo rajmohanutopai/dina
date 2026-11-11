@@ -50,7 +50,10 @@ let adapter: NodeSQLiteAdapter;
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'group-plans-'));
-  adapter = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: randomBytes(32).toString('hex') });
+  adapter = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: randomBytes(32).toString('hex'),
+  });
   applyMigrations(adapter, IDENTITY_MIGRATIONS);
 });
 
@@ -87,7 +90,9 @@ describe.each<[string, () => GroupPlanRepository]>([
     const back = repo.get('plan_a');
     expect(back).toEqual(foldedResult.plan);
     expect(back?.state).toBe('folded');
-    expect(back?.guests[0].disclosures).toEqual([{ kind: 'dietary', text: 'gluten-free', about: 'household' }]);
+    expect(back?.guests[0].disclosures).toEqual([
+      { kind: 'dietary', text: 'gluten-free', about: 'household' },
+    ]);
   });
 
   it('lists what a plan still owes, in any state, and nothing else (GROUP-2)', () => {
@@ -95,8 +100,15 @@ describe.each<[string, () => GroupPlanRepository]>([
     const word = { state: 'cancelled', slot: { start: 'Sat 26' }, seq: 2 };
     const stopped = abandon(plan('unsent', T0), T0 + 1);
     if (!stopped.ok) throw new Error(stopped.refusal);
-    repo.put({ ...stopped.plan, bookings: { 'did:plc:garcia': { ...word, sent: false } } } as GroupPlan);
-    repo.put({ ...stopped.plan, planId: 'told', bookings: { 'did:plc:garcia': { ...word, sent: true } } } as GroupPlan);
+    repo.put({
+      ...stopped.plan,
+      bookings: { 'did:plc:garcia': { ...word, sent: false } },
+    } as GroupPlan);
+    repo.put({
+      ...stopped.plan,
+      planId: 'told',
+      bookings: { 'did:plc:garcia': { ...word, sent: true } },
+    } as GroupPlan);
     repo.put({ ...stopped.plan, planId: 'deleting', deleteWhenTold: true });
     repo.put({ ...plan('settled-waiting'), state: 'settled' });
     // Owner text that reads like the keys matches nothing.
@@ -153,7 +165,9 @@ describe('rehydration is strict', () => {
     expect(rehydrateGroupPlan('[]')).toBeNull();
     expect(rehydrateGroupPlan(JSON.stringify({ ...plan('p'), state: 'dreaming' }))).toBeNull();
     expect(rehydrateGroupPlan(JSON.stringify({ ...plan('p'), guests: [] }))).toBeNull();
-    expect(rehydrateGroupPlan(JSON.stringify({ ...plan('p'), candidates: [{ start: 7 }] }))).toBeNull();
+    expect(
+      rehydrateGroupPlan(JSON.stringify({ ...plan('p'), candidates: [{ start: 7 }] })),
+    ).toBeNull();
     const badDisclosure = plan('p');
     badDisclosure.guests[0].disclosures = [{ kind: 'dietary', text: 'x', about: 'Lily' as never }];
     expect(rehydrateGroupPlan(JSON.stringify(badDisclosure))).toBeNull();
@@ -161,7 +175,10 @@ describe('rehydration is strict', () => {
 
   it('re-checks the bounds — a hand-edited row cannot carry a ninth guest past the ceiling', () => {
     const p = plan('p');
-    const guests = Array.from({ length: 9 }, (_, i) => ({ ...p.guests[0], contactDid: `did:plc:g${i}` }));
+    const guests = Array.from({ length: 9 }, (_, i) => ({
+      ...p.guests[0],
+      contactDid: `did:plc:g${i}`,
+    }));
     expect(rehydrateGroupPlan(JSON.stringify({ ...p, guests }))).toBeNull();
     const candidates = Array.from({ length: 13 }, (_, i) => ({ start: `Sat ${i}` }));
     expect(rehydrateGroupPlan(JSON.stringify({ ...p, candidates }))).toBeNull();
@@ -171,7 +188,9 @@ describe('rehydration is strict', () => {
     const repo = new SQLiteGroupPlanRepository(adapter);
     const p = plan('plan_c');
     repo.put(p);
-    const raw = adapter.query('SELECT plan_json, state FROM group_plans WHERE plan_id = ?', ['plan_c']);
+    const raw = adapter.query('SELECT plan_json, state FROM group_plans WHERE plan_id = ?', [
+      'plan_c',
+    ]);
     expect(raw).toHaveLength(1);
     expect(raw[0].state).toBe('proposing');
     expect(rehydrateGroupPlan(String(raw[0].plan_json))).toEqual(p);

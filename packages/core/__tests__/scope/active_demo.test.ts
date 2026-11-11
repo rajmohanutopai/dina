@@ -2,7 +2,7 @@
  * Active guided-demo state — unit tests (boot-recovery metadata).
  */
 
-import { kvGet, kvSet, resetKVStore } from '../../src/kv/store';
+import { kvSet, resetKVStore } from '../../src/kv/store';
 import {
   ACTIVE_DEMO_KEY,
   getActiveDemo,
@@ -21,7 +21,11 @@ describe('active guided-demo state', () => {
   });
 
   it('round-trips a demo record', async () => {
-    await setActiveDemo({ activeDemoScope: 'guided_demo:run1', startedAt: 1000, step: 'remember_emma' });
+    await setActiveDemo({
+      activeDemoScope: 'guided_demo:run1',
+      startedAt: 1000,
+      step: 'remember_emma',
+    });
     expect(await getActiveDemo()).toEqual({
       activeDemoScope: 'guided_demo:run1',
       startedAt: 1000,
@@ -62,7 +66,10 @@ describe('active guided-demo state', () => {
   });
 
   it('getActiveDemo returns null for a record with an invalid/non-demo scope', async () => {
-    await kvSet(ACTIVE_DEMO_KEY, JSON.stringify({ activeDemoScope: 'user', startedAt: 1, step: '' }));
+    await kvSet(
+      ACTIVE_DEMO_KEY,
+      JSON.stringify({ activeDemoScope: 'user', startedAt: 1, step: '' }),
+    );
     expect(await getActiveDemo()).toBeNull();
     await kvSet(ACTIVE_DEMO_KEY, JSON.stringify({ activeDemoScope: 'guided_demo:', startedAt: 1 }));
     expect(await getActiveDemo()).toBeNull();

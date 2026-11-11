@@ -144,9 +144,7 @@ export class ServiceProfilePublisher {
 
     this.onEvent?.({
       kind: 'publishing',
-      schemaHashSet: Object.values(profile.capabilitySchemas).map(
-        (s) => s.schema_hash,
-      ),
+      schemaHashSet: Object.values(profile.capabilitySchemas).map((s) => s.schema_hash),
     });
 
     const start = Date.now();
@@ -189,7 +187,7 @@ export class ServiceProfilePublisher {
       err !== null &&
       typeof err === 'object' &&
       typeof (err as { status?: unknown }).status === 'number'
-        ? ((err as { status: number }).status)
+        ? (err as { status: number }).status
         : undefined;
     if (status !== undefined) {
       this.onEvent?.({

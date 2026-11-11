@@ -185,9 +185,7 @@ export function applyFilters<T extends { display: SubjectCardDisplay }>(
 ): readonly T[] {
   if (activeIds.size === 0) return results;
   const activeFilters = ALL_VIEWER_FILTERS.filter((f) => activeIds.has(f.id));
-  return results.filter((r) =>
-    activeFilters.every((f) => f.predicate(r.display, profile)),
-  );
+  return results.filter((r) => activeFilters.every((f) => f.predicate(r.display, profile)));
 }
 
 /**

@@ -122,7 +122,10 @@ export interface TermEngineDeps {
    * personas, closed now, whose entries cover a part in `touches`. Absent or
    * null: no model beyond the shelf limits.
    */
-  valueModels?: (kind: string, touches: readonly string[]) => { model: ValueModel; closedPersonas: string[] } | null;
+  valueModels?: (
+    kind: string,
+    touches: readonly string[],
+  ) => { model: ValueModel; closedPersonas: string[] } | null;
   /**
    * The strategy slot (COMMITMENT_KERNEL §11): who fills it per kind, the
    * verdict budgets, and the door to the reasoning backend. Absent: the
@@ -139,9 +142,12 @@ export interface TermEngineDeps {
     }) => { ok: true } | { ok: false; spent: 'negotiation' | 'owner' };
     submit: NegotiationSubmitter;
     /** Any budget left, checked before Brain is asked (a spent one retires Brain). */
-    canSpend: (args: { kind: string; negotiationId: string; nowMs: number; thresholdVersion: number }) =>
-      | { ok: true }
-      | { ok: false; spent: 'negotiation' | 'owner' };
+    canSpend: (args: {
+      kind: string;
+      negotiationId: string;
+      nowMs: number;
+      thresholdVersion: number;
+    }) => { ok: true } | { ok: false; spent: 'negotiation' | 'owner' };
     /** The model as Brain may see it: untagged entries and Brain-readable personas only. */
     brainModel: (kind: string) => ValueModel | null;
   };

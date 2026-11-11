@@ -134,8 +134,7 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
         error: r.last_publish_error,
         attemptedAtMs:
           r.last_publish_attempt_at === null ? null : Number(r.last_publish_attempt_at),
-        nextRetryAtMs:
-          r.next_publish_retry_at === null ? null : Number(r.next_publish_retry_at),
+        nextRetryAtMs: r.next_publish_retry_at === null ? null : Number(r.next_publish_retry_at),
       },
     }));
   }
@@ -220,8 +219,7 @@ export class SQLiteServiceConfigRepository implements ServiceConfigRepository {
       error: row.last_publish_error,
       attemptedAtMs:
         row.last_publish_attempt_at === null ? null : Number(row.last_publish_attempt_at),
-      nextRetryAtMs:
-        row.next_publish_retry_at === null ? null : Number(row.next_publish_retry_at),
+      nextRetryAtMs: row.next_publish_retry_at === null ? null : Number(row.next_publish_retry_at),
     };
   }
 

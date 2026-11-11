@@ -694,7 +694,8 @@ describe('AppViewClient — commerce catalog + profile trust', () => {
 
 describe('AppViewClient — getA2ACard (the directory’s card for one DID, design §8.3)', () => {
   const did = 'did:plc:abcdefghijklmnopqrstuvwx';
-  const card = (interfaces: unknown) => JSON.stringify({ name: 'Bus', supportedInterfaces: interfaces });
+  const card = (interfaces: unknown) =>
+    JSON.stringify({ name: 'Bus', supportedInterfaces: interfaces });
   const answer = (over: Record<string, unknown> = {}) => ({
     card: card([
       { url: 'https://bus.example/a2a/rest', protocolBinding: 'HTTP+JSON', protocolVersion: '1.0' },
@@ -720,12 +721,22 @@ describe('AppViewClient — getA2ACard (the directory’s card for one DID, desi
       trustScore: 0.7,
       recommendation: 'caution',
     });
-    expect(calls).toEqual([`${APPVIEW}/xrpc/com.dinakernel.a2a.getCard?did=${encodeURIComponent(did)}`]);
+    expect(calls).toEqual([
+      `${APPVIEW}/xrpc/com.dinakernel.a2a.getCard?did=${encodeURIComponent(did)}`,
+    ]);
   });
 
   it('a DID the directory does not list is null; a closed directory throws; a malformed DID is never asked', async () => {
-    const { fetchFn, calls } = makeFetch([jsonResponse(404, { error: 'NotFound' }), jsonResponse(503, { error: 'DirectoryUnavailable' })]);
-    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep, maxRetries: 0 });
+    const { fetchFn, calls } = makeFetch([
+      jsonResponse(404, { error: 'NotFound' }),
+      jsonResponse(503, { error: 'DirectoryUnavailable' }),
+    ]);
+    const c = new AppViewClient({
+      appViewURL: APPVIEW,
+      fetch: fetchFn,
+      sleepFn: noSleep,
+      maxRetries: 0,
+    });
     expect(await c.getA2ACard(did)).toBeNull();
     await expect(c.getA2ACard(did)).rejects.toMatchObject({ name: 'AppViewError', status: 503 });
     expect(await c.getA2ACard('did:plc:short')).toBeNull();
@@ -734,8 +745,14 @@ describe('AppViewClient — getA2ACard (the directory’s card for one DID, desi
 
   it.each([
     ['a card that is not JSON', { card: '{' }],
-    ['a card with no JSON-RPC interface', { card: card([{ url: 'https://bus.example/a2a/rest', protocolBinding: 'HTTP+JSON' }]) }],
-    ['an endpoint Core would refuse (a literal IP)', { card: card([{ url: 'https://203.0.113.9/a2a/v1', protocolBinding: 'JSONRPC' }]) }],
+    [
+      'a card with no JSON-RPC interface',
+      { card: card([{ url: 'https://bus.example/a2a/rest', protocolBinding: 'HTTP+JSON' }]) },
+    ],
+    [
+      'an endpoint Core would refuse (a literal IP)',
+      { card: card([{ url: 'https://203.0.113.9/a2a/v1', protocolBinding: 'JSONRPC' }]) },
+    ],
     ['trust past 1', { trust: { score: 1.5, recommendation: 'proceed' } }],
     ['an unknown band', { trust: { score: 0.5, recommendation: 'trust me' } }],
     ['a time that is no timestamp', { indexedAt: 'yesterday' }],
@@ -761,10 +778,14 @@ describe('AppViewClient — searchA2AAgents (the A2A directory, design §8.3)', 
   };
 
   it('sends only the parameters given, to searchAgents', async () => {
-    const { fetchFn, calls } = makeFetch([jsonResponse(200, { agents: [good], cursor: null, rankingVersion: 'a2a-v1' })]);
+    const { fetchFn, calls } = makeFetch([
+      jsonResponse(200, { agents: [good], cursor: null, rankingVersion: 'a2a-v1' }),
+    ]);
     const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep });
     expect(await c.searchA2AAgents({ skill: 'eta_query', limit: 10 })).toEqual([good]);
-    expect(calls).toEqual([`${APPVIEW}/xrpc/com.dinakernel.a2a.searchAgents?skill=eta_query&limit=10`]);
+    expect(calls).toEqual([
+      `${APPVIEW}/xrpc/com.dinakernel.a2a.searchAgents?skill=eta_query&limit=10`,
+    ]);
   });
 
   it('drops any result not of exactly the published shape', async () => {
@@ -823,7 +844,15 @@ describe('AppViewClient — searchA2AAgents (the A2A directory, design §8.3)', 
 
   it('a closed directory (503) throws AppViewError with its status', async () => {
     const { fetchFn } = makeFetch([jsonResponse(503, { error: 'DirectoryUnavailable' })]);
-    const c = new AppViewClient({ appViewURL: APPVIEW, fetch: fetchFn, sleepFn: noSleep, maxRetries: 0 });
-    await expect(c.searchA2AAgents({})).rejects.toMatchObject({ name: 'AppViewError', status: 503 });
+    const c = new AppViewClient({
+      appViewURL: APPVIEW,
+      fetch: fetchFn,
+      sleepFn: noSleep,
+      maxRetries: 0,
+    });
+    await expect(c.searchA2AAgents({})).rejects.toMatchObject({
+      name: 'AppViewError',
+      status: 503,
+    });
   });
 });

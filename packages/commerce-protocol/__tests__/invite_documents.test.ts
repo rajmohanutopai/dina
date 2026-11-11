@@ -63,9 +63,9 @@ describe('the offer', () => {
 
   it('a tampered field breaks the digest; a swapped digest breaks the signature', () => {
     const offer = makeOffer();
-    expect(
-      validateInviteOffer({ ...offer, direction: 'i_supply_you' }, hash),
-    ).toContain('does not match');
+    expect(validateInviteOffer({ ...offer, direction: 'i_supply_you' }, hash)).toContain(
+      'does not match',
+    );
     // Re-digested but not re-signed: the shape passes, the signature fails.
     const redirected = makeOffer({ direction: 'i_supply_you' });
     const franken = { ...redirected, inviter_signature: offer.inviter_signature };
@@ -129,13 +129,16 @@ describe('the chain', () => {
       nonce: offer.nonce,
       activated_at: '2026-08-18T10:02:00.000Z',
     };
-    const ack = { ...ackDraft, ack_digest: inviteRecordDigest('invite_activation_ack', ackDraft, hash) };
+    const ack = {
+      ...ackDraft,
+      ack_digest: inviteRecordDigest('invite_activation_ack', ackDraft, hash),
+    };
     expect(validateInviteActivationAck(ack, hash)).toBeNull();
 
     // Tampering with any link is caught by the digest on that message.
-    expect(
-      validateInviteRedemption({ ...redemption, nonce: 'b'.repeat(64) }, hash),
-    ).toContain('does not match');
+    expect(validateInviteRedemption({ ...redemption, nonce: 'b'.repeat(64) }, hash)).toContain(
+      'does not match',
+    );
   });
 
   it('a revocation notice validates with its pinned reasons', () => {
@@ -151,9 +154,9 @@ describe('the chain', () => {
       revocation_digest: inviteRecordDigest('invite_revocation', draft, hash),
     };
     expect(validateInviteRevocationNotice(notice, hash)).toBeNull();
-    expect(
-      validateInviteRevocationNotice({ ...notice, reason: 'bored' }, hash),
-    ).toContain('reason');
+    expect(validateInviteRevocationNotice({ ...notice, reason: 'bored' }, hash)).toContain(
+      'reason',
+    );
   });
 });
 

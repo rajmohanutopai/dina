@@ -52,13 +52,28 @@ function sinkLogger(lines: string[]) {
 }
 
 function newHub(): StreamHub {
-  return new StreamHub({ maxStreams: 8, bufferMs: 60_000, bufferEvents: 16, bufferTasks: 16, bufferBytes: 1 << 20 });
+  return new StreamHub({
+    maxStreams: 8,
+    bufferMs: 60_000,
+    bufferEvents: 16,
+    bufferTasks: 16,
+    bufferBytes: 1 << 20,
+  });
 }
 
-const STREAMS: StreamLimits = { perIp: 4, maxLifetimeMs: 60_000, keepaliveMs: 60_000, maxBufferedBytes: 1 << 20 };
+const STREAMS: StreamLimits = {
+  perIp: 4,
+  maxLifetimeMs: 60_000,
+  keepaliveMs: 60_000,
+  maxBufferedBytes: 1 << 20,
+};
 
 /** A gateway over a recording Core link. */
-function gatewayWith(core: CoreLink, hub = newHub(), streams: StreamLimits = STREAMS): FastifyInstance {
+function gatewayWith(
+  core: CoreLink,
+  hub = newHub(),
+  streams: StreamLimits = STREAMS,
+): FastifyInstance {
   return buildGatewayServer({
     core,
     limiter: new EdgeLimiter(10_000),
@@ -70,7 +85,10 @@ function gatewayWith(core: CoreLink, hub = newHub(), streams: StreamLimits = STR
   });
 }
 
-function recordingCore(reply: () => CoreReply, forwarded: { path: string; envelope: GatewayEnvelope }[]): CoreLink {
+function recordingCore(
+  reply: () => CoreReply,
+  forwarded: { path: string; envelope: GatewayEnvelope }[],
+): CoreLink {
   return {
     async forward(path, envelope) {
       forwarded.push({ path, envelope });
@@ -98,20 +116,33 @@ const rpc = (app: FastifyInstance, payload: string, headers: Record<string, stri
   app.inject({
     method: 'POST',
     url: '/a2a/v1',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0', ...headers },
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${TOKEN}`,
+      'a2a-version': '1.0',
+      ...headers,
+    },
     payload,
   });
 
 describe('configuration (notes M3: the client’s address behind a proxy)', () => {
   // Plan C5
-  it.each(['true', '1.5', '-1', '9', 'all'])('refuses DINA_A2A_GATEWAY_TRUST_PROXY=%s at boot', (value) => {
-    expect(() => loadConfig({ DINA_A2A_GATEWAY_KEY_DIR: '/keys', DINA_A2A_GATEWAY_TRUST_PROXY: value })).toThrow(ConfigError);
-  });
+  it.each(['true', '1.5', '-1', '9', 'all'])(
+    'refuses DINA_A2A_GATEWAY_TRUST_PROXY=%s at boot',
+    (value) => {
+      expect(() =>
+        loadConfig({ DINA_A2A_GATEWAY_KEY_DIR: '/keys', DINA_A2A_GATEWAY_TRUST_PROXY: value }),
+      ).toThrow(ConfigError);
+    },
+  );
 
   // Plan C5
   it('takes a whole hop count, and trusts none by default', () => {
     expect(loadConfig({ DINA_A2A_GATEWAY_KEY_DIR: '/keys' }).network.trustProxy).toBe(0);
-    expect(loadConfig({ DINA_A2A_GATEWAY_KEY_DIR: '/keys', DINA_A2A_GATEWAY_TRUST_PROXY: '1' }).network.trustProxy).toBe(1);
+    expect(
+      loadConfig({ DINA_A2A_GATEWAY_KEY_DIR: '/keys', DINA_A2A_GATEWAY_TRUST_PROXY: '1' }).network
+        .trustProxy,
+    ).toBe(1);
   });
 });
 
@@ -121,7 +152,13 @@ describe('answered at the gateway, never forwarded (notes M2; §4.1 allowlist)',
   beforeEach(() => {
     forwarded = [];
     app = gatewayWith(
-      recordingCore(() => ({ ok: true, answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 1, result: {} } } }), forwarded),
+      recordingCore(
+        () => ({
+          ok: true,
+          answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 1, result: {} } },
+        }),
+        forwarded,
+      ),
     );
   });
   afterEach(async () => {
@@ -138,7 +175,10 @@ describe('answered at the gateway, never forwarded (notes M2; §4.1 allowlist)',
 
   // Plan C16
   it('a __proto__ member is refused as forbidden_member, and nothing reaches Core', async () => {
-    const res = await rpc(app, '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{"__proto__":{"admin":true}}}');
+    const res = await rpc(
+      app,
+      '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{"__proto__":{"admin":true}}}',
+    );
     const error = (res.json() as { error: { code: number; data?: { reason: string }[] } }).error;
     expect(error.code).toBe(-32600);
     expect(JSON.stringify(error)).toContain('forbidden_member');
@@ -157,7 +197,9 @@ describe('answered at the gateway, never forwarded (notes M2; §4.1 allowlist)',
       method,
       url,
       headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}` },
-      ...(method === 'POST' ? { payload: '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}' } : {}),
+      ...(method === 'POST'
+        ? { payload: '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}' }
+        : {}),
     });
     expect(res.statusCode).toBe(404);
     expect(forwarded).toEqual([]);
@@ -167,12 +209,19 @@ describe('answered at the gateway, never forwarded (notes M2; §4.1 allowlist)',
   it.each([
     ['an unknown extension', { 'a2a-extensions': 'https://unknown.example/ext/v9' }],
     ['no extension at all', {}],
-  ])('a call naming %s is served as any other; the gateway raises no -32008', async (_name, headers) => {
-    const res = await rpc(app, '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}', headers);
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ jsonrpc: '2.0', id: 1, result: {} });
-    expect(forwarded).toHaveLength(1);
-  });
+  ])(
+    'a call naming %s is served as any other; the gateway raises no -32008',
+    async (_name, headers) => {
+      const res = await rpc(
+        app,
+        '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}',
+        headers,
+      );
+      expect(res.statusCode).toBe(200);
+      expect(res.json()).toEqual({ jsonrpc: '2.0', id: 1, result: {} });
+      expect(forwarded).toHaveLength(1);
+    },
+  );
 });
 
 describe('through the real Core link: what of Core’s answer reaches the client (notes M2, M3)', () => {
@@ -193,7 +242,11 @@ describe('through the real Core link: what of Core’s answer reaches the client
     await new Promise<void>((resolve) => core.listen(0, '127.0.0.1', () => resolve()));
     const port = (core.address() as { port: number }).port;
     const seed = new Uint8Array(randomBytes(32));
-    const link = createCoreLink({ baseUrl: `http://127.0.0.1:${port}`, key: { seed, did: deriveDIDKey(getPublicKey(seed)) }, timeoutMs: 5_000 });
+    const link = createCoreLink({
+      baseUrl: `http://127.0.0.1:${port}`,
+      key: { seed, did: deriveDIDKey(getPublicKey(seed)) },
+      timeoutMs: 5_000,
+    });
     app = gatewayWith(link);
     await app.listen({ port: 0, host: '127.0.0.1' });
     base = `http://127.0.0.1:${(app.server.address() as { port: number }).port}`;
@@ -220,14 +273,25 @@ describe('through the real Core link: what of Core’s answer reaches the client
     answerBody = { jsonrpc: '2.0', id: 1, result: { tasks: [] } };
     const res = await fetch(`${base}/a2a/v1`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
       body: '{"jsonrpc":"2.0","id":1,"method":"ListTasks","params":{}}',
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual(answerBody);
     expect(res.headers.get('www-authenticate')).toBe('Bearer realm="dina-a2a"');
     expect(res.headers.get('retry-after')).toBe('60');
-    for (const name of [A2A_CORE_ANSWER_HEADER, A2A_EVENT_SEQ_HEADER, A2A_CREDENTIAL_GEN_HEADER, A2A_STREAM_CLIENT_HEADER, 'set-cookie', 'x-dina-internal']) {
+    for (const name of [
+      A2A_CORE_ANSWER_HEADER,
+      A2A_EVENT_SEQ_HEADER,
+      A2A_CREDENTIAL_GEN_HEADER,
+      A2A_STREAM_CLIENT_HEADER,
+      'set-cookie',
+      'x-dina-internal',
+    ]) {
       expect(res.headers.get(name)).toBeNull();
     }
   });
@@ -235,16 +299,31 @@ describe('through the real Core link: what of Core’s answer reaches the client
   // Plan C22
   it('a stream’s opening answer carries no cursor, credential generation, client key, cookies, internal headers or answer marker either', async () => {
     answerHeaders = INTERNAL;
-    answerBody = { jsonrpc: '2.0', id: 2, result: { task: { id: 't-1', status: { state: 'TASK_STATE_COMPLETED' } } } };
+    answerBody = {
+      jsonrpc: '2.0',
+      id: 2,
+      result: { task: { id: 't-1', status: { state: 'TASK_STATE_COMPLETED' } } },
+    };
     const res = await fetch(`${base}/a2a/v1`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
       body: '{"jsonrpc":"2.0","id":2,"method":"SubscribeToTask","params":{"id":"t-1"}}',
     });
     const text = await res.text();
     expect(res.headers.get('content-type')).toBe('text/event-stream');
     expect(text).toContain('TASK_STATE_COMPLETED');
-    for (const name of [A2A_CORE_ANSWER_HEADER, A2A_EVENT_SEQ_HEADER, A2A_CREDENTIAL_GEN_HEADER, A2A_STREAM_CLIENT_HEADER, 'set-cookie', 'x-dina-internal']) {
+    for (const name of [
+      A2A_CORE_ANSWER_HEADER,
+      A2A_EVENT_SEQ_HEADER,
+      A2A_CREDENTIAL_GEN_HEADER,
+      A2A_STREAM_CLIENT_HEADER,
+      'set-cookie',
+      'x-dina-internal',
+    ]) {
       expect(res.headers.get(name)).toBeNull();
     }
     expect(text).not.toContain('core-secret');
@@ -256,7 +335,11 @@ describe('through the real Core link: what of Core’s answer reaches the client
     answerBody = { error: 'rate_limited' };
     const res = await fetch(`${base}/a2a/v1`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
       body: '{"jsonrpc":"2.0","id":3,"method":"ListTasks","params":{}}',
     });
     expect(res.status).toBe(503);
@@ -266,12 +349,24 @@ describe('through the real Core link: what of Core’s answer reaches the client
 });
 
 describe('streams over a real socket (gateway stream limits)', () => {
-  const TASK = { id: 't-9', contextId: 'c-9', status: { state: 'TASK_STATE_WORKING', timestamp: '2027-01-15T08:00:00.000Z' } };
+  const TASK = {
+    id: 't-9',
+    contextId: 'c-9',
+    status: { state: 'TASK_STATE_WORKING', timestamp: '2027-01-15T08:00:00.000Z' },
+  };
   const opening: CoreReply = {
     ok: true,
-    answer: { status: 200, headers: {}, body: { jsonrpc: '2.0', id: 7, result: { task: TASK } }, eventSeq: 0, credentialGen: 0, streamClient: STREAM_CLIENT },
+    answer: {
+      status: 200,
+      headers: {},
+      body: { jsonrpc: '2.0', id: 7, result: { task: TASK } },
+      eventSeq: 0,
+      credentialGen: 0,
+      streamClient: STREAM_CLIENT,
+    },
   };
-  const streamBody = '{"jsonrpc":"2.0","id":7,"method":"SendStreamingMessage","params":{"message":{"messageId":"m","role":"ROLE_USER","parts":[]}}}';
+  const streamBody =
+    '{"jsonrpc":"2.0","id":7,"method":"SendStreamingMessage","params":{"message":{"messageId":"m","role":"ROLE_USER","parts":[]}}}';
   let app: FastifyInstance;
   let hub: StreamHub;
 
@@ -281,7 +376,11 @@ describe('streams over a real socket (gateway stream limits)', () => {
 
   async function listen(streams: StreamLimits): Promise<number> {
     hub = newHub();
-    app = gatewayWith(recordingCore(() => opening, []), hub, streams);
+    app = gatewayWith(
+      recordingCore(() => opening, []),
+      hub,
+      streams,
+    );
     await app.listen({ port: 0, host: '127.0.0.1' });
     return (app.server.address() as { port: number }).port;
   }
@@ -296,14 +395,23 @@ describe('streams over a real socket (gateway stream limits)', () => {
 
   // Plan C184
   it('an idle stream sends keepalive comments, and stays open', async () => {
-    const port = await listen({ perIp: 1, maxLifetimeMs: 60_000, keepaliveMs: 25, maxBufferedBytes: 1 << 20 });
+    const port = await listen({
+      perIp: 1,
+      maxLifetimeMs: 60_000,
+      keepaliveMs: 25,
+      maxBufferedBytes: 1 << 20,
+    });
     let received = '';
     const req = httpRequest({
       host: '127.0.0.1',
       port,
       method: 'POST',
       path: '/a2a/v1',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
     });
     req.on('response', (res) => res.on('data', (chunk: Buffer) => (received += chunk.toString())));
     req.end(streamBody);
@@ -316,9 +424,19 @@ describe('streams over a real socket (gateway stream limits)', () => {
 
   // Plan C184
   it('a client too far behind has its stream ended, and its slot is free again; a client that reads keeps its stream', async () => {
-    const port = await listen({ perIp: 1, maxLifetimeMs: 60_000, keepaliveMs: 60_000, maxBufferedBytes: 64 * 1024 });
+    const port = await listen({
+      perIp: 1,
+      maxLifetimeMs: 60_000,
+      keepaliveMs: 60_000,
+      maxBufferedBytes: 64 * 1024,
+    });
     const event = (seq: number) => ({
-      statusUpdate: { taskId: 't-9', contextId: 'c-9', status: { state: 'TASK_STATE_WORKING' }, metadata: { seq, pad: 'x'.repeat(4 * 1024) } },
+      statusUpdate: {
+        taskId: 't-9',
+        contextId: 'c-9',
+        status: { state: 'TASK_STATE_WORKING' },
+        metadata: { seq, pad: 'x'.repeat(4 * 1024) },
+      },
     });
     const open = (paused: boolean) => {
       const req = httpRequest({
@@ -326,10 +444,16 @@ describe('streams over a real socket (gateway stream limits)', () => {
         port,
         method: 'POST',
         path: '/a2a/v1',
-        headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+        headers: {
+          'content-type': 'application/json',
+          authorization: `Bearer ${TOKEN}`,
+          'a2a-version': '1.0',
+        },
       });
       let bytes = 0;
-      req.on('response', (res) => (paused ? res.pause() : res.on('data', (chunk: Buffer) => (bytes += chunk.length))));
+      req.on('response', (res) =>
+        paused ? res.pause() : res.on('data', (chunk: Buffer) => (bytes += chunk.length)),
+      );
       req.end(streamBody);
       return { req, read: () => bytes };
     };
@@ -355,7 +479,11 @@ describe('streams over a real socket (gateway stream limits)', () => {
     // The slot is free: a new stream from the same address opens.
     const next = await fetch(`http://127.0.0.1:${port}/a2a/v1`, {
       method: 'POST',
-      headers: { 'content-type': 'application/json', authorization: `Bearer ${TOKEN}`, 'a2a-version': '1.0' },
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${TOKEN}`,
+        'a2a-version': '1.0',
+      },
       body: streamBody,
     });
     expect(next.status).toBe(200);
@@ -408,7 +536,15 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
         return { ok: true, applied: sent.length };
       },
     };
-    const pump = new DeliveryPump({ core, hub: newHub(), transport, logger: sinkLogger(lines), intervalMs: 10, webhookConcurrency: 4, claimLimit: 100 });
+    const pump = new DeliveryPump({
+      core,
+      hub: newHub(),
+      transport,
+      logger: sinkLogger(lines),
+      intervalMs: 10,
+      webhookConcurrency: 4,
+      claimLimit: 100,
+    });
     return { pump, acks };
   }
 
@@ -418,8 +554,17 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
     target: 'webhook',
     task_id: `task-${id}`,
     seq: 1,
-    event: { statusUpdate: { taskId: `task-${id}`, contextId: 'c', status: { state: 'TASK_STATE_WORKING' } } },
-    webhook: { url, headers: { authorization: 'Bearer hook-secret', 'x-a2a-notification-token': 'tok-secret' } },
+    event: {
+      statusUpdate: {
+        taskId: `task-${id}`,
+        contextId: 'c',
+        status: { state: 'TASK_STATE_WORKING' },
+      },
+    },
+    webhook: {
+      url,
+      headers: { authorization: 'Bearer hook-secret', 'x-a2a-notification-token': 'tok-secret' },
+    },
   });
 
   // Plan C211
@@ -439,15 +584,21 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
     ['IPv6 link-local', ['fe80::1']],
     ['NAT64 of loopback', ['64:ff9b::7f00:1']],
     ['a mixed answer', ['203.0.113.5', '127.0.0.1']],
-  ])('a name that resolves to %s gets a final failure and no connection', async (_name, addresses) => {
-    const before = connections;
-    const transport = createA2AHostTransport({ resolve: async () => addresses });
-    const { pump, acks } = pumpOver([hook(1, `https://hooks.example.test:${port}/a2a`)], transport);
-    await pump.turn();
-    await pump.stop();
-    expect(acks).toEqual([{ id: 1, claim_id: 'claim-1', outcome: 'failed' }]);
-    expect(connections).toBe(before);
-  });
+  ])(
+    'a name that resolves to %s gets a final failure and no connection',
+    async (_name, addresses) => {
+      const before = connections;
+      const transport = createA2AHostTransport({ resolve: async () => addresses });
+      const { pump, acks } = pumpOver(
+        [hook(1, `https://hooks.example.test:${port}/a2a`)],
+        transport,
+      );
+      await pump.turn();
+      await pump.stop();
+      expect(acks).toEqual([{ id: 1, claim_id: 'claim-1', outcome: 'failed' }]);
+      expect(connections).toBe(before);
+    },
+  );
 
   // Plan C212
   it('a push URL naming localhost is accepted when set, and refused when the POST would go', async () => {
@@ -470,10 +621,20 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
       target: 'sse',
       task_id: 'task-sse-9',
       seq: 1,
-      event: { statusUpdate: { taskId: 'task-sse-9', contextId: 'c', status: { state: 'TASK_STATE_WORKING' } } },
+      event: {
+        statusUpdate: {
+          taskId: 'task-sse-9',
+          contextId: 'c',
+          status: { state: 'TASK_STATE_WORKING' },
+        },
+      },
       credential_gen: 0,
     };
-    const { pump } = pumpOver([hook(3, 'https://hooks.example.test/a2a-secret-path'), sse], async () => ({ ok: true, status: 500, body: '', connectedAddress: '203.0.113.5' }), lines);
+    const { pump } = pumpOver(
+      [hook(3, 'https://hooks.example.test/a2a-secret-path'), sse],
+      async () => ({ ok: true, status: 500, body: '', connectedAddress: '203.0.113.5' }),
+      lines,
+    );
     await pump.turn();
     await pump.stop();
     // A Core that refuses the claim and the report: the warnings say so, by status.
@@ -522,7 +683,14 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
           return { ok: false, status: 503 };
         },
         async claimEvents() {
-          return { ok: true, claim: { items: [hook(4, 'https://hooks.example.test/a2a-secret-path')], closed: [], fenced: [] } };
+          return {
+            ok: true,
+            claim: {
+              items: [hook(4, 'https://hooks.example.test/a2a-secret-path')],
+              closed: [],
+              fenced: [],
+            },
+          };
         },
         async ackEvents() {
           return { ok: false, status: 503 };
@@ -539,7 +707,10 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
     await unreported.stop();
     // Each pump logged its line, by counts and statuses.
     const logged = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
-    const fields = (msg: string) => logged.filter((l) => l.msg === msg).map(({ level: _l, time: _t, pid: _p, hostname: _h, msg: _m, ...rest }) => rest);
+    const fields = (msg: string) =>
+      logged
+        .filter((l) => l.msg === msg)
+        .map(({ level: _l, time: _t, pid: _p, hostname: _h, msg: _m, ...rest }) => rest);
     expect(fields('a2a delivery turn')).toEqual([
       { streamed: 1, webhooks: 1, closed: 0, fenced: 0 },
       { streamed: 0, webhooks: 1, closed: 0, fenced: 0 },
@@ -547,7 +718,17 @@ describe('webhook POSTs through the pump meet the outbound policy (§6.6, §12 M
     expect(fields('a2a delivery claim refused')).toEqual([{ core_status: 503 }]);
     expect(fields('a2a delivery report refused')).toEqual([{ core_status: 503, count: 1 }]);
     const all = lines.join('\n');
-    for (const secret of ['hooks.example.test', 'a2a-secret-path', 'hook-secret', 'tok-secret', 'task-3', 'task-4', 'task-sse-9', 'statusUpdate', 'TASK_STATE_WORKING']) {
+    for (const secret of [
+      'hooks.example.test',
+      'a2a-secret-path',
+      'hook-secret',
+      'tok-secret',
+      'task-3',
+      'task-4',
+      'task-sse-9',
+      'statusUpdate',
+      'TASK_STATE_WORKING',
+    ]) {
       expect(all).not.toContain(secret);
     }
   });

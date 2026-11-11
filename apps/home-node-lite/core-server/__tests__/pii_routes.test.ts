@@ -156,7 +156,7 @@ describe('POST /v1/pii/scrub (task 4.78)', () => {
       const body = res.json() as ScrubResponse;
       expect(body.entities.map((e) => e.type)).toEqual(['EMAIL']);
       expect(body.scrubbed).toContain('ABCDE1234F'); // allow-listed
-      expect(body.scrubbed).toContain('[EMAIL_1]');  // still scrubbed
+      expect(body.scrubbed).toContain('[EMAIL_1]'); // still scrubbed
       await app.close();
     });
 
@@ -352,9 +352,7 @@ describe('POST /v1/pii/scrub (task 4.78)', () => {
   describe('POST /v1/pii/rehydrate — session mode (task 4.79)', () => {
     it('restores using a pre-created session', async () => {
       const sessions = new RehydrationSessionRegistry();
-      const { sessionId } = sessions.create([
-        { token: '[EMAIL_1]', value: 'alice@example.com' },
-      ]);
+      const { sessionId } = sessions.create([{ token: '[EMAIL_1]', value: 'alice@example.com' }]);
       const app = await buildApp({ rehydrationSessions: sessions });
       const res = await app.inject({
         method: 'POST',
@@ -371,9 +369,7 @@ describe('POST /v1/pii/scrub (task 4.78)', () => {
 
     it('consume=true destroys the session after rehydrate', async () => {
       const sessions = new RehydrationSessionRegistry();
-      const { sessionId } = sessions.create([
-        { token: '[EMAIL_1]', value: 'a@b.com' },
-      ]);
+      const { sessionId } = sessions.create([{ token: '[EMAIL_1]', value: 'a@b.com' }]);
       const app = await buildApp({ rehydrationSessions: sessions });
       const res = await app.inject({
         method: 'POST',
@@ -402,10 +398,9 @@ describe('POST /v1/pii/scrub (task 4.78)', () => {
     it('returns 404 on expired session_id', async () => {
       let nowMs = 1_700_000_000_000;
       const sessions = new RehydrationSessionRegistry({ nowMsFn: () => nowMs });
-      const { sessionId } = sessions.create(
-        [{ token: '[EMAIL_1]', value: 'a@b.com' }],
-        { ttlMs: 1000 },
-      );
+      const { sessionId } = sessions.create([{ token: '[EMAIL_1]', value: 'a@b.com' }], {
+        ttlMs: 1000,
+      });
       nowMs += 2000;
       const app = await buildApp({ rehydrationSessions: sessions });
       const res = await app.inject({

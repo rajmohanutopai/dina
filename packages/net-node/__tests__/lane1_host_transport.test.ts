@@ -22,7 +22,10 @@ const FIXTURES = path.join(__dirname, 'fixtures', 'a2a_tls');
 const CERT = readFileSync(path.join(FIXTURES, 'localhost.cert.pem'), 'utf8');
 const KEY = readFileSync(path.join(FIXTURES, 'localhost.key.pem'), 'utf8');
 
-type Handler = (req: import('node:http').IncomingMessage, res: import('node:http').ServerResponse) => void;
+type Handler = (
+  req: import('node:http').IncomingMessage,
+  res: import('node:http').ServerResponse,
+) => void;
 
 let server: https.Server;
 let port = 0;
@@ -71,7 +74,11 @@ const productionTransport = (...answers: string[]) =>
 
 /** Loopback allowed for the test server alone, as the existing transport tests do. */
 const loopbackTransport = () =>
-  createA2AHostTransport({ resolve: async () => ['127.0.0.1'], isAllowedAddress: (a) => a === '127.0.0.1', ca: CERT });
+  createA2AHostTransport({
+    resolve: async () => ['127.0.0.1'],
+    isAllowedAddress: (a) => a === '127.0.0.1',
+    ca: CERT,
+  });
 
 /**
  * The call that opens a socket. The transport reaches `https.request` on the
@@ -107,7 +114,11 @@ describe('a forbidden DNS answer gets no connection (design §6.6)', () => {
     ['an answer that is no address', 'not-an-address'],
   ])('refuses %s before any socket opens', async (_name, address) => {
     const opened = openSockets();
-    expect(await productionTransport(address)(call())).toEqual({ ok: false, error: 'address_blocked', sent: false });
+    expect(await productionTransport(address)(call())).toEqual({
+      ok: false,
+      error: 'address_blocked',
+      sent: false,
+    });
     expect(opened).not.toHaveBeenCalled();
     expect(connections).toBe(0);
   });
@@ -115,7 +126,11 @@ describe('a forbidden DNS answer gets no connection (design §6.6)', () => {
   // Plan B225
   it('refuses an empty answer before any socket opens', async () => {
     const opened = openSockets();
-    expect(await productionTransport()(call())).toEqual({ ok: false, error: 'dns_failed', sent: false });
+    expect(await productionTransport()(call())).toEqual({
+      ok: false,
+      error: 'dns_failed',
+      sent: false,
+    });
     expect(opened).not.toHaveBeenCalled();
     expect(connections).toBe(0);
   });
@@ -123,18 +138,21 @@ describe('a forbidden DNS answer gets no connection (design §6.6)', () => {
 
 describe('a refused credential (design §5.3 as built)', () => {
   // Plan B235
-  it.each([401, 403])('returns the status of a %i and never reads its body, whatever it is', async (status) => {
-    handler = (_req, res) => {
-      res.writeHead(status, { 'content-type': 'text/html', 'content-encoding': 'gzip' });
-      res.end(gzipSync(Buffer.from(`REMOTE-REFUSAL-TEXT ${'x'.repeat(512 * 1024)}`)));
-    };
-    expect(await loopbackTransport()(call({ maxResponseBytes: 1024 }))).toEqual({
-      ok: true,
-      status,
-      body: '',
-      connectedAddress: '127.0.0.1',
-    });
-  });
+  it.each([401, 403])(
+    'returns the status of a %i and never reads its body, whatever it is',
+    async (status) => {
+      handler = (_req, res) => {
+        res.writeHead(status, { 'content-type': 'text/html', 'content-encoding': 'gzip' });
+        res.end(gzipSync(Buffer.from(`REMOTE-REFUSAL-TEXT ${'x'.repeat(512 * 1024)}`)));
+      };
+      expect(await loopbackTransport()(call({ maxResponseBytes: 1024 }))).toEqual({
+        ok: true,
+        status,
+        body: '',
+        connectedAddress: '127.0.0.1',
+      });
+    },
+  );
 });
 
 describe('the deadline covers the whole exchange (design §6.6 timeouts)', () => {
@@ -146,7 +164,11 @@ describe('the deadline covers the whole exchange (design §6.6 timeouts)', () =>
       timers.push(setInterval(() => res.write('x'), 50));
     };
     const started = Date.now();
-    expect(await loopbackTransport()(call({ timeoutMs: 400 }))).toEqual({ ok: false, error: 'timeout', sent: true });
+    expect(await loopbackTransport()(call({ timeoutMs: 400 }))).toEqual({
+      ok: false,
+      error: 'timeout',
+      sent: true,
+    });
     expect(Date.now() - started).toBeLessThan(3_000);
   });
 });
@@ -172,11 +194,14 @@ describe('the transport prints nothing it carries (design §10 metadata-only log
       res.end('{"jsonrpc":"2.0","id":1,"result":{"note":"REMOTE-ANSWER-TEXT"}}');
     };
     const secrets = { 'A2A-Version': '1.0', 'X-Api-Key': 'KEY-SECRET-2207' };
-    const body = '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"parts":[{"text":"OUTGOING-TEXT-31"}]}}}';
+    const body =
+      '{"jsonrpc":"2.0","id":1,"method":"SendMessage","params":{"message":{"parts":[{"text":"OUTGOING-TEXT-31"}]}}}';
     const ok = await loopbackTransport()(call({ headers: secrets, body }));
     expect(ok).toMatchObject({ ok: true, status: 200 });
     // A failing call too: errors are reported as codes, never printed.
-    const refused = await loopbackTransport()(call({ headers: secrets, body, url: `https://unlisted.test:${port}/rpc` }));
+    const refused = await loopbackTransport()(
+      call({ headers: secrets, body, url: `https://unlisted.test:${port}/rpc` }),
+    );
     expect(refused).toEqual({ ok: false, error: 'tls_failed', sent: false });
     const all = printed.join('\n');
     for (const text of ['KEY-SECRET-2207', 'OUTGOING-TEXT-31', 'REMOTE-ANSWER-TEXT']) {

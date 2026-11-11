@@ -92,10 +92,7 @@ export function useNetworkFeed(opts: UseNetworkFeedOptions): NetworkFeedState {
  * doesn't carry it), so the card renders without a band badge —
  * matches the search-result card behaviour.
  */
-function mapToFeedItems(
-  rows: readonly NetworkFeedAttestation[],
-  viewerDid: string,
-): FeedItem[] {
+function mapToFeedItems(rows: readonly NetworkFeedAttestation[], viewerDid: string): FeedItem[] {
   const out: FeedItem[] = [];
   for (const row of rows) {
     if (row.subjectId === null) continue;

@@ -47,20 +47,24 @@ const CID_RE = /^b[a-z2-7]{20,120}$/;
 
 /** Validate a presence record. `null` when valid, else the first problem. */
 export function validateServicePresenceRecord(record: unknown): string | null {
-  if (record === null || typeof record !== 'object' || Array.isArray(record)) return 'record must be an object';
+  if (record === null || typeof record !== 'object' || Array.isArray(record))
+    return 'record must be an object';
   const r = record as Record<string, unknown>;
   if (r.$type !== undefined && r.$type !== SERVICE_PRESENCE_COLLECTION) return 'wrong $type';
   if (r.v !== SERVICE_PRESENCE_VERSION) return 'v must be 1';
-  if (typeof r.n !== 'string' || !NONCE_RE.test(r.n)) return 'n must be 16 lowercase hex characters';
+  if (typeof r.n !== 'string' || !NONCE_RE.test(r.n))
+    return 'n must be 16 lowercase hex characters';
   if (typeof r.complete !== 'boolean') return 'complete must be a boolean';
   if (!Array.isArray(r.listings)) return 'listings must be an array';
-  if (r.listings.length > MAX_PUBLISHED_LISTINGS) return `listings holds at most ${MAX_PUBLISHED_LISTINGS}`;
+  if (r.listings.length > MAX_PUBLISHED_LISTINGS)
+    return `listings holds at most ${MAX_PUBLISHED_LISTINGS}`;
   if (!r.complete && r.listings.length > 0) return 'an incomplete set must be empty';
   const seen = new Set<string>();
   for (const entry of r.listings) {
     if (entry === null || typeof entry !== 'object') return 'each listing must be an object';
     const { rkey, cid } = entry as Record<string, unknown>;
-    if (typeof rkey !== 'string' || !isValidServiceListingRkey(rkey)) return 'listing rkey is not valid';
+    if (typeof rkey !== 'string' || !isValidServiceListingRkey(rkey))
+      return 'listing rkey is not valid';
     if (typeof cid !== 'string' || !CID_RE.test(cid)) return 'listing cid is not valid';
     if (seen.has(rkey)) return 'listings repeat an rkey';
     seen.add(rkey);

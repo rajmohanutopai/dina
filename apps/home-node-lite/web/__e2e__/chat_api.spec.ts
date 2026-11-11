@@ -37,25 +37,37 @@ const CORE = `http://127.0.0.1:${process.env.DINA_CORE_E2E_PORT ?? 18298}`;
 // owner device, paired through Core's owner routes as the web app pairs one.
 let owner: OwnerSigner;
 test.beforeAll(async () => {
-  owner = await pairOwnerSigner(CORE, readOwnerCapability(), process.env.DINA_E2E_OWNER_PASSPHRASE ?? '');
+  owner = await pairOwnerSigner(
+    CORE,
+    readOwnerCapability(),
+    process.env.DINA_E2E_OWNER_PASSPHRASE ?? '',
+  );
 });
 
 /** POST JSON to Brain, signed by the owner device. */
 function ownerPost(request: APIRequestContext, path: string, data: unknown) {
   const body = JSON.stringify(data);
   return request.post(`${BRAIN}${path}`, {
-    headers: { 'content-type': 'application/json', ...owner.headers('POST', `${BRAIN}${path}`, body) },
+    headers: {
+      'content-type': 'application/json',
+      ...owner.headers('POST', `${BRAIN}${path}`, body),
+    },
     data: body,
   });
 }
 
 test('Brain refuses an unsigned caller, even on loopback', async ({ request }) => {
-  const resp = await request.post(`${BRAIN}/api/v1/chat`, { data: { text: '/help', threadId: 'unsigned' } });
+  const resp = await request.post(`${BRAIN}/api/v1/chat`, {
+    data: { text: '/help', threadId: 'unsigned' },
+  });
   expect(resp.status()).toBe(401);
 });
 
 test('POST /api/v1/chat with /help returns a non-empty ChatResponse', async ({ request }) => {
-  const resp = await ownerPost(request, '/api/v1/chat', { text: '/help', threadId: 'phase-4-smoke' });
+  const resp = await ownerPost(request, '/api/v1/chat', {
+    text: '/help',
+    threadId: 'phase-4-smoke',
+  });
   expect(resp.status()).toBe(200);
   const body = (await resp.json()) as { intent: string; response: string };
   expect(typeof body.intent).toBe('string');
@@ -85,9 +97,9 @@ test('POST /api/v1/chat with /remember writes a memory record and acknowledges',
   // verifying the record actually landed in Core is a Core-side
   // integration concern already covered by Core's own staging tests.
   const resp = await ownerPost(request, '/api/v1/chat', {
-      text: '/remember Emma loves dinosaurs',
-      threadId: 'phase-4-remember',
-    });
+    text: '/remember Emma loves dinosaurs',
+    threadId: 'phase-4-remember',
+  });
   expect(resp.status()).toBe(200);
   const body = (await resp.json()) as {
     intent: string;

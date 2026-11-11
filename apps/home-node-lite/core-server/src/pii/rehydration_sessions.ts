@@ -75,9 +75,7 @@ export class RehydrationSessionRegistry {
   constructor(opts: RehydrationSessionOptions = {}) {
     const ttl = opts.defaultTtlMs ?? DEFAULT_REHYDRATION_TTL_MS;
     if (!Number.isFinite(ttl) || ttl <= 0) {
-      throw new Error(
-        `RehydrationSessionRegistry: defaultTtlMs must be > 0 (got ${ttl})`,
-      );
+      throw new Error(`RehydrationSessionRegistry: defaultTtlMs must be > 0 (got ${ttl})`);
     }
     this.defaultTtlMs = ttl;
     this.nowMsFn = opts.nowMsFn ?? Date.now;
@@ -104,16 +102,10 @@ export class RehydrationSessionRegistry {
     }
     const ttl = opts.ttlMs ?? this.defaultTtlMs;
     if (!Number.isFinite(ttl) || ttl <= 0) {
-      throw new Error(
-        `RehydrationSessionRegistry.create: ttlMs must be > 0 (got ${ttl})`,
-      );
+      throw new Error(`RehydrationSessionRegistry.create: ttlMs must be > 0 (got ${ttl})`);
     }
     for (const e of entities) {
-      if (
-        typeof e.token !== 'string' ||
-        typeof e.value !== 'string' ||
-        e.token.length === 0
-      ) {
+      if (typeof e.token !== 'string' || typeof e.value !== 'string' || e.token.length === 0) {
         throw new Error(
           'RehydrationSessionRegistry.create: every entity must have {token, value} strings',
         );

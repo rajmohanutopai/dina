@@ -35,7 +35,11 @@
 
 import { LOCAL_RUNNER_NAME } from '@dina/protocol';
 
-import { admitInboundClaim, authorizeInboundEffect, type InboundEffectBoundary } from '../a2a/inbound';
+import {
+  admitInboundClaim,
+  authorizeInboundEffect,
+  type InboundEffectBoundary,
+} from '../a2a/inbound';
 import { requestInboundInput } from '../a2a/inbound_turns';
 
 import type { WorkflowTask } from './domain';
@@ -265,12 +269,7 @@ export class LocalDelegationRunner {
         // external per-capability daemons (an unfiltered claim would
         // race them for routed tasks; the external-daemon claim path
         // always passes its own filter).
-        task = this.repo.claimDelegationTask(
-          this.agentDID,
-          nowMs,
-          this.leaseMs,
-          this.runnerFilter,
-        );
+        task = this.repo.claimDelegationTask(this.agentDID, nowMs, this.leaseMs, this.runnerFilter);
       } catch (err) {
         this.onError(err);
         return;
@@ -304,7 +303,9 @@ export class LocalDelegationRunner {
       // A2A design §7.3: an inbound A2A child is admitted (runner, authority,
       // permit) before the capability runs, and its effect authorized at the
       // boundary this runner keeps. A refused one is already failed and settled.
-      const boundary: InboundEffectBoundary = this.effectAuthorizingCapabilities.has(payload.capability)
+      const boundary: InboundEffectBoundary = this.effectAuthorizingCapabilities.has(
+        payload.capability,
+      )
         ? 'deferred'
         : 'at_claim';
       if (admitInboundClaim(task, this.agentDID, boundary) === 'refused') return;
@@ -389,7 +390,10 @@ export class LocalDelegationRunner {
       this.onInputRequired(task);
       return;
     }
-    const why = verdict.kind === 'not_inbound' ? 'only a call from an A2A client can ask for input' : verdict.reason;
+    const why =
+      verdict.kind === 'not_inbound'
+        ? 'only a call from an A2A client can ask for input'
+        : verdict.reason;
     const err = new Error(`input_required refused: ${why}`);
     this.safeFail(task, err);
     this.onFailed(task, err);

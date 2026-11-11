@@ -15,7 +15,6 @@ import { OFFSET_FILE, relayLogPath } from './relay_setup';
 
 export default async function globalTeardown(): Promise<void> {
   if (!fs.existsSync(OFFSET_FILE)) {
-     
     console.log('[MRS-14 relay] no offset file — relay setup did not run; nothing to sweep.');
     return;
   }
@@ -38,7 +37,6 @@ export default async function globalTeardown(): Promise<void> {
   fs.rmSync(OFFSET_FILE, { force: true });
 
   if (scanned === 0) {
-     
     console.log('[MRS-14 relay] relay flows did not run (no appended node logs).');
     return;
   }
@@ -49,6 +47,6 @@ export default async function globalTeardown(): Promise<void> {
         `dina-nodes logs this run:\n${report}`,
     );
   }
-   
+
   console.log(`[MRS-14 relay] server-log hygiene clean (${scanned} node logs, this-run window).`);
 }

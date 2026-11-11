@@ -61,18 +61,14 @@ describe('FirstRunModalView — content', () => {
 describe('FirstRunModalView — interactions', () => {
   it('dismiss CTA fires onDismiss', () => {
     const onDismiss = jest.fn();
-    const { getByTestId } = render(
-      <FirstRunModalView visible onDismiss={onDismiss} />,
-    );
+    const { getByTestId } = render(<FirstRunModalView visible onDismiss={onDismiss} />);
     fireEvent.press(getByTestId('first-run-modal-dismiss'));
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
 
   it('dismiss CTA does nothing when onDismiss is omitted', () => {
     const { getByTestId } = render(<FirstRunModalView visible />);
-    expect(() =>
-      fireEvent.press(getByTestId('first-run-modal-dismiss')),
-    ).not.toThrow();
+    expect(() => fireEvent.press(getByTestId('first-run-modal-dismiss'))).not.toThrow();
   });
 });
 

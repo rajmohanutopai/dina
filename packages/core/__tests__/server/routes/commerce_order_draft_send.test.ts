@@ -12,16 +12,12 @@ import * as path from 'node:path';
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
+import { conversationSnapshotDigest } from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { conversationSnapshotDigest } from '@dina/commerce-protocol';
-
-import { installCommerceRuntime, createCommerceRuntime } from '../../../src/commerce/runtime';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
-import {
-  type OrderDraft,
-  type OrderDraftLine,
-} from '../../../src/commerce/order_draft_store';
+import { type OrderDraft, type OrderDraftLine } from '../../../src/commerce/order_draft_store';
+import { installCommerceRuntime, createCommerceRuntime } from '../../../src/commerce/runtime';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';
@@ -189,7 +185,12 @@ it('THE SEND GATE: an unvouched line refuses, named', async () => {
 
 it('THE SEND GATE: a vouch at a STALE generation is not a vouch', async () => {
   seedDraft({
-    lines: [vouchedLine({ generation: 2, vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null } })],
+    lines: [
+      vouchedLine({
+        generation: 2,
+        vouch: { generation: 1, ceremony: 1, receiptDigest: 'b'.repeat(64), vouchedBy: null },
+      }),
+    ],
   });
   const resp = await router.handle(owner(sendBody()));
   expect(resp.status).toBe(409);
@@ -237,9 +238,7 @@ it('ONE LIVE CONVERSATION per supplier: a second send waits', async () => {
 
 it('a supplier no line resolves to has nothing to ask', async () => {
   seedDraft();
-  const resp = await router.handle(
-    owner(sendBody({ supplier_did: 'did:plc:someoneelse0000' })),
-  );
+  const resp = await router.handle(owner(sendBody({ supplier_did: 'did:plc:someoneelse0000' })));
   expect(resp.status).toBe(409);
   expect((resp.body as { error: string }).error).toBe('no_lines_for_supplier');
 });

@@ -76,9 +76,7 @@ describe('InlineMarkdownText tokenizer', () => {
   test('span cannot cross a newline (paragraph isolation)', () => {
     // The `[^*\n]` class in TOKEN_RE prevents bold spans from spanning
     // a paragraph break — matches how iMessage / Slack parse.
-    expect(tokenize('**bold\nspan**')).toEqual([
-      { kind: 'text', value: '**bold\nspan**' },
-    ]);
+    expect(tokenize('**bold\nspan**')).toEqual([{ kind: 'text', value: '**bold\nspan**' }]);
   });
 
   test('mixed bold + code in one message', () => {

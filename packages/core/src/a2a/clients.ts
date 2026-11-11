@@ -146,7 +146,8 @@ function view(row: A2AClientRow): A2AClientView {
     scope,
     expected_did: row.expected_did,
     bound_did: row.bound_did,
-    credential: row.bound_did === null ? 'bearer' : row.bound_key === null ? 'did_key_removed' : 'did',
+    credential:
+      row.bound_did === null ? 'bearer' : row.bound_key === null ? 'did_key_removed' : 'did',
     token_expires_at: row.token_expires_at,
     last_used_at: row.last_used_at,
     status: row.status,
@@ -156,7 +157,9 @@ function view(row: A2AClientRow): A2AClientView {
 }
 
 function getRow(store: A2AStore, clientId: string): A2AClientRow | null {
-  const rows = store.db.query('SELECT * FROM a2a_clients WHERE client_id = ?', [clientId]) as DBRow[];
+  const rows = store.db.query('SELECT * FROM a2a_clients WHERE client_id = ?', [
+    clientId,
+  ]) as DBRow[];
   return (rows[0] as unknown as A2AClientRow | undefined) ?? null;
 }
 
@@ -191,7 +194,8 @@ function parseScope(raw: unknown): string[] | ClientInputRefusal {
 
 function parseExpectedDid(raw: unknown): string | null | ClientInputRefusal {
   if (raw === undefined || raw === null || raw === '') return null;
-  if (typeof raw !== 'string' || raw.length > MAX_DID_CHARS || !DID_RE.test(raw)) return 'expected_did_malformed';
+  if (typeof raw !== 'string' || raw.length > MAX_DID_CHARS || !DID_RE.test(raw))
+    return 'expected_did_malformed';
   return raw;
 }
 
@@ -222,7 +226,15 @@ export function createA2AClient(
          (client_id, display_name, token_hash, token_expires_at, bound_did, expected_did,
           scope_json, last_used_at, status, created_at, revoked_at)
        VALUES (?, ?, ?, ?, NULL, ?, ?, NULL, 'active', ?, NULL)`,
-      [clientId, name, hash, nowMs + A2A_BEARER_LIFETIME_MS, expectedDid, JSON.stringify(scope), nowMs],
+      [
+        clientId,
+        name,
+        hash,
+        nowMs + A2A_BEARER_LIFETIME_MS,
+        expectedDid,
+        JSON.stringify(scope),
+        nowMs,
+      ],
     );
     store.db.execute(
       `INSERT INTO a2a_credential_bindings (client_id, binding_type, value_hash, created_at, revoked_at)
@@ -236,7 +248,9 @@ export function createA2AClient(
 }
 
 export function listA2AClients(store: A2AStore): A2AClientView[] {
-  const rows = store.db.query('SELECT * FROM a2a_clients ORDER BY created_at DESC, client_id') as DBRow[];
+  const rows = store.db.query(
+    'SELECT * FROM a2a_clients ORDER BY created_at DESC, client_id',
+  ) as DBRow[];
   return rows.map((r) => view(r as unknown as A2AClientRow));
 }
 
@@ -254,7 +268,11 @@ export type RotateResult =
  * commit. A DID-bound client has no bearer to rotate: it changes keys by
  * binding again.
  */
-export function rotateA2AClientToken(store: A2AStore, clientId: string, nowMs: number): RotateResult {
+export function rotateA2AClientToken(
+  store: A2AStore,
+  clientId: string,
+  nowMs: number,
+): RotateResult {
   const row = getRow(store, clientId);
   if (row === null) return { ok: false, reason: 'not_found' };
   if (row.status !== 'active') return { ok: false, reason: 'revoked' };
@@ -344,7 +362,10 @@ export function endExpiredBearers(store: A2AStore, nowMs: number, clientId?: str
  * a digest, so no client id reaches the gateway.
  */
 export function streamClientKeyOf(principal: string): string {
-  return bytesToHex(sha256(new TextEncoder().encode(`a2a-stream-client:${principal}`))).slice(0, 32);
+  return bytesToHex(sha256(new TextEncoder().encode(`a2a-stream-client:${principal}`))).slice(
+    0,
+    32,
+  );
 }
 
 /**
@@ -387,18 +408,29 @@ export type BearerAuth =
  * is found by its hash, so its value is never compared byte by byte and
  * never stored. Stamps `last_used_at` at most once a minute.
  */
-export function authenticateA2ABearer(store: A2AStore, authorization: unknown, nowMs: number): BearerAuth {
-  if (typeof authorization !== 'string' || authorization.trim() === '') return { ok: false, reason: 'missing' };
+export function authenticateA2ABearer(
+  store: A2AStore,
+  authorization: unknown,
+  nowMs: number,
+): BearerAuth {
+  if (typeof authorization !== 'string' || authorization.trim() === '')
+    return { ok: false, reason: 'missing' };
   const match = /^bearer +(\S+)$/i.exec(authorization.trim());
   const token = match?.[1] ?? '';
   if (!TOKEN_RE.test(token)) return { ok: false, reason: 'malformed' };
-  const rows = store.db.query('SELECT * FROM a2a_clients WHERE token_hash = ?', [tokenHash(token)]) as DBRow[];
+  const rows = store.db.query('SELECT * FROM a2a_clients WHERE token_hash = ?', [
+    tokenHash(token),
+  ]) as DBRow[];
   const row = rows[0] as unknown as A2AClientRow | undefined;
   if (row === undefined) return { ok: false, reason: 'unknown' };
   if (row.status !== 'active') return { ok: false, reason: 'revoked' };
-  if (row.token_expires_at === null || row.token_expires_at <= nowMs) return { ok: false, reason: 'expired' };
+  if (row.token_expires_at === null || row.token_expires_at <= nowMs)
+    return { ok: false, reason: 'expired' };
   if (row.last_used_at === null || nowMs - row.last_used_at >= LAST_USED_RESOLUTION_MS) {
-    store.db.execute('UPDATE a2a_clients SET last_used_at = ? WHERE client_id = ?', [nowMs, row.client_id]);
+    store.db.execute('UPDATE a2a_clients SET last_used_at = ? WHERE client_id = ?', [
+      nowMs,
+      row.client_id,
+    ]);
     row.last_used_at = nowMs;
   }
   return { ok: true, client: view(row), principal: a2aPrincipal(row.client_id) };
@@ -414,7 +446,9 @@ export type GrantRefusal =
   | 'capability_not_configured'
   | 'expiry_malformed';
 
-export type IssueGrantResult = { ok: true; grant: ServiceGrant } | { ok: false; reason: GrantRefusal };
+export type IssueGrantResult =
+  | { ok: true; grant: ServiceGrant }
+  | { ok: false; reason: GrantRefusal };
 
 /**
  * Issue a grant to a client for one capability on one listing (§5.2). Only a
@@ -439,7 +473,11 @@ export function issueA2AGrant(
   const nowSec = Math.floor(nowMs / 1000);
   let expiresAt: number | undefined;
   if (input.expires_at !== undefined && input.expires_at !== null) {
-    if (typeof input.expires_at !== 'number' || !Number.isSafeInteger(input.expires_at) || input.expires_at <= nowSec) {
+    if (
+      typeof input.expires_at !== 'number' ||
+      !Number.isSafeInteger(input.expires_at) ||
+      input.expires_at <= nowSec
+    ) {
       return { ok: false, reason: 'expiry_malformed' };
     }
     expiresAt = input.expires_at;
@@ -463,7 +501,11 @@ export function listA2AGrants(grants: ServiceGrantRepository, clientId: string):
 }
 
 /** Revoke one grant, only if it was issued to an A2A client. */
-export function revokeA2AGrant(grants: ServiceGrantRepository, grantId: string, nowMs: number): boolean {
+export function revokeA2AGrant(
+  grants: ServiceGrantRepository,
+  grantId: string,
+  nowMs: number,
+): boolean {
   const grant = grants.getById(grantId);
   if (grant === null || clientIdOfPrincipal(grant.granteeDid) === null) return false;
   return grants.revoke(grantId, Math.floor(nowMs / 1000));
@@ -492,9 +534,10 @@ export function authenticateA2ADidRequest(
   nodeDid: string,
 ): DidRequestAuth {
   if (request.did === undefined) return { ok: false, reason: 'unknown' };
-  const rows = store.db.query("SELECT * FROM a2a_clients WHERE bound_did = ? AND status = 'active'", [
-    request.did,
-  ]) as DBRow[];
+  const rows = store.db.query(
+    "SELECT * FROM a2a_clients WHERE bound_did = ? AND status = 'active'",
+    [request.did],
+  ) as DBRow[];
   const row = rows[0] as unknown as A2AClientRow | undefined;
   if (row === undefined || row.bound_key === null) return { ok: false, reason: 'unknown' };
   let key: Uint8Array;
@@ -511,7 +554,10 @@ export function authenticateA2ADidRequest(
   });
   if (!check.ok) return { ok: false, reason: 'signature' };
   if (row.last_used_at === null || nowMs - row.last_used_at >= LAST_USED_RESOLUTION_MS) {
-    store.db.execute('UPDATE a2a_clients SET last_used_at = ? WHERE client_id = ?', [nowMs, row.client_id]);
+    store.db.execute('UPDATE a2a_clients SET last_used_at = ? WHERE client_id = ?', [
+      nowMs,
+      row.client_id,
+    ]);
     row.last_used_at = nowMs;
   }
   return { ok: true, client: view(row), principal: a2aPrincipal(row.client_id) };

@@ -168,7 +168,10 @@ export function errorOf(answer: { body?: unknown }): { code: number; reason?: st
   const body = answer.body as { error?: { code: number; data?: JsonObject[] } };
   if (body.error === undefined) throw new Error(`no error: ${JSON.stringify(answer.body)}`);
   const dina = dinaErrorInfo(body.error);
-  return { code: body.error.code, ...(dina === undefined ? {} : { reason: dina.reason as string }) };
+  return {
+    code: body.error.code,
+    ...(dina === undefined ? {} : { reason: dina.reason as string }),
+  };
 }
 
 /** The Task inside a SendMessageResponse: A2A v1.0 answers `{task}`, never a bare Task. */
@@ -250,7 +253,12 @@ export class InboundWorld {
         method: 'POST',
         path: A2A_RPC_PATH,
         query: '',
-        body: JSON.stringify({ jsonrpc: '2.0', id: rpcId, method, ...(params === undefined ? {} : { params }) }),
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: rpcId,
+          method,
+          ...(params === undefined ? {} : { params }),
+        }),
         version: '1.0',
         ...over,
       },
@@ -258,7 +266,10 @@ export class InboundWorld {
     };
   }
 
-  message(data: Record<string, unknown>, over: Record<string, unknown> = {}): Record<string, unknown> {
+  message(
+    data: Record<string, unknown>,
+    over: Record<string, unknown> = {},
+  ): Record<string, unknown> {
     return {
       message: { messageId: `m-${rpcId + 1}`, role: 'ROLE_USER', parts: [{ data }], ...over },
     };
@@ -288,7 +299,12 @@ export class InboundWorld {
    */
   claimChild(externalId: string, leaseMs = 60_000): { verdict: string; taskId: string } {
     const op = this.opOf(externalId);
-    const claimed = this.world.repo.claimDelegationTask(this.runnerDid, this.world.clock, leaseMs, 'transit');
+    const claimed = this.world.repo.claimDelegationTask(
+      this.runnerDid,
+      this.world.clock,
+      leaseMs,
+      'transit',
+    );
     if (claimed === null || claimed.id !== op.internal_id) throw new Error('claim');
     return { verdict: admitInboundClaimWith(this.rt, claimed, this.runnerDid), taskId: claimed.id };
   }

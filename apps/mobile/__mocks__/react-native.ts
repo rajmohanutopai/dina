@@ -14,13 +14,47 @@
 
 import React from 'react';
 
+/** Loose prop bag for the host-component stand-ins below. */
+type MockProps = Record<string, unknown> & { children?: React.ReactNode };
+
+type RenderItem = (info: {
+  item: unknown;
+  index: number;
+  section?: unknown;
+  separators: never;
+}) => React.ReactNode;
+type KeyExtractor = (item: unknown, index: number) => string;
+type EmptyComponent = React.ComponentType | React.ReactElement | null | undefined;
+
+interface ListProps extends MockProps {
+  data?: unknown;
+  renderItem: RenderItem;
+  keyExtractor?: KeyExtractor;
+  ListEmptyComponent?: EmptyComponent;
+  refreshControl?: React.ReactNode;
+  contentContainerStyle?: unknown;
+}
+
+interface MockSection {
+  data?: unknown[];
+}
+
+interface SectionListProps extends MockProps {
+  sections?: unknown;
+  renderItem: RenderItem;
+  renderSectionHeader?: (info: { section: MockSection }) => React.ReactNode;
+  keyExtractor?: KeyExtractor;
+  ListEmptyComponent?: EmptyComponent;
+}
+
 export const Platform = {
   OS: 'ios',
-  select: (obj: any) => obj.ios ?? obj.default ?? {},
+  select: <T>(obj: { ios?: T; default?: T }): T | Record<string, never> =>
+    obj.ios ?? obj.default ?? {},
 };
 
 function passthrough(hostName: string) {
-  const Component: React.FC<any> = (props) =>
+  const Component: React.FC<MockProps> = (props) =>
     React.createElement(hostName, props, props.children);
   Component.displayName = hostName;
   return Component;
@@ -44,7 +78,7 @@ export const Switch = passthrough('Switch');
  * find IDs that aren't actually on screen. When visible, render the
  * children inline so testID + tap simulation work normally.
  */
-export const Modal: React.FC<any> = ({ visible, children, ...rest }) => {
+export const Modal: React.FC<MockProps> = ({ visible, children, ...rest }) => {
   if (visible !== true) return null;
   return React.createElement('Modal', rest, children);
 };
@@ -56,7 +90,7 @@ export const Share = {
   }),
 };
 
-export const Pressable: React.FC<any> = ({ onPress, children, ...rest }) =>
+export const Pressable: React.FC<MockProps> = ({ onPress, children, ...rest }) =>
   React.createElement('Pressable', { ...rest, onPress }, children);
 Pressable.displayName = 'Pressable';
 
@@ -65,7 +99,7 @@ Pressable.displayName = 'Pressable';
  * RTL render tests; the real FlatList does virtualization which jest
  * doesn't need to simulate.
  */
-export const FlatList: React.FC<any> = ({
+export const FlatList: React.FC<ListProps> = ({
   data,
   renderItem,
   keyExtractor,
@@ -76,16 +110,17 @@ export const FlatList: React.FC<any> = ({
 }) => {
   const items = Array.isArray(data) ? data : [];
   if (items.length === 0) {
-    const empty = typeof ListEmptyComponent === 'function'
-      ? React.createElement(ListEmptyComponent)
-      : (ListEmptyComponent ?? null);
+    const empty =
+      typeof ListEmptyComponent === 'function'
+        ? React.createElement(ListEmptyComponent)
+        : (ListEmptyComponent ?? null);
     return React.createElement('FlatList', { ...rest, style: contentContainerStyle }, empty);
   }
   return React.createElement(
     'FlatList',
     { ...rest, style: contentContainerStyle },
     refreshControl,
-    ...items.map((item: any, index: number) => {
+    ...items.map((item: unknown, index: number) => {
       const key = keyExtractor ? keyExtractor(item, index) : String(index);
       return React.createElement(
         React.Fragment,
@@ -100,7 +135,7 @@ FlatList.displayName = 'FlatList';
 /**
  * SectionList minimal — flatten + render. Same trade-off as FlatList.
  */
-export const SectionList: React.FC<any> = ({
+export const SectionList: React.FC<SectionListProps> = ({
   sections,
   renderItem,
   renderSectionHeader,
@@ -108,21 +143,20 @@ export const SectionList: React.FC<any> = ({
   ListEmptyComponent,
   ...rest
 }) => {
-  const list = Array.isArray(sections) ? sections : [];
+  const list: MockSection[] = Array.isArray(sections) ? sections : [];
   if (list.length === 0) {
-    const empty = typeof ListEmptyComponent === 'function'
-      ? React.createElement(ListEmptyComponent)
-      : (ListEmptyComponent ?? null);
+    const empty =
+      typeof ListEmptyComponent === 'function'
+        ? React.createElement(ListEmptyComponent)
+        : (ListEmptyComponent ?? null);
     return React.createElement('SectionList', rest, empty);
   }
   return React.createElement(
     'SectionList',
     rest,
-    ...list.flatMap((section: any, sectionIndex: number) => {
-      const header = renderSectionHeader
-        ? renderSectionHeader({ section })
-        : null;
-      const rows = (section.data ?? []).map((item: any, index: number) => {
+    ...list.flatMap((section: MockSection, sectionIndex: number) => {
+      const header = renderSectionHeader ? renderSectionHeader({ section }) : null;
+      const rows = (section.data ?? []).map((item: unknown, index: number) => {
         const key = keyExtractor ? keyExtractor(item, index) : `${sectionIndex}-${index}`;
         return React.createElement(
           React.Fragment,
@@ -130,14 +164,7 @@ export const SectionList: React.FC<any> = ({
           renderItem({ item, index, section, separators: undefined as never }),
         );
       });
-      return [
-        React.createElement(
-          React.Fragment,
-          { key: `s-${sectionIndex}` },
-          header,
-          ...rows,
-        ),
-      ];
+      return [React.createElement(React.Fragment, { key: `s-${sectionIndex}` }, header, ...rows)];
     }),
   );
 };

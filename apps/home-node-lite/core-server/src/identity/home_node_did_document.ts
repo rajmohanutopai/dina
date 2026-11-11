@@ -76,9 +76,7 @@ export function buildHomeNodeDIDDocument(
     throw new Error('buildHomeNodeDIDDocument: did is required');
   }
   if (!input.signingKey || input.signingKey.publicKey.length !== 32) {
-    throw new Error(
-      'buildHomeNodeDIDDocument: signingKey must be a 32-byte Ed25519 keypair',
-    );
+    throw new Error('buildHomeNodeDIDDocument: signingKey must be a 32-byte Ed25519 keypair');
   }
 
   const signingMultibase = publicKeyToMultibase(input.signingKey.publicKey);
@@ -117,10 +115,7 @@ export function buildHomeNodeDIDDocument(
   // Both fragment ids appear in authentication so DID resolvers see
   // `#dina_signing` AND `#dina_messaging` as valid reference points,
   // regardless of whether the underlying VM is shared or split.
-  const authentication: string[] = [
-    signingVmId,
-    messagingIsDistinct ? messagingVmId : signingVmId,
-  ];
+  const authentication: string[] = [signingVmId, messagingIsDistinct ? messagingVmId : signingVmId];
 
   const service: ServiceEndpoint[] = [];
   if (input.msgboxEndpoint && input.msgboxEndpoint.length > 0) {

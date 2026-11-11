@@ -63,13 +63,22 @@ export async function migrateStandardPersonaGrants(
 }
 
 /** A standing grant the owner gives at pairing for a chosen standard persona. */
-export function grantStandingAccess(agentDID: string, persona: string, pairingId: string, now: number = Date.now()): string | null {
+export function grantStandingAccess(
+  agentDID: string,
+  persona: string,
+  pairingId: string,
+  now: number = Date.now(),
+): string | null {
   const repo = getAgentGrantRepository();
   if (repo === null) return null;
   const tier = listPersonas().find((p) => p.name === persona)?.tier;
   if (tier !== 'standard') return null;
   // A retried pairing answer comes back through here (TT-11): one grant is enough.
-  if (repo.listActiveForAgent(agentDID, now).some((g) => g.grantKind === 'standing' && g.persona === persona)) {
+  if (
+    repo
+      .listActiveForAgent(agentDID, now)
+      .some((g) => g.grantKind === 'standing' && g.persona === persona)
+  ) {
     return null;
   }
   const id = `grant-${bytesToHex(randomBytes(8))}`;

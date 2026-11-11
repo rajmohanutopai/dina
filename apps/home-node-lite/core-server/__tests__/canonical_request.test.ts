@@ -13,14 +13,10 @@
 
 import { buildCanonicalPayload } from '@dina/protocol';
 
-import {
-  buildCanonicalRequest,
-  splitUrl,
-} from '../src/auth/canonical_request';
+import { buildCanonicalRequest, splitUrl } from '../src/auth/canonical_request';
 
 /** SHA-256("") — pinned so tests don't depend on which crypto ran. */
-const EMPTY_BODY_SHA256_HEX =
-  'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
+const EMPTY_BODY_SHA256_HEX = 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855';
 
 describe('buildCanonicalRequest (task 4.20)', () => {
   it('produces the 6-line canonical shape with a computed body hash', async () => {
@@ -37,8 +33,7 @@ describe('buildCanonicalRequest (task 4.20)', () => {
     // Body hash is a deterministic function of the input bytes; this
     // pin catches any change to the hashing algorithm or body
     // normalisation.
-    const bodyHash =
-      'fab7cd16a9da4b07b9a99c4d8f9a8a30ea02bfef1e9a2b7f3f4d1a29a7731b33'; // sha256('{"k":"v"}')
+    const bodyHash = 'fab7cd16a9da4b07b9a99c4d8f9a8a30ea02bfef1e9a2b7f3f4d1a29a7731b33'; // sha256('{"k":"v"}')
     // If the pinned hash is wrong we'll see it; recompute on failure.
     void bodyHash;
 

@@ -4,9 +4,19 @@
  * call hands the whole guest list to Core, and the turn ends.
  */
 
-import { createCoordinateGroupTool, createGroupPlanHandoffTool, matchGuest, nameKey } from '../../src/reasoning/group_tools';
+import {
+  createCoordinateGroupTool,
+  createGroupPlanHandoffTool,
+  matchGuest,
+  nameKey,
+} from '../../src/reasoning/group_tools';
 
-import type { CoordinateGroupCoreClient, CoordinateGroupOutcome, GroupPlanChoice, GroupPlanHandoff } from '../../src/reasoning/group_tools';
+import type {
+  CoordinateGroupCoreClient,
+  CoordinateGroupOutcome,
+  GroupPlanChoice,
+  GroupPlanHandoff,
+} from '../../src/reasoning/group_tools';
 import type { Contact, GroupPlanWire, OpenGroupPlanClientResult } from '@dina/core';
 
 function contact(did: string, displayName: string, aliases: string[] = []): Contact {
@@ -42,15 +52,32 @@ function planWire(over: Partial<GroupPlanWire> = {}): GroupPlanWire {
     chosen: null,
     fold: null,
     guests: [
-      { contact_did: 'did:plc:garcia', required: true, outcome: 'waiting', reply: null, disclosures: [], spokes: [] },
-      { contact_did: 'did:plc:miller', required: false, outcome: 'waiting', reply: null, disclosures: [], spokes: [] },
+      {
+        contact_did: 'did:plc:garcia',
+        required: true,
+        outcome: 'waiting',
+        reply: null,
+        disclosures: [],
+        spokes: [],
+      },
+      {
+        contact_did: 'did:plc:miller',
+        required: false,
+        outcome: 'waiting',
+        reply: null,
+        disclosures: [],
+        spokes: [],
+      },
     ],
     requirements: [],
     ...over,
   };
 }
 
-function fakeCore(result: OpenGroupPlanClientResult, contacts: Contact[] = [GARCIAS, MILLERS, JOHNSONS]) {
+function fakeCore(
+  result: OpenGroupPlanClientResult,
+  contacts: Contact[] = [GARCIAS, MILLERS, JOHNSONS],
+) {
   const open = jest.fn(async () => result);
   const list = jest.fn(async () => contacts);
   const core: CoordinateGroupCoreClient = { openGroupPlan: open, listContacts: list };
@@ -74,7 +101,10 @@ describe('names become contacts in routing, never by guessing', () => {
     expect(matchGuest('The Garcias', all)).toEqual({ kind: 'one', contact: GARCIAS });
     expect(matchGuest('garcia family', all)).toEqual({ kind: 'one', contact: GARCIAS });
     expect(matchGuest('Johnsons', all)).toEqual({ kind: 'one', contact: JOHNSONS });
-    expect(matchGuest('Miller', all)).toEqual({ kind: 'many', names: ['The Millers', 'Tom Miller'] });
+    expect(matchGuest('Miller', all)).toEqual({
+      kind: 'many',
+      names: ['The Millers', 'Tom Miller'],
+    });
     expect(matchGuest('the Millers', all)).toEqual({ kind: 'one', contact: MILLERS });
     expect(matchGuest('did:plc:tom', all)).toEqual({ kind: 'one', contact: MILLER_TOM });
     expect(matchGuest('Smiths', all)).toEqual({ kind: 'none' });
@@ -111,7 +141,9 @@ describe('coordinate_group', () => {
       }),
     );
     // The log carries counts and the outcome, never a name, an intent or a slot.
-    expect(events).toEqual([{ event: 'group_plan_requested', guests: 2, candidates: 1, outcome: 'opened' }]);
+    expect(events).toEqual([
+      { event: 'group_plan_requested', guests: 2, candidates: 1, outcome: 'opened' },
+    ]);
     expect(JSON.stringify(events)).not.toContain('Garcia');
     expect(JSON.stringify(events)).not.toContain('Emma');
   });
@@ -127,9 +159,9 @@ describe('coordinate_group', () => {
   it('an unknown or ambiguous name is a question back to the user, and nothing is sent', async () => {
     const { core, open } = fakeCore({ ok: true, plan: planWire() }, [GARCIAS, MILLERS, MILLER_TOM]);
     const tool = createCoordinateGroupTool({ core });
-    await expect(tool.execute({ ...ARGS, guests: [{ name: 'the Garcias' }, { name: 'Smiths' }] })).rejects.toThrow(
-      /not in the user's contacts: Smiths/,
-    );
+    await expect(
+      tool.execute({ ...ARGS, guests: [{ name: 'the Garcias' }, { name: 'Smiths' }] }),
+    ).rejects.toThrow(/not in the user's contacts: Smiths/);
     await expect(tool.execute({ ...ARGS, guests: [{ name: 'Miller' }] })).rejects.toThrow(
       /more than one contact matches: Miller \(The Millers, Tom Miller\)/,
     );
@@ -137,10 +169,17 @@ describe('coordinate_group', () => {
   });
 
   it("Core's refusal is relayed by name, and the same guest named twice is asked once", async () => {
-    const { core, open } = fakeCore({ ok: false, refusal: 'too_many_candidates', detail: '13 candidates; the ceiling is 12' });
+    const { core, open } = fakeCore({
+      ok: false,
+      refusal: 'too_many_candidates',
+      detail: '13 candidates; the ceiling is 12',
+    });
     const tool = createCoordinateGroupTool({ core });
     await expect(
-      tool.execute({ ...ARGS, guests: [{ name: 'the Garcias' }, { name: 'Garcia family' }, { name: 'did:plc:miller' }] }),
+      tool.execute({
+        ...ARGS,
+        guests: [{ name: 'the Garcias' }, { name: 'Garcia family' }, { name: 'did:plc:miller' }],
+      }),
     ).rejects.toThrow(/coordinate_group refused \(too_many_candidates\): 13 candidates/);
     expect(open).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -156,9 +195,15 @@ describe('coordinate_group', () => {
     const { core, open } = fakeCore({ ok: true, plan: planWire() });
     const tool = createCoordinateGroupTool({ core });
     await expect(tool.execute({ ...ARGS, intent: '' })).rejects.toThrow(/intent is required/);
-    await expect(tool.execute({ ...ARGS, guests: [] })).rejects.toThrow(/guests must be a non-empty array/);
-    await expect(tool.execute({ ...ARGS, candidate_slots: [{ note: 'x' }] })).rejects.toThrow(/start is required/);
-    await expect(tool.execute({ ...ARGS, guests: [{ required: true }] })).rejects.toThrow(/every guest needs a name/);
+    await expect(tool.execute({ ...ARGS, guests: [] })).rejects.toThrow(
+      /guests must be a non-empty array/,
+    );
+    await expect(tool.execute({ ...ARGS, candidate_slots: [{ note: 'x' }] })).rejects.toThrow(
+      /start is required/,
+    );
+    await expect(tool.execute({ ...ARGS, guests: [{ required: true }] })).rejects.toThrow(
+      /every guest needs a name/,
+    );
     expect(open).not.toHaveBeenCalled();
   });
 
@@ -189,10 +234,22 @@ describe('group_plan_handoff (§10; rule 7)', () => {
     ],
   });
 
-  const handleOf = (p: GroupPlanWire) => ({ plan_id: p.plan_id, intent: p.intent, state: p.state, round: p.round, chosen: p.chosen, updated_at: p.updated_at });
+  const handleOf = (p: GroupPlanWire) => ({
+    plan_id: p.plan_id,
+    intent: p.intent,
+    state: p.state,
+    round: p.round,
+    chosen: p.chosen,
+    updated_at: p.updated_at,
+  });
 
   it('hands the model the slot and the de-identified requirements — and not one household, reply or disclosure', async () => {
-    const tool = createGroupPlanHandoffTool({ core: { getGroupPlan: jest.fn(async () => settled), listGroupPlanHandles: jest.fn(async () => []) } });
+    const tool = createGroupPlanHandoffTool({
+      core: {
+        getGroupPlan: jest.fn(async () => settled),
+        listGroupPlanHandles: jest.fn(async () => []),
+      },
+    });
     expect(tool.terminal).toBeUndefined();
     const out = (await tool.execute({ plan_id: 'gp_1' })) as GroupPlanHandoff;
     expect(out).toEqual(
@@ -217,22 +274,42 @@ describe('group_plan_handoff (§10; rule 7)', () => {
   });
 
   it('is not ready before a slot is chosen, says so for a stopped plan, and refuses an unknown one', async () => {
-    const open = createGroupPlanHandoffTool({ core: { getGroupPlan: jest.fn(async () => planWire()), listGroupPlanHandles: jest.fn(async () => []) } });
+    const open = createGroupPlanHandoffTool({
+      core: {
+        getGroupPlan: jest.fn(async () => planWire()),
+        listGroupPlanHandles: jest.fn(async () => []),
+      },
+    });
     const notReady = (await open.execute({ plan_id: 'gp_1' })) as GroupPlanHandoff;
     expect(notReady.ready).toBe(false);
     expect(notReady.chosen).toBeNull();
     expect(notReady.note).toMatch(/No slot is chosen yet/);
 
-    const stopped = createGroupPlanHandoffTool({ core: { getGroupPlan: jest.fn(async () => planWire({ state: 'abandoned' })), listGroupPlanHandles: jest.fn(async () => []) } });
-    expect(((await stopped.execute({ plan_id: 'gp_1' })) as GroupPlanHandoff).note).toMatch(/stopped this plan/);
+    const stopped = createGroupPlanHandoffTool({
+      core: {
+        getGroupPlan: jest.fn(async () => planWire({ state: 'abandoned' })),
+        listGroupPlanHandles: jest.fn(async () => []),
+      },
+    });
+    expect(((await stopped.execute({ plan_id: 'gp_1' })) as GroupPlanHandoff).note).toMatch(
+      /stopped this plan/,
+    );
 
-    const missing = createGroupPlanHandoffTool({ core: { getGroupPlan: jest.fn(async () => null), listGroupPlanHandles: jest.fn(async () => []) } });
+    const missing = createGroupPlanHandoffTool({
+      core: {
+        getGroupPlan: jest.fn(async () => null),
+        listGroupPlanHandles: jest.fn(async () => []),
+      },
+    });
     await expect(missing.execute({ plan_id: 'nope' })).rejects.toThrow(/no plan nope/);
   });
 
   it('with no plan id it finds the plan from the handles: one plan, or the one that is bookable; several → a choice; none → a refusal that offers to plan (found on the first live run)', async () => {
     const proposing = planWire({ plan_id: 'gp_open', intent: 'cake tasting' });
-    const byId = new Map<string, GroupPlanWire>([[settled.plan_id, settled], [proposing.plan_id, proposing]]);
+    const byId = new Map<string, GroupPlanWire>([
+      [settled.plan_id, settled],
+      [proposing.plan_id, proposing],
+    ]);
     const core = (handles: GroupPlanWire[]) => ({
       getGroupPlan: jest.fn(async (id: string) => byId.get(id) ?? null),
       listGroupPlanHandles: jest.fn(async () => handles.map(handleOf)),

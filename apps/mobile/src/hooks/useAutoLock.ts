@@ -100,7 +100,8 @@ export function installAutoLock(opts: InstallAutoLockOptions = {}): AutoLockSubs
   const getTimeoutS = opts.getTimeoutS ?? getBackgroundTimeout;
   const now = opts.now ?? (() => Date.now());
   const scheduleTimer = opts.scheduleTimer ?? ((cb, ms) => setTimeout(cb, ms));
-  const cancelTimer = opts.cancelTimer ?? ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
+  const cancelTimer =
+    opts.cancelTimer ?? ((id) => clearTimeout(id as ReturnType<typeof setTimeout>));
 
   let pendingTimer: unknown = null;
   let lastState: AppStateStatus | 'unknown' = 'unknown';

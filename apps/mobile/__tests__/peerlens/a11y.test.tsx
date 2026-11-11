@@ -53,7 +53,7 @@ import type { SearchResult } from '../../app/peerlens/search';
 import type { FacetBar } from '../../src/peerlens/facets';
 import type { SubjectCardDisplay } from '../../src/peerlens/subject_card';
 import type { SubjectDetailInput } from '../../src/peerlens/subject_detail_data';
-import type { PublishJob , PeerlensProfile } from '@dina/core';
+import type { PublishJob, PeerlensProfile } from '@dina/core';
 
 // ─── Test fixtures ────────────────────────────────────────────────────────
 
@@ -168,7 +168,11 @@ function flattenTree(root: { children: readonly unknown[] }): RenderedElement[] 
 
   function walk(node: unknown): void {
     if (node === null || typeof node !== 'object') return;
-    const n = node as { type?: unknown; props?: Record<string, unknown>; children?: readonly unknown[] };
+    const n = node as {
+      type?: unknown;
+      props?: Record<string, unknown>;
+      children?: readonly unknown[];
+    };
     if (typeof n.type === 'string' && n.props) {
       out.push({ type: n.type, props: n.props });
     }
@@ -291,8 +295,7 @@ const SCREENS: readonly ScreenFixture[] = [
   },
   {
     name: 'ReviewerProfileScreen (loaded)',
-    render: () =>
-      render(<ReviewerProfileScreen profile={makeReviewerProfile()} nowMs={NOW} />),
+    render: () => render(<ReviewerProfileScreen profile={makeReviewerProfile()} nowMs={NOW} />),
   },
   {
     name: 'ReviewerProfileScreen (error)',
@@ -327,13 +330,7 @@ const SCREENS: readonly ScreenFixture[] = [
   {
     name: 'SearchScreen (empty)',
     render: () =>
-      render(
-        <SearchScreen
-          results={[]}
-          facets={{ primary: [], overflow: [] }}
-          q="aeron"
-        />,
-      ),
+      render(<SearchScreen results={[]} facets={{ primary: [], overflow: [] }} q="aeron" />),
     inlineAffordancePrefixes: ['facet-chip-', 'viewer-filter-chip-'],
   },
   {
@@ -374,21 +371,23 @@ const SCREENS: readonly ScreenFixture[] = [
       render(
         <SubjectDetailScreen
           subjectId="sub-1"
-          data={{
-            title: 'Aeron chair',
-            category: 'office_furniture/chair',
-            subjectTrustScore: 0.82,
-            reviewCount: 5,
-            reviews: [
-              {
-                ring: 'contact',
-                reviewerTrustScore: 0.85,
-                reviewerName: 'Sancho',
-                headline: 'Worth every penny',
-                createdAtMs: 1_700_000_000_000,
-              },
-            ],
-          } satisfies SubjectDetailInput}
+          data={
+            {
+              title: 'Aeron chair',
+              category: 'office_furniture/chair',
+              subjectTrustScore: 0.82,
+              reviewCount: 5,
+              reviews: [
+                {
+                  ring: 'contact',
+                  reviewerTrustScore: 0.85,
+                  reviewerName: 'Sancho',
+                  headline: 'Worth every penny',
+                  createdAtMs: 1_700_000_000_000,
+                },
+              ],
+            } satisfies SubjectDetailInput
+          }
           onWriteReview={() => undefined}
           onSelectReviewer={() => undefined}
         />,
@@ -487,9 +486,7 @@ describe('a11y — disabled-state announcement (CTAs surface disabled state)', (
   });
 
   it('NamespaceScreen Add CTA exposes busy state when isAdding=true', () => {
-    const { getByTestId } = render(
-      <NamespaceScreen did={DID} prior={PRIOR_OP} isAdding />,
-    );
+    const { getByTestId } = render(<NamespaceScreen did={DID} prior={PRIOR_OP} isAdding />);
     const cta = getByTestId('namespace-add-cta');
     expect(cta.props.accessibilityState).toMatchObject({ busy: true });
   });

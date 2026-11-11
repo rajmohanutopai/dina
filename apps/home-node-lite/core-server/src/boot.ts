@@ -148,7 +148,8 @@ import {
   StagingSweeper,
   TaskExpirySweeper,
   setCodingPermitAuthority,
-  setNodeDID, setNodeSigningPublicKey,
+  setNodeDID,
+  setNodeSigningPublicKey,
   setReasoningBroker,
   setWorkflowRepository,
   setWorkflowService,
@@ -156,6 +157,7 @@ import {
   type CoreRouter,
   recoverOwnerApprovals,
 } from '@dina/core';
+import { kvGet, kvSet } from '@dina/core/kv';
 import { DIDResolver } from '@dina/core/runtime';
 import {
   bootstrapMsgBox,
@@ -175,14 +177,18 @@ import {
   makeResolveSender,
   ServicePresenceWriter,
 } from '@dina/home-node';
-import { kvGet, kvSet } from '@dina/core/kv';
-import { createA2AHostTransport, createNodePolicySocket, makeNodeWebSocketFactory } from '@dina/net-node';
+import {
+  createA2AHostTransport,
+  createNodePolicySocket,
+  makeNodeWebSocketFactory,
+} from '@dina/net-node';
 
 import { createAgentFacades } from './agent/facades';
 import { makeHttpAskHandler } from './agent/http_ask_handler';
 import { PhoneApprovalManager } from './approval/phone_approval_manager';
 import { A2ACardPublisher, cardKeyCheck, cardRepoOverPds } from './appview/a2a_card_publisher';
 import { wireServiceProfilePublisher, type WiredServicePublisher } from './appview/wire_publisher';
+import { BackupSupervisor } from './backup/backup_supervisor';
 import { createSignedBrainFetch } from './brain_link';
 import { createAppViewSupplierDirectory } from './commerce/appview_supplier_directory';
 import { wireCommerceEpoch } from './commerce/wire_epoch';
@@ -198,11 +204,13 @@ import {
   resolveBootstrapScope,
   resolveHandoffFromEnv,
 } from './pair/bootstrap_capability';
-import { BackupSupervisor } from './backup/backup_supervisor';
 import { ReviewPublishSupervisor } from './peerlens/review_publish_supervisor';
 import { ReasoningCommitSupervisor } from './reasoning/reasoning_commit_supervisor';
 import { createServer } from './server';
-import { phoneStatusForOwnerSetup, registerApprovalPhoneRoutes } from './server/approval_phone_routes';
+import {
+  phoneStatusForOwnerSetup,
+  registerApprovalPhoneRoutes,
+} from './server/approval_phone_routes';
 import { bindCoreRouter } from './server/bind_core_router';
 import { socketAnswers, watchParent } from './server/cell_lifecycle';
 import { registerDebugDispatch } from './server/debug_dispatch';
@@ -385,7 +393,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   configureRateLimiter({
     maxRequests: config.runtime.rateLimitPerMinute,
     windowSeconds: 60,
-    ...(a2aGatewayDid === undefined ? {} : { perDidMax: { [a2aGatewayDid]: Number.POSITIVE_INFINITY } }),
+    ...(a2aGatewayDid === undefined
+      ? {}
+      : { perDidMax: { [a2aGatewayDid]: Number.POSITIVE_INFINITY } }),
   });
   logger.info(
     { maxRequestsPerMinute: config.runtime.rateLimitPerMinute },
@@ -538,11 +548,16 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   let brainFetch: typeof fetch = fetch;
   if (
     identity !== undefined &&
-    (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
+    (identity.kind === 'loaded_convenience' ||
+      identity.kind === 'generated' ||
+      identity.kind === 'loaded_wrapped')
   ) {
     const coreService = deriveIdentity({ masterSeed: identity.seed }).services.core;
     const coreServiceDid = deriveDIDKey(coreService.publicKey);
-    brainFetch = createSignedBrainFetch({ did: coreServiceDid, privateKey: coreService.privateKey });
+    brainFetch = createSignedBrainFetch({
+      did: coreServiceDid,
+      privateKey: coreService.privateKey,
+    });
     installCoreServiceDid(coreServiceDid);
   }
 
@@ -581,7 +596,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     // did:key boot had no node DID and could not pair.
     if (
       identity !== undefined &&
-      (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
+      (identity.kind === 'loaded_convenience' ||
+        identity.kind === 'generated' ||
+        identity.kind === 'loaded_wrapped')
     ) {
       const rootPub = deriveIdentity({ masterSeed: identity.seed }).root.publicKey;
       const didKey = deriveDIDKey(rootPub);
@@ -594,7 +611,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
     const pdsStart = Date.now();
     if (
       identity !== undefined &&
-      (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
+      (identity.kind === 'loaded_convenience' ||
+        identity.kind === 'generated' ||
+        identity.kind === 'loaded_wrapped')
     ) {
       try {
         const derivations = deriveIdentity({ masterSeed: identity.seed });
@@ -729,7 +748,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   const dbStart = Date.now();
   if (
     identity !== undefined &&
-    (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped')
+    (identity.kind === 'loaded_convenience' ||
+      identity.kind === 'generated' ||
+      identity.kind === 'loaded_wrapped')
   ) {
     try {
       const result = await initializeStorage(identity.seed, config.storage.vaultDir, logger);
@@ -789,7 +810,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           fetch(input, { ...init, signal: AbortSignal.timeout(10_000) });
         const plcURL = config.endpoints.plcDirectoryUrl;
         const cardKeys = new A2ACardKeyRotation({
-          keyAt: (generation) => ({ privateKey: deriveP256SigningKey(cardSeed, generation).privateKey, generation }),
+          keyAt: (generation) => ({
+            privateKey: deriveP256SigningKey(cardSeed, generation).privateKey,
+            generation,
+          }),
           publicOrigin: config.a2a.publicOrigin,
           // No did:plc (no PDS): no document; the card signs with generation 0 and does not rotate.
           document:
@@ -798,7 +822,13 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
               : {
                   readKey: () => currentA2ACardKey({ did: cardKeyDid, plcURL, fetch: plcFetch }),
                   recordKey: (cardPublicKey) =>
-                    ensureA2ACardKey({ did: cardKeyDid, cardPublicKey, masterSeed: cardSeed, plcURL, fetch: plcFetch }),
+                    ensureA2ACardKey({
+                      did: cardKeyDid,
+                      cardPublicKey,
+                      masterSeed: cardSeed,
+                      plcURL,
+                      fetch: plcFetch,
+                    }),
                 },
         });
         installA2ACardKeyRotation(cardKeys);
@@ -868,7 +898,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       // REAL_LIFE_FIXES_2: approvals a crash cut short (forgets, purchases,
       // standing replies, budgets), now that a card's fate can be read.
       await recoverOwnerApprovals().catch((err: unknown) =>
-        logger.warn({ err: err instanceof Error ? err.name : 'unknown' }, 'approval recovery failed; retried at the next boot'),
+        logger.warn(
+          { err: err instanceof Error ? err.name : 'unknown' },
+          'approval recovery failed; retried at the next boot',
+        ),
       );
       // Lane 1's runner reads the CURRENT runtime every tick, so it follows
       // the service the workflow plane installs later in boot.
@@ -911,7 +944,11 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // can tell this live provider from listings left behind. Written only
         // while MsgBox is up; renewed when over 22 h old; nudged whenever a
         // listing really changes and whenever MsgBox (re)authenticates.
-        const pds = (): PDSPublisher => wiredPublisher!.pdsPublisher;
+        const pds = (): PDSPublisher => {
+          if (wiredPublisher === undefined)
+            throw new Error('presence writer: service publisher not wired');
+          return wiredPublisher.pdsPublisher;
+        };
         presenceWriter = new ServicePresenceWriter({
           repo: {
             listRecords: async (collection) =>
@@ -926,8 +963,13 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           inboundUp: () => isMsgBoxAuthenticated(),
           randomBytes: (n) => randomBytes(n),
           onOutcome: (o) => {
-            if (o.status === 'failed') logger.warn({ error: o.error }, 'service presence write failed');
-            else if (o.status === 'written') logger.info({ listings: o.listings, complete: o.complete }, 'service presence renewed');
+            if (o.status === 'failed')
+              logger.warn({ error: o.error }, 'service presence write failed');
+            else if (o.status === 'written')
+              logger.info(
+                { listings: o.listings, complete: o.complete },
+                'service presence renewed',
+              );
           },
         });
         const writer = presenceWriter;
@@ -938,9 +980,15 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         });
         stopPresenceAuthHook = onMsgBoxAuthenticated(() => void writer.onInboundUp());
         // Hourly check, up to 1 h of random delay on top of the 22 h age.
-        presenceTimer = setInterval(() => {
-          setTimeout(() => void writer.renewIfDue(), Math.floor(Math.random() * 60 * 60 * 1000)).unref?.();
-        }, 60 * 60 * 1000);
+        presenceTimer = setInterval(
+          () => {
+            setTimeout(
+              () => void writer.renewIfDue(),
+              Math.floor(Math.random() * 60 * 60 * 1000),
+            ).unref?.();
+          },
+          60 * 60 * 1000,
+        );
         presenceTimer.unref?.();
         // Lane 3 (A2A design §8.2): the card publisher, a trusted host process
         // beside the profile publisher, on the same repo session. It writes
@@ -964,7 +1012,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
               const config = getA2ACardConfig();
               if (config === null) return { ok: false, reason: 'gateway_unconfigured' };
               const built = await buildInboundCard(a2aStore, { nodeDid: cardDid, config });
-              return built.ok ? { ok: true, card: built.card } : { ok: false, reason: built.reason };
+              return built.ok
+                ? { ok: true, card: built.card }
+                : { ok: false, reason: built.reason };
             },
             gatewayLive: () => getA2ACardConfig() !== null,
             // The card key is still being read from the DID document: judge nothing yet (no
@@ -976,7 +1026,12 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
             // The key that signs the card now: the check follows it, so a new key is put in the document first.
             cardKeyReady: cardKeyCheck(
               (cardPublicKey) =>
-                ensureA2ACardKey({ did: cardDid, cardPublicKey, masterSeed: seed, plcURL: config.endpoints.plcDirectoryUrl }),
+                ensureA2ACardKey({
+                  did: cardDid,
+                  cardPublicKey,
+                  masterSeed: seed,
+                  plcURL: config.endpoints.plcDirectoryUrl,
+                }),
               () => {
                 const current = getA2ACardConfig();
                 return current === null ? null : cardPublicKey(current.key);
@@ -999,7 +1054,8 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // database, only beside the publisher: a merchant reads the profile it
         // uploads.
         if (config.ucp?.enabled === true) {
-          const profileHost = config.ucp.profileHost !== undefined ? { profileHost: config.ucp.profileHost } : {};
+          const profileHost =
+            config.ucp.profileHost !== undefined ? { profileHost: config.ucp.profileHost } : {};
           // §3.13, S8: a server whose A2A gateway has a public origin takes signed order
           // webhooks there (unless the owner turns them off); the profile lists that URL.
           installUcpWebhookOrigin(config.a2a?.publicOrigin ?? null);
@@ -1012,7 +1068,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
           // A settings save may change the listed webhook URL: upload the profile now.
           const publication = ucpPublication;
           installUcpSettingsListener(() => publication.kick());
-          installUcpSearchRuntime(createUcpSearchRuntime(result.identityDB, { client: profileHost }));
+          installUcpSearchRuntime(
+            createUcpSearchRuntime(result.identityDB, { client: profileHost }),
+          );
           // §3.7, §3.10: checkouts and carts on the same database as the workflow's cards.
           const ucpCheckout = createUcpCheckoutRuntime(result.identityDB, {
             client: profileHost,
@@ -1325,7 +1383,9 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
   if (
     pdsIdentity !== undefined &&
     identity !== undefined &&
-    (identity.kind === 'loaded_convenience' || identity.kind === 'generated' || identity.kind === 'loaded_wrapped') &&
+    (identity.kind === 'loaded_convenience' ||
+      identity.kind === 'generated' ||
+      identity.kind === 'loaded_wrapped') &&
     identityDBForWorkflow !== undefined
   ) {
     // The shared workflow plane owns its own expiry sweeper. Stop the minimal
@@ -1568,7 +1628,10 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
       const bundleDir = process.env.DINA_CORE_WEB_BUNDLE_DIR ?? DEFAULT_WEB_BUNDLE_DIR;
       const brainOrigin = parseBrainOrigin(brainRaw);
       await registerWebAppRoutes(app, { bundleDir, brainOrigin });
-      logger.info({ path: WEB_APP_PREFIX, brainOrigin }, 'web app served by Core (owner devices sign; Brain cross-origin)');
+      logger.info(
+        { path: WEB_APP_PREFIX, brainOrigin },
+        'web app served by Core (owner devices sign; Brain cross-origin)',
+      );
     }
     // Debug control channel — TEST/DEV only, off by default. Lets a test
     // harness drive a real booted node over loopback without signing.
@@ -1711,11 +1774,18 @@ export async function bootServer(options: BootServerOptions = {}): Promise<Boote
         // show the review card, as the phone does in-process. The body stays
         // in Core until the owner decides.
         onQuarantinedD2D: ({ senderDID, messageType, quarantineId }) => {
-          void brainFetch(`${config.services?.brainUrl ?? LOCAL_BRAIN_URL}/api/v1/chat/quarantine-request`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({ quarantine_id: quarantineId, sender_did: senderDID, message_type: messageType }),
-          }).catch(() => {
+          void brainFetch(
+            `${config.services?.brainUrl ?? LOCAL_BRAIN_URL}/api/v1/chat/quarantine-request`,
+            {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                quarantine_id: quarantineId,
+                sender_did: senderDID,
+                message_type: messageType,
+              }),
+            },
+          ).catch(() => {
             // Best effort: the item stays in quarantine and in the review list.
           });
         },

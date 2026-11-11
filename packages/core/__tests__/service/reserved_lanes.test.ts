@@ -13,9 +13,26 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { isReservedLane, namesReservedLane } from '../../src/service/reserved_lanes';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
-import { InMemoryWorkflowRepository, SQLiteWorkflowRepository, type WorkflowRepository } from '../../src/workflow/repository';
+import {
+  InMemoryWorkflowRepository,
+  SQLiteWorkflowRepository,
+  type WorkflowRepository,
+} from '../../src/workflow/repository';
 
-const LOOKALIKES = ['dina.local', 'DINA.LOCAL', ' dina.local ', 'plugin:x', 'PLUGIN:x', 'plugin:', 'a2a:r', 'A2A:r', 'a2a:', 'reasoning:claude', 'Reasoning:', 'reasoning:'];
+const LOOKALIKES = [
+  'dina.local',
+  'DINA.LOCAL',
+  ' dina.local ',
+  'plugin:x',
+  'PLUGIN:x',
+  'plugin:',
+  'a2a:r',
+  'A2A:r',
+  'a2a:',
+  'reasoning:claude',
+  'Reasoning:',
+  'reasoning:',
+];
 
 describe('the rule', () => {
   it.each(LOOKALIKES)('%j is reserved', (lane) => {
@@ -34,7 +51,12 @@ describe('both stores’ generic claims take no reserved lane', () => {
 
   beforeEach(() => {
     dir = mkdtempSync(path.join(tmpdir(), 'reserved-lanes-'));
-    db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'dd'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+    db = new NodeSQLiteAdapter({
+      path: path.join(dir, 'identity.sqlite'),
+      passphraseHex: 'dd'.repeat(32),
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
     applyMigrations(db, IDENTITY_MIGRATIONS);
   });
 

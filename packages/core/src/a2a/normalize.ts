@@ -69,7 +69,9 @@ export interface NormalizedInvocation {
 }
 
 /** Whether Core's validator enforces every keyword of both schemas of a pair (`pinnedSchemaProblems`, `pinned_runtime`). */
-export function schemaPairEnforceable(schemas: Pick<PinnedSchemaPair, 'params' | 'result'>): boolean {
+export function schemaPairEnforceable(
+  schemas: Pick<PinnedSchemaPair, 'params' | 'result'>,
+): boolean {
   return (
     pinnedSchemaProblems(schemas.params, 'pinned_runtime').length === 0 &&
     pinnedSchemaProblems(schemas.result, 'pinned_runtime').length === 0

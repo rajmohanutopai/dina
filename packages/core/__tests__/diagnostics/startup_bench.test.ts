@@ -7,11 +7,7 @@
  * Source: ARCHITECTURE.md Task 10.11
  */
 
-import {
-  StartupBenchmark,
-  benchmarkBootSequence,
-  type BenchmarkResult,
-} from '../../src/diagnostics/startup_bench';
+import { StartupBenchmark, benchmarkBootSequence } from '../../src/diagnostics/startup_bench';
 
 describe('Startup Performance Benchmark (10.11)', () => {
   describe('StartupBenchmark class', () => {
@@ -102,12 +98,12 @@ describe('Startup Performance Benchmark (10.11)', () => {
       bench.begin();
       bench.timeSync('fast', () => {});
       bench.timeSync('slow', () => {
-        let x = 0;
-        for (let i = 0; i < 100000; i++) x += i;
+        let _x = 0;
+        for (let i = 0; i < 100000; i++) _x += i;
       });
       bench.timeSync('medium', () => {
-        let x = 0;
-        for (let i = 0; i < 10000; i++) x += i;
+        let _x = 0;
+        for (let i = 0; i < 10000; i++) _x += i;
       });
 
       const breakdown = bench.getBreakdown();

@@ -160,8 +160,11 @@ export function finishTermCardTask(
   if (workflow === null) return;
   try {
     if (workflow.store().getById(taskId)?.status === WorkflowTaskState.Queued)
-      workflow.store().transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
-    if (outcome.ok) workflow.complete(taskId, JSON.stringify({ decided: true }), 'term card decided');
+      workflow
+        .store()
+        .transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
+    if (outcome.ok)
+      workflow.complete(taskId, JSON.stringify({ decided: true }), 'term card decided');
     else workflow.fail(taskId, TERM_REFUSAL_WORDS[outcome.refusal] ?? 'not done');
   } catch {
     /* a raced transition changes nothing the owner decided */
@@ -241,18 +244,22 @@ export function createTermEngine(args: {
  * (hash-bound to the job), never from the model's answer; the term engine
  * runs the envelope and the budgets, and sends, cards or refuses.
  */
-export function commitTermStrategyMove(input: {
-  input: unknown;
-  result: unknown;
-}): { state: 'committed'; receipt: Record<string, unknown> } {
+export function commitTermStrategyMove(input: { input: unknown; result: unknown }): {
+  state: 'committed';
+  receipt: Record<string, unknown>;
+} {
   const engine = getCommerceRuntime()?.terms ?? null;
   if (engine === null) throw new Error('term engine unavailable');
-  const brief = input.input as { kind?: unknown; ref?: { negotiationId?: unknown; turn?: unknown } };
+  const brief = input.input as {
+    kind?: unknown;
+    ref?: { negotiationId?: unknown; turn?: unknown };
+  };
   if (brief.kind !== 'shelf_space.vendor' && brief.kind !== 'shelf_space.host')
     throw new Error('not a shelf negotiation move');
   const requestId = brief.ref?.negotiationId;
   const turn = brief.ref?.turn;
-  if (typeof requestId !== 'string' || typeof turn !== 'number') throw new Error('negotiation move: no ref');
+  if (typeof requestId !== 'string' || typeof turn !== 'number')
+    throw new Error('negotiation move: no ref');
   const move = readMove((input.result as { move?: unknown } | null)?.move);
   const answers = (input.input as { ownerAnswers?: unknown }).ownerAnswers;
   const { outcome } = engine.applyStrategyMove({
@@ -275,7 +282,8 @@ function readMove(value: unknown): StrategyMove {
   };
   if (m.kind === 'stop') return { kind: 'stop' };
   // §15 step 11: a question for the owner; the engine cleans and bounds it.
-  if (m.kind === 'ask_owner' && typeof m.question === 'string') return { kind: 'ask_owner', question: m.question };
+  if (m.kind === 'ask_owner' && typeof m.question === 'string')
+    return { kind: 'ask_owner', question: m.question };
   // A message the wire carries: a fixed kind and a part (the engine checks
   // the part is on the table). Anything else asked of the other side lets
   // the fixed style play the round.
@@ -285,12 +293,17 @@ function readMove(value: unknown): StrategyMove {
     typeof m.part === 'string'
   )
     return { kind: 'ask_other', message: m.message as TermMessageKind, part: m.part };
-  if (m.kind !== 'propose' || !Array.isArray(m.versions)) return { kind: 'ask_other', message: 'decline' };
+  if (m.kind !== 'propose' || !Array.isArray(m.versions))
+    return { kind: 'ask_other', message: 'decline' };
   const versions = m.versions.slice(0, 8).map((v): DealVersion => {
-    const terms = Array.isArray((v as { terms?: unknown }).terms) ? (v as { terms: unknown[] }).terms : [];
+    const terms = Array.isArray((v as { terms?: unknown }).terms)
+      ? (v as { terms: unknown[] }).terms
+      : [];
     const parts = terms.flatMap((t) => {
       const term = t as { name?: unknown; value?: unknown };
-      return typeof term.name === 'string' && typeof term.value === 'string' && /^(0|[1-9]\d{0,17})$/.test(term.value)
+      return typeof term.name === 'string' &&
+        typeof term.value === 'string' &&
+        /^(0|[1-9]\d{0,17})$/.test(term.value)
         ? [{ kind: 'number' as const, name: term.name, value: BigInt(term.value) }]
         : [];
     });

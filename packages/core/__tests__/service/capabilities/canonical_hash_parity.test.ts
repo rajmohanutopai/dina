@@ -41,8 +41,7 @@ import {
 import { capabilitySchemaHash } from '../../../src/service/capability_schema_hash';
 
 const ETA_QUERY_DESCRIPTION = 'Query estimated time of arrival for a transit service.';
-const PINNED_HASH =
-  '2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71';
+const PINNED_HASH = '2886d1f82453b418f4e620219681b897cdfa536c2d9ee9b0f524605107117a71';
 
 describe('canonical schema_hash parity (MT-24-I2)', () => {
   it('eta_query {description, params, result} hashes to the canonical Python reference', () => {

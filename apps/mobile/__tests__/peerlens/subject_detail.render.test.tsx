@@ -109,21 +109,14 @@ describe('SubjectDetailScreen — header', () => {
 
   it('renders correct review count singular', () => {
     const { getByText } = render(
-      <SubjectDetailScreen
-        subjectId="sub-1"
-        data={makeInput({ reviewCount: 1 })}
-      />,
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput({ reviewCount: 1 })} />,
     );
     expect(getByText(/^1 review$/)).toBeTruthy();
   });
 
   it('renders Write CTA when onWriteReview is provided', () => {
     const { getByTestId } = render(
-      <SubjectDetailScreen
-        subjectId="sub-1"
-        data={makeInput()}
-        onWriteReview={() => undefined}
-      />,
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} onWriteReview={() => undefined} />,
     );
     expect(getByTestId('subject-detail-write-cta')).toBeTruthy();
   });
@@ -133,9 +126,7 @@ describe('SubjectDetailScreen — header', () => {
     // Write CTA is always present in production. Callers that genuinely
     // need to suppress it (read-only contexts, e.g. a quoted preview)
     // pass an explicit no-op handler instead of relying on omission.
-    const { getByTestId } = render(
-      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
-    );
+    const { getByTestId } = render(<SubjectDetailScreen subjectId="sub-1" data={makeInput()} />);
     expect(getByTestId('subject-detail-write-cta')).toBeTruthy();
   });
 
@@ -145,9 +136,7 @@ describe('SubjectDetailScreen — header', () => {
   // The data layer derives + normalises; these tests pin the rendering
   // contract on the subject detail screen.
   it('hides the chip row entirely when host + language + location + price are all null', () => {
-    const { queryByTestId } = render(
-      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
-    );
+    const { queryByTestId } = render(<SubjectDetailScreen subjectId="sub-1" data={makeInput()} />);
     expect(queryByTestId('subject-detail-context')).toBeNull();
     expect(queryByTestId('subject-detail-host')).toBeNull();
     expect(queryByTestId('subject-detail-language')).toBeNull();
@@ -157,10 +146,7 @@ describe('SubjectDetailScreen — header', () => {
 
   it('renders only the host chip when language and location are absent', () => {
     const { getByTestId, queryByTestId, getByText } = render(
-      <SubjectDetailScreen
-        subjectId="sub-1"
-        data={makeInput({ host: 'amazon.co.uk' })}
-      />,
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput({ host: 'amazon.co.uk' })} />,
     );
     expect(getByTestId('subject-detail-context')).toBeTruthy();
     expect(getByTestId('subject-detail-host')).toBeTruthy();
@@ -295,9 +281,7 @@ describe('SubjectDetailScreen — header', () => {
   });
 
   it('hides the recency chip when lastActiveMs is omitted (no signal)', () => {
-    const { queryByTestId } = render(
-      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
-    );
+    const { queryByTestId } = render(<SubjectDetailScreen subjectId="sub-1" data={makeInput()} />);
     expect(queryByTestId('subject-detail-recency')).toBeNull();
   });
 
@@ -356,9 +340,7 @@ describe('SubjectDetailScreen — header', () => {
   });
 
   it('hides the banner when flagSummary is omitted', () => {
-    const { queryByTestId } = render(
-      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
-    );
+    const { queryByTestId } = render(<SubjectDetailScreen subjectId="sub-1" data={makeInput()} />);
     expect(queryByTestId('subject-detail-flag-warning')).toBeNull();
   });
 
@@ -374,17 +356,13 @@ describe('SubjectDetailScreen — header', () => {
   });
 
   it('hides the moderator-removed banner for a normal subject', () => {
-    const { queryByTestId } = render(
-      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
-    );
+    const { queryByTestId } = render(<SubjectDetailScreen subjectId="sub-1" data={makeInput()} />);
     expect(queryByTestId('subject-detail-tombstoned')).toBeNull();
   });
 
   // TN-V2-RANK-014 — alternatives strip below the review list.
   it('hides the alternatives strip when alternatives is empty (default)', () => {
-    const { queryByTestId } = render(
-      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} />,
-    );
+    const { queryByTestId } = render(<SubjectDetailScreen subjectId="sub-1" data={makeInput()} />);
     expect(queryByTestId('subject-detail-alternatives')).toBeNull();
   });
 
@@ -394,8 +372,18 @@ describe('SubjectDetailScreen — header', () => {
         subjectId="sub-1"
         data={makeInput({
           alternatives: [
-            { subjectId: 'alt-1', title: 'Alt One', subjectTrustScore: 0.85, category: 'tech/laptop' },
-            { subjectId: 'alt-2', title: 'Alt Two', subjectTrustScore: 0.55, category: 'tech/laptop' },
+            {
+              subjectId: 'alt-1',
+              title: 'Alt One',
+              subjectTrustScore: 0.85,
+              category: 'tech/laptop',
+            },
+            {
+              subjectId: 'alt-2',
+              title: 'Alt Two',
+              subjectTrustScore: 0.55,
+              category: 'tech/laptop',
+            },
           ],
         })}
       />,
@@ -413,9 +401,7 @@ describe('SubjectDetailScreen — header', () => {
       <SubjectDetailScreen
         subjectId="sub-1"
         data={makeInput({
-          alternatives: [
-            { subjectId: 'alt-1', title: 'Alt One', subjectTrustScore: 0.85 },
-          ],
+          alternatives: [{ subjectId: 'alt-1', title: 'Alt One', subjectTrustScore: 0.85 }],
         })}
       />,
     );
@@ -504,10 +490,7 @@ describe('SubjectDetailScreen — review sections', () => {
 
   it('renders an empty hint in strangers section when ALL groups are empty', () => {
     const { getByTestId, getByText } = render(
-      <SubjectDetailScreen
-        subjectId="sub-1"
-        data={makeInput({ reviews: [], reviewCount: 0 })}
-      />,
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput({ reviews: [], reviewCount: 0 })} />,
     );
     // Only the strangers section renders, with the global empty hint.
     expect(getByTestId('subject-detail-section-strangers')).toBeTruthy();
@@ -548,11 +531,7 @@ describe('SubjectDetailScreen — interactions', () => {
   it('tap on Write CTA fires onWriteReview with subjectId', () => {
     const onWrite = jest.fn();
     const { getByTestId } = render(
-      <SubjectDetailScreen
-        subjectId="sub-99"
-        data={makeInput()}
-        onWriteReview={onWrite}
-      />,
+      <SubjectDetailScreen subjectId="sub-99" data={makeInput()} onWriteReview={onWrite} />,
     );
     fireEvent.press(getByTestId('subject-detail-write-cta'));
     expect(onWrite).toHaveBeenCalledWith('sub-99');
@@ -564,9 +543,7 @@ describe('SubjectDetailScreen — interactions', () => {
       <SubjectDetailScreen
         subjectId="sub-1"
         data={makeInput({
-          reviews: [
-            makeReview({ reviewerName: 'Sancho', reviewerDid: 'did:plc:sancho' }),
-          ],
+          reviews: [makeReview({ reviewerName: 'Sancho', reviewerDid: 'did:plc:sancho' })],
         })}
         onSelectReviewer={onSelect}
       />,
@@ -578,12 +555,7 @@ describe('SubjectDetailScreen — interactions', () => {
   it('tap on Retry fires onRetry', () => {
     const onRetry = jest.fn();
     const { getByTestId } = render(
-      <SubjectDetailScreen
-        subjectId="sub-1"
-        data={null}
-        error="boom"
-        onRetry={onRetry}
-      />,
+      <SubjectDetailScreen subjectId="sub-1" data={null} error="boom" onRetry={onRetry} />,
     );
     fireEvent.press(getByTestId('subject-detail-retry'));
     expect(onRetry).toHaveBeenCalledTimes(1);
@@ -611,11 +583,7 @@ describe('SubjectDetailScreen — accessibility (TN-TEST-061 surface)', () => {
 
   it('Write CTA has accessibilityLabel="Write a review"', () => {
     const { getByLabelText } = render(
-      <SubjectDetailScreen
-        subjectId="sub-1"
-        data={makeInput()}
-        onWriteReview={() => undefined}
-      />,
+      <SubjectDetailScreen subjectId="sub-1" data={makeInput()} onWriteReview={() => undefined} />,
     );
     expect(getByLabelText('Write a review')).toBeTruthy();
   });
@@ -748,9 +716,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
       <SubjectDetailScreen
         subjectId="sub-1"
         data={makeInput({
-          reviews: [
-            makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' }),
-          ],
+          reviews: [makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' })],
         })}
         viewerDid="did:plc:viewer"
         onPressOwnReview={() => undefined}
@@ -764,9 +730,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
       <SubjectDetailScreen
         subjectId="sub-1"
         data={makeInput({
-          reviews: [
-            makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' }),
-          ],
+          reviews: [makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' })],
         })}
         viewerDid="did:plc:viewer"
       />,
@@ -791,9 +755,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
       <SubjectDetailScreen
         subjectId="sub-1"
         data={makeInput({
-          reviews: [
-            makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' }),
-          ],
+          reviews: [makeReview({ ring: 'self', reviewerDid: null, reviewerName: 'You' })],
         })}
         viewerDid="did:plc:viewer"
         onPressOwnReview={() => undefined}
@@ -803,7 +765,7 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
     expect(getByText('Edit')).toBeTruthy();
   });
 
-  it('does NOT render the Edit pill on other reviewers\' rows', () => {
+  it("does NOT render the Edit pill on other reviewers' rows", () => {
     const { queryByTestId } = render(
       <SubjectDetailScreen
         subjectId="sub-1"
@@ -860,15 +822,13 @@ describe('SubjectDetailScreen — own review row tappable (F2 fix)', () => {
     // Verify the callback receives the full review (including the
     // editing fields the route handler needs to seed /trust/write).
     const call = onPressOwnReviewEdit.mock.calls[0][0];
-    expect(call.attestationUri).toBe(
-      'at://did:plc:viewer/com.dinakernel.peerlens.attestation/abc',
-    );
+    expect(call.attestationUri).toBe('at://did:plc:viewer/com.dinakernel.peerlens.attestation/abc');
     expect(call.headline).toBe('Comfortable');
     expect(call.body).toBe('Long form body text');
     expect(call.sentiment).toBe('positive');
   });
 
-  it('Edit pill is inert (no callback) when the wire didn\'t carry an attestationUri', () => {
+  it("Edit pill is inert (no callback) when the wire didn't carry an attestationUri", () => {
     const onPressOwnReviewEdit = jest.fn();
     const { getByTestId } = render(
       <SubjectDetailScreen

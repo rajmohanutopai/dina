@@ -54,7 +54,10 @@ import { fillCardTemplate, validateCardSpec, type CardBlock, type CardSpec } fro
 import { parsePluginEnvelope } from '../workflow/plugin_envelope';
 
 /** Block kinds a plugin's answer may never carry: both are outbound exits (§11). */
-const FORBIDDEN_BLOCKS: ReadonlySet<CardBlock['kind']> = new Set<CardBlock['kind']>(['link', 'media']);
+const FORBIDDEN_BLOCKS: ReadonlySet<CardBlock['kind']> = new Set<CardBlock['kind']>([
+  'link',
+  'media',
+]);
 
 /** The slice of a workflow task this render reads. */
 export interface PluginResultTask {

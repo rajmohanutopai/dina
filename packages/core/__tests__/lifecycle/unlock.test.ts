@@ -11,8 +11,7 @@ import { mnemonicToSeed, generateMnemonic } from '../../src/crypto/bip39';
 import { resetRotationState, getCurrentGeneration } from '../../src/identity/rotation';
 import { resetLifecycleState, areSecretsZeroed } from '../../src/lifecycle/sleep_wake';
 import { fullUnlock, verifyPassphrase } from '../../src/lifecycle/unlock';
-import { resetPersonaState, listPersonas, isPersonaOpen } from '../../src/persona/service';
-
+import { resetPersonaState, isPersonaOpen } from '../../src/persona/service';
 
 describe('Full Unlock Flow', () => {
   let wrappedSeed: Awaited<ReturnType<typeof wrapSeed>>;

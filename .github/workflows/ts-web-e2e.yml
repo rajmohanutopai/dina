@@ -55,6 +55,12 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  # onnxruntime-node (pulled in by AppView's embedder) otherwise downloads its
+  # CUDA build from GitHub releases on every Linux install; CI uses the CPU
+  # build, and that download has failed `npm ci` with 504s.
+  ONNXRUNTIME_NODE_INSTALL_CUDA: skip
+
 jobs:
   build-and-smoke:
     name: Build SPA bundle + Playwright smoke
@@ -164,14 +170,34 @@ jobs:
       DINA_E2E_PREBUILT: "1"
 
     steps:
+      # The judged tier is meaningless without a key. A nightly run with no
+      # key configured skips with a warning; a manual run fails loudly.
+      - name: Check for Gemini key
+        id: key
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          if [ -n "${GEMINI_API_KEY}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "::warning::GEMINI_API_KEY secret is not set; skipping the functional live tier."
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::GEMINI_API_KEY secret is not set; the functional live tier needs it."
+            exit 1
+          fi
+
       - name: Checkout
+        if: steps.key.outputs.present == 'true'
         uses: actions/checkout@v4
 
       - name: Read Node version from .nvmrc
+        if: steps.key.outputs.present == 'true'
         id: nvmrc
         run: echo "version=$(cat .nvmrc)" >> "$GITHUB_OUTPUT"
 
       - name: Setup Node
+        if: steps.key.outputs.present == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: ${{ steps.nvmrc.outputs.version }}
@@ -179,9 +205,11 @@ jobs:
           cache-dependency-path: package-lock.json
 
       - name: Install dependencies
+        if: steps.key.outputs.present == 'true'
         run: npm ci
 
       - name: Cache Playwright browsers
+        if: steps.key.outputs.present == 'true'
         id: pw-cache
         uses: actions/cache@v4
         with:
@@ -191,31 +219,22 @@ jobs:
             playwright-${{ runner.os }}-
 
       - name: Install Playwright Chromium
-        if: steps.pw-cache.outputs.cache-hit != 'true'
+        if: steps.key.outputs.present == 'true' && steps.pw-cache.outputs.cache-hit != 'true'
         run: npm run -w @dina/home-node-lite-web-e2e test:e2e:install
 
       - name: Install Playwright system deps
-        if: steps.pw-cache.outputs.cache-hit == 'true'
+        if: steps.key.outputs.present == 'true' && steps.pw-cache.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
-
-      # Fail fast if no key is configured — the judged tier is meaningless
-      # without one.
-      - name: Require Gemini key
-        env:
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          if [ -z "${GEMINI_API_KEY}" ]; then
-            echo "::error::GEMINI_API_KEY secret is not set — the functional live tier needs it."
-            exit 1
-          fi
 
       # Build the ONBOARDING-AUTOPILOT bundle (dist-e2e) — the passphrase is
       # baked in by the build:bundle:e2e script. (No secret in scope here.)
       - name: Build autopilot SPA bundle
+        if: steps.key.outputs.present == 'true'
         run: npm run -w @dina/home-node-lite-web-e2e build:bundle:e2e
 
       # Judge calibration is the hard gate — run it before any scenario.
       - name: Judge calibration gate
+        if: steps.key.outputs.present == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: npm run -w @dina/home-node-lite-web-e2e test:e2e:calibration
@@ -224,6 +243,7 @@ jobs:
       # Isolated mode = a fresh stack per spec, so the Brain's agentic
       # staging-drain queue can't accumulate across specs (see F3).
       - name: Functional MRS flows
+        if: steps.key.outputs.present == 'true'
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: npm run -w @dina/home-node-lite-web-e2e test:e2e:functional:isolated

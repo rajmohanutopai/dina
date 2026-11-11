@@ -10,7 +10,12 @@
 
 import { p256 } from '@noble/curves/nist.js';
 
-import { p256FromMultikey, signAgentCard, verifyAgentCardSignatures, type AgentCard } from '@dina/a2a';
+import {
+  p256FromMultikey,
+  signAgentCard,
+  verifyAgentCardSignatures,
+  type AgentCard,
+} from '@dina/a2a';
 import { deriveP256SigningKey, deriveRotationKey, secp256k1ToDidKeyMultibase } from '@dina/core';
 import { ensureA2ACardKey } from '@dina/home-node';
 
@@ -29,8 +34,13 @@ class FakePlc {
       operation: {
         type: 'plc_operation',
         rotationKeys: [ROTATION],
-        verificationMethods: { atproto: 'did:key:zQ3shatproto', dina_signing: 'did:key:z6MkSigning' },
-        services: { atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: 'https://pds.example' } },
+        verificationMethods: {
+          atproto: 'did:key:zQ3shatproto',
+          dina_signing: 'did:key:z6MkSigning',
+        },
+        services: {
+          atproto_pds: { type: 'AtprotoPersonalDataServer', endpoint: 'https://pds.example' },
+        },
         alsoKnownAs: ['at://node.example'],
         prev: null,
         sig: 'sig',
@@ -65,8 +75,10 @@ class FakePlc {
 async function signedWith(generation: number, name = 'Bus 42'): Promise<AgentCard> {
   const key = deriveP256SigningKey(SEED, generation);
   const card = CARD(name) as unknown as Record<string, unknown>;
-  const sig = await signAgentCard(card, { alg: 'ES256', kid: `card-${generation}`, jku: 'https://dina.example/a2a/jwks.json' }, (input) =>
-    p256.sign(input, key.privateKey),
+  const sig = await signAgentCard(
+    card,
+    { alg: 'ES256', kid: `card-${generation}`, jku: 'https://dina.example/a2a/jwks.json' },
+    (input) => p256.sign(input, key.privateKey),
   );
   return { ...card, signatures: [sig] } as unknown as AgentCard;
 }
@@ -115,7 +127,14 @@ const settle = async () => {
 /** The check a node at card-key `generation` runs: it follows the key that signs the card. */
 const keyCheckFor = (generation: number) =>
   cardKeyCheck(
-    (cardPublicKey) => ensureA2ACardKey({ did: NODE, cardPublicKey, masterSeed: SEED, plcURL: PLC, fetch: plc.fetch }),
+    (cardPublicKey) =>
+      ensureA2ACardKey({
+        did: NODE,
+        cardPublicKey,
+        masterSeed: SEED,
+        plcURL: PLC,
+        fetch: plc.fetch,
+      }),
     () => deriveP256SigningKey(SEED, generation).publicKey,
     () => w.clock,
   );
@@ -138,9 +157,16 @@ it('once a restarted process takes up a new card key, the key reaches the DID do
   w.restart(n);
   await n.publisher.flush();
   await settle();
-  expect(events).toEqual(['plc update', 'card put, named key', 'plc update', 'card put, named key']);
+  expect(events).toEqual([
+    'plc update',
+    'card put, named key',
+    'plc update',
+    'card put, named key',
+  ]);
   expect(w.repo.card()?.card).not.toBe(first);
-  expect(await verifiesUnder(w.repo.card()?.card as string, deriveP256SigningKey(SEED, 1).publicKey)).toBe(true);
+  expect(
+    await verifiesUnder(w.repo.card()?.card as string, deriveP256SigningKey(SEED, 1).publicKey),
+  ).toBe(true);
   expect(await verifiesUnder(w.repo.card()?.card as string, plc.cardKey())).toBe(true);
   expect(w.rowOf(n).state).toBe('published');
 });
@@ -149,7 +175,14 @@ it('once a restarted process takes up a new card key, the key reaches the DID do
 it('within one running process, a new card key reaches the DID document before its card goes out', async () => {
   let generation = 0;
   const check = cardKeyCheck(
-    (cardPublicKey) => ensureA2ACardKey({ did: NODE, cardPublicKey, masterSeed: SEED, plcURL: PLC, fetch: plc.fetch }),
+    (cardPublicKey) =>
+      ensureA2ACardKey({
+        did: NODE,
+        cardPublicKey,
+        masterSeed: SEED,
+        plcURL: PLC,
+        fetch: plc.fetch,
+      }),
     // As boot wires it: the key that signs the card now.
     () => deriveP256SigningKey(SEED, generation).publicKey,
     () => w.clock,
@@ -166,8 +199,15 @@ it('within one running process, a new card key reaches the DID document before i
   n.card = await signedWith(1);
   await w.step(n);
   await settle();
-  expect(events).toEqual(['plc update', 'card put, named key', 'plc update', 'card put, named key']);
-  expect(await verifiesUnder(w.repo.card()?.card as string, deriveP256SigningKey(SEED, 1).publicKey)).toBe(true);
+  expect(events).toEqual([
+    'plc update',
+    'card put, named key',
+    'plc update',
+    'card put, named key',
+  ]);
+  expect(
+    await verifiesUnder(w.repo.card()?.card as string, deriveP256SigningKey(SEED, 1).publicKey),
+  ).toBe(true);
   expect(await verifiesUnder(w.repo.card()?.card as string, plc.cardKey())).toBe(true);
   // A key the check has confirmed is not looked up again, and nothing more is posted.
   const reads = plc.gets;
@@ -186,7 +226,11 @@ it('a key check that does not follow the card key lets the new card out under a 
   n.card = await signedWith(1);
   await w.step(n);
   await settle();
-  expect(events).toEqual(['plc update', 'card put, named key', 'card put, key not in the document']);
+  expect(events).toEqual([
+    'plc update',
+    'card put, named key',
+    'card put, key not in the document',
+  ]);
 });
 
 // Plan E151

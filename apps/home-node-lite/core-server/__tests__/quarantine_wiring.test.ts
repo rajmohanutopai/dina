@@ -28,8 +28,20 @@ it('a quarantined message is still listed after a restart; a past-TTL one is swe
   const seed = new Uint8Array(randomBytes(32));
   try {
     let st = await initializeStorage(seed, root, logger);
-    const kept = quarantineMessage('did:plc:stranger', 'social.update', '{"text":"hi"}', undefined, 'm1');
-    quarantineMessage('did:plc:stranger', 'social.update', '{}', Date.now() - 40 * 86_400_000, 'm2');
+    const kept = quarantineMessage(
+      'did:plc:stranger',
+      'social.update',
+      '{"text":"hi"}',
+      undefined,
+      'm1',
+    );
+    quarantineMessage(
+      'did:plc:stranger',
+      'social.update',
+      '{}',
+      Date.now() - 40 * 86_400_000,
+      'm2',
+    );
     await st.provider.closeAll();
 
     setQuarantineRepository(null);

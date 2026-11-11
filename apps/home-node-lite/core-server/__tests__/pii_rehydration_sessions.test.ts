@@ -144,27 +144,25 @@ describe('RehydrationSessionRegistry (task 4.79)', () => {
   describe('validation', () => {
     it('rejects non-array entities', () => {
       const reg = new RehydrationSessionRegistry();
-      expect(() =>
-        reg.create('not-an-array' as unknown as RehydrationEntity[]),
-      ).toThrow(/entities must be an array/);
+      expect(() => reg.create('not-an-array' as unknown as RehydrationEntity[])).toThrow(
+        /entities must be an array/,
+      );
     });
 
     it('rejects malformed entity items', () => {
       const reg = new RehydrationSessionRegistry();
-      expect(() =>
-        reg.create([{ token: '', value: 'x' }]),
-      ).toThrow(/must have \{token, value\} strings/);
-      expect(() =>
-        reg.create([{ token: 'x' } as unknown as RehydrationEntity]),
-      ).toThrow(/must have \{token, value\} strings/);
+      expect(() => reg.create([{ token: '', value: 'x' }])).toThrow(
+        /must have \{token, value\} strings/,
+      );
+      expect(() => reg.create([{ token: 'x' } as unknown as RehydrationEntity])).toThrow(
+        /must have \{token, value\} strings/,
+      );
     });
 
     it('rejects non-positive ttl', () => {
       const reg = new RehydrationSessionRegistry();
       expect(() => reg.create(sampleEntities, { ttlMs: 0 })).toThrow(/ttlMs must be > 0/);
-      expect(() => reg.create(sampleEntities, { ttlMs: NaN })).toThrow(
-        /ttlMs must be > 0/,
-      );
+      expect(() => reg.create(sampleEntities, { ttlMs: NaN })).toThrow(/ttlMs must be > 0/);
     });
 
     it('constructor rejects non-positive defaultTtlMs', () => {
@@ -191,10 +189,7 @@ describe('RehydrationSessionRegistry (task 4.79)', () => {
       reg.destroy(sessionId);
       const kinds = events.map((e) => e.kind);
       expect(kinds).toEqual(['created', 'destroyed']);
-      const created = events[0] as Extract<
-        RehydrationSessionEvent,
-        { kind: 'created' }
-      >;
+      const created = events[0] as Extract<RehydrationSessionEvent, { kind: 'created' }>;
       expect(created.entityCount).toBe(sampleEntities.length);
     });
   });

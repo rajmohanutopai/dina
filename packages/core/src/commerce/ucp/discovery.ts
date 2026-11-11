@@ -12,12 +12,7 @@
  */
 
 import { UCP_FETCH_LIMITS, type PolicySocketRequest } from '@dina/net-policy';
-import {
-  discoverMerchant,
-  readProfileDocument,
-  type Discovery,
-  type ProfileRead,
-} from '@dina/ucp';
+import { discoverMerchant, readProfileDocument, type Discovery, type ProfileRead } from '@dina/ucp';
 
 import { DocumentCache } from './http_cache';
 

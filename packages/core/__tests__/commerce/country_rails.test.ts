@@ -55,10 +55,16 @@ import {
 import { setContactRepository, SQLiteContactRepository } from '../../src/contacts/repository';
 import { setNodeDID } from '../../src/pairing/ceremony';
 import { setPeopleRepository, SQLitePeopleRepository } from '../../src/people/repository';
-import { SQLitePluginDecisionRepository, setPluginDecisionRepository } from '../../src/plugins/decisions';
+import {
+  SQLitePluginDecisionRepository,
+  setPluginDecisionRepository,
+} from '../../src/plugins/decisions';
 import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import { readInvocationCardPolicy } from '../../src/plugins/invoke';
-import { SQLitePluginInstallRepository, setPluginInstallRepository } from '../../src/plugins/registry';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
 import { CoreRouter, type CoreRequest } from '../../src/server/router';
 import { registerCommerceRoutes } from '../../src/server/routes/commerce';
 import { setD2DSender } from '../../src/server/routes/d2d_msg';
@@ -102,7 +108,10 @@ function nodeRuntime(
   nodeDid: string,
   money: () => CommerceMoneyAccess,
   tradeSpool: InMemoryTradeSpoolRepository = new InMemoryTradeSpoolRepository(),
-  extras: { receipts?: InMemoryCommerceReceiptRepository; settings?: CommerceSettingsRepository } = {},
+  extras: {
+    receipts?: InMemoryCommerceReceiptRepository;
+    settings?: CommerceSettingsRepository;
+  } = {},
 ): CommerceRuntime {
   return {
     money,
@@ -129,7 +138,9 @@ async function buyerAuthors(note: Record<string, unknown>): Promise<unknown> {
   });
   const router = new CoreRouter();
   registerCommerceRoutes(router, OWNER_CAP);
-  const res = await router.handle(owner('/v1/commerce/trade/payment-note', { supplier_did: SUPPLIER_DID, ...note }));
+  const res = await router.handle(
+    owner('/v1/commerce/trade/payment-note', { supplier_did: SUPPLIER_DID, ...note }),
+  );
   if (res.status !== 200) throw new Error(`author: ${JSON.stringify(res.body)}`);
   installCommerceRuntime(null);
   setD2DSender(null);
@@ -139,7 +150,11 @@ async function buyerAuthors(note: Record<string, unknown>): Promise<unknown> {
 
 /** Activate a country pack on this node through the first-party door. */
 function activatePack(pack: CountryPack, nowMs = T0): string {
-  const begun = beginFirstPartyInstall({ pluginId: COUNTRY_PACK_IDS[pack], publisherDid: SUPPLIER_DID, nowMs });
+  const begun = beginFirstPartyInstall({
+    pluginId: COUNTRY_PACK_IDS[pack],
+    publisherDid: SUPPLIER_DID,
+    nowMs,
+  });
   if (!begun.ok) throw new Error(JSON.stringify(begun));
   installs.bindPendingDevice(begun.installId, `${RUNNER_DID}-${pack}`, nowMs);
   installs.activate(begun.installId, `${RUNNER_DID}-${pack}`, nowMs);
@@ -185,7 +200,11 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-const UPI_NOTE = { amount: { currency: 'INR', minor_units: '250000' }, method: 'upi', external_ref: '314159265358' };
+const UPI_NOTE = {
+  amount: { currency: 'INR', minor_units: '250000' },
+  method: 'upi',
+  external_ref: '314159265358',
+};
 
 describe('a UPI payment note asks the India pack whether it settled (§5.D)', () => {
   it('the ask waits for the owner on the plugin lane with the note’s own UTR and amount; nothing is acked', async () => {
@@ -231,17 +250,27 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     const installId = supplierNode('in');
     if (installId === null) throw new Error('unreachable');
     // A cash note may still quote a receipt number — no rail answers for cash.
-    const cash = await buyerAuthors({ amount: UPI_NOTE.amount, method: 'cash', external_ref: 'receipt-88' });
+    const cash = await buyerAuthors({
+      amount: UPI_NOTE.amount,
+      method: 'cash',
+      external_ref: 'receipt-88',
+    });
     setNodeDID(SUPPLIER_DID);
     installCommerceRuntime(nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs })));
     expect(receive(cash).outcome).toBe('applied');
-    expect(askPaymentStatusRail((cash as { document: unknown }).document, T0)).toEqual({ asked: false, reason: 'method_has_no_rail' });
+    expect(askPaymentStatusRail((cash as { document: unknown }).document, T0)).toEqual({
+      asked: false,
+      reason: 'method_has_no_rail',
+    });
 
     const bare = await buyerAuthors({ amount: UPI_NOTE.amount, method: 'upi' });
     setNodeDID(SUPPLIER_DID);
     installCommerceRuntime(nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs })));
     expect(receive(bare).outcome).toBe('applied');
-    expect(askPaymentStatusRail((bare as { document: unknown }).document, T0)).toEqual({ asked: false, reason: 'no_reference' });
+    expect(askPaymentStatusRail((bare as { document: unknown }).document, T0)).toEqual({
+      asked: false,
+      reason: 'no_reference',
+    });
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(installId))).toHaveLength(0);
   });
 
@@ -250,25 +279,39 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     supplierNode(null);
     expect(receive(body).outcome).toBe('applied');
     expect(activeCountryPacks()).toEqual([]);
-    expect(askPaymentStatusRail((body as { document: unknown }).document, T0)).toEqual({ asked: false, reason: 'no_active_pack' });
+    expect(askPaymentStatusRail((body as { document: unknown }).document, T0)).toEqual({
+      asked: false,
+      reason: 'no_active_pack',
+    });
   });
 
   it('a refused note (wrong sender) asks nothing', async () => {
     const body = await buyerAuthors(UPI_NOTE);
     const installId = supplierNode('in');
     if (installId === null) throw new Error('unreachable');
-    const verdict = applyInboundTradeDocument({ senderDid: 'did:plc:stranger', body, evidenceJson: '{}', nowMs: T0 });
+    const verdict = applyInboundTradeDocument({
+      senderDid: 'did:plc:stranger',
+      body,
+      evidenceJson: '{}',
+      nowMs: T0,
+    });
     expect(verdict.outcome).not.toBe('applied');
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(installId))).toHaveLength(0);
   });
 
   it('the USA pack answers a bank transfer through its settlement rail; a UPI note has no US rail', async () => {
-    const transfer = await buyerAuthors({ amount: { currency: 'USD', minor_units: '125000' }, method: 'transfer', external_ref: 'ach-7781' });
+    const transfer = await buyerAuthors({
+      amount: { currency: 'USD', minor_units: '125000' },
+      method: 'transfer',
+      external_ref: 'ach-7781',
+    });
     const installId = supplierNode('us');
     if (installId === null) throw new Error('unreachable');
     expect(receive(transfer).outcome).toBe('applied');
     const [task] = workflowRepo.listNonTerminalByRunner(pluginLane(installId));
-    expect(parsePluginEnvelope(task?.payload ?? '')?.capability_id).toBe(`${COUNTRY_PACK_IDS.us}.settlement-status`);
+    expect(parsePluginEnvelope(task?.payload ?? '')?.capability_id).toBe(
+      `${COUNTRY_PACK_IDS.us}.settlement-status`,
+    );
     expect(parsePluginEnvelope(task?.payload ?? '')?.params).toEqual({
       payment_ref: 'ach-7781',
       rail: 'ach',
@@ -278,7 +321,10 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     const upi = await buyerAuthors(UPI_NOTE);
     setNodeDID(SUPPLIER_DID);
     installCommerceRuntime(nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs })));
-    expect(askPaymentStatusRail((upi as { document: unknown }).document, T0)).toEqual({ asked: false, reason: 'method_has_no_rail' });
+    expect(askPaymentStatusRail((upi as { document: unknown }).document, T0)).toEqual({
+      asked: false,
+      reason: 'method_has_no_rail',
+    });
   });
 
   it('a note that waited in the SPOOL while the money line was closed asks once when it replays — the same task as a live delivery would', async () => {
@@ -292,7 +338,9 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     expect(receive(body).outcome).toBe('spooled');
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(installId))).toHaveLength(0);
     // The line reopens; the next delivery drains the spool first, then lands itself.
-    installCommerceRuntime(nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs }), spool));
+    installCommerceRuntime(
+      nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs }), spool),
+    );
     expect(receive(body).outcome).toBe('duplicate');
     const tasks = workflowRepo.listNonTerminalByRunner(pluginLane(installId));
     expect(tasks).toHaveLength(1);
@@ -300,7 +348,11 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
   });
 
   it('with BOTH packs active, the note’s method picks the rail — a transfer asks the USA pack even when India was installed first', async () => {
-    const transfer = await buyerAuthors({ amount: { currency: 'USD', minor_units: '125000' }, method: 'transfer', external_ref: 'ach-9' });
+    const transfer = await buyerAuthors({
+      amount: { currency: 'USD', minor_units: '125000' },
+      method: 'transfer',
+      external_ref: 'ach-9',
+    });
     const inId = supplierNode('in');
     const usId = activatePack('us', T0 + 1_000);
     if (inId === null) throw new Error('unreachable');
@@ -309,14 +361,18 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     expect(receive(transfer).outcome).toBe('applied');
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(inId))).toHaveLength(0);
     const [usTask] = workflowRepo.listNonTerminalByRunner(pluginLane(usId));
-    expect(parsePluginEnvelope(usTask?.payload ?? '')?.capability_id).toBe(`${COUNTRY_PACK_IDS.us}.settlement-status`);
+    expect(parsePluginEnvelope(usTask?.payload ?? '')?.capability_id).toBe(
+      `${COUNTRY_PACK_IDS.us}.settlement-status`,
+    );
 
     const upi = await buyerAuthors(UPI_NOTE);
     setNodeDID(SUPPLIER_DID);
     installCommerceRuntime(nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs })));
     expect(receive(upi).outcome).toBe('applied');
     const [inTask] = workflowRepo.listNonTerminalByRunner(pluginLane(inId));
-    expect(parsePluginEnvelope(inTask?.payload ?? '')?.capability_id).toBe(`${COUNTRY_PACK_IDS.in}.upi-payment-status`);
+    expect(parsePluginEnvelope(inTask?.payload ?? '')?.capability_id).toBe(
+      `${COUNTRY_PACK_IDS.in}.upi-payment-status`,
+    );
   });
 
   it('a note replayed from the spool days later raises a card that lives from NOW, not from its arrival', async () => {
@@ -328,11 +384,23 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     const replay = T0 + 3 * 24 * 3600 * 1000;
     // Closed line at arrival: spooled.
     setNodeDID(SUPPLIER_DID);
-    installCommerceRuntime({ ...nodeRuntime(SUPPLIER_DID, moneyClosed('pack_paused'), spool), now: () => arrival } as never);
-    expect(applyInboundTradeDocument({ senderDid: BUYER_DID, body, evidenceJson: '{}', nowMs: arrival }).outcome).toBe('spooled');
+    installCommerceRuntime({
+      ...nodeRuntime(SUPPLIER_DID, moneyClosed('pack_paused'), spool),
+      now: () => arrival,
+    } as never);
+    expect(
+      applyInboundTradeDocument({ senderDid: BUYER_DID, body, evidenceJson: '{}', nowMs: arrival })
+        .outcome,
+    ).toBe('spooled');
     // Three days later the line reopens and something drains the spool.
-    installCommerceRuntime({ ...nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs }), spool), now: () => replay } as never);
-    expect(applyInboundTradeDocument({ senderDid: BUYER_DID, body, evidenceJson: '{}', nowMs: replay }).outcome).toBe('duplicate');
+    installCommerceRuntime({
+      ...nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs }), spool),
+      now: () => replay,
+    } as never);
+    expect(
+      applyInboundTradeDocument({ senderDid: BUYER_DID, body, evidenceJson: '{}', nowMs: replay })
+        .outcome,
+    ).toBe('duplicate');
     const [task] = workflowRepo.listNonTerminalByRunner(pluginLane(installId));
     expect(task?.status).toBe('pending_approval');
     // The card's 24 h start at the replay, so it is alive for the owner to see.
@@ -368,25 +436,42 @@ describe('a UPI payment note asks the India pack whether it settled (§5.D)', ()
     setPluginInstallRepository(broken);
     expect(receive(body).outcome).toBe('applied');
     expect(supplierDocs.listByCounterparty(BUYER_DID, 'payment_note')).toHaveLength(1);
-    expect(askPaymentStatusRail((body as { document: unknown }).document, T0)).toEqual({ asked: false, reason: 'refused', detail: 'Error' });
+    expect(askPaymentStatusRail((body as { document: unknown }).document, T0)).toEqual({
+      asked: false,
+      reason: 'refused',
+      detail: 'Error',
+    });
     setPluginInstallRepository(installs);
   });
 
   it('an unreadable note is a typed reason, never a throw into the ingress', () => {
-    expect(askPaymentStatusRail({ not: 'a note' }, T0)).toMatchObject({ asked: false, reason: 'unreadable' });
+    expect(askPaymentStatusRail({ not: 'a note' }, T0)).toMatchObject({
+      asked: false,
+      reason: 'unreadable',
+    });
   });
 });
 
 describe('the rail’s answer comes back beside the khata note it is about (§5.D, metadata-shaped)', () => {
   /** A rail task correlated to a note digest, in a given state — the shape `askPaymentStatusRail` stages. */
-  function seedRailTask(digest: string, status: WorkflowTask['status'], result?: string, id = `plgx_${status}`): void {
+  function seedRailTask(
+    digest: string,
+    status: WorkflowTask['status'],
+    result?: string,
+    id = `plgx_${status}`,
+  ): void {
     workflowRepo.create({
       id,
       kind: 'delegation',
       status,
       priority: 'normal',
       description: 'plugin invocation com.dinakernel.country.in.upi-payment-status',
-      payload: JSON.stringify({ type: 'plugin_invocation', install_id: 'pli', capability_id: 'com.dinakernel.country.in.upi-payment-status', params: {} }),
+      payload: JSON.stringify({
+        type: 'plugin_invocation',
+        install_id: 'pli',
+        capability_id: 'com.dinakernel.country.in.upi-payment-status',
+        params: {},
+      }),
       result_summary: '',
       policy: '',
       correlation_id: digest,
@@ -404,24 +489,38 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
     const digest = (body as { document: { note_digest: string } }).document.note_digest;
     const runtime = getCommerceRuntime();
     if (runtime === null) throw new Error('unreachable');
-    const row = () => buildTradeInbox(runtime, T0).items.find((i) => i.kind === 'unacknowledged_payment' && i.subject === digest);
+    const row = () =>
+      buildTradeInbox(runtime, T0).items.find(
+        (i) => i.kind === 'unacknowledged_payment' && i.subject === digest,
+      );
     const [task] = workflowRepo.listNonTerminalByRunner(pluginLane(installId));
     if (task === undefined) throw new Error('no rail task');
 
     expect(row()?.railCheck).toEqual({ state: 'awaiting_owner', taskId: task.id });
     // The owner approves: the same task moves to queued (the workflow's own transition).
-    expect(workflowRepo.transition(task.id, 'pending_approval' as never, 'queued' as never, T0 + 1)).toBe(true);
+    expect(
+      workflowRepo.transition(task.id, 'pending_approval' as never, 'queued' as never, T0 + 1),
+    ).toBe(true);
     expect(row()?.railCheck).toEqual({ state: 'asked', taskId: task.id });
     // The runner claims it (a plugin-lane task completes only under its claim
     // token, §9.1) and answers with a conforming result that also carries text.
-    const claimed = workflowRepo.claimDelegationTask(`${RUNNER_DID}-in`, T0 + 1, 60_000, pluginLane(installId));
+    const claimed = workflowRepo.claimDelegationTask(
+      `${RUNNER_DID}-in`,
+      T0 + 1,
+      60_000,
+      pluginLane(installId),
+    );
     expect(claimed?.id).toBe(task.id);
     expect(row()?.railCheck).toEqual({ state: 'asked', taskId: task.id });
     const completed = workflowRepo.completeWithDetails(
       task.id,
       `${RUNNER_DID}-in`,
       'settled',
-      JSON.stringify({ status: 'settled', provider_ref: 'psp-1', memo: 'ANY TEXT THE RUNNER WROTE' }),
+      JSON.stringify({
+        status: 'settled',
+        provider_ref: 'psp-1',
+        memo: 'ANY TEXT THE RUNNER WROTE',
+      }),
       '{}',
       T0 + 2,
       claimed?.claim_id,
@@ -442,9 +541,17 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
       ['pending_approval', undefined, { state: 'awaiting_owner' }],
       ['queued', undefined, { state: 'asked' }],
       ['running', undefined, { state: 'asked' }],
-      ['completed', JSON.stringify({ status: 'pending' }), { state: 'answered', answer: 'pending' }],
+      [
+        'completed',
+        JSON.stringify({ status: 'pending' }),
+        { state: 'answered', answer: 'pending' },
+      ],
       ['completed', JSON.stringify({ status: 'failed' }), { state: 'answered', answer: 'failed' }],
-      ['completed', JSON.stringify({ status: 'probably' }), { state: 'answered', answer: 'unknown' }],
+      [
+        'completed',
+        JSON.stringify({ status: 'probably' }),
+        { state: 'answered', answer: 'unknown' },
+      ],
       ['completed', 'not json', { state: 'answered', answer: 'unknown' }],
       ['cancelled', undefined, { state: 'closed' }],
       ['failed', undefined, { state: 'closed' }],
@@ -453,7 +560,10 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
     for (const [i, [status, result, expected]] of cases.entries()) {
       const digest = `d${i}`;
       seedRailTask(digest, status, result, `plgx_${i}`);
-      expect(paymentRailCheck(digest)).toMatchObject({ ...(expected as object), taskId: `plgx_${i}` });
+      expect(paymentRailCheck(digest)).toMatchObject({
+        ...(expected as object),
+        taskId: `plgx_${i}`,
+      });
     }
     // A DIFFERENT rail correlated to the same note (a future filing hook) is not the payment check.
     workflowRepo.create({
@@ -462,7 +572,12 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
       status: 'completed',
       priority: 'normal',
       description: 'plugin invocation com.dinakernel.country.in.eway-bill',
-      payload: JSON.stringify({ type: 'plugin_invocation', install_id: 'pli', capability_id: 'com.dinakernel.country.in.eway-bill', params: {} }),
+      payload: JSON.stringify({
+        type: 'plugin_invocation',
+        install_id: 'pli',
+        capability_id: 'com.dinakernel.country.in.eway-bill',
+        params: {},
+      }),
       result: JSON.stringify({ status: 'settled' }),
       result_summary: '',
       policy: '',
@@ -496,7 +611,9 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
     expect(receive(cash).outcome).toBe('applied');
     const runtime = getCommerceRuntime();
     if (runtime === null) throw new Error('unreachable');
-    const rows = buildTradeInbox(runtime, T0).items.filter((i) => i.kind === 'unacknowledged_payment');
+    const rows = buildTradeInbox(runtime, T0).items.filter(
+      (i) => i.kind === 'unacknowledged_payment',
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]?.railCheck).toBeUndefined();
   });
@@ -510,13 +627,32 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
     const [task] = workflowRepo.listNonTerminalByRunner(pluginLane(installId));
     if (task === undefined) throw new Error('no rail task');
     // Approve, claim, answer — the same three moves the live path makes.
-    expect(workflowRepo.transition(task.id, 'pending_approval' as never, 'queued' as never, T0 + 1)).toBe(true);
-    const claimed = workflowRepo.claimDelegationTask(`${RUNNER_DID}-in`, T0 + 1, 60_000, pluginLane(installId));
-    workflowRepo.completeWithDetails(task.id, `${RUNNER_DID}-in`, 'settled', JSON.stringify({ status: 'settled' }), '{}', T0 + 2, claimed?.claim_id);
+    expect(
+      workflowRepo.transition(task.id, 'pending_approval' as never, 'queued' as never, T0 + 1),
+    ).toBe(true);
+    const claimed = workflowRepo.claimDelegationTask(
+      `${RUNNER_DID}-in`,
+      T0 + 1,
+      60_000,
+      pluginLane(installId),
+    );
+    workflowRepo.completeWithDetails(
+      task.id,
+      `${RUNNER_DID}-in`,
+      'settled',
+      JSON.stringify({ status: 'settled' }),
+      '{}',
+      T0 + 2,
+      claimed?.claim_id,
+    );
 
     const router = new CoreRouter();
     registerCommerceRoutes(router, OWNER_CAP);
-    const res = await router.handle({ ...owner('/v1/commerce/trade/inbox', {}), method: 'GET', query: {} } as CoreRequest);
+    const res = await router.handle({
+      ...owner('/v1/commerce/trade/inbox', {}),
+      method: 'GET',
+      query: {},
+    } as CoreRequest);
     expect(res.status).toBe(200);
     const items = (res.body as { items: Record<string, unknown>[] }).items;
     const row = items.find((i) => i.kind === 'unacknowledged_payment' && i.subject === digest);
@@ -533,10 +669,20 @@ describe('the rail’s answer comes back beside the khata note it is about (§5.
     setNodeDID(SUPPLIER_DID);
     installCommerceRuntime(nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs })));
     expect(receive(pendingNote).outcome).toBe('applied');
-    const pendingDigest = (pendingNote as { document: { note_digest: string } }).document.note_digest;
-    const again = await router.handle({ ...owner('/v1/commerce/trade/inbox', {}), method: 'GET', query: {} } as CoreRequest);
-    const pendingRow = (again.body as { items: Record<string, unknown>[] }).items.find((i) => i.subject === pendingDigest);
-    expect(pendingRow?.rail_check).toEqual({ state: 'awaiting_owner', task_id: expect.stringMatching(/^plgx_/) });
+    const pendingDigest = (pendingNote as { document: { note_digest: string } }).document
+      .note_digest;
+    const again = await router.handle({
+      ...owner('/v1/commerce/trade/inbox', {}),
+      method: 'GET',
+      query: {},
+    } as CoreRequest);
+    const pendingRow = (again.body as { items: Record<string, unknown>[] }).items.find(
+      (i) => i.subject === pendingDigest,
+    );
+    expect(pendingRow?.rail_check).toEqual({
+      state: 'awaiting_owner',
+      task_id: expect.stringMatching(/^plgx_/),
+    });
     expect('answer' in ((pendingRow?.rail_check ?? {}) as object)).toBe(false);
   });
 
@@ -629,7 +775,8 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
     setContactRepository(null);
     setPeopleRepository(null);
     identityAdapter?.close();
-    if (identityDir !== undefined && identityDir !== '') rmSync(identityDir, { recursive: true, force: true });
+    if (identityDir !== undefined && identityDir !== '')
+      rmSync(identityDir, { recursive: true, force: true });
     identityDir = '';
   });
 
@@ -637,9 +784,14 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
     setNodeDID(SUPPLIER_DID);
     supplierDocs = new InMemoryTradeDocumentRepository();
     installCommerceRuntime(
-      nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs }), new InMemoryTradeSpoolRepository(), {
-        settings,
-      }),
+      nodeRuntime(
+        SUPPLIER_DID,
+        moneyOpen({ tradeDocuments: supplierDocs }),
+        new InMemoryTradeSpoolRepository(),
+        {
+          settings,
+        },
+      ),
     );
     const installId = activatePack(pack);
     if (installId === null) throw new Error('unreachable');
@@ -680,7 +832,13 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
    */
   it('the envelope carries Dina’s OWN projection of both parties, flat and strings-only', () => {
     const installId = supplierWithPack('in', statePaperIdentities({ addresses: true }));
-    askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 });
+    askDeliveryFilingRail({
+      note: NOTE,
+      counterpartyDid: BUYER_DID,
+      value: VALUE,
+      creditDays: 30,
+      askAtMs: T0,
+    });
     const tasks = workflowRepo.listNonTerminalByRunner(pluginLane(installId));
     const context = parsePluginEnvelope(tasks[0].payload)?.context as
       | { category: string; fields: Record<string, string> }[]
@@ -726,15 +884,26 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
     expect(JSON.stringify(context)).not.toContain(BUYER_DID);
     // `delivery` and `tax_filing` are consented but Dina keeps no store it
     // could project them from, so nothing stands in for them.
-    expect(context.every((i) => i.category === 'business_registry' || i.category === 'address')).toBe(true);
+    expect(
+      context.every((i) => i.category === 'business_registry' || i.category === 'address'),
+    ).toBe(true);
   });
 
   it('the owner’s card says what the projection added, as counts and category names only', () => {
     const installId = supplierWithPack('in', statePaperIdentities({ addresses: true }));
-    askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 });
+    askDeliveryFilingRail({
+      note: NOTE,
+      counterpartyDid: BUYER_DID,
+      value: VALUE,
+      creditDays: 30,
+      askAtMs: T0,
+    });
     const task = workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0];
     const policy = readInvocationCardPolicy(task);
-    expect(policy?.context).toEqual({ categories: ['address', 'business_registry'], item_count: 4 });
+    expect(policy?.context).toEqual({
+      categories: ['address', 'business_registry'],
+      item_count: 4,
+    });
     // Metadata, never content: the card facts name the categories and count
     // them, and carry not one character of what they describe.
     expect(JSON.stringify(policy)).not.toContain(OWN_GSTIN);
@@ -743,7 +912,13 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
 
   it('the audit log records the projection as metadata — categories, counts, a hash, no content', () => {
     supplierWithPack('in', statePaperIdentities({ addresses: true }));
-    askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 });
+    askDeliveryFilingRail({
+      note: NOTE,
+      counterpartyDid: BUYER_DID,
+      value: VALUE,
+      creditDays: 30,
+      askAtMs: T0,
+    });
     const entries = queryAudit({ action: 'plugin_context_projected' });
     expect(entries).toHaveLength(1);
     const detail = JSON.parse(entries[0].detail) as Record<string, unknown>;
@@ -786,17 +961,36 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
       askAtMs: T0,
     });
     expect(outcome).toMatchObject({ asked: true, pack: 'us' });
-    const envelope = parsePluginEnvelope(workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload);
+    const envelope = parsePluginEnvelope(
+      workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload,
+    );
     expect(envelope?.capability_id).toBe(`${COUNTRY_PACK_IDS.us}.invoice-terms`);
-    expect(envelope?.params).toEqual({ delivery_note_digest: 'bafy-note-1', net_days: 30, total: VALUE });
+    expect(envelope?.params).toEqual({
+      delivery_note_digest: 'bafy-note-1',
+      net_days: 30,
+      total: VALUE,
+    });
   });
 
   it('asks exactly once per dispatch — a second call is the same task', () => {
     const installId = supplierWithPack('in', statePaperIdentities());
-    expect(askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 }))
-      .toMatchObject({ asked: true });
     expect(
-      askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 + 5 }),
+      askDeliveryFilingRail({
+        note: NOTE,
+        counterpartyDid: BUYER_DID,
+        value: VALUE,
+        creditDays: 30,
+        askAtMs: T0,
+      }),
+    ).toMatchObject({ asked: true });
+    expect(
+      askDeliveryFilingRail({
+        note: NOTE,
+        counterpartyDid: BUYER_DID,
+        value: VALUE,
+        creditDays: 30,
+        askAtMs: T0 + 5,
+      }),
     ).toMatchObject({ asked: true });
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(installId))).toHaveLength(1);
   });
@@ -805,9 +999,18 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
     ['no GSTIN of our own', { own: null }, 'no_own_registration'],
     ['no GSTIN on the buyer’s contact', { theirs: null }, 'no_counterparty_registration'],
   ])('India files nothing when there is %s, and says which', (_label, opts, reason) => {
-    const installId = supplierWithPack('in', statePaperIdentities(opts as { own?: string | null; theirs?: string | null }));
+    const installId = supplierWithPack(
+      'in',
+      statePaperIdentities(opts as { own?: string | null; theirs?: string | null }),
+    );
     expect(
-      askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 }),
+      askDeliveryFilingRail({
+        note: NOTE,
+        counterpartyDid: BUYER_DID,
+        value: VALUE,
+        creditDays: 30,
+        askAtMs: T0,
+      }),
     ).toMatchObject({ asked: false, reason });
     expect(workflowRepo.listNonTerminalByRunner(pluginLane(installId))).toHaveLength(0);
   });
@@ -815,7 +1018,13 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
   it('files nothing when the dispatch has no value from a bound quote', () => {
     supplierWithPack('in', statePaperIdentities());
     expect(
-      askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: null, creditDays: 30, askAtMs: T0 }),
+      askDeliveryFilingRail({
+        note: NOTE,
+        counterpartyDid: BUYER_DID,
+        value: null,
+        creditDays: 30,
+        askAtMs: T0,
+      }),
     ).toMatchObject({ asked: false, reason: 'unpriceable' });
   });
 
@@ -840,12 +1049,23 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
     setNodeDID(SUPPLIER_DID);
     supplierDocs = new InMemoryTradeDocumentRepository();
     installCommerceRuntime(
-      nodeRuntime(SUPPLIER_DID, moneyOpen({ tradeDocuments: supplierDocs }), new InMemoryTradeSpoolRepository(), {
-        settings: statePaperIdentities(),
-      }),
+      nodeRuntime(
+        SUPPLIER_DID,
+        moneyOpen({ tradeDocuments: supplierDocs }),
+        new InMemoryTradeSpoolRepository(),
+        {
+          settings: statePaperIdentities(),
+        },
+      ),
     );
     expect(
-      askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 }),
+      askDeliveryFilingRail({
+        note: NOTE,
+        counterpartyDid: BUYER_DID,
+        value: VALUE,
+        creditDays: 30,
+        askAtMs: T0,
+      }),
     ).toEqual({ asked: false, reason: 'no_active_pack' });
   });
 
@@ -853,7 +1073,13 @@ describe('a dispatch asks the active pack for its filing (§5.D)', () => {
     supplierWithPack('in', statePaperIdentities());
     setWorkflowService(null);
     expect(
-      askDeliveryFilingRail({ note: NOTE, counterpartyDid: BUYER_DID, value: VALUE, creditDays: 30, askAtMs: T0 }),
+      askDeliveryFilingRail({
+        note: NOTE,
+        counterpartyDid: BUYER_DID,
+        value: VALUE,
+        creditDays: 30,
+        askAtMs: T0,
+      }),
     ).toEqual({ asked: false, reason: 'no_workflow' });
   });
 
@@ -971,7 +1197,9 @@ describe('an owner-initiated reminder asks the active pack (§5.D)', () => {
     const installId = supplierNode('in');
     if (installId === null) throw new Error('unreachable');
     expect(ask()).toMatchObject({ asked: true, pack: 'in' });
-    const envelope = parsePluginEnvelope(workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload);
+    const envelope = parsePluginEnvelope(
+      workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload,
+    );
     const context = envelope?.context as { category: string; fields: Record<string, string> }[];
     expect(context).toEqual([
       {
@@ -999,9 +1227,15 @@ describe('an owner-initiated reminder asks the active pack (§5.D)', () => {
     const installId = supplierNode('us');
     if (installId === null) throw new Error('unreachable');
     expect(ask()).toMatchObject({ asked: true, pack: 'us' });
-    const envelope = parsePluginEnvelope(workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload);
+    const envelope = parsePluginEnvelope(
+      workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload,
+    );
     expect(envelope?.capability_id).toBe(`${COUNTRY_PACK_IDS.us}.notice`);
-    expect(envelope?.params).toMatchObject({ to: '+14155550123', channel: 'sms', template: 'payment_due' });
+    expect(envelope?.params).toMatchObject({
+      to: '+14155550123',
+      channel: 'sms',
+      template: 'payment_due',
+    });
   });
 
   it('USA: an e-mail notice where there is no number', () => {
@@ -1009,7 +1243,9 @@ describe('an owner-initiated reminder asks the active pack (§5.D)', () => {
     const installId = supplierNode('us');
     if (installId === null) throw new Error('unreachable');
     expect(ask()).toMatchObject({ asked: true, pack: 'us' });
-    const envelope = parsePluginEnvelope(workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload);
+    const envelope = parsePluginEnvelope(
+      workflowRepo.listNonTerminalByRunner(pluginLane(installId))[0].payload,
+    );
     expect(envelope?.params).toMatchObject({ to: 'ap@buyer.example', channel: 'email' });
   });
 

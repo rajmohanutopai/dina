@@ -67,7 +67,10 @@ describe('Brain — service-config proxy (web My-Services publish)', () => {
   });
 
   it('surfaces a Core validation rejection as 400 (not a 502 gateway error)', async () => {
-    const app = makeApp({ put: [], del: [] }, { putError: 'invalid service listing: missing_category' });
+    const app = makeApp(
+      { put: [], del: [] },
+      { putError: 'invalid service listing: missing_category' },
+    );
     const res = await app.inject({ method: 'PUT', url: '/api/v1/service/config', payload: CFG });
     expect(res.statusCode).toBe(400);
     expect(String((res.json() as { error: string }).error)).toMatch(/missing_category/);

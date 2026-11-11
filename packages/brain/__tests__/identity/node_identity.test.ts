@@ -304,7 +304,7 @@ describe('ensureNodeIdentity — random seed smoke', () => {
       if (url.includes('createSession')) return errorJson(400, 'AccountNotFound');
       if (url.includes('plc.directory')) return new Response('', { status: 200 });
       if (url.includes('createAccount')) {
-        const body = JSON.parse('{}');
+        const _body = JSON.parse('{}');
         return okJson({
           accessJwt: 'a',
           refreshJwt: 'r',

@@ -403,7 +403,7 @@ describe('the broker outranks the declaration (§18.3, WS-9.3)', () => {
   });
 });
 
-describe('an order on the supplier\'s other offer (COMMITMENT_KERNEL §6, §9)', () => {
+describe("an order on the supplier's other offer (COMMITMENT_KERNEL §6, §9)", () => {
   it('the card says which version and the delivery date accepting binds', () => {
     const inbox = buildSupplierInbox({
       undecided: [ref()],
@@ -411,10 +411,16 @@ describe('an order on the supplier\'s other offer (COMMITMENT_KERNEL §6, §9)',
       versionOf: () => ({ alternativeId: 'tue', deliveryAt: '2026-08-11T10:00:00Z' }),
       nowMs: NOW,
     });
-    expect(inbox.items[0]?.detail).toMatch(/other offer \(tue\): delivery on 2026-08-11\. Accepting binds you to that date\./);
+    expect(inbox.items[0]?.detail).toMatch(
+      /other offer \(tue\): delivery on 2026-08-11\. Accepting binds you to that date\./,
+    );
     // An order on the quote's own terms reads as before.
-    const plain = buildSupplierInbox({ undecided: [ref()], settings: null, versionOf: () => null, nowMs: NOW });
+    const plain = buildSupplierInbox({
+      undecided: [ref()],
+      settings: null,
+      versionOf: () => null,
+      nowMs: NOW,
+    });
     expect(plain.items[0]?.detail).not.toMatch(/other offer/);
   });
 });
-

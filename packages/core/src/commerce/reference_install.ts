@@ -60,7 +60,9 @@ export const FIRST_PARTY_MANIFESTS = {
 export type FirstPartyPluginId = keyof typeof FIRST_PARTY_MANIFESTS;
 
 export function isFirstPartyManifestId(value: unknown): value is FirstPartyPluginId {
-  return typeof value === 'string' && Object.prototype.hasOwnProperty.call(FIRST_PARTY_MANIFESTS, value);
+  return (
+    typeof value === 'string' && Object.prototype.hasOwnProperty.call(FIRST_PARTY_MANIFESTS, value)
+  );
 }
 
 const PLUGIN_ID_BY_ROLE: Readonly<Record<CommerceRole, FirstPartyPluginId>> = {

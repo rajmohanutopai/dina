@@ -23,7 +23,10 @@ import {
   setBackupEnabled,
 } from '../../src/services/cloud_backup';
 import { signOutLocal } from '../../src/services/local_data_wipe';
-import { getRuntimeWarnings, resetRuntimeWarningsForTest } from '../../src/services/runtime_warnings';
+import {
+  getRuntimeWarnings,
+  resetRuntimeWarningsForTest,
+} from '../../src/services/runtime_warnings';
 import { getIdentityAdapter, shutdownAllPersistence } from '../../src/storage/init';
 
 const DIR = '/tmp/dina-test/';

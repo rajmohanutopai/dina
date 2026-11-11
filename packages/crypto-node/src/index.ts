@@ -42,7 +42,6 @@ import { hmac } from '@noble/hashes/hmac.js';
 import { sha256 as nobleSha256, sha512 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes } from '@noble/hashes/utils.js';
 
-
 // Configure @noble/ed25519 v3+'s sync SHA-512 the same way @dina/core
 // does. Without this, `ed.sign` / `ed.getPublicKey` throw at runtime
 // because SHA-512 is a required prerequisite and v3+ doesn't bundle
@@ -151,7 +150,8 @@ export interface RandomPort {
 }
 
 export interface CryptoAdapterNode
-  extends Ed25519Port,
+  extends
+    Ed25519Port,
     X25519Port,
     Secp256k1Port,
     HashPort,
@@ -173,8 +173,8 @@ function validateSeed(seed: Uint8Array): void {
     throw new Error(`slip0010: seed too short (${seed.length} bytes, need >= 16)`);
   }
   let allZero = true;
-  for (let i = 0; i < seed.length; i++) {
-    if (seed[i] !== 0) {
+  for (const byte of seed) {
+    if (byte !== 0) {
       allZero = false;
       break;
     }
@@ -500,10 +500,7 @@ export class NodeCryptoAdapter implements CryptoAdapterNode {
   // delegate entirely to libsodium so that invariant is enforced by the
   // reference C impl, not re-derived by hand.
 
-  async sealedBoxSeal(
-    message: Uint8Array,
-    recipientEd25519Pub: Uint8Array,
-  ): Promise<Uint8Array> {
+  async sealedBoxSeal(message: Uint8Array, recipientEd25519Pub: Uint8Array): Promise<Uint8Array> {
     if (recipientEd25519Pub.length !== 32) {
       throw new Error(
         `crypto-node: sealedBoxSeal recipient pubkey must be 32 bytes, got ${recipientEd25519Pub.length}`,
@@ -562,9 +559,7 @@ export class NodeCryptoAdapter implements CryptoAdapterNode {
       throw new Error(`crypto-node: argon2idHash timeCost must be >= 1, got ${timeCost}`);
     }
     if (!Number.isInteger(memoryCost) || memoryCost < 8) {
-      throw new Error(
-        `crypto-node: argon2idHash memoryCost must be >= 8 KiB, got ${memoryCost}`,
-      );
+      throw new Error(`crypto-node: argon2idHash memoryCost must be >= 8 KiB, got ${memoryCost}`);
     }
     if (!Number.isInteger(parallelism) || parallelism < 1) {
       throw new Error(`crypto-node: argon2idHash parallelism must be >= 1, got ${parallelism}`);
@@ -581,14 +576,18 @@ export class NodeCryptoAdapter implements CryptoAdapterNode {
     });
     // Detach from Buffer's shared pool so the returned view can't be
     // mutated by a later unrelated Buffer allocation.
-    return new Uint8Array(result.buffer.slice(result.byteOffset, result.byteOffset + result.byteLength));
+    return new Uint8Array(
+      result.buffer.slice(result.byteOffset, result.byteOffset + result.byteLength),
+    );
   }
 
   // ─── Random (task 3.28) ─────────────────────────────────────────────────
 
   async randomBytes(count: number): Promise<Uint8Array> {
     if (!Number.isInteger(count) || count < 0) {
-      throw new Error(`crypto-node: randomBytes count must be a non-negative integer, got ${count}`);
+      throw new Error(
+        `crypto-node: randomBytes count must be a non-negative integer, got ${count}`,
+      );
     }
     // `node:crypto.randomBytes` returns a Node Buffer; wrap in a plain
     // Uint8Array view so the output doesn't leak Buffer-only methods

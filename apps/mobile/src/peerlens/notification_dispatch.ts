@@ -245,9 +245,7 @@ function parseISOMs(iso: string, label: string): number {
   }
   const ms = Date.parse(iso);
   if (Number.isNaN(ms)) {
-    throw new Error(
-      `decideCosigNotification: ${label} is not a valid ISO-8601 datetime: "${iso}"`,
-    );
+    throw new Error(`decideCosigNotification: ${label} is not a valid ISO-8601 datetime: "${iso}"`);
   }
   return ms;
 }

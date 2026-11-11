@@ -6,11 +6,12 @@
  * never reaches it.
  */
 
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
@@ -38,12 +39,20 @@ const T0 = 1_800_000_000_000;
 
 function pngBytes(width: number, height: number, extraChunk?: string): Uint8Array {
   const out: number[] = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  const u32 = (v: number): number[] => [(v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff];
+  const u32 = (v: number): number[] => [
+    (v >>> 24) & 0xff,
+    (v >>> 16) & 0xff,
+    (v >>> 8) & 0xff,
+    v & 0xff,
+  ];
   const chunk = (type: string, data: number[]): number[] => [
     ...u32(data.length),
     ...[...type].map((c) => c.charCodeAt(0)),
     ...data,
-    0, 0, 0, 0, // CRC, unchecked by the bounded parser
+    0,
+    0,
+    0,
+    0, // CRC, unchecked by the bounded parser
   ];
   out.push(...chunk('IHDR', [...u32(width), ...u32(height), 8, 6, 0, 0, 0]));
   if (extraChunk !== undefined) out.push(...chunk(extraChunk, [0, 0, 0, 1]));
@@ -56,7 +65,19 @@ function jpegBytes(width: number, height: number): Uint8Array {
   const out: number[] = [0xff, 0xd8]; // SOI
   out.push(0xff, 0xe0, 0x00, 0x04, 0x4a, 0x46); // APP0, length 4
   // SOF0: length 11, precision 8, height, width, 1 component
-  out.push(0xff, 0xc0, 0x00, 0x0b, 0x08, (height >> 8) & 0xff, height & 0xff, (width >> 8) & 0xff, width & 0xff, 0x01, 0x11);
+  out.push(
+    0xff,
+    0xc0,
+    0x00,
+    0x0b,
+    0x08,
+    (height >> 8) & 0xff,
+    height & 0xff,
+    (width >> 8) & 0xff,
+    width & 0xff,
+    0x01,
+    0x11,
+  );
   out.push(0xff, 0xda, 0x00, 0x02); // SOS
   return new Uint8Array(out);
 }
@@ -374,7 +395,10 @@ describe('the SQLite artifact store', () => {
 describe('BLOB adapter parity — op-sqlite ArrayBuffer vs better-sqlite3 Buffer', () => {
   // getBytes only calls db.query; a minimal stub is enough to reproduce
   // each adapter's BLOB return shape.
-  function repoReturning(bytes: unknown, contentHash: string): SQLiteCommerceImageArtifactRepository {
+  function repoReturning(
+    bytes: unknown,
+    contentHash: string,
+  ): SQLiteCommerceImageArtifactRepository {
     const db = {
       query: () => [{ bytes, content_hash: contentHash }],
     } as unknown as ConstructorParameters<typeof SQLiteCommerceImageArtifactRepository>[0];

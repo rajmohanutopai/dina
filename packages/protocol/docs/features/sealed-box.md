@@ -18,6 +18,7 @@ from the Ed25519 signature around it).
 5. On the wire: `eph_pub (32 bytes) || ciphertext_with_mac`.
 
 The recipient decrypts by:
+
 1. Reading the first 32 bytes as `eph_pub`.
 2. Computing `shared_secret = X25519(recipient_priv, eph_pub)`.
 3. Recomputing `nonce = BLAKE2b-24(eph_pub || recipient_pub)`.

@@ -25,19 +25,28 @@ beforeEach(async () => {
 afterEach(() => iw.close());
 
 const CARD: A2ACardConfig = {
-  key: { privateKey: deriveP256SigningKey(new Uint8Array(32).fill(9), 0).privateKey, generation: 0 },
+  key: {
+    privateKey: deriveP256SigningKey(new Uint8Array(32).fill(9), 0).privateKey,
+    generation: 0,
+  },
   publicOrigin: 'https://dina.example.org',
 };
 /** The skills the card shows: none when no listing projects one (the card is then not built). */
 async function cardSkills(): Promise<string[]> {
-  const built = await buildInboundCard(iw.world.store, { nodeDid: 'did:plc:inboundprovidernode', config: CARD });
+  const built = await buildInboundCard(iw.world.store, {
+    nodeDid: 'did:plc:inboundprovidernode',
+    config: CARD,
+  });
   if (!built.ok && built.reason === 'no_projectable_skills') return [];
   if (!built.ok) throw new Error(built.reason);
   return built.card.skills.map((s) => s.id);
 }
 
 const stateByGet = (id: string) =>
-  resultOf(ingressGetTask(iw.rt, iw.request('GetTask', { id }), id)) as { status: { state: string }; artifacts?: unknown };
+  resultOf(ingressGetTask(iw.rt, iw.request('GetTask', { id }), id)) as {
+    status: { state: string };
+    artifacts?: unknown;
+  };
 
 /** An approved booking whose round the runner claimed: the effect has begun. */
 async function bookingUnderway(): Promise<{ id: string; taskId: string }> {
@@ -53,21 +62,36 @@ async function bookingUnderway(): Promise<{ id: string; taskId: string }> {
 describe('a result Core cannot hand back (A2A-I8)', () => {
   it('a booking made, its result breaking the schema: OUTCOME_UNKNOWN, never a plain failure, and no artifact', async () => {
     const { id, taskId } = await bookingUnderway();
-    iw.world.workflow.complete(taskId, JSON.stringify({ booked: 'not a boolean' }), 'done', iw.runnerDid);
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'outcome_unknown', reason_code: 'result_schema_mismatch' }));
+    iw.world.workflow.complete(
+      taskId,
+      JSON.stringify({ booked: 'not a boolean' }),
+      'done',
+      iw.runnerDid,
+    );
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'outcome_unknown', reason_code: 'result_schema_mismatch' }),
+    );
     expect(stateByGet(id).artifacts).toBeUndefined();
   });
 
   it('a booking made, its result not JSON at all: OUTCOME_UNKNOWN', async () => {
     const { id, taskId } = await bookingUnderway();
     iw.world.workflow.complete(taskId, '{not json', 'done', iw.runnerDid);
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'outcome_unknown', reason_code: 'result_unreadable' }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({ state: 'outcome_unknown', reason_code: 'result_unreadable' }),
+    );
   });
 
   it('a read whose result breaks the schema changed nothing: FAILED', () => {
     const id = sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42' } })).id as string;
     iw.runChild(id, { eta_minutes: 'soon' });
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'result_schema_mismatch', effect_phase: null }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        reason_code: 'result_schema_mismatch',
+        effect_phase: null,
+      }),
+    );
   });
 });
 
@@ -77,7 +101,11 @@ describe('a result schema Core cannot enforce (§7.3)', () => {
     listing({
       capabilitySchemas: {
         eta_query: {
-          params: { type: 'object', required: ['route_id'], properties: { route_id: { type: 'string', minLength: 1 } } },
+          params: {
+            type: 'object',
+            required: ['route_id'],
+            properties: { route_id: { type: 'string', minLength: 1 } },
+          },
           result: NOT_SECRET,
           schemaHash: 'h-eta-not',
         },
@@ -100,9 +128,18 @@ describe('a result schema Core cannot enforce (§7.3)', () => {
     const op = iw.opOf(id);
     const snapshot = JSON.parse(op.snapshot_json ?? '{}') as { schemas: { result: unknown } };
     snapshot.schemas.result = NOT_SECRET;
-    iw.world.store.db.run('UPDATE a2a_tasks SET snapshot_json = ? WHERE id = ?', [JSON.stringify(snapshot), op.id]);
+    iw.world.store.db.run('UPDATE a2a_tasks SET snapshot_json = ? WHERE id = ?', [
+      JSON.stringify(snapshot),
+      op.id,
+    ]);
     iw.runChild(id, { eta_minutes: 3, secret: 'SECRET-VALUE' });
-    expect(iw.opOf(id)).toEqual(expect.objectContaining({ state: 'failed', reason_code: 'result_schema_unenforceable', result_json: null }));
+    expect(iw.opOf(id)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        reason_code: 'result_schema_unenforceable',
+        result_json: null,
+      }),
+    );
     expect(JSON.stringify(stateByGet(id))).not.toContain('SECRET-VALUE');
   });
 });
@@ -120,7 +157,11 @@ describe('the params that execute satisfy their schema (§7.2 step 9)', () => {
               ...(declared ? { destination: { type: 'string' } } : {}),
             },
           },
-          result: { type: 'object', required: ['eta_minutes'], properties: { eta_minutes: { type: 'integer' } } },
+          result: {
+            type: 'object',
+            required: ['eta_minutes'],
+            properties: { eta_minutes: { type: 'integer' } },
+          },
           schemaHash: `h-eta-${declared ? 'declared' : 'undeclared'}`,
         },
       },
@@ -128,14 +169,18 @@ describe('the params that execute satisfy their schema (§7.2 step 9)', () => {
 
   it('a required member the schema never declares would be dropped, so the call is refused, not run without it', async () => {
     await save(requiresUndeclared(false), 'bus');
-    const task = sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42', destination: 'Elm' } }));
+    const task = sentTask(
+      iw.call({ skill: 'eta_query', params: { route_id: '42', destination: 'Elm' } }),
+    );
     expect((task.status as { state: string }).state).toBe('TASK_STATE_REJECTED');
     expect(iw.opOf(task.id as string).reason_code).toBe('params_invalid');
   });
 
   it('control: declared, the same params are accepted and run whole', async () => {
     await save(requiresUndeclared(true), 'bus');
-    const id = sentTask(iw.call({ skill: 'eta_query', params: { route_id: '42', destination: 'Elm' } })).id as string;
+    const id = sentTask(
+      iw.call({ skill: 'eta_query', params: { route_id: '42', destination: 'Elm' } }),
+    ).id as string;
     expect(iw.opOf(id).state).toBe('open');
     expect(JSON.parse(iw.childOf(id).payload) as { params: unknown }).toEqual(
       expect.objectContaining({ params: { route_id: '42', destination: 'Elm' } }),

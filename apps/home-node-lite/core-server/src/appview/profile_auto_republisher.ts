@@ -42,22 +42,14 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6e task 6.20.
  */
 
-import type {
-  BuildProfileInput,
-  ServiceProfileRecord,
-} from './profile_builder';
-import type {
-  PublishOutcome,
-  ServiceProfilePublisher,
-} from './service_profile_publisher';
+import type { BuildProfileInput, ServiceProfileRecord } from './profile_builder';
+import type { PublishOutcome, ServiceProfilePublisher } from './service_profile_publisher';
 
 export const DEFAULT_REPUBLISH_INITIAL_BACKOFF_MS = 1_000;
 export const DEFAULT_REPUBLISH_MAX_BACKOFF_MS = 60_000;
 export const DEFAULT_REPUBLISH_MAX_ATTEMPTS = 5;
 
-export type BuildProfileFn = (
-  config: BuildProfileInput,
-) => ServiceProfileRecord;
+export type BuildProfileFn = (config: BuildProfileInput) => ServiceProfileRecord;
 
 export interface ConfigSnapshotReader<T> {
   getCurrent(): T | null;
@@ -152,12 +144,9 @@ export class ProfileAutoRepublisher<T extends BuildProfileInput = BuildProfileIn
     this.maxBackoffMs = opts.maxBackoffMs ?? DEFAULT_REPUBLISH_MAX_BACKOFF_MS;
     this.maxAttempts = opts.maxAttempts ?? DEFAULT_REPUBLISH_MAX_ATTEMPTS;
     this.nowMsFn = opts.nowMsFn ?? (() => Date.now());
-    this.setTimerFn =
-      opts.setTimerFn ??
-      ((fn, ms) => setTimeout(fn, ms));
+    this.setTimerFn = opts.setTimerFn ?? ((fn, ms) => setTimeout(fn, ms));
     this.clearTimerFn =
-      opts.clearTimerFn ??
-      ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+      opts.clearTimerFn ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
     this.onEvent = opts.onEvent;
   }
 
@@ -282,10 +271,7 @@ export class ProfileAutoRepublisher<T extends BuildProfileInput = BuildProfileIn
     }
 
     // Transient failure → maybe retry.
-    const failedReason =
-      outcome.reason === 'network_error'
-        ? outcome.error
-        : outcome.error;
+    const failedReason = outcome.reason === 'network_error' ? outcome.error : outcome.error;
     if (this.attempt >= this.maxAttempts) {
       this.onEvent?.({
         kind: 'gave_up',

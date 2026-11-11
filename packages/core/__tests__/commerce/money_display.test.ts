@@ -5,7 +5,12 @@
  * Tally export.
  */
 
-import { CURRENCY_EXPONENTS, currencyExponent, formatMoney, formatMoneyAmount } from '../../src/commerce/money_display';
+import {
+  CURRENCY_EXPONENTS,
+  currencyExponent,
+  formatMoney,
+  formatMoneyAmount,
+} from '../../src/commerce/money_display';
 
 describe('money display', () => {
   it.each([
@@ -28,10 +33,13 @@ describe('money display', () => {
     expect(formatMoneyAmount({ currency: 'XYZ', minor_units: '1234' })).toBe('12.34');
   });
 
-  it.each(['BHD', 'KWD', 'OMR', 'JOD', 'IQD', 'TND', 'LYD'])('%s has three minor-unit digits', (currency) => {
-    expect(formatMoneyAmount({ currency, minor_units: '12345' })).toBe('12.345');
-    expect(formatMoneyAmount({ currency, minor_units: '5' })).toBe('0.005');
-  });
+  it.each(['BHD', 'KWD', 'OMR', 'JOD', 'IQD', 'TND', 'LYD'])(
+    '%s has three minor-unit digits',
+    (currency) => {
+      expect(formatMoneyAmount({ currency, minor_units: '12345' })).toBe('12.345');
+      expect(formatMoneyAmount({ currency, minor_units: '5' })).toBe('0.005');
+    },
+  );
 
   it('a currency string that names an Object.prototype key is an unknown currency, not a function', () => {
     for (const currency of ['constructor', '__proto__', 'toString', 'valueOf', 'hasOwnProperty']) {
@@ -48,12 +56,19 @@ describe('money display', () => {
     ['0x10', 'hex'],
     ['1e3', 'exponent'],
     ['007', 'leading zero'],
-  ])('refuses minor_units that are not Money (%s — %s) instead of rendering garbage', (minor_units) => {
-    expect(() => formatMoneyAmount({ currency: 'INR', minor_units })).toThrow(/money_display: money:/);
-  });
+  ])(
+    'refuses minor_units that are not Money (%s — %s) instead of rendering garbage',
+    (minor_units) => {
+      expect(() => formatMoneyAmount({ currency: 'INR', minor_units })).toThrow(
+        /money_display: money:/,
+      );
+    },
+  );
 
   it('refuses a currency that is not an ISO-4217 code shape', () => {
-    expect(() => formatMoneyAmount({ currency: 'constructor', minor_units: '100' })).toThrow(/currency/);
+    expect(() => formatMoneyAmount({ currency: 'constructor', minor_units: '100' })).toThrow(
+      /currency/,
+    );
     expect(() => formatMoneyAmount({ currency: 'inr', minor_units: '100' })).toThrow(/currency/);
   });
 });

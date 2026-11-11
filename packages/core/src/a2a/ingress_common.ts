@@ -91,7 +91,12 @@ export function renderRestAnswer(answer: GatewayAnswer): GatewayAnswer {
   const body = answer.body;
   const headers = answer.headers === undefined ? {} : { headers: answer.headers };
   if (isPlainObject(body) && body.jsonrpc === '2.0') {
-    if ('result' in body) return { status: answer.status, ...headers, body: (body.result ?? {}) as Record<string, unknown> };
+    if ('result' in body)
+      return {
+        status: answer.status,
+        ...headers,
+        body: (body.result ?? {}) as Record<string, unknown>,
+      };
     if (isPlainObject(body.error)) {
       const rendered = restError(body.error as unknown as JsonRpcErrorObject);
       return { status: rendered.status, ...headers, body: rendered.body };
@@ -106,7 +111,13 @@ export function renderRestAnswer(answer: GatewayAnswer): GatewayAnswer {
         code: answer.status,
         status: GRPC_STATUS_OF_HTTP[answer.status] ?? 'UNKNOWN',
         message: reason,
-        details: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason, domain: DINA_ERROR_DOMAIN }],
+        details: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason,
+            domain: DINA_ERROR_DOMAIN,
+          },
+        ],
       },
     },
   };
@@ -125,13 +136,23 @@ export function renderJsonRpcAnswer(answer: GatewayAnswer, rawBody: string): Gat
   const reason = isPlainObject(body) && typeof body.error === 'string' ? body.error : 'error';
   const parsed = parseJsonRpcRequestText(rawBody);
   const id = parsed.ok ? parsed.request.id : 'id' in parsed ? (parsed.id ?? null) : null;
-  return { status: answer.status, ...(answer.headers === undefined ? {} : { headers: answer.headers }), body: jsonRpcError(id, dinaRefusal(reason)) };
+  return {
+    status: answer.status,
+    ...(answer.headers === undefined ? {} : { headers: answer.headers }),
+    body: jsonRpcError(id, dinaRefusal(reason)),
+  };
 }
 
 export function parseGatewayEnvelope(value: unknown): GatewayEnvelope | null {
-  if (!isPlainObject(value) || !isPlainObject(value.request) || !isPlainObject(value.client_auth)) return null;
+  if (!isPlainObject(value) || !isPlainObject(value.request) || !isPlainObject(value.client_auth))
+    return null;
   const r = value.request;
-  if (typeof r.method !== 'string' || typeof r.path !== 'string' || typeof r.query !== 'string' || typeof r.body !== 'string') {
+  if (
+    typeof r.method !== 'string' ||
+    typeof r.path !== 'string' ||
+    typeof r.query !== 'string' ||
+    typeof r.body !== 'string'
+  ) {
     return null;
   }
   if (r.version !== undefined && typeof r.version !== 'string') return null;
@@ -142,7 +163,12 @@ export function parseGatewayEnvelope(value: unknown): GatewayEnvelope | null {
   if (sig !== undefined) {
     if (!isPlainObject(sig)) return null;
     const { did, timestamp, nonce, signature } = sig;
-    if (typeof did !== 'string' || typeof timestamp !== 'string' || typeof nonce !== 'string' || typeof signature !== 'string') {
+    if (
+      typeof did !== 'string' ||
+      typeof timestamp !== 'string' ||
+      typeof nonce !== 'string' ||
+      typeof signature !== 'string'
+    ) {
       return null;
     }
     didSignature = { did, timestamp, nonce, signature };
@@ -172,7 +198,9 @@ export function parseGatewayEnvelope(value: unknown): GatewayEnvelope | null {
 export function authenticateIngress(
   rt: InboundRuntime,
   envelope: GatewayEnvelope,
-): { ok: true; principal: string; clientId: string; scope: string[] } | { ok: false; answer: GatewayAnswer } {
+):
+  | { ok: true; principal: string; clientId: string; scope: string[] }
+  | { ok: false; answer: GatewayAnswer } {
   const nowMs = rt.a2a.nowMs();
   const { authorization, did_signature: sig } = envelope.client_auth;
   if (sig !== undefined) {
@@ -196,11 +224,21 @@ export function authenticateIngress(
       nodeDid,
     );
     if (!auth.ok) return { ok: false, answer: unauthenticated() };
-    return { ok: true, principal: auth.principal, clientId: auth.client.client_id, scope: auth.client.scope };
+    return {
+      ok: true,
+      principal: auth.principal,
+      clientId: auth.client.client_id,
+      scope: auth.client.scope,
+    };
   }
   const auth = authenticateA2ABearer(rt.a2a.store, authorization, nowMs);
   if (!auth.ok) return { ok: false, answer: unauthenticated() };
-  return { ok: true, principal: auth.principal, clientId: auth.client.client_id, scope: auth.client.scope };
+  return {
+    ok: true,
+    principal: auth.principal,
+    clientId: auth.client.client_id,
+    scope: auth.client.scope,
+  };
 }
 
 function utf8Bytes(text: string): number {
@@ -212,8 +250,16 @@ export const unauthenticated = (): GatewayAnswer => ({
   headers: { 'www-authenticate': A2A_BEARER_CHALLENGE },
   body: { error: 'unauthenticated' },
 });
-export const slowDown = (): GatewayAnswer => ({ status: 429, headers: { 'retry-after': '60' }, body: { error: 'rate_limited' } });
-export const rpcError = (id: JsonRpcId | null, kind: Parameters<typeof a2aError>[0], reason?: string): GatewayAnswer => ({
+export const slowDown = (): GatewayAnswer => ({
+  status: 429,
+  headers: { 'retry-after': '60' },
+  body: { error: 'rate_limited' },
+});
+export const rpcError = (
+  id: JsonRpcId | null,
+  kind: Parameters<typeof a2aError>[0],
+  reason?: string,
+): GatewayAnswer => ({
   status: 200,
   body: jsonRpcError(id, a2aError(kind, reason)),
 });
@@ -253,7 +299,9 @@ export function admitIngress(
     routeParams: route.params,
   };
   // The binding the client chose, by where it sent its request.
-  const bound = isRestRequest(envelope) ? bindRestDispatch(signed) : bindSignedDispatch({ ...signed, rpcPath: A2A_RPC_PATH });
+  const bound = isRestRequest(envelope)
+    ? bindRestDispatch(signed)
+    : bindSignedDispatch({ ...signed, rpcPath: A2A_RPC_PATH });
   if (!bound.ok) {
     return { ok: false, answer: rpcError(null, 'invalidRequest', bound.reason) };
   }
@@ -262,7 +310,8 @@ export function admitIngress(
   const version = envelope.request.version ?? bound.versionParameter ?? '';
   if (!speaksA2AVersion(version)) return { ok: false, answer: rpcError(id, 'versionNotSupported') };
   const params = bound.request.params === undefined ? {} : bound.request.params;
-  if (!isPlainObject(params)) return { ok: false, answer: rpcError(id, 'invalidParams', 'params_not_object') };
+  if (!isPlainObject(params))
+    return { ok: false, answer: rpcError(id, 'invalidParams', 'params_not_object') };
   // Dina serves no tenants (plan D5): every method refuses one alike, rather than some ignoring it.
   if (params.tenant !== undefined && params.tenant !== '') {
     return { ok: false, answer: rpcError(id, 'invalidParams', 'tenant_unsupported') };
@@ -271,6 +320,12 @@ export function admitIngress(
 }
 
 /** An operation the principal owns, by its A2A task id, or null (never another's). */
-export function ownedOperation(rt: InboundCore, principal: string, externalId: unknown): A2ATaskRow | null {
-  return typeof externalId === 'string' ? rt.a2a.store.getTaskByExternal('inbound', principal, externalId) : null;
+export function ownedOperation(
+  rt: InboundCore,
+  principal: string,
+  externalId: unknown,
+): A2ATaskRow | null {
+  return typeof externalId === 'string'
+    ? rt.a2a.store.getTaskByExternal('inbound', principal, externalId)
+    : null;
 }

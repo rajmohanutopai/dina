@@ -35,15 +35,8 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4h tasks 4.63 + 4.67.
  */
 
-import {
-  DeviceTokenError,
-  type DeviceTokenRegistry,
-  type DeviceRole,
-} from './device_tokens';
-import {
-  PairingCodeError,
-  type PairingCodeRegistry,
-} from './pairing_codes';
+import { DeviceTokenError, type DeviceTokenRegistry, type DeviceRole } from './device_tokens';
+import { PairingCodeError, type PairingCodeRegistry } from './pairing_codes';
 
 import type { FastifyReply, FastifyRequest } from 'fastify';
 
@@ -70,10 +63,7 @@ interface CompleteBody {
  * the concrete Fastify generics (which get specialised by our pino
  * logger) so callers can pass any Fastify instance the project produces.
  */
-type RouteHandler = (
-  req: FastifyRequest,
-  reply: FastifyReply,
-) => Promise<unknown> | unknown;
+type RouteHandler = (req: FastifyRequest, reply: FastifyReply) => Promise<unknown> | unknown;
 
 export interface FastifyAppShape {
   get(path: string, handler: RouteHandler): unknown;
@@ -134,8 +124,7 @@ export function registerPairRoutes(app: FastifyAppShape, opts: PairRoutesOptions
     const body = (req.body ?? {}) as CompleteBody;
 
     const code = typeof body.code === 'string' ? body.code.trim() : '';
-    const deviceName =
-      typeof body.device_name === 'string' ? body.device_name.trim() : '';
+    const deviceName = typeof body.device_name === 'string' ? body.device_name.trim() : '';
     const rawRole = typeof body.role === 'string' ? body.role.trim() : '';
 
     if (code.length === 0) {

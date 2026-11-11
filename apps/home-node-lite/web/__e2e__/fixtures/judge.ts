@@ -181,7 +181,12 @@ function parseVerdict(text: string): Verdict {
   // Clamping >1 up to 1.0 would let an off-scale value (e.g. a 0-100 judge
   // returning 90) unconditionally clear the confidence floor — defeating the
   // very guard the floor exists to be. A red infra error forces attention.
-  if (typeof o.confidence !== 'number' || !Number.isFinite(o.confidence) || o.confidence < 0 || o.confidence > 1) {
+  if (
+    typeof o.confidence !== 'number' ||
+    !Number.isFinite(o.confidence) ||
+    o.confidence < 0 ||
+    o.confidence > 1
+  ) {
     throw new Error(`judge: verdict.confidence is not a number in [0,1]: ${text.slice(0, 200)}`);
   }
   // `reason` is schema-required and load-bearing (it IS the failure

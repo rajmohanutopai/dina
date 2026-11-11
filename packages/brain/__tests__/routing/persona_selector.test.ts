@@ -4,7 +4,13 @@
  * Source: ARCHITECTURE.md Task 3.11
  */
 
-import { createPersona, resetPersonaState , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
+import {
+  createPersona,
+  resetPersonaState,
+  addContact,
+  resetContactDirectory,
+  setPeopleRepository,
+} from '@dina/core';
 import { makeFakePeopleRepo } from '@dina/test-harness';
 
 import {
@@ -62,7 +68,7 @@ describe('Persona Selector', () => {
   describe('selectPersona — LLM assisted', () => {
     it('consults LLM when keyword confidence is low', async () => {
       setLLMThreshold(0.99); // force all to low confidence
-      registerPersonaSelector(async (_input, personas) => ({
+      registerPersonaSelector(async (_input, _personas) => ({
         persona: 'work',
         confidence: 0.85,
         reason: 'LLM determined work-related content',

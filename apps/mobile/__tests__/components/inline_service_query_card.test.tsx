@@ -13,12 +13,7 @@
 import { render, screen } from '@testing-library/react-native';
 import React from 'react';
 
-import {
-  addLifecycleMessage,
-  resetThreads,
-  type ChatMessage,
-  getThread,
-} from '@dina/brain/chat';
+import { addLifecycleMessage, resetThreads, type ChatMessage, getThread } from '@dina/brain/chat';
 
 import { InlineServiceQueryCard } from '../../src/components/InlineServiceQueryCard';
 

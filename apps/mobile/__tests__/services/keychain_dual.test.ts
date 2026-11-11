@@ -17,8 +17,6 @@
  * Source: docs/HOME_NODE_LITE_WEB_UI_TASKS.md Phase 2 "Storage shim".
  */
 
-/* eslint-disable @typescript-eslint/no-require-imports */
-
 import 'fake-indexeddb/auto';
 // Node 22's `globalThis.crypto` already implements `crypto.subtle`,
 // so we don't need to inject one here. The web shim calls it
@@ -127,10 +125,10 @@ function scenarios(name: string, build: () => KeychainKit): void {
       // concurrently before any wrap key exists. Without single-flighting
       // the bootstrap, writes used to generate different CryptoKeys and
       // one row's ciphertext became permanently undecryptable.
-      const pairs = Array.from({ length: 8 }, (_, i) => [
-        `svc-${i}`,
-        `value-${i}-${'pad'.repeat(20)}`,
-      ] as const);
+      const pairs = Array.from(
+        { length: 8 },
+        (_, i) => [`svc-${i}`, `value-${i}-${'pad'.repeat(20)}`] as const,
+      );
       await Promise.all(
         pairs.map(([s, v]) => kit.setGenericPassword(`user-${s}`, v, { service: s })),
       );

@@ -193,7 +193,8 @@ export function reviewRulesFor(
 ): ReviewRule[] {
   const rules: ReviewRule[] = [];
   if (WRITE_ACTIONS.has(def.action_class)) rules.push('write_needs_approval');
-  if (def.requires_subject_authorization && discoverability !== 'known_only') rules.push('subject_auth_needs_review');
+  if (def.requires_subject_authorization && discoverability !== 'known_only')
+    rules.push('subject_auth_needs_review');
   return rules;
 }
 
@@ -366,7 +367,10 @@ export function validateServiceListing(
         // front of every stranger-supplied subject identifier — the same
         // pattern as write_needs_approval. `known_only` listings are exempt:
         // access there is explicitly grant-gated per grantee.
-        if (reviewRules.includes('subject_auth_needs_review') && capConfig.responsePolicy === 'auto') {
+        if (
+          reviewRules.includes('subject_auth_needs_review') &&
+          capConfig.responsePolicy === 'auto'
+        ) {
           errors.push({
             code: 'subject_auth_needs_review',
             capability: raw,

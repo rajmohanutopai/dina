@@ -26,7 +26,11 @@ import {
   markCommerceRestorePending,
 } from '../../src/commerce/restore_marker';
 import { EvidenceStore } from '../../src/commitment/evidence';
-import { OrderFallbackStore, SellerOptionStore, ShipperOptionStore } from '../../src/commitment/options';
+import {
+  OrderFallbackStore,
+  SellerOptionStore,
+  ShipperOptionStore,
+} from '../../src/commitment/options';
 import {
   buildArchivePayload,
   clearsOnRestore,
@@ -343,8 +347,17 @@ describe('real export → clean-install import', () => {
       shipper.answer('did:plc:seller', 'opt-1', { answer: 'admitted', atMs: 2 });
       // The seller's bound link and a fallback on an order.
       const seller = new SellerOptionStore(src.id);
-      const request = { v: 1 as const, kind: 'request' as const, request_id: option.request_id, service_at: option.service_at, crates: 1 };
-      seller.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: 'q-1', request }, 1);
+      const request = {
+        v: 1 as const,
+        kind: 'request' as const,
+        request_id: option.request_id,
+        service_at: option.service_at,
+        crates: 1,
+      };
+      seller.ask(
+        { requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: 'q-1', request },
+        1,
+      );
       seller.settleAsk(request.request_id, option, 1);
       seller.clear(request.request_id, 1);
       seller.takeUp(request.request_id, 'did:plc:buyer po-1', 2);
@@ -384,16 +397,30 @@ describe('real export → clean-install import', () => {
       setArchiveDataSource(dataSourceFor(dest));
       await importArchive(archive, PASS);
       // A resend after the restore gets the same answer.
-      expect(new ShipperOptionStore(dest.id).byOption('did:plc:seller', 'opt-1')?.answer).toEqual({ answer: 'admitted', atMs: 2 });
-      expect(new SellerOptionStore(dest.id).get('req-0011223344556677')).toMatchObject({ state: 'bound', orderRef: 'did:plc:buyer po-1' });
-      expect(new OrderFallbackStore(dest.id).get('did:plc:buyer', 'po-9')?.alternativeId).toBe('partner_00112233');
+      expect(new ShipperOptionStore(dest.id).byOption('did:plc:seller', 'opt-1')?.answer).toEqual({
+        answer: 'admitted',
+        atMs: 2,
+      });
+      expect(new SellerOptionStore(dest.id).get('req-0011223344556677')).toMatchObject({
+        state: 'bound',
+        orderRef: 'did:plc:buyer po-1',
+      });
+      expect(new OrderFallbackStore(dest.id).get('did:plc:buyer', 'po-9')?.alternativeId).toBe(
+        'partner_00112233',
+      );
       const evidence = new EvidenceStore(dest.id);
-      expect(evidence.forCounterparty('did:plc:brand')).toMatchObject([{ outcome: 'kept', occurrence: '2026-11-04' }]);
+      expect(evidence.forCounterparty('did:plc:brand')).toMatchObject([
+        { outcome: 'kept', occurrence: '2026-11-04' },
+      ]);
       // The owner's own switch travels; the other side's word is forgotten
       // until they repeat it, and the next message asks them to.
       expect(evidence.consent('did:plc:brand')).toEqual({ self: true, peer: false });
       expect(evidence.untold()).toMatchObject([
-        { counterpartyDid: 'did:plc:brand', on: true, ask: expect.stringMatching(/^[0-9a-f]{32}$/) },
+        {
+          counterpartyDid: 'did:plc:brand',
+          on: true,
+          ask: expect.stringMatching(/^[0-9a-f]{32}$/),
+        },
       ]);
       // Renumbered past anything the other side kept after the backup.
       expect(evidence.untold()[0]?.rev ?? 0).toBeGreaterThan(Date.now() - 60_000);
@@ -1777,7 +1804,12 @@ describe('commerce restore fence marker (§16.2)', () => {
         ),
       ).toEqual([
         { tender_id: 'tnd_bare', state: 'closed', approval_id: '', awarded_supplier_did: '' },
-        { tender_id: 'tnd_done', state: 'awarded', approval_id: '', awarded_supplier_did: 'did:plc:fog' },
+        {
+          tender_id: 'tnd_done',
+          state: 'awarded',
+          approval_id: '',
+          awarded_supplier_did: 'did:plc:fog',
+        },
         { tender_id: 'tnd_open', state: 'closed', approval_id: '', awarded_supplier_did: '' },
       ]);
       // Nothing the normal close would send: no tender left for the sweeper to close.

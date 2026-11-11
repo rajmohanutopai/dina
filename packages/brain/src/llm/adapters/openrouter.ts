@@ -18,7 +18,6 @@
  * Source: ARCHITECTURE.md Task 3.6
  */
 
-
 import {
   OPENROUTER_BASE_URL as OR_BASE,
   DEFAULT_OPENROUTER_MODEL,

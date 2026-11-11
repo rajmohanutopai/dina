@@ -37,8 +37,16 @@ import { SQLiteServiceGrantRepository, setServiceGrantRepository } from '@dina/c
 import { A2ADispatchRunner } from '@dina/home-node';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-const ETA_PARAMS = { type: 'object', required: ['route_id'], properties: { route_id: { type: 'string', minLength: 1 } } };
-const ETA_RESULT = { type: 'object', required: ['eta_minutes'], properties: { eta_minutes: { type: 'integer' } } };
+const ETA_PARAMS = {
+  type: 'object',
+  required: ['route_id'],
+  properties: { route_id: { type: 'string', minLength: 1 } },
+};
+const ETA_RESULT = {
+  type: 'object',
+  required: ['eta_minutes'],
+  properties: { eta_minutes: { type: 'integer' } },
+};
 
 let dir: string;
 let db: NodeSQLiteAdapter;
@@ -50,7 +58,12 @@ let clock: number;
 beforeEach(async () => {
   clock = Date.now();
   dir = mkdtempSync(path.join(tmpdir(), 'lane2-tick-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'ad'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: 'ad'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   store = new A2AStore(db);
   installA2A({ store, nowMs: () => clock });
@@ -59,7 +72,11 @@ beforeEach(async () => {
   const repo = new SQLiteWorkflowRepository(db);
   // No decision handler: an approved review card is left for the sweep to repair.
   const hooks = a2aWorkflowHooks(() => rt);
-  const workflow = new WorkflowService({ repository: repo, nowMsFn: () => clock, responseEgressGate: hooks.responseEgressGate });
+  const workflow = new WorkflowService({
+    repository: repo,
+    nowMsFn: () => clock,
+    responseEgressGate: hooks.responseEgressGate,
+  });
   setWorkflowService(workflow);
   rt = createA2ARuntime({ store, workflow, nowMs: () => clock });
   setServiceConfigRepository(new SQLiteServiceConfigRepository(db));
@@ -75,7 +92,14 @@ beforeEach(async () => {
       discoverability: 'public',
       status: 'active',
       name: 'Bus 42',
-      capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'review', category: 'transit' } },
+      capabilities: {
+        eta_query: {
+          mcpServer: 'transit',
+          mcpTool: 'get_eta',
+          responsePolicy: 'review',
+          category: 'transit',
+        },
+      },
       capabilitySchemas: { eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h' } },
     },
     'bus',
@@ -110,13 +134,19 @@ function approvedReviewCall(): number {
           jsonrpc: '2.0',
           id: 1,
           method: 'SendMessage',
-          params: { message: { messageId: 'tick-1', role: 'ROLE_USER', parts: [{ data: { skill: 'eta_query', params: { route_id: '1' } } }] } },
+          params: {
+            message: {
+              messageId: 'tick-1',
+              role: 'ROLE_USER',
+              parts: [{ data: { skill: 'eta_query', params: { route_id: '1' } } }],
+            },
+          },
         }),
       },
       client_auth: { authorization: `Bearer ${client.token}` },
     },
   );
-  const id = ((answer.body as { result: { task: { id: string } } }).result.task).id;
+  const id = (answer.body as { result: { task: { id: string } } }).result.task.id;
   const op = store.getTaskByExternal('inbound', `a2a:${client.client.client_id}`, id);
   if (op === null || op.internal_id === null) throw new Error('no review card');
   rt.workflow.approve(op.internal_id);
@@ -134,7 +164,11 @@ describe('one runner tick with a failing Lane 1 step (notes M1a, M2)', () => {
     async (failing, expectedEvent) => {
       const opId = approvedReviewCall();
       expect(store.getTask(opId)?.internal_id).toMatch(/^a2a-in-review-/);
-      db.execute('INSERT INTO a2a_request_nonces (did, nonce, expires_at) VALUES (?, ?, ?)', ['did:key:z6MkOld', 'n-old', 1]);
+      db.execute('INSERT INTO a2a_request_nonces (did, nonce, expires_at) VALUES (?, ?, ?)', [
+        'did:key:z6MkOld',
+        'n-old',
+        1,
+      ]);
       const realList = store.listTasksInStates.bind(store);
       if (failing === 'outbound sweep') {
         // Only the sweep's own read throws; the claim loop's read later in the tick runs as normal.
@@ -162,7 +196,11 @@ describe('one runner tick with a failing Lane 1 step (notes M1a, M2)', () => {
         return realQuery(text, params);
       }) as typeof db.query);
       const entries: Record<string, unknown>[] = [];
-      const runner = new A2ADispatchRunner({ runtime: () => rt, runnerDid: 'did:key:z6MkTickRunner', log: (e) => entries.push(e) });
+      const runner = new A2ADispatchRunner({
+        runtime: () => rt,
+        runnerDid: 'did:key:z6MkTickRunner',
+        log: (e) => entries.push(e),
+      });
       await expect(runner.tick()).resolves.toBeUndefined();
       await runner.flush();
       // Lane 2's sweep repaired the approved card: its execution exists.
@@ -173,7 +211,9 @@ describe('one runner tick with a failing Lane 1 step (notes M1a, M2)', () => {
       expect(sql.some((q) => q.includes('bound_did IS NOT NULL'))).toBe(true);
       // The failing step was logged by its own event and error class, nothing more; the tick itself never failed.
       expect(entries).toContainEqual({ event: expectedEvent, error: 'Error' });
-      expect(entries.filter((e) => e.error !== undefined)).toEqual([{ event: expectedEvent, error: 'Error' }]);
+      expect(entries.filter((e) => e.error !== undefined)).toEqual([
+        { event: expectedEvent, error: 'Error' },
+      ]);
       expect(JSON.stringify(entries)).not.toContain('lane 1 broke');
       await runner.stop();
     },

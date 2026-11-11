@@ -174,7 +174,10 @@ export interface ServiceQueryIngressOptions {
 }
 
 /** An approved card may start execution only from these states (approve moves it to `queued`). */
-const APPROVED_STATES: ReadonlySet<string> = new Set([WorkflowTaskState.Queued, WorkflowTaskState.Running]);
+const APPROVED_STATES: ReadonlySet<string> = new Set([
+  WorkflowTaskState.Queued,
+  WorkflowTaskState.Running,
+]);
 
 /** One admitted `service.query` per call. Stateless between calls. */
 export class ServiceQueryIngress {
@@ -297,13 +300,18 @@ export class ServiceQueryIngress {
    */
   async executeApproved(approvalTaskId: string): Promise<void> {
     const card = this.workflow.store().getById(approvalTaskId);
-    if (card === null) throw new Error(`executeApproved: approval task ${approvalTaskId} not found`);
+    if (card === null)
+      throw new Error(`executeApproved: approval task ${approvalTaskId} not found`);
     if (card.kind !== WorkflowTaskKind.Approval) {
       throw new Error(`executeApproved: task ${approvalTaskId} is not an approval card`);
     }
     if (!APPROVED_STATES.has(card.status)) {
       // Never approved, or already settled (expired, denied, executed).
-      this.log({ event: 'service.query.approved_not_live', approval_task_id: approvalTaskId, state: card.status });
+      this.log({
+        event: 'service.query.approved_not_live',
+        approval_task_id: approvalTaskId,
+        state: card.status,
+      });
       return;
     }
     const parsed = parseServiceQueryExecutionPayload(card.payload);
@@ -332,7 +340,9 @@ export class ServiceQueryIngress {
     // params still valid under it. The lane and the tool come from the live
     // listing, never from the card.
     const config = this.readConfig(
-      payload.service_uri === undefined ? undefined : parseServiceListingUri(payload.service_uri)?.rkey,
+      payload.service_uri === undefined
+        ? undefined
+        : parseServiceListingUri(payload.service_uri)?.rkey,
     );
     const cap = findCapabilityConfig(config, payload.capability);
     const refusal: [status: 'unavailable' | 'error', code: string] | null =
@@ -340,7 +350,8 @@ export class ServiceQueryIngress {
         ? ['unavailable', 'capability_not_configured']
         : namesReservedLane(cap)
           ? ['unavailable', 'capability_not_executable']
-          : snapshotDigest(snapshotForCapability(config, payload.capability)) !== snapshotDigest(payload.schema_snapshot)
+          : snapshotDigest(snapshotForCapability(config, payload.capability)) !==
+              snapshotDigest(payload.schema_snapshot)
             ? ['error', 'schema_version_mismatch']
             : null;
     const paramsErr = refusal === null ? validateQueryParams(config, asked) : null;
@@ -408,7 +419,11 @@ export class ServiceQueryIngress {
     } catch (err) {
       if (!(err instanceof WorkflowConflictError)) throw err;
       // A previous attempt made it: carry on and close the card.
-      this.log({ event: 'service.query.execute_exists', approval_task_id: approvalTaskId, exec_task_id: execTaskId });
+      this.log({
+        event: 'service.query.execute_exists',
+        approval_task_id: approvalTaskId,
+        exec_task_id: execTaskId,
+      });
     }
     this.cancelApprovalAfterExecution(approvalTaskId, 'executed_via_delegation');
   }
@@ -470,7 +485,11 @@ export class ServiceQueryIngress {
     if ('coreAnswerJson' in outcome) {
       // WS-4.6 — Core answered from its own records (§12.7 reconcile). No
       // task will ever carry this answer, so it goes out here or not at all.
-      this.log({ event: 'service.query.answered_by_core', from: fromDID, capability: query.capability });
+      this.log({
+        event: 'service.query.answered_by_core',
+        from: fromDID,
+        capability: query.capability,
+      });
       let result: unknown;
       try {
         result = JSON.parse(outcome.coreAnswerJson);
@@ -597,10 +616,14 @@ export class ServiceQueryIngress {
     // supply equivalent execution semantics.
     const canonical = resolveCatalogCapability(args.capability);
     const definition = canonical === null ? undefined : getCatalogCapability(canonical);
-    if (definition == null || (definition.action_class !== 'read' && definition.action_class !== 'quote')) {
+    if (
+      definition == null ||
+      (definition.action_class !== 'read' && definition.action_class !== 'quote')
+    ) {
       return null;
     }
-    const responseSchema = args.schemaSnapshot?.result ?? getCapability(args.capability)?.resultSchema;
+    const responseSchema =
+      args.schemaSnapshot?.result ?? getCapability(args.capability)?.resultSchema;
     if (
       responseSchema === undefined ||
       args.params === null ||
@@ -640,9 +663,15 @@ export class ServiceQueryIngress {
       return submitted;
     } catch (err) {
       const code =
-        err !== null && typeof err === 'object' && 'code' in err ? String((err as { code: unknown }).code) : '';
+        err !== null && typeof err === 'object' && 'code' in err
+          ? String((err as { code: unknown }).code)
+          : '';
       if (code === 'conflict') {
-        this.log({ event: 'service.query.reasoning_conflict', capability: args.capability, query_id: args.queryId });
+        this.log({
+          event: 'service.query.reasoning_conflict',
+          capability: args.capability,
+          query_id: args.queryId,
+        });
         return 'conflict';
       }
       if (code === 'authority_unavailable') {
@@ -717,7 +746,8 @@ export class ServiceQueryIngress {
       ...(args.grantId !== undefined ? { grant_id: args.grantId } : {}),
       ...(args.operatorApproved === true ? { operator_approved: true } : {}),
     });
-    const lane = args.mcpServer !== undefined && args.mcpServer !== '' ? args.mcpServer : LOCAL_RUNNER_NAME;
+    const lane =
+      args.mcpServer !== undefined && args.mcpServer !== '' ? args.mcpServer : LOCAL_RUNNER_NAME;
     if (lane !== LOCAL_RUNNER_NAME && isReservedLane(lane)) {
       // Unreachable: admission and execution refuse such a listing first.
       throw new Error(`refusing to queue a service query on reserved lane ${lane}`);
@@ -848,7 +878,11 @@ export class ServiceQueryIngress {
   }
 
   /** A Core-produced answer (WS-4.6), sent with no task behind it. Never throws. */
-  private async sendAnswer(fromDID: string, query: ServiceQueryBody, result: unknown): Promise<void> {
+  private async sendAnswer(
+    fromDID: string,
+    query: ServiceQueryBody,
+    result: unknown,
+  ): Promise<void> {
     if (this.directResponder === null) return;
     try {
       await this.directResponder(fromDID, {
@@ -908,7 +942,10 @@ export class ServiceQueryIngress {
    * map (the schema declares no whitelist) pass through unchanged. Dropped
    * key NAMES are logged so an operator sees clients sending unknown fields.
    */
-  private stripUndeclaredParams(config: ServiceConfig | null, query: ServiceQueryBody): ServiceQueryBody {
+  private stripUndeclaredParams(
+    config: ServiceConfig | null,
+    query: ServiceQueryBody,
+  ): ServiceQueryBody {
     if (query.params === null || typeof query.params !== 'object' || Array.isArray(query.params)) {
       return query;
     }
@@ -1074,7 +1111,10 @@ export function snapshotForCapability(
  * A schema with no canonical form (Core's recipe refuses it) matches only
  * by its stored hash.
  */
-export function checkQuerySchemaHash(config: ServiceConfig | null, query: ServiceQueryBody): string | null {
+export function checkQuerySchemaHash(
+  config: ServiceConfig | null,
+  query: ServiceQueryBody,
+): string | null {
   if (config === null) return null;
   const published = lookupPublishedSchema(config, query.capability);
   if (published === undefined) return null;
@@ -1097,9 +1137,16 @@ export function checkQuerySchemaHash(config: ServiceConfig | null, query: Servic
  * registry's validator; otherwise nothing to check. The error text goes to
  * the requester.
  */
-export function validateQueryParams(config: ServiceConfig | null, query: ServiceQueryBody): string | null {
+export function validateQueryParams(
+  config: ServiceConfig | null,
+  query: ServiceQueryBody,
+): string | null {
   const published = lookupPublishedSchema(config, query.capability);
-  if (published !== undefined && typeof published.params === 'object' && published.params !== null) {
+  if (
+    published !== undefined &&
+    typeof published.params === 'object' &&
+    published.params !== null
+  ) {
     return serviceSchemaError(query.params, published.params);
   }
   const registered = getCapability(query.capability);

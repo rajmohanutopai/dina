@@ -80,9 +80,8 @@ export default function RemindersScreen() {
           />
           <Text style={styles.emptyTitle}>No reminders yet</Text>
           <Text style={styles.emptyBody}>
-            Tell Dina about an event in Chat. Pick{' '}
-            <Text style={styles.code}>Remember</Text> and any dates inside will turn into
-            reminders here.
+            Tell Dina about an event in Chat. Pick <Text style={styles.code}>Remember</Text> and any
+            dates inside will turn into reminders here.
           </Text>
           <Pressable
             testID="reminders-go-to-chat"
@@ -143,9 +142,7 @@ function ReminderRow({
           <View style={styles.personaBadge}>
             <Text style={styles.personaText}>{item.persona}</Text>
           </View>
-          {item.isRecurring ? (
-            <Text style={styles.recurring}>{item.recurringLabel}</Text>
-          ) : null}
+          {item.isRecurring ? <Text style={styles.recurring}>{item.recurringLabel}</Text> : null}
         </View>
       </View>
     </Pressable>

@@ -143,12 +143,7 @@ describe('ApprovalRegistry (task 4.72)', () => {
       const b = reg.request({ ...baseInput, persona: '/financial' });
       reg.approve(a.id);
       reg.deny(b.id);
-      expect(events.map((e) => e.kind)).toEqual([
-        'requested',
-        'requested',
-        'approved',
-        'denied',
-      ]);
+      expect(events.map((e) => e.kind)).toEqual(['requested', 'requested', 'approved', 'denied']);
     });
   });
 
@@ -261,12 +256,8 @@ describe('ApprovalRegistry (task 4.72)', () => {
 
   describe('constructor validation', () => {
     it('rejects non-positive defaultTtlMs', () => {
-      expect(() => new ApprovalRegistry({ defaultTtlMs: 0 })).toThrow(
-        /defaultTtlMs must be > 0/,
-      );
-      expect(() => new ApprovalRegistry({ defaultTtlMs: NaN })).toThrow(
-        /defaultTtlMs must be > 0/,
-      );
+      expect(() => new ApprovalRegistry({ defaultTtlMs: 0 })).toThrow(/defaultTtlMs must be > 0/);
+      expect(() => new ApprovalRegistry({ defaultTtlMs: NaN })).toThrow(/defaultTtlMs must be > 0/);
     });
   });
 

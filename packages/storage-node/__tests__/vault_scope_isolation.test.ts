@@ -51,14 +51,24 @@ describe('vault scope isolation (real SQLite)', () => {
       // 1. user row + a 'dinosaurs' memory linked to Emma.
       setCurrentDataScope('user');
       repo.storeItemSync(
-        makeVaultItem({ id: 'u1', summary: 'dinosaurs', body: 'user dinos', retrieval_policy: 'normal' }),
+        makeVaultItem({
+          id: 'u1',
+          summary: 'dinosaurs',
+          body: 'user dinos',
+          retrieval_policy: 'normal',
+        }),
       );
       repo.linkSubjectSync('u1', 'emma');
 
       // 2. demo row with the same logical content, in demo scope.
       setCurrentDataScope('guided_demo:x');
       repo.storeItemSync(
-        makeVaultItem({ id: 'd1', summary: 'dinosaurs', body: 'demo dinos', retrieval_policy: 'normal' }),
+        makeVaultItem({
+          id: 'd1',
+          summary: 'dinosaurs',
+          body: 'demo dinos',
+          retrieval_policy: 'normal',
+        }),
       );
       repo.linkSubjectSync('d1', 'emma');
 

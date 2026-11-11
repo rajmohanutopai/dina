@@ -63,7 +63,10 @@ function makeEvidence(items: CatalogItem[]): CatalogEvidenceRecord {
     payload_root: catalogPayloadRoot([page.page_digest], hash),
     snapshot_digest: '',
   };
-  const snapshot = { ...snapshotDraft, snapshot_digest: catalogSnapshotDigest(snapshotDraft, hash) };
+  const snapshot = {
+    ...snapshotDraft,
+    snapshot_digest: catalogSnapshotDigest(snapshotDraft, hash),
+  };
   const pointer: CatalogPointer = {
     supplier_did: SUPPLIER,
     catalog_id: 'chairmaker-main',
@@ -123,7 +126,7 @@ describe('THE EGRESS CONTRACT (§5.2): closed fields only', () => {
   it('the named fail-closed test: raw extracted line text cannot reach a discovery query', () => {
     // The photographed line carries exactly what the design warns about —
     // a name and a phone number the model copied off the page.
-    const rawLineText = '6 benches, the 4ft teak ones — ask for Ramesh 9876543210';
+    const _rawLineText = '6 benches, the 4ft teak ones — ask for Ramesh 9876543210';
 
     // The ONLY discovery builder this module offers takes closed fields.
     // There is no signature to hand the text to; this test additionally

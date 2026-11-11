@@ -196,8 +196,8 @@ export function buildHomeNodeAskRuntime(
   // construction; both `makeAgenticAskHandler` consumers and the
   // coordinator's `buildAgenticExecuteFn` receive the same
   // `preFlight` callable below.
-  const plannerEnabled =
-    options.installedPersonas !== undefined && options.retrievalFetchers !== undefined;
+  const plannerInstalledPersonas = options.installedPersonas;
+  const plannerFetchers = options.retrievalFetchers;
   if ((options.installedPersonas !== undefined) !== (options.retrievalFetchers !== undefined)) {
     throw new Error(
       'buildHomeNodeAskRuntime: installedPersonas and retrievalFetchers must be provided together',
@@ -232,9 +232,9 @@ export function buildHomeNodeAskRuntime(
   // rest of the brain — same PII scrub, same consent gate, same tier
   // selection (intent_classification → lite tier).
   let preFlight: PreFlightRetrievalProvider | undefined;
-  if (plannerEnabled) {
-    const installedPersonas = options.installedPersonas!;
-    const fetchers = options.retrievalFetchers!;
+  if (plannerInstalledPersonas !== undefined && plannerFetchers !== undefined) {
+    const installedPersonas = plannerInstalledPersonas;
+    const fetchers = plannerFetchers;
     const ownerDid = options.ownerDid;
     // The planner's LLM call is the shared builder — one budget and one
     // response schema for both hosts (a local copy once capped it at 512

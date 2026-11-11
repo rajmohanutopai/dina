@@ -42,7 +42,9 @@ export function installEvidenceStore(db: DatabaseAdapter | null): void {
     store === null
       ? null
       : (kind, sinceMs) =>
-          (store?.brokenSince(sinceMs) ?? []).some((e) => evidenceKind(e.subject, e.dealRef) === kind),
+          (store?.brokenSince(sinceMs) ?? []).some(
+            (e) => evidenceKind(e.subject, e.dealRef) === kind,
+          ),
   );
 }
 

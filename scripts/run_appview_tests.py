@@ -162,7 +162,7 @@ class SectionStats:
 
 
 # ---------------------------------------------------------------------------
-# ANSI colors (matches test_status.py)
+# ANSI colors
 # ---------------------------------------------------------------------------
 
 def _use_color(no_color_flag: bool) -> bool:
@@ -204,7 +204,7 @@ class Colors:
 
 
 # ---------------------------------------------------------------------------
-# Duration formatting (matches test_status.py)
+# Duration formatting
 # ---------------------------------------------------------------------------
 
 _SEP = "\u2500"  # ─
@@ -435,7 +435,7 @@ def _aggregate(
 
 
 # ---------------------------------------------------------------------------
-# Table rendering (matches test_status.py format + Plan column)
+# Table rendering
 # ---------------------------------------------------------------------------
 
 def _render_suite(

@@ -268,7 +268,9 @@ export function formToPolicy(
       floors: {
         fee: auto === null ? { hard: floor } : { hard: floor, auto },
         share_bps:
-          keptShareAuto === undefined ? { hard: floorShare } : { hard: floorShare, auto: keptShareAuto },
+          keptShareAuto === undefined
+            ? { hard: floorShare }
+            : { hard: floorShare, auto: keptShareAuto },
       },
       available: { from, to },
       conditions: {

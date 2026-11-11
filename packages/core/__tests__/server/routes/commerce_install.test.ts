@@ -25,7 +25,12 @@ import { SUPPLIER_REFERENCE_MANIFEST } from '../../../src/commerce/reference_man
 import { getDeviceByDID, resetDeviceRegistry } from '../../../src/devices/registry';
 import { SQLiteDeviceRepository, setDeviceRepository } from '../../../src/devices/repository';
 import { publicKeyToMultibase } from '../../../src/identity/did';
-import { clearPairingState, completePairing, generatePairingCode, setNodeDID } from '../../../src/pairing/ceremony';
+import {
+  clearPairingState,
+  completePairing,
+  generatePairingCode,
+  setNodeDID,
+} from '../../../src/pairing/ceremony';
 import {
   SQLitePluginGrantRepository,
   SQLitePluginInstallRepository,
@@ -46,7 +51,11 @@ function pairRunner(): string {
   const seed = new Uint8Array(32);
   crypto.getRandomValues(seed);
   const publicKey = ed25519.getPublicKey(seed);
-  const { code } = generatePairingCode({ deviceName: 'supplier-runner', role: 'plugin', scope: 'runner' });
+  const { code } = generatePairingCode({
+    deviceName: 'supplier-runner',
+    role: 'plugin',
+    scope: 'runner',
+  });
   completePairing(code, 'supplier-runner', publicKeyToMultibase(publicKey), 'plugin', 'runner');
   return `did:key:${publicKeyToMultibase(publicKey)}`;
 }
@@ -211,7 +220,10 @@ describe('the ceremony', () => {
     const { body } = await begin('supplier');
     const installId = body.install_id as string;
     await router.handle(
-      post('/v1/commerce/install/bind_device', { install_id: installId, device_did: RUNNER_DEVICE }),
+      post('/v1/commerce/install/bind_device', {
+        install_id: installId,
+        device_did: RUNNER_DEVICE,
+      }),
     );
     await router.handle(
       post('/v1/commerce/install/confirm', { install_id: installId, device_did: RUNNER_DEVICE }),
@@ -235,7 +247,10 @@ describe('the ceremony', () => {
     const { body } = await begin('supplier');
     const installId = body.install_id as string;
     const bound = await router.handle(
-      post('/v1/commerce/install/bind_device', { install_id: installId, device_did: 'did:key:zNotPaired' }),
+      post('/v1/commerce/install/bind_device', {
+        install_id: installId,
+        device_did: 'did:key:zNotPaired',
+      }),
     );
     expect(bound.status).toBe(409);
     expect(bound.body).toMatchObject({ error: 'bind_refused' });
@@ -245,7 +260,10 @@ describe('the ceremony', () => {
     const { body } = await begin('supplier');
     const installId = body.install_id as string;
     await router.handle(
-      post('/v1/commerce/install/bind_device', { install_id: installId, device_did: RUNNER_DEVICE }),
+      post('/v1/commerce/install/bind_device', {
+        install_id: installId,
+        device_did: RUNNER_DEVICE,
+      }),
     );
     await router.handle(
       post('/v1/commerce/install/confirm', { install_id: installId, device_did: RUNNER_DEVICE }),
@@ -270,7 +288,9 @@ describe('the ceremony', () => {
     expect(retired.body).toMatchObject({ error: 'teardown_incomplete', removed: false });
     // Tombstoned, not live: the sweep will retry the revoke.
     expect(getDeviceByDID(RUNNER_DEVICE)?.revoked).toBe(true); // access cut in memory
-    const rows = adapter.query('SELECT status FROM plugin_installs WHERE install_id = ?', [installId]);
+    const rows = adapter.query('SELECT status FROM plugin_installs WHERE install_id = ?', [
+      installId,
+    ]);
     expect(rows.map((r) => String(r.status))).toEqual(['revoked']);
   });
 

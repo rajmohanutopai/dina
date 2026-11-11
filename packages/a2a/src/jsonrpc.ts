@@ -176,7 +176,8 @@ export function parseJsonRpcResponseText(
 export function parseJsonRpcResponse(value: unknown, expectedId: JsonRpcId): ParsedJsonRpcResponse {
   if (!isPlainObject(value)) return { ok: false, malformed: 'not_an_object' };
   if (value.jsonrpc !== '2.0') return { ok: false, malformed: 'jsonrpc_version' };
-  if (value.id !== expectedId && !(value.id === null && refusedUnread(value))) return { ok: false, malformed: 'id_mismatch' };
+  if (value.id !== expectedId && !(value.id === null && refusedUnread(value)))
+    return { ok: false, malformed: 'id_mismatch' };
   const hasResult = hasOwn(value, 'result');
   const hasError = hasOwn(value, 'error');
   if (hasResult === hasError) return { ok: false, malformed: 'result_xor_error' };
@@ -198,6 +199,7 @@ function refusedUnread(value: Record<string, unknown>): boolean {
   return (
     !hasOwn(value, 'result') &&
     isPlainObject(error) &&
-    (error.code === JSONRPC_ERROR_CODES.parseError || error.code === JSONRPC_ERROR_CODES.invalidRequest)
+    (error.code === JSONRPC_ERROR_CODES.parseError ||
+      error.code === JSONRPC_ERROR_CODES.invalidRequest)
   );
 }

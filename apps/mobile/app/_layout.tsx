@@ -70,10 +70,10 @@ import { useAutoLock } from '../src/hooks/useAutoLock';
 import { useBackupPrompt } from '../src/hooks/useBackupPrompt';
 import { clearThread } from '../src/hooks/useChatThread';
 import { useCreditsClaim } from '../src/hooks/useCreditsClaim';
+import { useDailyPlanCheckins } from '../src/hooks/useDailyPlanCheckins';
 import { useNodeBootstrap } from '../src/hooks/useNodeBootstrap';
 import { useUnreadBadge } from '../src/hooks/useNotificationsBadge';
 import { useRelayWake } from '../src/hooks/useRelayWake';
-import { useDailyPlanCheckins } from '../src/hooks/useDailyPlanCheckins';
 import { useReminderFireWatcher } from '../src/hooks/useReminderFireWatcher';
 import { sealVault, useIsUnlocked } from '../src/hooks/useUnlock';
 import { closeMenu, getMenuOpen, openMenu, subscribeMenuOpen } from '../src/navigation/menu_state';
@@ -117,8 +117,20 @@ function DinaHeaderTitle() {
 // on both iOS and Android and stays out of the way of a rightward
 // `headerRight` content slot.
 type NavMenuItem =
-  | { feature: FeatureKey; href: string; action?: undefined; label?: undefined; ionicon?: undefined }
-  | { feature: FeatureKey; href?: undefined; action: 'lock'; label?: undefined; ionicon?: undefined }
+  | {
+      feature: FeatureKey;
+      href: string;
+      action?: undefined;
+      label?: undefined;
+      ionicon?: undefined;
+    }
+  | {
+      feature: FeatureKey;
+      href?: undefined;
+      action: 'lock';
+      label?: undefined;
+      ionicon?: undefined;
+    }
   /** Commerce destinations — not (yet) core FeatureKeys, so they carry
    *  their own label + icon instead of a registry lookup. */
   | {
@@ -989,7 +1001,11 @@ export default function RootLayout() {
                 />
                 <Tabs.Screen
                   name="catalog-draft"
-                  options={{ title: 'Catalog draft', href: null, headerLeft: renderHeaderBackButton }}
+                  options={{
+                    title: 'Catalog draft',
+                    href: null,
+                    headerLeft: renderHeaderBackButton,
+                  }}
                 />
                 <Tabs.Screen
                   name="trade"

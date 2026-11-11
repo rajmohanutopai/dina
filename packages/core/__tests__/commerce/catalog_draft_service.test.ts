@@ -193,7 +193,9 @@ describe('the order is enforced, not assumed', () => {
   it('refuses every operation on a draft in the wrong state', async () => {
     const h = harness();
     // prepare and approve both run before confirm has happened.
-    expect(await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' })).toMatchObject({
+    expect(
+      await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: 'x' }),
+    ).toMatchObject({
       ok: false,
       refusal: 'wrong_state',
     });
@@ -248,7 +250,9 @@ describe('the content receipt', () => {
 
   it('refuses to confirm while any model-derived field is still proposed', () => {
     const it = item();
-    const h = harness(makeDraft({ provenance: { '0': { ...acceptedProvenance(it)['0'], name: 'proposed' } } }));
+    const h = harness(
+      makeDraft({ provenance: { '0': { ...acceptedProvenance(it)['0'], name: 'proposed' } } }),
+    );
     expect(h.service.confirm('draft-1')).toMatchObject({
       ok: false,
       refusal: 'unconfirmed_field',
@@ -320,7 +324,9 @@ describe('the class-conditional rule, in both directions', () => {
     });
     if (!prepared.ok) throw new Error(prepared.error);
     h.setPresent(false);
-    expect(h.service.approve('draft-1', prepared.value.held?.snapshot.snapshot_digest ?? '')).toMatchObject({
+    expect(
+      h.service.approve('draft-1', prepared.value.held?.snapshot.snapshot_digest ?? ''),
+    ).toMatchObject({
       ok: false,
       refusal: 'no_user_presence',
     });
@@ -334,7 +340,10 @@ describe('approve compares against the snapshot Core is holding', () => {
     // asking itself.
     const h = harness();
     h.service.confirm('draft-1');
-    await h.service.prepare('draft-1', { protocolVersion: '1.0', publishedAt: '2026-08-13T09:00:00.000Z' });
+    await h.service.prepare('draft-1', {
+      protocolVersion: '1.0',
+      publishedAt: '2026-08-13T09:00:00.000Z',
+    });
     expect(h.service.approve('draft-1', 'f'.repeat(64))).toMatchObject({
       ok: false,
       refusal: 'digest_mismatch',
@@ -435,7 +444,10 @@ describe('publish', () => {
     const h = harness();
     await toApproved(h);
     h.setPublishResult({ ok: false, error: 'InvalidSwap', lostSwap: true });
-    expect(await h.service.publish('draft-1')).toMatchObject({ ok: false, refusal: 'publish_failed' });
+    expect(await h.service.publish('draft-1')).toMatchObject({
+      ok: false,
+      refusal: 'publish_failed',
+    });
 
     const after = h.drafts.get('draft-1');
     expect(after?.state).toBe('confirmed');
@@ -544,7 +556,10 @@ describe('the second publication, which is the one with a chain to break', () =>
       serviceRkey: 'listing-2',
     });
     if (!prepared.ok) throw new Error(prepared.error);
-    const approved = h.service.approve('draft-1', prepared.value.held?.snapshot.snapshot_digest ?? '');
+    const approved = h.service.approve(
+      'draft-1',
+      prepared.value.held?.snapshot.snapshot_digest ?? '',
+    );
     if (!approved.ok) throw new Error(approved.error);
 
     const published = await h.service.publish('draft-1');
@@ -577,7 +592,10 @@ describe('the second publication, which is the one with a chain to break', () =>
     if (!prepared.ok) throw new Error(prepared.error);
     const held = prepared.value.held?.pointer;
     if (held === undefined) throw new Error('fixture');
-    const approved = h.service.approve('draft-1', prepared.value.held?.snapshot.snapshot_digest ?? '');
+    const approved = h.service.approve(
+      'draft-1',
+      prepared.value.held?.snapshot.snapshot_digest ?? '',
+    );
     if (!approved.ok) throw new Error(approved.error);
 
     // The successor: our snapshot is its predecessor, which is exactly how the
@@ -663,7 +681,9 @@ describe('a model-derived draft must say which model read it', () => {
 });
 
 describe('the receipt rule, in both directions', () => {
-  async function approvedThen(mutate: (d: CatalogDraft) => CatalogDraft): Promise<Awaited<ReturnType<CatalogDraftService['publish']>>> {
+  async function approvedThen(
+    mutate: (d: CatalogDraft) => CatalogDraft,
+  ): Promise<Awaited<ReturnType<CatalogDraftService['publish']>>> {
     const h = harness();
     await toApproved(h);
     const approved = h.drafts.get('draft-1');
@@ -1088,7 +1108,10 @@ describe('the publication lease', () => {
     await toApproved(h);
     const draft = h.drafts.get('draft-1');
     if (draft === null) throw new Error('fixture');
-    h.drafts.put({ ...draft, publishClaim: { token: 'from-before-the-restart', atMs: 1_800_000_500_000 } });
+    h.drafts.put({
+      ...draft,
+      publishClaim: { token: 'from-before-the-restart', atMs: 1_800_000_500_000 },
+    });
 
     expect(await h.other.publish('draft-1')).toMatchObject({ refusal: 'publishing' });
     expect(h.other.editValue('draft-1', '0.name', 'During someone else’s publish')).toMatchObject({
@@ -1275,7 +1298,9 @@ describe('the local head and the repo disagree', () => {
   };
 
   /** A node that can publish: a writer is installed, so a clobber is possible. */
-  function publishingNode(reader: (() => Promise<{ record: unknown; cid: string } | null>) | 'throws' | null): Harness {
+  function publishingNode(
+    reader: (() => Promise<{ record: unknown; cid: string } | null>) | 'throws' | null,
+  ): Harness {
     const h = harness();
     installCatalogRecordWriter(async () => ({ cid: 'cid-written' }));
     if (reader === 'throws') {

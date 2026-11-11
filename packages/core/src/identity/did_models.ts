@@ -58,19 +58,25 @@ export function verifyJsonRoundtrip(doc: DIDDocument): boolean {
 
 /** Normalize verification methods: handle snake_case field aliases. */
 function normalizeVerificationMethods(vms: unknown[]): VerificationMethod[] {
-  return vms.map((vm: any) => ({
-    id: vm.id,
-    type: vm.type ?? 'Multikey',
-    controller: vm.controller,
-    publicKeyMultibase: vm.publicKeyMultibase ?? vm.public_key_multibase,
-  }));
+  return vms.map((raw) => {
+    const vm = raw as Record<string, unknown>;
+    return {
+      id: vm.id,
+      type: vm.type ?? 'Multikey',
+      controller: vm.controller,
+      publicKeyMultibase: vm.publicKeyMultibase ?? vm.public_key_multibase,
+    } as VerificationMethod;
+  });
 }
 
 /** Normalize service endpoints: handle snake_case field aliases. */
 function normalizeServices(services: unknown[]): ServiceEndpoint[] {
-  return services.map((s: any) => ({
-    id: s.id,
-    type: s.type,
-    serviceEndpoint: s.serviceEndpoint ?? s.service_endpoint,
-  }));
+  return services.map((raw) => {
+    const s = raw as Record<string, unknown>;
+    return {
+      id: s.id,
+      type: s.type,
+      serviceEndpoint: s.serviceEndpoint ?? s.service_endpoint,
+    } as ServiceEndpoint;
+  });
 }

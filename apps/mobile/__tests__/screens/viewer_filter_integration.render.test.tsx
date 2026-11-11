@@ -80,9 +80,7 @@ describe('SearchScreen — viewer-filter chip integration (TN-V2-RANK-005)', () 
       dietary: [],
       accessibility: [],
     });
-    const { getByTestId } = render(
-      <SearchScreen results={[]} facets={EMPTY_FACETS} />,
-    );
+    const { getByTestId } = render(<SearchScreen results={[]} facets={EMPTY_FACETS} />);
     await waitFor(() => {
       expect(getByTestId('viewer-filter-chip-languages')).toBeTruthy();
     });
@@ -100,9 +98,7 @@ describe('SearchScreen — viewer-filter chip integration (TN-V2-RANK-005)', () 
       dietary: [],
       accessibility: [],
     });
-    const { queryByTestId } = render(
-      <SearchScreen results={[]} facets={EMPTY_FACETS} />,
-    );
+    const { queryByTestId } = render(<SearchScreen results={[]} facets={EMPTY_FACETS} />);
     await waitFor(() => {
       // Container hidden because no chips apply.
       expect(queryByTestId('viewer-filter-chips')).toBeNull();
@@ -123,9 +119,7 @@ describe('SearchScreen — viewer-filter chip integration (TN-V2-RANK-005)', () 
       { subjectId: 's2', display: makeDisplay('PT-BR') },
       { subjectId: 's3', display: makeDisplay(null) },
     ];
-    const { getByTestId } = render(
-      <SearchScreen results={results} facets={EMPTY_FACETS} />,
-    );
+    const { getByTestId } = render(<SearchScreen results={results} facets={EMPTY_FACETS} />);
     await waitFor(() => {
       expect(getByTestId('subject-card-s1')).toBeTruthy();
       expect(getByTestId('subject-card-s2')).toBeTruthy();
@@ -143,9 +137,9 @@ describe('SearchScreen — viewer-filter chip integration (TN-V2-RANK-005)', () 
       accessibility: [],
     });
     const results = [
-      { subjectId: 's1', display: makeDisplay('EN') },     // viewer-language match
-      { subjectId: 's2', display: makeDisplay('PT-BR') },  // mismatch — should be filtered
-      { subjectId: 's3', display: makeDisplay(null) },     // unknown — passes per contract
+      { subjectId: 's1', display: makeDisplay('EN') }, // viewer-language match
+      { subjectId: 's2', display: makeDisplay('PT-BR') }, // mismatch — should be filtered
+      { subjectId: 's3', display: makeDisplay(null) }, // unknown — passes per contract
     ];
     const { getByTestId, queryByTestId } = render(
       <SearchScreen results={results} facets={EMPTY_FACETS} />,

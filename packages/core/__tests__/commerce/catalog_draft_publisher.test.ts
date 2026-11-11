@@ -10,12 +10,12 @@
  * lost-swap recovery in the state machine unreachable in production.
  */
 
+import { publishHeldDraft } from '../../src/commerce/catalog_draft_publisher';
 import {
   CATALOG_POINTER_NSID,
   installCatalogRecordReader,
   installCatalogRecordWriter,
 } from '../../src/commerce/catalog_record_writer';
-import { publishHeldDraft } from '../../src/commerce/catalog_draft_publisher';
 
 import type { CatalogDraft } from '../../src/commerce/catalog_draft_store';
 import type { CatalogPointer } from '@dina/commerce-protocol';
@@ -101,7 +101,10 @@ afterEach(() => {
 });
 
 function deps(fence: () => unknown | null = () => null): {
-  deps: { fence: () => unknown | null; recordPublication: (c: string, p: CatalogPointer, cid: string) => void };
+  deps: {
+    fence: () => unknown | null;
+    recordPublication: (c: string, p: CatalogPointer, cid: string) => void;
+  };
   recorded: Recorded[];
 } {
   const recorded: Recorded[] = [];

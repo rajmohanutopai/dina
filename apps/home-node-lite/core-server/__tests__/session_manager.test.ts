@@ -11,11 +11,7 @@ import {
   type SessionManagerEvent,
   type SessionOutcome,
 } from '../src/appview/session_manager';
-import {
-  InMemoryKeystoreAdapter,
-  SessionTokenStore,
-  type SessionRecord,
-} from '../src/appview/session_token_store';
+import { InMemoryKeystoreAdapter, SessionTokenStore } from '../src/appview/session_token_store';
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 
@@ -36,10 +32,15 @@ function buildStore(): SessionTokenStore {
 }
 
 function pds(
-  results: Partial<Record<'createAccount' | 'createSession' | 'refreshSession' | 'deleteSession', {
-    status: number;
-    body: Record<string, unknown> | null;
-  }>>,
+  results: Partial<
+    Record<
+      'createAccount' | 'createSession' | 'refreshSession' | 'deleteSession',
+      {
+        status: number;
+        body: Record<string, unknown> | null;
+      }
+    >
+  >,
 ): PdsClientFn {
   return async (kind) => {
     const entry = results[kind];
@@ -53,20 +54,22 @@ function pds(
 describe('SessionManager (task 6.2)', () => {
   describe('construction', () => {
     it('throws without pdsClient', () => {
-      expect(() =>
-        new SessionManager({
-          pdsClient: undefined as unknown as PdsClientFn,
-          tokenStore: buildStore(),
-        }),
+      expect(
+        () =>
+          new SessionManager({
+            pdsClient: undefined as unknown as PdsClientFn,
+            tokenStore: buildStore(),
+          }),
       ).toThrow(/pdsClient/);
     });
 
     it('throws without tokenStore', () => {
-      expect(() =>
-        new SessionManager({
-          pdsClient: async () => ({ status: 200, body: null }),
-          tokenStore: undefined as unknown as SessionTokenStore,
-        }),
+      expect(
+        () =>
+          new SessionManager({
+            pdsClient: async () => ({ status: 200, body: null }),
+            tokenStore: undefined as unknown as SessionTokenStore,
+          }),
       ).toThrow(/tokenStore/);
     });
   });

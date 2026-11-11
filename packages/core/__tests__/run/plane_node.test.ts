@@ -158,7 +158,8 @@ function providerResponse(
   // params strings (E76-05). The signed digests are SHA-256 of those exact bytes.
   const cardStr = JSON.stringify({ version: 1, blocks: [{ kind: 'title', text: 'Route 42' }] });
   const paramsStr = JSON.stringify({ stop: 'main-st' });
-  const payloadHex = over.payloadHex ?? bytesToHex(enc.encode(JSON.stringify({ card: cardStr, params: paramsStr })));
+  const payloadHex =
+    over.payloadHex ?? bytesToHex(enc.encode(JSON.stringify({ card: cardStr, params: paramsStr })));
   const msg = {
     provider_did: PROVIDER_DID,
     service_uri: SERVICE_URI,

@@ -34,7 +34,11 @@ import {
 } from '../../src/commerce/catalog_draft_store';
 import { InMemoryCatalogPointerRepository } from '../../src/commerce/catalog_pointer_store';
 import { buildCatalogSnapshot } from '../../src/commerce/catalog_publisher';
-import { goodsLimitKey, goodsLimitPort, GOODS_SELLER_KIND } from '../../src/commerce/goods_earned_room';
+import {
+  goodsLimitKey,
+  goodsLimitPort,
+  GOODS_SELLER_KIND,
+} from '../../src/commerce/goods_earned_room';
 import {
   admitInboundCounter,
   answerQuoteOutcomeInCore,
@@ -435,21 +439,41 @@ describe('COMMITMENT_KERNEL §15 step 7 — a held option becomes a partner-run 
     installOptionStores(null);
   });
 
-  it('the next revision offers the run, at the owner\'s share of the saving, and the buyer keeps it', async () => {
+  it("the next revision offers the run, at the owner's share of the saving, and the buyer keeps it", async () => {
     const pair = await negotiatingPair();
     expect(pair.quote.protocol_version).toBe('1.4');
     // The seller's own delivery costs ₹120 any day; its shipper's run, ₹50.
     const models = new ValueModelStore(adapter);
     for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
       models.putEntry(
-        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n } },
+        {
+          id: day,
+          kind: 'goods.seller',
+          covers: ['delivery_day'],
+          body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n },
+        },
         NOW,
       );
     await setOwnerTimeZone('UTC');
     installOptionStores(adapter);
     const links = new SellerOptionStore(adapter);
-    const request = { v: 1 as const, kind: 'request' as const, request_id: 'req-0011223344556677', service_at: '2026-08-18T09:00:00Z', crates: 1, postal_code: '682001' };
-    links.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: pair.quote.quote_id, request }, NOW);
+    const request = {
+      v: 1 as const,
+      kind: 'request' as const,
+      request_id: 'req-0011223344556677',
+      service_at: '2026-08-18T09:00:00Z',
+      crates: 1,
+      postal_code: '682001',
+    };
+    links.ask(
+      {
+        requestId: request.request_id,
+        shipperDid: 'did:plc:shipper',
+        dealRef: pair.quote.quote_id,
+        request,
+      },
+      NOW,
+    );
     links.settleAsk(
       request.request_id,
       {
@@ -493,19 +517,42 @@ describe('COMMITMENT_KERNEL §15 step 7 — a held option becomes a partner-run 
       expect(pair.quote.protocol_version).toBe('1.5');
       installCommerceRuntime(pair.supplier);
       expect(
-        pair.supplier.settings.writeSupplier({ ...supplierSettings(POLICY), grantExitIfRunFails: grant }).ok,
+        pair.supplier.settings.writeSupplier({
+          ...supplierSettings(POLICY),
+          grantExitIfRunFails: grant,
+        }).ok,
       ).toBe(true);
       const models = new ValueModelStore(adapter);
       for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
         models.putEntry(
-          { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n } },
+          {
+            id: day,
+            kind: 'goods.seller',
+            covers: ['delivery_day'],
+            body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n },
+          },
           NOW,
         );
       await setOwnerTimeZone('UTC');
       installOptionStores(adapter);
       const links = new SellerOptionStore(adapter);
-      const request = { v: 1 as const, kind: 'request' as const, request_id: `req-00112233445566${grant ? '77' : '88'}`, service_at: '2026-08-18T09:00:00Z', crates: 1, postal_code: '682001' };
-      links.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: pair.quote.quote_id, request }, NOW);
+      const request = {
+        v: 1 as const,
+        kind: 'request' as const,
+        request_id: `req-00112233445566${grant ? '77' : '88'}`,
+        service_at: '2026-08-18T09:00:00Z',
+        crates: 1,
+        postal_code: '682001',
+      };
+      links.ask(
+        {
+          requestId: request.request_id,
+          shipperDid: 'did:plc:shipper',
+          dealRef: pair.quote.quote_id,
+          request,
+        },
+        NOW,
+      );
       links.settleAsk(
         request.request_id,
         {
@@ -537,7 +584,8 @@ describe('COMMITMENT_KERNEL §15 step 7 — a held option becomes a partner-run 
     }
   }
 
-  it('§15 step 12: a buyer that asked gets the exit right on the partner run', () => exitRightCase(true));
+  it('§15 step 12: a buyer that asked gets the exit right on the partner run', () =>
+    exitRightCase(true));
 
   it('§15 step 12: a seller that does not grant it gives none', () => exitRightCase(false));
 
@@ -546,14 +594,34 @@ describe('COMMITMENT_KERNEL §15 step 7 — a held option becomes a partner-run 
     const models = new ValueModelStore(adapter);
     for (const day of ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'])
       models.putEntry(
-        { id: day, kind: 'goods.seller', covers: ['delivery_day'], body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n } },
+        {
+          id: day,
+          kind: 'goods.seller',
+          covers: ['delivery_day'],
+          body: { type: 'choice', part: 'delivery_day', option: day, rupees: -120n },
+        },
         NOW,
       );
     await setOwnerTimeZone('UTC');
     installOptionStores(adapter);
     const links = new SellerOptionStore(adapter);
-    const request = { v: 1 as const, kind: 'request' as const, request_id: 'req-0011223344556677', service_at: '2026-08-18T09:00:00Z', crates: 1, postal_code: '682001' };
-    links.ask({ requestId: request.request_id, shipperDid: 'did:plc:shipper', dealRef: pair.quote.quote_id, request }, NOW);
+    const request = {
+      v: 1 as const,
+      kind: 'request' as const,
+      request_id: 'req-0011223344556677',
+      service_at: '2026-08-18T09:00:00Z',
+      crates: 1,
+      postal_code: '682001',
+    };
+    links.ask(
+      {
+        requestId: request.request_id,
+        shipperDid: 'did:plc:shipper',
+        dealRef: pair.quote.quote_id,
+        request,
+      },
+      NOW,
+    );
     links.settleAsk(
       request.request_id,
       {
@@ -681,7 +749,11 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
         id: 'n1',
         kind: 'goods.seller',
         covers: ['delivery_day'],
-        body: { type: 'never', label: 'no Tuesday runs', all: [{ part: 'delivery_day', choice: 'tue' }] },
+        body: {
+          type: 'never',
+          label: 'no Tuesday runs',
+          all: [{ part: 'delivery_day', choice: 'tue' }],
+        },
       },
       NOW,
     );
@@ -719,7 +791,9 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
           },
         ],
         estimated_delivery_at: '2026-08-14T10:00:00Z',
-        alternatives: [{ alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' }],
+        alternatives: [
+          { alternative_id: 'tue', charges: [], estimated_delivery_at: '2026-08-11T10:00:00Z' },
+        ],
       }),
       nowMs: NOW,
     });
@@ -745,20 +819,24 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
         id: 'n1',
         kind: 'goods.seller',
         covers: ['delivery_day'],
-        body: { type: 'never', label: 'no Tuesday runs', all: [{ part: 'delivery_day', choice: 'tue' }] },
+        body: {
+          type: 'never',
+          label: 'no Tuesday runs',
+          all: [{ part: 'delivery_day', choice: 'tue' }],
+        },
       },
       NOW,
     );
     const pair = { buyer, supplier, quote, workflow };
     const answer = supplierAnswers(pair, await buyerCounters(pair, '40000'));
     if (!('json' in answer)) throw new Error(answer.refused);
-    const revision = (JSON.parse(answer.json) as { outcome: string; quote: SignedQuote });
+    const revision = JSON.parse(answer.json) as { outcome: string; quote: SignedQuote };
     expect(revision.outcome).toBe('revised');
     expect(revision.quote.total.minor_units).toBe('45000');
     expect(revision.quote.alternatives).toBeUndefined();
   });
 
-  it('a counter revision is held while a persona holding the seller\'s rules is closed (§15 step 10)', async () => {
+  it("a counter revision is held while a persona holding the seller's rules is closed (§15 step 10)", async () => {
     const pair = await negotiatingPair();
     pair.supplier.goodsSellerModel = () => ({ model: null, closedPersonas: ['health'] });
     const answer = supplierAnswers(pair, await buyerCounters(pair, '40000'));
@@ -775,7 +853,7 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
     expect(JSON.parse(answer.json)).toMatchObject({ outcome: 'held' });
   });
 
-  it('floors are measured from the catalogue price the owner published, not the runner\'s first price (§15 step 10)', async () => {
+  it("floors are measured from the catalogue price the owner published, not the runner's first price (§15 step 10)", async () => {
     // The runner quoted 600 each; the owner's catalogue says 500, so the 10%
     // floor is 450, not 540.
     const pair = await negotiatingPair(POLICY, false, '600');
@@ -892,7 +970,10 @@ describe('items 2-5 — a counter becomes revision N+1, never below the floor', 
   it('COMMITMENT_KERNEL §7 replay: ₹900 held, hard ₹800, automatic newly raised to ₹950, proposal ₹850 — the offer stays at ₹900 and the owner is asked', async () => {
     // First quoted at ₹1,000 a unit, so floors up to ₹1,000 can take effect.
     const pair = await negotiatingPair(
-      { ...POLICY, items: [{ product: GTIN, floorMinorUnits: '80000', autoFloorMinorUnits: '80000' }] },
+      {
+        ...POLICY,
+        items: [{ product: GTIN, floorMinorUnits: '80000', autoFloorMinorUnits: '80000' }],
+      },
       false,
       '100000',
     );

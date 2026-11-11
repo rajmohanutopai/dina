@@ -170,7 +170,10 @@ describe('§5.B2 — money-free research components do not reach the money engin
         const { source } = importsOf(m);
         const symbols = MONEY_WIRE_SYMBOLS.filter((sym) => new RegExp(`\\b${sym}\\b`).test(source));
         expect({ module: m, symbols }).toEqual({ module: m, symbols: [] });
-        expect({ module: m, callsMoney: /\.money\s*\(/.test(source) }).toEqual({ module: m, callsMoney: false });
+        expect({ module: m, callsMoney: /\.money\s*\(/.test(source) }).toEqual({
+          module: m,
+          callsMoney: false,
+        });
       }
     });
   }

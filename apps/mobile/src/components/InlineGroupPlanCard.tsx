@@ -25,7 +25,14 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  ActivityIndicator,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 import { readLifecycle, type ChatMessage } from '@dina/brain/chat';
 
@@ -68,7 +75,10 @@ export function slotText(slot: { start: string; end?: string }): string {
   if (slot.end === undefined) return start;
   const end = readableInstant(slot.end);
   // Same day: "Sat 3 Oct 2026, 15:00 to 17:00" rather than the date twice.
-  const sameDay = ISO_SLOT.test(slot.start) && ISO_SLOT.test(slot.end) && slot.start.slice(0, 10) === slot.end.slice(0, 10);
+  const sameDay =
+    ISO_SLOT.test(slot.start) &&
+    ISO_SLOT.test(slot.end) &&
+    slot.start.slice(0, 10) === slot.end.slice(0, 10);
   return sameDay ? `${start} to ${end.slice(end.lastIndexOf(', ') + 2)}` : `${start} to ${end}`;
 }
 
@@ -122,7 +132,9 @@ export function parseCandidates(text: string): { start: string }[] {
     .map((start) => ({ start }));
 }
 
-export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): React.JSX.Element | null {
+export function InlineGroupPlanCard({
+  message,
+}: InlineGroupPlanCardProps): React.JSX.Element | null {
   const lc = readLifecycle(message);
   const planId = lc !== null && lc.kind === 'group_plan' ? lc.planId : '';
   const [plan, setPlan] = useState<GroupPlanWire | null>(null);
@@ -179,7 +191,8 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
       return true;
     } catch (err) {
       const key = (err as { errorKey?: string }).errorKey;
-      if (alive.current) setError(key !== undefined ? refusalText(key) : "Couldn't do that. Try again.");
+      if (alive.current)
+        setError(key !== undefined ? refusalText(key) : "Couldn't do that. Try again.");
       return false;
     } finally {
       if (alive.current) setBusy(false);
@@ -234,13 +247,17 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
   // the web page shows the same slots as plain text and points at the console.
   const choosable = canChoose && client !== null;
   const emptiedBy = fold?.emptied_by ?? [];
-  const unreachableRequired = plan.guests.filter((g) => g.required && g.outcome === 'unreachable').map((g) => g.contact_did);
+  const unreachableRequired = plan.guests
+    .filter((g) => g.required && g.outcome === 'unreachable')
+    .map((g) => g.contact_did);
   // The §13 moves after a round that did not converge: go ahead without the
   // household that blocked it (unreachable, or answered and emptied the fold).
-  const droppable = roundClosed && !canChoose ? [...new Set([...unreachableRequired, ...emptiedBy])] : [];
+  const droppable =
+    roundClosed && !canChoose ? [...new Set([...unreachableRequired, ...emptiedBy])] : [];
   const showMoves = (roundClosed && !canChoose) || settled;
   // An open widen input is only useful while the organizer can still act.
-  const canWiden = client !== null && (roundClosed || settled) && !busy && parseCandidates(wider).length > 0;
+  const canWiden =
+    client !== null && (roundClosed || settled) && !busy && parseCandidates(wider).length > 0;
 
   let outcomeLine: string | null = null;
   if (plan.state === 'confirming' && roundClosed) {
@@ -262,7 +279,10 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
   }
 
   return (
-    <View testID={`group-plan-card-${planId}`} style={[styles.card, closed ? styles.cardMuted : null]}>
+    <View
+      testID={`group-plan-card-${planId}`}
+      style={[styles.card, closed ? styles.cardMuted : null]}
+    >
       <View style={styles.eyebrowRow}>
         <Ionicons name="people-outline" size={14} color={colors.textMuted} />
         <Text style={styles.eyebrow}>{eyebrowFor(plan)}</Text>
@@ -272,13 +292,19 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
       </Text>
 
       {plan.guests.map((g) => (
-        <View key={g.contact_did} style={styles.guestRow} testID={`group-plan-guest-${planId}-${g.contact_did}`}>
+        <View
+          key={g.contact_did}
+          style={styles.guestRow}
+          testID={`group-plan-guest-${planId}-${g.contact_did}`}
+        >
           <Ionicons name={outcomeIcon(g.outcome)} size={16} color={outcomeColor(g.outcome)} />
           <Text style={styles.guestName} numberOfLines={1}>
             {householdName(g.contact_did, contacts)}
             {g.required ? '' : ' (optional)'}
           </Text>
-          <Text style={[styles.guestOutcome, { color: outcomeColor(g.outcome) }]}>{outcomeText(g)}</Text>
+          <Text style={[styles.guestOutcome, { color: outcomeColor(g.outcome) }]}>
+            {outcomeText(g)}
+          </Text>
         </View>
       ))}
 
@@ -296,22 +322,31 @@ export function InlineGroupPlanCard({ message }: InlineGroupPlanCardProps): Reac
 
       {!closed && plan.state !== 'confirming' && agreed.length > 0 ? (
         <View style={styles.foldBlock}>
-          <Text style={styles.foldLabel}>{canChoose ? 'Works for everyone required:' : 'Works so far:'}</Text>
+          <Text style={styles.foldLabel}>
+            {canChoose ? 'Works for everyone required:' : 'Works so far:'}
+          </Text>
           {agreed.map((slot) => (
             <TouchableOpacity
               key={slot.start}
               testID={`group-plan-choose-${planId}-${slot.start}`}
-              style={[styles.actionButton, styles.primaryButton, !choosable || busy ? styles.disabled : null]}
+              style={[
+                styles.actionButton,
+                styles.primaryButton,
+                !choosable || busy ? styles.disabled : null,
+              ]}
               disabled={!choosable || busy}
               onPress={() => {
                 // Guarded in the handler too: a slot that is not a choice must
                 // not act, whatever fires the press.
-                if (choosable && !busy && client !== null) void decide(() => client.choose(planId, slot));
+                if (choosable && !busy && client !== null)
+                  void decide(() => client.choose(planId, slot));
               }}
               accessibilityRole="button"
               accessibilityLabel={choosable ? `Choose ${slotText(slot)}` : slotText(slot)}
             >
-              <Text style={styles.primaryButtonText}>{choosable ? `Choose ${slotText(slot)}` : slotText(slot)}</Text>
+              <Text style={styles.primaryButtonText}>
+                {choosable ? `Choose ${slotText(slot)}` : slotText(slot)}
+              </Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -406,7 +441,9 @@ function eyebrowFor(plan: GroupPlanWire): string {
   }
 }
 
-function outcomeIcon(outcome: GroupPlanWire['guests'][number]['outcome']): keyof typeof Ionicons.glyphMap {
+function outcomeIcon(
+  outcome: GroupPlanWire['guests'][number]['outcome'],
+): keyof typeof Ionicons.glyphMap {
   if (outcome === 'answered') return 'checkmark-circle-outline';
   if (outcome === 'unreachable') return 'remove-circle-outline';
   return 'time-outline';
@@ -460,7 +497,12 @@ const styles = StyleSheet.create({
     ...shadows.sm,
   },
   cardMuted: { opacity: 0.8 },
-  eyebrowRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs, marginBottom: spacing.xs },
+  eyebrowRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
   eyebrow: { ...textStyles.eyebrow, color: colors.textMuted },
   headerRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
   title: { fontSize: 16, fontWeight: '600', color: colors.textPrimary, marginBottom: spacing.sm },

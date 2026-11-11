@@ -46,7 +46,10 @@ function sweep(now: number): void {
 }
 
 /** Build the document and its manifest from what Core holds now. */
-export async function buildReadableExport(): Promise<{ manifest: ExportManifest; doc: Record<string, unknown> }> {
+export async function buildReadableExport(): Promise<{
+  manifest: ExportManifest;
+  doc: Record<string, unknown>;
+}> {
   const personas: ExportManifestEntry[] = [];
   const vault: Record<string, unknown[]> = {};
   const reminders: unknown[] = [];
@@ -58,7 +61,10 @@ export async function buildReadableExport(): Promise<{ manifest: ExportManifest;
         persona: p.name,
         tier: p.tier,
         included: false,
-        why: p.tier === 'locked' ? `locked: unlock ${p.name} with your passphrase and ask again` : `closed: unlock ${p.name} and ask again`,
+        why:
+          p.tier === 'locked'
+            ? `locked: unlock ${p.name} with your passphrase and ask again`
+            : `closed: unlock ${p.name} and ask again`,
         items: 0,
       });
       continue;
@@ -73,10 +79,15 @@ export async function buildReadableExport(): Promise<{ manifest: ExportManifest;
     vault[p.name] = items;
     personas.push({ persona: p.name, tier: p.tier, included: true, items: items.length });
     for (const r of listByPersona(p.name)) {
-      reminders.push({ persona: p.name, message: r.message, due: new Date(r.due_at).toISOString() });
+      reminders.push({
+        persona: p.name,
+        message: r.message,
+        due: new Date(r.due_at).toISOString(),
+      });
     }
     const t = getTopicRepository(p.name);
-    if (t !== null) topics[p.name] = (await t.top(200, Math.floor(Date.now() / 1000))).map((x) => x.topic);
+    if (t !== null)
+      topics[p.name] = (await t.top(200, Math.floor(Date.now() / 1000))).map((x) => x.topic);
   }
   const people = (getPeopleRepository()?.listPeople() ?? [])
     .filter((p) => p.status !== 'rejected')
@@ -85,16 +96,35 @@ export async function buildReadableExport(): Promise<{ manifest: ExportManifest;
       relationship: p.relationshipHint,
       also_called: (p.surfaces ?? []).filter((s) => s.status !== 'rejected').map((s) => s.surface),
     }));
-  const contacts = listContacts().map((c) => ({ name: c.displayName, did: c.did, relationship: c.relationship }));
-  const manifest: ExportManifest = { personas, people: people.length, contacts: contacts.length, reminders: reminders.length };
+  const contacts = listContacts().map((c) => ({
+    name: c.displayName,
+    did: c.did,
+    relationship: c.relationship,
+  }));
+  const manifest: ExportManifest = {
+    personas,
+    people: people.length,
+    contacts: contacts.length,
+    reminders: reminders.length,
+  };
   return {
     manifest,
-    doc: { exported_at: new Date().toISOString(), manifest, vault, people, contacts, reminders, topics },
+    doc: {
+      exported_at: new Date().toISOString(),
+      manifest,
+      vault,
+      people,
+      contacts,
+      reminders,
+      topics,
+    },
   };
 }
 
 /** Prepare an export: held in memory; the caller gets the manifest and an id. */
-export async function prepareReadableExport(now: number = Date.now()): Promise<{ id: string; manifest: ExportManifest }> {
+export async function prepareReadableExport(
+  now: number = Date.now(),
+): Promise<{ id: string; manifest: ExportManifest }> {
   sweep(now);
   // A forget that cancels exports while this one is being built (it awaits
   // topic reads) must not let a document holding the forgotten data be

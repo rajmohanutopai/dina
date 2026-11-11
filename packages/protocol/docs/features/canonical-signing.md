@@ -26,12 +26,12 @@ before signature verification.
 
 ## Headers added to the HTTP request
 
-| Header        | Value                                                            |
-|---------------|------------------------------------------------------------------|
-| `X-DID`       | Sender DID (`did:plc:...`)                                       |
-| `X-Timestamp` | Same RFC3339 string used in the canonical payload                |
-| `X-Nonce`     | Same hex nonce                                                   |
-| `X-Signature` | Base64url-encoded `Ed25519.Sign(privateKey, canonical_payload)`  |
+| Header        | Value                                                           |
+| ------------- | --------------------------------------------------------------- |
+| `X-DID`       | Sender DID (`did:plc:...`)                                      |
+| `X-Timestamp` | Same RFC3339 string used in the canonical payload               |
+| `X-Nonce`     | Same hex nonce                                                  |
+| `X-Signature` | Base64url-encoded `Ed25519.Sign(privateKey, canonical_payload)` |
 
 ## Why sort query keys
 
@@ -49,7 +49,7 @@ sides follow.
 - Server verify: `@dina/core`'s auth middleware verifies the
   headers against the reconstructed canonical string.
 - Client sign: `HttpCoreTransport` (`@dina/core`) sorts query keys
-  + signs; see `packages/core/src/client/http-transport.ts`.
+  - signs; see `packages/core/src/client/http-transport.ts`.
 
 ## Vectors
 

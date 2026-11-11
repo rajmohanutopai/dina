@@ -16,7 +16,11 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
-import { InMemoryReviewPublishRepository, setReviewPublishRepository, type PublishJob } from '@dina/core';
+import {
+  InMemoryReviewPublishRepository,
+  setReviewPublishRepository,
+  type PublishJob,
+} from '@dina/core';
 
 import OutboxScreen from '../../app/peerlens/outbox';
 
@@ -59,7 +63,9 @@ describe('OutboxScreen — render states', () => {
 
   it('in-flight only: banner + all-caught-up, no empty', () => {
     const { getByTestId, queryByTestId } = render(
-      <OutboxScreen jobs={[job({ jobId: 'a', status: 'queued' }), job({ jobId: 'b', status: 'publishing' })]} />,
+      <OutboxScreen
+        jobs={[job({ jobId: 'a', status: 'queued' }), job({ jobId: 'b', status: 'publishing' })]}
+      />,
     );
     expect(getByTestId('outbox-inflight-banner')).toBeTruthy();
     expect(getByTestId('outbox-no-failures')).toBeTruthy();
@@ -70,7 +76,9 @@ describe('OutboxScreen — render states', () => {
 
   it('failures: renders the failed row with a friendly error + actions', () => {
     const { getByTestId, getByText } = render(
-      <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'unauthorized' })]} />,
+      <OutboxScreen
+        jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'unauthorized' })]}
+      />,
     );
     expect(getByTestId('outbox-row-failed')).toBeTruthy();
     expect(getByText(/credentials|infrastructure|re-onboard/i)).toBeTruthy();
@@ -97,12 +105,21 @@ describe('OutboxScreen — interactions (drive the repo)', () => {
   it('Dismiss deletes the failed job', () => {
     const repo = new InMemoryReviewPublishRepository();
     setReviewPublishRepository(repo);
-    repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+    repo.create({
+      jobId: 'f1',
+      ownerDid: DID,
+      rkey: 'rk',
+      recordJSON: '{}',
+      draftJSON: '{}',
+      createdAt: 1,
+    });
     repo.claim('f1', 1, 60_000);
     repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2, 1);
 
     const { getByTestId } = render(
-      <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]} />,
+      <OutboxScreen
+        jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]}
+      />,
     );
     fireEvent.press(getByTestId('outbox-dismiss-f1'));
     expect(repo.getById('f1')).toBeNull();
@@ -111,9 +128,18 @@ describe('OutboxScreen — interactions (drive the repo)', () => {
   it('Cancel deletes a queued job', () => {
     const repo = new InMemoryReviewPublishRepository();
     setReviewPublishRepository(repo);
-    repo.create({ jobId: 'q1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+    repo.create({
+      jobId: 'q1',
+      ownerDid: DID,
+      rkey: 'rk',
+      recordJSON: '{}',
+      draftJSON: '{}',
+      createdAt: 1,
+    });
 
-    const { getByTestId } = render(<OutboxScreen jobs={[job({ jobId: 'q1', status: 'queued' })]} />);
+    const { getByTestId } = render(
+      <OutboxScreen jobs={[job({ jobId: 'q1', status: 'queued' })]} />,
+    );
     fireEvent.press(getByTestId('outbox-cancel-q1'));
     expect(repo.getById('q1')).toBeNull();
   });
@@ -126,12 +152,21 @@ describe('OutboxScreen — interactions (drive the repo)', () => {
     // covered in review_publish_actions.test.ts with a drainable node.)
     const repo = new InMemoryReviewPublishRepository();
     setReviewPublishRepository(repo);
-    repo.create({ jobId: 'f1', ownerDid: DID, rkey: 'rk', recordJSON: '{}', draftJSON: '{}', createdAt: 1 });
+    repo.create({
+      jobId: 'f1',
+      ownerDid: DID,
+      rkey: 'rk',
+      recordJSON: '{}',
+      draftJSON: '{}',
+      createdAt: 1,
+    });
     repo.claim('f1', 1, 60_000);
     repo.fail('f1', { class: 'permanent', code: 'bad_request', message: 'x' }, 2, 1);
 
     const { getByTestId } = render(
-      <OutboxScreen jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]} />,
+      <OutboxScreen
+        jobs={[job({ jobId: 'f1', status: 'failed', lastErrorCode: 'bad_request' })]}
+      />,
     );
     fireEvent.press(getByTestId('outbox-retry-f1'));
     await Promise.resolve();

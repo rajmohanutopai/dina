@@ -14,10 +14,7 @@ import React from 'react';
 import { Text, View } from 'react-native';
 
 import { addUserMessage, resetThreads, type ChatMessage } from '@dina/brain/chat';
-import {
-  InMemoryChatMessageRepository,
-  setChatMessageRepository,
-} from '@dina/core';
+import { InMemoryChatMessageRepository, setChatMessageRepository } from '@dina/core';
 
 import { useD2DChat, resetD2DChatSnapshotsForTest } from '../../src/hooks/useD2DChat';
 

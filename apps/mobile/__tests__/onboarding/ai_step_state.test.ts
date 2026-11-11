@@ -103,8 +103,8 @@ describe('stepAfterCreateHandle — mandatory-AI invariant (regression #389)', (
   });
 
   it('a draft with passphrase but no mnemonic still goes to passphrase (not AI/provisioning)', () => {
-    expect(
-      stepAfterCreateHandle({ ownerName: 'Ada', handle: 'ada', passphrase: 'pw' }).kind,
-    ).toBe('create_passphrase');
+    expect(stepAfterCreateHandle({ ownerName: 'Ada', handle: 'ada', passphrase: 'pw' }).kind).toBe(
+      'create_passphrase',
+    );
   });
 });

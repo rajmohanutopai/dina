@@ -203,7 +203,7 @@ describe('createServiceQueryDeliverer — watch-origin inbox routing (#6)', () =
       details: SUCCESS_DETAILS,
     });
     expect(inbox).toHaveLength(0);
-    expect((getThread('main')?.length ?? 0)).toBeGreaterThan(0);
+    expect(getThread('main')?.length ?? 0).toBeGreaterThan(0);
   });
 });
 
@@ -212,10 +212,25 @@ describe('createServiceQueryDeliverer — group-plan spokes (GROUP_COORDINATION 
     const deliver = createServiceQueryDeliverer({ threadId: 'main', threadResolver });
     for (const details of [
       SUCCESS_DETAILS,
-      { response_status: 'unavailable', capability: 'availability_coordination', service_name: 'x', error: 'declined' },
-      { response_status: 'error', capability: 'availability_coordination', service_name: 'x', error: 'send_failed: relay refused' },
+      {
+        response_status: 'unavailable',
+        capability: 'availability_coordination',
+        service_name: 'x',
+        error: 'declined',
+      },
+      {
+        response_status: 'error',
+        capability: 'availability_coordination',
+        service_name: 'x',
+        error: 'send_failed: relay refused',
+      },
     ] as ServiceQueryEventDetails[]) {
-      await deliver({ text: 'done', event: makeEvent(), task: makeTask('group_plan:gp_1'), details });
+      await deliver({
+        text: 'done',
+        event: makeEvent(),
+        task: makeTask('group_plan:gp_1'),
+        details,
+      });
     }
     expect(getThread('main')).toHaveLength(0);
     expect(getThread(PEER)).toHaveLength(0);
@@ -270,7 +285,11 @@ describe('createServiceQueryDeliverer — reply goes to the asking thread (REAL_
       details: SUCCESS_DETAILS,
     };
     await deliver(once);
-    await deliver({ ...once, text: 'something else', details: { ...SUCCESS_DETAILS, response_status: 'error' } });
+    await deliver({
+      ...once,
+      text: 'something else',
+      details: { ...SUCCESS_DETAILS, response_status: 'error' },
+    });
     const thread = getThread('t9');
     expect(thread).toHaveLength(1);
     const lc = readLifecycle(thread[0]);

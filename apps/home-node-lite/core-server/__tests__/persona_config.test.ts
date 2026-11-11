@@ -139,22 +139,17 @@ describe('loadPersonaConfig (task 4.68)', () => {
       expect(err!.detail?.tier).toBe('admin');
     });
 
-    it.each(['open', 'restricted'])(
-      'throws invalid_tier on non-canonical tier %s',
-      (tier) => {
-        const err = catchErr(() =>
-          loadPersonaConfig({
-            path: '/x.json',
-            readFile: readerReturning(
-              JSON.stringify({ version: 1, personas: { p: { tier } } }),
-            ),
-          }),
-        );
-        expect(err!.code).toBe('invalid_tier');
-        expect(err!.detail?.persona).toBe('p');
-        expect(err!.detail?.tier).toBe(tier);
-      },
-    );
+    it.each(['open', 'restricted'])('throws invalid_tier on non-canonical tier %s', (tier) => {
+      const err = catchErr(() =>
+        loadPersonaConfig({
+          path: '/x.json',
+          readFile: readerReturning(JSON.stringify({ version: 1, personas: { p: { tier } } })),
+        }),
+      );
+      expect(err!.code).toBe('invalid_tier');
+      expect(err!.detail?.persona).toBe('p');
+      expect(err!.detail?.tier).toBe(tier);
+    });
 
     it('invalid_tier error preserves the raw input for the operator', () => {
       const err = catchErr(() =>

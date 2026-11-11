@@ -22,7 +22,6 @@ import {
 } from '../../src/identity/keypair';
 import { writeServiceKey, loadServiceKey } from '../../src/identity/keypair_node';
 
-
 describe('Ed25519 Keypair Management', () => {
   describe('generateKeypair', () => {
     it('generates a keypair with public and private keys', () => {

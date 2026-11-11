@@ -548,7 +548,9 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
       );
     }
     if (drainResult.failedReason !== undefined) {
-      return plainResponse(`I couldn't save that: ${describeSaveFailure(drainResult.failedReason)}.`);
+      return plainResponse(
+        `I couldn't save that: ${describeSaveFailure(drainResult.failedReason)}.`,
+      );
     }
     if (drainResult.notYetFiled === true) {
       return plainResponse(`I've kept that, but filing it is taking longer than usual.`);
@@ -584,7 +586,8 @@ async function handleRemember(text: string, thread: string): Promise<BotResponse
     zone = undefined;
   }
   const when = reminders.map((r) => formatReminderDue(r.due_at, zone));
-  const list = when.length === 1 ? when[0] : `${when.slice(0, -1).join(', ')} and ${when[when.length - 1]}`;
+  const list =
+    when.length === 1 ? when[0] : `${when.slice(0, -1).join(', ')} and ${when[when.length - 1]}`;
 
   // Render created reminders as scheduled cards (InlineReminderCard in
   // its `scheduled` state) instead of a raw "[id] 🔔 time — text" list,
@@ -752,7 +755,11 @@ export type AskCommandHandler = (
 }>;
 
 /** Records the owner's words in Core at the start of a chat turn; installed by each host. */
-export type OwnerTurnRecorder = (input: { releaseSession: string; turnId: string; text: string }) => Promise<boolean>;
+export type OwnerTurnRecorder = (input: {
+  releaseSession: string;
+  turnId: string;
+  text: string;
+}) => Promise<boolean>;
 
 let ownerTurnRecorder: OwnerTurnRecorder | null = null;
 
@@ -795,10 +802,15 @@ async function rememberOwnerWords(thread: string, words: string): Promise<Rememb
   try {
     ingested = await client.stagingIngestOwnerWords(proven.proof);
   } catch {
-    return { status: 'failed', personas: [], reason: "Core did not accept these as the owner's words" };
+    return {
+      status: 'failed',
+      personas: [],
+      reason: "Core did not accept these as the owner's words",
+    };
   }
   if (ingested.duplicate) return { status: 'duplicate', personas: [] };
-  if (rememberDrainHook === null) return { status: 'pending_unlock', personas: [], reason: 'filing shortly' };
+  if (rememberDrainHook === null)
+    return { status: 'pending_unlock', personas: [], reason: 'filing shortly' };
   let r: RememberDrainResult;
   try {
     r = await rememberDrainHook(ingested.itemId);
@@ -818,9 +830,14 @@ async function rememberOwnerWords(thread: string, words: string): Promise<Rememb
   }
   // REQ-19: held, not failed; it is filed once the model answers.
   if (r.heldForModel === true) {
-    return { status: 'pending_unlock', personas: [], reason: 'kept; filed once the AI provider answers' };
+    return {
+      status: 'pending_unlock',
+      personas: [],
+      reason: 'kept; filed once the AI provider answers',
+    };
   }
-  if (r.failedReason !== undefined) return { status: 'failed', personas: [], reason: r.failedReason };
+  if (r.failedReason !== undefined)
+    return { status: 'failed', personas: [], reason: r.failedReason };
   return { status: 'pending_unlock', personas: [], reason: 'filing shortly' };
 }
 installOwnerWordsRememberer(rememberOwnerWords);
@@ -987,9 +1004,7 @@ async function handleSchedule(contactDID: string, payload: string): Promise<BotR
   // Redirect rather than misroute to public discovery (which would search the
   // network for a "scheduling" provider — never the intent of /schedule).
   if (contactDID === '') {
-    return plainResponse(
-      'Open a chat with a contact to find a time with them, then try again.',
-    );
+    return plainResponse('Open a chat with a contact to find a time with them, then try again.');
   }
   if (contactServiceHandler === null) {
     return plainResponse(`Scheduling with this contact isn't wired up yet. (Coming soon.)`);

@@ -82,10 +82,7 @@ function buildGenesis(mnemonic: string) {
     handle: 'recovery.example',
   });
   const rotation = deriveRotationKey(masterSeed, 0);
-  const { signedOperation: genesisSigned } = signOperation(
-    creation.operation,
-    rotation.privateKey,
-  );
+  const { signedOperation: genesisSigned } = signOperation(creation.operation, rotation.privateKey);
   return {
     masterSeed,
     rotationPrivateKey: rotation.privateKey,

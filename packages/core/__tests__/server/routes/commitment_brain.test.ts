@@ -21,7 +21,10 @@ import { cleanForProvenance } from '../../../src/a2a/provenance_text';
 import { resetSpanProofs } from '../../../src/a2a/span_proof';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import { installValueModelStore, ValueModelStore } from '../../../src/commitment/model_store';
-import { installStandingChoiceStore, StandingChoiceStore } from '../../../src/commitment/standing_choices';
+import {
+  installStandingChoiceStore,
+  StandingChoiceStore,
+} from '../../../src/commitment/standing_choices';
 import { installStrategyStore, StrategyStore } from '../../../src/commitment/strategy_store';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommitmentBrainRoutes } from '../../../src/server/routes/commitment_brain';
@@ -242,7 +245,7 @@ describe('Brain’s door to the value model', () => {
     expect(JSON.stringify(asBrain.body)).toContain('owner_only');
   });
 
-  it('R-06: the seller\'s share is one setting: Brain may raise it first, then change it', async () => {
+  it("R-06: the seller's share is one setting: Brain may raise it first, then change it", async () => {
     const share = (option: string) => ({
       action: 'put',
       entry: { body: { type: 'choice', part: 'saving_share', option, rupees: '1' } },
@@ -253,7 +256,12 @@ describe('Brain’s door to the value model', () => {
     });
     expect(first.body.status).toBe('pending_owner');
     store.putEntry(
-      { id: 'saving_share', kind: 'goods.seller', covers: ['saving_share'], body: { type: 'choice', part: 'saving_share', option: 'third', rupees: 1n } },
+      {
+        id: 'saving_share',
+        kind: 'goods.seller',
+        covers: ['saving_share'],
+        body: { type: 'choice', part: 'saving_share', option: 'third', rupees: 1n },
+      },
       9,
     );
     const replaced = await call('POST', '/v1/commitment/brain/goods.seller/changes', {
@@ -273,7 +281,11 @@ describe('Brain’s door to the value model', () => {
             counterpartyDid: 'did:plc:store',
             state: 'accepted',
             resourceRef: 'slot-3',
-            general: { start: '2026-11-01T00:00:00Z', end: '2027-02-01T00:00:00Z', exit_notice_days: 30 },
+            general: {
+              start: '2026-11-01T00:00:00Z',
+              end: '2027-02-01T00:00:00Z',
+              exit_notice_days: 30,
+            },
             terms: [{ name: 'fee', value: '170000' }],
             promises: [],
             endsAt: '2027-02-01T00:00:00Z',
@@ -285,7 +297,11 @@ describe('Brain’s door to the value model', () => {
             counterpartyDid: 'did:plc:brand',
             state: 'rejected',
             resourceRef: 'slot-9',
-            general: { start: '2026-09-01T00:00:00Z', end: '2026-10-01T00:00:00Z', exit_notice_days: 60 },
+            general: {
+              start: '2026-09-01T00:00:00Z',
+              end: '2026-10-01T00:00:00Z',
+              exit_notice_days: 60,
+            },
             terms: [{ name: 'fee', value: '999999' }],
             promises: [],
             endsAt: null,
@@ -314,7 +330,12 @@ describe('Brain’s door to the value model', () => {
       strategy.setSettings(KIND, { strategy: 'brain', valuesOn: false }, 2);
       const off = await call('GET', `/v1/commitment/brain/${KIND}`, undefined);
       expect(off.body.past_deals).toEqual([
-        { state: 'accepted', counterparty_did: 'did:plc:store', start: '2026-11-01T00:00:00Z', end: '2027-02-01T00:00:00Z' },
+        {
+          state: 'accepted',
+          counterparty_did: 'did:plc:store',
+          start: '2026-11-01T00:00:00Z',
+          end: '2027-02-01T00:00:00Z',
+        },
       ]);
       expect(JSON.stringify(off.body)).not.toMatch(/170000|999999/);
     } finally {
@@ -327,7 +348,12 @@ describe('Brain’s door to the value model', () => {
     installStandingChoiceStore(choices);
     try {
       const put = (bps: unknown, callerType?: string) =>
-        call('PUT', '/v1/commitment/brain/goods.seller/saving-share', { share_bps: bps }, callerType);
+        call(
+          'PUT',
+          '/v1/commitment/brain/goods.seller/saving-share',
+          { share_bps: bps },
+          callerType,
+        );
       // Not Brain's while the owner bargains in the fixed style.
       expect((await put(2_500)).status).toBe(409);
       strategy.setSettings('goods.seller', { strategy: 'brain', valuesOn: true }, Date.now());
@@ -335,11 +361,21 @@ describe('Brain’s door to the value model', () => {
       expect((await put(10_001)).status).toBe(400);
       expect((await put(2.5)).status).toBe(400);
       expect(
-        (await call('PUT', '/v1/commitment/brain/goods.buyer/saving-share', { share_bps: 1 }, 'brain')).status,
+        (
+          await call(
+            'PUT',
+            '/v1/commitment/brain/goods.buyer/saving-share',
+            { share_bps: 1 },
+            'brain',
+          )
+        ).status,
       ).toBe(404);
       const ok = await put(2_500);
       expect(ok).toEqual({ status: 200, body: { ok: true, share_bps: 2_500 } });
-      expect(choices.get('goods.seller', 'saving_share_bps')).toMatchObject({ value: '2500', setBy: 'brain' });
+      expect(choices.get('goods.seller', 'saving_share_bps')).toMatchObject({
+        value: '2500',
+        setBy: 'brain',
+      });
       // Brain sees what it set, in its own view.
       const view = await call('GET', '/v1/commitment/brain/goods.seller', undefined);
       expect(view.body.standing).toEqual({ saving_share_bps: 2_500 });

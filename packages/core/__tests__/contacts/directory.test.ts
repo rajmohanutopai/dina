@@ -61,7 +61,6 @@ import {
   InMemoryVaultRepository,
   setVaultRepository,
   getVaultRepository,
-  resetVaultRepositories,
 } from '../../src/vault/repository';
 
 describe('Contact Directory', () => {
@@ -1272,16 +1271,16 @@ describe('Contact Directory', () => {
     });
 
     it('checkPaperIdentity judges without writing', () => {
-    expect(checkPaperIdentity(DID, { legalName: 'ChairMaker Industries LLP' })).toEqual([]);
-    expect(getPaperIdentity(DID).legalName).toBe('');
-    expect(
-      checkPaperIdentity(DID, { registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' } as never] }).map(
-        (f) => f.refusal,
-      ),
-    ).toEqual(['malformed_registration']);
-  });
+      expect(checkPaperIdentity(DID, { legalName: 'ChairMaker Industries LLP' })).toEqual([]);
+      expect(getPaperIdentity(DID).legalName).toBe('');
+      expect(
+        checkPaperIdentity(DID, {
+          registrations: [{ scheme: 'gstin', value: '27AAPFU0939F1ZW' } as never],
+        }).map((f) => f.refusal),
+      ).toEqual(['malformed_registration']);
+    });
 
-  it('refuses a mistyped registration and writes NOTHING — not the good fields either', () => {
+    it('refuses a mistyped registration and writes NOTHING — not the good fields either', () => {
       expect(setPaperIdentity(DID, { legalName: 'ChairMaker Industries LLP' })).toEqual([]);
       const findings = setPaperIdentity(DID, {
         legalName: 'Renamed Industries',
@@ -1342,105 +1341,125 @@ describe('Contact Directory', () => {
     });
 
     describe('the channels a rail would message', () => {
-    it('start empty and round-trip through the PEOPLE GRAPH, canonicalised', () => {
-      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
-      expect(setContactChannels(DID, { phone: '+91 98450 12345', email: '  Sales@ChairMaker.example  ' })).toEqual([]);
-      expect(getContactChannels(DID)).toEqual({ phone: '+919845012345', email: 'sales@chairmaker.example' });
-      // The contact row holds none of it — the people graph does.
-      const personId = getContact(DID)?.personId ?? '';
-      expect(
-        getPeopleRepository()
-          ?.listIdentities(personId)
-          .filter((i) => i.identityType === 'phone')
-          .map((i) => i.identityValue),
-      ).toEqual(['+919845012345']);
-    });
-
-    it('replacing a number removes the old binding — one phone, not a history', () => {
-      setContactChannels(DID, { phone: '+919845012345' });
-      setContactChannels(DID, { phone: '+919845099999' });
-      const personId = getContact(DID)?.personId ?? '';
-      expect(
-        getPeopleRepository()
-          ?.listIdentities(personId)
-          .filter((i) => i.identityType === 'phone')
-          .map((i) => i.identityValue),
-      ).toEqual(['+919845099999']);
-      expect(getContactChannels(DID).phone).toBe('+919845099999');
-    });
-
-    it('an empty string or null clears one channel and leaves the other', () => {
-      setContactChannels(DID, { phone: '+919845012345', email: 'sales@chairmaker.example' });
-      setContactChannels(DID, { phone: '' });
-      expect(getContactChannels(DID)).toEqual({ phone: null, email: 'sales@chairmaker.example' });
-      setContactChannels(DID, { email: null });
-      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
-    });
-
-    it.each([
-      ['phone', '12345'],
-      ['phone', '+9198450123456789012'],
-      ['phone', 'call me'],
-      // Judged as TYPED: the canonicaliser strips non-digits, so a sentence
-      // with a number in it would otherwise be stored as a diallable number.
-      ['phone', 'call me on 98450 12345 tomorrow at 9'],
-      ['phone', '9845012345 x123'],
-      ['phone', 'ask Sancho 9845012345'],
-      ['email', 'sales@chairmaker'],
-      ['email', 'not an address'],
-      ['email', 'a@b.c d'],
-    ])('refuses a malformed %s without echoing it, and writes nothing', (field, value) => {
-      const findings = setContactChannels(DID, { [field]: value } as { phone?: string; email?: string });
-      expect(findings.map((f) => f.refusal)).toEqual(['malformed_channel']);
-      expect(findings[0].detail).not.toContain(value);
-      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
-    });
-
-    it('refuses a number another live person already holds — re-pointing an identity is a merge, not an edit', () => {
-      addContact('did:plc:otherseller', 'Other Seller', 'verified');
-      expect(setContactChannels('did:plc:otherseller', { phone: '+919845012345' })).toEqual([]);
-      const findings = setContactChannels(DID, { phone: '+91 98450 12345' });
-      expect(findings.map((f) => f.refusal)).toEqual(['channel_held_by_another_person']);
-      expect(getContactChannels(DID).phone).toBeNull();
-      expect(getContactChannels('did:plc:otherseller').phone).toBe('+919845012345');
-      // The refusal names neither the number nor the other person's id: both
-      // are PII, and the owner needs neither to know what to do.
-      expect(findings[0].detail).not.toContain('9845012345');
-      expect(findings[0].detail).not.toContain(getContact('did:plc:otherseller')?.personId ?? 'person');
-      expect(findings[0].detail).toMatch(/merge/);
-    });
-
-    it('a conflicted phone refuses the WHOLE save — the e-mail beside it is not written', () => {
-      setContactChannels(DID, { email: 'old@chairmaker.example' });
-      addContact('did:plc:otherseller', 'Other Seller', 'verified');
-      expect(setContactChannels('did:plc:otherseller', { phone: '+919845012345' })).toEqual([]);
-      const findings = setContactChannels(DID, {
-        phone: '+919845012345',
-        email: 'new@chairmaker.example',
+      it('start empty and round-trip through the PEOPLE GRAPH, canonicalised', () => {
+        expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+        expect(
+          setContactChannels(DID, {
+            phone: '+91 98450 12345',
+            email: '  Sales@ChairMaker.example  ',
+          }),
+        ).toEqual([]);
+        expect(getContactChannels(DID)).toEqual({
+          phone: '+919845012345',
+          email: 'sales@chairmaker.example',
+        });
+        // The contact row holds none of it — the people graph does.
+        const personId = getContact(DID)?.personId ?? '';
+        expect(
+          getPeopleRepository()
+            ?.listIdentities(personId)
+            .filter((i) => i.identityType === 'phone')
+            .map((i) => i.identityValue),
+        ).toEqual(['+919845012345']);
       });
-      expect(findings.map((f) => f.refusal)).toEqual(['channel_held_by_another_person']);
-      // Nothing was written: the e-mail is what it was.
-      expect(getContactChannels(DID)).toEqual({ phone: null, email: 'old@chairmaker.example' });
+
+      it('replacing a number removes the old binding — one phone, not a history', () => {
+        setContactChannels(DID, { phone: '+919845012345' });
+        setContactChannels(DID, { phone: '+919845099999' });
+        const personId = getContact(DID)?.personId ?? '';
+        expect(
+          getPeopleRepository()
+            ?.listIdentities(personId)
+            .filter((i) => i.identityType === 'phone')
+            .map((i) => i.identityValue),
+        ).toEqual(['+919845099999']);
+        expect(getContactChannels(DID).phone).toBe('+919845099999');
+      });
+
+      it('an empty string or null clears one channel and leaves the other', () => {
+        setContactChannels(DID, { phone: '+919845012345', email: 'sales@chairmaker.example' });
+        setContactChannels(DID, { phone: '' });
+        expect(getContactChannels(DID)).toEqual({ phone: null, email: 'sales@chairmaker.example' });
+        setContactChannels(DID, { email: null });
+        expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+      });
+
+      it.each([
+        ['phone', '12345'],
+        ['phone', '+9198450123456789012'],
+        ['phone', 'call me'],
+        // Judged as TYPED: the canonicaliser strips non-digits, so a sentence
+        // with a number in it would otherwise be stored as a diallable number.
+        ['phone', 'call me on 98450 12345 tomorrow at 9'],
+        ['phone', '9845012345 x123'],
+        ['phone', 'ask Sancho 9845012345'],
+        ['email', 'sales@chairmaker'],
+        ['email', 'not an address'],
+        ['email', 'a@b.c d'],
+      ])('refuses a malformed %s without echoing it, and writes nothing', (field, value) => {
+        const findings = setContactChannels(DID, { [field]: value } as {
+          phone?: string;
+          email?: string;
+        });
+        expect(findings.map((f) => f.refusal)).toEqual(['malformed_channel']);
+        expect(findings[0].detail).not.toContain(value);
+        expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+      });
+
+      it('refuses a number another live person already holds — re-pointing an identity is a merge, not an edit', () => {
+        addContact('did:plc:otherseller', 'Other Seller', 'verified');
+        expect(setContactChannels('did:plc:otherseller', { phone: '+919845012345' })).toEqual([]);
+        const findings = setContactChannels(DID, { phone: '+91 98450 12345' });
+        expect(findings.map((f) => f.refusal)).toEqual(['channel_held_by_another_person']);
+        expect(getContactChannels(DID).phone).toBeNull();
+        expect(getContactChannels('did:plc:otherseller').phone).toBe('+919845012345');
+        // The refusal names neither the number nor the other person's id: both
+        // are PII, and the owner needs neither to know what to do.
+        expect(findings[0].detail).not.toContain('9845012345');
+        expect(findings[0].detail).not.toContain(
+          getContact('did:plc:otherseller')?.personId ?? 'person',
+        );
+        expect(findings[0].detail).toMatch(/merge/);
+      });
+
+      it('a conflicted phone refuses the WHOLE save — the e-mail beside it is not written', () => {
+        setContactChannels(DID, { email: 'old@chairmaker.example' });
+        addContact('did:plc:otherseller', 'Other Seller', 'verified');
+        expect(setContactChannels('did:plc:otherseller', { phone: '+919845012345' })).toEqual([]);
+        const findings = setContactChannels(DID, {
+          phone: '+919845012345',
+          email: 'new@chairmaker.example',
+        });
+        expect(findings.map((f) => f.refusal)).toEqual(['channel_held_by_another_person']);
+        // Nothing was written: the e-mail is what it was.
+        expect(getContactChannels(DID)).toEqual({ phone: null, email: 'old@chairmaker.example' });
+      });
+
+      it('a malformed phone refuses the WHOLE save — an e-mail in the same call is not written', () => {
+        const findings = setContactChannels(DID, {
+          phone: 'call me',
+          email: 'sales@chairmaker.example',
+        });
+        expect(findings.map((f) => f.refusal)).toEqual(['malformed_channel']);
+        expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
+      });
+
+      it('checkContactChannels judges without writing', () => {
+        expect(checkContactChannels(DID, { phone: '+919845012345' })).toEqual([]);
+        expect(getContactChannels(DID).phone).toBeNull();
+        expect(checkContactChannels(DID, { phone: 'call me' }).map((f) => f.refusal)).toEqual([
+          'malformed_channel',
+        ]);
+      });
+
+      it('throws for an unknown contact', () => {
+        expect(() => setContactChannels('did:plc:nobody', { phone: '+919845012345' })).toThrow(
+          /not found/,
+        );
+      });
     });
 
-    it('a malformed phone refuses the WHOLE save — an e-mail in the same call is not written', () => {
-      const findings = setContactChannels(DID, { phone: 'call me', email: 'sales@chairmaker.example' });
-      expect(findings.map((f) => f.refusal)).toEqual(['malformed_channel']);
-      expect(getContactChannels(DID)).toEqual({ phone: null, email: null });
-    });
-
-    it('checkContactChannels judges without writing', () => {
-      expect(checkContactChannels(DID, { phone: '+919845012345' })).toEqual([]);
-      expect(getContactChannels(DID).phone).toBeNull();
-      expect(checkContactChannels(DID, { phone: 'call me' }).map((f) => f.refusal)).toEqual(['malformed_channel']);
-    });
-
-    it('throws for an unknown contact', () => {
-      expect(() => setContactChannels('did:plc:nobody', { phone: '+919845012345' })).toThrow(/not found/);
-    });
-  });
-
-  it('reads a hand-edited nonsense row as "not stated", never a crash', () => {
+    it('reads a hand-edited nonsense row as "not stated", never a crash', () => {
       const personId = getContact(DID)?.personId ?? '';
       adapter.execute(
         "UPDATE contacts SET registrations = 'not json', billing_address = '{oops' WHERE person_id = ?",

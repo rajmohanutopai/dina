@@ -261,7 +261,10 @@ export class SQLiteStagingRepository implements StagingRepository {
     };
     const count = (where: string, params: unknown[] = []): number =>
       Number(
-        this.db.query<{ c: number }>(`SELECT COUNT(*) as c FROM staging_inbox WHERE ${where}`, params)[0]?.c ?? 0,
+        this.db.query<{ c: number }>(
+          `SELECT COUNT(*) as c FROM staging_inbox WHERE ${where}`,
+          params,
+        )[0]?.c ?? 0,
       );
 
     // 1. Delete expired (7d TTL). An owner memory not yet in the vault stays.
@@ -424,7 +427,9 @@ export class InMemoryStagingRepository implements StagingRepository {
           result.retained++;
         } else {
           this.rows.delete(id);
-          this.dedup.delete(dedupKey(item.producer_id, item.source, item.source_id, item.data_scope));
+          this.dedup.delete(
+            dedupKey(item.producer_id, item.source, item.source_id, item.data_scope),
+          );
           result.expired++;
           continue;
         }
@@ -456,7 +461,12 @@ export class InMemoryStagingRepository implements StagingRepository {
         if (item.retry_count > STAGING_MAX_RETRIES) {
           result.deadLettered++;
         } else if (item.lease_until <= now) {
-          this.rows.set(id, { ...item, status: 'received', lease_until: 0, claim_token: undefined });
+          this.rows.set(id, {
+            ...item,
+            status: 'received',
+            lease_until: 0,
+            claim_token: undefined,
+          });
           result.requeued++;
         }
       }

@@ -38,38 +38,38 @@ Stack-scoped tabs (have their own nested Stack):
 
 ## Complete Route → Entry Point Map
 
-| Route | How you reach it | Expected back destination |
-|---|---|---|
-| `/` | Default / tab bar | n/a (root) |
-| `/people` | Tab bar | n/a (root tab) |
-| `/notifications` | Tab bar | n/a (root tab) |
-| `/approvals` | Tab bar (conditional) | n/a (root tab) |
-| `/peerlens` | Tab bar | n/a (root tab) |
-| `/peerlens/search` | PeerLens → search icon | `/peerlens` (Stack) |
-| `/peerlens/[subjectId]` | PeerLens search result | `/peerlens` or `/peerlens/search` (Stack) |
-| `/peerlens/reviewer/[did]` | Subject → reviewer | `/peerlens/[subjectId]` (Stack) |
-| `/peerlens/write` | Subject / reviewer / chat draft | `/peerlens/[subjectId]` or `/` (chat-draft) |
-| `/peerlens/outbox` | PeerLens → outbox button | `/peerlens` (Stack) |
-| `/peerlens/namespace` | PeerLens → namespace button | `/peerlens` (Stack) |
-| `/vault` | Hamburger menu | n/a (Stack root) |
-| `/vault/[name]` | Vault hub → persona card | `/vault` (Stack) |
-| `/settings` | Hamburger menu | `/` (Chat) |
-| `/admin` | Settings → MORE → Admin | `/settings` |
-| `/policy` | Admin → Agent policies | `/admin` |
-| `/paired-devices` | Settings → MORE → Agents | `/settings` |
-| `/service-settings` | Settings → Service Sharing | `/settings` |
-| `/recovery-phrase` | Settings → View recovery phrase, or confirm-recovery-phrase → View phrase | `/settings` (or `/confirm-recovery-phrase`) |
-| `/confirm-recovery-phrase` | Chat banner, or Settings → Confirm phrase | `/settings` (or `/`) |
-| `/peerlens-preferences/region` | Settings → PeerLens Preferences | `/settings` |
-| `/peerlens-preferences/budget` | Settings → PeerLens Preferences | `/settings` |
-| `/peerlens-preferences/devices` | Settings → PeerLens Preferences | `/settings` |
-| `/peerlens-preferences/languages` | Settings → PeerLens Preferences | `/settings` |
-| `/peerlens-preferences/dietary` | Settings → PeerLens Preferences | `/settings` |
-| `/peerlens-preferences/accessibility` | Settings → PeerLens Preferences | `/settings` |
-| `/reminders` | Hamburger menu | `/` (Chat) |
-| `/help` | Hamburger / header right (?) button | `/` (or source tab via `?from=`) |
-| `/add-contact` | People → + Add | `/people` |
-| `/chat/[did]` | People → contact row | `/people` |
+| Route                                 | How you reach it                                                          | Expected back destination                   |
+| ------------------------------------- | ------------------------------------------------------------------------- | ------------------------------------------- |
+| `/`                                   | Default / tab bar                                                         | n/a (root)                                  |
+| `/people`                             | Tab bar                                                                   | n/a (root tab)                              |
+| `/notifications`                      | Tab bar                                                                   | n/a (root tab)                              |
+| `/approvals`                          | Tab bar (conditional)                                                     | n/a (root tab)                              |
+| `/peerlens`                           | Tab bar                                                                   | n/a (root tab)                              |
+| `/peerlens/search`                    | PeerLens → search icon                                                    | `/peerlens` (Stack)                         |
+| `/peerlens/[subjectId]`               | PeerLens search result                                                    | `/peerlens` or `/peerlens/search` (Stack)   |
+| `/peerlens/reviewer/[did]`            | Subject → reviewer                                                        | `/peerlens/[subjectId]` (Stack)             |
+| `/peerlens/write`                     | Subject / reviewer / chat draft                                           | `/peerlens/[subjectId]` or `/` (chat-draft) |
+| `/peerlens/outbox`                    | PeerLens → outbox button                                                  | `/peerlens` (Stack)                         |
+| `/peerlens/namespace`                 | PeerLens → namespace button                                               | `/peerlens` (Stack)                         |
+| `/vault`                              | Hamburger menu                                                            | n/a (Stack root)                            |
+| `/vault/[name]`                       | Vault hub → persona card                                                  | `/vault` (Stack)                            |
+| `/settings`                           | Hamburger menu                                                            | `/` (Chat)                                  |
+| `/admin`                              | Settings → MORE → Admin                                                   | `/settings`                                 |
+| `/policy`                             | Admin → Agent policies                                                    | `/admin`                                    |
+| `/paired-devices`                     | Settings → MORE → Agents                                                  | `/settings`                                 |
+| `/service-settings`                   | Settings → Service Sharing                                                | `/settings`                                 |
+| `/recovery-phrase`                    | Settings → View recovery phrase, or confirm-recovery-phrase → View phrase | `/settings` (or `/confirm-recovery-phrase`) |
+| `/confirm-recovery-phrase`            | Chat banner, or Settings → Confirm phrase                                 | `/settings` (or `/`)                        |
+| `/peerlens-preferences/region`        | Settings → PeerLens Preferences                                           | `/settings`                                 |
+| `/peerlens-preferences/budget`        | Settings → PeerLens Preferences                                           | `/settings`                                 |
+| `/peerlens-preferences/devices`       | Settings → PeerLens Preferences                                           | `/settings`                                 |
+| `/peerlens-preferences/languages`     | Settings → PeerLens Preferences                                           | `/settings`                                 |
+| `/peerlens-preferences/dietary`       | Settings → PeerLens Preferences                                           | `/settings`                                 |
+| `/peerlens-preferences/accessibility` | Settings → PeerLens Preferences                                           | `/settings`                                 |
+| `/reminders`                          | Hamburger menu                                                            | `/` (Chat)                                  |
+| `/help`                               | Hamburger / header right (?) button                                       | `/` (or source tab via `?from=`)            |
+| `/add-contact`                        | People → + Add                                                            | `/people`                                   |
+| `/chat/[did]`                         | People → contact row                                                      | `/people`                                   |
 
 ---
 
@@ -192,10 +192,10 @@ const SECTION_PARENTS: Record<string, string> = {
   admin: '/settings',
   'paired-devices': '/settings',
   'service-settings': '/settings',
-  policy: '/admin',                        // ADD — admin drill-down
-  'recovery-phrase': '/settings',          // ADD — settings drill-down
-  'confirm-recovery-phrase': '/settings',  // ADD — settings drill-down (chat banner should pass ?from=/)
-  'peerlens-preferences': '/settings',     // ADD — settings drill-downs (all 6 sub-screens)
+  policy: '/admin', // ADD — admin drill-down
+  'recovery-phrase': '/settings', // ADD — settings drill-down
+  'confirm-recovery-phrase': '/settings', // ADD — settings drill-down (chat banner should pass ?from=/)
+  'peerlens-preferences': '/settings', // ADD — settings drill-downs (all 6 sub-screens)
   settings: '/',
   reminders: '/',
   help: '/',
@@ -204,24 +204,24 @@ const SECTION_PARENTS: Record<string, string> = {
 
 ### 2. In-screen `router.back()` → `router.replace(parent)` (Bugs 5–9)
 
-| File | Line | Current | Fix |
-|---|---|---|---|
-| `add-contact.tsx` | 99 | `router.back()` | `router.replace('/people')` |
-| `add-contact.tsx` | 150 | `router.back()` | `router.replace('/people')` |
-| `confirm-recovery-phrase.tsx` | 69 | `router.back()` | `router.replace('/settings')` (or read `from` param) |
-| `confirm-recovery-phrase.tsx` | 75 | `router.back()` | `router.replace('/settings')` |
-| `confirm-recovery-phrase.tsx` | 137 | `router.back()` | `router.replace('/settings')` |
-| `recovery-phrase.tsx` | 175 | `router.back()` | `router.replace('/settings')` |
-| `peerlens-preferences/region.tsx` | 77 | `router.back()` | `router.replace('/settings')` |
-| `service-settings.tsx` | 242 | `router.back()` | `router.replace('/settings')` |
+| File                              | Line | Current         | Fix                                                  |
+| --------------------------------- | ---- | --------------- | ---------------------------------------------------- |
+| `add-contact.tsx`                 | 99   | `router.back()` | `router.replace('/people')`                          |
+| `add-contact.tsx`                 | 150  | `router.back()` | `router.replace('/people')`                          |
+| `confirm-recovery-phrase.tsx`     | 69   | `router.back()` | `router.replace('/settings')` (or read `from` param) |
+| `confirm-recovery-phrase.tsx`     | 75   | `router.back()` | `router.replace('/settings')`                        |
+| `confirm-recovery-phrase.tsx`     | 137  | `router.back()` | `router.replace('/settings')`                        |
+| `recovery-phrase.tsx`             | 175  | `router.back()` | `router.replace('/settings')`                        |
+| `peerlens-preferences/region.tsx` | 77   | `router.back()` | `router.replace('/settings')`                        |
+| `service-settings.tsx`            | 242  | `router.back()` | `router.replace('/settings')`                        |
 
 ### 3. Missing `?from` params (Bugs 10–11)
 
-| Location | Current | Fix |
-|---|---|---|
-| `help.tsx:138` admin card | `router.push('/admin')` | `router.push({ pathname: '/admin', params: { from: '/help' } })` |
-| `confirm-recovery-phrase.tsx:71` | `router.push('/recovery-phrase')` | `router.push({ pathname: '/recovery-phrase', params: { from: '/confirm-recovery-phrase' } })` |
-| `index.tsx` chat banner | `router.push('/confirm-recovery-phrase')` | `router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })` — so in-screen buttons can return to Chat |
+| Location                         | Current                                   | Fix                                                                                                                      |
+| -------------------------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `help.tsx:138` admin card        | `router.push('/admin')`                   | `router.push({ pathname: '/admin', params: { from: '/help' } })`                                                         |
+| `confirm-recovery-phrase.tsx:71` | `router.push('/recovery-phrase')`         | `router.push({ pathname: '/recovery-phrase', params: { from: '/confirm-recovery-phrase' } })`                            |
+| `index.tsx` chat banner          | `router.push('/confirm-recovery-phrase')` | `router.push({ pathname: '/confirm-recovery-phrase', params: { from: '/' } })` — so in-screen buttons can return to Chat |
 
 ---
 

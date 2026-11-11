@@ -142,7 +142,8 @@ export function decidePushDelivery(i: PushPipelineInput): PushDeliveryDecision {
   let demoted = false;
   if (!i.budget_available) {
     const disp = overBudgetDisposition(i.kind);
-    if (disp.disposition === 'retryable_reject') return { action: 'reject', reason: 'over_budget_action' };
+    if (disp.disposition === 'retryable_reject')
+      return { action: 'reject', reason: 'over_budget_action' };
     // informational overage → demote to briefing (never dropped by default)
     deliverTier = disp.tier;
     demoted = true;

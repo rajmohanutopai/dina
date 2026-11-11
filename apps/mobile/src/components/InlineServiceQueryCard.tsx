@@ -17,7 +17,7 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { buildResultCardSpec } from '@dina/brain';
@@ -88,8 +88,12 @@ export function InlineServiceQueryCard({
     }
     return (
       <View testID="chat-card-service-response" style={styles.card}>
-        <Text testID={`service-query-card-title-${message.id}`} style={styles.title}>{serviceName}</Text>
-        <Text testID={`service-query-card-body-${message.id}`} style={styles.body}>{message.content}</Text>
+        <Text testID={`service-query-card-title-${message.id}`} style={styles.title}>
+          {serviceName}
+        </Text>
+        <Text testID={`service-query-card-body-${message.id}`} style={styles.body}>
+          {message.content}
+        </Text>
         <ProviderAttribution
           serviceName={serviceName}
           providerDid={lc.providerDid}

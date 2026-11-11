@@ -24,8 +24,16 @@ const LOCAL = 'did:key:z6MkLocalCore';
 async function runningLocalChild(): Promise<{ id: string; taskId: string }> {
   await save(
     listing({
-      capabilities: { appointment_book: { responsePolicy: 'review', instruction: 'Book it.', category: 'appointments' } },
-      capabilitySchemas: { appointment_book: { params: BOOK_PARAMS, result: BOOK_RESULT, schemaHash: 'h-book' } },
+      capabilities: {
+        appointment_book: {
+          responsePolicy: 'review',
+          instruction: 'Book it.',
+          category: 'appointments',
+        },
+      },
+      capabilitySchemas: {
+        appointment_book: { params: BOOK_PARAMS, result: BOOK_RESULT, schemaHash: 'h-book' },
+      },
     }),
     'bus',
   );
@@ -57,15 +65,18 @@ it.each([
   ['heartbeat', {}],
   ['progress', { message: 'half way' }],
   ['input-required', { question: 'Which slot?' }],
-])('Brain cannot %s a running in-process inbound child; the call stays Core’s runner’s to settle', async (verb, body) => {
-  const { id, taskId } = await runningLocalChild();
-  const router = new CoreRouter();
-  registerWorkflowRoutes(router);
-  const resp = await brainPost(router, `/v1/workflow/tasks/${taskId}/${verb}`, body);
-  expect([verb, resp.status]).toEqual([verb, 403]);
-  expect(iw.childOf(id).status).toBe('running');
-  expect(iw.opOf(id).state).toBe('open');
-  // Core's runner still reports as before.
-  iw.world.workflow.complete(taskId, JSON.stringify({ booked: true }), 'done', LOCAL);
-  expect(iw.opOf(id).state).toBe('completed');
-});
+])(
+  'Brain cannot %s a running in-process inbound child; the call stays Core’s runner’s to settle',
+  async (verb, body) => {
+    const { id, taskId } = await runningLocalChild();
+    const router = new CoreRouter();
+    registerWorkflowRoutes(router);
+    const resp = await brainPost(router, `/v1/workflow/tasks/${taskId}/${verb}`, body);
+    expect([verb, resp.status]).toEqual([verb, 403]);
+    expect(iw.childOf(id).status).toBe('running');
+    expect(iw.opOf(id).state).toBe('open');
+    // Core's runner still reports as before.
+    iw.world.workflow.complete(taskId, JSON.stringify({ booked: true }), 'done', LOCAL);
+    expect(iw.opOf(id).state).toBe('completed');
+  },
+);

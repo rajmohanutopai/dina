@@ -100,7 +100,6 @@ import {
   registerWebOriginCors,
 } from './web_origin';
 
-
 /**
  * Per-persona hints used by the agentic /remember loop's system prompt.
  * Helps the LLM disambiguate (e.g. routing a "$25 toy budget" memory to
@@ -252,7 +251,10 @@ export async function bootServer(
       : new NameLexicon({
           fetch: (known) => coreForNames.piiNames(known),
           onDegraded: (reason) =>
-            logger.warn({ reason }, 'pii names unavailable; refusing model calls until Core answers'),
+            logger.warn(
+              { reason },
+              'pii names unavailable; refusing model calls until Core answers',
+            ),
         }),
   );
   // Every consumer outside the ask pipeline gets the model behind the router,

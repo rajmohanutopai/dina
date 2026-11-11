@@ -45,7 +45,12 @@ import { newA2AId } from '../../a2a/ids';
 import { buildInboundCard, getA2ACardConfig } from '../../a2a/inbound_card';
 import { cancelOutboundOperation } from '../../a2a/permits';
 import { OUTBOUND_PRINCIPAL, proposeDelegation } from '../../a2a/proposal';
-import { getA2APublisher, publicationView, readPublication, setDirectoryListing } from '../../a2a/publication';
+import {
+  getA2APublisher,
+  publicationView,
+  readPublication,
+  setDirectoryListing,
+} from '../../a2a/publication';
 import { getA2AReleaseLog } from '../../a2a/release_log';
 import {
   activateRemoteAgent,
@@ -64,7 +69,10 @@ import { bindRunner, listRunnerBindings, unbindRunner } from '../../a2a/runner_b
 import { getA2ARuntime, getA2AStore, type A2ARuntime } from '../../a2a/runtime';
 import { ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getNodeDID } from '../../pairing/ceremony';
-import { getServiceGrantRepository, type ServiceGrant } from '../../service/service_grant_repository';
+import {
+  getServiceGrantRepository,
+  type ServiceGrant,
+} from '../../service/service_grant_repository';
 import { parseReleaseSession } from '../../vault/release';
 
 import { makeOwnerGuard } from './owner_guard';
@@ -91,7 +99,12 @@ import type { CoreRequest, CoreResponse, CoreRouter } from '../router';
 
 const json = (status: number, body: unknown): CoreResponse => ({ status, body });
 
-const NOT_FOUND = new Set(['not_found', 'agent_not_found', 'client_not_found', 'listing_not_found']);
+const NOT_FOUND = new Set([
+  'not_found',
+  'agent_not_found',
+  'client_not_found',
+  'listing_not_found',
+]);
 // A refused credential request names what was wrong, never echoes a secret.
 const CONFLICT = new Set([
   'did_bound',
@@ -108,7 +121,13 @@ const CONFLICT = new Set([
 const TOO_MANY = new Set(['too_many_recent']);
 
 function refusal(reason: string, extra: Record<string, unknown> = {}): CoreResponse {
-  const status = NOT_FOUND.has(reason) ? 404 : CONFLICT.has(reason) ? 409 : TOO_MANY.has(reason) ? 429 : 400;
+  const status = NOT_FOUND.has(reason)
+    ? 404
+    : CONFLICT.has(reason)
+      ? 409
+      : TOO_MANY.has(reason)
+        ? 429
+        : 400;
   return json(status, { error: reason, ...extra });
 }
 
@@ -118,7 +137,9 @@ function body(req: CoreRequest): Record<string, unknown> {
 
 /** Brain on a server (the signed service key) or in-process on the phone. */
 function isBrain(req: CoreRequest): boolean {
-  return req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  return (
+    req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined)
+  );
 }
 
 export function agentView(store: A2AStore, agent: RemoteAgentRow): Record<string, unknown> {
@@ -140,7 +161,8 @@ export function agentView(store: A2AStore, agent: RemoteAgentRow): Record<string
       action_class: b.action_class,
       credential_ref: b.credential_ref,
       revision: b.revision,
-      result_schema: b.result_schema_json === null ? null : (JSON.parse(b.result_schema_json) as unknown),
+      result_schema:
+        b.result_schema_json === null ? null : (JSON.parse(b.result_schema_json) as unknown),
     })),
     credentials: store.listCredentials(agent.agent_id).map(credentialView),
     schemes: cardSchemeChoices(agent.schemes_json),
@@ -190,12 +212,14 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
   const ownerGuard = makeOwnerGuard(ownerCapability, 'remote agents are the owner’s to manage');
   const runtime = (): A2ARuntime | CoreResponse =>
     getA2ARuntime() ?? json(503, { error: 'a2a_unavailable' });
-  const store = (): A2AStore | CoreResponse => getA2AStore() ?? json(503, { error: 'a2a_unavailable' });
+  const store = (): A2AStore | CoreResponse =>
+    getA2AStore() ?? json(503, { error: 'a2a_unavailable' });
   const isResponse = (v: unknown): v is CoreResponse =>
     isPlainObject(v) && typeof (v as { status?: unknown }).status === 'number' && 'body' in v;
   const brainOnly = (req: CoreRequest): CoreResponse | null =>
     isBrain(req) ? null : json(403, { error: 'access_denied', reason: 'brain only' });
-  const brainOrOwner = (req: CoreRequest): CoreResponse | null => (isBrain(req) ? null : ownerGuard(req));
+  const brainOrOwner = (req: CoreRequest): CoreResponse | null =>
+    isBrain(req) ? null : ownerGuard(req);
 
   // ------------------------------------------------------------------ Brain
 
@@ -213,7 +237,9 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
       skill: b.skill,
       ...(b.text !== undefined ? { text: b.text } : {}),
       ...(b.data !== undefined ? { data: b.data } : {}),
-      ...(typeof b.reply_to === 'string' && b.reply_to !== '' ? { replyTo: b.reply_to.slice(0, 200) } : {}),
+      ...(typeof b.reply_to === 'string' && b.reply_to !== ''
+        ? { replyTo: b.reply_to.slice(0, 200) }
+        : {}),
       releaseSession: b.release_session,
       ...(b.sources !== undefined ? { sources: b.sources } : {}),
     });
@@ -270,7 +296,11 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     const rt = runtime();
     if (isResponse(rt)) return rt;
     const b = body(req);
-    if (typeof b.job_id !== 'string' || typeof b.claim_id !== 'string' || typeof b.digest !== 'string') {
+    if (
+      typeof b.job_id !== 'string' ||
+      typeof b.claim_id !== 'string' ||
+      typeof b.digest !== 'string'
+    ) {
       return json(400, { error: 'job_id, claim_id and digest are required' });
     }
     const out = submitGuardVerdict(rt, {
@@ -299,8 +329,10 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     const b = body(req);
     const sessionId = parseReleaseSession(b.release_session);
     const turnId = parseReleaseSession(b.turn_id);
-    if (sessionId === null || turnId === null) return json(400, { error: 'release_session and turn_id are required' });
-    if (typeof b.text !== 'string' || b.text.trim() === '') return json(400, { error: 'text is required' });
+    if (sessionId === null || turnId === null)
+      return json(400, { error: 'release_session and turn_id are required' });
+    if (typeof b.text !== 'string' || b.text.trim() === '')
+      return json(400, { error: 'text is required' });
     return json(200, { recorded: log.recordUtterance(sessionId, turnId, b.text) });
   });
 
@@ -348,7 +380,9 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     `${OWNER_A2A_CLIENTS}/:id/rotate`,
     ownerRoute((req, s) => {
       const out = rotateA2AClientToken(s, req.params.id ?? '', Date.now());
-      return out.ok ? json(200, { token: out.token, token_expires_at: out.token_expires_at }) : refusal(out.reason);
+      return out.ok
+        ? json(200, { token: out.token, token_expires_at: out.token_expires_at })
+        : refusal(out.reason);
     }),
   );
 
@@ -396,7 +430,12 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
       const out = issueA2AGrant(
         s,
         grants,
-        { client_id: req.params.id ?? '', service_rkey: b.service_rkey, capability: b.capability, expires_at: b.expires_at },
+        {
+          client_id: req.params.id ?? '',
+          service_rkey: b.service_rkey,
+          capability: b.capability,
+          expires_at: b.expires_at,
+        },
         Date.now(),
       );
       return out.ok ? json(201, grantView(out.grant)) : refusal(out.reason);
@@ -459,7 +498,8 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     const built = await buildInboundCard(s, { nodeDid, config });
     return { gatewayLive: true, projectableSkills: built.ok ? built.card.skills.length : 0 };
   };
-  const publisherView = async (s: A2AStore) => publicationView(readPublication(s), await publicationInputs(s));
+  const publisherView = async (s: A2AStore) =>
+    publicationView(readPublication(s), await publicationInputs(s));
 
   router.get(
     OWNER_A2A_PUBLISHER,
@@ -472,7 +512,9 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     OWNER_A2A_CARD_KEY,
     ownerRoute(async () => {
       const rotation = getA2ACardKeyRotation();
-      return rotation === null ? json(503, { error: 'card_unconfigured' }) : json(200, rotation.view());
+      return rotation === null
+        ? json(503, { error: 'card_unconfigured' })
+        : json(200, rotation.view());
     }),
   );
   router.post(
@@ -496,7 +538,8 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     OWNER_A2A_DIRECTORY_LISTING,
     ownerRoute(async (req, s) => {
       const enabled = body(req).enabled;
-      if (typeof enabled !== 'boolean') return json(400, { error: 'enabled must be true or false' });
+      if (typeof enabled !== 'boolean')
+        return json(400, { error: 'enabled must be true or false' });
       setDirectoryListing(s, enabled, Date.now(), newA2AId);
       getA2APublisher()?.nudge();
       return json(200, await publisherView(s));
@@ -509,7 +552,8 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
       const port = getA2APublisher();
       if (port === null) return json(503, { error: 'publisher_unavailable' });
       const refence = body(req).refence;
-      if (refence !== undefined && typeof refence !== 'boolean') return json(400, { error: 'refence must be true or false' });
+      if (refence !== undefined && typeof refence !== 'boolean')
+        return json(400, { error: 'refence must be true or false' });
       const out = await port.activate({ refence: refence === true });
       return out.ok ? json(200, await publisherView(s)) : json(409, { error: out.reason });
     }),
@@ -532,7 +576,10 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
       if (typeof b.card_url !== 'string') return json(400, { error: 'card_url is required' });
       const out = await registerRemoteAgent({ store: s }, b.card_url);
       if (!out.ok) {
-        return refusal(out.reason, out.existingAgentId !== undefined ? { agent_id: out.existingAgentId } : {});
+        return refusal(
+          out.reason,
+          out.existingAgentId !== undefined ? { agent_id: out.existingAgentId } : {},
+        );
       }
       return json(201, agentView(s, out.agent));
     }),
@@ -564,14 +611,18 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     `${OWNER_A2A_REMOTE_AGENTS}/:id/verify`,
     ownerRoute(async (req, s) => {
       const out = await reverifyRemoteAgent({ store: s }, req.params.id ?? '');
-      return out.ok ? json(200, { changed: out.changed, agent: agentView(s, out.agent) }) : refusal(out.reason);
+      return out.ok
+        ? json(200, { changed: out.changed, agent: agentView(s, out.agent) })
+        : refusal(out.reason);
     }),
   );
 
   router.post(
     `${OWNER_A2A_REMOTE_AGENTS}/:id/revoke`,
     ownerRoute((req, s) =>
-      revokeRemoteAgent({ store: s }, req.params.id ?? '') ? json(200, { status: 'revoked' }) : refusal('not_found'),
+      revokeRemoteAgent({ store: s }, req.params.id ?? '')
+        ? json(200, { status: 'revoked' })
+        : refusal('not_found'),
     ),
   );
 
@@ -606,7 +657,8 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     `${OWNER_A2A_REMOTE_AGENTS}/:id/credentials/:ref/rotate`,
     ownerRoute((req, s) => {
       const credential = s.getCredential(req.params.ref ?? '');
-      if (credential === null || credential.remote_agent_id !== req.params.id) return refusal('not_found');
+      if (credential === null || credential.remote_agent_id !== req.params.id)
+        return refusal('not_found');
       const out = rotateRemoteCredential({ store: s }, credential.credential_ref, body(req).secret);
       return out.ok ? json(201, credentialView(out.credential)) : refusal(out.reason);
     }),
@@ -616,7 +668,8 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     `${OWNER_A2A_REMOTE_AGENTS}/:id/credentials/:ref/revoke`,
     ownerRoute((req, s) => {
       const credential = s.getCredential(req.params.ref ?? '');
-      if (credential === null || credential.remote_agent_id !== req.params.id) return refusal('not_found');
+      if (credential === null || credential.remote_agent_id !== req.params.id)
+        return refusal('not_found');
       return revokeRemoteCredential({ store: s }, credential.credential_ref)
         ? json(200, { status: 'revoked' })
         : refusal('already_finished');
@@ -627,17 +680,27 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
     `${OWNER_A2A_REMOTE_AGENTS}/:id/bindings`,
     ownerRoute((req, s) => {
       const b = body(req);
-      if (typeof b.skill !== 'string' || typeof b.action_class !== 'string' || typeof b.credential_ref !== 'string') {
+      if (
+        typeof b.skill !== 'string' ||
+        typeof b.action_class !== 'string' ||
+        typeof b.credential_ref !== 'string'
+      ) {
         return json(400, { error: 'skill, action_class and credential_ref are required' });
       }
       const out = bindRemoteSkill({ store: s }, req.params.id ?? '', {
         skill: b.skill,
         actionClass: b.action_class,
         credentialRef: b.credential_ref,
-        ...(b.result_schema !== undefined && b.result_schema !== null ? { resultSchema: b.result_schema } : {}),
+        ...(b.result_schema !== undefined && b.result_schema !== null
+          ? { resultSchema: b.result_schema }
+          : {}),
       });
       return out.ok
-        ? json(200, { skill: out.binding.skill, action_class: out.binding.action_class, revision: out.binding.revision })
+        ? json(200, {
+            skill: out.binding.skill,
+            action_class: out.binding.action_class,
+            revision: out.binding.revision,
+          })
         : refusal(out.reason);
     }),
   );
@@ -675,7 +738,8 @@ export function registerA2ARoutes(router: CoreRouter, ownerCapability?: string):
       // The owner's surface alone: what the placeholders in this answer stand
       // for, beside it, never written into the remote's text (§6.5).
       const op = s.getTaskByExternal('outbound', OUTBOUND_PRINCIPAL, view.operation_id);
-      const legend = op === null || view.result === null ? [] : placeholderLegend(rt, op.id, op.external_id);
+      const legend =
+        op === null || view.result === null ? [] : placeholderLegend(rt, op.id, op.external_id);
       return json(200, { ...view, placeholder_legend: legend });
     }),
   );

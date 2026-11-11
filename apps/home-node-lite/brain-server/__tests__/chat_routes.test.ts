@@ -130,7 +130,11 @@ describe('Brain server — /api/v1/chat HTTP wiring', () => {
 
     async function post(payload: Record<string, unknown>) {
       const app = makeApp();
-      const resp = await app.inject({ method: 'POST', url: '/api/v1/chat/service-result', payload });
+      const resp = await app.inject({
+        method: 'POST',
+        url: '/api/v1/chat/service-result',
+        payload,
+      });
       const body = JSON.parse(resp.body) as { ok?: boolean };
       await app.close();
       return { statusCode: resp.statusCode, body };
@@ -242,7 +246,12 @@ describe('/chat/a2a-result — A2A Lane 1 outcomes in the asking conversation', 
     await app.ready();
     try {
       deleteThread('a2a-thread');
-      const payload = { text: 'Summarizer answered:\n\nThe summary.', event_id: 41, operation_id: 'op-1', reply_to: 'a2a-thread' };
+      const payload = {
+        text: 'Summarizer answered:\n\nThe summary.',
+        event_id: 41,
+        operation_id: 'op-1',
+        reply_to: 'a2a-thread',
+      };
       const first = await app.inject({ method: 'POST', url: '/api/v1/chat/a2a-result', payload });
       const again = await app.inject({ method: 'POST', url: '/api/v1/chat/a2a-result', payload });
       expect(first.statusCode).toBe(200);
@@ -260,11 +269,14 @@ describe('/chat/a2a-result — A2A Lane 1 outcomes in the asking conversation', 
     const app = makeApp();
     await app.ready();
     try {
-      const resp = await app.inject({ method: 'POST', url: '/api/v1/chat/a2a-result', payload: { text: 'x', event_id: 'nope' } });
+      const resp = await app.inject({
+        method: 'POST',
+        url: '/api/v1/chat/a2a-result',
+        payload: { text: 'x', event_id: 'nope' },
+      });
       expect(resp.statusCode).toBe(400);
     } finally {
       await app.close();
     }
   });
 });
-

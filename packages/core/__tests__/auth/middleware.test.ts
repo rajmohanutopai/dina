@@ -17,7 +17,6 @@ import {
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
 
-
 const pubKey = getPublicKey(TEST_ED25519_SEED);
 const did = 'did:key:z6MkBrainService';
 
@@ -177,14 +176,21 @@ describe('Auth Middleware Orchestration', () => {
         const seed = new Uint8Array(32).fill(i);
         const stranger = deriveDIDKey(getPublicKey(seed));
         const bodyBytes = new Uint8Array();
-        const req = { method: 'GET', path: '/v1/vault/query', query: '', body: bodyBytes, headers: signRequest('GET', '/v1/vault/query', '', bodyBytes, seed, stranger) };
+        const req = {
+          method: 'GET',
+          path: '/v1/vault/query',
+          query: '',
+          body: bodyBytes,
+          headers: signRequest('GET', '/v1/vault/query', '', bodyBytes, seed, stranger),
+        };
         expect(authenticateRequest(req).rejectedAt).toBe('authorization');
       }
       expect(getRateLimiter().tracked).toBe(0);
     });
 
     it('control: a known caller spends one bucket, however many requests it sends', () => {
-      for (let i = 0; i < 3; i += 1) expect(authenticateRequest(signedRequest('GET', '/healthz')).authenticated).toBe(true);
+      for (let i = 0; i < 3; i += 1)
+        expect(authenticateRequest(signedRequest('GET', '/healthz')).authenticated).toBe(true);
       expect(getRateLimiter().tracked).toBe(1);
       expect(getRateLimiter().remaining(did)).toBe(47);
     });

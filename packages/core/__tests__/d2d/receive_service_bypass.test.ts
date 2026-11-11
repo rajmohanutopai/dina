@@ -20,7 +20,6 @@ import {
 import { resetStagingState } from '../../src/staging/service';
 import { clearReplayCache } from '../../src/transport/adversarial';
 
-
 const senderPriv = TEST_ED25519_SEED;
 const senderPub = getPublicKey(senderPriv);
 const recipientPriv = new Uint8Array(32).fill(0x42);

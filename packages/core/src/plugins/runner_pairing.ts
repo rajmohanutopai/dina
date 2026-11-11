@@ -12,7 +12,10 @@ import { generatePairingCode, isCodeValid } from '../pairing/ceremony';
 
 import { getPluginInstallRepository, type PluginInstall } from './registry';
 
-export function issueRunnerPairingCode(install: PluginInstall): { code: string; expiresAt: number } {
+export function issueRunnerPairingCode(install: PluginInstall): {
+  code: string;
+  expiresAt: number;
+} {
   return generatePairingCode({
     deviceName: install.pluginId,
     role: 'plugin',
@@ -37,7 +40,11 @@ export type RunnerPairingState =
  * `completePairing`. Pure over the registry and the pairing table, so a
  * screen may poll it.
  */
-export function runnerPairingState(installId: string, code: string, nowSec: number): RunnerPairingState {
+export function runnerPairingState(
+  installId: string,
+  code: string,
+  nowSec: number,
+): RunnerPairingState {
   const installs = getPluginInstallRepository();
   if (installs === null) return { state: 'refused', error: 'plugin registry not wired' };
   const install = installs.getById(installId);

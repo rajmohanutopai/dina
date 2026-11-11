@@ -14,7 +14,6 @@ import { pino } from 'pino';
 
 import { quarantineSize, listQuarantined, resetQuarantineState } from '@dina/core/d2d';
 
-
 import { registerDebugDispatch } from '../src/server/debug_dispatch';
 
 import type { Logger } from '../src/logger';
@@ -128,9 +127,9 @@ describe('/v1/debug/quarantine-seed', () => {
     // The message actually landed in Core's quarantine store (the live read
     // surface GET /v1/d2d/quarantine serves) — not just an echoed object.
     expect(quarantineSize()).toBe(1);
-    expect(listQuarantined().some((m) => m.id === q?.id && m.senderDID === 'did:plc:stranger')).toBe(
-      true,
-    );
+    expect(
+      listQuarantined().some((m) => m.id === q?.id && m.senderDID === 'did:plc:stranger'),
+    ).toBe(true);
   });
 });
 
@@ -185,7 +184,10 @@ describe('/v1/debug/dispatch token gate (DINA_DEBUG_TOKEN set)', () => {
   it('still enforces loopback even with a valid token (non-loopback + right token = 403)', async () => {
     const { handler, coreHandle } = register({ token: 's3cret' });
     const { reply, result } = makeReply();
-    await handler(dispatchReq({ ip: '203.0.113.7', headers: { 'x-debug-token': 's3cret' } }), reply);
+    await handler(
+      dispatchReq({ ip: '203.0.113.7', headers: { 'x-debug-token': 's3cret' } }),
+      reply,
+    );
     expect(result.status).toBe(403);
     expect(coreHandle).not.toHaveBeenCalled();
   });

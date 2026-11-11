@@ -41,8 +41,8 @@ export class LRUSet {
 
     // Evict oldest if at capacity
     if (this.map.size >= this.maxSize) {
-      const oldest = this.map.keys().next().value!;
-      this.map.delete(oldest);
+      const oldest = this.map.keys().next().value;
+      if (oldest !== undefined) this.map.delete(oldest);
     }
 
     this.map.set(key, Date.now());

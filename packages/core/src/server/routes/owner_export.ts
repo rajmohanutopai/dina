@@ -16,7 +16,8 @@ import type { CoreRouter } from '../router';
 
 export function registerOwnerExportRoutes(router: CoreRouter, ownerCapability?: string): void {
   router.post('/v1/owner-export/prepare', async (req) => {
-    const brain = req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+    const brain =
+      req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
     if (!brain && typeof ownerDidForRequest(req, ownerCapability) !== 'string') {
       return { status: 403, body: { error: 'owner or brain only' } };
     }
@@ -27,7 +28,8 @@ export function registerOwnerExportRoutes(router: CoreRouter, ownerCapability?: 
     const owner = ownerDidForRequest(req, ownerCapability);
     if (typeof owner !== 'string') return owner;
     const doc = takeReadableExport(req.params.id ?? '');
-    if (doc === null) return { status: 404, body: { error: 'export not found, expired, or already taken' } };
+    if (doc === null)
+      return { status: 404, body: { error: 'export not found, expired, or already taken' } };
     return { status: 200, body: JSON.parse(doc) as unknown };
   });
 }

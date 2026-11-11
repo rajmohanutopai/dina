@@ -53,14 +53,17 @@ function makeMockWs(): {
   wsModule: { WebSocket: new (url: string, options?: unknown) => unknown };
   lastInstance: () => MockWs | null;
 } {
-  let last: MockWs | null = null;
+  const instances: MockWs[] = [];
   class TrackedMockWs extends MockWs {
     constructor(url: string, options?: unknown) {
       super(url, options);
-      last = this;
+      instances.push(this);
     }
   }
-  return { wsModule: { WebSocket: TrackedMockWs }, lastInstance: () => last };
+  return {
+    wsModule: { WebSocket: TrackedMockWs },
+    lastInstance: () => instances[instances.length - 1] ?? null,
+  };
 }
 
 describe('createNodeWebSocket (task 3.37)', () => {

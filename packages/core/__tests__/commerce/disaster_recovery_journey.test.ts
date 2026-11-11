@@ -93,9 +93,7 @@ describe('ChairMaker is restored mid-order, and Sancho gets an honest answer', (
   let clock: { now: number };
 
   /** Rebuild the supplier's runtime — what a boot does after a restore. */
-  function bootSupplier(
-    overrides: { verifyHeldEvidence?: () => boolean } = {},
-  ): CommerceRuntime {
+  function bootSupplier(overrides: { verifyHeldEvidence?: () => boolean } = {}): CommerceRuntime {
     const built = createCommerceRuntime({
       adapter,
       supplierDid: () => SUPPLIER_DID,

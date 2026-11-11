@@ -2,11 +2,7 @@
  * Task 6.22 — trust ring resolution tests.
  */
 
-import {
-  TrustRingIndex,
-  resolveRing,
-  type Did,
-} from '../src/appview/peerlens_ring';
+import { TrustRingIndex, resolveRing, type Did } from '../src/appview/peerlens_ring';
 
 const USER: Did = 'did:plc:user-self';
 const FRIEND_A: Did = 'did:plc:friend-alice';
@@ -17,7 +13,7 @@ const STRANGER: Did = 'did:plc:stranger';
 
 describe('resolveRing (task 6.22)', () => {
   describe('basic ring assignment', () => {
-    it('user\'s own DID → ring 1 (self)', () => {
+    it("user's own DID → ring 1 (self)", () => {
       expect(
         resolveRing({
           userDid: USER,
@@ -279,11 +275,11 @@ describe('TrustRingIndex (task 6.22)', () => {
       });
       // AppView returns 5 candidates ranked by trust.
       const candidates = [
-        FRIEND_A,            // ring 1 (direct)
-        'did:plc:fof-z',     // ring 2 (2-hop)
+        FRIEND_A, // ring 1 (direct)
+        'did:plc:fof-z', // ring 2 (2-hop)
         'did:plc:unknown-1', // ring 3 (stranger)
-        FOF_Y,               // ring 2
-        USER,                // ring 1 (self — edge case, shouldn't appear but test anyway)
+        FOF_Y, // ring 2
+        USER, // ring 1 (self — edge case, shouldn't appear but test anyway)
       ];
       expect(idx.rings(candidates)).toEqual([1, 2, 3, 2, 1]);
     });

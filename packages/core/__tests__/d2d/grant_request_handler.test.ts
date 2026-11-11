@@ -45,10 +45,7 @@ import {
   getPeopleRepository,
 } from '../../src/people/repository';
 import { setD2DSender } from '../../src/server/routes/d2d_msg';
-import {
-  setServiceConfig,
-  resetServiceConfigState,
-} from '../../src/service/service_config';
+import { setServiceConfig, resetServiceConfigState } from '../../src/service/service_config';
 import {
   setServiceGrantRepository,
   type ServiceGrant,
@@ -403,7 +400,9 @@ describe('handleServiceGrantRequest — owner-private decision log', () => {
   // The requester-visible outcome is collapsed (§2); the GRANTOR records the
   // truth here (§10). Every branch must log exactly one decision so the owner
   // can review mis-tiered contacts. The requester never sees this.
-  function decisions(): ReturnType<NonNullable<ReturnType<typeof getServiceDecisionRepository>>['list']> {
+  function decisions(): ReturnType<
+    NonNullable<ReturnType<typeof getServiceDecisionRepository>>['list']
+  > {
     const repo = getServiceDecisionRepository();
     if (repo === null) throw new Error('decision repo not wired');
     return repo.list();

@@ -14,7 +14,6 @@ import { a2aDisplayText, isInvisibleCodePoint, isPlainObject, type JsonObject } 
 
 import { isMirrorableDetail, isMirrorableTitle } from '../approval/mirror_text';
 
-
 import type { InboundActionClass } from './action_registry';
 
 export const A2A_INBOUND_REVIEW_TYPE = 'a2a_inbound_review';
@@ -38,7 +37,13 @@ export interface InboundReviewCard {
   display: InboundReviewDisplay;
 }
 
-const ACTION_CLASSES: ReadonlySet<string> = new Set(['read', 'quote', 'write', 'booking', 'agentic']);
+const ACTION_CLASSES: ReadonlySet<string> = new Set([
+  'read',
+  'quote',
+  'write',
+  'booking',
+  'agentic',
+]);
 
 const hex4 = (unit: number): string => `\\u${unit.toString(16).padStart(4, '0')}`;
 
@@ -59,7 +64,13 @@ export function visibleJson(value: JsonObject): string {
     const unit = text.slice(i, i + width);
     const lone = cp >= 0xd800 && cp <= 0xdfff;
     // `split('')` walks UTF-16 code units: an astral point is both halves of its pair.
-    out += lone || isInvisibleCodePoint(cp) ? unit.split('').map((c) => hex4(c.charCodeAt(0))).join('') : unit;
+    out +=
+      lone || isInvisibleCodePoint(cp)
+        ? unit
+            .split('')
+            .map((c) => hex4(c.charCodeAt(0)))
+            .join('')
+        : unit;
     i += width;
   }
   return out;
@@ -109,11 +120,17 @@ export function parseInboundReviewCard(raw: string): InboundReviewCard | null {
   if (!isPlainObject(parsed) || parsed.type !== A2A_INBOUND_REVIEW_TYPE) return null;
   const strings = ['operation_id', 'client_id', 'client_name', 'skill', 'service_name'] as const;
   if (strings.some((k) => typeof parsed[k] !== 'string')) return null;
-  if (typeof parsed.action_class !== 'string' || !ACTION_CLASSES.has(parsed.action_class)) return null;
+  if (typeof parsed.action_class !== 'string' || !ACTION_CLASSES.has(parsed.action_class))
+    return null;
   if (!isPlainObject(parsed.params)) return null;
   if (typeof parsed.post_hash !== 'string' || !/^[0-9a-f]{64}$/.test(parsed.post_hash)) return null;
   const display = parsed.display;
-  if (!isPlainObject(display) || typeof display.title !== 'string' || typeof display.detail !== 'string') return null;
+  if (
+    !isPlainObject(display) ||
+    typeof display.title !== 'string' ||
+    typeof display.detail !== 'string'
+  )
+    return null;
   return parsed as unknown as InboundReviewCard;
 }
 

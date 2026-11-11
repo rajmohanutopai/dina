@@ -354,7 +354,10 @@ describe("a goods version resting on a shipper's option", () => {
 
 describe('§15 step 12 — the exit right on both sides', () => {
   const request = makeQuoteRequest({ protocol_version: '1.5' });
-  const base = makeSignedQuote(request, { protocol_version: '1.5', valid_until: '2026-08-20T00:00:00.000Z' });
+  const base = makeSignedQuote(request, {
+    protocol_version: '1.5',
+    valid_until: '2026-08-20T00:00:00.000Z',
+  });
   const priced = priceQuoteAlternatives(base, [
     {
       alternative_id: 'partner_0a1b2c3d',
@@ -364,7 +367,13 @@ describe('§15 step 12 — the exit right on both sides', () => {
       offer_ends_at: '2026-08-10T09:00:00Z',
       exit_if_run_fails: true,
     },
-    { alternative_id: 'partner_0a1b2c3e', charges: [], estimated_delivery_at: '2026-08-19T09:00:00Z', partner_run: true, offer_ends_at: '2026-08-10T09:00:00Z' },
+    {
+      alternative_id: 'partner_0a1b2c3e',
+      charges: [],
+      estimated_delivery_at: '2026-08-19T09:00:00Z',
+      partner_run: true,
+      offer_ends_at: '2026-08-10T09:00:00Z',
+    },
   ]);
   const quote = makeSignedQuote(request, {
     protocol_version: '1.5',
@@ -399,7 +408,11 @@ describe('§15 step 12 — the exit right on both sides', () => {
       expect(
         sellerOrderHoldsExit(
           {
-            orders: { load: () => ({ ref: { orderDigest: order.order_digest, quoteDigest: quote.quote_digest } }) },
+            orders: {
+              load: () => ({
+                ref: { orderDigest: order.order_digest, quoteDigest: quote.quote_digest },
+              }),
+            },
             receipts: receiptsOf(order),
           },
           BUYER_DID,
@@ -415,13 +428,34 @@ describe('§15 step 12 — the exit right on both sides', () => {
       buyerOrders: { get: () => ({ orderDigest: order.order_digest }) },
       receipts: receiptsOf(order),
     };
-    const one = buyerExitCancellation(stores, SUPPLIER_DID, 'po-1', Date.parse('2026-08-19T10:00:00Z'));
+    const one = buyerExitCancellation(
+      stores,
+      SUPPLIER_DID,
+      'po-1',
+      Date.parse('2026-08-19T10:00:00Z'),
+    );
     expect(one).not.toBeNull();
     expect(validateCancellationRequest(one, hash)).toBeNull();
-    expect(one).toMatchObject({ purchase_order_id: 'po-1', order_digest: order.order_digest, reason_code: 'partner_run_failed' });
-    const again = buyerExitCancellation(stores, SUPPLIER_DID, 'po-1', Date.parse('2026-08-19T11:00:00Z'));
+    expect(one).toMatchObject({
+      purchase_order_id: 'po-1',
+      order_digest: order.order_digest,
+      reason_code: 'partner_run_failed',
+    });
+    const again = buyerExitCancellation(
+      stores,
+      SUPPLIER_DID,
+      'po-1',
+      Date.parse('2026-08-19T11:00:00Z'),
+    );
     expect(again?.cancellation_id).toBe(one?.cancellation_id);
-    expect(buyerExitCancellation({ ...stores, buyerOrders: { get: () => null } }, SUPPLIER_DID, 'po-1', 0)).toBeNull();
+    expect(
+      buyerExitCancellation(
+        { ...stores, buyerOrders: { get: () => null } },
+        SUPPLIER_DID,
+        'po-1',
+        0,
+      ),
+    ).toBeNull();
   });
 });
 
@@ -467,10 +501,11 @@ describe('§15 step 12 — the seller cancels an exit through its own records (a
     });
     expect(runtime.admission.admitOrder(order, BUYER_DID)).toEqual({ kind: 'reserved' });
     expect(
-      'acknowledgement' in runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
-        kind: 'accepted',
-        supplierOrderId: 'so-1',
-      }),
+      'acknowledgement' in
+        runtime.admission.decideOrder(BUYER_DID, order.purchase_order_id, {
+          kind: 'accepted',
+          supplierOrderId: 'so-1',
+        }),
     ).toBe(true);
     // The run fell through without fault: the seller recorded the fallback.
     getOrderFallbackStore()?.record({
@@ -491,7 +526,10 @@ describe('§15 step 12 — the seller cancels an exit through its own records (a
       idempotency_key: 'exit-1',
       issued_at: new Date(clock.now).toISOString(),
     };
-    const cancellation = { ...draftCx, cancellation_digest: commerceRecordDigest('cancellation', draftCx, hash) };
+    const cancellation = {
+      ...draftCx,
+      cancellation_digest: commerceRecordDigest('cancellation', draftCx, hash),
+    };
     return { runtime, order, cancellation };
   }
   afterEach(() => {
@@ -517,15 +555,17 @@ describe('§15 step 12 — the seller cancels an exit through its own records (a
           lines: [{ lineId: 'l1', fulfilledQuantity: { value: '100', unitCode: 'each' } }],
         }),
     ).toBe(false);
-    expect(await handleOptionMessage(BUYER_DID, { v: 1, kind: 'exit', cancellation }, clock.now)).toBe('kept');
+    expect(
+      await handleOptionMessage(BUYER_DID, { v: 1, kind: 'exit', cancellation }, clock.now),
+    ).toBe('kept');
     expect(runtime.chains.load(BUYER_DID, order.purchase_order_id).head.state).toBe('dispatched');
   });
 
   it('P-10: an order on a version without the right is not cancelled this way', async () => {
     const { runtime, order, cancellation } = sellerWithOrder(false);
-    expect(await handleOptionMessage(BUYER_DID, { v: 1, kind: 'exit', cancellation }, clock.now)).toBe(
-      'refused',
-    );
+    expect(
+      await handleOptionMessage(BUYER_DID, { v: 1, kind: 'exit', cancellation }, clock.now),
+    ).toBe('refused');
     expect(runtime.chains.load(BUYER_DID, order.purchase_order_id).head.state).toBe('accepted');
   });
 });

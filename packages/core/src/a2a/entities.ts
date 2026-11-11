@@ -37,7 +37,12 @@ function unseal(row: EntityRow, operationId: string): string | null {
   if (row.seal === 'identity_db') return new TextDecoder().decode(row.sealed);
   if (row.persona === null) return null;
   try {
-    const plain = openForPersonaPurpose(row.persona, ENTITY_SEAL_PURPOSE, entityAad(operationId, row.placeholder), row.sealed);
+    const plain = openForPersonaPurpose(
+      row.persona,
+      ENTITY_SEAL_PURPOSE,
+      entityAad(operationId, row.placeholder),
+      row.sealed,
+    );
     return plain === null ? null : new TextDecoder().decode(plain);
   } catch {
     return null; // a wrong key, a moved blob or damage shows no original, never an error

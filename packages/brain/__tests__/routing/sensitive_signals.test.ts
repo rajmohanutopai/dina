@@ -10,7 +10,6 @@ import {
   hasHealthSignal,
   hasFinanceSignal,
   hasWorkSignal,
-  type SensitiveHit,
 } from '../../src/routing/sensitive_signals';
 
 describe('Sensitive Signals', () => {

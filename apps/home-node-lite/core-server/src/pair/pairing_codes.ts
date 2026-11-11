@@ -114,7 +114,11 @@ export function deriveCode(secret: Uint8Array, length = PAIRING_CODE_LENGTH): st
   const hash = createHash('sha256').update(secret).digest();
   const out = new Array<string>(length);
   for (let i = 0; i < length; i++) {
-    out[i] = PAIRING_ALPHABET[hash[i]! % PAIRING_ALPHABET.length]!;
+    const byte = hash[i];
+    if (byte === undefined) throw new Error(`deriveCode: hash byte ${i} missing`);
+    const ch = PAIRING_ALPHABET[byte % PAIRING_ALPHABET.length];
+    if (ch === undefined) throw new Error('deriveCode: alphabet index out of range');
+    out[i] = ch;
   }
   return out.join('');
 }

@@ -8,14 +8,14 @@ canonical-request signer Brain's `HttpCoreTransport` consumes.
 
 **Phase 3d in progress** — see `docs/HOME_NODE_LITE_TASKS.md` 3.34-3.39:
 
-| Task | Status | Details |
-|---|---|---|
-| 3.34 | ✅ | Scaffold (this package) |
-| 3.35 | ✅ | HTTP client + signed-request builder |
-| 3.36 | pending | Retry with exponential backoff |
-| 3.37 | pending | WebSocket client (`ws` peer dep) |
-| 3.38 | pending | Reconnect helper |
-| 3.39 | pending | Unit tests |
+| Task | Status  | Details                              |
+| ---- | ------- | ------------------------------------ |
+| 3.34 | ✅      | Scaffold (this package)              |
+| 3.35 | ✅      | HTTP client + signed-request builder |
+| 3.36 | pending | Retry with exponential backoff       |
+| 3.37 | pending | WebSocket client (`ws` peer dep)     |
+| 3.38 | pending | Reconnect helper                     |
+| 3.39 | pending | Unit tests                           |
 
 ## Contents (today)
 
@@ -50,7 +50,7 @@ import { NodeCryptoAdapter } from '@dina/crypto-node';
 const crypto = new NodeCryptoAdapter();
 const signer = createCanonicalRequestSigner({
   did: 'did:plc:brain-01',
-  privateKey: brainSigningKey,   // 32-byte Ed25519 seed
+  privateKey: brainSigningKey, // 32-byte Ed25519 seed
   sign: (priv, msg) => crypto.ed25519Sign(priv, msg),
   // nonce + now default to node:crypto.randomBytes + Date.now
 });

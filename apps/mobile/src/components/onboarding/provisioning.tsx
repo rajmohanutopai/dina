@@ -100,7 +100,6 @@ export function Provisioning(props: ProvisioningProps): React.ReactElement {
     };
     // Only run once on mount — provisioning should fire exactly one
     // side-effect per provisioning screen instance.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const headline =

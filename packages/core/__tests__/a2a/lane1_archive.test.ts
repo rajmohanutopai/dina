@@ -55,16 +55,29 @@ let dir: string;
 const open: NodeSQLiteAdapter[] = [];
 
 function adapter(file: string, migrations: typeof IDENTITY_MIGRATIONS): NodeSQLiteAdapter {
-  const a = new NodeSQLiteAdapter({ path: path.join(dir, file), passphraseHex: randomBytes(32).toString('hex'), journalMode: 'WAL', synchronous: 'NORMAL' });
+  const a = new NodeSQLiteAdapter({
+    path: path.join(dir, file),
+    passphraseHex: randomBytes(32).toString('hex'),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(a, migrations);
   open.push(a);
   return a;
 }
 
-function source(identity: NodeSQLiteAdapter | null, personas: Map<string, NodeSQLiteAdapter>): ArchiveDataSource {
+function source(
+  identity: NodeSQLiteAdapter | null,
+  personas: Map<string, NodeSQLiteAdapter>,
+): ArchiveDataSource {
   return {
     identityAdapter: () => identity,
-    personaSources: async () => [...personas.entries()].map(([name, a]) => ({ name, tier: name === 'general' ? 'default' : 'sensitive', adapter: a })),
+    personaSources: async () =>
+      [...personas.entries()].map(([name, a]) => ({
+        name,
+        tier: name === 'general' ? 'default' : 'sensitive',
+        adapter: a,
+      })),
     openPersonaForRestore: async (name) => {
       const existing = personas.get(name);
       if (existing !== undefined) return existing;
@@ -108,13 +121,19 @@ afterEach(() => {
  * is its own SQLite file, so whatever Core writes for the persona lands in
  * the file an export reads.
  */
-async function lane1Secrets(): Promise<{ sealed: Uint8Array[]; general: NodeSQLiteAdapter; itemId: string }> {
+async function lane1Secrets(): Promise<{
+  sealed: Uint8Array[];
+  general: NodeSQLiteAdapter;
+  itemId: string;
+}> {
   const general = adapter('general.sqlite', PERSONA_MIGRATIONS);
   setVaultRepository('general', new SQLiteVaultRepository(general));
   world.cards.set(
     KEYED_URL,
     agentCard({
-      supportedInterfaces: [{ url: 'https://keyed.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+      supportedInterfaces: [
+        { url: 'https://keyed.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+      ],
       securitySchemes: { key: { apiKeySecurityScheme: { location: 'header', name: 'X-Api-Key' } } },
       securityRequirements: [{ schemes: { key: { list: [] } } }],
     }),
@@ -122,14 +141,28 @@ async function lane1Secrets(): Promise<{ sealed: Uint8Array[]; general: NodeSQLi
   const d = { store: world.store, nowMs: () => world.clock };
   const keyed = await registerRemoteAgent(d, KEYED_URL);
   if (!keyed.ok) throw new Error(keyed.reason);
-  const credential = createRemoteCredential(d, keyed.agent.agent_id, { kind: 'api_key', scheme: 'key', secret: { value: API_KEY } });
+  const credential = createRemoteCredential(d, keyed.agent.agent_id, {
+    kind: 'api_key',
+    scheme: 'key',
+    secret: { value: API_KEY },
+  });
   if (!credential.ok) throw new Error(credential.reason);
-  bindRemoteSkill(d, keyed.agent.agent_id, { skill: 'summarize', actionClass: 'read', credentialRef: credential.credential.credential_ref });
+  bindRemoteSkill(d, keyed.agent.agent_id, {
+    skill: 'summarize',
+    actionClass: 'read',
+    credentialRef: credential.credential.credential_ref,
+  });
   activateRemoteAgent(d, keyed.agent.agent_id);
 
   // The owner's own words: an original kept in the identity file.
   world.turn(MAIL);
-  const fromOwner = proposeDelegation(world.runtime, { agentId, skill: 'summarize', text: MAIL, sources: [{ quote: MAIL, from: 'owner' }], releaseSession: SESSION });
+  const fromOwner = proposeDelegation(world.runtime, {
+    agentId,
+    skill: 'summarize',
+    text: MAIL,
+    sources: [{ quote: MAIL, from: 'owner' }],
+    releaseSession: SESSION,
+  });
   if (!fromOwner.ok) throw new Error(fromOwner.reason);
   // A vault item saved before the conversation: an original sealed under the persona.
   const item = makeVaultItem({ summary: 'Note', body: CLINIC });
@@ -154,9 +187,15 @@ async function lane1Secrets(): Promise<{ sealed: Uint8Array[]; general: NodeSQLi
   recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: HELD }] });
   expect(op(fromOwner.operationId).state).toBe('quarantined');
 
-  const sealed = [op(fromOwner.operationId), op(fromVault.operationId)].flatMap((row) => world.store.entitiesOf(row.id).map((e) => e.sealed));
-  expect(world.store.entitiesOf(op(fromOwner.operationId).id).map((e) => e.seal)).toEqual(['identity_db']);
-  expect(world.store.entitiesOf(op(fromVault.operationId).id).map((e) => e.seal)).toEqual(['persona_dek']);
+  const sealed = [op(fromOwner.operationId), op(fromVault.operationId)].flatMap((row) =>
+    world.store.entitiesOf(row.id).map((e) => e.sealed),
+  );
+  expect(world.store.entitiesOf(op(fromOwner.operationId).id).map((e) => e.seal)).toEqual([
+    'identity_db',
+  ]);
+  expect(world.store.entitiesOf(op(fromVault.operationId).id).map((e) => e.seal)).toEqual([
+    'persona_dek',
+  ]);
   expect(world.db.query('SELECT COUNT(*) AS n FROM a2a_credential_secrets')).toEqual([{ n: 1 }]);
   // The vault item itself is in the persona's own file, and nowhere else.
   expect(general.query('SELECT id FROM vault_items')).toEqual([{ id: item.id }]);
@@ -169,7 +208,13 @@ async function lane1Secrets(): Promise<{ sealed: Uint8Array[]; general: NodeSQLi
  * EMAIL, so the owner's sealed words are looked for whole.
  */
 function leaks(text: string, sealed: Uint8Array[]): string[] {
-  const needles = [API_KEY, HELD, MAIL, bytesToHex(new TextEncoder().encode(API_KEY)), ...sealed.map((s) => bytesToHex(s))];
+  const needles = [
+    API_KEY,
+    HELD,
+    MAIL,
+    bytesToHex(new TextEncoder().encode(API_KEY)),
+    ...sealed.map((s) => bytesToHex(s)),
+  ];
   return needles.filter((n) => text.includes(n));
 }
 
@@ -178,12 +223,20 @@ describe('what an archive carries of Lane 1 (design §9 Lifecycle)', () => {
   it('carries no credential secret, no sealed original and no held result, and a restored node holds none of them', async () => {
     const { sealed, general, itemId } = await lane1Secrets();
     // Ordinary owner data beside it, so the restore below really writes.
-    world.db.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', ['theme', 'dark', 1]);
+    world.db.execute('INSERT INTO kv_store (key, value, updated_at) VALUES (?, ?, ?)', [
+      'theme',
+      'dark',
+      1,
+    ]);
     setArchiveDataSource(source(world.db, new Map([['general', general]])));
     const archive = await createArchive(PASS);
 
     const payload = await readManifest(archive, PASS);
-    expect(Object.keys(payload.identity.tables).filter((t) => t.startsWith('a2a_') || t.startsWith('workflow_'))).toEqual([]);
+    expect(
+      Object.keys(payload.identity.tables).filter(
+        (t) => t.startsWith('a2a_') || t.startsWith('workflow_'),
+      ),
+    ).toEqual([]);
     expect(payload.personas[0]?.tables.vault_items?.map((r) => r.id)).toEqual([itemId]);
     expect(leaks(JSON.stringify(payload), sealed)).toEqual([]);
 
@@ -191,10 +244,20 @@ describe('what an archive carries of Lane 1 (design §9 Lifecycle)', () => {
     const restored = new Map<string, NodeSQLiteAdapter>();
     setArchiveDataSource(source(target, restored));
     await importArchive(archive, PASS);
-    expect(target.query(`SELECT value FROM kv_store WHERE key = 'theme'`)).toEqual([{ value: 'dark' }]);
+    expect(target.query(`SELECT value FROM kv_store WHERE key = 'theme'`)).toEqual([
+      { value: 'dark' },
+    ]);
     // The persona comes back with its item, and its sealed spans stay behind.
-    expect(restored.get('general')?.query('SELECT id, body FROM vault_items')).toEqual([{ id: itemId, body: CLINIC }]);
-    for (const table of ['a2a_credential_secrets', 'a2a_entities', 'a2a_remote_credentials', 'a2a_tasks', 'a2a_guard_jobs']) {
+    expect(restored.get('general')?.query('SELECT id, body FROM vault_items')).toEqual([
+      { id: itemId, body: CLINIC },
+    ]);
+    for (const table of [
+      'a2a_credential_secrets',
+      'a2a_entities',
+      'a2a_remote_credentials',
+      'a2a_tasks',
+      'a2a_guard_jobs',
+    ]) {
       expect(target.query(`SELECT COUNT(*) AS n FROM ${table}`)).toEqual([{ n: 0 }]);
     }
   });
@@ -205,7 +268,9 @@ describe('what an archive carries of Lane 1 (design §9 Lifecycle)', () => {
     const payload = await buildArchivePayload(source(null, new Map([['general', general]])));
     expect(payload.identity.tables).toEqual({});
     expect(payload.personas[0]?.tables.vault_items?.map((r) => r.id)).toEqual([itemId]);
-    expect(payload.personas.map((p) => Object.keys(p.tables).filter((t) => t.startsWith('a2a_')))).toEqual([[]]);
+    expect(
+      payload.personas.map((p) => Object.keys(p.tables).filter((t) => t.startsWith('a2a_'))),
+    ).toEqual([[]]);
     expect(leaks(JSON.stringify(payload), sealed)).toEqual([]);
   });
 });

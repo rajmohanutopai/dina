@@ -52,7 +52,11 @@ import {
 } from '../../../src/commerce/owner_presence';
 import { priceQuoteAlternatives } from '../../../src/commerce/quote_issuance';
 import { InMemoryCommerceReceiptRepository } from '../../../src/commerce/receipts';
-import { getCommerceRuntime, installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
+import {
+  getCommerceRuntime,
+  installCommerceRuntime,
+  type CommerceRuntime,
+} from '../../../src/commerce/runtime';
 import * as ceremony from '../../../src/pairing/ceremony';
 import { setNodeDID } from '../../../src/pairing/ceremony';
 import {
@@ -71,7 +75,7 @@ import {
   type InstalledBuyerPack,
 } from '../../commerce/helpers';
 
-import type { PurchaseOrderProposal , ApprovalSourceBinding } from '@dina/commerce-protocol';
+import type { PurchaseOrderProposal, ApprovalSourceBinding } from '@dina/commerce-protocol';
 
 const OWNER_CAP = 'test-owner-capability-secret';
 
@@ -683,13 +687,18 @@ describe('a node that does not know who it is', () => {
  */
 describe('the listing is named once', () => {
   const prepareWith = async (over: Record<string, unknown>) =>
-    router.handle(owner('/v1/commerce/orders/prepare', { order: ORDER, context: CONTEXT, ...over }));
+    router.handle(
+      owner('/v1/commerce/orders/prepare', { order: ORDER, context: CONTEXT, ...over }),
+    );
 
   it('takes the rkey OUT of the bound service URI', async () => {
     const resp = await router.handle(
       owner('/v1/commerce/orders/prepare', {
         order: ORDER,
-        context: { ...CONTEXT, serviceUri: `at://${SUPPLIER}/com.dinakernel.service.profile/chairs` },
+        context: {
+          ...CONTEXT,
+          serviceUri: `at://${SUPPLIER}/com.dinakernel.service.profile/chairs`,
+        },
       }),
     );
 
@@ -966,8 +975,6 @@ describe('a node that cannot read its own install registry', () => {
 // the source-bound approval.
 // ---------------------------------------------------------------------------
 
-
-
 describe('the conditional presence gate on prepare (§5.4 stage 4)', () => {
   afterEach(() => {
     installOwnerPresenceVerifier(null);
@@ -1081,8 +1088,8 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
     orderDrafts = new InMemoryOrderDraftRepository();
     orderDrafts.put(sourceDraft());
     installCommerceRuntime({
-    receipts: new InMemoryCommerceReceiptRepository(),
-    attributionBoundary: new InMemoryAttributionBoundaryRepository(),
+      receipts: new InMemoryCommerceReceiptRepository(),
+      attributionBoundary: new InMemoryAttributionBoundaryRepository(),
       buyerOrders,
       buyerQuotes: new InMemoryBuyerQuoteRepository(),
       buyerQuoteRequests: new InMemoryBuyerQuoteRequestRepository(),
@@ -1223,7 +1230,7 @@ describe('the SOURCE-BOUND approval (§5.4 stage 4)', () => {
 });
 
 describe('an order on an alternative (COMMITMENT_KERNEL §6, §9)', () => {
-  it('prepare binds the version\'s delivery date and charges, read from the held quote', async () => {
+  it("prepare binds the version's delivery date and charges, read from the held quote", async () => {
     const request = makeQuoteRequest({ protocol_version: '1.3' });
     const base = makeSignedQuote(request, { quote_id: 'q-alt' });
     const alternatives = priceQuoteAlternatives(base, [
@@ -1239,7 +1246,9 @@ describe('an order on an alternative (COMMITMENT_KERNEL §6, §9)', () => {
       accepted_terms_digest: tue?.terms_digest,
     });
     // Not held yet: the version cannot be read, so nothing is bound.
-    const unheld = await router.handle(owner('/v1/commerce/orders/prepare', { order, context: CONTEXT }));
+    const unheld = await router.handle(
+      owner('/v1/commerce/orders/prepare', { order, context: CONTEXT }),
+    );
     expect(unheld.status).toBe(409);
     getCommerceRuntime()?.buyerQuotes.append({
       supplierDid: quote.supplier_did,
@@ -1247,11 +1256,15 @@ describe('an order on an alternative (COMMITMENT_KERNEL §6, §9)', () => {
       quote,
       acceptedAt: T0,
     });
-    const resp = await router.handle(owner('/v1/commerce/orders/prepare', { order, context: CONTEXT }));
+    const resp = await router.handle(
+      owner('/v1/commerce/orders/prepare', { order, context: CONTEXT }),
+    );
     expect(resp.status).toBe(200);
     const approvalId = (resp.body as { approval_id: string }).approval_id;
     const retained = approvals.get(approvalId);
-    expect(retained?.payload).toMatchObject({ alternativeId: 'tue', estimatedDeliveryAt: '2026-08-11T10:00:00Z' });
+    expect(retained?.payload).toMatchObject({
+      alternativeId: 'tue',
+      estimatedDeliveryAt: '2026-08-11T10:00:00Z',
+    });
   });
 });
-

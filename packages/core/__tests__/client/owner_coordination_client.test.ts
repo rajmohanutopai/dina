@@ -26,7 +26,10 @@ import {
   type ServiceOffer,
 } from '../../src/contacts/service_offers_repository';
 import { GROUP_COORDINATION_CAPABILITY } from '../../src/coordination/group_coordination_service';
-import { SQLiteGroupPlanRepository, setGroupPlanRepository } from '../../src/coordination/group_plan_repository';
+import {
+  SQLiteGroupPlanRepository,
+  setGroupPlanRepository,
+} from '../../src/coordination/group_plan_repository';
 import { SQLitePeopleRepository, setPeopleRepository } from '../../src/people/repository';
 import { CoreRouter } from '../../src/server/router';
 import { setD2DSender } from '../../src/server/routes/d2d_msg';
@@ -64,7 +67,10 @@ let sent: string[];
 
 beforeEach(() => {
   dir = mkdtempSync(path.join(tmpdir(), 'owner-coordination-client-'));
-  adapter = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: randomBytes(32).toString('hex') });
+  adapter = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: randomBytes(32).toString('hex'),
+  });
   applyMigrations(adapter, IDENTITY_MIGRATIONS);
   resetContactDirectory();
   setPeopleRepository(new SQLitePeopleRepository(adapter));
@@ -130,7 +136,10 @@ describe('the Brain-shared client reaches the two doors and no more', () => {
     });
     expect(opened.ok).toBe(true);
     if (!opened.ok) throw new Error(opened.refusal);
-    expect(opened.plan.guests.map((g) => [g.contact_did, g.required])).toEqual([[GARCIA, true], [MILLER, false]]);
+    expect(opened.plan.guests.map((g) => [g.contact_did, g.required])).toEqual([
+      [GARCIA, true],
+      [MILLER, false],
+    ]);
     expect(sent).toEqual([GARCIA, MILLER]);
 
     accept(GARCIA, [{ start: 'Sat 26' }]);
@@ -141,12 +150,31 @@ describe('the Brain-shared client reaches the two doors and no more', () => {
 
     const handles = await brain.listGroupPlanHandles();
     expect(handles.map((h) => h.plan_id)).toEqual([opened.plan.plan_id]);
-    expect(handles[0]).toEqual({ plan_id: opened.plan.plan_id, intent: "Emma's birthday", state: 'folded', round: 1, chosen: null, updated_at: expect.any(Number) });
+    expect(handles[0]).toEqual({
+      plan_id: opened.plan.plan_id,
+      intent: "Emma's birthday",
+      state: 'folded',
+      round: 1,
+      chosen: null,
+      updated_at: expect.any(Number),
+    });
 
-    const refused = await brain.openGroupPlan({ intent: '', guests: [{ contactDid: GARCIA }], candidates: [{ start: 'x' }] });
+    const refused = await brain.openGroupPlan({
+      intent: '',
+      guests: [{ contactDid: GARCIA }],
+      candidates: [{ start: 'x' }],
+    });
     expect(refused).toEqual({ ok: false, refusal: 'empty_intent' });
-    const stranger = await brain.openGroupPlan({ intent: 'x', guests: [{ contactDid: 'did:plc:stranger' }], candidates: [{ start: 'x' }] });
-    expect(stranger).toEqual({ ok: false, refusal: 'guest_not_a_contact', detail: 'did:plc:stranger' });
+    const stranger = await brain.openGroupPlan({
+      intent: 'x',
+      guests: [{ contactDid: 'did:plc:stranger' }],
+      candidates: [{ start: 'x' }],
+    });
+    expect(stranger).toEqual({
+      ok: false,
+      refusal: 'guest_not_a_contact',
+      detail: 'did:plc:stranger',
+    });
   });
 });
 
@@ -200,7 +228,9 @@ describe('the owner client', () => {
       candidates: [{ start: 'Sat 26' }],
     });
     if (!opened.ok) throw new Error(opened.refusal);
-    const impostor = new OwnerCoordinationClient(inProcessOwnerDispatcher(router, 'wrong-capability'));
+    const impostor = new OwnerCoordinationClient(
+      inProcessOwnerDispatcher(router, 'wrong-capability'),
+    );
     for (const call of [
       () => impostor.list(),
       () => impostor.choose(opened.plan.plan_id, { start: 'Sat 26' }),

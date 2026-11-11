@@ -5,12 +5,7 @@
  */
 
 import { enrichItem, resetEnrichmentPipeline } from '../../src/enrichment/pipeline';
-import {
-  detectSponsored,
-  tagSponsored,
-  untagSponsored,
-  type SponsoredResult,
-} from '../../src/enrichment/sponsored';
+import { detectSponsored, tagSponsored, untagSponsored } from '../../src/enrichment/sponsored';
 
 describe('Sponsored Content Detection', () => {
   describe('detectSponsored', () => {

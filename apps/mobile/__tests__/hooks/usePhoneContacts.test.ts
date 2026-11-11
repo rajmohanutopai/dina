@@ -24,7 +24,6 @@ import {
   type PhoneContact,
 } from '../../src/hooks/usePhoneContacts';
 
-
 const PHONE_CONTACTS: PhoneContact[] = [
   { id: 'p1', name: 'Alice Johnson', phones: ['+1-555-0101'], emails: ['alice@example.com'] },
   { id: 'p2', name: 'Bob Smith', phones: ['+1-555-0102'], emails: [] },

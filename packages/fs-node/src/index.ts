@@ -111,7 +111,9 @@ export class NodeFsAdapter implements FsAdapter {
       `.${base}.tmp-${process.pid}-${process.hrtime.bigint().toString(36)}`,
     );
     const payload =
-      typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
+      typeof data === 'string'
+        ? Buffer.from(data, 'utf8')
+        : Buffer.from(data.buffer, data.byteOffset, data.byteLength);
     try {
       await fs.writeFile(tmpPath, payload);
       await fs.rename(tmpPath, filePath);

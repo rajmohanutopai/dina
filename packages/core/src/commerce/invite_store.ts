@@ -8,7 +8,6 @@
 import type { DatabaseAdapter } from '../storage/db_adapter';
 import type { InviteDirection } from '@dina/commerce-protocol';
 
-
 // ---------------------------------------------------------------------------
 // Store
 // ---------------------------------------------------------------------------
@@ -130,4 +129,3 @@ export class InMemoryInviteRepository implements InviteRepository {
     return this.list().filter((r) => r.state === state);
   }
 }
-

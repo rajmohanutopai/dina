@@ -57,19 +57,32 @@ function publicKeyOf(kid: string): Uint8Array {
 
 /** Verifies against the SDK's key set; JWS never normalizes S, so a high-S signature counts. */
 const sdkKeys: JwsVerifyFn = ({ header, signingInputs, signature }) =>
-  signingInputs.some((input) => p256.verify(signature, input, publicKeyOf(header.kid), { lowS: false }));
+  signingInputs.some((input) =>
+    p256.verify(signature, input, publicKeyOf(header.kid), { lowS: false }),
+  );
 
 /** Whether one signature verifies over one payload, as any JWS verifier checks it. */
-function verifiesOver(sig: { protected: string; signature: string }, payload: string, key: Uint8Array): boolean {
+function verifiesOver(
+  sig: { protected: string; signature: string },
+  payload: string,
+  key: Uint8Array,
+): boolean {
   const signature = base64urlDecode(sig.signature);
   if (signature === null) return false;
-  return p256.verify(signature, utf8Bytes(`${sig.protected}.${base64urlEncodeUtf8(payload)}`), key, { lowS: false });
+  return p256.verify(
+    signature,
+    utf8Bytes(`${sig.protected}.${base64urlEncodeUtf8(payload)}`),
+    key,
+    { lowS: false },
+  );
 }
 
 describe('Dina computes the SDK’s payload byte for byte', () => {
   // Cold audit C5-1: the vector is the card Dina projects, so a projection that moved must regenerate it.
   it('the dina_projected vector is the card Dina projects today (if not: regenerate, see fixtures/dina_card.ts)', () => {
-    expect(cardNamed('dina_projected').card).toEqual(JSON.parse(JSON.stringify(dinaProjectedCard())));
+    expect(cardNamed('dina_projected').card).toEqual(
+      JSON.parse(JSON.stringify(dinaProjectedCard())),
+    );
   });
 
   it.each(VECTORS.cards.map((c) => [c.name, c] as const))('%s', (_name, vector) => {
@@ -77,7 +90,10 @@ describe('Dina computes the SDK’s payload byte for byte', () => {
   });
 
   it('the two forms differ exactly where the SDK drops something: empties and unknown members', () => {
-    const differs = VECTORS.cards.map((c) => [c.name, cardSigningPayload(c.card) !== c.sdk_payload]);
+    const differs = VECTORS.cards.map((c) => [
+      c.name,
+      cardSigningPayload(c.card) !== c.sdk_payload,
+    ]);
     expect(differs).toEqual([
       ['dina_projected', true],
       ['bearer_requirement', true],
@@ -113,7 +129,9 @@ describe('a card the SDK signed verifies here', () => {
 
   it('a change the SDK form covers breaks the signature', async () => {
     const card = VECTORS.signed.cards.bearer_requirement;
-    expect((await verifyAgentCardSignatures({ ...card, name: 'Another agent' }, sdkKeys)).state).toBe('invalid');
+    expect(
+      (await verifyAgentCardSignatures({ ...card, name: 'Another agent' }, sdkKeys)).state,
+    ).toBe('invalid');
   });
 });
 
@@ -126,7 +144,9 @@ describe('Dina signs its card so the SDK’s verifier accepts it', () => {
   it('Dina’s projected card gets one signature per form; the second covers the SDK’s own payload', async () => {
     const vector = cardNamed('dina_projected');
     expect(cardSigningForms(vector.card)).toEqual(['spec', 'a2a_sdk']);
-    const sigs = await Promise.all(cardSigningForms(vector.card).map((form) => signAgentCard(vector.card, header, sign, form)));
+    const sigs = await Promise.all(
+      cardSigningForms(vector.card).map((form) => signAgentCard(vector.card, header, sign, form)),
+    );
     const [spec, sdk] = sigs;
     if (spec === undefined || sdk === undefined) throw new Error('two signatures expected');
     expect(verifiesOver(spec, cardSigningPayload(vector.card), publicKey)).toBe(true);

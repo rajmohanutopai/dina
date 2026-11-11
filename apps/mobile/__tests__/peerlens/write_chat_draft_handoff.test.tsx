@@ -23,7 +23,6 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
 // `require` inside the (hoisted) factory + the void-union effect type mirror the
 // global __mocks__/expo-router.ts idiom; disabled locally for the test mock.
 jest.mock('expo-router', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const ReactLocal = require('react');
   return {
     __esModule: true,
@@ -61,7 +60,9 @@ import WriteScreen from '../../app/peerlens/write';
 import * as appview from '../../src/peerlens/appview_runtime';
 import { emptyWriteFormState, type WriteFormState } from '../../src/peerlens/write_form_data';
 
-const injectMock = appview.injectAttestation as jest.MockedFunction<typeof appview.injectAttestation>;
+const injectMock = appview.injectAttestation as jest.MockedFunction<
+  typeof appview.injectAttestation
+>;
 
 function publishableInitial(): WriteFormState {
   return {

@@ -338,7 +338,8 @@ export default function AIProvidersScreen(): React.JSX.Element {
                             {modelVersion >= 0
                               ? `${getModelDisplayName(
                                   type,
-                                  peekModelOverride(type, 'primary') ?? getProviderTiers(type).primary,
+                                  peekModelOverride(type, 'primary') ??
+                                    getProviderTiers(type).primary,
                                 )}\n${getModelDisplayName(
                                   type,
                                   peekModelOverride(type, 'lite') ?? getProviderTiers(type).lite,

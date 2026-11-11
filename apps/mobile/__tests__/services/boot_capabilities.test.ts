@@ -191,7 +191,11 @@ describe('buildBootInputs — the abandoned-install sweeper (PLUGIN_ARCHITECTURE
     // A runner pairs into it (Core binds it), then the owner walks away past the window.
     const privateKey = new Uint8Array(32).fill(23);
     const publicKey = ed25519.getPublicKey(privateKey);
-    const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
+    const { code } = generatePairingCode({
+      role: 'plugin',
+      scope: 'runner',
+      pluginInstallId: installId,
+    });
     completePairing(code, 'runner', publicKeyToMultibase(publicKey), 'plugin', 'runner');
     const runnerDid = `did:key:${publicKeyToMultibase(publicKey)}`;
     expect(installs.getById(installId)?.deviceDid).toBe(runnerDid);
@@ -230,7 +234,11 @@ describe('buildBootInputs — the repo-proof verifier (§5.C1-mobile)', () => {
     // The jest stand-in for `@dina/net-expo/repo_proof` passes its self-check
     // and answers like an unreachable publisher; the boot wrapper passes the
     // typed failure through.
-    const result = await verifier({ did: 'did:plc:acme', collection: 'com.dinakernel.plugin.release', rkey: 'x' });
+    const result = await verifier({
+      did: 'did:plc:acme',
+      collection: 'com.dinakernel.plugin.release',
+      rkey: 'x',
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.transient).toBe(true);
   });

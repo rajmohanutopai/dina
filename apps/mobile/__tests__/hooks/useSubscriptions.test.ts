@@ -26,10 +26,18 @@ import { setOwnerDispatcher } from '../../src/services/owner_dispatcher';
 const NOW = 1_700_000_000_000;
 
 function wireWatch(): WatchService {
-  const svc = new WatchService({ repository: new InMemoryWorkflowRepository(), nowMsFn: () => NOW });
+  const svc = new WatchService({
+    repository: new InMemoryWorkflowRepository(),
+    nowMsFn: () => NOW,
+  });
   setWatchService(svc);
   // The owner UI reaches watches ONLY through this owner-marked dispatch.
-  setOwnerDispatcher(inProcessOwnerDispatcher(createCoreRouter({ ownerCapability: 'test-owner-cap' }), 'test-owner-cap'));
+  setOwnerDispatcher(
+    inProcessOwnerDispatcher(
+      createCoreRouter({ ownerCapability: 'test-owner-cap' }),
+      'test-owner-cap',
+    ),
+  );
   return svc;
 }
 
@@ -104,7 +112,11 @@ describe('useSubscriptions', () => {
 
     it('parses the target string into a poll query and the condition into a wake filter', async () => {
       const svc = wireWatch();
-      const watchId = await createSubscription({ ...baseInput, target: 'flight=BA117', condition: 'delayed' });
+      const watchId = await createSubscription({
+        ...baseInput,
+        target: 'flight=BA117',
+        condition: 'delayed',
+      });
       expect(watchId).not.toBeNull();
       const active = svc.listActive();
       expect(active).toHaveLength(1);

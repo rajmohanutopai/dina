@@ -30,9 +30,9 @@
 
 export interface CanonicalCapability {
   /** The one true name everything is keyed on. */
-  readonly canonical: string
+  readonly canonical: string;
   /** Synonyms that resolve to `canonical`. Excludes `canonical` itself. */
-  readonly aliases: readonly string[]
+  readonly aliases: readonly string[];
   /**
    * Concrete categories this capability may be listed under (catalog §9.1).
    * MIRRORS the catalog capability's `category_ids` — the §79 gate asserts
@@ -40,11 +40,11 @@ export interface CanonicalCapability {
    * allowed for an official capability (anti-spoof / anti-pollution), since
    * AppView can't import the catalog. Empty only for an entry with no constraint.
    */
-  readonly categoryIds: readonly string[]
+  readonly categoryIds: readonly string[];
   /** Human / LLM-readable "what question this answers" — the discovery signal. */
-  readonly description: string
+  readonly description: string;
   /** Domain grouping for discovery + marketing. */
-  readonly domain: string
+  readonly domain: string;
   /**
    * MIRRORS the catalog capability's `intent_routable` (the §79 gate asserts
    * parity). Generic intent discovery (`searchCapabilities`) surfaces ONLY
@@ -55,7 +55,7 @@ export interface CanonicalCapability {
    * search — PUBLIC_SERVICES_TAXONOMY §3). Lives here because AppView cannot
    * import the catalog.
    */
-  readonly intentRoutable: boolean
+  readonly intentRoutable: boolean;
   /**
    * MIRRORS the catalog capability's `privacy_class` (§79 parity). AppView's
    * INGESTER needs it to enforce the public-sensitive rule at the trust
@@ -64,14 +64,14 @@ export interface CanonicalCapability {
    * sensitive/regulated capability from a public row (same pattern as the
    * category anti-spoof drop).
    */
-  readonly privacyClass: 'public' | 'personal' | 'sensitive' | 'regulated'
+  readonly privacyClass: 'public' | 'personal' | 'sensitive' | 'regulated';
   /**
    * MIRRORS the catalog capability's `requires_subject_authorization` (§79
    * parity). Subject-scoped capabilities read data ABOUT someone (a student's
    * homework, a customer's order) — combined with `privacyClass` this is the
    * ingest-side public-exposure predicate.
    */
-  readonly requiresSubjectAuthorization: boolean
+  readonly requiresSubjectAuthorization: boolean;
 }
 
 /**
@@ -82,8 +82,8 @@ export interface CanonicalCapability {
  * when it is intent-routable AND not subject-scoped.
  */
 export function isPublicExposureAllowed(entry: CanonicalCapability): boolean {
-  if (entry.privacyClass !== 'sensitive' && entry.privacyClass !== 'regulated') return true
-  return entry.intentRoutable && !entry.requiresSubjectAuthorization
+  if (entry.privacyClass !== 'sensitive' && entry.privacyClass !== 'regulated') return true;
+  return entry.intentRoutable && !entry.requiresSubjectAuthorization;
 }
 
 /**
@@ -250,7 +250,7 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
     privacyClass: 'personal',
     requiresSubjectAuthorization: true,
   }),
-])
+]);
 
 /**
  * Build the alias → canonical lookup from a set of entries. Includes each
@@ -264,33 +264,33 @@ export const CAPABILITY_REGISTRY: readonly CanonicalCapability[] = Object.freeze
 export function buildAliasMap(
   entries: readonly CanonicalCapability[],
 ): ReadonlyMap<string, string> {
-  const m = new Map<string, string>()
+  const m = new Map<string, string>();
   for (const entry of entries) {
-    register(m, entry.canonical, entry.canonical)
+    register(m, entry.canonical, entry.canonical);
     for (const alias of entry.aliases) {
-      register(m, alias, entry.canonical)
+      register(m, alias, entry.canonical);
     }
   }
-  return m
+  return m;
 }
 
 function register(m: Map<string, string>, token: string, canonical: string): void {
-  const existing = m.get(token)
+  const existing = m.get(token);
   if (existing !== undefined && existing !== canonical) {
     throw new Error(
       `capability-registry: token "${token}" maps to both ` +
         `"${existing}" and "${canonical}" — vocabulary tokens must be unique.`,
-    )
+    );
   }
-  m.set(token, canonical)
+  m.set(token, canonical);
 }
 
-const ALIAS_TO_CANONICAL: ReadonlyMap<string, string> = buildAliasMap(CAPABILITY_REGISTRY)
+const ALIAS_TO_CANONICAL: ReadonlyMap<string, string> = buildAliasMap(CAPABILITY_REGISTRY);
 
 /** Canonical → entry, for description/domain lookup. */
 const CANONICAL_TO_ENTRY: ReadonlyMap<string, CanonicalCapability> = new Map(
   CAPABILITY_REGISTRY.map((e) => [e.canonical, e]),
-)
+);
 
 /**
  * Normalize a raw capability string the same way every layer does BEFORE
@@ -298,7 +298,7 @@ const CANONICAL_TO_ENTRY: ReadonlyMap<string, CanonicalCapability> = new Map(
  * want the normalized form (not the canonical mapping) share one rule.
  */
 export function normalizeCapability(raw: string): string {
-  return raw.trim().toLowerCase()
+  return raw.trim().toLowerCase();
 }
 
 /**
@@ -311,9 +311,9 @@ export function normalizeCapability(raw: string): string {
  * string) forces every call site to make that choice explicitly.
  */
 export function resolveCanonicalCapability(raw: string): string | null {
-  const normalized = normalizeCapability(raw)
-  if (normalized.length === 0) return null
-  return ALIAS_TO_CANONICAL.get(normalized) ?? null
+  const normalized = normalizeCapability(raw);
+  if (normalized.length === 0) return null;
+  return ALIAS_TO_CANONICAL.get(normalized) ?? null;
 }
 
 /**
@@ -331,18 +331,18 @@ export function resolveCanonicalCapability(raw: string): string | null {
  * one. A custom capability is its own canonical key (no alias folding) — the
  * namespace owner controls its meaning.
  */
-const CUSTOM_CAPABILITY_RE = /^[a-z0-9]+(?:\.[a-z0-9_]+)+$/
+const CUSTOM_CAPABILITY_RE = /^[a-z0-9]+(?:\.[a-z0-9_]+)+$/;
 
 /** Whether a normalized string is a well-formed namespaced custom capability. */
 export function isCustomCapability(normalized: string): boolean {
-  return CUSTOM_CAPABILITY_RE.test(normalized)
+  return CUSTOM_CAPABILITY_RE.test(normalized);
 }
 
 /** The three admissible outcomes of classifying a raw capability string. */
 export type CapabilityClass =
   | { readonly kind: 'canonical'; readonly canonical: string }
   | { readonly kind: 'custom'; readonly canonical: string }
-  | { readonly kind: 'unknown' }
+  | { readonly kind: 'unknown' };
 
 /**
  * Classify a raw capability into the open vocabulary: a registry alias/
@@ -350,12 +350,12 @@ export type CapabilityClass =
  * (provider-owned), or genuinely unknown (dropped from the public index).
  */
 export function classifyCapability(raw: string): CapabilityClass {
-  const normalized = normalizeCapability(raw)
-  if (normalized.length === 0) return { kind: 'unknown' }
-  const canonical = ALIAS_TO_CANONICAL.get(normalized)
-  if (canonical !== undefined) return { kind: 'canonical', canonical }
-  if (isCustomCapability(normalized)) return { kind: 'custom', canonical: normalized }
-  return { kind: 'unknown' }
+  const normalized = normalizeCapability(raw);
+  if (normalized.length === 0) return { kind: 'unknown' };
+  const canonical = ALIAS_TO_CANONICAL.get(normalized);
+  if (canonical !== undefined) return { kind: 'canonical', canonical };
+  if (isCustomCapability(normalized)) return { kind: 'custom', canonical: normalized };
+  return { kind: 'unknown' };
 }
 
 /**
@@ -367,15 +367,15 @@ export function classifyCapability(raw: string): CapabilityClass {
  * that is intentionally registry-only.
  */
 export function resolveSearchableCapability(raw: string): string | null {
-  const c = classifyCapability(raw)
-  return c.kind === 'unknown' ? null : c.canonical
+  const c = classifyCapability(raw);
+  return c.kind === 'unknown' ? null : c.canonical;
 }
 
 /** The canonical entry (description/domain) for a raw or canonical string. */
 export function getCapabilityEntry(raw: string): CanonicalCapability | null {
-  const canonical = resolveCanonicalCapability(raw)
-  if (canonical === null) return null
-  return CANONICAL_TO_ENTRY.get(canonical) ?? null
+  const canonical = resolveCanonicalCapability(raw);
+  if (canonical === null) return null;
+  return CANONICAL_TO_ENTRY.get(canonical) ?? null;
 }
 
 /**
@@ -387,13 +387,13 @@ export function getCapabilityEntry(raw: string): CanonicalCapability | null {
  * under `developer_ops`), since AppView can't import the catalog to check.
  */
 export function allowedCategoriesForCapability(raw: string): readonly string[] | null {
-  const entry = getCapabilityEntry(raw)
-  return entry === null ? null : entry.categoryIds
+  const entry = getCapabilityEntry(raw);
+  return entry === null ? null : entry.categoryIds;
 }
 
 /** All canonical capabilities (e.g. for the discovery coverage join). */
 export function allCanonicalCapabilities(): readonly CanonicalCapability[] {
-  return CAPABILITY_REGISTRY
+  return CAPABILITY_REGISTRY;
 }
 
 /**
@@ -410,13 +410,13 @@ export function allCanonicalCapabilities(): readonly CanonicalCapability[] {
  */
 export interface CanonicalizedCapabilities {
   /** Deduped canonical capability names for the public `capabilitiesJson`. */
-  readonly capabilities: string[]
+  readonly capabilities: string[];
   /** `capabilitySchemas` re-keyed to canonical names (known caps only). */
-  readonly capabilitySchemas: Record<string, unknown>
+  readonly capabilitySchemas: Record<string, unknown>;
   /** `responsePolicy` re-keyed to canonical names (known caps only). */
-  readonly responsePolicy: Record<string, string>
+  readonly responsePolicy: Record<string, string>;
   /** Raw (normalized) capability strings that are NOT in the registry. */
-  readonly unknown: string[]
+  readonly unknown: string[];
 }
 
 /**
@@ -440,45 +440,45 @@ export function canonicalizeForIndex(
   rawSchemas: Record<string, unknown> | undefined,
   rawPolicy: Record<string, string> | undefined,
 ): CanonicalizedCapabilities {
-  const capabilities: string[] = []
-  const seen = new Set<string>()
-  const unknown: string[] = []
-  const capabilitySchemas: Record<string, unknown> = {}
-  const responsePolicy: Record<string, string> = {}
+  const capabilities: string[] = [];
+  const seen = new Set<string>();
+  const unknown: string[] = [];
+  const capabilitySchemas: Record<string, unknown> = {};
+  const responsePolicy: Record<string, string> = {};
 
   for (const raw of rawCapabilities ?? []) {
-    const normalized = normalizeCapability(raw)
-    if (normalized.length === 0) continue
+    const normalized = normalizeCapability(raw);
+    if (normalized.length === 0) continue;
     // Open vocabulary: a registry alias folds to its canonical name; a
     // well-formed namespaced custom capability is admitted under its own
     // name (provider-owned); anything else is genuinely unknown.
-    const cls = classifyCapability(normalized)
+    const cls = classifyCapability(normalized);
     if (cls.kind === 'unknown') {
       // Not surfaced publicly. Dedupe the unknown report too.
-      if (!unknown.includes(normalized)) unknown.push(normalized)
-      continue
+      if (!unknown.includes(normalized)) unknown.push(normalized);
+      continue;
     }
-    const canonical = cls.canonical
+    const canonical = cls.canonical;
     if (seen.has(canonical)) {
       // Already have this key (e.g. provider listed two aliases of the same
       // thing). Keep the first schema/policy; skip the rest.
-      continue
+      continue;
     }
-    seen.add(canonical)
-    capabilities.push(canonical)
+    seen.add(canonical);
+    capabilities.push(canonical);
 
     // Re-key the maps: find the published entry under the RAW key the
     // provider used (could be the alias or the canonical), move it under
     // the canonical name. `rawSchemas`/`rawPolicy` are keyed by whatever
     // string the provider published, so look up by the original raw — but
     // normalized, since the published map keys may differ in case.
-    const schemaVal = lookupByNormalizedKey(rawSchemas, raw)
-    if (schemaVal !== undefined) capabilitySchemas[canonical] = schemaVal
-    const policyVal = lookupByNormalizedKey(rawPolicy, raw)
-    if (policyVal !== undefined) responsePolicy[canonical] = policyVal
+    const schemaVal = lookupByNormalizedKey(rawSchemas, raw);
+    if (schemaVal !== undefined) capabilitySchemas[canonical] = schemaVal;
+    const policyVal = lookupByNormalizedKey(rawPolicy, raw);
+    if (policyVal !== undefined) responsePolicy[canonical] = policyVal;
   }
 
-  return { capabilities, capabilitySchemas, responsePolicy, unknown }
+  return { capabilities, capabilitySchemas, responsePolicy, unknown };
 }
 
 /**
@@ -493,11 +493,11 @@ function lookupByNormalizedKey<T>(
   map: Record<string, T> | undefined,
   rawKey: string,
 ): T | undefined {
-  if (map === undefined) return undefined
-  if (Object.prototype.hasOwnProperty.call(map, rawKey)) return map[rawKey]
-  const target = normalizeCapability(rawKey)
+  if (map === undefined) return undefined;
+  if (Object.prototype.hasOwnProperty.call(map, rawKey)) return map[rawKey];
+  const target = normalizeCapability(rawKey);
   for (const [k, v] of Object.entries(map)) {
-    if (normalizeCapability(k) === target) return v
+    if (normalizeCapability(k) === target) return v;
   }
-  return undefined
+  return undefined;
 }

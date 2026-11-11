@@ -48,10 +48,7 @@ function silentLogger() {
 class FakeMemoryService extends MemoryService {
   public calls: { personas: string[] | undefined; limit: number }[] = [];
   public result: TocEntry[] = [];
-  override async toc(
-    personas: string[] | undefined,
-    limit: number,
-  ): Promise<TocEntry[]> {
+  override async toc(personas: string[] | undefined, limit: number): Promise<TocEntry[]> {
     this.calls.push({ personas, limit });
     return this.result.slice(0, limit);
   }
@@ -233,10 +230,7 @@ describe('GET /v1/memory/toc (task 4.77)', () => {
      * Build an app where `MemoryService` reads from real in-memory
      * topic repositories so a touch → toc round-trip is end-to-end.
      */
-    async function buildIngestingApp(opts: {
-      personas: string[];
-      nowSec?: number;
-    }) {
+    async function buildIngestingApp(opts: { personas: string[]; nowSec?: number }) {
       const repoByPersona = new Map<string, TopicRepository>();
       for (const p of opts.personas) {
         repoByPersona.set(p, new InMemoryTopicRepository());
@@ -355,11 +349,7 @@ describe('GET /v1/memory/toc (task 4.77)', () => {
       ['empty persona', { persona: '', topic: 'x', kind: 'theme' }, 'persona is required'],
       ['missing topic', { persona: 'work', kind: 'theme' }, 'topic is required'],
       ['whitespace topic', { persona: 'work', topic: '  ', kind: 'theme' }, 'topic is required'],
-      [
-        'missing kind',
-        { persona: 'work', topic: 'x' },
-        'kind must be "entity" or "theme"',
-      ],
+      ['missing kind', { persona: 'work', topic: 'x' }, 'kind must be "entity" or "theme"'],
       [
         'invalid kind',
         { persona: 'work', topic: 'x', kind: 'namespace' },
@@ -448,12 +438,12 @@ describe('GET /v1/memory/toc (task 4.77)', () => {
     it('rejects non-positive defaultLimit', async () => {
       const app = await createServer({ config: baseConfig(), logger: silentLogger() });
       const svc = new FakeMemoryService();
-      expect(() =>
-        registerMemoryRoutes(app, { memoryService: svc, defaultLimit: 0 }),
-      ).toThrow(/defaultLimit/);
-      expect(() =>
-        registerMemoryRoutes(app, { memoryService: svc, defaultLimit: 1.5 }),
-      ).toThrow(/defaultLimit/);
+      expect(() => registerMemoryRoutes(app, { memoryService: svc, defaultLimit: 0 })).toThrow(
+        /defaultLimit/,
+      );
+      expect(() => registerMemoryRoutes(app, { memoryService: svc, defaultLimit: 1.5 })).toThrow(
+        /defaultLimit/,
+      );
       await app.close();
     });
 

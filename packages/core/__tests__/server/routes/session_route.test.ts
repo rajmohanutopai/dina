@@ -66,7 +66,7 @@ describe('POST /v1/session/start', () => {
 });
 
 describe('POST /v1/session/end', () => {
-  it('ends the caller\'s own session (wire-compat {ok:true})', async () => {
+  it("ends the caller's own session (wire-compat {ok:true})", async () => {
     const start = await router.handle(req('/v1/session/start', { host_session_id: 'h1' }, A));
     const sid = (start.body as Record<string, unknown>).session_id as string;
     const end = await router.handle(req('/v1/session/end', { session_id: sid }, A));
@@ -79,7 +79,7 @@ describe('POST /v1/session/end', () => {
     expect(res.status).toBe(400);
   });
 
-  it('404 when ending another agent\'s session', async () => {
+  it("404 when ending another agent's session", async () => {
     const start = await router.handle(req('/v1/session/start', { host_session_id: 'h1' }, A));
     const sid = (start.body as Record<string, unknown>).session_id as string;
     const res = await router.handle(req('/v1/session/end', { session_id: sid }, B));
@@ -113,13 +113,13 @@ describe('POST /v1/session/end', () => {
 });
 
 describe('GET /v1/sessions', () => {
-  it('lists only the authenticated caller\'s active sessions', async () => {
+  it("lists only the authenticated caller's active sessions", async () => {
     await router.handle(req('/v1/session/start', { host_session_id: 'a-session' }, A));
     await router.handle(req('/v1/session/start', { host_session_id: 'b-session' }, B));
 
     const res = await router.handle(req('/v1/sessions', undefined, A, 'GET'));
     expect(res.status).toBe(200);
-    const sessions = (res.body as { sessions: Array<Record<string, unknown>> }).sessions;
+    const sessions = (res.body as { sessions: Record<string, unknown>[] }).sessions;
     expect(sessions).toHaveLength(1);
     expect(sessions[0]).toMatchObject({
       name: 'a-session',

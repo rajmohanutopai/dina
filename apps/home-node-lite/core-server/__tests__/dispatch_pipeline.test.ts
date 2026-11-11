@@ -8,11 +8,7 @@
 
 import { pino } from 'pino';
 
-import {
-  RPC_REQUEST_TYPE,
-  RPC_RESPONSE_TYPE,
-  type CoreRPCRequest,
-} from '@dina/protocol';
+import { RPC_REQUEST_TYPE, RPC_RESPONSE_TYPE, type CoreRPCRequest } from '@dina/protocol';
 
 import { dispatchTunneledRequest } from '../src/msgbox/dispatch_pipeline';
 import { createServer } from '../src/server';

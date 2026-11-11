@@ -47,12 +47,16 @@ const CARD_URL = 'https://agent.example/.well-known/agent-card.json';
 const CARD = {
   name: 'Summarizer',
   description: 'Summarizes.',
-  supportedInterfaces: [{ url: 'https://agent.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' }],
+  supportedInterfaces: [
+    { url: 'https://agent.example/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
+  ],
   version: '1.0.0',
   capabilities: {},
   defaultInputModes: ['text/plain'],
   defaultOutputModes: ['text/plain'],
-  skills: [{ id: 'summarize', name: 'Summarize', description: 'Summarize a text.', tags: ['text'] }],
+  skills: [
+    { id: 'summarize', name: 'Summarize', description: 'Summarize a text.', tags: ['text'] },
+  ],
 };
 const SESSION = 'chat:forward';
 const THREAD = 'forward-thread';
@@ -72,8 +76,11 @@ let failNext: number;
 
 /** Brain as the plane sees it: every POST recorded, the first `failNext` A2A ones answered 500. */
 const brainFetch = (async (input: string | URL | Request, init?: RequestInit) => {
-  const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url);
-  const body = typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
+  const url = new URL(
+    typeof input === 'string' ? input : input instanceof URL ? input.href : input.url,
+  );
+  const body =
+    typeof init?.body === 'string' ? (JSON.parse(init.body) as Record<string, unknown>) : {};
   posts.push({ path: url.pathname, body });
   if (url.pathname === A2A_RESULT_PATH && failNext > 0) {
     failNext -= 1;
@@ -105,7 +112,10 @@ beforeEach(async () => {
   wired = wireWorkflowPlane({
     identityDB,
     pdsIdentity,
-    signingKeypair: { publicKey: derivations.root.publicKey, privateKey: derivations.root.privateKey },
+    signingKeypair: {
+      publicKey: derivations.root.publicKey,
+      privateKey: derivations.root.privateKey,
+    },
     msgboxURL: 'wss://msgbox.invalid',
     appViewURL: 'https://appview.invalid',
     coreRouter: createCoreRouter({}),
@@ -141,28 +151,51 @@ async function releasedOperation(runtime: A2ARuntime): Promise<string> {
   const agentId = reg.agent.agent_id;
   const cred = createNoneCredential(d, agentId);
   if (!cred.ok) throw new Error(cred.reason);
-  expect(bindRemoteSkill(d, agentId, { skill: 'summarize', actionClass: 'read', credentialRef: cred.credential.credential_ref }).ok).toBe(true);
+  expect(
+    bindRemoteSkill(d, agentId, {
+      skill: 'summarize',
+      actionClass: 'read',
+      credentialRef: cred.credential.credential_ref,
+    }).ok,
+  ).toBe(true);
   expect(activateRemoteAgent(d, agentId)).toEqual({ ok: true });
 
   const log = new A2AReleaseLog(identityDB);
   installA2AReleaseLog(log);
   log.recordUtterance(SESSION, 'turn-1', 'Summarize my note for the agent.');
-  const p = proposeDelegation(runtime, { agentId, skill: 'summarize', text: 'Summarize my note.', replyTo: THREAD, releaseSession: SESSION });
+  const p = proposeDelegation(runtime, {
+    agentId,
+    skill: 'summarize',
+    text: 'Summarize my note.',
+    replyTo: THREAD,
+    releaseSession: SESSION,
+  });
   if (!p.ok) throw new Error(p.reason);
   runtime.workflow.approve(p.approvalTaskId);
 
   const op = runtime.store.getTaskByExternal('outbound', 'owner', p.operationId);
-  const childId = op === null ? undefined : runtime.store.childrenOf(op.id, 'dispatch')[0]?.child_task_id;
+  const childId =
+    op === null ? undefined : runtime.store.childrenOf(op.id, 'dispatch')[0]?.child_task_id;
   const child = childId === undefined ? null : runtime.workflow.store().getById(childId);
   if (child === null) throw new Error('no dispatch child');
-  const claimed = runtime.workflow.store().claimDelegationTask(RUNNER, Date.now(), 30_000, child.requested_runner ?? '');
+  const claimed = runtime.workflow
+    .store()
+    .claimDelegationTask(RUNNER, Date.now(), 30_000, child.requested_runner ?? '');
   if (claimed === null) throw new Error('no claim');
   const claim = { childTaskId: claimed.id, claimId: claimed.claim_id ?? '', runnerDid: RUNNER };
   expect(beginOutboundDispatch(runtime, claim).kind).toBe('send');
   recordRemoteOutcome(runtime, claim, { kind: 'result', parts: [{ text: 'The summary.' }] });
   const job = claimNextGuardJob(runtime);
   if (job === null) throw new Error('no guard job');
-  expect(submitGuardVerdict(runtime, { jobId: job.job_id, claimId: job.claim_id, digest: job.digest, verdict: 'passed', code: 'model_pass' }).ok).toBe(true);
+  expect(
+    submitGuardVerdict(runtime, {
+      jobId: job.job_id,
+      claimId: job.claim_id,
+      digest: job.digest,
+      verdict: 'passed',
+      code: 'model_pass',
+    }).ok,
+  ).toBe(true);
   return p.operationId;
 }
 
@@ -170,9 +203,12 @@ describe('Core forwards an A2A event to Brain by its event id (design A2A-I7; pl
   // Plan X-5 (the server hop: core-server's forwarding closure in wire_workflow_plane.ts)
   it('a POST Brain fails is sent again with the same event id, operation and thread, and the event is retired once Brain takes it', async () => {
     const runtime = getA2ARuntime();
-    if (runtime === null || getWorkflowService() === null) throw new Error('the plane wired no A2A runtime');
+    if (runtime === null || getWorkflowService() === null)
+      throw new Error('the plane wired no A2A runtime');
     const operationId = await releasedOperation(runtime);
-    const released = identityDB.query(`SELECT event_id FROM workflow_events WHERE event_kind = 'a2a_result_released'`) as { event_id: number }[];
+    const released = identityDB.query(
+      `SELECT event_id FROM workflow_events WHERE event_kind = 'a2a_result_released'`,
+    ) as { event_id: number }[];
     expect(released).toHaveLength(1);
     const eventId = released[0]?.event_id;
 
@@ -181,14 +217,21 @@ describe('Core forwards an A2A event to Brain by its event id (design A2A-I7; pl
     const forwarded = posts.filter((p) => p.path === A2A_RESULT_PATH);
     expect(forwarded).toHaveLength(2);
     for (const post of forwarded) {
-      expect(post.body).toMatchObject({ event_id: eventId, operation_id: operationId, reply_to: THREAD });
+      expect(post.body).toMatchObject({
+        event_id: eventId,
+        operation_id: operationId,
+        reply_to: THREAD,
+      });
       expect(post.body.text).toContain('The summary.');
     }
     expect(forwarded[1]?.body).toEqual(forwarded[0]?.body);
 
     // Brain took the second: Core retires the event, and nothing is sent a third time.
     await until(() => {
-      const rows = identityDB.query(`SELECT needs_delivery FROM workflow_events WHERE event_id = ?`, [eventId]) as { needs_delivery: number }[];
+      const rows = identityDB.query(
+        `SELECT needs_delivery FROM workflow_events WHERE event_id = ?`,
+        [eventId],
+      ) as { needs_delivery: number }[];
       return rows[0]?.needs_delivery === 0;
     }, 5_000);
     await new Promise((resolve) => setTimeout(resolve, 1_500));

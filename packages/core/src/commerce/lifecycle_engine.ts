@@ -51,7 +51,6 @@ import {
 
 import { validateServiceResponseBody } from '../d2d/service_bodies';
 
-
 import { ackIdSuffix } from './admission';
 import { type CommerceOrderStore } from './commerce_order';
 import { CommerceIntegrityError, type QuoteFamilyStore } from './quote_family';
@@ -61,11 +60,7 @@ import {
   rehydrateOrderStatus,
   rehydratePurchaseOrder,
 } from './rehydrate';
-import {
-  selectFencePredecessor,
-  type ChainRefusal,
-  type StatusChainStore,
-} from './status_chain';
+import { selectFencePredecessor, type ChainRefusal, type StatusChainStore } from './status_chain';
 
 import type { CommerceReceiptRepository } from './receipts';
 
@@ -200,7 +195,7 @@ type StatusFields = Partial<CommerceOrderStatus> &
   Pick<CommerceOrderStatus, 'sequence' | 'state' | 'supplier_epoch' | 'updated_at'>;
 
 /** Bound on the signed-body walk: far above any real response body. */
-const MAX_SIGNED_BODY_NODES = 10_000;
+const _MAX_SIGNED_BODY_NODES = 10_000;
 
 /**
  * Does the signed body actually commit to this record?
@@ -1297,10 +1292,7 @@ export class CommerceLifecycleEngine {
           //
           // Verified here against this node's OWN signatures, so a buyer
           // cannot set it by assertion.
-          readoptedChainEvidence: this.presentsVerifiableChain(
-            request,
-            authenticatedBuyerDid,
-          ),
+          readoptedChainEvidence: this.presentsVerifiableChain(request, authenticatedBuyerDid),
           decisionDeadlineAt: null,
           createdAt: nowMs,
         });

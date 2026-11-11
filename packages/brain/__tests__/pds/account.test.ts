@@ -5,7 +5,7 @@
  * integration suite and are env-var gated so they don't run by default.
  */
 
-import { PDSAccountClient, PDSAccountError } from '../../src/pds/account';
+import { PDSAccountClient } from '../../src/pds/account';
 
 type MockFetch = jest.Mock<Promise<Response>, [input: string | URL | Request, init?: RequestInit]>;
 

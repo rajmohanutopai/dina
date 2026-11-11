@@ -31,11 +31,7 @@ import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { getProviderTiers } from '@dina/brain/llm';
 
 import { swapAgenticActiveProvider } from '../ai/agentic_swap';
-import {
-  peekModelOverride,
-  setModelOverride,
-  clearModelOverride,
-} from '../ai/model_overrides';
+import { peekModelOverride, setModelOverride, clearModelOverride } from '../ai/model_overrides';
 import { getModelDisplayName, getModelOptions } from '../ai/models_catalog';
 import { PROVIDERS, createModel } from '../ai/provider';
 import { colors, radius, shadows, spacing, textStyles } from '../theme';
@@ -148,7 +144,7 @@ export function ModelPickerSheet({
         customTimerRef.current[tier] = null;
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Re-run only when the sheet opens/closes or the provider changes.
   }, [visible, provider]);
 
   /**
@@ -231,10 +227,7 @@ export function ModelPickerSheet({
         usingCustom: true,
         // Don't probe yet — wait for the text. If the user already
         // typed something earlier in this session, kick a probe.
-        status:
-          prev[tier].customText.trim().length > 0
-            ? { kind: 'probing' }
-            : { kind: 'idle' },
+        status: prev[tier].customText.trim().length > 0 ? { kind: 'probing' } : { kind: 'idle' },
       },
     }));
     const existing = tiers[tier].customText.trim();
@@ -257,12 +250,9 @@ export function ModelPickerSheet({
     }, CUSTOM_DEBOUNCE_MS);
   }
 
-  const allValid =
-    tiers.primary.status.kind === 'ok' &&
-    tiers.lite.status.kind === 'ok';
+  const allValid = tiers.primary.status.kind === 'ok' && tiers.lite.status.kind === 'ok';
   const anyProbing =
-    tiers.primary.status.kind === 'probing' ||
-    tiers.lite.status.kind === 'probing';
+    tiers.primary.status.kind === 'probing' || tiers.lite.status.kind === 'probing';
   const canSave = allValid && !saving && !anyProbing;
 
   async function save(): Promise<void> {
@@ -292,12 +282,7 @@ export function ModelPickerSheet({
   }
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="slide"
-      onRequestClose={onClose}
-    >
+    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable
         style={styles.backdrop}
         onPress={onClose}
@@ -306,12 +291,10 @@ export function ModelPickerSheet({
         accessibilityLabel="Dismiss model picker"
       />
       <View style={styles.sheet}>
-        <Text style={styles.title}>
-          Models · {PROVIDERS[provider].label}
-        </Text>
+        <Text style={styles.title}>Models · {PROVIDERS[provider].label}</Text>
         <Text style={styles.subtitle}>
-          The models Dina uses on this provider. Each selection is
-          tested live; an invalid model surfaces here.
+          The models Dina uses on this provider. Each selection is tested live; an invalid model
+          surfaces here.
         </Text>
 
         <KeyboardAwareScrollView
@@ -325,12 +308,8 @@ export function ModelPickerSheet({
             return (
               <View key={tier} style={styles.tierBlock}>
                 <View style={styles.tierHeader}>
-                  <Text style={styles.tierLabel}>
-                    {tier.toUpperCase()}
-                  </Text>
-                  <Text style={styles.tierDescription}>
-                    {TIER_DESCRIPTION[tier]}
-                  </Text>
+                  <Text style={styles.tierLabel}>{tier.toUpperCase()}</Text>
+                  <Text style={styles.tierDescription}>{TIER_DESCRIPTION[tier]}</Text>
                 </View>
 
                 {catalogue.map((modelId) => {
@@ -346,20 +325,14 @@ export function ModelPickerSheet({
                       accessibilityLabel={`${tier} ${modelId}`}
                       accessibilityState={{ selected: isPicked }}
                     >
-                      <View
-                        style={[styles.radio, isPicked && styles.radioPicked]}
-                      />
+                      <View style={[styles.radio, isPicked && styles.radioPicked]} />
                       <View style={styles.rowText}>
                         <Text style={styles.rowLabel}>
                           {getModelDisplayName(provider, modelId)}
                         </Text>
-                        {isDefault ? (
-                          <Text style={styles.rowDefault}>default</Text>
-                        ) : null}
+                        {isDefault ? <Text style={styles.rowDefault}>default</Text> : null}
                       </View>
-                      {isPicked ? (
-                        <StatusIndicator status={state.status} />
-                      ) : null}
+                      {isPicked ? <StatusIndicator status={state.status} /> : null}
                     </TouchableOpacity>
                   );
                 })}
@@ -378,16 +351,9 @@ export function ModelPickerSheet({
                   accessibilityLabel={`${tier} custom`}
                   accessibilityState={{ selected: state.usingCustom }}
                 >
-                  <View
-                    style={[
-                      styles.radio,
-                      state.usingCustom && styles.radioPicked,
-                    ]}
-                  />
+                  <View style={[styles.radio, state.usingCustom && styles.radioPicked]} />
                   <Text style={styles.rowLabel}>type a model id</Text>
-                  {state.usingCustom ? (
-                    <StatusIndicator status={state.status} />
-                  ) : null}
+                  {state.usingCustom ? <StatusIndicator status={state.status} /> : null}
                 </TouchableOpacity>
                 {state.usingCustom ? (
                   <TextInput
@@ -403,9 +369,7 @@ export function ModelPickerSheet({
                 ) : null}
 
                 {state.status.kind === 'error' ? (
-                  <Text style={styles.statusErrorText}>
-                    {state.status.message}
-                  </Text>
+                  <Text style={styles.statusErrorText}>{state.status.message}</Text>
                 ) : null}
               </View>
             );
@@ -424,11 +388,7 @@ export function ModelPickerSheet({
           <TouchableOpacity
             testID="model-picker-save"
             accessibilityRole="button"
-            style={[
-              styles.button,
-              styles.saveButton,
-              !canSave && styles.saveDisabled,
-            ]}
+            style={[styles.button, styles.saveButton, !canSave && styles.saveDisabled]}
             onPress={save}
             disabled={!canSave}
             accessibilityLabel="Save model selection"
@@ -445,11 +405,7 @@ export function ModelPickerSheet({
   );
 }
 
-function StatusIndicator({
-  status,
-}: {
-  status: TryStatus;
-}): React.JSX.Element | null {
+function StatusIndicator({ status }: { status: TryStatus }): React.JSX.Element | null {
   if (status.kind === 'probing') {
     return <ActivityIndicator size="small" color={colors.textMuted} />;
   }

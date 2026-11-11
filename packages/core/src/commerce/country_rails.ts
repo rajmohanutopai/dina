@@ -52,10 +52,13 @@ import {
 } from '@dina/commerce-protocol';
 
 import { getContactChannels, getPaperIdentity } from '../contacts/directory';
-import { invokeToolCapability, isPluginInvocationTask, type InvokeToolCapabilityResult } from '../plugins/invoke';
+import {
+  invokeToolCapability,
+  isPluginInvocationTask,
+  type InvokeToolCapabilityResult,
+} from '../plugins/invoke';
 import { getPluginInstallRepository, type PluginInstall } from '../plugins/registry';
 import { getWorkflowService } from '../workflow/service';
-
 
 import { COUNTRY_PACK_IDS, type CountryPack } from './country_packs';
 import {
@@ -99,7 +102,13 @@ export type PaymentStatusRailOutcome =
   | { asked: true; pack: CountryPack; taskId: string; mode: 'dispatched' | 'approval_required' }
   | {
       asked: false;
-      reason: 'unreadable' | 'no_reference' | 'method_has_no_rail' | 'no_active_pack' | 'no_workflow' | 'refused';
+      reason:
+        | 'unreadable'
+        | 'no_reference'
+        | 'method_has_no_rail'
+        | 'no_active_pack'
+        | 'no_workflow'
+        | 'refused';
       detail?: string;
     };
 
@@ -114,12 +123,13 @@ export function activeCountryPacks(): { pack: CountryPack; install: PluginInstal
   const out: { pack: CountryPack; install: PluginInstall }[] = [];
   for (const install of installs.list()) {
     if (install.status !== 'active' || install.trustAnchor.kind !== 'local_publisher_key') continue;
-    const pack = (Object.keys(COUNTRY_PACK_IDS) as CountryPack[]).find((p) => COUNTRY_PACK_IDS[p] === install.pluginId);
+    const pack = (Object.keys(COUNTRY_PACK_IDS) as CountryPack[]).find(
+      (p) => COUNTRY_PACK_IDS[p] === install.pluginId,
+    );
     if (pack !== undefined) out.push({ pack, install });
   }
   return out;
 }
-
 
 /**
  * Which rail answers "did this payment settle?" for a note's method, and the
@@ -164,11 +174,18 @@ export function askPaymentStatusRail(rawNote: unknown, askAtMs: number): Payment
   try {
     return askPaymentStatusRailUnguarded(rawNote, askAtMs);
   } catch (err) {
-    return { asked: false, reason: 'refused', detail: err instanceof Error ? err.constructor.name : typeof err };
+    return {
+      asked: false,
+      reason: 'refused',
+      detail: err instanceof Error ? err.constructor.name : typeof err,
+    };
   }
 }
 
-function askPaymentStatusRailUnguarded(rawNote: unknown, askAtMs: number): PaymentStatusRailOutcome {
+function askPaymentStatusRailUnguarded(
+  rawNote: unknown,
+  askAtMs: number,
+): PaymentStatusRailOutcome {
   // The verifier already accepted these bytes; reading them again here is
   // what gives this hook a typed note without the verifier returning one.
   const read = readPaymentNote(rawNote, hash);
@@ -179,8 +196,11 @@ function askPaymentStatusRailUnguarded(rawNote: unknown, askAtMs: number): Payme
   if (packs.length === 0) return { asked: false, reason: 'no_active_pack' };
   // The pack whose rail answers THIS note's method — with both packs active,
   // a UPI note asks India and a transfer asks the USA, whichever came first.
-  let chosen: { pack: CountryPack; install: PluginInstall; rail: NonNullable<ReturnType<typeof statusRailFor>> } | null =
-    null;
+  let chosen: {
+    pack: CountryPack;
+    install: PluginInstall;
+    rail: NonNullable<ReturnType<typeof statusRailFor>>;
+  } | null = null;
   for (const candidate of packs) {
     const rail = statusRailFor(candidate.pack, note);
     if (rail !== null) {
@@ -234,7 +254,11 @@ export function askDeliveryFilingRail(args: {
   try {
     return askDeliveryFilingRailUnguarded(args);
   } catch (err) {
-    return { asked: false, reason: 'refused', detail: err instanceof Error ? err.constructor.name : typeof err };
+    return {
+      asked: false,
+      reason: 'refused',
+      detail: err instanceof Error ? err.constructor.name : typeof err,
+    };
   }
 }
 
@@ -289,7 +313,12 @@ function askDeliveryFilingRailUnguarded(args: {
  */
 function filingFor(
   pack: CountryPack,
-  args: { note: DeliveryNote; counterpartyDid: string; value: Money | null; creditDays: number | null },
+  args: {
+    note: DeliveryNote;
+    counterpartyDid: string;
+    value: Money | null;
+    creditDays: number | null;
+  },
 ):
   | { capabilityId: string; params: Record<string, unknown>; categories: string[] }
   | { reason: DeliveryFilingRefusal; detail?: string }
@@ -297,12 +326,14 @@ function filingFor(
   if (pack === 'in') {
     // An e-way bill names both parties by GSTIN and declares a value.
     const own = ownRegistration('gstin');
-    if (own === null) return { reason: 'no_own_registration', detail: 'no GSTIN in your business settings' };
+    if (own === null)
+      return { reason: 'no_own_registration', detail: 'no GSTIN in your business settings' };
     const theirs = counterpartyRegistration(args.counterpartyDid, 'gstin');
     if (theirs === null) {
       return { reason: 'no_counterparty_registration', detail: 'no GSTIN on this buyer’s contact' };
     }
-    if (args.value === null) return { reason: 'unpriceable', detail: 'the dispatch has no value from a bound quote' };
+    if (args.value === null)
+      return { reason: 'unpriceable', detail: 'the dispatch has no value from a bound quote' };
     return {
       capabilityId: `${COUNTRY_PACK_IDS.in}.eway-bill`,
       params: {
@@ -316,7 +347,8 @@ function filingFor(
   }
   if (pack === 'us') {
     // An invoice states the order's net terms and the delivered total.
-    if (args.value === null) return { reason: 'unpriceable', detail: 'the dispatch has no value from a bound quote' };
+    if (args.value === null)
+      return { reason: 'unpriceable', detail: 'the dispatch has no value from a bound quote' };
     if (args.creditDays === null) {
       return { reason: 'terms_not_supported', detail: 'the bound quote states no payment terms' };
     }
@@ -362,7 +394,11 @@ export function askPaymentReminderRail(args: {
   try {
     return askPaymentReminderRailUnguarded(args);
   } catch (err) {
-    return { asked: false, reason: 'refused', detail: err instanceof Error ? err.constructor.name : typeof err };
+    return {
+      asked: false,
+      reason: 'refused',
+      detail: err instanceof Error ? err.constructor.name : typeof err,
+    };
   }
 }
 
@@ -382,7 +418,8 @@ function askPaymentReminderRailUnguarded(args: {
   for (const candidate of packs) {
     const reminder = reminderFor(candidate.pack, channels, args);
     if (reminder === null) continue;
-    if ('reason' in reminder) return { asked: false, reason: reminder.reason, detail: reminder.detail };
+    if ('reason' in reminder)
+      return { asked: false, reason: reminder.reason, detail: reminder.detail };
     const result: InvokeToolCapabilityResult = invokeToolCapability(
       {
         installId: candidate.install.installId,
@@ -527,7 +564,11 @@ export function paymentRailCheck(noteDigest: string): PaymentRailCheck | null {
     case 'running':
       return { state: 'asked', taskId: task.id };
     case 'completed':
-      return { state: 'answered', answer: rehydratePaymentRailAnswer(task.result), taskId: task.id };
+      return {
+        state: 'answered',
+        answer: rehydratePaymentRailAnswer(task.result),
+        taskId: task.id,
+      };
     default:
       return { state: 'closed', taskId: task.id };
   }

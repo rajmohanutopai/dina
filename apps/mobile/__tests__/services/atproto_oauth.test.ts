@@ -52,7 +52,12 @@ function makeAuthServer(opts: { tokenSub: string }) {
   const calls: Recorded[] = [];
   let parCount = 0;
   const fetchFn: FetchLike = async (url, init) => {
-    calls.push({ url, method: init?.method ?? 'GET', headers: init?.headers ?? {}, body: init?.body });
+    calls.push({
+      url,
+      method: init?.method ?? 'GET',
+      headers: init?.headers ?? {},
+      body: init?.body,
+    });
     if (url === `${PDS}/.well-known/oauth-protected-resource`) {
       return jsonResponse(200, { authorization_servers: [ISSUER] });
     }
@@ -70,7 +75,10 @@ function makeAuthServer(opts: { tokenSub: string }) {
       if (parCount === 1) {
         return jsonResponse(400, { error: 'use_dpop_nonce' }, 'server-nonce-abc');
       }
-      return jsonResponse(201, { request_uri: 'urn:ietf:params:oauth:request_uri:demo', expires_in: 60 });
+      return jsonResponse(201, {
+        request_uri: 'urn:ietf:params:oauth:request_uri:demo',
+        expires_in: 60,
+      });
     }
     if (url === `${ISSUER}/oauth/token`) {
       return jsonResponse(
@@ -139,9 +147,7 @@ describe('startOAuth', () => {
     // SECURITY: identity-only scope. The PAR requests `atproto`, NEVER the
     // broad `transition:generic` (app-password-like PDS access) — that would
     // contradict the "No other access required" read-only-link promise.
-    const parBody = String(
-      srv.calls.filter((c) => c.url.endsWith('/oauth/par'))[1]?.body ?? '',
-    );
+    const parBody = String(srv.calls.filter((c) => c.url.endsWith('/oauth/par'))[1]?.body ?? '');
     expect(parBody).toMatch(/(^|&)scope=atproto(&|$)/);
     expect(parBody).not.toContain('transition');
 
@@ -159,7 +165,11 @@ describe('startOAuth', () => {
     expect(payload.htu).toBe(`${ISSUER}/oauth/par`);
     expect(payload.nonce).toBe('server-nonce-abc');
     // Verify the ES256 signature against the embedded JWK.
-    const pub = new Uint8Array([0x04, ...b64urlDecode(header.jwk.x), ...b64urlDecode(header.jwk.y)]);
+    const pub = new Uint8Array([
+      0x04,
+      ...b64urlDecode(header.jwk.x),
+      ...b64urlDecode(header.jwk.y),
+    ]);
     const digest = sha256(new TextEncoder().encode(`${h}.${pl}`));
     expect(p256.verify(b64urlDecode(sig), digest, pub, { prehash: false })).toBe(true);
   });

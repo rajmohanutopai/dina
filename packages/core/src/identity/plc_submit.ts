@@ -46,11 +46,12 @@ export const DEFAULT_BACKOFF_BASE_MS = 500;
  *
  * Sequence with default base 500: 500ms → 1s → 2s → 4s → 8s.
  */
-export function computePLCBackoff(failedAttempts: number, baseMs = DEFAULT_BACKOFF_BASE_MS): number {
+export function computePLCBackoff(
+  failedAttempts: number,
+  baseMs = DEFAULT_BACKOFF_BASE_MS,
+): number {
   if (!Number.isInteger(failedAttempts) || failedAttempts < 1) {
-    throw new Error(
-      `plc_submit: failedAttempts must be a positive integer, got ${failedAttempts}`,
-    );
+    throw new Error(`plc_submit: failedAttempts must be a positive integer, got ${failedAttempts}`);
   }
   // Math.pow(2, n-1) for n=1..5 → 1, 2, 4, 8, 16. Multiplied by base
   // gives 500ms, 1s, 2s, 4s, 8s for the default base.

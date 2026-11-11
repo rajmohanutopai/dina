@@ -72,7 +72,12 @@ export type ReconnectEvent =
  */
 export class ReconnectPolicy {
   private attempt = 0;
-  private readonly opts: Required<Pick<ReconnectPolicyOptions, 'baseDelayMs' | 'maxDelayMs' | 'backoffFactor' | 'jitter' | 'random'>>;
+  private readonly opts: Required<
+    Pick<
+      ReconnectPolicyOptions,
+      'baseDelayMs' | 'maxDelayMs' | 'backoffFactor' | 'jitter' | 'random'
+    >
+  >;
   private readonly onEvent?: (event: ReconnectEvent) => void;
 
   constructor(opts: ReconnectPolicyOptions = {}) {

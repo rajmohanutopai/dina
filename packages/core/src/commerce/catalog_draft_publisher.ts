@@ -150,7 +150,11 @@ export async function publishHeldDraft(
     if (validated !== null) {
       // We know our bytes are out there and cannot say from what: the same
       // position as an unreadable head, so it is transient rather than a race.
-      return { ok: false, error: `${outcome.error} — the live head is unreadable: ${validated}`, lostSwap: false };
+      return {
+        ok: false,
+        error: `${outcome.error} — the live head is unreadable: ${validated}`,
+        lostSwap: false,
+      };
     }
     const livePointer = live.pointer as unknown as CatalogPointer;
     deps.recordPublication(draft.catalogId, livePointer, live.cid);

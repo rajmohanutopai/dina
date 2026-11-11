@@ -323,7 +323,9 @@ describe("the owner's values choose among versions (COMMITMENT_KERNEL §7, §15 
   it('§15 step 12: a partner-run version that holds the exit right says so in the ranking; one without does not', async () => {
     const opened = await openTender();
     const tenderId = String(opened.body.tender_id);
-    for (const wire of sent.filter((w) => w.body.capability === 'com.dinakernel.commerce.request_quote')) {
+    for (const wire of sent.filter(
+      (w) => w.body.capability === 'com.dinakernel.commerce.request_quote',
+    )) {
       const request = wire.body.params as QuoteRequest;
       const product = request.lines[0]?.product;
       if (product === undefined) throw new Error('request has no line');
@@ -350,7 +352,12 @@ describe("the owner's values choose among versions (COMMITMENT_KERNEL §7, §15 
           {
             alternative_id: 'partner_0a1b2c3d',
             charges: [
-              { kind: 'discount', label: 'Delivery by a partner run', amount: { currency: 'INR', minor_units: '1000' }, operation: 'subtract' },
+              {
+                kind: 'discount',
+                label: 'Delivery by a partner run',
+                amount: { currency: 'INR', minor_units: '1000' },
+                operation: 'subtract',
+              },
             ],
             estimated_delivery_at: '2035-08-18T09:00:00Z',
             partner_run: true,
@@ -366,13 +373,25 @@ describe("the owner's values choose among versions (COMMITMENT_KERNEL §7, §15 
         protocol_version: '1.5',
         alternatives,
       });
-      runtime.buyerQuotes.append({ supplierDid: wire.toDid, quoteId: quote.quote_id, quote, acceptedAt: Date.now() });
+      runtime.buyerQuotes.append({
+        supplierDid: wire.toDid,
+        quoteId: quote.quote_id,
+        quote,
+        acceptedAt: Date.now(),
+      });
       runtime.tenders.setMemberQuote(request.request_id, quote.quote_id);
     }
-    const res = await router.handle(call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }));
-    const runs = (res.body as { ranked: { supplier_did: string; partner_run?: { exit_if_run_fails?: true } }[] }).ranked
+    const res = await router.handle(
+      call('GET', '/v1/commerce/trade/tender/ranking', {}, { tender_id: tenderId }),
+    );
+    const runs = (
+      res.body as { ranked: { supplier_did: string; partner_run?: { exit_if_run_fails?: true } }[] }
+    ).ranked
       .filter((r) => r.partner_run !== undefined)
-      .map((r) => [r.supplier_did === SUPPLIER_A ? 'A' : 'B', r.partner_run?.exit_if_run_fails ?? false]);
+      .map((r) => [
+        r.supplier_did === SUPPLIER_A ? 'A' : 'B',
+        r.partner_run?.exit_if_run_fails ?? false,
+      ]);
     expect(runs.sort()).toEqual([
       ['A', true],
       ['B', false],
@@ -1131,7 +1150,11 @@ describe('owner cards that outlive their question (integration report 2026-09-27
             id: 'n1',
             kind: 'goods.buyer',
             covers: ['total'],
-            body: { type: 'never', label: 'never over ₹400', all: [{ part: 'total', above: 40_000n }] },
+            body: {
+              type: 'never',
+              label: 'never over ₹400',
+              all: [{ part: 'total', above: 40_000n }],
+            },
           },
         ]),
         closedPersonas: [],
@@ -1255,7 +1278,11 @@ describe('owner cards that outlive their question (integration report 2026-09-27
   it('a quote that lands while its request is still sending joins the tender (COM-8)', async () => {
     installCommerceServiceQueryDispatch(async (args) => {
       sent.push({ toDid: args.toDid, body: args.body as unknown as Record<string, unknown> });
-      const body = args.body as unknown as { capability: string; params: QuoteRequest; query_id: string };
+      const body = args.body as unknown as {
+        capability: string;
+        params: QuoteRequest;
+        query_id: string;
+      };
       if (body.capability === 'com.dinakernel.commerce.request_quote') {
         const product = body.params.lines[0]?.product;
         if (product === undefined) throw new Error('request has no line');
@@ -1294,10 +1321,12 @@ describe('owner cards that outlive their question (integration report 2026-09-27
     });
     const opened = await openTender();
     const tenderId = String(opened.body.tender_id);
-    expect(runtime.tenders.listMembers(tenderId).map((m) => m.quoteId).sort()).toEqual([
-      `q-${SUPPLIER_A.slice(-4)}`,
-      `q-${SUPPLIER_B.slice(-4)}`,
-    ]);
+    expect(
+      runtime.tenders
+        .listMembers(tenderId)
+        .map((m) => m.quoteId)
+        .sort(),
+    ).toEqual([`q-${SUPPLIER_A.slice(-4)}`, `q-${SUPPLIER_B.slice(-4)}`]);
   });
 
   it('a request a gate refused before egress leaves no member (COM-8)', async () => {

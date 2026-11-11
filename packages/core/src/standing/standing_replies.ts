@@ -81,26 +81,46 @@ export async function proposeStandingReply(input: {
 }): Promise<StandingProposeOutcome> {
   const now = input.now ?? Date.now();
   const checked = verifySpanProof(input.proof, 'standing_reply', now);
-  if (!checked.ok) return { status: 'refused', reason: `owner turn not proven (${checked.reason})` };
+  if (!checked.ok)
+    return { status: 'refused', reason: `owner turn not proven (${checked.reason})` };
   const text = input.replyText.trim();
-  if (text === '' || text.length > 500) return { status: 'refused', reason: 'the reply text must be 1 to 500 characters' };
+  if (text === '' || text.length > 500)
+    return { status: 'refused', reason: 'the reply text must be 1 to 500 characters' };
   // The reply is the owner's own words from this turn, never a model's.
-  if (!drawsOnlyFrom(text, checked.turnText)) return { status: 'refused', reason: "the reply must be the owner's own words" };
-  if (input.contacts.length === 0) return { status: 'refused', reason: 'name at least one contact; there is no "all contacts" rule' };
+  if (!drawsOnlyFrom(text, checked.turnText))
+    return { status: 'refused', reason: "the reply must be the owner's own words" };
+  if (input.contacts.length === 0)
+    return {
+      status: 'refused',
+      reason: 'name at least one contact; there is no "all contacts" rule',
+    };
   const contacts: { did: string; name: string }[] = [];
   for (const name of input.contacts) {
     const r = resolveContactRef(name);
     if (r.kind === 'ambiguous') return { status: 'ambiguous', name, candidates: r.names };
-    if (r.kind === 'none') return { status: 'refused', reason: `"${name}" is not one of your contacts` };
-    if (!contacts.some((c) => c.did === r.contact.did)) contacts.push({ did: r.contact.did, name: r.contact.displayName });
+    if (r.kind === 'none')
+      return { status: 'refused', reason: `"${name}" is not one of your contacts` };
+    if (!contacts.some((c) => c.did === r.contact.did))
+      contacts.push({ did: r.contact.did, name: r.contact.displayName });
   }
   const expiresAt = Date.parse(input.until);
-  if (!Number.isFinite(expiresAt) || expiresAt <= now) return { status: 'refused', reason: 'give a date in the future for when the reply ends' };
-  if (expiresAt - now > MAX_DAYS * 86_400_000) return { status: 'refused', reason: `a standing reply lasts at most ${MAX_DAYS} days` };
+  if (!Number.isFinite(expiresAt) || expiresAt <= now)
+    return { status: 'refused', reason: 'give a date in the future for when the reply ends' };
+  if (expiresAt - now > MAX_DAYS * 86_400_000)
+    return { status: 'refused', reason: `a standing reply lasts at most ${MAX_DAYS} days` };
   const service = getWorkflowService();
   if (service === null) return { status: 'refused', reason: 'approvals are not available' };
   const id = `standing-${bytesToHex(randomBytes(8))}`;
-  const rule: StandingReply = { id, state: 'proposed', replyText: text, contacts, startsAt: now, expiresAt, createdAt: now, lastSent: {} };
+  const rule: StandingReply = {
+    id,
+    state: 'proposed',
+    replyText: text,
+    contacts,
+    startsAt: now,
+    expiresAt,
+    createdAt: now,
+    lastSent: {},
+  };
   await save(rule);
   const until = new Date(expiresAt).toUTCString().slice(0, 16);
   const summary = `Reply automatically to ${contacts.map((c) => c.name).join(', ')} with: "${text}" — sent in reply to any request from ${contacts.length === 1 ? 'them' : 'these people'} until ${until}.`;
@@ -155,7 +175,12 @@ async function activateLocked(task: WorkflowTask): Promise<boolean> {
   if (rule === null || rule.state !== 'proposed') return false;
   rule.state = 'active';
   await save(rule);
-  appendAudit('owner', 'standing_reply_active', rule.id, `contacts=${rule.contacts.length} expires=${rule.expiresAt}`);
+  appendAudit(
+    'owner',
+    'standing_reply_active',
+    rule.id,
+    `contacts=${rule.contacts.length} expires=${rule.expiresAt}`,
+  );
   return true;
 }
 
@@ -182,7 +207,10 @@ export async function revokeStandingReply(id: string, now: number = Date.now()):
  * message is staged as usual). Answer with a live rule's text, once per
  * contact per rule per day. Returns whether a reply was sent.
  */
-export async function answerWithStandingReply(senderDid: string, now: number = Date.now()): Promise<boolean> {
+export async function answerWithStandingReply(
+  senderDid: string,
+  now: number = Date.now(),
+): Promise<boolean> {
   const sender = getD2DSender();
   if (sender === null) return false;
   // Reserve under the lock: read the latest rule, check it is still live
@@ -222,7 +250,10 @@ export async function reconcileStandingReplies(): Promise<void> {
   for (const rule of await listStandingReplies()) {
     if (rule.state !== 'proposed' && rule.state !== 'active') continue;
     const task = service.store().getById(rule.id);
-    if (task !== null && (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running)) {
+    if (
+      task !== null &&
+      (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running)
+    ) {
       // Approved: turn it on if a crash came first, and settle the card
       // either way (it may have gone live before the card was settled).
       await activateStandingReply(task);
@@ -232,9 +263,11 @@ export async function reconcileStandingReplies(): Promise<void> {
       } catch {
         /* already settled */
       }
-    } else if (rule.state === 'proposed' && (task === null || task.status !== WorkflowTaskState.PendingApproval)) {
+    } else if (
+      rule.state === 'proposed' &&
+      (task === null || task.status !== WorkflowTaskState.PendingApproval)
+    ) {
       await declineStandingReply({ payload: JSON.stringify({ rule_id: rule.id }) } as WorkflowTask);
     }
   }
 }
-

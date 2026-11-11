@@ -40,17 +40,14 @@ export function registerTrustCacheMemoryWarning(): MemoryWarningSubscription {
   // The cast keeps us compatible with the older RN typings shipped
   // by the mocks. Real RN treats 'memoryWarning' as a first-class
   // event type; the mock surfaces it as a generic listener slot.
-  const sub = AppState.addEventListener(
-    'memoryWarning' as unknown as 'change',
-    () => {
-      // Fire-and-forget — the eviction is async (KV deletes) but the
-      // OS doesn't wait for our promise. Catching is defensive: if
-      // KV is mid-flush and rejects, we don't want a runaway
-      // unhandled-rejection log on a routine memory event.
-      void evictTrustCacheTo(MEMORY_WARNING_TARGET).catch(() => {
-        /* swallow — next event will retry */
-      });
-    },
-  );
+  const sub = AppState.addEventListener('memoryWarning' as unknown as 'change', () => {
+    // Fire-and-forget — the eviction is async (KV deletes) but the
+    // OS doesn't wait for our promise. Catching is defensive: if
+    // KV is mid-flush and rejects, we don't want a runaway
+    // unhandled-rejection log on a routine memory event.
+    void evictTrustCacheTo(MEMORY_WARNING_TARGET).catch(() => {
+      /* swallow — next event will retry */
+    });
+  });
   return sub as unknown as MemoryWarningSubscription;
 }

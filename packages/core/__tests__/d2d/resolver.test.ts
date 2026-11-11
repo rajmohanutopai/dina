@@ -13,7 +13,6 @@ import { DIDResolver } from '../../src/d2d/resolver';
 import { deriveDIDKey, publicKeyToMultibase } from '../../src/identity/did';
 import { buildDIDDocument } from '../../src/identity/did_document';
 
-
 const pubKey = getPublicKey(TEST_ED25519_SEED);
 const testDID = deriveDIDKey(pubKey);
 const testMultibase = publicKeyToMultibase(pubKey);
@@ -267,7 +266,12 @@ describe('DIDResolver', () => {
       });
       expect(await down.lookup(PLC)).toEqual({ kind: 'unavailable' });
       const garbled = new DIDResolver({
-        fetch: (async () => ({ ok: true, status: 200, json: async () => JSON.parse('{') }) as unknown as Response) as typeof fetch,
+        fetch: (async () =>
+          ({
+            ok: true,
+            status: 200,
+            json: async () => JSON.parse('{'),
+          }) as unknown as Response) as typeof fetch,
       });
       expect(await garbled.lookup(PLC)).toEqual({ kind: 'unavailable' });
       expect(await down.lookup('did:web:example.com')).toEqual({ kind: 'unavailable' });
@@ -290,7 +294,10 @@ describe('DIDResolver', () => {
       await resolver.lookup(PLC);
       await resolver.lookup(PLC);
       expect(calls).toHaveLength(2);
-      expect(await resolver.lookup(testDID)).toEqual({ kind: 'document', document: expect.objectContaining({ id: testDID }) });
+      expect(await resolver.lookup(testDID)).toEqual({
+        kind: 'document',
+        document: expect.objectContaining({ id: testDID }),
+      });
       expect(calls).toHaveLength(2);
     });
   });

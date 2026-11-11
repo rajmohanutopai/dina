@@ -140,14 +140,23 @@ class Dispatch {
     const start = beginOutboundDispatch(
       this.rt,
       this.claim,
-      ref === null || auth === null ? {} : { credential: { ref, problem: auth.ok ? null : auth.reason } },
+      ref === null || auth === null
+        ? {}
+        : { credential: { ref, problem: auth.ok ? null : auth.reason } },
     );
     this.settings.log({ event: 'a2a.dispatch', task_id: this.claim.childTaskId, kind: start.kind });
     // The poll ends a fixed time after the send, however often a restart or
     // a lost lease resumes it (§6.4).
     if (start.kind === 'send') {
-      await this.send(start, start.messageId, start.parts, auth?.ok === true ? auth.headers : {}, start.sentAt + this.settings.deadlineMs);
-    } else if (start.kind === 'resume') await this.poll(start, start.remoteTaskId, start.sentAt + this.settings.deadlineMs);
+      await this.send(
+        start,
+        start.messageId,
+        start.parts,
+        auth?.ok === true ? auth.headers : {},
+        start.sentAt + this.settings.deadlineMs,
+      );
+    } else if (start.kind === 'resume')
+      await this.poll(start, start.remoteTaskId, start.sentAt + this.settings.deadlineMs);
   }
 
   private record(outcome: RemoteOutcome): boolean {
@@ -175,9 +184,13 @@ class Dispatch {
     if (authHeaders === undefined) {
       // After the send, reads follow the credential through any rotation: the
       // owner replacing a secret mid-task must not strand its result.
-      const ref = this.rt.store.liveSuccessor(target.credentialRef)?.credential_ref ?? target.credentialRef;
+      const ref =
+        this.rt.store.liveSuccessor(target.credentialRef)?.credential_ref ?? target.credentialRef;
       const auth = await remoteAuthHeaders(this.rt.store, ref, this.rt.nowMs());
-      if (!auth.ok) return { kind: auth.reason === 'token_unavailable' ? 'token_unavailable' : 'no_credential' };
+      if (!auth.ok)
+        return {
+          kind: auth.reason === 'token_unavailable' ? 'token_unavailable' : 'no_credential',
+        };
       authHeaders = auth.headers;
     }
     this.rpcSeq += 1;
@@ -192,7 +205,9 @@ class Dispatch {
     if (!response.ok) return { kind: 'transport', sent: response.sent, error: response.error };
     if (response.status === 401 || response.status === 403) {
       // A cached token may simply have expired: the next request fetches a new one.
-      forgetCachedToken(this.rt.store.liveSuccessor(target.credentialRef)?.credential_ref ?? target.credentialRef);
+      forgetCachedToken(
+        this.rt.store.liveSuccessor(target.credentialRef)?.credential_ref ?? target.credentialRef,
+      );
       return { kind: 'auth_refused' };
     }
     const parsed = parseJsonRpcResponseText(response.body, id);
@@ -295,13 +310,26 @@ class Dispatch {
   private renew(): boolean {
     const held = this.rt.workflow
       .store()
-      .heartbeatTask(this.claim.childTaskId, this.claim.runnerDid, this.rt.nowMs(), this.settings.leaseMs, this.claim.claimId);
+      .heartbeatTask(
+        this.claim.childTaskId,
+        this.claim.runnerDid,
+        this.rt.nowMs(),
+        this.settings.leaseMs,
+        this.claim.claimId,
+      );
     if (!held) this.settings.log({ event: 'a2a.claim_lost', task_id: this.claim.childTaskId });
     return held;
   }
 
-  private async poll(target: DispatchTarget, remoteTaskId: string, deadline: number): Promise<void> {
-    const taskRef: JsonObject = { ...(target.tenant !== '' ? { tenant: target.tenant } : {}), id: remoteTaskId };
+  private async poll(
+    target: DispatchTarget,
+    remoteTaskId: string,
+    deadline: number,
+  ): Promise<void> {
+    const taskRef: JsonObject = {
+      ...(target.tenant !== '' ? { tenant: target.tenant } : {}),
+      id: remoteTaskId,
+    };
     const { backoff } = this.settings;
     // A refused credential is retried once, and only for OAuth (the cached
     // token may have expired and a fresh one is fetched); a static key or
@@ -407,20 +435,25 @@ export class A2ADispatchRunner {
     const leaseMs = options.leaseMs ?? 60_000;
     // The longest stretch without a renewal: an OAuth token fetch, one remote
     // call, and the longest sleep.
-    const longestGap = A2A_FETCH_LIMITS.token.timeoutMs + A2A_FETCH_LIMITS.rpc.timeoutMs + Math.max(...backoff);
+    const longestGap =
+      A2A_FETCH_LIMITS.token.timeoutMs + A2A_FETCH_LIMITS.rpc.timeoutMs + Math.max(...backoff);
     if (leaseMs <= longestGap) {
-      throw new Error(`A2ADispatchRunner: leaseMs ${leaseMs} must exceed one call plus the longest sleep (${longestGap})`);
+      throw new Error(
+        `A2ADispatchRunner: leaseMs ${leaseMs} must exceed one call plus the longest sleep (${longestGap})`,
+      );
     }
     this.settings = {
       leaseMs,
       backoff,
       deadlineMs: options.pollDeadlineMs ?? 30 * 60_000,
-      sleep: options.sleep ?? ((ms) => new Promise((resolve) => unrefTimer(setTimeout(resolve, ms)))),
+      sleep:
+        options.sleep ?? ((ms) => new Promise((resolve) => unrefTimer(setTimeout(resolve, ms)))),
       log: options.log ?? (() => undefined),
       stopped: () => this.stopped,
     };
     this.setIntervalFn = options.setInterval ?? ((fn, ms) => unrefTimer(setInterval(fn, ms)));
-    this.clearIntervalFn = options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
+    this.clearIntervalFn =
+      options.clearInterval ?? ((h) => clearInterval(h as ReturnType<typeof setInterval>));
   }
 
   start(): void {
@@ -464,14 +497,17 @@ export class A2ADispatchRunner {
     // Each sweep on its own: a fault in one never starves the other.
     try {
       const swept = sweepA2AOutbound(rt);
-      if (swept.failed > 0) this.settings.log({ event: 'a2a.sweep_ops_failed', count: swept.failed });
+      if (swept.failed > 0)
+        this.settings.log({ event: 'a2a.sweep_ops_failed', count: swept.failed });
     } catch (err) {
       this.settings.log({ event: 'a2a.sweep_failed', error: errorName(err) });
     }
     try {
       // Lane 2: review cards approved with no execution minted, and calls
       // whose child ended with no settle (a crash between the two commits).
-      sweepA2AInbound(inboundCore(rt), (entry) => this.settings.log({ event: 'a2a.inbound_sweep_op_failed', ...entry }));
+      sweepA2AInbound(inboundCore(rt), (entry) =>
+        this.settings.log({ event: 'a2a.inbound_sweep_op_failed', ...entry }),
+      );
     } catch (err) {
       this.settings.log({ event: 'a2a.inbound_sweep_failed', error: errorName(err) });
     }
@@ -514,7 +550,12 @@ export class A2ADispatchRunner {
         try {
           task = rt.workflow
             .store()
-            .claimDelegationTask(this.runnerDid, rt.nowMs(), this.settings.leaseMs, a2aLaneFor(agentId));
+            .claimDelegationTask(
+              this.runnerDid,
+              rt.nowMs(),
+              this.settings.leaseMs,
+              a2aLaneFor(agentId),
+            );
         } catch (err) {
           this.settings.log({ event: 'a2a.claim_failed', error: errorName(err) });
           break;
@@ -536,7 +577,8 @@ export class A2ADispatchRunner {
     this.lastDidRefreshMs = now;
     this.refreshing = refreshBoundDidKeys(rt.store, rt.nowMs)
       .then((counts) => {
-        if (counts.suspended > 0 || counts.unresolved > 0) this.settings.log({ event: 'a2a.did_refresh', ...counts });
+        if (counts.suspended > 0 || counts.unresolved > 0)
+          this.settings.log({ event: 'a2a.did_refresh', ...counts });
       })
       .catch((err: unknown) => {
         this.settings.log({ event: 'a2a.did_refresh_failed', error: errorName(err) });
@@ -550,7 +592,11 @@ export class A2ADispatchRunner {
     const job = new Dispatch(rt, this.settings, task, this.runnerDid)
       .run()
       .catch((err: unknown) => {
-        this.settings.log({ event: 'a2a.dispatch_crashed', task_id: task.id, error: errorName(err) });
+        this.settings.log({
+          event: 'a2a.dispatch_crashed',
+          task_id: task.id,
+          error: errorName(err),
+        });
       })
       .finally(() => {
         this.jobs.delete(job);

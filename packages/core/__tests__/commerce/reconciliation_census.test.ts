@@ -130,7 +130,7 @@ describe('the repository query behind it', () => {
         purchaseOrderId: 'po-normal',
         idempotencyKey: 'idem-2',
         reconciliationRequired: false,
-    readoptedChainEvidence: false,
+        readoptedChainEvidence: false,
       }),
     );
     expect(orders.listAwaitingReconciliation().map((r) => r.purchaseOrderId)).toEqual([

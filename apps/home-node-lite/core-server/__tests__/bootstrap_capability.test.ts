@@ -64,7 +64,11 @@ describe('bootstrap enrolment capability (item 2)', () => {
 
     it('does not mint when there is no handoff channel (dev / standalone boot)', async () => {
       const gen = fakeGenerate('X', 1);
-      const res = await deliverBootstrapCapability({ firstBoot: true, handoff: null, generate: gen });
+      const res = await deliverBootstrapCapability({
+        firstBoot: true,
+        handoff: null,
+        generate: gen,
+      });
       expect(res).toEqual({ delivered: false, reason: 'no_handoff_channel' });
       expect(gen).not.toHaveBeenCalled();
     });

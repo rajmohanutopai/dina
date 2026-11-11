@@ -54,7 +54,7 @@ export function clearTrustedAgents(): void {
 export function routeTaskToHandler(
   taskType: string,
   persona?: string,
-  agentTrust?: string,
+  _agentTrust?: string,
 ): TaskRoutingResult {
   // 1. FTS-only
   if (FTS_ONLY_TASKS.has(taskType)) {

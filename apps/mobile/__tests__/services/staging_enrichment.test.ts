@@ -19,7 +19,6 @@ import {
 import type { LLMProvider } from '../../../brain/src/llm/adapters/provider';
 import type { CoreClient } from '@dina/core';
 
-
 function fakeProvider(response: string): LLMProvider {
   return {
     name: 'fake',

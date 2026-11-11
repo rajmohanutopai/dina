@@ -133,12 +133,8 @@ describe('language predicate — "missing field = pass"', () => {
   });
 
   it('passes case-insensitively', () => {
-    expect(
-      lang(makeDisplay({ language: 'EN' }), makeProfile({ languages: ['EN'] })),
-    ).toBe(true);
-    expect(
-      lang(makeDisplay({ language: 'en' }), makeProfile({ languages: ['EN-US'] })),
-    ).toBe(true);
+    expect(lang(makeDisplay({ language: 'EN' }), makeProfile({ languages: ['EN'] }))).toBe(true);
+    expect(lang(makeDisplay({ language: 'en' }), makeProfile({ languages: ['EN-US'] }))).toBe(true);
   });
 
   it('passes when viewer has en-US and subject has EN (subtag match)', () => {
@@ -218,11 +214,7 @@ describe('applyFilters — AND-composition + immutability', () => {
   it('does not mutate the active set', () => {
     const active = new Set<ViewerFilterId>(['languages']);
     const before = new Set(active);
-    applyFilters(
-      [makeResult('a', makeDisplay({ language: 'EN' }))],
-      PROFILE,
-      active,
-    );
+    applyFilters([makeResult('a', makeDisplay({ language: 'EN' }))], PROFILE, active);
     expect(active).toEqual(before);
   });
 });

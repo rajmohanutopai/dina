@@ -15,7 +15,9 @@ const SERVICE: ServiceProfile = {
   isDiscoverable: true,
 };
 
-function makeApp(appView: Pick<AppViewClient, 'searchCapabilities' | 'searchServices'>): FastifyInstance {
+function makeApp(
+  appView: Pick<AppViewClient, 'searchCapabilities' | 'searchServices'>,
+): FastifyInstance {
   const app = Fastify({ logger: false });
   registerServiceSearchRoutes(app, { appView });
   return app;

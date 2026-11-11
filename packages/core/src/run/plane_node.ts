@@ -26,7 +26,12 @@ import { hasDEK, unwrapWithPersonaDEK, wrapWithPersonaDEK } from '../persona/orc
 import { parseRunMessagePayload, parseResultCardPayload } from './card';
 import { getCompletionReceiptRepository } from './completion';
 import { SQLiteErasureKeyStore, type ErasureKeyStore } from './erasure_store';
-import { NaclDeviceSealer, SQLiteRunSpool, type DeviceSealer, type RunSpool } from './locked_arrival';
+import {
+  NaclDeviceSealer,
+  SQLiteRunSpool,
+  type DeviceSealer,
+  type RunSpool,
+} from './locked_arrival';
 import { getMessageRepository, type MessageRepository } from './message';
 import { type PersonaCipher } from './payload_store';
 import { wireRunPlane, type RunPlane, type RunPlaneDeps } from './plane';
@@ -137,10 +142,7 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     // the pacer's `service.query` fail before it ever reaches the provider (§3/§7).
     // The pacer re-issues each interval, so a per-query ceiling is correct; the
     // run's own `expires_at` remains the hard lifetime bound enforced elsewhere.
-    const ttl = Math.max(
-      1,
-      Math.min(MAX_SERVICE_TTL, Math.round((run.expires_at - now()) / 1000)),
-    );
+    const ttl = Math.max(1, Math.min(MAX_SERVICE_TTL, Math.round((run.expires_at - now()) / 1000)));
     await deps.sendD2D(run.provider_did, MsgTypeServiceQuery, {
       query_id: correlationId,
       capability: INTERACTIVE_RUN_CAPABILITY,
@@ -274,14 +276,22 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
     if (correlationId.startsWith(DELEGATION_CORRELATION_PREFIX)) {
       const delegationId = correlationId.slice(DELEGATION_CORRELATION_PREFIX.length);
       if (r === null) {
-        log({ evt: 'run_plane.completion_rejected', reason: 'no_result', delegation_id: delegationId });
+        log({
+          evt: 'run_plane.completion_rejected',
+          reason: 'no_result',
+          delegation_id: delegationId,
+        });
         return true;
       }
       // The wire run_id is untrusted until verified; look up the run by it and let
       // `verifyRunResult` bind run_id + provider + service back to that run.
       const run = runs.getById(typeof r.run_id === 'string' ? r.run_id : '');
       if (run === null) {
-        log({ evt: 'run_plane.completion_rejected', reason: 'unknown_run', delegation_id: delegationId });
+        log({
+          evt: 'run_plane.completion_rejected',
+          reason: 'unknown_run',
+          delegation_id: delegationId,
+        });
         return true;
       }
       const resolve = await resolveKeyFor(r, run.provider_did);
@@ -315,7 +325,11 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
         boundMsg.run_id !== run.run_id ||
         boundMsg.decision_revision !== verified.verified.decision_revision
       ) {
-        log({ evt: 'run_plane.completion_rejected', reason: 'binding_mismatch', run_id: run.run_id });
+        log({
+          evt: 'run_plane.completion_rejected',
+          reason: 'binding_mismatch',
+          run_id: run.run_id,
+        });
         return true;
       }
       // R3-01 — receipt CONFLICT gate BEFORE any card write: if a receipt already
@@ -333,7 +347,11 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
           (priorReceipt.result_card_digest !== null &&
             priorReceipt.result_card_digest !== verified.verified.result_card_digest))
       ) {
-        log({ evt: 'run_plane.completion_rejected', reason: 'receipt_conflict', run_id: run.run_id });
+        log({
+          evt: 'run_plane.completion_rejected',
+          reason: 'receipt_conflict',
+          run_id: run.run_id,
+        });
         return true;
       }
       // 81B-04 — the RESULT-CARD is a payload just like a pull message (§5.1/§13):
@@ -385,7 +403,11 @@ export function wireRunPlaneNode(deps: RunPlaneNodeDeps): RunPlaneNode {
               );
               log({ evt: 'run_plane.result_card_staged', run_id: run.run_id });
             } else {
-              log({ evt: 'run_plane.result_card_deferred', reason: 'persona_locked', run_id: run.run_id });
+              log({
+                evt: 'run_plane.result_card_deferred',
+                reason: 'persona_locked',
+                run_id: run.run_id,
+              });
             }
           }
         }

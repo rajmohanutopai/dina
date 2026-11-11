@@ -117,9 +117,14 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
     // Sending it lets Core say what is missing ("a street line is required")
     // beside the field; dropping it because the street happens to be blank
     // would throw their typing away without a word.
-    const hasAddress = [form.line1, form.line2, form.city, form.region, form.postalCode, form.country].some(
-      (value) => value.trim() !== '',
-    );
+    const hasAddress = [
+      form.line1,
+      form.line2,
+      form.city,
+      form.region,
+      form.postalCode,
+      form.country,
+    ].some((value) => value.trim() !== '');
     try {
       const result = await saveTradeDetails(contactDid, {
         legalName: form.legalName,
@@ -150,7 +155,9 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
   }, [contactDid, form, router]);
 
   const matchesField = (findingField: string, field: string): boolean =>
-    findingField === field || findingField.startsWith(`${field}[`) || findingField.startsWith(`${field}.`);
+    findingField === field ||
+    findingField.startsWith(`${field}[`) ||
+    findingField.startsWith(`${field}.`);
   const FIELD_KEYS = [
     'legalName',
     'registrations',
@@ -166,7 +173,9 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
   const findingFor = (field: string): string | undefined =>
     findings.find((f) => matchesField(f.field, field))?.detail;
   /** Findings that belong beside no field on this form — never swallowed. */
-  const unplacedFindings = findings.filter((f) => !FIELD_KEYS.some((key) => matchesField(f.field, key)));
+  const unplacedFindings = findings.filter(
+    (f) => !FIELD_KEYS.some((key) => matchesField(f.field, key)),
+  );
 
   if (status === 'loading') {
     return (
@@ -181,7 +190,11 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
     key: keyof FormState,
     label: string,
     findingKey: string,
-    props: { placeholder?: string; autoCapitalize?: 'none' | 'characters'; keyboardType?: 'email-address' | 'phone-pad' } = {},
+    props: {
+      placeholder?: string;
+      autoCapitalize?: 'none' | 'characters';
+      keyboardType?: 'email-address' | 'phone-pad';
+    } = {},
   ): React.JSX.Element => {
     const problem = findingFor(findingKey);
     return (
@@ -216,10 +229,22 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
           anything you do not have blank.
         </Text>
 
-        {field('legalName', 'Registered name', 'legalName', { placeholder: 'ChairMaker Industries LLP' })}
-        {field('gstin', 'GSTIN', 'registrations', { placeholder: '27AAPFU0939F1ZV', autoCapitalize: 'characters' })}
-        {field('phone', 'Phone', 'phone', { placeholder: '+91 98450 12345', keyboardType: 'phone-pad' })}
-        {field('email', 'E-mail', 'email', { placeholder: 'sales@example.com', autoCapitalize: 'none', keyboardType: 'email-address' })}
+        {field('legalName', 'Registered name', 'legalName', {
+          placeholder: 'ChairMaker Industries LLP',
+        })}
+        {field('gstin', 'GSTIN', 'registrations', {
+          placeholder: '27AAPFU0939F1ZV',
+          autoCapitalize: 'characters',
+        })}
+        {field('phone', 'Phone', 'phone', {
+          placeholder: '+91 98450 12345',
+          keyboardType: 'phone-pad',
+        })}
+        {field('email', 'E-mail', 'email', {
+          placeholder: 'sales@example.com',
+          autoCapitalize: 'none',
+          keyboardType: 'email-address',
+        })}
 
         <Text style={styles.section}>Billing address</Text>
         {field('line1', 'Street', 'billing_address.line1', { placeholder: '4 Kalasipalya Road' })}
@@ -227,11 +252,16 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
         {field('city', 'City', 'billing_address.city', { placeholder: 'Bengaluru' })}
         {field('region', 'State', 'billing_address.region', { placeholder: 'Karnataka' })}
         {field('postalCode', 'PIN / ZIP', 'billing_address.postalCode', { placeholder: '560002' })}
-        {field('country', 'Country code', 'billing_address.country', { placeholder: 'IN', autoCapitalize: 'characters' })}
+        {field('country', 'Country code', 'billing_address.country', {
+          placeholder: 'IN',
+          autoCapitalize: 'characters',
+        })}
 
         {(error !== '' || unplacedFindings.length > 0) && (
           <Text testID="contact-trade-error" style={styles.error}>
-            {[error, ...unplacedFindings.map((f) => f.detail)].filter((line) => line !== '').join('\n')}
+            {[error, ...unplacedFindings.map((f) => f.detail)]
+              .filter((line) => line !== '')
+              .join('\n')}
           </Text>
         )}
 
@@ -250,9 +280,17 @@ export default function ContactTradeDetailsScreen(): React.JSX.Element {
             accessibilityRole="button"
             onPress={() => void save()}
             disabled={busy || contactDid === ''}
-            style={({ pressed }) => [styles.save, pressed && styles.pressed, busy && styles.disabled]}
+            style={({ pressed }) => [
+              styles.save,
+              pressed && styles.pressed,
+              busy && styles.disabled,
+            ]}
           >
-            {busy ? <ActivityIndicator color={colors.white} /> : <Text style={styles.saveText}>Save</Text>}
+            {busy ? (
+              <ActivityIndicator color={colors.white} />
+            ) : (
+              <Text style={styles.saveText}>Save</Text>
+            )}
           </Pressable>
         </View>
       </ScrollView>
@@ -265,7 +303,12 @@ const styles = StyleSheet.create({
   centered: { alignItems: 'center', justifyContent: 'center' },
   content: { padding: spacing.md, paddingBottom: spacing.xl, gap: spacing.sm },
   sub: { ...textStyles.body, color: colors.textSecondary, marginBottom: spacing.sm },
-  section: { ...textStyles.body, color: colors.textPrimary, fontWeight: '600', marginTop: spacing.md },
+  section: {
+    ...textStyles.body,
+    color: colors.textPrimary,
+    fontWeight: '600',
+    marginTop: spacing.md,
+  },
   label: { ...textStyles.caption, color: colors.textSecondary, marginBottom: spacing.xs },
   input: {
     ...textStyles.body,

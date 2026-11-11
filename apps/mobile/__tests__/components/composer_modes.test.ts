@@ -66,7 +66,10 @@ describe('resolveUserChip — metadata.mode (new messages)', () => {
 
 describe('resolveUserChip — legacy prefix fallback (older persisted messages)', () => {
   it('strips a known slash prefix and labels the chip', () => {
-    const { chipLabel, displayContent } = resolveUserChip('/reviews is the Sony XM5 good?', undefined);
+    const { chipLabel, displayContent } = resolveUserChip(
+      '/reviews is the Sony XM5 good?',
+      undefined,
+    );
     expect(chipLabel).toBe('Reviews');
     expect(displayContent).toBe('is the Sony XM5 good?');
   });

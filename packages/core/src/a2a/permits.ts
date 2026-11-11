@@ -74,9 +74,18 @@ function settleApproval(
 ): void {
   runtime.workflow
     .store()
-    .transition(approvalTaskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, runtime.nowMs());
+    .transition(
+      approvalTaskId,
+      WorkflowTaskState.Queued,
+      WorkflowTaskState.Running,
+      runtime.nowMs(),
+    );
   if (outcome.ok) {
-    runtime.workflow.complete(approvalTaskId, JSON.stringify(outcome.result), 'approved and queued');
+    runtime.workflow.complete(
+      approvalTaskId,
+      JSON.stringify(outcome.result),
+      'approved and queued',
+    );
   } else {
     runtime.workflow.fail(approvalTaskId, outcome.reason);
   }
@@ -99,7 +108,8 @@ export function mintOutboundPermit(runtime: A2ARuntime, approvalTaskId: string):
       const op = operationOfApproval(runtime, approvalTaskId);
       if (op === null) return 'not_a2a';
       if (op.state !== 'pending_decision') return 'not_pending';
-      if (runtime.store.getOutboundPermitByApproval(approvalTaskId) !== null) return 'already_minted';
+      if (runtime.store.getOutboundPermitByApproval(approvalTaskId) !== null)
+        return 'already_minted';
       const approval = runtime.workflow.store().getById(approvalTaskId);
       if (approval === null || approval.status !== WorkflowTaskState.Queued) return 'not_approved';
       const card = parseDelegationConsentCard(approval.payload);
@@ -114,7 +124,10 @@ export function mintOutboundPermit(runtime: A2ARuntime, approvalTaskId: string):
       const authority = currentAuthority(runtime, consent.remote_agent_id, consent.skill);
       const drift = authority.ok ? snapshotDrift(snapshot, authority) : authority.reason;
       if (drift !== null) {
-        endOutboundOperation(runtime, op, ['pending_decision'], { state: 'stale_authority', reason_code: drift });
+        endOutboundOperation(runtime, op, ['pending_decision'], {
+          state: 'stale_authority',
+          reason_code: drift,
+        });
         settleApproval(runtime, approvalTaskId, { ok: false, reason: `stale_authority: ${drift}` });
         return 'stale_authority';
       }
@@ -203,7 +216,11 @@ export function snapshotDrift(
 }
 
 /** The owner said no, or let the card lapse: the operation ends, nothing was minted. */
-function closeUndecided(runtime: A2ARuntime, approvalTaskId: string, state: 'refused' | 'expired'): void {
+function closeUndecided(
+  runtime: A2ARuntime,
+  approvalTaskId: string,
+  state: 'refused' | 'expired',
+): void {
   const op = operationOfApproval(runtime, approvalTaskId);
   if (op === null) return;
   endOutboundOperation(runtime, op, ['pending_decision'], { state, reason_code: state });
@@ -266,7 +283,11 @@ export interface SweepCounts {
  */
 export function sweepA2AOutbound(runtime: A2ARuntime): SweepCounts {
   const counts: SweepCounts = { minted: 0, closed: 0, expired: 0, orphaned: 0, failed: 0 };
-  for (const op of runtime.store.listTasksInStates('outbound', ['pending_decision', 'queued', 'running'])) {
+  for (const op of runtime.store.listTasksInStates('outbound', [
+    'pending_decision',
+    'queued',
+    'running',
+  ])) {
     try {
       const outcome = sweepOne(runtime, op);
       if (outcome !== null) counts[outcome] += 1;
@@ -277,7 +298,10 @@ export function sweepA2AOutbound(runtime: A2ARuntime): SweepCounts {
   return counts;
 }
 
-function sweepOne(runtime: A2ARuntime, op: A2ATaskRow): Exclude<keyof SweepCounts, 'failed'> | null {
+function sweepOne(
+  runtime: A2ARuntime,
+  op: A2ATaskRow,
+): Exclude<keyof SweepCounts, 'failed'> | null {
   const now = runtime.nowMs();
   const tasks = runtime.workflow.store();
   if (op.state === 'pending_decision') {
@@ -295,12 +319,23 @@ function sweepOne(runtime: A2ARuntime, op: A2ATaskRow): Exclude<keyof SweepCount
         ? 'orphaned'
         : null;
     }
-    if (card.status === WorkflowTaskState.Queued) return mintOutboundPermit(runtime, card.id) === 'minted' ? 'minted' : null;
+    if (card.status === WorkflowTaskState.Queued)
+      return mintOutboundPermit(runtime, card.id) === 'minted' ? 'minted' : null;
     if (card.status === WorkflowTaskState.Cancelled) {
-      return endOutboundOperation(runtime, op, ['pending_decision'], { state: 'refused', reason_code: 'refused' }) ? 'closed' : null;
+      return endOutboundOperation(runtime, op, ['pending_decision'], {
+        state: 'refused',
+        reason_code: 'refused',
+      })
+        ? 'closed'
+        : null;
     }
     if (card.status === WorkflowTaskState.Failed) {
-      return endOutboundOperation(runtime, op, ['pending_decision'], { state: 'expired', reason_code: 'expired' }) ? 'closed' : null;
+      return endOutboundOperation(runtime, op, ['pending_decision'], {
+        state: 'expired',
+        reason_code: 'expired',
+      })
+        ? 'closed'
+        : null;
     }
     return null;
   }
@@ -308,18 +343,27 @@ function sweepOne(runtime: A2ARuntime, op: A2ATaskRow): Exclude<keyof SweepCount
   const child = dispatch === undefined ? null : tasks.getById(dispatch.child_task_id);
   if (op.state === 'queued') {
     const permit = runtime.store.permitsOf(op.id).find((p) => p.state === 'minted');
-    const childDead = child === null || (child.status !== WorkflowTaskState.Queued && child.status !== WorkflowTaskState.Running);
+    const childDead =
+      child === null ||
+      (child.status !== WorkflowTaskState.Queued && child.status !== WorkflowTaskState.Running);
     const permitDead = permit === undefined || permit.expires_at <= now;
     if (!childDead && !permitDead) return null;
     return runtime.store.transaction(() => {
       if (permit !== undefined) runtime.store.voidPermit(permit.permit_id, 'expired');
-      const ended = endOutboundOperation(runtime, op, ['queued'], { state: 'expired', reason_code: 'dispatch_expired' });
-      if (child !== null && child.status === WorkflowTaskState.Queued) runtime.workflow.cancel(child.id, 'a2a permit expired');
+      const ended = endOutboundOperation(runtime, op, ['queued'], {
+        state: 'expired',
+        reason_code: 'dispatch_expired',
+      });
+      if (child !== null && child.status === WorkflowTaskState.Queued)
+        runtime.workflow.cancel(child.id, 'a2a permit expired');
       return ended ? 'expired' : null;
     });
   }
   // running: the dispatch child ended (lease swept, deadline passed) with no report.
-  if (child === null || ['failed', 'cancelled', 'outcome_unknown', 'completed'].includes(child.status)) {
+  if (
+    child === null ||
+    ['failed', 'cancelled', 'outcome_unknown', 'completed'].includes(child.status)
+  ) {
     return endOutboundOperation(runtime, op, ['running'], {
       state: 'outcome_unknown',
       reason_code: 'dispatch_ended_unreported',
@@ -352,9 +396,13 @@ export function cancelOutboundOperation(runtime: A2ARuntime, operationId: string
     if (op.state === 'pending_decision') {
       runtime.store.requestCancel(op.id, now);
       runtime.store.updateCancelRequest(op.id, ['requested'], 'confirmed', { nowMs: now });
-      endOutboundOperation(runtime, op, ['pending_decision'], { state: 'cancelled', reason_code: 'cancelled_by_owner' });
+      endOutboundOperation(runtime, op, ['pending_decision'], {
+        state: 'cancelled',
+        reason_code: 'cancelled_by_owner',
+      });
       const approval = runtime.store.childrenOf(op.id, 'approval')[0];
-      const card = approval === undefined ? null : runtime.workflow.store().getById(approval.child_task_id);
+      const card =
+        approval === undefined ? null : runtime.workflow.store().getById(approval.child_task_id);
       if (card !== null && card.status === WorkflowTaskState.PendingApproval) {
         runtime.workflow.cancel(card.id, 'cancelled by the owner');
       }
@@ -363,19 +411,26 @@ export function cancelOutboundOperation(runtime: A2ARuntime, operationId: string
     if (op.state === 'queued') {
       runtime.store.requestCancel(op.id, now);
       runtime.store.updateCancelRequest(op.id, ['requested'], 'confirmed', { nowMs: now });
-      for (const permit of runtime.store.permitsOf(op.id)) runtime.store.voidPermit(permit.permit_id, 'cancelled');
-      endOutboundOperation(runtime, op, ['queued'], { state: 'cancelled', reason_code: 'cancelled_by_owner', submission_phase: 'terminal' });
+      for (const permit of runtime.store.permitsOf(op.id))
+        runtime.store.voidPermit(permit.permit_id, 'cancelled');
+      endOutboundOperation(runtime, op, ['queued'], {
+        state: 'cancelled',
+        reason_code: 'cancelled_by_owner',
+        submission_phase: 'terminal',
+      });
       const dispatch = runtime.store.childrenOf(op.id, 'dispatch')[0];
-      const child = dispatch === undefined ? null : runtime.workflow.store().getById(dispatch.child_task_id);
-      if (child !== null && child.status === WorkflowTaskState.Queued) runtime.workflow.cancel(child.id, 'cancelled by the owner');
+      const child =
+        dispatch === undefined ? null : runtime.workflow.store().getById(dispatch.child_task_id);
+      if (child !== null && child.status === WorkflowTaskState.Queued)
+        runtime.workflow.cancel(child.id, 'cancelled by the owner');
       return { ok: true, state: 'cancelled' };
     }
     if (op.state === 'running') {
       runtime.store.requestCancel(op.id, now);
-      if (runtime.store.getCancelRequest(op.id)?.state === 'refused') return { ok: false, reason: 'cancel_refused' };
+      if (runtime.store.getCancelRequest(op.id)?.state === 'refused')
+        return { ok: false, reason: 'cancel_refused' };
       return { ok: true, state: 'cancel_requested' };
     }
     return { ok: false, reason: 'already_finished' };
   });
 }
-

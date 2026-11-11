@@ -96,22 +96,19 @@ const REMAINING_COUPLINGS: Readonly<Record<string, string>> = {
   // Cost: each row check moves to the pack that owns the row, and the pack hands
   // them to the preflight.
   'commerce/archive_preflight.ts':
-    'checks ledger rows in a backup through the ledger\'s own rehydrators',
+    "checks ledger rows in a backup through the ledger's own rehydrators",
   // The barrel re-exports the money modules along with everything else.
   // Cost: the move rewrites it, nothing more — a re-export is not a caller.
-  'commerce/index.ts':
-    're-export only; the barrel follows the files',
+  'commerce/index.ts': 're-export only; the barrel follows the files',
   // The composition seam. `runtime.ts` CONSTRUCTS the money stores
   // (`SQLiteTradeDocumentRepository`, the revshare ledger, the spool) and
   // registers the inbound ingress. Cost: the stores become injected rather
   // than constructed, so the two composition roots pass what the pack owns.
-  'commerce/runtime.ts':
-    'constructs the money stores; the move makes them injected',
+  'commerce/runtime.ts': 'constructs the money stores; the move makes them injected',
   // The money ROUTES live inside the 6,450-line commerce route file beside
   // the money-free ones. Cost: carve `/v1/commerce/trade/*` and the revenue
   // -share routes into their own registrar, which the roots call separately.
-  'server/routes/commerce.ts':
-    'money routes share a file with money-free ones; carve them out',
+  'server/routes/commerce.ts': 'money routes share a file with money-free ones; carve them out',
 };
 
 function tsFiles(dir: string): string[] {

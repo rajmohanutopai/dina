@@ -108,8 +108,6 @@ async function resolveMatches(name: string): Promise<Person[]> {
   return repo
     .listPeople()
     .filter((p) =>
-      (p.surfaces ?? []).some(
-        (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
-      ),
+      (p.surfaces ?? []).some((s) => s.status !== 'rejected' && s.normalizedSurface === needle),
     );
 }

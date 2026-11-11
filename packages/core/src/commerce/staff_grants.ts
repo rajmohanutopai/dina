@@ -231,7 +231,10 @@ export function checkStaffOperation(args: {
     return { verdict: 'refuse', reason: 'no live staff grant for this scope' };
   }
   if (grant.installs !== 'both' && grant.installs !== args.installRole) {
-    return { verdict: 'refuse', reason: `grant covers ${grant.installs}, operation is ${args.installRole}` };
+    return {
+      verdict: 'refuse',
+      reason: `grant covers ${grant.installs}, operation is ${args.installRole}`,
+    };
   }
   if (!CAPPED_SCOPES.has(args.scope)) {
     return { verdict: 'allow' };

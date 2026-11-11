@@ -94,7 +94,8 @@ export async function deliverBootstrapCapability(
   const { code, expiresAt } = generate({
     role: 'agent',
     scope,
-    deviceName: opts.deviceName ?? (scope === 'dot' ? 'ChatGPT dot' : DEFAULT_BOOTSTRAP_DEVICE_NAME),
+    deviceName:
+      opts.deviceName ?? (scope === 'dot' ? 'ChatGPT dot' : DEFAULT_BOOTSTRAP_DEVICE_NAME),
   });
 
   try {

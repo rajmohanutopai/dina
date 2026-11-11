@@ -18,10 +18,7 @@
 import rateLimit from '@fastify/rate-limit';
 import Fastify from 'fastify';
 
-import {
-  CREDITS_CLAIM_GRANT_NSID,
-  CREDITS_GET_CONFIG_NSID,
-} from '@dina/protocol';
+import { CREDITS_CLAIM_GRANT_NSID, CREDITS_GET_CONFIG_NSID } from '@dina/protocol';
 
 import { processClaim } from './claim';
 

@@ -34,20 +34,19 @@ import {
   makeServiceQueryReconcileSend,
   unwrapSeed,
 } from '@dina/core';
-
-import { loadWrappedSeed } from './wrapped_seed_store';
 import {
   makeCatalogRepoAccess,
   makeTermListingRepo,
   wireCommerceEpoch,
   type TermListingRepoClient,
+  EpochRepoClient,
 } from '@dina/home-node';
 
 import { installMobilePhotoPipeline, uninstallMobilePhotoPipeline } from './photo_pipeline';
+import { loadWrappedSeed } from './wrapped_seed_store';
 
 import type { CommerceSweepers } from '@dina/core';
 import type { DatabaseAdapter } from '@dina/core/storage';
-import type { EpochRepoClient } from '@dina/home-node';
 
 let sweepers: CommerceSweepers | null = null;
 
@@ -115,7 +114,9 @@ export async function startMobileCommercePlane(options: MobileCommercePlaneOptio
     installCatalogRecordWriter(catalogRepo.writer);
     installCatalogRecordReader(catalogRepo.reader);
     // SHELF_SPACE_NEGOTIATION §6.1 — slot listings, into the same own repo.
-    installTermListingRepo(makeTermListingRepo({ pds: options.pds, ownerDid: options.businessDid }));
+    installTermListingRepo(
+      makeTermListingRepo({ pds: options.pds, ownerDid: options.businessDid }),
+    );
   } else {
     options.log({ event: 'commerce.epoch_skipped', reason: 'no_pds_repo' });
   }

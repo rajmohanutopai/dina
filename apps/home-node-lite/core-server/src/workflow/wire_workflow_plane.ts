@@ -47,7 +47,9 @@ import {
   type CoreRouter,
   type ServiceConfig,
   type ResponseBridgeSender,
- ApprovalNotifier, ServiceInboundNotifier } from '@dina/core';
+  ApprovalNotifier,
+  ServiceInboundNotifier,
+} from '@dina/core';
 // `setD2DSender` registers the generic D2D egress callback for the `/v1/msg/send`
 // route. It lives on the runtime subpath (route module), not the main barrel.
 import { sign as ed25519Sign, verify as ed25519Verify } from '@dina/core';

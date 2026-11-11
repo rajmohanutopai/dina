@@ -160,7 +160,9 @@ export class SQLiteServiceOfferRepository implements ServiceOfferRepository {
   }
 
   get(grantId: string): ServiceOffer | null {
-    const rows = this.db.query('SELECT * FROM contact_service_offers WHERE grant_id = ?', [grantId]);
+    const rows = this.db.query('SELECT * FROM contact_service_offers WHERE grant_id = ?', [
+      grantId,
+    ]);
     return rows.length === 0 ? null : rowToOffer(rows[0]);
   }
 

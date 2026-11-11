@@ -2,11 +2,7 @@
  * Task 4.59 — PLC startup drift check tests.
  */
 
-import {
-  generateMnemonic,
-  mnemonicToSeed,
-  publicKeyToMultibase,
-} from '@dina/core';
+import { generateMnemonic, mnemonicToSeed, publicKeyToMultibase } from '@dina/core';
 
 import { deriveIdentity } from '../src/identity/derivations';
 import {
@@ -154,8 +150,7 @@ describe('plcProbe (task 4.59)', () => {
         resolveFn: async () => ({ verificationMethods: {} }),
       });
       expect(result.ok).toBe(false);
-      if (!result.ok)
-        expect(result.detail.reason).toBe('missing_verification_method');
+      if (!result.ok) expect(result.detail.reason).toBe('missing_verification_method');
     });
 
     it('different key published → key_mismatch with both did:keys in detail', async () => {
@@ -191,8 +186,7 @@ describe('plcProbe (task 4.59)', () => {
         }),
       });
       expect(result.ok).toBe(false);
-      if (!result.ok)
-        expect(result.detail.reason).toBe('missing_verification_method');
+      if (!result.ok) expect(result.detail.reason).toBe('missing_verification_method');
     });
   });
 

@@ -10,7 +10,7 @@ import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
 import { createInProcessDispatch } from '../../src/server/in_process_dispatch';
-import { CoreRouter, type CoreRequest, type CoreResponse } from '../../src/server/router';
+import { CoreRouter, type CoreRequest } from '../../src/server/router';
 
 const SEED = TEST_ED25519_SEED;
 const PUB = getPublicKey(SEED);

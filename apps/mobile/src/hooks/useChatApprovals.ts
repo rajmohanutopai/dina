@@ -13,12 +13,8 @@
  */
 
 import { getAskApprovalGateway } from '@dina/brain';
-import { addMessage, type ChatMessage } from '@dina/brain/chat';
-import {
-  getApprovalManager,
-  resetApprovalManager,
-  type ApprovalRequest,
-} from '@dina/core';
+import { addMessage } from '@dina/brain/chat';
+import { getApprovalManager, resetApprovalManager, type ApprovalRequest } from '@dina/core';
 
 export interface ApprovalCardData {
   id: string;
@@ -72,7 +68,7 @@ export function createApprovalCard(
     addMessage(threadId, 'approval', JSON.stringify({ id, action, persona, reason, preview }));
   }
 
-  return toCardData(getApprovalManager().getRequest(id)!);
+  return toCardData(requireRequest(id));
 }
 
 /**
@@ -116,7 +112,7 @@ export async function approveCard(
   }
   try {
     getApprovalManager().approveRequest(id, scope, approverDID);
-    return toCardData(getApprovalManager().getRequest(id)!);
+    return toCardData(requireRequest(id));
   } catch {
     return null;
   }
@@ -137,7 +133,7 @@ export async function denyCard(id: string): Promise<ApprovalCardData | null> {
   }
   try {
     getApprovalManager().denyRequest(id);
-    return toCardData(getApprovalManager().getRequest(id)!);
+    return toCardData(requireRequest(id));
   } catch {
     return null;
   }
@@ -211,6 +207,13 @@ function decidedCard(id: string, status: 'approved' | 'denied'): ApprovalCardDat
 }
 
 /** Convert ApprovalRequest to UI card data. */
+/** The manager's record for `id`; throws when it has none. */
+function requireRequest(id: string): ApprovalRequest {
+  const req = getApprovalManager().getRequest(id);
+  if (req === undefined) throw new Error(`approval request ${id} not found`);
+  return req;
+}
+
 function toCardData(req: ApprovalRequest): ApprovalCardData {
   return {
     id: req.id,

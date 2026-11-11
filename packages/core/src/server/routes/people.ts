@@ -114,9 +114,10 @@ async function handleApplyExtraction(
   // recall edge (`vault_item_subjects`) here — the out-of-process
   // counterpart of the in-process post_publish step 5b. Fail-soft:
   // recall enrichment, never fails the extraction apply.
-  const persona = typeof (req.body as { persona?: unknown }).persona === 'string'
-    ? ((req.body as { persona?: string }).persona as string)
-    : '';
+  const persona =
+    typeof (req.body as { persona?: unknown }).persona === 'string'
+      ? ((req.body as { persona?: string }).persona as string)
+      : '';
   if (persona !== '' && applied.personIds && applied.personIds.length > 0) {
     const vaultRepo = getVaultRepository(persona);
     if (vaultRepo !== null) {
@@ -208,9 +209,7 @@ async function handleFind(
     return jsonError(500, (err as Error).message);
   }
   const matches = people.filter((p) =>
-    (p.surfaces ?? []).some(
-      (s) => s.status !== 'rejected' && s.normalizedSurface === needle,
-    ),
+    (p.surfaces ?? []).some((s) => s.status !== 'rejected' && s.normalizedSurface === needle),
   );
   return { status: 200, body: { people: matches as unknown as Record<string, unknown>[] } };
 }

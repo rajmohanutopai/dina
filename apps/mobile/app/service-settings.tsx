@@ -32,6 +32,7 @@ import {
   listCapabilities as listLocalCapabilities,
   listPersonas,
   type CapabilityDef,
+  ServiceConfig,
 } from '@dina/core';
 import {
   validateServiceListing,
@@ -71,9 +72,6 @@ import { slugifyRkey } from '../src/services/listing_rkey';
 import { subscribeRuntimeWarnings, getRuntimeWarnings } from '../src/services/runtime_warnings';
 import { showMessage } from '../src/services/show_message';
 import { colors, spacing, radius, shadows, textStyles } from '../src/theme';
-
-
-import type { ServiceConfig } from '@dina/core';
 
 // Local capability registry — every capability the brain knows how to
 // validate (paramsSchema, resultSchema, hash, default TTL). Surfacing
@@ -362,9 +360,9 @@ export default function ServiceSettingsScreen() {
               ? findCapability(catalog, canonical)?.default_category_id
               : undefined),
           // Saved mcpServer presence IS the lane (Tier 1 caps omit it).
-          lane: (typeof cap.mcpServer === 'string' && cap.mcpServer !== ''
-            ? 'agent'
-            : 'dina') as 'dina' | 'agent',
+          lane: (typeof cap.mcpServer === 'string' && cap.mcpServer !== '' ? 'agent' : 'dina') as
+            | 'dina'
+            | 'agent',
           instruction: cap.instruction ?? '',
           // Keep the real binding in screen state so lane round-trips
           // don't fabricate a default one (see the state docstring).
@@ -601,9 +599,7 @@ export default function ServiceSettingsScreen() {
         // (free-text custom) keep any prior hash (nothing to derive from).
         const schemaEntry = schemas[c.key];
         const schemaHash =
-          schemaEntry !== undefined
-            ? capabilitySchemaHash(schemaEntry)
-            : prior?.schemaHash;
+          schemaEntry !== undefined ? capabilitySchemaHash(schemaEntry) : prior?.schemaHash;
         if (schemaEntry !== undefined && schemaHash !== undefined) {
           schemaEntry.schemaHash = schemaHash;
         }
@@ -803,10 +799,7 @@ export default function ServiceSettingsScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior="padding"
-    >
+    <KeyboardAvoidingView style={styles.container} behavior="padding">
       <Stack.Screen options={{ title: isCreate ? 'New listing' : 'Edit listing' }} />
       {loadError !== null ? (
         <View style={styles.errorBanner}>
@@ -857,20 +850,18 @@ export default function ServiceSettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>SERVICE TYPE</Text>
           <View style={styles.card}>
-            {(
-              [
-                {
-                  value: 'services' as ServiceSurface,
-                  title: 'Provider service',
-                  body: 'Lives in the Services tab. Customers find and use it like a business listing.',
-                },
-                {
-                  value: 'talk' as ServiceSurface,
-                  title: 'Relationship service (Talk)',
-                  body: 'Surfaced inside a Talk thread with a contact — e.g. "find a time with me". Private to people you approve.',
-                },
-              ]
-            ).map((opt) => {
+            {[
+              {
+                value: 'services' as ServiceSurface,
+                title: 'Provider service',
+                body: 'Lives in the Services tab. Customers find and use it like a business listing.',
+              },
+              {
+                value: 'talk' as ServiceSurface,
+                title: 'Relationship service (Talk)',
+                body: 'Surfaced inside a Talk thread with a contact — e.g. "find a time with me". Private to people you approve.',
+              },
+            ].map((opt) => {
               const selected = surface === opt.value;
               return (
                 <Pressable
@@ -902,8 +893,9 @@ export default function ServiceSettingsScreen() {
                 <View style={{ flex: 1, paddingRight: spacing.sm }}>
                   <Text style={styles.rowTitle}>Offer to close contacts by default</Text>
                   <Text style={styles.rowSubtitle}>
-                    Close contacts (family) are auto-granted; friends get a one-time "Allow?" prompt.
-                    Everyone else is silently not offered. You can still approve anyone by hand.
+                    Close contacts (family) are auto-granted; friends get a one-time "Allow?"
+                    prompt. Everyone else is silently not offered. You can still approve anyone by
+                    hand.
                   </Text>
                 </View>
                 <Text style={styles.rowValue}>{defaultOfferable ? '✓' : '—'}</Text>
@@ -1088,9 +1080,8 @@ export default function ServiceSettingsScreen() {
         <View style={styles.section}>
           <Text style={styles.sectionHeader}>CAPABILITIES</Text>
           <Text style={styles.sectionSubtitle}>
-            For each capability: who answers it (your Dina, from your instructions and notes — or
-            a connected agent), and whether answers go out automatically or wait for your
-            approval.
+            For each capability: who answers it (your Dina, from your instructions and notes — or a
+            connected agent), and whether answers go out automatically or wait for your approval.
           </Text>
           <View style={styles.card}>
             {capabilities.length === 0 ? (
@@ -1142,7 +1133,10 @@ export default function ServiceSettingsScreen() {
                           </Text>
                         </View>
                         <View
-                          style={[styles.policyHalf, cap.policy === 'review' && styles.policyActive]}
+                          style={[
+                            styles.policyHalf,
+                            cap.policy === 'review' && styles.policyActive,
+                          ]}
                         >
                           <Text
                             style={[
@@ -1179,16 +1173,26 @@ export default function ServiceSettingsScreen() {
                         accessibilityRole="button"
                         accessibilityLabel={`${friendly} answered by: ${cap.lane === 'dina' ? 'my Dina' : 'a connected agent'}. Tap to toggle.`}
                       >
-                        <View style={[styles.policyHalf, cap.lane === 'dina' && styles.policyActive]}>
+                        <View
+                          style={[styles.policyHalf, cap.lane === 'dina' && styles.policyActive]}
+                        >
                           <Text
-                            style={[styles.policyText, cap.lane === 'dina' && styles.policyActiveText]}
+                            style={[
+                              styles.policyText,
+                              cap.lane === 'dina' && styles.policyActiveText,
+                            ]}
                           >
                             My Dina
                           </Text>
                         </View>
-                        <View style={[styles.policyHalf, cap.lane === 'agent' && styles.policyActive]}>
+                        <View
+                          style={[styles.policyHalf, cap.lane === 'agent' && styles.policyActive]}
+                        >
                           <Text
-                            style={[styles.policyText, cap.lane === 'agent' && styles.policyActiveText]}
+                            style={[
+                              styles.policyText,
+                              cap.lane === 'agent' && styles.policyActiveText,
+                            ]}
                           >
                             Agent
                           </Text>
@@ -1201,7 +1205,9 @@ export default function ServiceSettingsScreen() {
                         style={styles.instructionInput}
                         value={cap.instruction}
                         onChangeText={(t) => setCapabilityInstruction(cap.key, t)}
-                        placeholder={'How should Dina answer? e.g. "Use my appointment notes to answer availability. If someone wants to book, ask me first."'}
+                        placeholder={
+                          'How should Dina answer? e.g. "Use my appointment notes to answer availability. If someone wants to book, ask me first."'
+                        }
                         placeholderTextColor={colors.textSecondary}
                         multiline
                         testID={`service-settings-instruction-${cap.key}`}
@@ -1209,8 +1215,8 @@ export default function ServiceSettingsScreen() {
                       />
                     ) : (
                       <Text style={styles.laneHint}>
-                        A connected agent executes this capability. Manage agents under
-                        Settings → Agents.
+                        A connected agent executes this capability. Manage agents under Settings →
+                        Agents.
                       </Text>
                     )}
                   </View>

@@ -20,14 +20,7 @@ export interface HygieneViolation {
 }
 
 /** Seeded vault content the E2E flows write — must never reach a log. */
-const VAULT_TOKENS = [
-  'HbA1c',
-  'blood pressure',
-  'Barclays',
-  'cold brew',
-  'Neptune',
-  'dinosaur',
-];
+const VAULT_TOKENS = ['HbA1c', 'blood pressure', 'Barclays', 'cold brew', 'Neptune', 'dinosaur'];
 
 const SECRET_PATTERNS: { kind: string; re: RegExp }[] = [
   // Precise, high-signal secret prefixes.
@@ -86,7 +79,11 @@ export function scanForLeaks(
     if (opts.ownDids !== undefined) {
       for (const did of line.match(DID_RE) ?? []) {
         if (!opts.ownDids.has(did)) {
-          violations.push({ source, kind: `foreign-did:${did.slice(0, 24)}`, excerpt: line.slice(0, 80) });
+          violations.push({
+            source,
+            kind: `foreign-did:${did.slice(0, 24)}`,
+            excerpt: line.slice(0, 80),
+          });
         }
       }
     }
@@ -117,9 +114,7 @@ export function isCoreBootSeedLine(line: string): boolean {
   // it stays flagged by the MNEMONIC sweep. (The scan runs against the fully
   // flushed log at teardown, so the whole line — field + msg — is present.)
   return (
-    line.includes('"mnemonic":') &&
-    line.includes('first-boot') &&
-    line.includes('master seed')
+    line.includes('"mnemonic":') && line.includes('first-boot') && line.includes('master seed')
   );
 }
 

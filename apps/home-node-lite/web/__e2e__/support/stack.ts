@@ -42,10 +42,7 @@ const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..', '..');
 const WEB_DIR = path.resolve(__dirname, '..', '..');
 
 const GEMINI_KEY =
-  process.env.DINA_GEMINI_API_KEY ??
-  process.env.GEMINI_API_KEY ??
-  process.env.GOOGLE_API_KEY ??
-  '';
+  process.env.DINA_GEMINI_API_KEY ?? process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? '';
 
 /** Minimal structural type — avoids importing Playwright's WebServer type
  *  (keeps this module a plain helper, not a Playwright-typed file). */
@@ -190,7 +187,8 @@ export function buildStack(opts: {
           .slice(-12)}.test-pds.dinakernel.com`,
       }
     : {};
-  const msgboxEnv: Record<string, string> = opts.msgbox === true ? { DINA_MSGBOX_ENABLED: 'true' } : {};
+  const msgboxEnv: Record<string, string> =
+    opts.msgbox === true ? { DINA_MSGBOX_ENABLED: 'true' } : {};
   // Provisioning is a network round-trip (createAccount + PLC) — give Core
   // a longer boot window when it's on.
   const coreBootTimeout = needsPds ? 90_000 : 30_000;

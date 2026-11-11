@@ -98,7 +98,11 @@ describe('postGrantPromptOnce — honest prompt_shown', () => {
     expect(getThread(PEER)).toHaveLength(1); // one card
     const shown = decisionRepo.rows.filter((r) => r.decision === 'prompt_shown');
     expect(shown).toHaveLength(1);
-    expect(shown[0]).toMatchObject({ requesterDid: PEER, capability: CAP, reason: 'closeness=medium' });
+    expect(shown[0]).toMatchObject({
+      requesterDid: PEER,
+      capability: CAP,
+      reason: 'closeness=medium',
+    });
   });
 
   it('does NOT log prompt_shown for a rehydrated card that was never re-posted', async () => {

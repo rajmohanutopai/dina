@@ -42,10 +42,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 6a task 6.2.
  */
 
-import {
-  SessionTokenStore,
-  type SessionRecord,
-} from './session_token_store';
+import { SessionTokenStore, type SessionRecord } from './session_token_store';
 
 /** Raw PDS response body from createSession / createAccount / refreshSession. */
 export interface PdsServerResponse {
@@ -111,7 +108,12 @@ export type SessionOutcome =
 
 export type DeleteSessionOutcome =
   | { ok: true }
-  | { ok: false; reason: 'no_session' | 'network_error' | 'pds_error'; error?: string; status?: number };
+  | {
+      ok: false;
+      reason: 'no_session' | 'network_error' | 'pds_error';
+      error?: string;
+      status?: number;
+    };
 
 export interface SessionManagerOptions {
   pdsClient: PdsClientFn;
@@ -267,7 +269,10 @@ export class SessionManager {
     kind: PdsClientRequestKind,
     payload: Record<string, unknown>,
     bearer?: string,
-  ): Promise<{ ok: true; body: Record<string, unknown> | null } | { ok: false; status: number; body: Record<string, unknown> | null }> {
+  ): Promise<
+    | { ok: true; body: Record<string, unknown> | null }
+    | { ok: false; status: number; body: Record<string, unknown> | null }
+  > {
     let result: PdsClientResult;
     try {
       result = await this.pdsClient(kind, payload, bearer);

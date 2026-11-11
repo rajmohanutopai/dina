@@ -22,7 +22,11 @@ const status = (task: string, state: string): JsonObject => ({
 const ALICE = 'a'.repeat(32);
 const BOB = 'b'.repeat(32);
 /** A stream's start for `client` and an event's mark, under credential generation `gen` (0 until a credential ends). */
-const from = (afterSeq: number, gen = 0, client = ALICE) => ({ afterSeq, client, credentialGen: gen });
+const from = (afterSeq: number, gen = 0, client = ALICE) => ({
+  afterSeq,
+  client,
+  credentialGen: gen,
+});
 const at = (seq: number, gen = 0) => ({ seq, credentialGen: gen });
 
 function sink() {
@@ -163,7 +167,8 @@ describe('StreamHub', () => {
   });
 
   describe('credential generations (design §10: a credential that ends takes its streams with it)', () => {
-    const states = (got: JsonObject[]) => got.map((e) => (e.statusUpdate as { status: { state: string } }).status.state);
+    const states = (got: JsonObject[]) =>
+      got.map((e) => (e.statusUpdate as { status: { state: string } }).status.state);
 
     it('a stream opened under an earlier generation ends at the first event of a later one, and gets nothing of it', () => {
       const h = hub();
@@ -200,7 +205,12 @@ describe('StreamHub', () => {
       h.open('t', from(0, 1), fresh.sink);
       h.open('t', from(0, 0, BOB), bob.sink);
       h.setFences([{ client: ALICE, before_gen: 1 }]);
-      expect([old.ended(), oldOther.ended(), fresh.ended(), bob.ended()]).toEqual([true, true, false, false]);
+      expect([old.ended(), oldOther.ended(), fresh.ended(), bob.ended()]).toEqual([
+        true,
+        true,
+        false,
+        false,
+      ]);
       expect(old.got).toEqual([]);
       // Ended means ended: nothing more reaches it.
       h.publish('t', at(1, 1), status('t', 'TASK_STATE_WORKING'));
@@ -415,7 +425,13 @@ describe('DeliveryPump', () => {
 
   // Cold audit C3-14: each of these fails if the pump drops the claim's fences, or applies them late.
   const smallHub = () =>
-    new StreamHub({ maxStreams: 8, bufferMs: 1_000, bufferEvents: 4, bufferTasks: 4, bufferBytes: 1 << 20 });
+    new StreamHub({
+      maxStreams: 8,
+      bufferMs: 1_000,
+      bufferEvents: 4,
+      bufferTasks: 4,
+      bufferBytes: 1 << 20,
+    });
 
   it('a fence alone ends the client’s older streams, on a task with nothing new to say', async () => {
     const hub = smallHub();
@@ -452,7 +468,17 @@ describe('DeliveryPump', () => {
     hub.open('t', from(0, 1, ALICE), fencedOut.sink);
     hub.open('t', from(0, 2, ALICE), fresh.sink);
     next.push({
-      items: [{ id: 1, claim_id: 'k1', target: 'sse', task_id: 't', seq: 1, event: status('t', 'TASK_STATE_WORKING'), credential_gen: 1 }],
+      items: [
+        {
+          id: 1,
+          claim_id: 'k1',
+          target: 'sse',
+          task_id: 't',
+          seq: 1,
+          event: status('t', 'TASK_STATE_WORKING'),
+          credential_gen: 1,
+        },
+      ],
       closed: [],
       fenced: [{ client: ALICE, before_gen: 2 }],
     });

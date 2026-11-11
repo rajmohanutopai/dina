@@ -139,7 +139,10 @@ export function clampCreditsConfig(raw: unknown): CreditsClientConfig {
   const r = (typeof raw === 'object' && raw !== null ? raw : {}) as Record<string, unknown>;
   const enabled = typeof r.enabled === 'boolean' ? r.enabled : false;
   const grantUsd =
-    typeof r.grant_usd === 'number' && Number.isFinite(r.grant_usd) && r.grant_usd > 0 && r.grant_usd <= 5
+    typeof r.grant_usd === 'number' &&
+    Number.isFinite(r.grant_usd) &&
+    r.grant_usd > 0 &&
+    r.grant_usd <= 5
       ? r.grant_usd
       : d.grant_usd;
   const modelPin =
@@ -367,7 +370,9 @@ export interface CreditsBalance {
  * Read the live balance from OpenRouter with the granted key and update
  * the sticky exhaustion latch. Null when no grant / endpoint trouble.
  */
-export async function refreshBalance(fetchImpl: typeof fetch = fetch): Promise<CreditsBalance | null> {
+export async function refreshBalance(
+  fetchImpl: typeof fetch = fetch,
+): Promise<CreditsBalance | null> {
   const key = await getGrantKey();
   if (key === null) return null;
   try {
@@ -375,7 +380,9 @@ export async function refreshBalance(fetchImpl: typeof fetch = fetch): Promise<C
       headers: { Authorization: `Bearer ${key}` },
     });
     if (res.status !== 200) return null;
-    const body = (await res.json()) as { data?: { limit?: unknown; usage?: unknown; limit_remaining?: unknown } };
+    const body = (await res.json()) as {
+      data?: { limit?: unknown; usage?: unknown; limit_remaining?: unknown };
+    };
     const remRaw = body.data?.limit_remaining;
     const remainingUsd =
       typeof remRaw === 'number' && Number.isFinite(remRaw) ? Math.max(0, remRaw) : null;

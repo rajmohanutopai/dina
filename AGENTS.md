@@ -31,8 +31,6 @@ a trust network on AT Protocol.
   Store**, Android in progress) and on a server (`apps/home-node-lite`, two Fastify processes:
   Core `:8100`, Brain `:8200`). Only the platform adapters (`packages/*-node` vs `packages/*-expo`)
   differ.
-- **`legacy/` (Go Core + Python Brain) is a reference oracle, not the product.** Do **not** add new
-  product behavior to `legacy/`; new work goes in `packages/` + `apps/`.
 
 ## Architecture invariants (most likely to matter in review)
 
@@ -77,7 +75,6 @@ a trust network on AT Protocol.
 
 - **No git writes** (commit, push, branch, tag, reset, discarding checkout) unless the user
   explicitly asks in that turn. Read-only git (status, log, diff, fetch, pull) is fine.
-- **Stay inside the project root** (`/Users/rajmohan/OpenSource/dina2/dina/`).
+- **Stay inside the project root**.
 - **PII must never reach stdout** — log metadata only (persona, type, count, latency), never vault
   content, queries, or plaintext.
-- Do not add new product behavior to `legacy/`.

@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 9.13
  */
 
-import { appendAudit, resetAuditState } from '../../../core/src/audit/service';
+import { appendAudit } from '../../../core/src/audit/service';
 import {
   getAuditEntries,
   getDistinctActors,

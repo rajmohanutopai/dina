@@ -6,8 +6,6 @@
 
 import { queryVault, storeItem, clearVaults, cosineSimilarity } from '../../src/vault/crud';
 
-import type { SearchQuery } from '@dina/test-harness';
-
 /** Create a normalized 4-dim embedding for testing. */
 function embed(...values: number[]): Uint8Array {
   const f32 = new Float32Array(values);

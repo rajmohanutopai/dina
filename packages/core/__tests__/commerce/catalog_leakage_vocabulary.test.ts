@@ -58,14 +58,17 @@ function maximalItem(): Record<string, unknown> {
     fulfilment_regions: [{ scheme: 'admin_area', value: 'IN-KA' }],
     indicative_price: { currency: 'INR', minor_units: '450000' },
     minimum_order: { value: '4', unit_code: 'each' },
-    freshness: { generated_at: '2026-08-08T09:00:00.000Z', valid_until: '2026-09-08T09:00:00.000Z' },
+    freshness: {
+      generated_at: '2026-08-08T09:00:00.000Z',
+      valid_until: '2026-09-08T09:00:00.000Z',
+    },
     attributes: { finish: 'matte', stackable: true, seat_height_cm: 45 },
     images: ['https://images.example.test/chair-1.jpg'],
   };
 }
 
 /** Every distinct key name anywhere in a value, at any depth. */
-function keyNames(value: unknown, out: Set<string> = new Set()): Set<string> {
+function keyNames(value: unknown, out = new Set<string>()): Set<string> {
   if (Array.isArray(value)) {
     for (const entry of value) keyNames(entry, out);
     return out;
@@ -100,9 +103,7 @@ describe('the closed vocabulary and the wire type are one list', () => {
     // Stronger than the assertion above, and deliberately so: passing the walk
     // could in principle come from a hole in the walk rather than from
     // membership. This asserts membership directly.
-    const missing = [...keyNames(maximalItem())].filter(
-      (name) => !PUBLIC_CATALOG_FIELDS.has(name),
-    );
+    const missing = [...keyNames(maximalItem())].filter((name) => !PUBLIC_CATALOG_FIELDS.has(name));
 
     expect(missing).toEqual([]);
   });

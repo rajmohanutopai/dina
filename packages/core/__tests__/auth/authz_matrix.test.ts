@@ -7,7 +7,7 @@
  * Source: core/test/authz_test.go
  */
 
-import { hasFixture, loadVectors } from '@dina/test-harness';
+import { hasFixture } from '@dina/test-harness';
 
 import { isAuthorized, getAuthorizationMatrix } from '../../src/auth/authz';
 
@@ -284,8 +284,18 @@ describe('Authorization Matrix', () => {
     deniedCases.push({ caller: 'brain', method: 'POST', path, label: `Brain x ${path}` });
   }
   for (const caller of ['agent', 'plugin', 'connector'] as CallerType[]) {
-    deniedCases.push({ caller, method: 'POST', path: '/v1/plugins/tool-invoke', label: `${caller} x plugins/tool-invoke` });
-    deniedCases.push({ caller, method: 'GET', path: '/v1/plugins/tool-capabilities', label: `${caller} x plugins/tool-capabilities` });
+    deniedCases.push({
+      caller,
+      method: 'POST',
+      path: '/v1/plugins/tool-invoke',
+      label: `${caller} x plugins/tool-invoke`,
+    });
+    deniedCases.push({
+      caller,
+      method: 'GET',
+      path: '/v1/plugins/tool-capabilities',
+      label: `${caller} x plugins/tool-capabilities`,
+    });
   }
 
   for (const { caller, method, path, label } of deniedCases) {
@@ -423,7 +433,8 @@ describe('Group coordination rows (GROUP_COORDINATION §7, §11)', () => {
   ];
 
   it('the owner reaches every route', () => {
-    for (const [m, p] of [OPEN, READ, HANDLES, ...decisions]) expect(isAuthorized('owner', m, p)).toBe(true);
+    for (const [m, p] of [OPEN, READ, HANDLES, ...decisions])
+      expect(isAuthorized('owner', m, p)).toBe(true);
   });
 
   it('Brain, a paired device and admin reach the three doors — open, read, handles — and no decision', () => {
@@ -431,13 +442,15 @@ describe('Group coordination rows (GROUP_COORDINATION §7, §11)', () => {
       expect(isAuthorized(caller, ...OPEN)).toBe(true);
       expect(isAuthorized(caller, ...READ)).toBe(true);
       expect(isAuthorized(caller, ...HANDLES)).toBe(true);
-      for (const [m, p] of decisions) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
+      for (const [m, p] of decisions)
+        expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
     }
   });
 
   it('an agent, a plugin, a connector and a service reach nothing', () => {
     for (const caller of ['agent', 'plugin', 'connector', 'service'] as CallerType[]) {
-      for (const [m, p] of [OPEN, READ, HANDLES, ...decisions]) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
+      for (const [m, p] of [OPEN, READ, HANDLES, ...decisions])
+        expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
     }
   });
 
@@ -466,12 +479,22 @@ describe('Merchant integration rows (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2)', ()
   ];
   it('the owner and a staff device reach every door; the handler owns the grant check', () => {
     for (const caller of ['owner', 'staff'] as CallerType[]) {
-      for (const [m, p] of doors) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, true]);
+      for (const [m, p] of doors)
+        expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, true]);
     }
   });
   it('Brain, admin, a plain device, an agent, a plugin, a connector and a service reach neither', () => {
-    for (const caller of ['brain', 'admin', 'device', 'agent', 'plugin', 'connector', 'service'] as CallerType[]) {
-      for (const [m, p] of doors) expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
+    for (const caller of [
+      'brain',
+      'admin',
+      'device',
+      'agent',
+      'plugin',
+      'connector',
+      'service',
+    ] as CallerType[]) {
+      for (const [m, p] of doors)
+        expect([caller, m, p, isAuthorized(caller, m, p)]).toEqual([caller, m, p, false]);
     }
   });
   it('the doors are exact: a wrong verb, a tail or a sibling inherits nothing', () => {
@@ -481,8 +504,12 @@ describe('Merchant integration rows (JIFFY_MERCHANT_INTEGRATION_PLAN §3.2)', ()
     expect(isAuthorized('staff', 'POST', '/v1/commerce/integration/settings')).toBe(false);
     expect(isAuthorized('staff', 'GET', '/v1/commerce/integration/catalog/refresh')).toBe(false);
     expect(isAuthorized('staff', 'PUT', '/v1/commerce/integration/settings/proposal')).toBe(false);
-    expect(isAuthorized('staff', 'GET', '/v1/commerce/integration/settings/proposal/x')).toBe(false);
+    expect(isAuthorized('staff', 'GET', '/v1/commerce/integration/settings/proposal/x')).toBe(
+      false,
+    );
     expect(isAuthorized('staff', 'PUT', '/v1/commerce/integration/orders/attachments')).toBe(false);
-    expect(isAuthorized('staff', 'POST', '/v1/commerce/integration/orders/attachments/x')).toBe(false);
+    expect(isAuthorized('staff', 'POST', '/v1/commerce/integration/orders/attachments/x')).toBe(
+      false,
+    );
   });
 });

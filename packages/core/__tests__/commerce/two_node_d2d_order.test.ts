@@ -23,14 +23,14 @@
  * strictly less than "it works between two machines".
  */
 
+import { resetAuditState } from '../../src/audit/service';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { sealMessage } from '../../src/d2d/envelope';
 import { addContact, clearGatesState } from '../../src/d2d/gates';
+import { resetQuarantineState } from '../../src/d2d/quarantine';
 import { receiveD2D } from '../../src/d2d/receive_pipeline';
-import { resetAuditState } from '../../src/audit/service';
 import { resetStagingState } from '../../src/staging/service';
 import { clearReplayCache } from '../../src/transport/adversarial';
-import { resetQuarantineState } from '../../src/d2d/quarantine';
 
 import type { DinaMessage } from '../../src/d2d/wire';
 
@@ -127,10 +127,17 @@ describe("Sancho's order reaches ChairMaker over D2D", () => {
     const sealed = sanchoSends(submitOrder('q-wire-replay'));
     const options = { isCapabilityConfigured: (cap: string) => cap === 'submit_order' };
 
-    expect(receiveD2D(sealed, chairMakerPub, chairMakerPriv, [sanchoPub], 'verified', options).action).toBe(
-      'bypassed',
+    expect(
+      receiveD2D(sealed, chairMakerPub, chairMakerPriv, [sanchoPub], 'verified', options).action,
+    ).toBe('bypassed');
+    const again = receiveD2D(
+      sealed,
+      chairMakerPub,
+      chairMakerPriv,
+      [sanchoPub],
+      'verified',
+      options,
     );
-    const again = receiveD2D(sealed, chairMakerPub, chairMakerPriv, [sanchoPub], 'verified', options);
     expect(again.action).not.toBe('bypassed');
   });
 
@@ -139,7 +146,10 @@ describe("Sancho's order reaches ChairMaker over D2D", () => {
     // this supplier never configured must not reach the commerce path at
     // all — it takes the ordinary staging route instead.
     addContact(BUYER_DID);
-    const sealed = sanchoSends({ ...submitOrder('q-wire-unconfigured'), capability: 'not_offered' });
+    const sealed = sanchoSends({
+      ...submitOrder('q-wire-unconfigured'),
+      capability: 'not_offered',
+    });
 
     const received = receiveD2D(sealed, chairMakerPub, chairMakerPriv, [sanchoPub], 'verified', {
       isCapabilityConfigured: (cap) => cap === 'submit_order',

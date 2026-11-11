@@ -11,10 +11,9 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { NodeSQLiteAdapter, NodeSQLiteAdapterError } from '../src/adapter';
+import { NodeSQLiteAdapter } from '../src/adapter';
 
 import type { DatabaseAdapter } from '@dina/core';
-
 
 /** 32-byte test key — all zeros by default, or supply a hex override. */
 const KEY_A = '0'.repeat(64);
@@ -28,7 +27,11 @@ function tempPath(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow cleanup errors */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow cleanup errors */
+    }
   }
 });
 
@@ -37,10 +40,26 @@ describe('NodeSQLiteAdapter — option validation', () => {
     ['empty path', { path: '', passphraseHex: KEY_A }, /invalid_path/],
     ['non-hex key', { path: tempPath(), passphraseHex: 'not hex' }, /invalid_key/],
     ['short key', { path: tempPath(), passphraseHex: 'ab' }, /invalid_key/],
-    ['non-pow2 page size', { path: tempPath(), passphraseHex: KEY_A, cipherPageSize: 3000 }, /invalid_page_size/],
-    ['page size below 512', { path: tempPath(), passphraseHex: KEY_A, cipherPageSize: 256 }, /invalid_page_size/],
-    ['bad journal mode', { path: tempPath(), passphraseHex: KEY_A, journalMode: 'TRUNCATE' as 'WAL' }, /invalid_journal_mode/],
-    ['bad synchronous', { path: tempPath(), passphraseHex: KEY_A, synchronous: 'YOLO' as 'FULL' }, /invalid_synchronous/],
+    [
+      'non-pow2 page size',
+      { path: tempPath(), passphraseHex: KEY_A, cipherPageSize: 3000 },
+      /invalid_page_size/,
+    ],
+    [
+      'page size below 512',
+      { path: tempPath(), passphraseHex: KEY_A, cipherPageSize: 256 },
+      /invalid_page_size/,
+    ],
+    [
+      'bad journal mode',
+      { path: tempPath(), passphraseHex: KEY_A, journalMode: 'TRUNCATE' as 'WAL' },
+      /invalid_journal_mode/,
+    ],
+    [
+      'bad synchronous',
+      { path: tempPath(), passphraseHex: KEY_A, synchronous: 'YOLO' as 'FULL' },
+      /invalid_synchronous/,
+    ],
   ] as const)('rejects %s', (_label, opts, re) => {
     expect(() => new NodeSQLiteAdapter(opts)).toThrow(re);
   });
@@ -87,9 +106,7 @@ describe('NodeSQLiteAdapter — encryption round-trip', () => {
     a.execute('CREATE TABLE t (id INTEGER)');
     a.close();
 
-    expect(() => new NodeSQLiteAdapter({ path: p, passphraseHex: KEY_B })).toThrow(
-      /wrong_key/,
-    );
+    expect(() => new NodeSQLiteAdapter({ path: p, passphraseHex: KEY_B })).toThrow(/wrong_key/);
   });
 });
 
@@ -176,11 +193,15 @@ describe('NodeSQLiteAdapter — CRUD', () => {
     a = new NodeSQLiteAdapter({ path: tempPath(), passphraseHex: KEY_A });
     a.execute('CREATE TABLE items (id INTEGER PRIMARY KEY, name TEXT, tag TEXT)');
   });
-  afterEach(() => { a.close(); });
+  afterEach(() => {
+    a.close();
+  });
 
   it('execute() runs DDL without params', () => {
     a.execute('CREATE TABLE extra (id INTEGER)');
-    expect(a.query('SELECT name FROM sqlite_master WHERE type=? AND name=?', ['table', 'extra'])).toHaveLength(1);
+    expect(
+      a.query('SELECT name FROM sqlite_master WHERE type=? AND name=?', ['table', 'extra']),
+    ).toHaveLength(1);
   });
 
   it('execute() with params binds parameters', () => {
@@ -223,7 +244,9 @@ describe('NodeSQLiteAdapter — transactions', () => {
     a = new NodeSQLiteAdapter({ path: tempPath(), passphraseHex: KEY_A });
     a.execute('CREATE TABLE t (v INTEGER)');
   });
-  afterEach(() => { a.close(); });
+  afterEach(() => {
+    a.close();
+  });
 
   it('commits on normal return', () => {
     a.transaction(() => {
@@ -244,10 +267,17 @@ describe('NodeSQLiteAdapter — transactions', () => {
   });
 
   it('propagates the thrown error unchanged', () => {
-    class Custom extends Error { constructor() { super('custom'); this.name = 'Custom'; } }
+    class Custom extends Error {
+      constructor() {
+        super('custom');
+        this.name = 'Custom';
+      }
+    }
     let caught: unknown;
     try {
-      a.transaction(() => { throw new Custom(); });
+      a.transaction(() => {
+        throw new Custom();
+      });
     } catch (e) {
       caught = e;
     }
@@ -261,7 +291,9 @@ describe('NodeSQLiteAdapter — explicit transaction forms (task 3.9)', () => {
     a = new NodeSQLiteAdapter({ path: tempPath(), passphraseHex: KEY_A });
     a.execute('CREATE TABLE t (v INTEGER)');
   });
-  afterEach(() => { a.close(); });
+  afterEach(() => {
+    a.close();
+  });
 
   it('begin + commit persists writes', () => {
     expect(a.inExplicitTransaction).toBe(false);

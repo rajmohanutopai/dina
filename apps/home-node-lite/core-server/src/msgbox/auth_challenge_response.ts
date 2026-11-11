@@ -34,10 +34,7 @@
 import { sign as ed25519Sign } from '@dina/core';
 import { AUTH_RESPONSE } from '@dina/protocol';
 
-import type {
-  AuthChallengeFrame,
-  AuthResponseFrame,
-} from '@dina/protocol';
+import type { AuthChallengeFrame, AuthResponseFrame } from '@dina/protocol';
 
 /** Prefix pinned per `packages/protocol/src/types/auth_frames.ts`. */
 export const AUTH_RELAY_PREFIX = 'AUTH_RELAY';
@@ -111,8 +108,8 @@ export function buildAuthRelayPayload(nonce: string, ts: number): string {
 
 function bytesToHex(bytes: Uint8Array): string {
   let out = '';
-  for (let i = 0; i < bytes.length; i++) {
-    out += (bytes[i] ?? 0).toString(16).padStart(2, '0');
+  for (const b of bytes) {
+    out += b.toString(16).padStart(2, '0');
   }
   return out;
 }

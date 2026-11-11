@@ -64,15 +64,23 @@ describe('route_to_persona against the live persona list (REAL_LIFE_FIXES §2.1)
 
   it('checks secondary targets too', async () => {
     const collect = emptyRememberSideEffects();
-    const tool = createRouteToPersonaTool({ collect, installedPersonas: () => ['general', 'health'] });
-    const out = (await tool.execute({ persona: 'health', secondary: ['money'] })) as { error?: string };
+    const tool = createRouteToPersonaTool({
+      collect,
+      installedPersonas: () => ['general', 'health'],
+    });
+    const out = (await tool.execute({ persona: 'health', secondary: ['money'] })) as {
+      error?: string;
+    };
     expect(out.error).toContain("'money'");
     expect(collect.routes).toEqual([]);
   });
 
   it('accepts installed names in any case', async () => {
     const collect = emptyRememberSideEffects();
-    const tool = createRouteToPersonaTool({ collect, installedPersonas: () => ['general', 'garden'] });
+    const tool = createRouteToPersonaTool({
+      collect,
+      installedPersonas: () => ['general', 'garden'],
+    });
     expect(await tool.execute({ persona: 'Garden' })).toMatchObject({ ok: true });
     expect(collect.routes).toEqual([{ primary: 'garden', secondary: [] }]);
   });

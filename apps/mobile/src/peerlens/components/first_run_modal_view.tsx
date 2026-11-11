@@ -38,12 +38,7 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable } from 'react-native';
 
 import { colors, spacing, radius, textStyles } from '../../theme';
 import { FIRST_RUN_MODAL_COPY } from '../first_run';
@@ -59,9 +54,7 @@ export interface FirstRunModalViewProps {
   onDismiss?: () => void;
 }
 
-export function FirstRunModalView(
-  props: FirstRunModalViewProps,
-): React.ReactElement | null {
+export function FirstRunModalView(props: FirstRunModalViewProps): React.ReactElement | null {
   if (!props.visible) return null;
 
   const { title, body, dismissLabel } = FIRST_RUN_MODAL_COPY;
@@ -74,21 +67,14 @@ export function FirstRunModalView(
         </View>
         <View style={styles.bodyStack}>
           {body.map((paragraph, idx) => (
-            <Text
-              key={idx}
-              style={styles.bodyText}
-              testID={`first-run-modal-body-${idx}`}
-            >
+            <Text key={idx} style={styles.bodyText} testID={`first-run-modal-body-${idx}`}>
               {paragraph}
             </Text>
           ))}
         </View>
         <Pressable
           onPress={props.onDismiss}
-          style={({ pressed }) => [
-            styles.dismissBtn,
-            pressed && styles.dismissBtnPressed,
-          ]}
+          style={({ pressed }) => [styles.dismissBtn, pressed && styles.dismissBtnPressed]}
           testID="first-run-modal-dismiss"
           accessibilityRole="button"
           accessibilityLabel={dismissLabel}

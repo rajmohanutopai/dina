@@ -1,0 +1,29 @@
+# Ignore list for appview/Dockerfile only (Docker reads <Dockerfile>.dockerignore
+# next to the Dockerfile in place of the root .dockerignore).
+#
+# Build context is the REPO ROOT now (appview consumes @dina/commerce-protocol
+# from the workspace), so the context must be trimmed deliberately — otherwise
+# every node_modules tree and every sibling app is shipped to the daemon.
+**/node_modules
+**/dist
+**/.git
+**/coverage
+**/*.log
+**/.DS_Store
+
+# Sibling components appview does not build against.
+apps/
+cli/
+msgbox/
+services/
+dina-nodes/
+packages/adapter-conformance/
+packages/brain/
+packages/core/
+packages/home-node/
+packages/protocol/
+packages/managed-runtime/
+packages/*-expo/
+packages/*-node/
+# AppView's merchant index needs this one node package.
+!packages/net-socket-node/

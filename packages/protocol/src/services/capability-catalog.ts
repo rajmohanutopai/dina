@@ -45,16 +45,86 @@ export const CATALOG_VERSION = '2026-06-09';
 // `sort_order` follows the spec's mobile ordering (§36) for the subset present.
 
 export const CATALOG_CATEGORIES: readonly CatalogCategory[] = Object.freeze([
-  Object.freeze({ id: 'developer_ops', display_name: 'Developer Tools and Operations', short_description: 'API health, deploys, builds, incidents, and ops status.', icon: 'terminal', sort_order: 1, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'home_iot', display_name: 'Home, Personal, and IoT Automations', short_description: 'Private home-node services, devices, sensors, automations.', icon: 'home', sort_order: 6, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'transit', display_name: 'Transit and Mobility', short_description: 'Buses, trains, shuttles, rides, parking, routes.', icon: 'bus', sort_order: 7, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'commerce', display_name: 'Commerce and Retail', short_description: 'Shops, sellers, inventory, prices, orders.', icon: 'cart', sort_order: 8, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'appointments', display_name: 'Appointments and Bookings', short_description: 'Scheduling for non-medical providers — salons, consultants, classes.', icon: 'calendar', sort_order: 9, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'school', display_name: 'School and Education', short_description: 'Schools, colleges, tutoring, classes.', icon: 'school', sort_order: 11, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'home_local', display_name: 'Home, Repairs, and Local Services', short_description: 'Plumbers, electricians, cleaners, repairs.', icon: 'tools', sort_order: 12, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'logistics', display_name: 'Logistics, Delivery, and Postal', short_description: 'Couriers, shipping, parcels, local delivery.', icon: 'package', sort_order: 13, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'professional', display_name: 'Professional Services', short_description: 'Lawyers, accountants, consultants, agencies (non-medical).', icon: 'briefcase', sort_order: 17, lifecycle: 'stable' as const }),
-  Object.freeze({ id: 'healthcare', display_name: 'Healthcare and Wellness', short_description: 'Clinics, dentists, pharmacies, labs, therapists.', icon: 'health', sort_order: 19, lifecycle: 'stable' as const }),
+  Object.freeze({
+    id: 'developer_ops',
+    display_name: 'Developer Tools and Operations',
+    short_description: 'API health, deploys, builds, incidents, and ops status.',
+    icon: 'terminal',
+    sort_order: 1,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'home_iot',
+    display_name: 'Home, Personal, and IoT Automations',
+    short_description: 'Private home-node services, devices, sensors, automations.',
+    icon: 'home',
+    sort_order: 6,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'transit',
+    display_name: 'Transit and Mobility',
+    short_description: 'Buses, trains, shuttles, rides, parking, routes.',
+    icon: 'bus',
+    sort_order: 7,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'commerce',
+    display_name: 'Commerce and Retail',
+    short_description: 'Shops, sellers, inventory, prices, orders.',
+    icon: 'cart',
+    sort_order: 8,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'appointments',
+    display_name: 'Appointments and Bookings',
+    short_description: 'Scheduling for non-medical providers — salons, consultants, classes.',
+    icon: 'calendar',
+    sort_order: 9,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'school',
+    display_name: 'School and Education',
+    short_description: 'Schools, colleges, tutoring, classes.',
+    icon: 'school',
+    sort_order: 11,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'home_local',
+    display_name: 'Home, Repairs, and Local Services',
+    short_description: 'Plumbers, electricians, cleaners, repairs.',
+    icon: 'tools',
+    sort_order: 12,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'logistics',
+    display_name: 'Logistics, Delivery, and Postal',
+    short_description: 'Couriers, shipping, parcels, local delivery.',
+    icon: 'package',
+    sort_order: 13,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'professional',
+    display_name: 'Professional Services',
+    short_description: 'Lawyers, accountants, consultants, agencies (non-medical).',
+    icon: 'briefcase',
+    sort_order: 17,
+    lifecycle: 'stable' as const,
+  }),
+  Object.freeze({
+    id: 'healthcare',
+    display_name: 'Healthcare and Wellness',
+    short_description: 'Clinics, dentists, pharmacies, labs, therapists.',
+    icon: 'health',
+    sort_order: 19,
+    lifecycle: 'stable' as const,
+  }),
 ]);
 
 // ─── JSON Schemas for the launch-backed capabilities ────────────────────────
@@ -128,7 +198,15 @@ const APPOINTMENT_STATUS_RESULT = Object.freeze({
   properties: {
     status: {
       type: 'string',
-      enum: ['confirmed', 'pending', 'cancelled', 'not_found', 'available', 'unavailable', 'unknown'],
+      enum: [
+        'confirmed',
+        'pending',
+        'cancelled',
+        'not_found',
+        'available',
+        'unavailable',
+        'unknown',
+      ],
     },
     appointment_time: { type: 'string' },
     provider_name: { type: 'string' },
@@ -227,7 +305,8 @@ const HOUSEHOLD_DISCLOSURE = Object.freeze({
     kind: { type: 'string', enum: ['dietary', 'accessibility', 'transport', 'note'] },
     text: {
       type: 'string',
-      description: 'The need itself, in a few words ("gluten-free", "step-free access", "we can drive one car").',
+      description:
+        'The need itself, in a few words ("gluten-free", "step-free access", "we can drive one car").',
     },
     about: { type: 'string', enum: ['household'] },
   },
@@ -244,7 +323,8 @@ const AVAILABILITY_COORDINATION_RESULT = Object.freeze({
     disclosures: {
       type: 'array',
       items: HOUSEHOLD_DISCLOSURE,
-      description: 'A need the household has and chooses to say — a diet, a mobility need, who can drive. Omit the field when there is none; never state that a need is absent, and never a name or who it is for.',
+      description:
+        'A need the household has and chooses to say — a diet, a mobility need, who can drive. Omit the field when there is none; never state that a need is absent, and never a name or who it is for.',
     },
   },
 });
@@ -668,7 +748,10 @@ export function validateCatalogIntegrity(
         );
       }
     }
-    if (cap.default_category_id !== undefined && !cap.category_ids.includes(cap.default_category_id)) {
+    if (
+      cap.default_category_id !== undefined &&
+      !cap.category_ids.includes(cap.default_category_id)
+    ) {
       throw new Error(
         `capability-catalog: capability "${cap.id}" default_category_id "${cap.default_category_id}" is not in its category_ids.`,
       );
@@ -779,9 +862,10 @@ export type CatalogCapabilityKind = 'official' | 'custom' | 'unknown';
  * make a flat name "official") is enforced here by deriving the kind from the
  * id, never trusting a provider-supplied `capability_kind`.
  */
-export function classifyCatalogCapability(
-  raw: string,
-): { readonly kind: CatalogCapabilityKind; readonly canonical?: string } {
+export function classifyCatalogCapability(raw: string): {
+  readonly kind: CatalogCapabilityKind;
+  readonly canonical?: string;
+} {
   const normalized = normalizeCapability(raw);
   if (normalized.length === 0) return { kind: 'unknown' };
   const official = CATALOG_ALIAS_TO_CANONICAL.get(normalized);

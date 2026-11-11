@@ -72,9 +72,27 @@ beforeEach(() => {
 
 describe('talkThreadResolver — pure decision', () => {
   it('returns the peer DID for a did:-shaped origin, null otherwise', () => {
-    expect(talkThreadResolver({ originChannel: PEER, eventKind: 'completed', task: { id: TASK_ID, kind: 'service_query' } })).toBe(PEER);
-    expect(talkThreadResolver({ originChannel: 'ask', eventKind: 'completed', task: { id: TASK_ID, kind: 'service_query' } })).toBeNull();
-    expect(talkThreadResolver({ originChannel: '', eventKind: 'completed', task: { id: TASK_ID, kind: 'service_query' } })).toBeNull();
+    expect(
+      talkThreadResolver({
+        originChannel: PEER,
+        eventKind: 'completed',
+        task: { id: TASK_ID, kind: 'service_query' },
+      }),
+    ).toBe(PEER);
+    expect(
+      talkThreadResolver({
+        originChannel: 'ask',
+        eventKind: 'completed',
+        task: { id: TASK_ID, kind: 'service_query' },
+      }),
+    ).toBeNull();
+    expect(
+      talkThreadResolver({
+        originChannel: '',
+        eventKind: 'completed',
+        task: { id: TASK_ID, kind: 'service_query' },
+      }),
+    ).toBeNull();
   });
 });
 
@@ -87,7 +105,12 @@ describe('seam 3/4 — real resolver routes the response to the peer thread', ()
       service_name: 'Sancho scheduling',
       result: { status: 'accepted', accepted_slots: [{ start: 'Tue 3pm' }] },
     };
-    await deliverer()({ text: 'Tue 3pm works.', event: makeEvent(), task: makeTask(PEER), details });
+    await deliverer()({
+      text: 'Tue 3pm works.',
+      event: makeEvent(),
+      task: makeTask(PEER),
+      details,
+    });
 
     const peer = getThread(PEER);
     expect(peer).toHaveLength(1);
@@ -232,7 +255,12 @@ describe('seam 4 — lazy-hydration race (P2-3)', () => {
       result: { status: 'accepted', accepted_slots: [{ start: 'Tue 3pm' }] },
     };
     // The deliverer must hydrate the peer thread before the patch search.
-    await deliverer()({ text: 'Tue 3pm works.', event: makeEvent(), task: makeTask(PEER), details });
+    await deliverer()({
+      text: 'Tue 3pm works.',
+      event: makeEvent(),
+      task: makeTask(PEER),
+      details,
+    });
 
     const cards = getThread(PEER).filter((m) => readLifecycle(m)?.kind === 'service_query');
     expect(cards).toHaveLength(1); // patched the persisted card — NOT a duplicate

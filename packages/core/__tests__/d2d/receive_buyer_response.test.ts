@@ -229,9 +229,7 @@ describe('a supplier answer arriving over D2D', () => {
     // well formed. Its CONTENTS were refused. Both facts are now recorded,
     // which is the honest pair; previously only the first one was.
     expect(result.action).toBe('bypassed');
-    const unsettled = queryAudit({}).find(
-      (e) => e.action === 'd2d_recv_service_buyer_unsettled',
-    );
+    const unsettled = queryAudit({}).find((e) => e.action === 'd2d_recv_service_buyer_unsettled');
     expect(unsettled).toBeDefined();
     expect(unsettled?.detail).toContain('outcome=foreign_supplier');
     expect(unsettled?.detail).toContain('capability=request_quote');
@@ -288,7 +286,10 @@ describe('a quote that misses the query window (TODO: late quotes)', () => {
     withRetainedRequest({ supplier_did: 'did:plc:someone-else', expires_at: later() });
     expect(deliver().action).not.toBe('bypassed');
     clearReplayCache();
-    withRetainedRequest({ supplier_did: SUPPLIER, expires_at: new Date(Date.now() - 1000).toISOString() });
+    withRetainedRequest({
+      supplier_did: SUPPLIER,
+      expires_at: new Date(Date.now() - 1000).toISOString(),
+    });
     expect(deliver().action).not.toBe('bypassed');
   });
 

@@ -144,7 +144,8 @@ export async function touchTopicsForItem(
         kind: 'entity',
         sampleItemId,
       });
-      ok ? result.touched++ : result.failed++;
+      if (ok) result.touched++;
+      else result.failed++;
     }
     for (const theme of themes) {
       const ok = await safeTouch(opts.core, log, {
@@ -153,7 +154,8 @@ export async function touchTopicsForItem(
         kind: 'theme',
         sampleItemId,
       });
-      ok ? result.touched++ : result.failed++;
+      if (ok) result.touched++;
+      else result.failed++;
     }
   }
 

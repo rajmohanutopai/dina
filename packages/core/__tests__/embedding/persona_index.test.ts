@@ -14,12 +14,7 @@ import {
   indexSize,
   destroyAllIndexes,
 } from '../../src/embedding/persona_index';
-import {
-  storeItem,
-  queryVault,
-  clearVaults,
-  DEFAULT_TEST_PERSONAS,
-} from '../../src/vault/crud';
+import { storeItem, queryVault, clearVaults, DEFAULT_TEST_PERSONAS } from '../../src/vault/crud';
 
 /** Create a Float32Array embedding. */
 function embed(...values: number[]): Float32Array {

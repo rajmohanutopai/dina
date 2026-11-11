@@ -70,7 +70,9 @@ function rowToQuote(row: DBRow): SignedQuote {
   // fork, or a forged one be called a successor.
   const rehydrated = rehydrateSignedQuote(String(row.record_json), hash);
   if (!rehydrated.ok) {
-    throw new BuyerQuoteIntegrityError(`stored quote ${String(row.quote_digest)}: ${rehydrated.error}`);
+    throw new BuyerQuoteIntegrityError(
+      `stored quote ${String(row.quote_digest)}: ${rehydrated.error}`,
+    );
   }
   if (rehydrated.value.quote_digest !== String(row.quote_digest)) {
     throw new BuyerQuoteIntegrityError(
@@ -108,7 +110,11 @@ export class SQLiteBuyerQuoteRepository implements BuyerQuoteRepository {
     const out: { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] = [];
     for (const row of rows) {
       try {
-        out.push({ supplierDid: String(row.supplier_did), quote: rowToQuote(row), acceptedAt: Number(row.accepted_at) });
+        out.push({
+          supplierDid: String(row.supplier_did),
+          quote: rowToQuote(row),
+          acceptedAt: Number(row.accepted_at),
+        });
       } catch (err) {
         if (!(err instanceof BuyerQuoteIntegrityError)) throw err;
       }
@@ -161,13 +167,30 @@ export class InMemoryBuyerQuoteRepository implements BuyerQuoteRepository {
   listHeads(limit: number): { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] {
     const heads: { supplierDid: string; quote: SignedQuote; acceptedAt: number }[] = [];
     for (const [key, revisions] of this.rows) {
-      const head = [...revisions].sort((a, b) => Number(b.quote_revision) - Number(a.quote_revision))[0];
-      if (head !== undefined) heads.push({ supplierDid: key.split(' ')[0] ?? '', quote: head, acceptedAt: this.acceptedAt.get(head.quote_digest) ?? 0 });
+      const head = [...revisions].sort(
+        (a, b) => Number(b.quote_revision) - Number(a.quote_revision),
+      )[0];
+      if (head !== undefined)
+        heads.push({
+          supplierDid: key.split(' ')[0] ?? '',
+          quote: head,
+          acceptedAt: this.acceptedAt.get(head.quote_digest) ?? 0,
+        });
     }
-    return heads.sort((a, b) => b.acceptedAt - a.acceptedAt || a.quote.quote_digest.localeCompare(b.quote.quote_digest)).slice(0, limit);
+    return heads
+      .sort(
+        (a, b) =>
+          b.acceptedAt - a.acceptedAt || a.quote.quote_digest.localeCompare(b.quote.quote_digest),
+      )
+      .slice(0, limit);
   }
 
-  append(args: { supplierDid: string; quoteId: string; quote: SignedQuote; acceptedAt?: number }): boolean {
+  append(args: {
+    supplierDid: string;
+    quoteId: string;
+    quote: SignedQuote;
+    acceptedAt?: number;
+  }): boolean {
     const k = this.key(args.supplierDid, args.quoteId);
     const held = this.rows.get(k) ?? [];
     if (held.some((entry) => entry.quote_revision === args.quote.quote_revision)) return false;
@@ -232,7 +255,10 @@ export function verifyInboundQuote(args: {
   // against the held head, and a mismatch there reads as a fork by this
   // supplier rather than as an answer about somebody else's quote.
   if (quote.supplier_did !== args.supplierDid) {
-    return { outcome: 'not_our_quote', detail: 'quote.supplier_did is not the authenticated sender' };
+    return {
+      outcome: 'not_our_quote',
+      detail: 'quote.supplier_did is not the authenticated sender',
+    };
   }
   if (quote.buyer_did !== args.buyerDid) {
     return { outcome: 'not_our_quote', detail: 'quote.buyer_did is not this node (§9.8)' };

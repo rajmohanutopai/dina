@@ -34,10 +34,10 @@ AUTH_RELAY\n{nonce}\n{ts}
 
 ## auth_response field shapes
 
-| Field | Type / encoding                              |
-|-------|----------------------------------------------|
-| `did` | Full DID string (`did:plc:...` or `did:key:...`) |
-| `sig` | Hex-encoded Ed25519 signature (64 bytes → 128 hex chars) |
+| Field | Type / encoding                                              |
+| ----- | ------------------------------------------------------------ |
+| `did` | Full DID string (`did:plc:...` or `did:key:...`)             |
+| `sig` | Hex-encoded Ed25519 signature (64 bytes → 128 hex chars)     |
 | `pub` | Hex-encoded raw Ed25519 public key (32 bytes → 64 hex chars) |
 
 `pub` MUST match the public key published in the sender's DID

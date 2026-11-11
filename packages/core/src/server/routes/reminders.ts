@@ -139,10 +139,7 @@ function reminderBody(reminder: Reminder): Record<string, unknown> {
 // POST /v1/reminders
 // ---------------------------------------------------------------------------
 
-async function handleCreate(
-  req: CoreRequest,
-  deps: ReminderRouteDeps,
-): Promise<CoreResponse> {
+async function handleCreate(req: CoreRequest, deps: ReminderRouteDeps): Promise<CoreResponse> {
   if (req.rawBody.byteLength > CREATE_BODY_MAX_BYTES) {
     return jsonError(413, `body exceeds ${CREATE_BODY_MAX_BYTES} bytes`);
   }
@@ -185,8 +182,7 @@ async function handleCreate(
       due_at: body.due_at,
       persona,
       kind: typeof body.kind === 'string' ? body.kind : undefined,
-      source_item_id:
-        typeof body.source_item_id === 'string' ? body.source_item_id : undefined,
+      source_item_id: typeof body.source_item_id === 'string' ? body.source_item_id : undefined,
       source: typeof body.source === 'string' ? body.source : undefined,
       recurring,
       timezone: typeof body.timezone === 'string' ? body.timezone : undefined,
@@ -223,10 +219,7 @@ async function handleListByPersona(
 // GET /v1/reminders/pending?now=…
 // ---------------------------------------------------------------------------
 
-async function handleListPending(
-  req: CoreRequest,
-  deps: ReminderRouteDeps,
-): Promise<CoreResponse> {
+async function handleListPending(req: CoreRequest, deps: ReminderRouteDeps): Promise<CoreResponse> {
   let now: number | undefined;
   const raw = req.query.now;
   if (typeof raw === 'string' && raw.trim() !== '') {
@@ -253,10 +246,7 @@ async function handleListPending(
 // the next occurrence and returns it; otherwise null. Response:
 // `{ next: Reminder | null }`. 404 when the id is unknown.
 
-async function handleComplete(
-  req: CoreRequest,
-  deps: ReminderRouteDeps,
-): Promise<CoreResponse> {
+async function handleComplete(req: CoreRequest, deps: ReminderRouteDeps): Promise<CoreResponse> {
   const id = typeof req.params.id === 'string' ? req.params.id : '';
   if (id === '') return jsonError(400, 'reminder id is required');
   if (deps.getReminder(id) === null) {
@@ -275,10 +265,7 @@ async function handleComplete(
 // POST /v1/reminders/:id/snooze   body: { snooze_ms: number }
 // ---------------------------------------------------------------------------
 
-async function handleSnooze(
-  req: CoreRequest,
-  deps: ReminderRouteDeps,
-): Promise<CoreResponse> {
+async function handleSnooze(req: CoreRequest, deps: ReminderRouteDeps): Promise<CoreResponse> {
   const id = typeof req.params.id === 'string' ? req.params.id : '';
   if (id === '') return jsonError(400, 'reminder id is required');
   if (req.body === undefined || req.body === null || typeof req.body !== 'object') {
@@ -304,10 +291,7 @@ async function handleSnooze(
 // DELETE /v1/reminders/:id
 // ---------------------------------------------------------------------------
 
-async function handleDelete(
-  req: CoreRequest,
-  deps: ReminderRouteDeps,
-): Promise<CoreResponse> {
+async function handleDelete(req: CoreRequest, deps: ReminderRouteDeps): Promise<CoreResponse> {
   const id = typeof req.params.id === 'string' ? req.params.id : '';
   if (id === '') return jsonError(400, 'reminder id is required');
   let deleted: boolean;
@@ -329,10 +313,7 @@ async function handleDelete(
 // lite brain-server's fire loop, which broadcasts the result to the SPA
 // over SSE. Mobile fires in-process and never calls this.
 
-async function handleFire(
-  req: CoreRequest,
-  deps: ReminderRouteDeps,
-): Promise<CoreResponse> {
+async function handleFire(req: CoreRequest, deps: ReminderRouteDeps): Promise<CoreResponse> {
   let now: number | undefined;
   if (req.body !== undefined && req.body !== null && typeof req.body === 'object') {
     const rawNow = (req.body as { now?: unknown }).now;

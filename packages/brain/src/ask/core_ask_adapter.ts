@@ -69,7 +69,10 @@ function fromStored(s: StoredAskRecord): AskRecord {
 }
 
 function clone(r: AskRecord): AskRecord {
-  return { ...r, ...(r.forcedSources !== undefined ? { forcedSources: [...r.forcedSources] } : {}) };
+  return {
+    ...r,
+    ...(r.forcedSources !== undefined ? { forcedSources: [...r.forcedSources] } : {}),
+  };
 }
 
 export class CoreAskAdapter implements AskPersistenceAdapter {

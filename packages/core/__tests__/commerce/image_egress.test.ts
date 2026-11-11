@@ -9,11 +9,12 @@
  * transmitting has not gated anything.
  */
 
-import { sha256 } from '@noble/hashes/sha2.js';
-import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { sha256 } from '@noble/hashes/sha2.js';
+import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
@@ -69,7 +70,11 @@ function makeBroker(provider = 'openai'): {
           rows: [
             {
               page_index: 0,
-              cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', list_price_minor_units: '1800000' },
+              cells: {
+                sku: 'CM-CHAIR-1',
+                name: 'Oak dining chair',
+                list_price_minor_units: '1800000',
+              },
             },
           ],
           model: 'stub-vision',
@@ -119,7 +124,10 @@ describe('BROKER BYPASS: no gate, no bytes', () => {
     const repo = new InMemoryImageEgressAuthorizationRepository();
     repo.put(makeAuthorization());
     const result = await extractRowsThroughGate(gateArgs(repo));
-    expect(result).toMatchObject({ ok: false, refusal: expect.stringContaining('no_egress_broker') });
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining('no_egress_broker'),
+    });
   });
 
   it('refuses with no authorization, broker untouched', async () => {
@@ -189,7 +197,10 @@ describe('AUTHORIZATION REPLAY: single use means single use', () => {
       extractRows: () => Promise.reject(new Error('socket dropped mid-request')),
     });
     const result = await extractRowsThroughGate(gateArgs(repo));
-    expect(result).toMatchObject({ ok: false, refusal: expect.stringContaining('provider_failed') });
+    expect(result).toMatchObject({
+      ok: false,
+      refusal: expect.stringContaining('provider_failed'),
+    });
     expect(repo.get('egr_test1')?.consumedAtMs).not.toBeNull();
   });
 });

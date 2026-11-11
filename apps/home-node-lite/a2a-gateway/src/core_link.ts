@@ -52,15 +52,22 @@ export interface CoreAnswer {
   streamClient?: string;
 }
 
-export type CoreReply = { ok: true; answer: CoreAnswer } | { ok: false; status: number | 'unreachable' };
+export type CoreReply =
+  | { ok: true; answer: CoreAnswer }
+  | { ok: false; status: number | 'unreachable' };
 
 export interface CoreLink {
   /** Forward one client call to its internal route. */
   forward(path: string, envelope: GatewayEnvelope): Promise<CoreReply>;
   /** Read the signed public card and the JWK Set its `jku` names. */
-  card(): Promise<{ ok: true; card: unknown; jwks: unknown } | { ok: false; status: number | 'unreachable' }>;
+  card(): Promise<
+    { ok: true; card: unknown; jwks: unknown } | { ok: false; status: number | 'unreachable' }
+  >;
   /** Claim due task events: at most `limit`, of which at most `webhookLimit` webhook POSTs. */
-  claimEvents(limit: number, webhookLimit: number): Promise<{ ok: true; claim: DeliveryClaim } | { ok: false; status: number | 'unreachable' }>;
+  claimEvents(
+    limit: number,
+    webhookLimit: number,
+  ): Promise<{ ok: true; claim: DeliveryClaim } | { ok: false; status: number | 'unreachable' }>;
   /**
    * Hand a UCP order webhook to Core (UCP plan §3.13). Core answers within
    * `UCP_WEBHOOK_STORE_WAIT_MS` or the merchant is told 503 and retries.
@@ -72,7 +79,9 @@ export interface CoreLink {
    */
   ucpOauthCallback(params: Readonly<Record<string, string>>): Promise<CoreReply>;
   /** Report claimed events; resolves to how many Core applied. */
-  ackEvents(acks: readonly DeliveryAck[]): Promise<{ ok: true; applied: number } | { ok: false; status: number | 'unreachable' }>;
+  ackEvents(
+    acks: readonly DeliveryAck[],
+  ): Promise<{ ok: true; applied: number } | { ok: false; status: number | 'unreachable' }>;
 }
 
 /** Headers of Core's answer the client may see. */
@@ -102,18 +111,28 @@ export function isClientAnswer(headers: Record<string, string>): boolean {
 /** How much longer than Core's wait the gateway gives a `SendMessage` forward: Core answers inside it. */
 export const SEND_WAIT_MARGIN_MS = 5_000;
 
-export function createCoreLink(options: { baseUrl: string; key: GatewayServiceKey; timeoutMs: number }): CoreLink {
+export function createCoreLink(options: {
+  baseUrl: string;
+  key: GatewayServiceKey;
+  timeoutMs: number;
+}): CoreLink {
   const crypto = new Crypto();
   const http = new HttpClient({ timeoutMs: options.timeoutMs });
   // Core holds a SendMessage that did not ask to return at once for up to
   // A2A_SEND_WAIT_MS, so its forward may take that long whatever the
   // timeout set for every other call.
   const sendRoute = ingressRouteOf('SendMessage');
-  const waiting = new HttpClient({ timeoutMs: Math.max(options.timeoutMs, A2A_SEND_WAIT_MS + SEND_WAIT_MARGIN_MS) });
+  const waiting = new HttpClient({
+    timeoutMs: Math.max(options.timeoutMs, A2A_SEND_WAIT_MS + SEND_WAIT_MARGIN_MS),
+  });
   // A webhook is stored or refused quickly: past this, the merchant is better off retrying.
-  const storing = new HttpClient({ timeoutMs: Math.min(options.timeoutMs, UCP_WEBHOOK_STORE_WAIT_MS) });
+  const storing = new HttpClient({
+    timeoutMs: Math.min(options.timeoutMs, UCP_WEBHOOK_STORE_WAIT_MS),
+  });
   // A callback waits for Core's one code exchange with the merchant.
-  const exchanging = new HttpClient({ timeoutMs: Math.max(options.timeoutMs, UCP_OAUTH_CALLBACK_WAIT_MS) });
+  const exchanging = new HttpClient({
+    timeoutMs: Math.max(options.timeoutMs, UCP_OAUTH_CALLBACK_WAIT_MS),
+  });
   const sign = createCanonicalRequestSigner({
     did: options.key.did,
     privateKey: options.key.seed,
@@ -122,8 +141,14 @@ export function createCoreLink(options: { baseUrl: string; key: GatewayServiceKe
   });
   const base = options.baseUrl.replace(/\/+$/, '');
 
-  async function send(method: 'GET' | 'POST', path: string, body?: unknown, client: HttpClient = http) {
-    const bytes = body === undefined ? new Uint8Array() : new TextEncoder().encode(JSON.stringify(body));
+  async function send(
+    method: 'GET' | 'POST',
+    path: string,
+    body?: unknown,
+    client: HttpClient = http,
+  ) {
+    const bytes =
+      body === undefined ? new Uint8Array() : new TextEncoder().encode(JSON.stringify(body));
     const signed = await sign({ method, path, query: '', body: bytes });
     const headers: Record<string, string> = {
       'x-did': signed.did,
@@ -132,7 +157,11 @@ export function createCoreLink(options: { baseUrl: string; key: GatewayServiceKe
       'x-signature': signed.signature,
     };
     if (bytes.byteLength > 0) headers['content-type'] = 'application/json';
-    return client.request(`${base}${path}`, { method, headers, ...(bytes.byteLength > 0 ? { body: bytes } : {}) });
+    return client.request(`${base}${path}`, {
+      method,
+      headers,
+      ...(bytes.byteLength > 0 ? { body: bytes } : {}),
+    });
   }
 
   return {
@@ -173,7 +202,8 @@ export function createCoreLink(options: { baseUrl: string; key: GatewayServiceKe
         return { ok: false, status: 'unreachable' };
       }
       const body = decode(res.body) as { card?: unknown; jwks?: unknown } | undefined;
-      if (res.status !== 200 || body?.card === undefined || body.jwks === undefined) return { ok: false, status: res.status };
+      if (res.status !== 200 || body?.card === undefined || body.jwks === undefined)
+        return { ok: false, status: res.status };
       return { ok: true, card: body.card, jwks: body.jwks };
     },
     async ucpWebhook(envelope) {

@@ -20,18 +20,11 @@
  *      failure so callers never have to handle thrown exceptions.
  */
 
-import {
-  PERSONA_CLASSIFY,
-  PERSONA_CLASSIFY_RESPONSE_SCHEMA,
-} from '../llm/prompts';
+import { PERSONA_CLASSIFY, PERSONA_CLASSIFY_RESPONSE_SCHEMA } from '../llm/prompts';
 import { getProviderTiers, type ProviderName } from '../llm/provider_config';
 import { resolveAlias } from '../persona/registry';
 
-import type {
-  ClassificationInput,
-  MentionedContact,
-  AttributionCandidate,
-} from './domain';
+import type { ClassificationInput, MentionedContact } from './domain';
 import type { PersonaSelectorProvider } from './persona_selector';
 import type { ChatOptions, LLMProvider } from '../llm/adapters/provider';
 

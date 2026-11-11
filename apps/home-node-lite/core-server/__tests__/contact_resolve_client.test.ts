@@ -29,10 +29,7 @@ function okBody(contacts: ContactMatch[] = [contact()], total?: number): Record<
   return { contacts, total: total ?? contacts.length };
 }
 
-function stubFetch(
-  body: Record<string, unknown> | null,
-  status = 200,
-): ContactResolveFetchFn {
+function stubFetch(body: Record<string, unknown> | null, status = 200): ContactResolveFetchFn {
   return async () => ({ body, status });
 }
 
@@ -113,15 +110,9 @@ describe('createContactResolveClient (task 6.14)', () => {
         ],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(2);
-      expect(out.response.contacts.map((c) => c.displayName).sort()).toEqual([
-        'Alice',
-        'Other',
-      ]);
+      expect(out.response.contacts.map((c) => c.displayName).sort()).toEqual(['Alice', 'Other']);
     });
 
     // ── Entry-level skip taxonomy — full coverage ───────────────────
@@ -141,12 +132,15 @@ describe('createContactResolveClient (task 6.14)', () => {
       ['boolean entry', true],
       ['array entry', ['x']],
     ])('parseResponse skips non-object entry: %s', async (_label, entry) => {
-      const body = { contacts: [contact(), entry, contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa', displayName: 'B' })] };
+      const body = {
+        contacts: [
+          contact(),
+          entry,
+          contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa', displayName: 'B' }),
+        ],
+      };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(2);
       expect(out.response.contacts.map((c) => c.displayName)).toEqual(['Alice', 'B']);
     });
@@ -162,26 +156,16 @@ describe('createContactResolveClient (task 6.14)', () => {
         ],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(2);
     });
 
     it('parseResponse skips entry with non-string handle', async () => {
       const body = {
-        contacts: [
-          contact(),
-          { ...contact(), handle: 42 },
-          { ...contact(), handle: null },
-        ],
+        contacts: [contact(), { ...contact(), handle: 42 }, { ...contact(), handle: null }],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(1);
       expect(out.response.contacts[0]?.handle).toBe('alice.bsky.social');
     });
@@ -199,10 +183,7 @@ describe('createContactResolveClient (task 6.14)', () => {
         ],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(1);
     });
 
@@ -213,10 +194,7 @@ describe('createContactResolveClient (task 6.14)', () => {
       // to symmetric "non-empty required" rules would surface here.
       const body = { contacts: [{ ...contact(), displayName: '' }] };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(1);
       expect(out.response.contacts[0]?.displayName).toBe('');
     });
@@ -237,17 +215,12 @@ describe('createContactResolveClient (task 6.14)', () => {
         ],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       // All 7 entries are kept (their other fields are valid); only
       // the `ring` field varies. Pin: rings 1/2/3 preserved, others
       // collapse to null.
       expect(out.response.contacts).toHaveLength(7);
-      const ringsByDid = Object.fromEntries(
-        out.response.contacts.map((c) => [c.did, c.ring]),
-      );
+      const ringsByDid = Object.fromEntries(out.response.contacts.map((c) => [c.did, c.ring]));
       expect(ringsByDid['did:plc:abcdefghijklmnopqrstuvwx']).toBe(1);
       expect(ringsByDid['did:plc:bcdefghijklmnopqrstuvwxa']).toBe(2);
       expect(ringsByDid['did:plc:cdefghijklmnopqrstuvwxab']).toBe(3);
@@ -267,18 +240,17 @@ describe('createContactResolveClient (task 6.14)', () => {
           { ...contact(), did: 'did:plc:cdefghijklmnopqrstuvwxab', lastSeenMs: 1.5 }, // float
           { ...contact(), did: 'did:plc:defghijklmnopqrstuvwxabc', lastSeenMs: -1 }, // negative
           { ...contact(), did: 'did:plc:efghijklmnopqrstuvwxabcd', lastSeenMs: Number.NaN },
-          { ...contact(), did: 'did:plc:fghijklmnopqrstuvwxabcde', lastSeenMs: Number.POSITIVE_INFINITY },
+          {
+            ...contact(),
+            did: 'did:plc:fghijklmnopqrstuvwxabcde',
+            lastSeenMs: Number.POSITIVE_INFINITY,
+          },
         ],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts).toHaveLength(6);
-      const lsByDid = Object.fromEntries(
-        out.response.contacts.map((c) => [c.did, c.lastSeenMs]),
-      );
+      const lsByDid = Object.fromEntries(out.response.contacts.map((c) => [c.did, c.lastSeenMs]));
       expect(lsByDid['did:plc:abcdefghijklmnopqrstuvwx']).toBe(1_700_000_000_000);
       expect(lsByDid['did:plc:bcdefghijklmnopqrstuvwxa']).toBe(0); // boundary preserved
       expect(lsByDid['did:plc:cdefghijklmnopqrstuvwxab']).toBeNull(); // float
@@ -301,10 +273,7 @@ describe('createContactResolveClient (task 6.14)', () => {
         ],
       };
       const resolve = createContactResolveClient({ fetchFn: stubFetch(body) });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       const c = out.response.contacts[0]!;
       expect(c.trustScore).toBeNull();
       expect(c.ring).toBeNull();
@@ -319,18 +288,21 @@ describe('createContactResolveClient (task 6.14)', () => {
       const resolve = createContactResolveClient({
         fetchFn: stubFetch(okBody([webContact])),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.contacts[0]!.did).toBe('did:web:example.com');
     });
 
     it('fires resolved event with contact count', async () => {
-      interface Ev { kind: 'resolved'; query: string; contactCount: number }
+      interface Ev {
+        kind: 'resolved';
+        query: string;
+        contactCount: number;
+      }
       const events: Ev[] = [];
       const resolve = createContactResolveClient({
-        fetchFn: stubFetch(okBody([contact(), contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' })])),
+        fetchFn: stubFetch(
+          okBody([contact(), contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' })]),
+        ),
         onEvent: (e) => {
           if (e.kind === 'resolved') events.push(e);
         },
@@ -573,10 +545,7 @@ describe('createContactResolveClient (task 6.14)', () => {
       const resolve = createContactResolveClient({
         fetchFn: stubFetch({ contacts: [contact()], total: 47 }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(47);
     });
 
@@ -584,21 +553,18 @@ describe('createContactResolveClient (task 6.14)', () => {
       const resolve = createContactResolveClient({
         fetchFn: stubFetch({ contacts: [], total: 0 }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(0);
     });
 
     it('non-integer total falls back to contacts.length', async () => {
       const resolve = createContactResolveClient({
-        fetchFn: stubFetch({ contacts: [contact(), contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' })], total: 5.5 }),
+        fetchFn: stubFetch({
+          contacts: [contact(), contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' })],
+          total: 5.5,
+        }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(2);
     });
 
@@ -606,10 +572,7 @@ describe('createContactResolveClient (task 6.14)', () => {
       const resolve = createContactResolveClient({
         fetchFn: stubFetch({ contacts: [contact()], total: -1 }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
     });
 
@@ -621,10 +584,7 @@ describe('createContactResolveClient (task 6.14)', () => {
       const resolve = createContactResolveClient({
         fetchFn: stubFetch({ contacts: [contact()], total: value }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
     });
 
@@ -632,21 +592,21 @@ describe('createContactResolveClient (task 6.14)', () => {
       const resolve = createContactResolveClient({
         fetchFn: stubFetch({ contacts: [contact()], total: '5' as unknown as number }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(1);
     });
 
     it('missing total falls back to contacts.length', async () => {
       const resolve = createContactResolveClient({
-        fetchFn: stubFetch({ contacts: [contact(), contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' }), contact({ did: 'did:plc:cdefghijklmnopqrstuvwxab' })] }),
+        fetchFn: stubFetch({
+          contacts: [
+            contact(),
+            contact({ did: 'did:plc:bcdefghijklmnopqrstuvwxa' }),
+            contact({ did: 'did:plc:cdefghijklmnopqrstuvwxab' }),
+          ],
+        }),
       });
-      const out = (await resolve({ query: 'x' })) as Extract<
-        ContactResolveOutcome,
-        { ok: true }
-      >;
+      const out = (await resolve({ query: 'x' })) as Extract<ContactResolveOutcome, { ok: true }>;
       expect(out.response.total).toBe(3);
     });
   });

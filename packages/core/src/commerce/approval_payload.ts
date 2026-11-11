@@ -258,7 +258,10 @@ export interface TermAgreementApprovalPayload {
   proposalDigest: string;
 }
 
-export type ApprovalPayload = BuyerApprovalPayload | SupplierApprovalPayload | TermAgreementApprovalPayload;
+export type ApprovalPayload =
+  | BuyerApprovalPayload
+  | SupplierApprovalPayload
+  | TermAgreementApprovalPayload;
 
 /**
  * The protocol's own canonicalizer, imported rather than rewritten.

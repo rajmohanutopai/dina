@@ -265,7 +265,9 @@ describe('owner run — validation + durable idempotency + list (dual-review rem
     const before = (await router.handle(req('GET', `/v1/run/${id}/status`, 'owner'))).body as {
       next_fetch_at: number;
     };
-    await router.handle(req('POST', `/v1/run/${id}/update`, 'owner', { interval_ms: 1000, config_version: 0 }));
+    await router.handle(
+      req('POST', `/v1/run/${id}/update`, 'owner', { interval_ms: 1000, config_version: 0 }),
+    );
     const after = (await router.handle(req('GET', `/v1/run/${id}/status`, 'owner'))).body as {
       next_fetch_at: number;
     };
@@ -322,7 +324,12 @@ describe('owner run — validation + durable idempotency + list (dual-review rem
 
   it('L-IDEM: a same-key start with a DIFFERENT body is a 409 (key reuse)', async () => {
     const a = await router.handle(
-      req('POST', '/v1/run/start', 'owner', startBody({ idempotency_key: 's1', persona: 'general' })),
+      req(
+        'POST',
+        '/v1/run/start',
+        'owner',
+        startBody({ idempotency_key: 's1', persona: 'general' }),
+      ),
     );
     expect(a.status).toBe(201);
     const b = await router.handle(
@@ -356,7 +363,9 @@ describe('owner run — validation + durable idempotency + list (dual-review rem
     ]) {
       // idempotency_key: '' suppresses the helper's default so the route sees a
       // missing key.
-      const r = await router.handle(req('POST', path, 'owner', { idempotency_key: '', config_version: 0 }));
+      const r = await router.handle(
+        req('POST', path, 'owner', { idempotency_key: '', config_version: 0 }),
+      );
       expect(r.status).toBe(400);
       expect((r.body as { field: string }).field).toBe('idempotency_key');
     }

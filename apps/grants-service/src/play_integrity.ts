@@ -40,7 +40,10 @@ import type { DeviceState } from './ports';
 const PLAY_INTEGRITY_BASE = 'https://playintegrity.googleapis.com/v1';
 
 /** Device-integrity labels Play Integrity may return, strongest first. */
-export type DeviceVerdict = 'MEETS_STRONG_INTEGRITY' | 'MEETS_DEVICE_INTEGRITY' | 'MEETS_BASIC_INTEGRITY';
+export type DeviceVerdict =
+  | 'MEETS_STRONG_INTEGRITY'
+  | 'MEETS_DEVICE_INTEGRITY'
+  | 'MEETS_BASIC_INTEGRITY';
 
 export interface PlayIntegrityOptions {
   /** The app's package name, e.g. com.dinakernel.mobile. */
@@ -103,10 +106,7 @@ export class PlayIntegrityClient implements DeviceState {
     this.maxAgeMs = opts.maxTokenAgeMs ?? 10 * 60 * 1000;
   }
 
-  private async authedPost(
-    action: string,
-    body: Record<string, unknown>,
-  ): Promise<Response> {
+  private async authedPost(action: string, body: Record<string, unknown>): Promise<Response> {
     const accessToken = await this.opts.tokenMinter.getAccessToken();
     const url = `${PLAY_INTEGRITY_BASE}/${encodeURIComponent(this.opts.packageName)}:${action}`;
     return this.fetchImpl(url, {
@@ -156,7 +156,11 @@ export class PlayIntegrityClient implements DeviceState {
     // timestampMillis as a string of epoch ms.
     const tsRaw = payload.requestDetails?.timestampMillis;
     const ts = typeof tsRaw === 'string' ? Number(tsRaw) : typeof tsRaw === 'number' ? tsRaw : NaN;
-    if (!Number.isFinite(ts) || this.now() - ts > this.maxAgeMs || ts - this.now() > this.maxAgeMs) {
+    if (
+      !Number.isFinite(ts) ||
+      this.now() - ts > this.maxAgeMs ||
+      ts - this.now() > this.maxAgeMs
+    ) {
       return 'invalid';
     }
 

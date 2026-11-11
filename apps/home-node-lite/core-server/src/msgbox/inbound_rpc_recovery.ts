@@ -67,9 +67,10 @@ export class InboundRpcRecovery {
    */
   onDisconnect(reason?: string): number {
     const count = this.registry.abortAll();
-    const event: RecoveryEvent = reason !== undefined
-      ? { kind: 'abort_on_disconnect', abortedCount: count, reason }
-      : { kind: 'abort_on_disconnect', abortedCount: count };
+    const event: RecoveryEvent =
+      reason !== undefined
+        ? { kind: 'abort_on_disconnect', abortedCount: count, reason }
+        : { kind: 'abort_on_disconnect', abortedCount: count };
     this.onEvent?.(event);
     return count;
   }

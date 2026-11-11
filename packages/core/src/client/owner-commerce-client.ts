@@ -75,19 +75,26 @@ export class OwnerCommerceClient {
 
   async listDrafts(catalogId: string): Promise<{ drafts: CatalogDraft[] }> {
     const res = await this.dispatcher.dispatch({
-        method: 'GET',
-        path: '/v1/commerce/catalog/drafts',
-        query: { catalog_id: catalogId },
-      });
+      method: 'GET',
+      path: '/v1/commerce/catalog/drafts',
+      query: { catalog_id: catalogId },
+    });
     return expectOk<{ drafts: CatalogDraft[] }>(res, 'listDrafts');
   }
 
   /** §4.1 capture: pages in, artifacts + a single-use authorization out. */
-  async photoCapture(catalogId: string, pagesBase64: readonly string[]): Promise<PhotoCaptureResult> {
-    return this.post('/v1/commerce/catalog/drafts/photo_capture', {
-      catalog_id: catalogId,
-      pages: pagesBase64,
-    }, 'photoCapture');
+  async photoCapture(
+    catalogId: string,
+    pagesBase64: readonly string[],
+  ): Promise<PhotoCaptureResult> {
+    return this.post(
+      '/v1/commerce/catalog/drafts/photo_capture',
+      {
+        catalog_id: catalogId,
+        pages: pagesBase64,
+      },
+      'photoCapture',
+    );
   }
 
   /** §3 + §5: extract through the gate, draft created with its §2.1 chain. */
@@ -96,11 +103,15 @@ export class OwnerCommerceClient {
     draftId: string;
     authorizationId: string;
   }): Promise<DraftAnswer> {
-    return this.post('/v1/commerce/catalog/drafts/photo_extract', {
-      catalog_id: args.catalogId,
-      draft_id: args.draftId,
-      authorization_id: args.authorizationId,
-    }, 'photoExtract');
+    return this.post(
+      '/v1/commerce/catalog/drafts/photo_extract',
+      {
+        catalog_id: args.catalogId,
+        draft_id: args.draftId,
+        authorization_id: args.authorizationId,
+      },
+      'photoExtract',
+    );
   }
 
   /** §5 step 4 — set a cell, clear it (value null), or remove a row (column null). */
@@ -110,12 +121,16 @@ export class OwnerCommerceClient {
     column: string | null;
     value: string | null;
   }): Promise<DraftAnswer> {
-    return this.post('/v1/commerce/catalog/drafts/repair', {
-      draft_id: args.draftId,
-      row: args.row,
-      column: args.column,
-      value: args.value,
-    }, 'repair');
+    return this.post(
+      '/v1/commerce/catalog/drafts/repair',
+      {
+        draft_id: args.draftId,
+        row: args.row,
+        column: args.column,
+        value: args.value,
+      },
+      'repair',
+    );
   }
 
   /** Accept named `{item.field}` refs, each currently `proposed`. */
@@ -125,11 +140,15 @@ export class OwnerCommerceClient {
 
   /** Inline value correction on an assembled item — one field per call. */
   async edit(args: { draftId: string; field: string; value: unknown }): Promise<DraftAnswer> {
-    return this.post('/v1/commerce/catalog/drafts/edit', {
-      draft_id: args.draftId,
-      field: args.field,
-      value: args.value,
-    }, 'edit');
+    return this.post(
+      '/v1/commerce/catalog/drafts/edit',
+      {
+        draft_id: args.draftId,
+        field: args.field,
+        value: args.value,
+      },
+      'edit',
+    );
   }
 
   /** §10 item 9 — prove a person is here. Never stored, never echoed. */
@@ -156,10 +175,14 @@ export class OwnerCommerceClient {
 
   /** The owner names the EXACT snapshot they reviewed. */
   async approve(draftId: string, approvedSnapshotDigest: string): Promise<DraftAnswer> {
-    return this.post('/v1/commerce/catalog/drafts/approve', {
-      draft_id: draftId,
-      approved_snapshot_digest: approvedSnapshotDigest,
-    }, 'approve');
+    return this.post(
+      '/v1/commerce/catalog/drafts/approve',
+      {
+        draft_id: draftId,
+        approved_snapshot_digest: approvedSnapshotDigest,
+      },
+      'approve',
+    );
   }
 
   async publish(draftId: string): Promise<DraftAnswer> {
@@ -174,10 +197,10 @@ export class OwnerCommerceClient {
   /** §6 — a stored page's stripped bytes, for the photograph-beside-values screens. */
   async photoPage(artifactId: string): Promise<{ mime: string; bytes_base64: string }> {
     const res = await this.dispatcher.dispatch({
-        method: 'GET',
-        path: '/v1/commerce/catalog/drafts/photo_page',
-        query: { artifact_id: artifactId },
-      });
+      method: 'GET',
+      path: '/v1/commerce/catalog/drafts/photo_page',
+      query: { artifact_id: artifactId },
+    });
     return expectOk<{ mime: string; bytes_base64: string }>(res, 'photoPage');
   }
 
@@ -187,28 +210,43 @@ export class OwnerCommerceClient {
 
   /** §5.0 capture, ORDER lane: pages in, artifacts + authorization out. */
   async orderPhotoCapture(pagesBase64: readonly string[]): Promise<PhotoCaptureResult> {
-    return this.post('/v1/commerce/orders/drafts/photo_capture', { pages: pagesBase64 }, 'orderPhotoCapture');
+    return this.post(
+      '/v1/commerce/orders/drafts/photo_capture',
+      { pages: pagesBase64 },
+      'orderPhotoCapture',
+    );
   }
 
   /** §3 + §5.0: extract through the gate; the draft carries its §2.1 chain. */
-  async orderPhotoExtract(args: { draftId: string; authorizationId: string }): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/photo_extract', {
-      draft_id: args.draftId,
-      authorization_id: args.authorizationId,
-    }, 'orderPhotoExtract');
+  async orderPhotoExtract(args: {
+    draftId: string;
+    authorizationId: string;
+  }): Promise<OrderDraftAnswer> {
+    return this.post(
+      '/v1/commerce/orders/drafts/photo_extract',
+      {
+        draft_id: args.draftId,
+        authorization_id: args.authorizationId,
+      },
+      'orderPhotoExtract',
+    );
   }
 
   async orderDrafts(): Promise<{ drafts: OrderDraftSummary[] }> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/orders/drafts', query: {} });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/orders/drafts',
+      query: {},
+    });
     return expectOk<{ drafts: OrderDraftSummary[] }>(res, 'orderDrafts');
   }
 
   async orderDraft(draftId: string): Promise<OrderDraftAnswer> {
     const res = await this.dispatcher.dispatch({
-        method: 'GET',
-        path: '/v1/commerce/orders/drafts/get',
-        query: { draft_id: draftId },
-      });
+      method: 'GET',
+      path: '/v1/commerce/orders/drafts/get',
+      query: { draft_id: draftId },
+    });
     return expectOk<OrderDraftAnswer>(res, 'orderDraft');
   }
 
@@ -219,12 +257,16 @@ export class OwnerCommerceClient {
     field: string;
     value: string;
   }): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/line/repair', {
-      draft_id: args.draftId,
-      line_id: args.lineId,
-      field: args.field,
-      value: args.value,
-    }, 'orderRepairLine');
+    return this.post(
+      '/v1/commerce/orders/drafts/line/repair',
+      {
+        draft_id: args.draftId,
+        line_id: args.lineId,
+        field: args.field,
+        value: args.value,
+      },
+      'orderRepairLine',
+    );
   }
 
   async orderResolveLine(args: {
@@ -233,29 +275,41 @@ export class OwnerCommerceClient {
     resolution: OrderDraftLine['resolution'];
     evidence?: OrderDraftLine['evidence'];
   }): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/line/resolve', {
-      draft_id: args.draftId,
-      line_id: args.lineId,
-      resolution: args.resolution,
-      ...(args.evidence !== undefined ? { evidence: args.evidence } : {}),
-    }, 'orderResolveLine');
+    return this.post(
+      '/v1/commerce/orders/drafts/line/resolve',
+      {
+        draft_id: args.draftId,
+        line_id: args.lineId,
+        resolution: args.resolution,
+        ...(args.evidence !== undefined ? { evidence: args.evidence } : {}),
+      },
+      'orderResolveLine',
+    );
   }
 
   async orderDeferLine(draftId: string, lineId: string): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/line/defer', {
-      draft_id: draftId,
-      line_id: lineId,
-    }, 'orderDeferLine');
+    return this.post(
+      '/v1/commerce/orders/drafts/line/defer',
+      {
+        draft_id: draftId,
+        line_id: lineId,
+      },
+      'orderDeferLine',
+    );
   }
 
   async orderAcceptFields(
     draftId: string,
     refs: readonly { lineId: string; field: string }[],
   ): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/accept_fields', {
-      draft_id: draftId,
-      refs: refs.map((ref) => ({ line_id: ref.lineId, field: ref.field })),
-    }, 'orderAcceptFields');
+    return this.post(
+      '/v1/commerce/orders/drafts/accept_fields',
+      {
+        draft_id: draftId,
+        refs: refs.map((ref) => ({ line_id: ref.lineId, field: ref.field })),
+      },
+      'orderAcceptFields',
+    );
   }
 
   async orderRequirement(args: {
@@ -264,12 +318,16 @@ export class OwnerCommerceClient {
     action: 'edit' | 'accept' | 'omit' | 'reinstate';
     value?: string;
   }): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/requirement', {
-      draft_id: args.draftId,
-      key: args.key,
-      action: args.action,
-      ...(args.value !== undefined ? { value: args.value } : {}),
-    }, 'orderRequirement');
+    return this.post(
+      '/v1/commerce/orders/drafts/requirement',
+      {
+        draft_id: args.draftId,
+        key: args.key,
+        action: args.action,
+        ...(args.value !== undefined ? { value: args.value } : {}),
+      },
+      'orderRequirement',
+    );
   }
 
   /** §5.3 — the ceremony. Presence UNCONDITIONAL on this lane. */
@@ -278,10 +336,14 @@ export class OwnerCommerceClient {
   }
 
   async orderReopen(draftId: string, conversationId: string): Promise<OrderDraftAnswer> {
-    return this.post('/v1/commerce/orders/drafts/reopen', {
-      draft_id: draftId,
-      conversation_id: conversationId,
-    }, 'orderReopen');
+    return this.post(
+      '/v1/commerce/orders/drafts/reopen',
+      {
+        draft_id: draftId,
+        conversation_id: conversationId,
+      },
+      'orderReopen',
+    );
   }
 
   async orderAbandon(draftId: string): Promise<OrderDraftAnswer> {
@@ -294,11 +356,15 @@ export class OwnerCommerceClient {
     supplierDid: string;
     projection: Record<string, unknown>;
   }): Promise<OrderSendAnswer> {
-    return this.post('/v1/commerce/orders/drafts/request-quote', {
-      draft_id: args.draftId,
-      supplier_did: args.supplierDid,
-      projection: args.projection,
-    }, 'orderRequestQuote');
+    return this.post(
+      '/v1/commerce/orders/drafts/request-quote',
+      {
+        draft_id: args.draftId,
+        supplier_did: args.supplierDid,
+        projection: args.projection,
+      },
+      'orderRequestQuote',
+    );
   }
 
   /** §5.4 stage 4 — Core builds the order; the card renders what it answers. */
@@ -313,12 +379,16 @@ export class OwnerCommerceClient {
      */
     projection?: Record<string, unknown>;
   }): Promise<OrderApproveAnswer> {
-    return this.post('/v1/commerce/orders/drafts/approve', {
-      draft_id: args.draftId,
-      conversation_id: args.conversationId,
-      quote_id: args.quoteId,
-      ...(args.projection !== undefined ? { projection: args.projection } : {}),
-    }, 'orderApprove');
+    return this.post(
+      '/v1/commerce/orders/drafts/approve',
+      {
+        draft_id: args.draftId,
+        conversation_id: args.conversationId,
+        quote_id: args.quoteId,
+        ...(args.projection !== undefined ? { projection: args.projection } : {}),
+      },
+      'orderApprove',
+    );
   }
 
   /**
@@ -328,15 +398,12 @@ export class OwnerCommerceClient {
    * the courier"), so a classified outcome never throws; only an
    * unclassified failure does.
    */
-  async orderSubmit(args: {
-    draftId: string;
-    conversationId: string;
-  }): Promise<OrderSubmitAnswer> {
+  async orderSubmit(args: { draftId: string; conversationId: string }): Promise<OrderSubmitAnswer> {
     const res = await this.dispatcher.dispatch({
-        method: 'POST',
-        path: '/v1/commerce/orders/drafts/submit',
-        body: { draft_id: args.draftId, conversation_id: args.conversationId },
-      });
+      method: 'POST',
+      path: '/v1/commerce/orders/drafts/submit',
+      body: { draft_id: args.draftId, conversation_id: args.conversationId },
+    });
     const classified = res.body as OrderSubmitAnswer | undefined;
     if (classified !== undefined && typeof classified.dispatch_class === 'string') {
       return classified;
@@ -350,10 +417,10 @@ export class OwnerCommerceClient {
 
   async tenderRanking(tenderId: string): Promise<TenderRankingView> {
     const res = await this.dispatcher.dispatch({
-        method: 'GET',
-        path: '/v1/commerce/trade/tender/ranking',
-        query: { tender_id: tenderId },
-      });
+      method: 'GET',
+      path: '/v1/commerce/trade/tender/ranking',
+      query: { tender_id: tenderId },
+    });
     return expectOk<TenderRankingView>(res, 'tenderRanking');
   }
 
@@ -375,14 +442,14 @@ export class OwnerCommerceClient {
     alternativeId?: string;
   }): Promise<TenderAwardOutcome> {
     const res = await this.dispatcher.dispatch({
-        method: 'POST',
-        path: '/v1/commerce/trade/tender/award',
-        body: {
-          tender_id: args.tenderId,
-          ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
-          ...(args.alternativeId === undefined ? {} : { alternative_id: args.alternativeId }),
-        },
-      });
+      method: 'POST',
+      path: '/v1/commerce/trade/tender/award',
+      body: {
+        tender_id: args.tenderId,
+        ...(args.supplierDid === undefined ? {} : { supplier_did: args.supplierDid }),
+        ...(args.alternativeId === undefined ? {} : { alternative_id: args.alternativeId }),
+      },
+    });
     const outcome = readTenderAward(res.status, res.body);
     return outcome ?? expectOk<never>(res, 'awardTender');
   }
@@ -436,7 +503,9 @@ export class OwnerCommerceClient {
               negotiation: {
                 target_total: input.limits.targetMinorUnits,
                 budget_ceiling: input.limits.ceilingMinorUnits,
-                ...(input.limits.maxRounds === undefined ? {} : { max_rounds: input.limits.maxRounds }),
+                ...(input.limits.maxRounds === undefined
+                  ? {}
+                  : { max_rounds: input.limits.maxRounds }),
                 ...(input.limits.deadlineSeconds === undefined
                   ? {}
                   : { deadline_seconds: input.limits.deadlineSeconds }),
@@ -450,7 +519,10 @@ export class OwnerCommerceClient {
 
   /** The buyer's commerce settings: saved delivery regions, currency, suppliers. */
   async buyerSettings(): Promise<BuyerSettingsAnswer> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/settings/buyer' });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/settings/buyer',
+    });
     return expectOk<BuyerSettingsAnswer>(res, 'buyerSettings');
   }
 
@@ -461,7 +533,10 @@ export class OwnerCommerceClient {
    * repair (`settings: null` when it does not). Other refusals throw.
    */
   async buyerSettingsToEdit(): Promise<BuyerSettingsToEdit> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/settings/buyer' });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/settings/buyer',
+    });
     const body = (res.body ?? {}) as {
       error?: string;
       findings?: SettingsFindingDto[];
@@ -507,10 +582,10 @@ export class OwnerCommerceClient {
   /** Send an order held from a quote (an award, `from_quote`). */
   async sendHeldOrder(approvalId: string): Promise<OrderSendOutcome> {
     const res = await this.dispatcher.dispatch({
-        method: 'POST',
-        path: '/v1/commerce/orders/submit',
-        body: { approval_id: approvalId },
-      });
+      method: 'POST',
+      path: '/v1/commerce/orders/submit',
+      body: { approval_id: approvalId },
+    });
     const outcome = readOrderSend(res.status, res.body);
     return outcome ?? expectOk<never>(res, 'sendHeldOrder');
   }
@@ -550,14 +625,14 @@ export class OwnerCommerceClient {
     role?: 'buyer' | 'supplier',
   ): Promise<TradeStatementAnswer> {
     const res = await this.dispatcher.dispatch({
-        method: 'GET',
-        path: '/v1/commerce/trade/statement',
-        query: {
-          counterparty_did: counterpartyDid,
-          currency,
-          ...(role !== undefined ? { role } : {}),
-        },
-      });
+      method: 'GET',
+      path: '/v1/commerce/trade/statement',
+      query: {
+        counterparty_did: counterpartyDid,
+        currency,
+        ...(role !== undefined ? { role } : {}),
+      },
+    });
     return expectOk<TradeStatementAnswer>(res, 'tradeStatement');
   }
 
@@ -566,7 +641,10 @@ export class OwnerCommerceClient {
    * a real state ("not configured"), not an error.
    */
   async businessIdentity(): Promise<BusinessIdentityAnswer> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/settings/business' });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/settings/business',
+    });
     return expectOk<BusinessIdentityAnswer>(res, 'businessIdentity');
   }
 
@@ -587,7 +665,11 @@ export class OwnerCommerceClient {
       country: string;
     };
   }): Promise<{ ok: true } | { ok: false; findings: SettingsFindingDto[] }> {
-    const res = await this.dispatcher.dispatch({ method: 'PUT', path: '/v1/commerce/settings/business', body: settings });
+    const res = await this.dispatcher.dispatch({
+      method: 'PUT',
+      path: '/v1/commerce/settings/business',
+      body: settings,
+    });
     if (res.status === 200) return { ok: true };
     const body = (res.body ?? {}) as { findings?: SettingsFindingDto[]; error?: string };
     if (body.findings !== undefined) return { ok: false, findings: body.findings };
@@ -611,15 +693,15 @@ export class OwnerCommerceClient {
     currency: string;
   }): Promise<TradeReminderAnswer> {
     const res = await this.dispatcher.dispatch({
-        method: 'POST',
-        path: '/v1/commerce/trade/remind',
-        body: {
-          counterparty_did: args.counterpartyDid,
-          purchase_order_id: args.purchaseOrderId,
-          due_at: args.dueAt,
-          currency: args.currency,
-        },
-      });
+      method: 'POST',
+      path: '/v1/commerce/trade/remind',
+      body: {
+        counterparty_did: args.counterpartyDid,
+        purchase_order_id: args.purchaseOrderId,
+        due_at: args.dueAt,
+        currency: args.currency,
+      },
+    });
     if (res.status === 200) return expectOk<TradeReminderAnswer>(res, 'remindCounterparty');
     // A pack that cannot send is a FACT to show the owner (no channel stated,
     // no pack installed, nothing outstanding), not an exception to swallow.
@@ -707,7 +789,11 @@ export class OwnerCommerceClient {
   }
 
   async booksExport(currency: string): Promise<{ voucher_count: number; xml: string }> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/trade/books-export', query: { currency } });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/trade/books-export',
+      query: { currency },
+    });
     return expectOk<{ voucher_count: number; xml: string }>(res, 'booksExport');
   }
 
@@ -736,7 +822,10 @@ export class OwnerCommerceClient {
   }
 
   /** §8 cold leg, standalone: (re)send a minted open offer to a DID. */
-  async sendInvite(args: { nonce: string; toDid: string }): Promise<{ ok: true; dispatched: boolean }> {
+  async sendInvite(args: {
+    nonce: string;
+    toDid: string;
+  }): Promise<{ ok: true; dispatched: boolean }> {
     return this.post(
       '/v1/commerce/invites/send',
       { nonce: args.nonce, to_did: args.toDid },
@@ -801,15 +890,19 @@ export class OwnerCommerceClient {
 
   async listStaffGrants(deviceDid: string): Promise<{ grants: StaffGrantEntry[] }> {
     const res = await this.dispatcher.dispatch({
-        method: 'GET',
-        path: '/v1/commerce/staff-grants',
-        query: { device_did: deviceDid },
-      });
+      method: 'GET',
+      path: '/v1/commerce/staff-grants',
+      query: { device_did: deviceDid },
+    });
     return expectOk<{ grants: StaffGrantEntry[] }>(res, 'listStaffGrants');
   }
 
   async revokeStaffGrants(deviceDid: string): Promise<{ ok: true }> {
-    return this.post('/v1/commerce/staff-grants/revoke', { device_did: deviceDid }, 'revokeStaffGrants');
+    return this.post(
+      '/v1/commerce/staff-grants/revoke',
+      { device_did: deviceDid },
+      'revokeStaffGrants',
+    );
   }
   // --- COMMITMENT_KERNEL §11: who bargains for the owner, per kind of deal ------
 
@@ -864,7 +957,10 @@ export class OwnerCommerceClient {
 
   /** The store's term policy (§5.4). */
   async termPolicy(): Promise<{ policy: TermPolicy }> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/policy' });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/terms/policy',
+    });
     return expectOk(res, 'termPolicy');
   }
 
@@ -879,12 +975,19 @@ export class OwnerCommerceClient {
     revision: number;
     withdrawn: { listing_id: string; record_removed: boolean }[];
   }> {
-    const res = await this.dispatcher.dispatch({ method: 'PUT', path: '/v1/commerce/terms/policy', body: { policy } });
+    const res = await this.dispatcher.dispatch({
+      method: 'PUT',
+      path: '/v1/commerce/terms/policy',
+      body: { policy },
+    });
     return expectOk(res, 'saveTermPolicy');
   }
 
   async termListings(): Promise<{ listings: TermListingView[] }> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/listings' });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/terms/listings',
+    });
     return expectOk(res, 'termListings');
   }
 
@@ -899,7 +1002,11 @@ export class OwnerCommerceClient {
     /** Who may ask (§6.2); kept by Core, never published. Omitted: kept as set, or contacts_or_card. */
     access?: 'contacts_or_card' | 'anyone';
   }): Promise<{ ok: true; listing: TermListing; uri: string }> {
-    return this.post('/v1/commerce/terms/listings', args as unknown as Record<string, unknown>, 'publishTermListing');
+    return this.post(
+      '/v1/commerce/terms/listings',
+      args as unknown as Record<string, unknown>,
+      'publishTermListing',
+    );
   }
 
   /** Withdraw a listing. Presence-gated. */
@@ -921,16 +1028,29 @@ export class OwnerCommerceClient {
     end: string;
     policy: TermBuyerPolicy;
   }): Promise<{ ok: true; request_id: string }> {
-    return this.post('/v1/commerce/terms/negotiations', args as unknown as Record<string, unknown>, 'startTermNegotiation');
+    return this.post(
+      '/v1/commerce/terms/negotiations',
+      args as unknown as Record<string, unknown>,
+      'startTermNegotiation',
+    );
   }
 
-  async termNegotiations(): Promise<{ negotiations: TermNegotiationView[]; ranked: RankedTermOffer[] }> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/negotiations' });
+  async termNegotiations(): Promise<{
+    negotiations: TermNegotiationView[];
+    ranked: RankedTermOffer[];
+  }> {
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/terms/negotiations',
+    });
     return expectOk(res, 'termNegotiations');
   }
 
   async termAgreements(): Promise<{ agreements: TermAgreementSummary[] }> {
-    const res = await this.dispatcher.dispatch({ method: 'GET', path: '/v1/commerce/terms/agreements' });
+    const res = await this.dispatcher.dispatch({
+      method: 'GET',
+      path: '/v1/commerce/terms/agreements',
+    });
     return expectOk(res, 'termAgreements');
   }
 
@@ -943,7 +1063,10 @@ export class OwnerCommerceClient {
   }
 
   /** End an agreement, with notice after the trial (§5.5). Presence-gated. */
-  async terminateTermAgreement(proposalDigest: string, effectiveAt?: string): Promise<{ ok: true }> {
+  async terminateTermAgreement(
+    proposalDigest: string,
+    effectiveAt?: string,
+  ): Promise<{ ok: true }> {
     return this.post(
       `/v1/commerce/terms/agreements/${encodeURIComponent(proposalDigest)}/terminate`,
       effectiveAt === undefined ? {} : { effective_at: effectiveAt },
@@ -954,7 +1077,12 @@ export class OwnerCommerceClient {
   /** Settle one scheduled period — the cash handler's act; Core derives share and fee (§5.6). */
   async issueTermSettlement(
     proposalDigest: string,
-    args: { period_start: string; period_end: string; gross_minor: string; replaces_settlement_digest?: string },
+    args: {
+      period_start: string;
+      period_end: string;
+      gross_minor: string;
+      replaces_settlement_digest?: string;
+    },
   ): Promise<{ ok: true }> {
     return this.post(
       `/v1/commerce/terms/agreements/${encodeURIComponent(proposalDigest)}/settlements`,
@@ -964,14 +1092,16 @@ export class OwnerCommerceClient {
   }
 
   /** Accept or dispute a period's figures — never a record of payment (§5.6). */
-  async acknowledgeTermSettlement(settlementDigest: string, kind: 'accepted' | 'disputed'): Promise<{ ok: true }> {
+  async acknowledgeTermSettlement(
+    settlementDigest: string,
+    kind: 'accepted' | 'disputed',
+  ): Promise<{ ok: true }> {
     return this.post(
       `/v1/commerce/terms/settlements/${encodeURIComponent(settlementDigest)}/ack`,
       { kind },
       'acknowledgeTermSettlement',
     );
   }
-
 }
 
 export interface OrderDraftAnswer {
@@ -1178,7 +1308,12 @@ export interface TradeInboxItemDto {
 export interface TradeStatementAnswer {
   ok: true;
   statement: Record<string, unknown>;
-  dues: { purchase_order_id: string; due_at: string; amount: { currency: string; minor_units: string }; overdue: boolean }[];
+  dues: {
+    purchase_order_id: string;
+    due_at: string;
+    amount: { currency: string; minor_units: string };
+    overdue: boolean;
+  }[];
   /** THIS node's side of the folded ledger (§4.4 — one fold per orientation). */
   role: 'buyer' | 'supplier';
 }
@@ -1208,7 +1343,10 @@ export interface CreateTenderRequest {
   }[];
   lines: TenderLineRequest[];
   /** Where the goods are delivered. */
-  region: { scheme: 'country' | 'admin_area' | 'postal_area' | 'geohash' | 'custom'; value: string };
+  region: {
+    scheme: 'country' | 'admin_area' | 'postal_area' | 'geohash' | 'custom';
+    value: string;
+  };
   currency: string;
   /** Negotiation limits, in minor units of `currency`. */
   limits?: {

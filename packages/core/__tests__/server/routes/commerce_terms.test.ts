@@ -427,7 +427,9 @@ describe('the owner’s term routes', () => {
     };
     const accessOf = () => store.engine.listings().map((l) => l.access);
     // No setting sent: the default, contacts_or_card.
-    expect((await router.handle(owner('/v1/commerce/terms/listings', listingBody))).status).toBe(200);
+    expect((await router.handle(owner('/v1/commerce/terms/listings', listingBody))).status).toBe(
+      200,
+    );
     expect(accessOf()).toEqual(['contacts_or_card']);
     const opened = await router.handle(
       owner('/v1/commerce/terms/listings', { ...listingBody, access: 'anyone' }),
@@ -435,9 +437,13 @@ describe('the owner’s term routes', () => {
     expect(opened.status).toBe(200);
     expect(accessOf()).toEqual(['anyone']);
     // The setting is the owner's own: the public record does not carry it.
-    expect(JSON.stringify((opened.body as { listing: unknown }).listing)).not.toMatch(/anyone|access/);
+    expect(JSON.stringify((opened.body as { listing: unknown }).listing)).not.toMatch(
+      /anyone|access/,
+    );
     // A republish that sends none keeps it.
-    expect((await router.handle(owner('/v1/commerce/terms/listings', listingBody))).status).toBe(200);
+    expect((await router.handle(owner('/v1/commerce/terms/listings', listingBody))).status).toBe(
+      200,
+    );
     expect(accessOf()).toEqual(['anyone']);
     const bad = await router.handle(
       owner('/v1/commerce/terms/listings', { ...listingBody, access: 'friends' }),

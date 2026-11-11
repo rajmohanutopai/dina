@@ -64,8 +64,7 @@ export const DEFAULT_REFRESH_LEEWAY_MS = 5 * 60 * 1000;
 export type RefreshFn = (
   currentRefreshJwt: string,
 ) => Promise<
-  | { ok: true; record: Omit<SessionRecord, 'updatedAtMs'> }
-  | { ok: false; error: string }
+  { ok: true; record: Omit<SessionRecord, 'updatedAtMs'> } | { ok: false; error: string }
 >;
 
 export interface SessionTokenStoreOptions {
@@ -211,10 +210,7 @@ export class SessionTokenStore {
 
   // ── Internals ────────────────────────────────────────────────────────
 
-  private async doRefresh(
-    current: SessionRecord,
-    refreshFn: RefreshFn,
-  ): Promise<GetActiveOutcome> {
+  private async doRefresh(current: SessionRecord, refreshFn: RefreshFn): Promise<GetActiveOutcome> {
     let result: Awaited<ReturnType<RefreshFn>>;
     try {
       result = await refreshFn(current.refreshJwt);

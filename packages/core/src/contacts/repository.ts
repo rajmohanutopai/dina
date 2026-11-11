@@ -182,7 +182,9 @@ export class SQLiteContactRepository implements ContactRepository {
     }
     if ('billingAddress' in updates) {
       sets.push('billing_address = ?');
-      params.push(updates.billingAddress === undefined ? '' : JSON.stringify(updates.billingAddress));
+      params.push(
+        updates.billingAddress === undefined ? '' : JSON.stringify(updates.billingAddress),
+      );
     }
     sets.push('updated_at = ?');
     params.push(Date.now());
@@ -212,18 +214,16 @@ export class SQLiteContactRepository implements ContactRepository {
   }
 
   resolveAlias(aliasNormalized: string): string | null {
-    const rows = this.db.query(
-      'SELECT person_id FROM contact_aliases WHERE alias_normalized = ?',
-      [aliasNormalized],
-    );
+    const rows = this.db.query('SELECT person_id FROM contact_aliases WHERE alias_normalized = ?', [
+      aliasNormalized,
+    ]);
     return rows.length > 0 ? String(rows[0].person_id) : null;
   }
 
   getAliases(personId: string): string[] {
-    const rows = this.db.query(
-      'SELECT alias_normalized FROM contact_aliases WHERE person_id = ?',
-      [personId],
-    );
+    const rows = this.db.query('SELECT alias_normalized FROM contact_aliases WHERE person_id = ?', [
+      personId,
+    ]);
     return rows.map((r) => String(r.alias_normalized));
   }
 
@@ -308,7 +308,9 @@ function rowToContact(row: DBRow, aliases: string[]): Contact {
  * directory refuses bad input where the owner types it, and a read path that
  * panics on an old row would take the whole contact list down with it.
  */
-function decodePaperIdentity(row: DBRow): Pick<Contact, 'legalName' | 'registrations' | 'billingAddress'> {
+function decodePaperIdentity(
+  row: DBRow,
+): Pick<Contact, 'legalName' | 'registrations' | 'billingAddress'> {
   const legalName = String(row.legal_name ?? '');
   const registrations = decodeJson<TaxRegistration[]>(String(row.registrations ?? '[]'), []);
   const billingAddress = decodeJson<PostalAddress | null>(String(row.billing_address ?? ''), null);

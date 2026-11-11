@@ -416,9 +416,13 @@ export interface LLMProfile {
 }
 
 /** A plain note for a provider that is not known to be live, or undefined. */
-export function availabilityNote(p: Pick<ServiceProfile, 'liveness' | 'lastSeenAt'>, nowMs = Date.now()): string | undefined {
+export function availabilityNote(
+  p: Pick<ServiceProfile, 'liveness' | 'lastSeenAt'>,
+  nowMs = Date.now(),
+): string | undefined {
   if (p.liveness === undefined || p.liveness === 'fresh') return undefined;
-  if (p.liveness === 'unknown') return 'This provider runs an older version that does not report whether it is online.';
+  if (p.liveness === 'unknown')
+    return 'This provider runs an older version that does not report whether it is online.';
   const seen = typeof p.lastSeenAt === 'string' ? Date.parse(p.lastSeenAt) : NaN;
   const days = Number.isFinite(seen) ? Math.max(1, Math.floor((nowMs - seen) / 86_400_000)) : null;
   const when = days === null ? 'lately' : `for ${days} day${days === 1 ? '' : 's'}`;
@@ -521,7 +525,9 @@ function queryLocation(params: unknown): { lat: number; lng: number } | undefine
   const loc = (params as { location?: unknown }).location;
   if (loc === null || typeof loc !== 'object') return undefined;
   const where = viewerLocationFromArgs(loc as Record<string, unknown>);
-  return where.lat !== undefined && where.lng !== undefined ? { lat: where.lat, lng: where.lng } : undefined;
+  return where.lat !== undefined && where.lng !== undefined
+    ? { lat: where.lat, lng: where.lng }
+    : undefined;
 }
 
 /** Origin stamp for a query asked from a chat thread (REAL_LIFE_FIXES §1.5). */
@@ -666,7 +672,12 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
       let matchedProfiles: ServiceProfile[] = [];
       // Other public providers Core may try if this one goes quiet (§9).
       // Never with a grant (that listing is the only one authorised).
-      let fallbacks: { toDID: string; serviceUri?: string; schemaHash?: string; serviceName?: string }[] = [];
+      let fallbacks: {
+        toDID: string;
+        serviceUri?: string;
+        schemaHash?: string;
+        serviceName?: string;
+      }[] = [];
 
       // WM-BRAIN-06d: if the LLM didn't route via search_provider_services
       // first (intent-classifier SHORTCUT, cached DID, whatever), the
@@ -691,7 +702,11 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
             let pool = profiles;
             if (where !== undefined) {
               try {
-                pool = await options.appViewClient.searchServices({ capability, lat: where.lat, lng: where.lng });
+                pool = await options.appViewClient.searchServices({
+                  capability,
+                  lat: where.lat,
+                  lng: where.lng,
+                });
               } catch {
                 pool = profiles;
               }
@@ -699,7 +714,9 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
             const others = pool.filter((p) => p.did !== operatorDID);
             const ejected = await quietProviders(options.providerStanding, others);
             const candidates = rankCandidates(capability, others, {
-              ...(options.selfDid !== undefined && options.selfDid !== '' ? { excludeDid: options.selfDid } : {}),
+              ...(options.selfDid !== undefined && options.selfDid !== ''
+                ? { excludeDid: options.selfDid }
+                : {}),
               ...(where !== undefined ? { viewer: where } : {}),
               ejected,
             }).filter((c) => !ejected.has(c.profile.did));
@@ -710,7 +727,10 @@ export function createQueryServiceTool(options: QueryServiceToolOptions): AgentT
               .filter((c, i, all) => all.findIndex((x) => x.profile.did === c.profile.did) === i)
               .slice(0, MAX_QUERY_FALLBACKS)
               .map((c) => {
-                const hash = schemaForCapability(c.profile.capabilitySchemas, capability)?.schemaHash;
+                const hash = schemaForCapability(
+                  c.profile.capabilitySchemas,
+                  capability,
+                )?.schemaHash;
                 return {
                   toDID: c.profile.did,
                   ...(c.profile.uri !== undefined ? { serviceUri: c.profile.uri } : {}),

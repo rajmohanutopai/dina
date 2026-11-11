@@ -24,14 +24,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 
 import { useViewerPreferences } from '../../src/hooks/useViewerPreferences';
 import { FacetBarView } from '../../src/peerlens/components/facet_bar_view';
@@ -113,9 +106,7 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
   // didn't provide any controlled state (tests always pass at least
   // one of `results`/`isLoading`/`error`, so they keep the screen pure).
   const isControlled =
-    props.results !== undefined ||
-    props.isLoading !== undefined ||
-    props.error !== undefined;
+    props.results !== undefined || props.isLoading !== undefined || props.error !== undefined;
   const [retryNonce, setRetryNonce] = React.useState(0);
   // Refetch when the screen regains focus — covers re-deep-linking with
   // the same query (Expo Router doesn't remount, so q-keyed effects
@@ -214,11 +205,7 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
         onTap={onTapFacet}
         onShowMore={onShowMoreFacets}
       />
-      <ViewerFilterChipsView
-        filters={filters}
-        active={activeFilters}
-        onToggle={onToggleFilter}
-      />
+      <ViewerFilterChipsView filters={filters} active={activeFilters} onToggle={onToggleFilter} />
 
       {isLoading && displayedResults.length === 0 ? (
         <View style={styles.loading} testID="search-loading">
@@ -249,10 +236,7 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
                 },
               })
             }
-            style={({ pressed }) => [
-              styles.writeCta,
-              pressed && styles.writeCtaPressed,
-            ]}
+            style={({ pressed }) => [styles.writeCta, pressed && styles.writeCtaPressed]}
             testID="search-write-cta"
             accessibilityRole="button"
             accessibilityLabel={
@@ -266,10 +250,7 @@ export default function SearchScreen(props: SearchScreenProps): React.ReactEleme
           </Pressable>
         </View>
       ) : (
-        <ScrollView
-          contentContainerStyle={styles.resultsContainer}
-          testID="search-results"
-        >
+        <ScrollView contentContainerStyle={styles.resultsContainer} testID="search-results">
           {displayedResults.map((r) => (
             <SubjectCardView
               key={r.subjectId}

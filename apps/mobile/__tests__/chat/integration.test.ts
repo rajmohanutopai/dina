@@ -16,7 +16,6 @@ import { buildDIDDocument, validateDIDDocument } from '../../../core/src/identit
 import { signCanonical, verifyCanonical, canonicalize } from '../../../core/src/identity/signing';
 import { storeItem, queryVault, clearVaults } from '../../../core/src/vault/crud';
 
-
 const pubKey = getPublicKey(TEST_ED25519_SEED);
 const did = deriveDIDKey(pubKey);
 const pubKeyMultibase = publicKeyToMultibase(pubKey);

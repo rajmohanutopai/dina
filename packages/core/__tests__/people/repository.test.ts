@@ -4,16 +4,16 @@
  * scenarios so behaviour stays in lockstep across the two stacks.
  */
 
-import {
-  computeExtractionFingerprint,
-  type PeopleRepository,
-} from '../../src/people/repository';
+import { computeExtractionFingerprint, type PeopleRepository } from '../../src/people/repository';
 
 import { openPeopleHarness, type PeopleHarness } from './_harness';
 
 import type { ExtractionResult, ExtractionPersonLink } from '../../src/people/domain';
 
-function lc(canonicalName: string, surfaces: ExtractionPersonLink['surfaces']): ExtractionPersonLink {
+function lc(
+  canonicalName: string,
+  surfaces: ExtractionPersonLink['surfaces'],
+): ExtractionPersonLink {
   return {
     canonicalName,
     relationshipHint: '',
@@ -76,11 +76,7 @@ describe('SQLitePeopleRepository', () => {
     it('is idempotent across re-runs of the same extractor on the same item', () => {
       const result = ext({
         sourceItemId: 'item-1',
-        results: [
-          lc('Sancho', [
-            { surface: 'Sancho', surfaceType: 'name', confidence: 'medium' },
-          ]),
-        ],
+        results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }])],
       });
       const first = repo.applyExtraction(result);
       const second = repo.applyExtraction(result);
@@ -115,9 +111,7 @@ describe('SQLitePeopleRepository', () => {
       repo.applyExtraction(
         ext({
           sourceItemId: 'item-1',
-          results: [
-            lc('Alice', [{ surface: 'Alice', surfaceType: 'name', confidence: 'high' }]),
-          ],
+          results: [lc('Alice', [{ surface: 'Alice', surfaceType: 'name', confidence: 'high' }])],
         }),
       );
       const second = repo.applyExtraction(
@@ -225,9 +219,11 @@ describe('SQLitePeopleRepository', () => {
       expect(second.conflicts).toEqual([]);
       const all = repo.listPeople();
       expect(all).toHaveLength(1);
-      expect(all[0].surfaces?.map((s) => s.normalizedSurface).sort()).toEqual(
-        ['carlos', 'carlos garcia', 'my brother'],
-      );
+      expect(all[0].surfaces?.map((s) => s.normalizedSurface).sort()).toEqual([
+        'carlos',
+        'carlos garcia',
+        'my brother',
+      ]);
     });
 
     it('upsert: same (person, normalized_surface) updates instead of inserting', () => {
@@ -239,9 +235,7 @@ describe('SQLitePeopleRepository', () => {
         ext({
           sourceItemId: 'item-1',
           extractorVersion: 'v1',
-          results: [
-            lc('Eve', [{ surface: 'Eve', surfaceType: 'name', confidence: 'high' }]),
-          ],
+          results: [lc('Eve', [{ surface: 'Eve', surfaceType: 'name', confidence: 'high' }])],
         }),
       );
       // Same surface, second extraction adds a nickname. The "Eve"
@@ -275,9 +269,7 @@ describe('SQLitePeopleRepository', () => {
       repo.applyExtraction(
         ext({
           sourceItemId: 'item-1',
-          results: [
-            lc('Frank', [{ surface: 'Frank', surfaceType: 'name', confidence: 'medium' }]),
-          ],
+          results: [lc('Frank', [{ surface: 'Frank', surfaceType: 'name', confidence: 'medium' }])],
         }),
       );
       const frank = repo.listPeople().find((p) => p.canonicalName === 'Frank');
@@ -392,9 +384,7 @@ describe('SQLitePeopleRepository', () => {
       repo.applyExtraction(
         ext({
           sourceItemId: 'item-1',
-          results: [
-            lc('Grace', [{ surface: 'Grace', surfaceType: 'name', confidence: 'medium' }]),
-          ],
+          results: [lc('Grace', [{ surface: 'Grace', surfaceType: 'name', confidence: 'medium' }])],
         }),
       );
       const person = repo.listPeople()[0];
@@ -568,13 +558,17 @@ describe('SQLitePeopleRepository', () => {
       const a = repo.applyExtraction(
         ext({
           sourceItemId: 'i1',
-          results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }])],
+          results: [
+            lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }]),
+          ],
         }),
       );
       const b = repo.applyExtraction(
         ext({
           sourceItemId: 'i2',
-          results: [lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }])],
+          results: [
+            lc('Sancho', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'medium' }]),
+          ],
         }),
       );
       const aId = a.personIds?.[0];
@@ -654,9 +648,7 @@ describe('SQLitePeopleRepository', () => {
       repo.applyExtraction(
         ext({
           sourceItemId: 'item-1',
-          results: [
-            lc('Maybe', [{ surface: 'Maybe', surfaceType: 'name', confidence: 'medium' }]),
-          ],
+          results: [lc('Maybe', [{ surface: 'Maybe', surfaceType: 'name', confidence: 'medium' }])],
         }),
       );
       // Surface is suggested → not in resolution map.
@@ -692,9 +684,7 @@ describe('SQLitePeopleRepository', () => {
         ext({
           sourceItemId: 'item-1',
           results: [
-            lc('Goneville', [
-              { surface: 'Goneville', surfaceType: 'name', confidence: 'high' },
-            ]),
+            lc('Goneville', [{ surface: 'Goneville', surfaceType: 'name', confidence: 'high' }]),
           ],
         }),
       );
@@ -759,9 +749,7 @@ describe('SQLitePeopleRepository', () => {
         r.applyExtraction(
           ext({
             sourceItemId: 'item-1',
-            results: [
-              lc('Solid', [{ surface: 'Solid', surfaceType: 'name', confidence: 'high' }]),
-            ],
+            results: [lc('Solid', [{ surface: 'Solid', surfaceType: 'name', confidence: 'high' }])],
           }),
         );
         now = now + 60 * 86_400 * 1000;
@@ -784,9 +772,7 @@ describe('SQLitePeopleRepository', () => {
           ext({
             sourceItemId: 'item-1',
             results: [
-              lc('Touched', [
-                { surface: 'Touched', surfaceType: 'name', confidence: 'medium' },
-              ]),
+              lc('Touched', [{ surface: 'Touched', surfaceType: 'name', confidence: 'medium' }]),
             ],
           }),
         );

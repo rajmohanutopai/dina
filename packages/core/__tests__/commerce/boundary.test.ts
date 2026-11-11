@@ -250,9 +250,9 @@ describe('commerce aggregate boundary', () => {
     expect(routes.match(/function ownerPresentNowForRoutes\(/g) ?? []).toHaveLength(1);
     // And no hand-rolled constant standing in for either.
     expect(/userPresent:\s*\(\)\s*=>\s*(false|true)/.test(routes)).toBe(false);
-    expect(/function ownerPresenceCanBeEstablished\(\)[\s\S]{0,80}return (false|true);/.test(routes)).toBe(
-      false,
-    );
+    expect(
+      /function ownerPresenceCanBeEstablished\(\)[\s\S]{0,80}return (false|true);/.test(routes),
+    ).toBe(false);
   });
 
   /**
@@ -992,10 +992,7 @@ describe('commerce aggregate boundary', () => {
     const NOT_YET_CALLED = new Map<string, string>([
       // Each entry is a capability the product does not YET have, said out
       // loud. A row here is a promise to wire it, not permission to forget.
-      [
-        'idempotency_store.ts:forget',
-        '§15.5 probe eviction — no retention sweep calls it yet',
-      ],
+      ['idempotency_store.ts:forget', '§15.5 probe eviction — no retention sweep calls it yet'],
       // Exposed the moment this rule stopped counting the in-memory double's
       // `Map.delete` as a use. A draft holds the extracted rows of a
       // photographed price list — the seller's own data — and there is no way
@@ -1008,7 +1005,7 @@ describe('commerce aggregate boundary', () => {
       ],
       [
         'order_draft_store.ts:delete',
-        '§6 buyer erasure — rides PC-8\'s retention screen with the photographs',
+        "§6 buyer erasure — rides PC-8's retention screen with the photographs",
       ],
       [
         'sku_ledger.ts:highWater',

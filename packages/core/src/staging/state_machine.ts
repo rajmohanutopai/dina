@@ -60,7 +60,10 @@ const TRANSITIONS: Record<StagingStatus, Set<StagingStatus>> = {
 export const CHAT_AUTO_SOURCE = 'chat_auto';
 
 /** Sources whose items are the owner's own memories (dedup, §2.4; TTL, below). */
-export const OWNER_MEMORY_SOURCES: ReadonlySet<string> = new Set(['user_remember', CHAT_AUTO_SOURCE]);
+export const OWNER_MEMORY_SOURCES: ReadonlySet<string> = new Set([
+  'user_remember',
+  CHAT_AUTO_SOURCE,
+]);
 
 /**
  * The TTL purge may not delete this row. An owner memory that has not reached

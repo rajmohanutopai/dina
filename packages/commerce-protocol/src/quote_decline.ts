@@ -45,7 +45,7 @@ export type QuoteDecline = {
   reason_code: string;
   issued_at: string;
   decline_digest: string;
-}
+};
 
 export type ReadQuoteDecline = { ok: true; decline: QuoteDecline } | { ok: false; error: string };
 
@@ -90,4 +90,3 @@ export function verifyQuoteDeclineAgainstRequest(
   }
   return verifyConversationVersion(request.protocol_version, decline.protocol_version, 'decline');
 }
-

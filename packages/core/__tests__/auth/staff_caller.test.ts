@@ -19,7 +19,7 @@ import {
 
 const STAFF_DID = 'did:key:zstaffclerk';
 
-describe("resolveCallerType — staff role (§6.2)", () => {
+describe('resolveCallerType — staff role (§6.2)', () => {
   beforeEach(() => {
     resetCallerTypeState();
     registerDevice(STAFF_DID, 'Order clerk phone');
@@ -143,19 +143,21 @@ describe('authz matrix — the staff surface is the trade prefix and nothing els
   });
 });
 describe('the SIGNED pipeline admits a staff device (the harnesses preset callerType and never noticed)', () => {
-  const { TEST_ED25519_SEED } = jest.requireActual<typeof import('@dina/test-harness')>('@dina/test-harness');
-  const { signRequest } = jest.requireActual<typeof import('../../src/auth/canonical')>('../../src/auth/canonical');
-  const {
-    authenticateRequest,
-    registerPublicKeyResolver,
-    resetMiddlewareState,
-  } = jest.requireActual<typeof import('../../src/auth/middleware')>('../../src/auth/middleware');
+  const { TEST_ED25519_SEED } =
+    jest.requireActual<typeof import('@dina/test-harness')>('@dina/test-harness');
+  const { signRequest } = jest.requireActual<typeof import('../../src/auth/canonical')>(
+    '../../src/auth/canonical',
+  );
+  const { authenticateRequest, registerPublicKeyResolver, resetMiddlewareState } =
+    jest.requireActual<typeof import('../../src/auth/middleware')>('../../src/auth/middleware');
   const {
     registerDevice: registerCallerDevice,
     resetCallerTypeState,
     setDeviceRoleResolver,
   } = jest.requireActual<typeof import('../../src/auth/caller_type')>('../../src/auth/caller_type');
-  const { getPublicKey } = jest.requireActual<typeof import('../../src/crypto/ed25519')>('../../src/crypto/ed25519');
+  const { getPublicKey } = jest.requireActual<typeof import('../../src/crypto/ed25519')>(
+    '../../src/crypto/ed25519',
+  );
 
   const staffDid = 'did:key:z6MkSignedStaffPhone';
   const pubKey = getPublicKey(TEST_ED25519_SEED);

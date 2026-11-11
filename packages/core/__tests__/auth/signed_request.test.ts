@@ -3,7 +3,13 @@
  * malformed material is a refusal, never a throw.
  */
 
-import { NonceCache, checkRequestSignature, deriveDIDKey, getPublicKey, signRequest } from '../../src';
+import {
+  NonceCache,
+  checkRequestSignature,
+  deriveDIDKey,
+  getPublicKey,
+  signRequest,
+} from '../../src';
 
 const privateKey = new Uint8Array(32).fill(5);
 const did = deriveDIDKey(getPublicKey(privateKey));

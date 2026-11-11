@@ -413,9 +413,7 @@ export class InMemoryReservationRepository implements ReservationRepository {
     return [...this.rows.values()]
       .filter(
         (r) =>
-          r.sealed_response_ref !== null &&
-          r.state !== 'reserved' &&
-          r.state !== 'held_by_lock',
+          r.sealed_response_ref !== null && r.state !== 'reserved' && r.state !== 'held_by_lock',
       )
       .sort((a, b) => a.cursor - b.cursor)
       .map((r) => ({ ...r }));

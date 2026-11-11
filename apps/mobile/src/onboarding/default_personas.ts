@@ -29,12 +29,7 @@
  * cross-stack classifier divergence.
  */
 
-import {
-  createPersona,
-  personaExists,
-  setPersonaDescription,
-  type PersonaTier,
-} from '@dina/core';
+import { createPersona, personaExists, setPersonaDescription, type PersonaTier } from '@dina/core';
 
 export interface DefaultPersonaSpec {
   name: string;

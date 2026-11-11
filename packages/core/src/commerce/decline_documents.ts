@@ -129,10 +129,9 @@ export class SQLiteDeclineDocumentRepository implements DeclineDocumentRepositor
   }
 
   get(recordDigest: string): DeclineDocumentRow | null {
-    const rows = this.db.query(
-      `SELECT * FROM commerce_decline_documents WHERE record_digest = ?`,
-      [recordDigest],
-    );
+    const rows = this.db.query(`SELECT * FROM commerce_decline_documents WHERE record_digest = ?`, [
+      recordDigest,
+    ]);
     return rows[0] === undefined ? null : declineRowFromDb(rows[0]);
   }
 

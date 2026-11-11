@@ -30,7 +30,9 @@ interface ScheduledRecord {
   trigger: { type: string; seconds: number; channelId?: string };
 }
 
-type ResponseListener = (response: { notification: { request: { content: { data: Record<string, unknown> } } } }) => void;
+type ResponseListener = (response: {
+  notification: { request: { content: { data: Record<string, unknown> } } };
+}) => void;
 
 let permissionResult: {
   granted: boolean;
@@ -40,7 +42,9 @@ let permissionResult: {
 
 const scheduled = new Map<string, ScheduledRecord>();
 const responseListeners = new Set<ResponseListener>();
-let lastResponse: { notification: { request: { content: { data: Record<string, unknown> } } } } | null = null;
+let lastResponse: {
+  notification: { request: { content: { data: Record<string, unknown> } } };
+} | null = null;
 
 export const AndroidImportance = {
   UNKNOWN: 0,
@@ -144,9 +148,9 @@ export function addNotificationResponseReceivedListener(listener: ResponseListen
   };
 }
 
-export async function getLastNotificationResponseAsync(): Promise<
-  { notification: { request: { content: { data: Record<string, unknown> } } } } | null
-> {
+export async function getLastNotificationResponseAsync(): Promise<{
+  notification: { request: { content: { data: Record<string, unknown> } } };
+} | null> {
   return lastResponse;
 }
 
@@ -158,10 +162,7 @@ export async function clearLastNotificationResponseAsync(): Promise<void> {
 // Test helpers — exported with `__` prefix to mark them as mock-only.
 // ---------------------------------------------------------------------------
 
-export function __setPermissionResult(result: {
-  granted: boolean;
-  canAskAgain?: boolean;
-}): void {
+export function __setPermissionResult(result: { granted: boolean; canAskAgain?: boolean }): void {
   permissionResult = {
     granted: result.granted,
     canAskAgain: result.canAskAgain ?? true,
@@ -169,8 +170,7 @@ export function __setPermissionResult(result: {
 }
 
 export function __setLastNotificationResponse(data: Record<string, unknown> | null): void {
-  lastResponse =
-    data === null ? null : { notification: { request: { content: { data } } } };
+  lastResponse = data === null ? null : { notification: { request: { content: { data } } } };
 }
 
 export function __fireNotificationResponse(data: Record<string, unknown>): void {

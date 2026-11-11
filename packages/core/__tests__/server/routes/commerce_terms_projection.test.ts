@@ -139,13 +139,17 @@ function setUpStore(
   const store = fleet.add(STORE_DID);
   const set = store.engine.setPolicy(policy);
   if (!set.ok) throw new Error(set.refusal);
-  const published = publishListing(store, {
-    listingId: 'slot-3',
-    resourceRef: 'slot-3',
-    kind: 'shelf',
-    region: { scheme: 'postal_area', value: 'IN-560034' },
-    tags: ['beverages.juice', 'snacks'],
-  }, access);
+  const published = publishListing(
+    store,
+    {
+      listingId: 'slot-3',
+      resourceRef: 'slot-3',
+      kind: 'shelf',
+      region: { scheme: 'postal_area', value: 'IN-560034' },
+      tags: ['beverages.juice', 'snacks'],
+    },
+    access,
+  );
   if (!published.ok) throw new Error(published.refusal);
   return { store, listing: published.listing, uri: published.uri };
 }
@@ -199,8 +203,7 @@ function raiseAllFive(fleets: Fleet[]): Map<string, Raised> {
   // Stranger: under contacts_or_card an unknown brand is held and the owner asked.
   {
     const fleet = fresh();
-    const { store, listing, uri } = setUpStore(fleet, juicePolicy(),
-        'contacts_or_card');
+    const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
     teeCards(store);
     ask(fleet.add(BRAND_DID), listing, uri, 3);
     fleet.pump();
@@ -472,8 +475,14 @@ describe('R-07 — the five term cards as Brain reads them', () => {
   it('on the phone, Brain’s in-process client reads the cards redacted and cannot decide them; the owner’s reads them whole (R-10)', async () => {
     const brainClient = new InProcessTransport(router, undefined, { workflowCaller: 'brain' });
     const ownerClient = new InProcessTransport(router);
-    const asBrain = await brainClient.listWorkflowTasks({ kind: 'approval', state: 'pending_approval' });
-    const asOwner = await ownerClient.listWorkflowTasks({ kind: 'approval', state: 'pending_approval' });
+    const asBrain = await brainClient.listWorkflowTasks({
+      kind: 'approval',
+      state: 'pending_approval',
+    });
+    const asOwner = await ownerClient.listWorkflowTasks({
+      kind: 'approval',
+      state: 'pending_approval',
+    });
     for (const type of FIVE_TYPES) {
       const { spec } = raisedCard(type);
       const brainView = asBrain.find((t) => t.id === spec.cardId);
@@ -643,7 +652,10 @@ describe('R-07 — no term route is Brain’s', () => {
     // server's signed HTTP one and the phone's in-process one. (The interface,
     // core-client.ts, names no paths at all, so scanning it proved nothing.)
     for (const transport of ['http-transport.ts', 'in-process-transport.ts']) {
-      const text = fs.readFileSync(path.resolve(__dirname, '../../../src/client', transport), 'utf8');
+      const text = fs.readFileSync(
+        path.resolve(__dirname, '../../../src/client', transport),
+        'utf8',
+      );
       // Sanity: the file does carry routes, so the scan can find one.
       expect([transport, /\/v1\/workflow\/tasks/.test(text)]).toEqual([transport, true]);
       expect([transport, text.match(/\/v1\/commerce\/terms[^'`"]*/g)]).toEqual([transport, null]);

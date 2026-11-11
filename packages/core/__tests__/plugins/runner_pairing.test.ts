@@ -17,7 +17,10 @@ import { getPublicKey } from '../../src/crypto/ed25519';
 import { resetDeviceRegistry } from '../../src/devices/registry';
 import { publicKeyToMultibase } from '../../src/identity/did';
 import { clearPairingState, completePairing, setNodeDID } from '../../src/pairing/ceremony';
-import { SQLitePluginInstallRepository, setPluginInstallRepository } from '../../src/plugins/registry';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
 import { issueRunnerPairingCode, runnerPairingState } from '../../src/plugins/runner_pairing';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
@@ -118,12 +121,18 @@ describe('runnerPairingState (§15.3)', () => {
     if (goneInstall === null) throw new Error('expected the pending install');
     const { code } = issueRunnerPairingCode(goneInstall);
     installs.remove(gone);
-    expect(runnerPairingState(gone, code, NOW_SEC)).toMatchObject({ state: 'refused', error: expect.stringMatching(/gone/) });
+    expect(runnerPairingState(gone, code, NOW_SEC)).toMatchObject({
+      state: 'refused',
+      error: expect.stringMatching(/gone/),
+    });
 
     const activated = pendingRunner();
     installs.bindPendingDevice(activated, 'did:key:zrunner', NOW);
     installs.activate(activated, 'did:key:zrunner', NOW);
-    expect(runnerPairingState(activated, code, NOW_SEC)).toMatchObject({ state: 'refused', error: expect.stringMatching(/active/) });
+    expect(runnerPairingState(activated, code, NOW_SEC)).toMatchObject({
+      state: 'refused',
+      error: expect.stringMatching(/active/),
+    });
 
     const expired = pendingRunner(-1);
     expect(runnerPairingState(expired, code, Math.floor(Date.now() / 1000))).toMatchObject({

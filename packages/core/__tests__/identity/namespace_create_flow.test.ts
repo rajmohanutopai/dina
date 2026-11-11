@@ -332,9 +332,7 @@ describe('nextAvailableNamespaceIndex', () => {
   });
 
   it('returns 0 when verificationMethods is non-object (e.g. null)', () => {
-    expect(
-      nextAvailableNamespaceIndex({ verificationMethods: null as unknown as object }),
-    ).toBe(0);
+    expect(nextAvailableNamespaceIndex({ verificationMethods: null as unknown as object })).toBe(0);
   });
 });
 
@@ -343,7 +341,8 @@ describe('nextAvailableNamespaceIndex', () => {
 function base64urlDecode(s: string): Uint8Array {
   const padLen = (4 - (s.length % 4)) % 4;
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat(padLen);
-  const bin = typeof atob !== 'undefined' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
+  const bin =
+    typeof atob !== 'undefined' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
   const out = new Uint8Array(bin.length);
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out;

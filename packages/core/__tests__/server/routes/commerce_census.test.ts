@@ -9,12 +9,12 @@
  * plane was never configured.
  */
 
+import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
 import { CommerceOrderStore } from '../../../src/commerce/commerce_order';
 import {
   InMemoryCommerceOrderRefRepository,
   type CommerceOrderRef,
 } from '../../../src/commerce/order_refs';
-import { InMemoryBuyerOrderRepository } from '../../../src/commerce/buyer_orders';
 import { installCommerceRuntime, type CommerceRuntime } from '../../../src/commerce/runtime';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerCommerceRoutes } from '../../../src/server/routes/commerce';

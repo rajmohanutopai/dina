@@ -546,9 +546,7 @@ export interface ApprovalManager {
 
 export interface CrashLogger {
   store(entry: { component: string; message: string; stack_hash: string }): Promise<void>;
-  query(
-    since: number,
-  ): Promise<{ id: number; ts: number; component: string; message: string }[]>;
+  query(since: number): Promise<{ id: number; ts: number; component: string; message: string }[]>;
   purge(retentionDays: number): Promise<number>;
 }
 

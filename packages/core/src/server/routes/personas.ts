@@ -44,7 +44,9 @@ async function handleList(resolveList: () => PersonaState[]): Promise<CoreRespon
       name: p.name,
       tier: p.tier,
       isOpen: p.isOpen,
-      ...(p.description !== undefined && p.description !== '' ? { description: p.description } : {}),
+      ...(p.description !== undefined && p.description !== ''
+        ? { description: p.description }
+        : {}),
     }))
     .sort((a, b) => a.name.localeCompare(b.name));
   return { status: 200, body: { personas } };

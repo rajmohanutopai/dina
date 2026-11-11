@@ -8,16 +8,8 @@
  * set + accessible-personas publication.
  */
 
-import {
-  getAccessiblePersonas,
-  setAccessiblePersonas,
-} from '@dina/brain';
-import {
-  createPersona,
-  getPersona,
-  listPersonas,
-  resetPersonaState,
-} from '@dina/core';
+import { getAccessiblePersonas, setAccessiblePersonas } from '@dina/brain';
+import { createPersona, getPersona, resetPersonaState } from '@dina/core';
 
 import { openAllPersonasForInAppUser } from '../src/persona_lifecycle';
 
@@ -40,12 +32,7 @@ describe('openAllPersonasForInAppUser', () => {
     const opened = await openAllPersonasForInAppUser();
 
     expect(opened.sort()).toEqual(['finance', 'general', 'health', 'work']);
-    expect(getAccessiblePersonas().sort()).toEqual([
-      'finance',
-      'general',
-      'health',
-      'work',
-    ]);
+    expect(getAccessiblePersonas().sort()).toEqual(['finance', 'general', 'health', 'work']);
     expect(getPersona('health')?.isOpen).toBe(true);
     expect(getPersona('finance')?.isOpen).toBe(true);
   });
@@ -194,6 +181,8 @@ describe('TT-17: a vault that fails to open', () => {
 
   it('with no error sink, a failure still aborts', async () => {
     createPersona('health', 'sensitive', 'health');
-    await expect(openAllPersonasForInAppUser({ openVaultDB: failHealth })).rejects.toThrow('not a database');
+    await expect(openAllPersonasForInAppUser({ openVaultDB: failHealth })).rejects.toThrow(
+      'not a database',
+    );
   });
 });

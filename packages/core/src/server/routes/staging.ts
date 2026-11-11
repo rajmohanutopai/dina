@@ -2,13 +2,13 @@
  * Staging inbox routes — ingest / claim / resolve / fail / extend-lease.
  */
 
-import {
-  isPositiveRememberRequest,
-  verifySpanProof,
-  type SpanProof,
-} from '../../a2a/span_proof';
+import { isPositiveRememberRequest, verifySpanProof, type SpanProof } from '../../a2a/span_proof';
 import { STAGING_ITEM_TTL_S } from '../../constants';
-import { isUnknownPersona, resolveInstalledPersonaName , validatePersonaName } from '../../persona/service';
+import {
+  isUnknownPersona,
+  resolveInstalledPersonaName,
+  validatePersonaName,
+} from '../../persona/service';
 import {
   ingest,
   claim,
@@ -85,7 +85,8 @@ function readSpanProof(body: Record<string, unknown>): SpanProof | null {
   const turnText = body.turn_text;
   const start = body.start;
   const end = body.end;
-  if (typeof rs !== 'string' || rs === '' || typeof turnId !== 'string' || turnId === '') return null;
+  if (typeof rs !== 'string' || rs === '' || typeof turnId !== 'string' || turnId === '')
+    return null;
   if (typeof turnText !== 'string' || turnText === '' || turnText.length > 20_000) return null;
   if (typeof start !== 'number' || typeof end !== 'number') return null;
   return { releaseSession: rs, turnId, turnText, start, end };
@@ -99,7 +100,10 @@ function claimTokenOf(body: Record<string, unknown>): string | undefined {
 
 /** A stale claim is a conflict the worker can read; anything else is its bad request. */
 function errorResponse(err: unknown): { status: number; body: { error: string } } {
-  return { status: err instanceof StaleStagingClaimError ? 409 : 400, body: { error: errMsg(err) } };
+  return {
+    status: err instanceof StaleStagingClaimError ? 409 : 400,
+    body: { error: errMsg(err) },
+  };
 }
 
 export function registerStagingRoutes(router: CoreRouter): void {
@@ -182,14 +186,20 @@ export function registerStagingRoutes(router: CoreRouter): void {
   // `chat_auto`, which needs the owner's approval for a sensitive or locked
   // vault. Brain-only (`/v1/staging/` authz); never a body-chosen source.
   router.post('/v1/staging/ingest-owner-words', async (req) => {
-    if (!(req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined))) {
+    if (
+      !(
+        req.callerType === 'brain' ||
+        (req.trustedInProcess === true && req.callerType === undefined)
+      )
+    ) {
       return { status: 403, body: { error: 'brain only' } };
     }
     const body = (req.body as Record<string, unknown> | undefined) ?? {};
     const proof = readSpanProof(body);
     if (proof === null) return { status: 400, body: { error: 'a span proof is required' } };
     const checked = verifySpanProof(proof, 'remember');
-    if (!checked.ok) return { status: 409, body: { error: 'no_owner_turn', reason: checked.reason } };
+    if (!checked.ok)
+      return { status: 409, body: { error: 'no_owner_turn', reason: checked.reason } };
     const source = isPositiveRememberRequest(checked.turnText, checked.span)
       ? 'user_remember'
       : CHAT_AUTO_SOURCE;
@@ -201,7 +211,12 @@ export function registerStagingRoutes(router: CoreRouter): void {
     const item = getItem(result.id);
     return {
       status: result.duplicate ? 200 : 201,
-      body: { id: result.id, duplicate: result.duplicate, status: item?.status ?? 'received', source },
+      body: {
+        id: result.id,
+        duplicate: result.duplicate,
+        status: item?.status ?? 'received',
+        source,
+      },
     };
   });
 

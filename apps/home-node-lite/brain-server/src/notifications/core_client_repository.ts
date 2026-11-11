@@ -13,11 +13,7 @@
  * purge and no Core route for it.
  */
 
-import type {
-  CoreClient,
-  NotificationLogRepository,
-  StoredNotificationItem,
-} from '@dina/core';
+import type { CoreClient, NotificationLogRepository, StoredNotificationItem } from '@dina/core';
 
 export class CoreClientNotificationLogRepository implements NotificationLogRepository {
   constructor(private readonly core: CoreClient) {}

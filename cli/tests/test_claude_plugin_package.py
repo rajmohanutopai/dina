@@ -96,7 +96,7 @@ def test_plugin_uses_only_the_automatic_standard_hooks_file() -> None:
     assert pre_tool_use[0]["hooks"] == [
         {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dina-gate",
+            "command": '"${CLAUDE_PLUGIN_ROOT}/bin/dina-gate"',
         }
     ]
     session_end = hooks["hooks"]["SessionEnd"]

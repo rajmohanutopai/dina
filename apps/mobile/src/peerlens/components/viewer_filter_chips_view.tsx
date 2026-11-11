@@ -50,12 +50,7 @@ export function ViewerFilterChipsView(
         contentContainerStyle={styles.scroll}
       >
         {filters.map((f) => (
-          <Chip
-            key={f.id}
-            filter={f}
-            isActive={active.has(f.id)}
-            onToggle={onToggle}
-          />
+          <Chip key={f.id} filter={f} isActive={active.has(f.id)} onToggle={onToggle} />
         ))}
       </ScrollView>
     </View>
@@ -84,9 +79,7 @@ function Chip(props: ChipProps): React.ReactElement {
       accessibilityLabel={filter.label}
       testID={`viewer-filter-chip-${filter.id}`}
     >
-      <Text style={[styles.chipLabel, isActive && styles.chipLabelActive]}>
-        {filter.label}
-      </Text>
+      <Text style={[styles.chipLabel, isActive && styles.chipLabelActive]}>{filter.label}</Text>
     </Pressable>
   );
 }

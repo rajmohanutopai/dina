@@ -365,9 +365,17 @@ describe('PDSPublisher', () => {
       new PDSPublisher({ pdsUrl: PDS, handle: HANDLE, password: PASSWORD, fetch: fetchFn });
 
     it('reads the repository head', async () => {
-      const { fetchFn, calls } = makeFetch([sessionOK(), jsonResponse(200, { cid: 'bafyhead', rev: '3l2abc' })]);
-      expect(await publisher(fetchFn).getLatestCommit()).toEqual({ cid: 'bafyhead', rev: '3l2abc' });
-      expect(calls[1].url).toBe(`${PDS}/xrpc/com.atproto.sync.getLatestCommit?did=${encodeURIComponent(DID)}`);
+      const { fetchFn, calls } = makeFetch([
+        sessionOK(),
+        jsonResponse(200, { cid: 'bafyhead', rev: '3l2abc' }),
+      ]);
+      expect(await publisher(fetchFn).getLatestCommit()).toEqual({
+        cid: 'bafyhead',
+        rev: '3l2abc',
+      });
+      expect(calls[1].url).toBe(
+        `${PDS}/xrpc/com.atproto.sync.getLatestCommit?did=${encodeURIComponent(DID)}`,
+      );
     });
 
     it.each([
@@ -386,10 +394,18 @@ describe('PDSPublisher', () => {
         jsonResponse(400, { error: 'InvalidSwap', message: 'head moved' }),
       ]);
       const p = publisher(fetchFn);
-      await p.putRecord('com.dinakernel.a2a.card', 'self', { card: '{}' }, { swapCommit: 'bafyhead' });
+      await p.putRecord(
+        'com.dinakernel.a2a.card',
+        'self',
+        { card: '{}' },
+        { swapCommit: 'bafyhead' },
+      );
       expect(calls[1].body).toEqual(expect.objectContaining({ swapCommit: 'bafyhead' }));
       expect('swapRecord' in (calls[1].body as object)).toBe(false);
-      await p.deleteRecord('com.dinakernel.a2a.card', 'self', { swapCommit: 'bafyhead', swapRecord: 'bafyrec' });
+      await p.deleteRecord('com.dinakernel.a2a.card', 'self', {
+        swapCommit: 'bafyhead',
+        swapRecord: 'bafyrec',
+      });
       expect(calls[2].body).toEqual({
         repo: DID,
         collection: 'com.dinakernel.a2a.card',

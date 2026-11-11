@@ -243,7 +243,7 @@ export function filterByTier(
   if (tier === 'none' || tier === 'locked') return null;
 
   if (tier === 'summary') {
-    const { body, ...rest } = data;
+    const { body: _body, ...rest } = data;
     return rest;
   }
 
@@ -310,7 +310,7 @@ export interface TieredPayload {
  * @returns { full, summary } pair
  */
 export function buildTieredPayload(data: Record<string, unknown>): TieredPayload {
-  const { body, ...summaryData } = data;
+  const { body: _body, ...summaryData } = data;
   return {
     full: { ...data },
     summary: summaryData,

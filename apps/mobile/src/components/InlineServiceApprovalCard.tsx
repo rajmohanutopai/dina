@@ -22,7 +22,8 @@
 import React, { useCallback, useState } from 'react';
 import { Text, TouchableOpacity, View, StyleSheet } from 'react-native';
 
-import { addSystemMessage ,
+import {
+  addSystemMessage,
   getServiceApproveCommandHandler,
   getServiceDenyCommandHandler,
 } from '@dina/brain/chat';
@@ -139,7 +140,9 @@ export function InlineServiceApprovalCard({
       <Text testID={`service-approval-card-body-${meta.taskId}`} style={styles.body}>
         <Text style={styles.requester}>{requesterLabel}</Text> asks
         {meta.serviceName !== '' ? ` ${meta.serviceName}` : ''}:{' '}
-        <Text testID={`service-approval-card-capability-${meta.taskId}`} style={styles.capability}>{meta.capability}</Text>
+        <Text testID={`service-approval-card-capability-${meta.taskId}`} style={styles.capability}>
+          {meta.capability}
+        </Text>
       </Text>
       {meta.paramsPreview !== '' ? (
         <Text

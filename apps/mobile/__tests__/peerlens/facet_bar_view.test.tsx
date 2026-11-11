@@ -38,9 +38,7 @@ const SAMPLE_FACETS: FacetBar = {
 
 describe('FacetBarView — render', () => {
   it('renders null when both primary and overflow are empty', () => {
-    const { queryByTestId } = render(
-      <FacetBarView facets={{ primary: [], overflow: [] }} />,
-    );
+    const { queryByTestId } = render(<FacetBarView facets={{ primary: [], overflow: [] }} />);
     expect(queryByTestId('facet-bar')).toBeNull();
   });
 
@@ -81,17 +79,13 @@ describe('FacetBarView — render', () => {
 
 describe('FacetBarView — active state', () => {
   it('"All" chip has selected=true when activeValue is null', () => {
-    const { getByTestId } = render(
-      <FacetBarView facets={SAMPLE_FACETS} activeValue={null} />,
-    );
+    const { getByTestId } = render(<FacetBarView facets={SAMPLE_FACETS} activeValue={null} />);
     const chip = getByTestId('facet-chip-all');
     expect(chip.props.accessibilityState).toMatchObject({ selected: true });
   });
 
   it('chip with matching value has selected=true', () => {
-    const { getByTestId } = render(
-      <FacetBarView facets={SAMPLE_FACETS} activeValue="Phones" />,
-    );
+    const { getByTestId } = render(<FacetBarView facets={SAMPLE_FACETS} activeValue="Phones" />);
     const phonesChip = getByTestId('facet-chip-Phones');
     expect(phonesChip.props.accessibilityState).toMatchObject({ selected: true });
     // "All" chip is no longer selected.
@@ -100,9 +94,7 @@ describe('FacetBarView — active state', () => {
   });
 
   it('non-active chips have selected=false', () => {
-    const { getByTestId } = render(
-      <FacetBarView facets={SAMPLE_FACETS} activeValue="Furniture" />,
-    );
+    const { getByTestId } = render(<FacetBarView facets={SAMPLE_FACETS} activeValue="Furniture" />);
     expect(getByTestId('facet-chip-Books').props.accessibilityState).toMatchObject({
       selected: false,
     });
@@ -112,27 +104,21 @@ describe('FacetBarView — active state', () => {
 describe('FacetBarView — tap behaviour', () => {
   it('tap on "All" fires onTap with null', () => {
     const onTap = jest.fn();
-    const { getByTestId } = render(
-      <FacetBarView facets={SAMPLE_FACETS} onTap={onTap} />,
-    );
+    const { getByTestId } = render(<FacetBarView facets={SAMPLE_FACETS} onTap={onTap} />);
     fireEvent.press(getByTestId('facet-chip-all'));
     expect(onTap).toHaveBeenCalledWith(null);
   });
 
   it('tap on a primary chip fires onTap with that value', () => {
     const onTap = jest.fn();
-    const { getByTestId } = render(
-      <FacetBarView facets={SAMPLE_FACETS} onTap={onTap} />,
-    );
+    const { getByTestId } = render(<FacetBarView facets={SAMPLE_FACETS} onTap={onTap} />);
     fireEvent.press(getByTestId('facet-chip-Furniture'));
     expect(onTap).toHaveBeenCalledWith('Furniture');
   });
 
   it('tap on "More" fires onShowMore', () => {
     const onShowMore = jest.fn();
-    const { getByTestId } = render(
-      <FacetBarView facets={SAMPLE_FACETS} onShowMore={onShowMore} />,
-    );
+    const { getByTestId } = render(<FacetBarView facets={SAMPLE_FACETS} onShowMore={onShowMore} />);
     fireEvent.press(getByTestId('facet-chip-more'));
     expect(onShowMore).toHaveBeenCalledTimes(1);
   });
@@ -173,7 +159,9 @@ describe('FacetBarView — render order', () => {
   // surfaces once (testIDs propagate to the outermost host node only
   // when queried via getAllByTestId).
 
-  function orderedChipIds(getAllByTestId: (m: RegExp) => readonly { props: { testID?: string } }[]): string[] {
+  function orderedChipIds(
+    getAllByTestId: (m: RegExp) => readonly { props: { testID?: string } }[],
+  ): string[] {
     const seen = new Set<string>();
     const ordered: string[] = [];
     for (const node of getAllByTestId(/^facet-chip-/)) {
@@ -204,14 +192,8 @@ describe('FacetBarView — render order', () => {
       <FacetBarView facets={SAMPLE_FACETS} onShowMore={() => undefined} />,
     );
     const ids = orderedChipIds(getAllByTestId);
-    const primaryIds = ids.filter(
-      (id) => id !== 'facet-chip-all' && id !== 'facet-chip-more',
-    );
-    expect(primaryIds).toEqual([
-      'facet-chip-Furniture',
-      'facet-chip-Phones',
-      'facet-chip-Books',
-    ]);
+    const primaryIds = ids.filter((id) => id !== 'facet-chip-all' && id !== 'facet-chip-more');
+    expect(primaryIds).toEqual(['facet-chip-Furniture', 'facet-chip-Phones', 'facet-chip-Books']);
   });
 
   it('"More" chip is the LAST chip rendered (rightmost)', () => {

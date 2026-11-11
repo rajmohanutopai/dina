@@ -179,7 +179,8 @@ export function generateHumanRedirect(contactSuggestions: string[]): string {
     return `I understand how you feel. How about reaching out to ${names[0]}? A real conversation can make a big difference.`;
   }
 
-  const last = names.pop()!;
+  const last = names.pop();
+  if (last === undefined) throw new Error('generateHumanRedirect: no contact name to suggest');
   return `I understand how you feel. How about reaching out to ${names.join(', ')} or ${last}? A real conversation can make a big difference.`;
 }
 
@@ -211,7 +212,9 @@ export const CRISIS_RESOURCES_TEXT =
 /** The reply to an acute-risk message: warmth, then the fixed resources. */
 export function crisisReply(names: readonly string[]): string {
   const someone =
-    names.length > 0 ? ` Could you reach out to ${names[0]} right now, or let me help you message them?` : '';
+    names.length > 0
+      ? ` Could you reach out to ${names[0]} right now, or let me help you message them?`
+      : '';
   return `I'm really glad you told me, and I'm worried about you. You don't have to carry this alone.${someone} ${CRISIS_RESOURCES_TEXT}`;
 }
 

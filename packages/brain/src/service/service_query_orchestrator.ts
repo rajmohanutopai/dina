@@ -266,10 +266,7 @@ export class ServiceQueryOrchestrator {
       services = await this.appView.searchServices(searchParams);
     } catch (err) {
       if (isSearchRejectionNoCandidate(err)) {
-        throw new ServiceOrchestratorError(
-          `no service advertises "${capability}"`,
-          'no_candidate',
-        );
+        throw new ServiceOrchestratorError(`no service advertises "${capability}"`, 'no_candidate');
       }
       throw err;
     }
@@ -280,10 +277,7 @@ export class ServiceQueryOrchestrator {
       ...(req.selfDid !== undefined ? { excludeDid: req.selfDid } : {}),
     });
     if (top === null) {
-      throw new ServiceOrchestratorError(
-        `no service advertises "${capability}"`,
-        'no_candidate',
-      );
+      throw new ServiceOrchestratorError(`no service advertises "${capability}"`, 'no_candidate');
     }
 
     const queryId = this.generateQueryId();
@@ -388,11 +382,14 @@ export class ServiceQueryOrchestrator {
         schemaHash:
           req.schemaHash !== undefined && req.schemaHash !== '' ? req.schemaHash : undefined,
         // Carry the LLM-chosen listing's uri (multi-listing per DID).
-        serviceUri: req.serviceUri !== undefined && req.serviceUri !== '' ? req.serviceUri : undefined,
+        serviceUri:
+          req.serviceUri !== undefined && req.serviceUri !== '' ? req.serviceUri : undefined,
         // Carry the grant id for a known_only listing (provider authorizes by
         // grant_id + the authenticated caller DID).
         grantId: req.grantId !== undefined && req.grantId !== '' ? req.grantId : undefined,
-        ...(req.fallbacks !== undefined && req.fallbacks.length > 0 ? { fallbacks: req.fallbacks } : {}),
+        ...(req.fallbacks !== undefined && req.fallbacks.length > 0
+          ? { fallbacks: req.fallbacks }
+          : {}),
       });
     } catch (err) {
       throw new ServiceOrchestratorError(

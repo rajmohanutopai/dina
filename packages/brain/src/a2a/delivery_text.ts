@@ -38,7 +38,8 @@ const MAX_RESULT_CHARS = 4000;
 export function a2aOperationIdOf(taskPayload: string): string | null {
   try {
     const parsed = JSON.parse(taskPayload) as { type?: unknown; operation_id?: unknown };
-    const a2aType = parsed.type === A2A_DISPATCH_PAYLOAD_TYPE || parsed.type === A2A_DELEGATION_CONSENT_TYPE;
+    const a2aType =
+      parsed.type === A2A_DISPATCH_PAYLOAD_TYPE || parsed.type === A2A_DELEGATION_CONSENT_TYPE;
     return a2aType && typeof parsed.operation_id === 'string' ? parsed.operation_id : null;
   } catch {
     return null;

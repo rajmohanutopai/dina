@@ -83,7 +83,12 @@ function isSpoke(v: unknown): v is SpokeRecord {
   if (!isRecord(v) || typeof v.round !== 'number' || !Number.isInteger(v.round)) return false;
   if (v.stage === 'grant_requested') return typeof v.requestId === 'string' && v.requestId !== '';
   if (v.stage === 'queried') {
-    return typeof v.taskId === 'string' && v.taskId !== '' && typeof v.queryId === 'string' && v.queryId !== '';
+    return (
+      typeof v.taskId === 'string' &&
+      v.taskId !== '' &&
+      typeof v.queryId === 'string' &&
+      v.queryId !== ''
+    );
   }
   return false;
 }

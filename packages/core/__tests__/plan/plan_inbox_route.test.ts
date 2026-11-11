@@ -39,8 +39,14 @@ let db: NodeSQLiteAdapter;
 let store: PlanStore;
 let router: CoreRouter;
 
-function signed(method: 'GET' | 'POST', p: string, bodyObj?: unknown, query: Record<string, string> = {}): CoreRequest {
-  const raw = bodyObj === undefined ? new Uint8Array() : new TextEncoder().encode(JSON.stringify(bodyObj));
+function signed(
+  method: 'GET' | 'POST',
+  p: string,
+  bodyObj?: unknown,
+  query: Record<string, string> = {},
+): CoreRequest {
+  const raw =
+    bodyObj === undefined ? new Uint8Array() : new TextEncoder().encode(JSON.stringify(bodyObj));
   const qs = new URLSearchParams(query).toString();
   const h = signRequest(method, p, qs, raw, SEED, AGENT);
   return {
@@ -63,7 +69,14 @@ function batch(id: string) {
   return {
     batch_id: id,
     persona: 'work',
-    items: [{ source: 'teams', source_ref: 'thread-1', title: 'Answer the release question', observed_at: T0 }],
+    items: [
+      {
+        source: 'teams',
+        source_ref: 'thread-1',
+        title: 'Answer the release question',
+        observed_at: T0,
+      },
+    ],
   };
 }
 
@@ -107,7 +120,10 @@ describe('POST /v1/plan/inbox from a sleeping phone', () => {
     const res = await router.handle(req);
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ accepted: 0, held: 1, duplicate_batch: false });
-    expect(store.listTasks({ origin: AGENT })[0]).toMatchObject({ status: 'held', persona: 'work' });
+    expect(store.listTasks({ origin: AGENT })[0]).toMatchObject({
+      status: 'held',
+      persona: 'work',
+    });
   });
 
   it('refuses one signed 21 hours before', async () => {

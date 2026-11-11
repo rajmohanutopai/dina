@@ -151,8 +151,8 @@ export async function shareReadableExport(json: string): Promise<'shared' | 'fai
     }
   }
   // `require`, not `import()` (see __tests__/services/no_local_dynamic_import.test.ts).
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { shareOrCopy } =
+    // eslint-disable-next-line @typescript-eslint/no-require-imports -- lazy load keeps react-native's Share out of this module until a share runs; Metro needs require(), not import()
     require('../services/share_text') as typeof import('../services/share_text');
   return (await shareOrCopy(json)) === 'failed' ? 'failed' : 'shared';
 }

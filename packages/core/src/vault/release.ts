@@ -83,7 +83,11 @@ export function recordVaultRelease(
  * classifier, so they taint the conversation like an item would. Same
  * contract as `recordVaultRelease`.
  */
-export function recordTopicRelease(ctx: ReleaseContext | undefined, persona: string, topics: readonly string[]): void {
+export function recordTopicRelease(
+  ctx: ReleaseContext | undefined,
+  persona: string,
+  topics: readonly string[],
+): void {
   if (ctx === undefined) return;
   if (recorder === null) throw new Error('vault release: no release log is installed');
   if (topics.length === 0) return;
@@ -92,5 +96,7 @@ export function recordTopicRelease(ctx: ReleaseContext | undefined, persona: str
 
 /** The text fields of an item a release hands out, in a fixed order. */
 export function releasedTextFields(item: VaultItem): string[] {
-  return [item.summary, item.body, item.content_l0, item.content_l1].map((v) => (typeof v === 'string' ? v : ''));
+  return [item.summary, item.body, item.content_l0, item.content_l1].map((v) =>
+    typeof v === 'string' ? v : '',
+  );
 }

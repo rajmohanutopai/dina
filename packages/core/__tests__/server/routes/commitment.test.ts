@@ -322,11 +322,18 @@ describe('the value model’s Core form', () => {
   it('C-06b: the organiser of a group booking has a strategy setting, and no value model (§15 step 11)', async () => {
     await present();
     const put = await router.handle(
-      owner('PUT', '/v1/commitment/strategy/group.organizer', { strategy: 'brain' }, { kind: 'group.organizer' }),
+      owner(
+        'PUT',
+        '/v1/commitment/strategy/group.organizer',
+        { strategy: 'brain' },
+        { kind: 'group.organizer' },
+      ),
     );
     expect(put.status).toBe(200);
     const got = await router.handle(
-      owner('GET', '/v1/commitment/strategy/group.organizer', undefined, { kind: 'group.organizer' }),
+      owner('GET', '/v1/commitment/strategy/group.organizer', undefined, {
+        kind: 'group.organizer',
+      }),
     );
     expect(got.body).toMatchObject({ kind: 'group.organizer', strategy: 'brain' });
     const model = await router.handle(
@@ -373,13 +380,25 @@ describe('the value model’s Core form', () => {
     expect((await put([{ part: 'delivery_day', choice: 'Tuesday' }])).status).toBe(400);
     expect((await put([{ part: 'total', flag: true }])).status).toBe(400);
     expect((await put([{ part: 'delivery_day', below: '5' }])).status).toBe(400);
-    expect((await put([{ part: 'total', present: true }, { part: 'delivery_day', choice: 'sun' }])).status).toBe(200);
+    expect(
+      (
+        await put([
+          { part: 'total', present: true },
+          { part: 'delivery_day', choice: 'sun' },
+        ])
+      ).status,
+    ).toBe(200);
     const share = (id: string) =>
       router.handle(
         owner(
           'PUT',
           '/v1/commitment/models/goods.seller/entries',
-          { entry: { id, body: { type: 'choice', part: 'saving_share', option: 'third', rupees: '1' } } },
+          {
+            entry: {
+              id,
+              body: { type: 'choice', part: 'saving_share', option: 'third', rupees: '1' },
+            },
+          },
           { kind: 'goods.seller' },
         ),
       );
@@ -387,20 +406,26 @@ describe('the value model’s Core form', () => {
     expect((await share('saving_share')).status).toBe(200);
   });
 
-  it('C-08: a shipper\'s asking fee and a seller\'s firm rule are the owner\'s to set', async () => {
+  it("C-08: a shipper's asking fee and a seller's firm rule are the owner's to set", async () => {
     const put = (kind: string, form: unknown) =>
       router.handle(owner('PUT', `/v1/commitment/models/${kind}/form`, { form }, { kind }));
     await present();
     expect(
-      (await put('delivery.shipper', { binding: 'card', asking: { fee: '30000' }, limits: { fee: { hard: '20000', auto: '25000' } } }))
-        .status,
+      (
+        await put('delivery.shipper', {
+          binding: 'card',
+          asking: { fee: '30000' },
+          limits: { fee: { hard: '20000', auto: '25000' } },
+        })
+      ).status,
     ).toBe(200);
     expect((await put('goods.seller', { binding: 'firm' })).status).toBe(200);
     expect((await put('goods.buyer', { binding: 'firm' })).status).toBe(400);
   });
   it('C-09: the strategy setting shows both choices, values only where they apply, and the share in use', async () => {
     const get = async (kind: string) =>
-      (await router.handle(owner('GET', `/v1/commitment/strategy/${kind}`, undefined, { kind }))).body as {
+      (await router.handle(owner('GET', `/v1/commitment/strategy/${kind}`, undefined, { kind })))
+        .body as {
         values_apply: boolean;
         disclosure: string;
         disclosures: { with_values: string; without_values: string };
@@ -418,7 +443,12 @@ describe('the value model’s Core form', () => {
     expect(host.disclosures.with_values).toBe(host.disclosures.without_values);
     await present();
     const put = await router.handle(
-      owner('PUT', '/v1/commitment/strategy/shelf_space.host', { strategy: 'brain' }, { kind: 'shelf_space.host' }),
+      owner(
+        'PUT',
+        '/v1/commitment/strategy/shelf_space.host',
+        { strategy: 'brain' },
+        { kind: 'shelf_space.host' },
+      ),
     );
     expect((put.body as { disclosure: string }).disclosure).toMatch(/not what parts are worth/);
 
@@ -428,16 +458,32 @@ describe('the value model’s Core form', () => {
       owner(
         'PUT',
         '/v1/commitment/models/goods.seller/entries',
-        { entry: { id: 'saving_share', body: { type: 'choice', part: 'saving_share', option: 'most', rupees: '1' } } },
+        {
+          entry: {
+            id: 'saving_share',
+            body: { type: 'choice', part: 'saving_share', option: 'most', rupees: '1' },
+          },
+        },
         { kind: 'goods.seller' },
       ),
     );
     expect(share.status).toBe(200);
     expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'owner', option: 'most' });
-    new StandingChoiceStore(identity).set('goods.seller', SAVING_SHARE_BPS, '4000', 'brain', Date.now());
+    new StandingChoiceStore(identity).set(
+      'goods.seller',
+      SAVING_SHARE_BPS,
+      '4000',
+      'brain',
+      Date.now(),
+    );
     expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'owner', option: 'most' });
     await router.handle(
-      owner('PUT', '/v1/commitment/strategy/goods.seller', { strategy: 'brain' }, { kind: 'goods.seller' }),
+      owner(
+        'PUT',
+        '/v1/commitment/strategy/goods.seller',
+        { strategy: 'brain' },
+        { kind: 'goods.seller' },
+      ),
     );
     expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'brain', share_bps: 4000 });
     // The owner dropping their share clears Brain's too, until Brain sets another.
@@ -453,7 +499,10 @@ describe('the value model’s Core form', () => {
     identity.execute(
       `INSERT INTO commitment_value_index (persona, kind, entry_id, covers) VALUES ('health', 'goods.seller', 'n9', 'delivery_day')`,
     );
-    expect((await get('goods.seller')).saving_share).toEqual({ set_by: 'closed', personas: ['health'] });
+    expect((await get('goods.seller')).saving_share).toEqual({
+      set_by: 'closed',
+      personas: ['health'],
+    });
     identity.execute(`DELETE FROM commitment_value_index`);
     // Rules that cannot be read: said so, never a 500 and never a made-up share.
     identity.execute(
@@ -463,6 +512,8 @@ describe('the value model’s Core form', () => {
       owner('GET', '/v1/commitment/strategy/goods.seller', undefined, { kind: 'goods.seller' }),
     );
     expect(unreadable.status).toBe(200);
-    expect((unreadable.body as { saving_share: unknown }).saving_share).toEqual({ set_by: 'unreadable' });
+    expect((unreadable.body as { saving_share: unknown }).saving_share).toEqual({
+      set_by: 'unreadable',
+    });
   });
 });

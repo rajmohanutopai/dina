@@ -22,7 +22,10 @@ import { InMemoryVaultRepository } from '../../src/vault/repository';
 describe('vault_item_subjects — recall edge (Phase D)', () => {
   it('links a person to an item and recalls it by person', () => {
     const repo = new InMemoryVaultRepository();
-    const item = makeVaultItem({ summary: 'loves eggs and bacon', content_l0: 'loves eggs and bacon' });
+    const item = makeVaultItem({
+      summary: 'loves eggs and bacon',
+      content_l0: 'loves eggs and bacon',
+    });
     repo.storeItemSync(item);
     repo.linkSubjectSync(item.id, 'person-quixote', { source: 'manual', confidence: 'high' });
 

@@ -49,7 +49,8 @@ export const DINA_REQUEST_SIGNING = Object.freeze({
   headers: ['X-DID', 'X-Timestamp', 'X-Nonce', 'X-Signature'],
   canonical:
     'dina-a2a-request:v1\n{NODE_DID}\n{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}',
-  audience: 'NODE_DID is the did this card’s Dina extension names: a request signed for one node verifies at no other',
+  audience:
+    'NODE_DID is the did this card’s Dina extension names: a request signed for one node verifies at no other',
   signature: 'Ed25519, lower-case hex',
   timestamp: 'RFC 3339 UTC, within five minutes',
   nonce: '16 to 128 characters of [A-Za-z0-9_-], never reused',
@@ -100,7 +101,12 @@ export function didRequestSigningInput(args: {
  * pins the signature to one binding: no other node, client, DID or
  * challenge accepts it.
  */
-export function didBindingSigningInput(args: { nodeDid: string; clientId: string; did: string; challenge: string }): string {
+export function didBindingSigningInput(args: {
+  nodeDid: string;
+  clientId: string;
+  did: string;
+  challenge: string;
+}): string {
   return [DID_BINDING_DOMAIN, args.nodeDid, args.clientId, args.did, args.challenge].join('\n');
 }
 

@@ -130,4 +130,3 @@ export function deserializeWrappedSeed(data: Uint8Array): WrappedSeed {
     params: { memory, iterations, parallelism },
   };
 }
-

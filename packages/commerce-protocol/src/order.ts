@@ -130,10 +130,14 @@ export function validatePurchaseOrderProposal(order: unknown, sha256: Sha256Fn):
   const linesError = validatePurchaseOrderLines(order.accepted_lines, 'order.accepted_lines');
   if (linesError !== null) return linesError;
   if (order.alternative_id !== undefined) {
-    if (typeof order.alternative_id !== 'string' || !/^[a-z][a-z0-9_]{0,15}$/.test(order.alternative_id))
+    if (
+      typeof order.alternative_id !== 'string' ||
+      !/^[a-z][a-z0-9_]{0,15}$/.test(order.alternative_id)
+    )
       return 'order.alternative_id: lowercase id';
     const minor = Number(String(order.protocol_version).split('.')[1] ?? '0');
-    if (!Number.isFinite(minor) || minor < 3) return 'order.alternative_id: requires protocol minor >= 1.3';
+    if (!Number.isFinite(minor) || minor < 3)
+      return 'order.alternative_id: requires protocol minor >= 1.3';
   }
 
   if (order.buyer_reference !== undefined) {

@@ -1,8 +1,8 @@
 // ESLint flat config (ESLint 9+).
 //
 // Scope: TS sources under packages/ and apps/home-node-lite/ (and later
-// apps/mobile/). The existing polyglot tree (legacy/, cli/, msgbox/,
-// appview/, services/, tests/, scripts/) is ignored — those services have
+// apps/mobile/). The existing polyglot tree (cli/, msgbox/,
+// appview/, services/, scripts/) is ignored — those services have
 // their own linters or are non-TS.
 //
 // Phase 2 will add a custom rule `dina/port-async-only` that enforces the
@@ -24,12 +24,10 @@ export default tseslint.config(
       '**/*.tsbuildinfo',
       '**/.turbo/**',
       // Non-TS services (polyglot repo).
-      'legacy/**',
       'cli/**',
       'msgbox/**',
       'appview/**',
       'services/**',
-      'tests/**',
       'scripts/**',
       'docs/**',
       'api/**',
@@ -111,6 +109,25 @@ export default tseslint.config(
       // custom rule under a local plugin (tracked in task doc § Phase 2).
       // Until then, tseslint.strict catches most accidental sync-to-async
       // signature drift.
+    },
+  },
+
+  // 4b. Tests and test harnesses. Fixtures and mocks lean on `x!` after an
+  //     assertion, loose `any` stand-ins, no-op callbacks and lazy
+  //     `require`; source code keeps the strict rules.
+  {
+    files: [
+      '**/__tests__/**',
+      '**/__e2e__/**',
+      '**/*.test.{ts,tsx,mts,cts}',
+      '**/*.spec.{ts,tsx,mts,cts}',
+      'packages/test-harness/**',
+    ],
+    rules: {
+      '@typescript-eslint/no-non-null-assertion': 'off',
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-empty-function': 'off',
+      '@typescript-eslint/no-require-imports': 'off',
     },
   },
 

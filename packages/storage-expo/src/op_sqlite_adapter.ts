@@ -83,13 +83,13 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
   }
 
   execute(sql: string, params?: unknown[]): void {
-    this.assertOpen();
-    this.db!.executeSync(sql, params);
+    const db = this.assertOpen();
+    db.executeSync(sql, params);
   }
 
   query<T extends DBRow = DBRow>(sql: string, params?: unknown[]): T[] {
-    this.assertOpen();
-    const result = this.db!.executeSync(sql, params);
+    const db = this.assertOpen();
+    const result = db.executeSync(sql, params);
     // op-sqlite 15+ returns `rows` as a flat `Array<Record<…>>`.
     // Older versions exposed `{ _array: […] }`. Reading the old shape
     // against the new return silently yielded `[]` for every SELECT,
@@ -104,7 +104,7 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
   }
 
   run(sql: string, params?: unknown[]): number {
-    this.assertOpen();
+    const db = this.assertOpen();
     // Return the REAL changed-row count (`sqlite3_changes()`), not a constant.
     // The durable-job state machine's CAS transitions (`UPDATE … WHERE …
     // status=?`) read this to know whether the guarded row actually matched;
@@ -112,18 +112,18 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
     // could both "claim"/"complete" the same job and lost leases counted as
     // publishes. `?? 0` fails CLOSED (treat as "did not apply") if a future
     // op-sqlite ever omits the field — safer than a false success.
-    const result = this.db!.executeSync(sql, params);
+    const result = db.executeSync(sql, params);
     return result.rowsAffected ?? 0;
   }
 
   transaction(fn: () => void): void {
-    this.assertOpen();
-    this.db!.executeSync('BEGIN');
+    const db = this.assertOpen();
+    db.executeSync('BEGIN');
     try {
       fn();
-      this.db!.executeSync('COMMIT');
+      db.executeSync('COMMIT');
     } catch (err) {
-      this.db!.executeSync('ROLLBACK');
+      db.executeSync('ROLLBACK');
       throw err;
     }
   }
@@ -141,7 +141,8 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
     this._isOpen = false;
   }
 
-  private assertOpen(): void {
+  private assertOpen(): OpSQLiteDB {
     if (!this._isOpen || !this.db) throw new Error('op-sqlite: database not open');
+    return this.db;
   }
 }

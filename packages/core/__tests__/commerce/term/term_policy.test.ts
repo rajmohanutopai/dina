@@ -36,8 +36,12 @@ import { publishListing } from './term_harness';
 import { BRAND_DID, Fleet, juicePolicy, STORE_DID, type Node } from './term_harness';
 
 /** A store's clamp for one term: the kernel's, with the store as holder. */
-const clampTerm = (name: TermName, proposed: bigint, bounds: TermBounds, authorised: bigint | null) =>
-  clampPart(termPart(name), 'seller', proposed, bounds, authorised);
+const clampTerm = (
+  name: TermName,
+  proposed: bigint,
+  bounds: TermBounds,
+  authorised: bigint | null,
+) => clampPart(termPart(name), 'seller', proposed, bounds, authorised);
 
 const JUICE = 'beverages.juice';
 

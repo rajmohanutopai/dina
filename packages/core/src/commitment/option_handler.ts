@@ -122,7 +122,12 @@ export function installOptionStores(db: DatabaseAdapter | null): void {
         if (request === undefined || sellerDid === '') return;
         const answer = await answerRequest(sellerDid, request, nowMs, true);
         if (answer === null || answer === 'refused') return;
-        appendAudit(sellerDid, 'option_answered', request.request_id, `answer=${answer.kind} by=owner_answer`);
+        appendAudit(
+          sellerDid,
+          'option_answered',
+          request.request_id,
+          `answer=${answer.kind} by=owner_answer`,
+        );
         await send(sellerDid, answer).catch(() => undefined);
       },
     });
@@ -142,8 +147,8 @@ export function installOptionStores(db: DatabaseAdapter | null): void {
     db === null
       ? null
       : (recipient, exit) => {
-          const po = (exit as { cancellation?: { purchase_order_id?: unknown } } | null)?.cancellation
-            ?.purchase_order_id;
+          const po = (exit as { cancellation?: { purchase_order_id?: unknown } } | null)
+            ?.cancellation?.purchase_order_id;
           const self = getNodeDID();
           const kept =
             typeof po === 'string' && self !== null ? (fallbackStore?.get(self, po) ?? null) : null;
@@ -384,7 +389,12 @@ export const makeOptionClearDecisionHandler =
  * a failed send nor a restart loses the yes), the card closes, and the send
  * goes now and again on each tick until the transport takes it.
  */
-function takeExit(taskId: string, payload: Record<string, unknown>, nowMs: number, sendNow = true): void {
+function takeExit(
+  taskId: string,
+  payload: Record<string, unknown>,
+  nowMs: number,
+  sendNow = true,
+): void {
   const supplierDid = typeof payload.supplier_did === 'string' ? payload.supplier_did : '';
   const po = typeof payload.purchase_order_id === 'string' ? payload.purchase_order_id : '';
   const cancellation = exitPort?.buyerCancellation(supplierDid, po, nowMs) ?? null;
@@ -395,7 +405,9 @@ function takeExit(taskId: string, payload: Record<string, unknown>, nowMs: numbe
   try {
     // A card a crash left running is completed as it stands.
     if (workflow?.store().getById(taskId)?.status === WorkflowTaskState.Queued)
-      workflow.store().transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
+      workflow
+        .store()
+        .transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
     workflow?.complete(
       taskId,
       JSON.stringify({ exit: kept ? 'asked' : 'no_order' }),
@@ -420,7 +432,8 @@ async function sendExits(nowMs: number): Promise<number> {
     if (exitsInFlight.has(key)) continue;
     exitsInFlight.add(key);
     try {
-      if (!(await send(ask.supplierDid, { v: 1, kind: 'exit', cancellation: ask.cancellation }))) continue;
+      if (!(await send(ask.supplierDid, { v: 1, kind: 'exit', cancellation: ask.cancellation })))
+        continue;
       store.sent(ask.supplierDid, ask.purchaseOrderId, nowMs);
       sent += 1;
     } catch {
@@ -445,10 +458,16 @@ function repairApprovedExits(nowMs: number): void {
     const id = `option-exit-${f.supplierDid}-${f.purchaseOrderId}`;
     const task = workflow.store().getById(id);
     if (task === null) continue;
-    if (task.status !== WorkflowTaskState.Queued && task.status !== WorkflowTaskState.Running) continue;
+    if (task.status !== WorkflowTaskState.Queued && task.status !== WorkflowTaskState.Running)
+      continue;
     // Sent by the tick that called this. The kept cancellation stands
     // (first kept wins); only the card is finished.
-    takeExit(id, { supplier_did: f.supplierDid, purchase_order_id: f.purchaseOrderId }, nowMs, false);
+    takeExit(
+      id,
+      { supplier_did: f.supplierDid, purchase_order_id: f.purchaseOrderId },
+      nowMs,
+      false,
+    );
   }
 }
 
@@ -485,7 +504,11 @@ export interface ExitRightPort {
   sellerOrderHoldsExit: (buyerDid: string, purchaseOrderId: string) => boolean;
   /** On the seller's node: will versions resting on runs for this quote carry the right? */
   quoteGrantsExit: (quoteId: string) => boolean;
-  buyerCancellation: (supplierDid: string, purchaseOrderId: string, nowMs: number) => Record<string, unknown> | null;
+  buyerCancellation: (
+    supplierDid: string,
+    purchaseOrderId: string,
+    nowMs: number,
+  ) => Record<string, unknown> | null;
   cancelForExit: (buyerDid: string, cancellation: Record<string, unknown>) => string;
 }
 
@@ -538,7 +561,9 @@ async function tellBuyers(nowMs: number): Promise<void> {
       alternative_id: f.alternativeId,
       at: new Date(f.appliedAt).toISOString(),
       // §15 step 12: an order that holds the exit right says so.
-      ...(exitPort?.sellerOrderHoldsExit(f.buyerDid, f.purchaseOrderId) === true ? { exit: true as const } : {}),
+      ...(exitPort?.sellerOrderHoldsExit(f.buyerDid, f.purchaseOrderId) === true
+        ? { exit: true as const }
+        : {}),
     };
     try {
       if (!(await send(f.buyerDid, notice))) continue;
@@ -566,7 +591,9 @@ async function answerRequest(
   if (store === null || models === null) return 'refused';
   const loaded = models.load(SHIPPER_KIND, ['delivery_day', 'run', 'fee']);
   const asking = models.form(SHIPPER_KIND).form.asking;
-  const chooseFee = await brainFee(sellerDid, request, nowMs, mayAsk, () => models.loadForBrain(SHIPPER_KIND));
+  const chooseFee = await brainFee(sellerDid, request, nowMs, mayAsk, () =>
+    models.loadForBrain(SHIPPER_KIND),
+  );
   return answerOptionRequest({
     store,
     view: { model: loaded.model, closedPersonas: loaded.closedPersonas, asking },
@@ -600,7 +627,10 @@ async function brainFee(
   nowMs: number,
   mayAsk: boolean,
   brainModel: () => ValueModel,
-): Promise<((bounds: { day: string; crates: number; slackMs: number }) => bigint | 'asking' | 'wait') | undefined> {
+): Promise<
+  | ((bounds: { day: string; crates: number; slackMs: number }) => bigint | 'asking' | 'wait')
+  | undefined
+> {
   const turns = feeTurns;
   const strategies = await getStrategyStore();
   if (turns === null || strategies === null) return undefined;
@@ -625,7 +655,14 @@ async function brainFee(
     const submit = (): string | null => {
       if (feeSubmitter === null) return null;
       const model = brainModel();
-      if (!strategies.canSpend({ kind: SHIPPER_KIND, negotiationId: turnId, nowMs, thresholdVersion: model.version }).ok)
+      if (
+        !strategies.canSpend({
+          kind: SHIPPER_KIND,
+          negotiationId: turnId,
+          nowMs,
+          thresholdVersion: model.version,
+        }).ok
+      )
         return null;
       return (
         feeSubmitter({
@@ -721,22 +758,36 @@ export async function commitShipperFeeMove(input: { input: unknown; result: unkn
   const turnId = ref?.negotiationId;
   if (typeof turnId !== 'string' || ref?.turn !== 0) throw new Error('shipper fee move: no ref');
   const turn = turns.get(SHIPPER_KIND, turnId, 0);
-  if (turn === null || turn.state !== 'pending') return { state: 'committed', receipt: { outcome: 'already_applied' } };
+  if (turn === null || turn.state !== 'pending')
+    return { state: 'committed', receipt: { outcome: 'already_applied' } };
   const sellerDid = String(turn.result.seller_did ?? '');
   const request = turn.result.request as OptionRequestBody | undefined;
-  if (request === undefined || sellerDid === '' || shipperTurnId(sellerDid, request.request_id) !== turnId)
+  if (
+    request === undefined ||
+    sellerDid === '' ||
+    shipperTurnId(sellerDid, request.request_id) !== turnId
+  )
     throw new Error('shipper fee move: turn does not name its request');
   // §15 step 14: a turn waiting on the owner takes no move (a replayed
   // commit of the move that asked), and a move from a brief before the
   // owner's latest answer is stale: the turn was asked again with it.
   const standing = moveAgainstAnswers(SHIPPER_KIND, turnId, 0, answersSeenIn(input.input));
   if (standing !== 'current')
-    return { state: 'committed', receipt: { outcome: standing === 'waiting' ? 'waiting_owner' : 'stale_move' } };
-  const move = (input.result as { move?: { kind?: unknown; versions?: unknown; question?: unknown } } | null)
-    ?.move;
+    return {
+      state: 'committed',
+      receipt: { outcome: standing === 'waiting' ? 'waiting_owner' : 'stale_move' },
+    };
+  const move = (
+    input.result as { move?: { kind?: unknown; versions?: unknown; question?: unknown } } | null
+  )?.move;
   const versions = Array.isArray(move?.versions) ? (move.versions as { terms?: unknown }[]) : [];
-  const fee = (Array.isArray(versions[0]?.terms) ? (versions[0].terms as { name?: unknown; value?: unknown }[]) : []).find(
-    (t) => t.name === 'fee' && typeof t.value === 'string' && /^(0|[1-9][0-9]{0,17})$/.test(t.value),
+  const fee = (
+    Array.isArray(versions[0]?.terms)
+      ? (versions[0].terms as { name?: unknown; value?: unknown }[])
+      : []
+  ).find(
+    (t) =>
+      t.name === 'fee' && typeof t.value === 'string' && /^(0|[1-9][0-9]{0,17})$/.test(t.value),
   )?.value as string | undefined;
   // A yes-or-no question for the owner, put only while the hold leaves room
   // for the answer and the fee after it; nothing is sent while it is open.
@@ -749,7 +800,10 @@ export async function commitShipperFeeMove(input: { input: unknown; result: unkn
       negotiationId: turnId,
       turn: 0,
       question: move.question,
-      decideByMs: Math.min(nowMs + QUESTION_WAIT_MS, lastIssueMs(Date.parse(request.service_at)) - ANSWER_ROOM_MS),
+      decideByMs: Math.min(
+        nowMs + QUESTION_WAIT_MS,
+        lastIssueMs(Date.parse(request.service_at)) - ANSWER_ROOM_MS,
+      ),
       nowMs,
       // Brain holds these from its brief; the card never shows them.
       hide: [turnId, sellerDid, request.request_id],
@@ -780,7 +834,12 @@ export async function commitShipperFeeMove(input: { input: unknown; result: unkn
   // is the D2D outbox's, and a lost send is replayed on the seller's resend.
   const answer = await answerRequest(sellerDid, request, nowMs, false);
   if (answer !== null && answer !== 'refused') {
-    appendAudit(sellerDid, 'option_answered', request.request_id, `answer=${answer.kind} by=${outcome}`);
+    appendAudit(
+      sellerDid,
+      'option_answered',
+      request.request_id,
+      `answer=${answer.kind} by=${outcome}`,
+    );
     await send(sellerDid, answer).catch(() => undefined);
   }
   return { state: 'committed', receipt: { outcome } };
@@ -895,7 +954,10 @@ export async function handleOptionMessage(
       // fallback this node recorded is cancelled this way; Core cancels it
       // without asking the runner (the race against dispatch still applies).
       const store = fallbackStore;
-      const po = typeof body.cancellation.purchase_order_id === 'string' ? body.cancellation.purchase_order_id : '';
+      const po =
+        typeof body.cancellation.purchase_order_id === 'string'
+          ? body.cancellation.purchase_order_id
+          : '';
       const recorded = store?.get(fromDid, po) ?? null;
       if (
         exitPort === null ||

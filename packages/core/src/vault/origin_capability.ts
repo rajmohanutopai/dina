@@ -93,11 +93,7 @@ export function checkVaultCapability(
   if (!isVaultOrigin(cap.origin)) return { ok: false, reason: 'unknown_origin' };
   if (!isVaultOperationAllowed(cap.origin, operation))
     return { ok: false, reason: 'operation_denied' };
-  if (
-    persona !== undefined &&
-    cap.personas !== undefined &&
-    !cap.personas.includes(persona)
-  ) {
+  if (persona !== undefined && cap.personas !== undefined && !cap.personas.includes(persona)) {
     return { ok: false, reason: 'persona_out_of_scope' };
   }
   return { ok: true };

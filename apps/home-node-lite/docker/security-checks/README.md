@@ -10,20 +10,20 @@ Run the stack (`./apps/home-node-lite/install-lite.sh` or
 `docker compose -f apps/home-node-lite/docker-compose.lite.yml up -d`),
 then execute whichever scripts you need.
 
-| Script                           | Task  | Verifies                                                  |
-|----------------------------------|-------|-----------------------------------------------------------|
-| `verify-key-isolation.sh`        | 11.11 | Brain's mount namespace cannot reach Core's key file      |
-| `pen-test-key-paths.sh`          | 11.12 | PID-ns, /proc/environ, symlink, /dev/mem, /dev/net/tun, cap-inventory (also covers **11.14** cap_drop=ALL via `/proc/self/status` CapInh/Prm/Eff/Bnd/Amb = 0) |
-| `verify-read-only-rootfs.sh`     | 11.15 | Root FS mounted read-only; tmpfs `/tmp` + vault volume remain writable |
-| `verify-seccomp.sh`              | 11.16 | Docker default seccomp profile denies mount / unshare / ptrace / kmem / dev-mem |
-| `benchmark.sh`                   | 11.1 / 11.2 | Idle RSS + cold-start wall-clock (measurement + budget assertions) |
-| `probe-throughput.py`            | 11.3  | Sustained open-loop load at target RPS; asserts delivered rate ≥ 95% of target + error rate ≤ 1% |
-| `probe-ask-latency-vs-go.py`     | 11.6  | Side-by-side latency sampling on Lite + Go URLs; asserts `Lite.p95 ≤ 2× Go.p95` |
-| `probe-wal-reclamation.sh`       | 11.9  | Samples SQLite WAL size over a window; asserts peak ≤ ceiling |
-| `probe-ws-reconnect.sh`          | 11.10 | WS reconnect under `tc netem` loss/drop (Linux + root only) |
-| `soak-runner.sh`                 | 11.7  | 24h soak harness — orchestrates throughput + memory-growth + unhandled-rejection gates |
-| `pi5-smoke.sh`                   | 11.17 / 11.18 | Pi 5 8GB first-boot wall-clock + idle memory; Pi-tuned budgets (ARM64 Linux only) |
-| `smoke-clean-host.sh`            | 7.32  | Clean-host `docker compose up` full cycle                |
+| Script                       | Task          | Verifies                                                                                                                                                      |
+| ---------------------------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `verify-key-isolation.sh`    | 11.11         | Brain's mount namespace cannot reach Core's key file                                                                                                          |
+| `pen-test-key-paths.sh`      | 11.12         | PID-ns, /proc/environ, symlink, /dev/mem, /dev/net/tun, cap-inventory (also covers **11.14** cap_drop=ALL via `/proc/self/status` CapInh/Prm/Eff/Bnd/Amb = 0) |
+| `verify-read-only-rootfs.sh` | 11.15         | Root FS mounted read-only; tmpfs `/tmp` + vault volume remain writable                                                                                        |
+| `verify-seccomp.sh`          | 11.16         | Docker default seccomp profile denies mount / unshare / ptrace / kmem / dev-mem                                                                               |
+| `benchmark.sh`               | 11.1 / 11.2   | Idle RSS + cold-start wall-clock (measurement + budget assertions)                                                                                            |
+| `probe-throughput.py`        | 11.3          | Sustained open-loop load at target RPS; asserts delivered rate ≥ 95% of target + error rate ≤ 1%                                                              |
+| `probe-ask-latency-vs-go.py` | 11.6          | Side-by-side latency sampling on Lite + Go URLs; asserts `Lite.p95 ≤ 2× Go.p95`                                                                               |
+| `probe-wal-reclamation.sh`   | 11.9          | Samples SQLite WAL size over a window; asserts peak ≤ ceiling                                                                                                 |
+| `probe-ws-reconnect.sh`      | 11.10         | WS reconnect under `tc netem` loss/drop (Linux + root only)                                                                                                   |
+| `soak-runner.sh`             | 11.7          | 24h soak harness — orchestrates throughput + memory-growth + unhandled-rejection gates                                                                        |
+| `pi5-smoke.sh`               | 11.17 / 11.18 | Pi 5 8GB first-boot wall-clock + idle memory; Pi-tuned budgets (ARM64 Linux only)                                                                             |
+| `smoke-clean-host.sh`        | 7.32          | Clean-host `docker compose up` full cycle                                                                                                                     |
 
 All scripts are POSIX `sh`-compatible, exit `0` on pass, non-zero on
 fail, and honour `DINA_CORE_CONTAINER` / `DINA_BRAIN_CONTAINER` env

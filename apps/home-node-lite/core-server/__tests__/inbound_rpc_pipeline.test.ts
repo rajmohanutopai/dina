@@ -18,11 +18,7 @@ import {
   verifyResponseSignature,
   type CoreRPCResponse,
 } from '@dina/core';
-import {
-  RPC_REQUEST_TYPE,
-  RPC_RESPONSE_TYPE,
-  type CoreRPCRequest,
-} from '@dina/protocol';
+import { RPC_REQUEST_TYPE, RPC_RESPONSE_TYPE, type CoreRPCRequest } from '@dina/protocol';
 
 import { deriveIdentity } from '../src/identity/derivations';
 import { CancelRegistry } from '../src/msgbox/cancel_registry';
@@ -87,10 +83,8 @@ async function buildScenario(
 ): Promise<Scenario> {
   const coreKeys = fresh().root;
   const senderKeys = fresh().root;
-  const knownSenders =
-    overrides.knownSenders ?? new Map([[SENDER_DID, senderKeys.publicKey]]);
-  const idempotency =
-    overrides.idempotency ?? new IdempotencyCache({ ttlMs: 5 * 60 * 1000 });
+  const knownSenders = overrides.knownSenders ?? new Map([[SENDER_DID, senderKeys.publicKey]]);
+  const idempotency = overrides.idempotency ?? new IdempotencyCache({ ttlMs: 5 * 60 * 1000 });
   const cancels = new CancelRegistry();
   const events: InboundRpcEvent[] = [];
   const app = await createServer({ config: baseConfig(), logger: silentLogger() });
@@ -264,10 +258,7 @@ describe('handleInboundRpc (task 4.41)', () => {
   describe('full chain engagement (task 4.46 wiring)', () => {
     it('tunnelled 404 flows through Fastify error handler + envelope', async () => {
       const s = await buildScenario();
-      const sealed = sealRPCRequest(
-        buildRequest({ path: '/ghost' }),
-        s.coreKeys.publicKey,
-      );
+      const sealed = sealRPCRequest(buildRequest({ path: '/ghost' }), s.coreKeys.publicKey);
       const result = await handleInboundRpc(sealed, s.ctx);
       const response = openSealed(
         result!.sealed,

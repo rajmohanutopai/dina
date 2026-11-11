@@ -8,8 +8,8 @@
 
 import Fastify, { type FastifyInstance } from 'fastify';
 
-import { wireToStoredNotification } from '@dina/core';
 import { appendNotification, resetNotifications } from '@dina/brain/notifications';
+import { wireToStoredNotification } from '@dina/core';
 
 import { registerNotificationApiRoutes } from '../src/routes/notifications';
 

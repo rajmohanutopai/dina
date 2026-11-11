@@ -170,7 +170,10 @@ export class SQLiteBuyerStatusRepository implements BuyerStatusRepository {
           ORDER BY sequence_num`,
         [supplierDid, purchaseOrderId],
       )
-      .map((row) => ({ record: rowToStatus(row), evidence: rehydrateEnvelopeEvidence(row.evidence_json) }))
+      .map((row) => ({
+        record: rowToStatus(row),
+        evidence: rehydrateEnvelopeEvidence(row.evidence_json),
+      }))
       .filter((entry): entry is HeldStatusEvidence => entry.evidence !== null);
   }
 
@@ -356,16 +359,25 @@ export function verifyInboundStatus(args: {
   // compare against the held head, and a mismatch there reads as a fork by
   // this supplier rather than as an answer about somebody else's order.
   if (status.supplier_did !== args.supplierDid) {
-    return { outcome: 'not_our_order', detail: 'status.supplier_did is not the authenticated sender' };
+    return {
+      outcome: 'not_our_order',
+      detail: 'status.supplier_did is not the authenticated sender',
+    };
   }
   if (status.purchase_order_id !== args.purchaseOrderId) {
-    return { outcome: 'not_our_order', detail: 'status.purchase_order_id is not the order asked about' };
+    return {
+      outcome: 'not_our_order',
+      detail: 'status.purchase_order_id is not the order asked about',
+    };
   }
   if (status.buyer_did !== args.order.buyerDid) {
     return { outcome: 'not_our_order', detail: 'status.buyer_did is not this node' };
   }
   if (args.order.supplierDid !== '' && status.supplier_did !== args.order.supplierDid) {
-    return { outcome: 'not_our_order', detail: 'status is signed by a supplier this order did not name' };
+    return {
+      outcome: 'not_our_order',
+      detail: 'status is signed by a supplier this order did not name',
+    };
   }
 
   // §9.11's lines rule is CUMULATIVE against the order. Without the order's

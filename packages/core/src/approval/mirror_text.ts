@@ -85,4 +85,3 @@ export function hasUnsafeMultilineText(value: string): boolean {
   }
   return false;
 }
-

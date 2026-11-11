@@ -26,11 +26,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 import React from 'react';
 
 import { saveActiveProvider } from '../../src/ai/active_provider';
-import {
-  getConfiguredProviders,
-  saveApiKey,
-  verifyKey,
-} from '../../src/ai/provider';
+import { getConfiguredProviders, saveApiKey, verifyKey } from '../../src/ai/provider';
 import { AiProviderSet } from '../../src/components/onboarding/ai_provider_set';
 
 const LOC = { current: 6, total: 7, label: 'Connect AI' };

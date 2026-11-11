@@ -281,7 +281,10 @@ describe('golden vectors: frozen refusals and canonical forms (another runtime r
 // Cold audit C4-1: the digest vector is a record the directory would take
 it('the attempted-record vector is a whole card record: every member the card lexicon requires, and no other', () => {
   const lexicon = JSON.parse(
-    readFileSync(join(__dirname, '..', 'lexicons', 'com', 'dinakernel', 'a2a', 'card.json'), 'utf8'),
+    readFileSync(
+      join(__dirname, '..', 'lexicons', 'com', 'dinakernel', 'a2a', 'card.json'),
+      'utf8',
+    ),
   ) as { defs: { main: { record: { required: string[]; properties: Record<string, unknown> } } } };
   const { required, properties } = lexicon.defs.main.record;
   const members = Object.keys(V.attempted_record_digest.record).filter((k) => k !== '$type');
@@ -290,5 +293,7 @@ it('the attempted-record vector is a whole card record: every member the card le
 });
 
 it('the fence vectors hold a signature over non-canonical bytes, refused as the envelope’s is', () => {
-  expect(V.fence_refusals.find((r) => r.name === 'a signature over non-canonical bytes')?.expect).toBe('fence_signature');
+  expect(
+    V.fence_refusals.find((r) => r.name === 'a signature over non-canonical bytes')?.expect,
+  ).toBe('fence_signature');
 });

@@ -72,7 +72,10 @@ export function makeHttpServiceSearchHandler(
       });
       const text = await response.text();
       if (text.length > MAX_RESPONSE_BYTES) {
-        return { status: 502, body: { error: 'service directory response exceeded the size limit' } };
+        return {
+          status: 502,
+          body: { error: 'service directory response exceeded the size limit' },
+        };
       }
       let body: unknown;
       try {
@@ -84,9 +87,7 @@ export function makeHttpServiceSearchHandler(
         return {
           status: response.status >= 500 ? 503 : response.status,
           body:
-            body && typeof body === 'object'
-              ? body
-              : { error: 'service directory request failed' },
+            body && typeof body === 'object' ? body : { error: 'service directory request failed' },
         };
       }
       const safe = sanitizeResponse(body);

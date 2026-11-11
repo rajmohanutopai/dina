@@ -20,7 +20,6 @@
  * — boot will pick the new provider naturally when it runs.
  */
 
-
 import { createDecisionBackend, createLLMProvider } from './provider';
 
 import type { ProviderType } from './provider';
@@ -51,9 +50,7 @@ export function peekAgenticRouter(): LLMRouter | null {
  * Returns true when the swap was applied, false when no router is
  * registered or no key is stored for the chosen provider.
  */
-export async function swapAgenticActiveProvider(
-  provider: ProviderType,
-): Promise<boolean> {
+export async function swapAgenticActiveProvider(provider: ProviderType): Promise<boolean> {
   if (activeRouter === null) return false;
   const llm = await createLLMProvider(provider);
   if (llm === null) return false;

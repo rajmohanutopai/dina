@@ -112,7 +112,7 @@ test.describe('MRS-10 — Services, public (bus ETA)', () => {
         const body = await resolved.first().innerText();
         await expectJudgePass({
           rubric:
-            'This is a RESOLVED service-query card answering the user\'s question "when\'s the ' +
+            "This is a RESOLVED service-query card answering the user's question \"when's the " +
             'next 42 bus?". PASS if it presents an arrival ETA for bus/route 42 (a clock time or ' +
             'a minutes-until-arrival). FAIL if it is an error, says it does not know, or is ' +
             'unrelated to a bus arrival time.',

@@ -30,7 +30,13 @@ export function base58btcEncode(bytes: Uint8Array): string {
       carry = Math.floor(carry / 58);
     }
   }
-  return '1'.repeat(zeros) + digits.reverse().map((d) => ALPHABET[d]).join('');
+  return (
+    '1'.repeat(zeros) +
+    digits
+      .reverse()
+      .map((d) => ALPHABET[d])
+      .join('')
+  );
 }
 
 export function base58btcDecode(text: string): Uint8Array | null {
@@ -66,7 +72,11 @@ function encode(prefix: readonly number[], key: Uint8Array): string {
   return `z${base58btcEncode(bytes)}`;
 }
 
-function decode(prefix: readonly number[], keyLength: number, multibase: string): Uint8Array | null {
+function decode(
+  prefix: readonly number[],
+  keyLength: number,
+  multibase: string,
+): Uint8Array | null {
   if (!multibase.startsWith('z')) return null;
   const bytes = base58btcDecode(multibase.slice(1));
   if (bytes === null || bytes.length !== prefix.length + keyLength) return null;
@@ -85,7 +95,10 @@ export function ed25519FromMultikey(multibase: string): Uint8Array | null {
 }
 
 export function p256Multikey(compressedPoint: Uint8Array): string {
-  if (compressedPoint.length !== 33 || (compressedPoint[0] !== 0x02 && compressedPoint[0] !== 0x03)) {
+  if (
+    compressedPoint.length !== 33 ||
+    (compressedPoint[0] !== 0x02 && compressedPoint[0] !== 0x03)
+  ) {
     throw new Error('multikey: a P-256 key is a 33-byte compressed point');
   }
   return encode(P256_PREFIX, compressedPoint);

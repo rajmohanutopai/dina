@@ -23,16 +23,7 @@
 
 import { usePathname } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { KeyboardAvoidingView } from 'react-native-keyboard-controller';
 
 import { setBackgroundTimeout } from '@dina/core';
@@ -56,13 +47,20 @@ import { loadBackgroundTimeoutPreference } from '../services/security_preference
 import { loadStaffIdentity, onStaffIdentitySaved } from '../services/staff_identity_store';
 import { loadAutoPassphrase, loadStartupMode } from '../services/startup_preferences';
 import { hasWrappedSeed, loadWrappedSeed } from '../services/wrapped_seed_store';
-import { colors, fonts, radius, spacing, textStyles } from '../theme';
+import { colors, radius, spacing, textStyles } from '../theme';
 
 import { OnboardingFlow } from './onboarding/onboarding_flow';
 import { PassphraseField } from './PassphraseField';
 import { StaffShellRedirect } from './staff_shell_redirect';
 
-export type Mode = 'loading' | 'read_failed' | 'onboarding' | 'staff' | 'locked' | 'unlocking' | 'unlocked';
+export type Mode =
+  | 'loading'
+  | 'read_failed'
+  | 'onboarding'
+  | 'staff'
+  | 'locked'
+  | 'unlocking'
+  | 'unlocked';
 
 const DEV_PASSPHRASE = process.env.EXPO_PUBLIC_DINA_DEV_PASSPHRASE ?? '';
 
@@ -379,10 +377,7 @@ export function UnlockGate({ children }: { children: React.ReactNode }): React.R
   // `locked` or `unlocking` — returning-user passphrase form.
   const busy = mode === 'unlocking';
   return (
-    <KeyboardAvoidingView
-      behavior="padding"
-      style={styles.root}
-    >
+    <KeyboardAvoidingView behavior="padding" style={styles.root}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.brand}>Dina</Text>
         <Text style={styles.headline}>Welcome back</Text>

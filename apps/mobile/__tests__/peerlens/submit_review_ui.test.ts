@@ -30,7 +30,9 @@ import { submitReviewFromUI } from '../../src/peerlens/submit_review_ui';
 import type { AttestationDraftBody } from '../../src/peerlens/review_draft_body';
 
 const mockNode = getBootedNode as jest.MockedFunction<typeof getBootedNode>;
-const mockInjectConfigured = isTestPublishConfigured as jest.MockedFunction<typeof isTestPublishConfigured>;
+const mockInjectConfigured = isTestPublishConfigured as jest.MockedFunction<
+  typeof isTestPublishConfigured
+>;
 const mockSubmit = submitReviewPublish as jest.MockedFunction<typeof submitReviewPublish>;
 
 const DRAFT: AttestationDraftBody = {
@@ -54,7 +56,6 @@ afterEach(() => {
 });
 
 it('inject active + NO real publisher → passes a sentinel publisher + the inject publishToPDS', async () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mockNode.mockReturnValue({ did: 'did:plc:owner', pdsPublisher: undefined } as any);
   mockInjectConfigured.mockReturnValue(true);
 
@@ -66,7 +67,6 @@ it('inject active + NO real publisher → passes a sentinel publisher + the inje
 });
 
 it('inject OFF + NO real publisher → publisher undefined (real no_credentials path) + no inject', async () => {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   mockNode.mockReturnValue({ did: 'did:plc:owner', pdsPublisher: undefined } as any);
   mockInjectConfigured.mockReturnValue(false);
 
@@ -79,7 +79,7 @@ it('inject OFF + NO real publisher → publisher undefined (real no_credentials 
 
 it('a real publisher is passed straight through (no sentinel)', async () => {
   const realPublisher = { publish: () => undefined };
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+
   mockNode.mockReturnValue({ did: 'did:plc:owner', pdsPublisher: realPublisher } as any);
   mockInjectConfigured.mockReturnValue(false);
 

@@ -47,7 +47,7 @@ export function proveOwnerWords(
   words: string,
 ): { ok: true; proof: OwnerWordsProof; span: string } | { ok: false; error: string } {
   const turn = getCurrentOwnerTurn(thread);
-  if (turn === null) return { ok: false, error: "no owner message is on record for this turn" };
+  if (turn === null) return { ok: false, error: 'no owner message is on record for this turn' };
   const wanted = cleanForProvenance(words).trim();
   if (wanted === '') return { ok: false, error: 'quote the words to use' };
   const clean = cleanForProvenance(turn.text);

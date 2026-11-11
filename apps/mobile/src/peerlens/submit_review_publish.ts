@@ -88,7 +88,11 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
     input.draftId !== undefined &&
     existing?.status === 'published'
   ) {
-    return { kind: 'published', uri: existing.publishedUri ?? '', cid: existing.publishedCid ?? '' };
+    return {
+      kind: 'published',
+      uri: existing.publishedUri ?? '',
+      cid: existing.publishedCid ?? '',
+    };
   }
 
   // 2. Credential gate — BEFORE the queued projection. If this boot has no PDS
@@ -105,7 +109,11 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
 
   // 4. Local lexicon validation — reject BEFORE persisting anything.
   if (lexiconErrorFor(input.record) !== null) {
-    return { kind: 'error', code: 'lexicon_invalid', message: describePublishErrorCode('lexicon_invalid') };
+    return {
+      kind: 'error',
+      code: 'lexicon_invalid',
+      message: describePublishErrorCode('lexicon_invalid'),
+    };
   }
 
   // 5. Per-identity cap (counts only THIS DID's active jobs).
@@ -168,7 +176,11 @@ export async function submitReviewPublish(input: SubmitReviewInput): Promise<Sub
   });
   if (res.kind === 'published') return { kind: 'published', uri: res.uri, cid: res.cid };
   if (res.kind === 'failed') {
-    return { kind: 'error', code: res.error.code, message: describePublishErrorCode(res.error.code) };
+    return {
+      kind: 'error',
+      code: res.error.code,
+      message: describePublishErrorCode(res.error.code),
+    };
   }
   // `requeued` (transient) or `lost` (lease reclaimed mid-write) → the job is in
   // flight / owned by the worker; surface it as queued.

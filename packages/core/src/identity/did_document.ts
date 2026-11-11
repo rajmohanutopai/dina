@@ -20,7 +20,7 @@
 export type { VerificationMethod, ServiceEndpoint, DIDDocument } from '@dina/protocol';
 import { DID_V1_CONTEXT, MULTIKEY_CONTEXT } from '@dina/protocol';
 
-import type { DIDDocument, ServiceEndpoint } from '@dina/protocol';
+import type { DIDDocument } from '@dina/protocol';
 
 /**
  * Build a W3C DID Document from identity material.

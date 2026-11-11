@@ -12,7 +12,10 @@ import { openPeopleHarness, type PeopleHarness } from './_harness';
 
 import type { ExtractionPersonLink, ExtractionResult } from '../../src/people/domain';
 
-function lc(canonicalName: string, surfaces: ExtractionPersonLink['surfaces']): ExtractionPersonLink {
+function lc(
+  canonicalName: string,
+  surfaces: ExtractionPersonLink['surfaces'],
+): ExtractionPersonLink {
   return { canonicalName, relationshipHint: '', sourceExcerpt: '', surfaces };
 }
 
@@ -137,19 +140,14 @@ describe('RepositoryPersonResolver', () => {
         }),
       );
       const result = resolver.resolveBySurface('Alex');
-      expect(result.map((p) => p.canonicalName).sort()).toEqual([
-        'Alex Reyes',
-        'Alex Wong',
-      ]);
+      expect(result.map((p) => p.canonicalName).sort()).toEqual(['Alex Reyes', 'Alex Wong']);
     });
 
     it('skips suggested surfaces (only confirmed resolve)', () => {
       harness.repo.applyExtraction(
         ext({
           sourceItemId: 'item-1',
-          results: [
-            lc('Maybe', [{ surface: 'Maybe', surfaceType: 'name', confidence: 'medium' }]),
-          ],
+          results: [lc('Maybe', [{ surface: 'Maybe', surfaceType: 'name', confidence: 'medium' }])],
         }),
       );
       // Surface is suggested → should NOT resolve.
@@ -163,9 +161,7 @@ describe('RepositoryPersonResolver', () => {
         ext({
           sourceItemId: 'item-1',
           results: [
-            lc('Pending', [
-              { surface: 'Pending', surfaceType: 'name', confidence: 'medium' },
-            ]),
+            lc('Pending', [{ surface: 'Pending', surfaceType: 'name', confidence: 'medium' }]),
           ],
         }),
       );
@@ -211,9 +207,7 @@ describe('RepositoryPersonResolver', () => {
         ext({
           sourceItemId: 'item-1',
           results: [
-            lc('Sancho Garcia', [
-              { surface: 'Sancho', surfaceType: 'name', confidence: 'high' },
-            ]),
+            lc('Sancho Garcia', [{ surface: 'Sancho', surfaceType: 'name', confidence: 'high' }]),
           ],
         }),
       );
@@ -225,9 +219,7 @@ describe('RepositoryPersonResolver', () => {
       harness.repo.applyExtraction(
         ext({
           sourceItemId: 'item-1',
-          results: [
-            lc('Alonso', [{ surface: 'Alonso', surfaceType: 'name', confidence: 'high' }]),
-          ],
+          results: [lc('Alonso', [{ surface: 'Alonso', surfaceType: 'name', confidence: 'high' }])],
         }),
       );
       const person = harness.repo.listPeople()[0];
@@ -246,9 +238,7 @@ describe('RepositoryPersonResolver', () => {
               canonicalName: '',
               relationshipHint: '',
               sourceExcerpt: '',
-              surfaces: [
-                { surface: 'Sanch', surfaceType: 'name', confidence: 'high' },
-              ],
+              surfaces: [{ surface: 'Sanch', surfaceType: 'name', confidence: 'high' }],
             },
           ],
         }),
@@ -266,9 +256,7 @@ describe('RepositoryPersonResolver', () => {
               canonicalName: '',
               relationshipHint: '',
               sourceExcerpt: '',
-              surfaces: [
-                { surface: 'Sanch', surfaceType: 'nickname', confidence: 'high' },
-              ],
+              surfaces: [{ surface: 'Sanch', surfaceType: 'nickname', confidence: 'high' }],
             },
           ],
         }),
@@ -286,9 +274,7 @@ describe('RepositoryPersonResolver', () => {
               canonicalName: '',
               relationshipHint: '',
               sourceExcerpt: '',
-              surfaces: [
-                { surface: 'whisper', surfaceType: 'name', confidence: 'medium' },
-              ],
+              surfaces: [{ surface: 'whisper', surfaceType: 'name', confidence: 'medium' }],
             },
           ],
         }),

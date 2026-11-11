@@ -644,9 +644,7 @@ export function formatPlaceLocation(
  * Exported for `subject_detail_data.ts` so the chip semantics
  * stay single-source across card + detail surfaces.
  */
-export function normalisePriceTier(
-  tier: string | null | undefined,
-): '$' | '$$' | '$$$' | null {
+export function normalisePriceTier(tier: string | null | undefined): '$' | '$$' | '$$$' | null {
   if (tier === '$' || tier === '$$' || tier === '$$$') return tier;
   return null;
 }
@@ -763,9 +761,7 @@ export function deriveRecencyBadge(
   return formatAge(ageMs);
 }
 
-function recencyThresholdForCategory(
-  category: string | null | undefined,
-): number {
+function recencyThresholdForCategory(category: string | null | undefined): number {
   if (typeof category !== 'string' || category.trim().length === 0) {
     return DEFAULT_RECENCY_THRESHOLD_MS;
   }

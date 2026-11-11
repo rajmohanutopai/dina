@@ -13,7 +13,6 @@ import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
 import { newBuyerOrder } from '../../src/commerce/buyer_reconciliation';
 import {
   makeServiceQueryReconcileSend,
-  ORDER_RECONCILE_CAPABILITY,
   ORDER_RECONCILE_WIRE_CAPABILITY,
   ReconcilePollSweeper,
 } from '../../src/commerce/reconcile_sweeper';

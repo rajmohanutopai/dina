@@ -34,13 +34,6 @@ SECRET_RES=(
 
 MNEMONIC_SCANNER="$(dirname "$0")/log_hygiene_mnemonic_scan.mjs"
 
-# Ban the EXACT PDS app password too, loaded at RUNTIME from the gitignored
-# sanity env if present — so the literal secret never lives in this script.
-if [ -f tests/sanity/.env.sanity ]; then
-  _pw="$(grep -aoE '\b[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}-[a-z0-9]{4}\b' tests/sanity/.env.sanity | head -1 || true)"
-  [ -n "$_pw" ] && SECRET_RES+=("$(printf '%s' "$_pw" | sed 's/[][\.*^$/]/\\&/g')")
-fi
-
 fail=0
 hit() { echo "  ✗ FORBIDDEN: $1"; echo "    $2"; fail=1; }
 

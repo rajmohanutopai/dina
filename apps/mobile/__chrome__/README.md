@@ -3,11 +3,11 @@
 Operator-runnable test scenarios that exercise the **same mobile
 source** across three real platform surfaces:
 
-| Driver | Tool | What it tests | Required setup |
-|---|---|---|---|
-| `web`     | Claude Chrome plugin | RNW rendering in a real browser | `npm run web:export` + static-serve dist/ |
-| `ios`     | `idb`                 | iOS Expo dev-client            | iOS simulator booted, `idb companion` running |
-| `android` | `adb`                 | Android Expo dev-client        | Android emulator booted, `adb` on PATH |
+| Driver    | Tool                 | What it tests                   | Required setup                                |
+| --------- | -------------------- | ------------------------------- | --------------------------------------------- |
+| `web`     | Claude Chrome plugin | RNW rendering in a real browser | `npm run web:export` + static-serve dist/     |
+| `ios`     | `idb`                | iOS Expo dev-client             | iOS simulator booted, `idb companion` running |
+| `android` | `adb`                | Android Expo dev-client         | Android emulator booted, `adb` on PATH        |
 
 Per `docs/HOME_NODE_LITE_WEB_UI_TASKS.md` §4.6 — "one scenario, three
 drivers". The same `.scenario.md` file maps to a Claude prompt that
@@ -45,12 +45,12 @@ bundle is what gets attached to the release notes.
 
 ## Why this complements Playwright
 
-| Playwright | Chrome plugin |
-|---|---|
-| Runs unattended in CI | Operator pastes the scenario at Claude |
+| Playwright                   | Chrome plugin                                           |
+| ---------------------------- | ------------------------------------------------------- |
+| Runs unattended in CI        | Operator pastes the scenario at Claude                  |
 | Fast feedback on regressions | Catches "looks wrong" + state issues during development |
-| Web only (Chromium) | Web + iOS + Android via three drivers |
-| Strict — selectors, asserts | Tolerant — Claude reasons about state |
+| Web only (Chromium)          | Web + iOS + Android via three drivers                   |
+| Strict — selectors, asserts  | Tolerant — Claude reasons about state                   |
 
 Same scenario backlog, different cadence: Playwright runs on every
 PR; Chrome scenarios run on every release + during exploratory

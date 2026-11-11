@@ -23,7 +23,7 @@ function mockProvider(
   model: string,
   source: 'local' | 'cloud',
 ): (text: string) => Promise<EmbeddingResult> {
-  return async (text: string) => ({
+  return async (_text: string) => ({
     vector: new Float32Array(768).fill(0.1),
     dimensions: 768,
     model,

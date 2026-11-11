@@ -160,11 +160,23 @@ describe('parseServiceQueryExecutionPayload', () => {
   });
 
   describe('continuation (A2A multi-turn)', () => {
-    const TURN = { prompt: 'Which stop?', input_schema: { type: 'object' }, input: { stop: 'Elm' } };
-    const base = { from_did: 'a2a:ac_1', query_id: 'q', capability: 'eta_query', params: { route_id: '42' } };
+    const TURN = {
+      prompt: 'Which stop?',
+      input_schema: { type: 'object' },
+      input: { stop: 'Elm' },
+    };
+    const base = {
+      from_did: 'a2a:ac_1',
+      query_id: 'q',
+      capability: 'eta_query',
+      params: { route_id: '42' },
+    };
 
     it('round-trips every turn, and leaves the params as they were', () => {
-      const wire = buildServiceQueryExecutionPayload({ ...base, continuation: { turns: [TURN, { ...TURN, input: null }] } });
+      const wire = buildServiceQueryExecutionPayload({
+        ...base,
+        continuation: { turns: [TURN, { ...TURN, input: null }] },
+      });
       const parsed = parseServiceQueryExecutionPayload(JSON.parse(JSON.stringify(wire)));
       expect(parsed?.continuation).toEqual({ turns: [TURN, { ...TURN, input: null }] });
       expect(parsed?.params).toEqual({ route_id: '42' });
@@ -172,7 +184,9 @@ describe('parseServiceQueryExecutionPayload', () => {
 
     it('may_ask is true or absent, never a truthy coercion', () => {
       expect(buildServiceQueryExecutionPayload({ ...base, may_ask: true }).may_ask).toBe(true);
-      expect('may_ask' in buildServiceQueryExecutionPayload({ ...base, may_ask: false })).toBe(false);
+      expect('may_ask' in buildServiceQueryExecutionPayload({ ...base, may_ask: false })).toBe(
+        false,
+      );
       const wire = { type: SERVICE_QUERY_EXECUTION_TYPE, ...base, may_ask: 'yes' };
       expect(parseServiceQueryExecutionPayload(wire)?.may_ask).toBeUndefined();
       expect(parseServiceQueryExecutionPayload({ ...wire, may_ask: true })?.may_ask).toBe(true);
@@ -180,7 +194,10 @@ describe('parseServiceQueryExecutionPayload', () => {
 
     it('writes nothing for no turns', () => {
       expect('continuation' in buildServiceQueryExecutionPayload(base)).toBe(false);
-      expect('continuation' in buildServiceQueryExecutionPayload({ ...base, continuation: { turns: [] } })).toBe(false);
+      expect(
+        'continuation' in
+          buildServiceQueryExecutionPayload({ ...base, continuation: { turns: [] } }),
+      ).toBe(false);
     });
 
     it.each([

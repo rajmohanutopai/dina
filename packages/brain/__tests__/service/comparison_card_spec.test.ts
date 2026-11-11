@@ -41,7 +41,10 @@ function sectionIndex(blocks: CardBlock[], label: string): number {
 }
 
 /** The first `list` block belonging to a section (before the next section). */
-function listAfter(blocks: CardBlock[], label: string): Extract<CardBlock, { kind: 'list' }> | null {
+function listAfter(
+  blocks: CardBlock[],
+  label: string,
+): Extract<CardBlock, { kind: 'list' }> | null {
   const idx = sectionIndex(blocks, label);
   if (idx < 0) return null;
   for (let i = idx + 1; i < blocks.length; i += 1) {
@@ -140,7 +143,12 @@ describe('buildComparisonCardSpec — money-free where-to-buy projection', () =>
             { label: 'Why', value: 'price: 0 of 6000' },
           ],
           alternatives: [
-            { supplierDid: 'did:plc:midseller', seller: 'Mid Seating (did:plc:midseller)', total: 'INR 700.00', leadTime: '5 days' },
+            {
+              supplierDid: 'did:plc:midseller',
+              seller: 'Mid Seating (did:plc:midseller)',
+              total: 'INR 700.00',
+              leadTime: '5 days',
+            },
           ],
           handoff: [
             { supplierDid: 'did:plc:midseller', serviceUri: 'at://did:plc:midseller/svc' },
@@ -155,13 +163,19 @@ describe('buildComparisonCardSpec — money-free where-to-buy projection', () =>
       ),
     );
     const kinds = blocks.map((b) => b.kind);
-    const keyValues = blocks.filter((b): b is Extract<CardBlock, { kind: 'keyValue' }> => b.kind === 'keyValue');
+    const keyValues = blocks.filter(
+      (b): b is Extract<CardBlock, { kind: 'keyValue' }> => b.kind === 'keyValue',
+    );
     // The decision reads in the headline, before the first section; the price follows it.
     const labels = keyValues.map((b) => b.label);
     expect(labels).toEqual(['Requested', 'Recommended', 'Chosen for', 'Indicative price', 'Why']);
-    expect(keyValues.find((b) => b.label === 'Recommended')?.value).toBe('Steady Seats (did:plc:dearseller)');
+    expect(keyValues.find((b) => b.label === 'Recommended')?.value).toBe(
+      'Steady Seats (did:plc:dearseller)',
+    );
     const firstSection = kinds.indexOf('section');
-    expect(blocks.findIndex((b) => b.kind === 'keyValue' && b.label === 'Chosen for')).toBeLessThan(firstSection);
+    expect(blocks.findIndex((b) => b.kind === 'keyValue' && b.label === 'Chosen for')).toBeLessThan(
+      firstSection,
+    );
     // The set-aside lines are ONE list under their own section, right after the headline.
     expect(blocks[firstSection]).toEqual({ kind: 'section', label: 'Set aside' });
     expect(listAfter(blocks, 'Set aside')?.rows).toEqual([
@@ -172,14 +186,19 @@ describe('buildComparisonCardSpec — money-free where-to-buy projection', () =>
     // Names on the link and on the alternatives row (the card's `seller` label, not the DID).
     const link = blocks.find((b): b is Extract<CardBlock, { kind: 'link' }> => b.kind === 'link');
     expect(link?.label).toBe('Steady Seats (did:plc:dearseller)');
-    expect(listAfter(blocks, 'Where to buy')?.rows).toEqual([{ text: 'did:plc:midseller', sub: 'at://did:plc:midseller/svc' }]);
+    expect(listAfter(blocks, 'Where to buy')?.rows).toEqual([
+      { text: 'did:plc:midseller', sub: 'at://did:plc:midseller/svc' },
+    ]);
     expect(listAfter(blocks, 'Alternatives')?.rows).toEqual([
       { text: 'Mid Seating (did:plc:midseller)', sub: '5 days', trailing: 'INR 700.00' },
     ]);
   });
 
   it('many set-aside lines never push the price, the where-to-buy list or the incomparable section past the block cap', () => {
-    const setAside = Array.from({ length: 19 }, (_, i) => ({ label: 'Set aside', value: `did:plc:s${String(i)}: unknown` }));
+    const setAside = Array.from({ length: 19 }, (_, i) => ({
+      label: 'Set aside',
+      value: `did:plc:s${String(i)}: unknown`,
+    }));
     const blocks = blocksOf(
       buildComparisonCardSpec(
         card({

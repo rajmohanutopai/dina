@@ -48,7 +48,13 @@ beforeAll(async () => {
     logger: pino({ level: 'silent' }),
     cardCacheMs: 0,
     trustProxy: 0,
-    hub: new StreamHub({ maxStreams: 4, bufferMs: 1_000, bufferEvents: 4, bufferTasks: 4, bufferBytes: 1 << 20 }),
+    hub: new StreamHub({
+      maxStreams: 4,
+      bufferMs: 1_000,
+      bufferEvents: 4,
+      bufferTasks: 4,
+      bufferBytes: 1 << 20,
+    }),
     streams: { perIp: 20, maxLifetimeMs: 60_000, keepaliveMs: 60_000, maxBufferedBytes: 1 << 20 },
   });
   await gateway.listen({ port: 0, host: '127.0.0.1' });
@@ -78,24 +84,37 @@ const restGet = (path: string) =>
 const rpc = (body: string) =>
   `POST /a2a/v1 HTTP/1.1\r\nHost: x\r\nAuthorization: Bearer t\r\nA2A-Version: 1.0\r\nContent-Type: application/json\r\nContent-Length: ${Buffer.byteLength(body)}\r\nConnection: close\r\n\r\n${body}`;
 
-it.each(['/a2a/rest/tasks/..', '/a2a/rest/tasks/.', '/a2a/rest/tasks/%2e%2e', '/a2a/rest/tasks/%2E', '/a2a/rest/tasks/../cancel'])(
-  'REST %s: no route, 404 at the gateway, and nothing reaches Core',
-  async (path) => {
-    const answer = await raw(restGet(path));
-    expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 404 Not Found');
+it.each([
+  '/a2a/rest/tasks/..',
+  '/a2a/rest/tasks/.',
+  '/a2a/rest/tasks/%2e%2e',
+  '/a2a/rest/tasks/%2E',
+  '/a2a/rest/tasks/../cancel',
+])('REST %s: no route, 404 at the gateway, and nothing reaches Core', async (path) => {
+  const answer = await raw(restGet(path));
+  expect(answer.split('\r\n')[0]).toBe('HTTP/1.1 404 Not Found');
+  expect(reached).toEqual([]);
+});
+
+it.each(['..', '.'])(
+  'JSON-RPC GetTask with id %p: task not found (-32001), and nothing reaches Core',
+  async (id) => {
+    const answer = await raw(
+      rpc(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'GetTask', params: { id } })),
+    );
+    const body = JSON.parse(answer.slice(answer.indexOf('\r\n\r\n') + 4)) as {
+      id: number;
+      error: { code: number };
+    };
+    expect([body.id, body.error.code]).toEqual([7, -32001]);
     expect(reached).toEqual([]);
   },
 );
 
-it.each(['..', '.'])('JSON-RPC GetTask with id %p: task not found (-32001), and nothing reaches Core', async (id) => {
-  const answer = await raw(rpc(JSON.stringify({ jsonrpc: '2.0', id: 7, method: 'GetTask', params: { id } })));
-  const body = JSON.parse(answer.slice(answer.indexOf('\r\n\r\n') + 4)) as { id: number; error: { code: number } };
-  expect([body.id, body.error.code]).toEqual([7, -32001]);
-  expect(reached).toEqual([]);
-});
-
 it('an id with dots that is not a dot segment still reaches its own route', async () => {
   await raw(restGet('/a2a/rest/tasks/t.1..x'));
-  await raw(rpc(JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'GetTask', params: { id: '...' } })));
+  await raw(
+    rpc(JSON.stringify({ jsonrpc: '2.0', id: 8, method: 'GetTask', params: { id: '...' } })),
+  );
   expect(reached).toEqual(['/v1/a2a/ingress/tasks/t.1..x/get', '/v1/a2a/ingress/tasks/.../get']);
 });

@@ -53,8 +53,16 @@ import { StreamHub } from '../src/stream_hub';
 
 import type { FastifyInstance } from 'fastify';
 
-const ETA_PARAMS = { type: 'object', required: ['route_id'], properties: { route_id: { type: 'string', minLength: 1 } } };
-const ETA_RESULT = { type: 'object', required: ['eta_minutes'], properties: { eta_minutes: { type: 'integer' } } };
+const ETA_PARAMS = {
+  type: 'object',
+  required: ['route_id'],
+  properties: { route_id: { type: 'string', minLength: 1 } },
+};
+const ETA_RESULT = {
+  type: 'object',
+  required: ['eta_minutes'],
+  properties: { eta_minutes: { type: 'integer' } },
+};
 
 let dir: string;
 let db: NodeSQLiteAdapter;
@@ -95,8 +103,19 @@ function serveCore(r: CoreRouter): Promise<Server> {
 }
 
 /** One gateway process: its server on a real socket, its hub and its delivery loop. */
-async function startGateway(): Promise<{ app: FastifyInstance; base: string; pump: DeliveryPump; stop: () => Promise<void> }> {
-  const hub = new StreamHub({ maxStreams: 10, bufferMs: 60_000, bufferEvents: 16, bufferTasks: 64, bufferBytes: 1 << 20 });
+async function startGateway(): Promise<{
+  app: FastifyInstance;
+  base: string;
+  pump: DeliveryPump;
+  stop: () => Promise<void>;
+}> {
+  const hub = new StreamHub({
+    maxStreams: 10,
+    bufferMs: 60_000,
+    bufferEvents: 16,
+    bufferTasks: 64,
+    bufferBytes: 1 << 20,
+  });
   const link = createCoreLink({ baseUrl: coreUrl, key, timeoutMs: 5_000 });
   const app = buildGatewayServer({
     core: link,
@@ -133,11 +152,20 @@ async function startGateway(): Promise<{ app: FastifyInstance; base: string; pum
 
 beforeAll(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'a2a-gw-restart-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'ac'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: 'ac'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   installA2A({ store: new A2AStore(db) });
   repo = new SQLiteWorkflowRepository(db);
-  workflow = new WorkflowService({ repository: repo, ...a2aWorkflowHooks(getA2ARuntime), responseBridgeSender: async () => undefined });
+  workflow = new WorkflowService({
+    repository: repo,
+    ...a2aWorkflowHooks(getA2ARuntime),
+    responseBridgeSender: async () => undefined,
+  });
   setWorkflowService(workflow);
   setServiceConfigRepository(new SQLiteServiceConfigRepository(db));
   setServiceGrantRepository(new SQLiteServiceGrantRepository(db));
@@ -152,7 +180,14 @@ beforeAll(async () => {
       discoverability: 'public',
       status: 'active',
       name: 'Bus 42',
-      capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'get_eta', responsePolicy: 'auto', category: 'transit' } },
+      capabilities: {
+        eta_query: {
+          mcpServer: 'transit',
+          mcpTool: 'get_eta',
+          responsePolicy: 'auto',
+          category: 'transit',
+        },
+      },
       capabilitySchemas: { eta_query: { params: ETA_PARAMS, result: ETA_RESULT, schemaHash: 'h' } },
     },
     'bus',
@@ -163,7 +198,11 @@ beforeAll(async () => {
   const seed = new Uint8Array(randomBytes(32));
   key = { seed, did: deriveDIDKey(getPublicKey(seed)) };
   registerService(key.did, 'gateway');
-  configureRateLimiter({ maxRequests: 50, windowSeconds: 60, perDidMax: { [key.did]: Number.POSITIVE_INFINITY } });
+  configureRateLimiter({
+    maxRequests: 50,
+    windowSeconds: 60,
+    perDidMax: { [key.did]: Number.POSITIVE_INFINITY },
+  });
   setNodeDID('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
   router = createCoreRouter();
   coreHttp = await serveCore(router);
@@ -183,14 +222,27 @@ afterAll(async () => {
 });
 
 let rpcId = 0;
-async function call(base: string, method: string, params: Record<string, unknown>, extra: Record<string, string> = {}) {
+async function call(
+  base: string,
+  method: string,
+  params: Record<string, unknown>,
+  extra: Record<string, string> = {},
+) {
   rpcId += 1;
   const res = await fetch(`${base}/a2a/v1`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'a2a-version': '1.0', authorization: `Bearer ${token}`, ...extra },
+    headers: {
+      'content-type': 'application/json',
+      'a2a-version': '1.0',
+      authorization: `Bearer ${token}`,
+      ...extra,
+    },
     body: JSON.stringify({ jsonrpc: '2.0', id: rpcId, method, params }),
   });
-  return { status: res.status, body: (await res.json()) as { result?: Record<string, unknown>; error?: { code: number } } };
+  return {
+    status: res.status,
+    body: (await res.json()) as { result?: Record<string, unknown>; error?: { code: number } },
+  };
 }
 
 /** Open a streaming call; read its JSON-RPC events as they come. */
@@ -198,7 +250,11 @@ async function stream(base: string, method: string, params: Record<string, unkno
   rpcId += 1;
   const res = await fetch(`${base}/a2a/v1`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'a2a-version': '1.0', authorization: `Bearer ${token}` },
+    headers: {
+      'content-type': 'application/json',
+      'a2a-version': '1.0',
+      authorization: `Bearer ${token}`,
+    },
     body: JSON.stringify({ jsonrpc: '2.0', id: rpcId, method, params }),
   });
   const reader = res.body?.getReader();
@@ -209,7 +265,8 @@ async function stream(base: string, method: string, params: Record<string, unkno
       if (at !== -1) {
         const frame = buffered.slice(0, at);
         buffered = buffered.slice(at + 2);
-        if (frame.startsWith('data: ')) return (JSON.parse(frame.slice(6)) as { result: Record<string, unknown> }).result;
+        if (frame.startsWith('data: '))
+          return (JSON.parse(frame.slice(6)) as { result: Record<string, unknown> }).result;
         continue;
       }
       let chunk;
@@ -228,21 +285,28 @@ async function stream(base: string, method: string, params: Record<string, unkno
 const said = (m: Record<string, unknown> | 'end'): string => {
   if (m === 'end') return 'end';
   if (m.task !== undefined) return `task:${(m.task as { status: { state: string } }).status.state}`;
-  if (m.statusUpdate !== undefined) return (m.statusUpdate as { status: { state: string } }).status.state;
+  if (m.statusUpdate !== undefined)
+    return (m.statusUpdate as { status: { state: string } }).status.state;
   return 'artifact';
 };
 
-function runnerClaims(taskId: string, leaseMs = 30_000): string {
+function runnerClaims(
+  taskId: string,
+  leaseMs = 30_000,
+): { id: string; claimId: string | undefined } {
   const store = getA2ARuntime()?.store;
   const op = store?.getTaskByExternal('inbound', `a2a:${clientIdOf()}`, taskId) ?? null;
   const claimed = repo.claimDelegationTask(runnerDid, Date.now(), leaseMs, 'transit');
-  if (claimed === null || op === null || claimed.id !== op.internal_id) throw new Error('the runner took another call');
+  if (claimed === null || op === null || claimed.id !== op.internal_id)
+    throw new Error('the runner took another call');
   expect(admitInboundClaim(claimed, runnerDid)).toBe('admitted');
-  return claimed.id;
+  return { id: claimed.id, claimId: claimed.claim_id || undefined };
 }
 
 function clientIdOf(): string {
-  const row = getA2ARuntime()?.store.db.query('SELECT client_id FROM a2a_clients LIMIT 1') as { client_id: string }[];
+  const row = getA2ARuntime()?.store.db.query('SELECT client_id FROM a2a_clients LIMIT 1') as {
+    client_id: string;
+  }[];
   return row[0]?.client_id ?? '';
 }
 
@@ -251,11 +315,15 @@ describe('a gateway restart loses only open streams (§4.1, §7.5)', () => {
   it('a client that subscribes again after a restart gets the current Task, then the rest: nothing lost, nothing twice', async () => {
     const first = await startGateway();
     const a = await stream(first.base, 'SendStreamingMessage', {
-      message: { messageId: 'restart-1', role: 'ROLE_USER', parts: [{ data: { skill: 'eta_query', params: { route_id: '42' } } }] },
+      message: {
+        messageId: 'restart-1',
+        role: 'ROLE_USER',
+        parts: [{ data: { skill: 'eta_query', params: { route_id: '42' } } }],
+      },
     });
     const opening = await a();
     expect(said(opening)).toBe('task:TASK_STATE_SUBMITTED');
-    const id = ((opening as { task: { id: string } }).task).id;
+    const id = (opening as { task: { id: string } }).task.id;
     // The runner takes it with a short lease; the first gateway streams WORKING.
     runnerClaims(id, 1);
     await first.pump.turn();
@@ -277,14 +345,17 @@ describe('a gateway restart loses only open streams (§4.1, §7.5)', () => {
       const b = await stream(second.base, 'SubscribeToTask', { id });
       const reopened = await b();
       // It opens on the task as it stands now: the change made while no gateway ran is not lost.
-      expect((reopened as { task: { status: unknown } }).task.status).toEqual(polled.body.result?.status);
+      expect((reopened as { task: { status: unknown } }).task.status).toEqual(
+        polled.body.result?.status,
+      );
       // The waiting SUBMITTED event is already in the Task it opened with: it is not sent again.
       await second.pump.turn();
-      const child = runnerClaims(id);
+      // The runner reports with the claim it holds, as a real runner does.
+      const { id: child, claimId } = runnerClaims(id);
       await second.pump.turn();
       const working = await b();
       expect(said(working)).toBe('TASK_STATE_WORKING');
-      workflow.complete(child, JSON.stringify({ eta_minutes: 3 }), 'done', runnerDid);
+      workflow.complete(child, JSON.stringify({ eta_minutes: 3 }), 'done', runnerDid, claimId);
       await second.pump.turn();
       const story = [said(working), said(await b()), said(await b()), said(await b())];
       expect(story).toEqual(['TASK_STATE_WORKING', 'artifact', 'TASK_STATE_COMPLETED', 'end']);
@@ -308,7 +379,11 @@ describe('extensions (design §7.2 step 2, §7.6 required:false)', () => {
         gw.base,
         'SendMessage',
         {
-          message: { messageId: `ext-${rpcId}`, role: 'ROLE_USER', parts: [{ data: { skill: 'eta_query', params: { route_id: '7' } } }] },
+          message: {
+            messageId: `ext-${rpcId}`,
+            role: 'ROLE_USER',
+            parts: [{ data: { skill: 'eta_query', params: { route_id: '7' } } }],
+          },
           // Answered at once: the test cancels the call while it is queued.
           configuration: { returnImmediately: true },
         },

@@ -146,29 +146,36 @@ describe('workflow routes refuse reserved lanes', () => {
     },
   );
 
-  it.each(['a2a:ra-1', 'plugin:inst_1', 'dina.local', 'reasoning:claude', 'DINA.LOCAL', ' dina.local', 'PLUGIN:x', 'a2a:', 'Reasoning:'])(
-    'refuses creating a task on the reserved lane %j',
-    async (lane) => {
-      const resp = await router.handle(
-        req(
-          'POST',
-          '/v1/workflow/tasks',
-          {
-            id: 't-reserved',
-            kind: 'delegation',
-            description: 'x',
-            payload: '{}',
-            requested_runner: lane,
-            initial_state: 'queued',
-          },
-          'brain',
-        ),
-      );
-      expect(resp.status).toBe(400);
-      expect((resp.body as { error?: string }).error).toBe('reserved_runner');
-      expect(repo.getById('t-reserved')).toBeNull();
-    },
-  );
+  it.each([
+    'a2a:ra-1',
+    'plugin:inst_1',
+    'dina.local',
+    'reasoning:claude',
+    'DINA.LOCAL',
+    ' dina.local',
+    'PLUGIN:x',
+    'a2a:',
+    'Reasoning:',
+  ])('refuses creating a task on the reserved lane %j', async (lane) => {
+    const resp = await router.handle(
+      req(
+        'POST',
+        '/v1/workflow/tasks',
+        {
+          id: 't-reserved',
+          kind: 'delegation',
+          description: 'x',
+          payload: '{}',
+          requested_runner: lane,
+          initial_state: 'queued',
+        },
+        'brain',
+      ),
+    );
+    expect(resp.status).toBe(400);
+    expect((resp.body as { error?: string }).error).toBe('reserved_runner');
+    expect(repo.getById('t-reserved')).toBeNull();
+  });
 
   it.each(['brain', 'agent', 'admin', 'owner'])(
     'refuses a %s a Tier 1 task on dina.local: Core’s service-query ingress fills that lane (plan §4.2a)',
@@ -196,7 +203,12 @@ describe('workflow routes refuse reserved lanes', () => {
 
   it('refuses a reasoning task through the route: only the broker makes one', async () => {
     const resp = await router.handle(
-      req('POST', '/v1/workflow/tasks', { id: 't-reason', kind: 'reasoning', description: 'x', payload: '{}' }, 'brain'),
+      req(
+        'POST',
+        '/v1/workflow/tasks',
+        { id: 't-reason', kind: 'reasoning', description: 'x', payload: '{}' },
+        'brain',
+      ),
     );
     expect(resp.status).toBe(400);
     expect((resp.body as { error?: string }).error).toBe('reserved_runner');

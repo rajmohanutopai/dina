@@ -24,13 +24,19 @@
  */
 
 import {
-  SQLiteVaultRepository,
   InMemoryVaultRepository,
   setVaultRepository,
   resetVaultRepositories,
- queryVault, storeItem, clearVaults } from '@dina/core';
+  queryVault,
+  storeItem,
+  clearVaults,
+} from '@dina/core';
 
-import { openSQLiteVault, closeSQLiteVault, type SQLiteVaultHandle } from './helpers/sqlite_vault_harness';
+import {
+  openSQLiteVault,
+  closeSQLiteVault,
+  type SQLiteVaultHandle,
+} from './helpers/sqlite_vault_harness';
 
 interface Backend {
   name: 'in-memory' | 'sqlite';
@@ -207,8 +213,12 @@ describe('VaultRepository parity — InMemory ↔ SQLite', () => {
       for (const must of qc.mustContainLabels) {
         // If one backend finds it, the other MUST too — otherwise the
         // fake repo is papering over a production predicate bug.
-        expect({ label: qc.label, mustFind: must, inMemory: m.has(must), sqlite: s.has(must) })
-          .toMatchObject({ inMemory: true, sqlite: true });
+        expect({
+          label: qc.label,
+          mustFind: must,
+          inMemory: m.has(must),
+          sqlite: s.has(must),
+        }).toMatchObject({ inMemory: true, sqlite: true });
       }
     }
   });

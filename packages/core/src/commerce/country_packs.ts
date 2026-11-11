@@ -119,7 +119,8 @@ export const INDIA_PACK_MANIFEST: PluginManifest = {
   plugin_id: COUNTRY_PACK_IDS.in,
   version: '1.0.0',
   display_name: 'Country pack — India',
-  short_description: 'UPI payment status, GSTIN checks, e-way bills and WhatsApp reminders for the khata.',
+  short_description:
+    'UPI payment status, GSTIN checks, e-way bills and WhatsApp reminders for the khata.',
   execution: { mode: 'runner' },
   capabilities: [
     {
@@ -252,7 +253,10 @@ export const INDIA_PACK_MANIFEST: PluginManifest = {
         required: ['to', 'template', 'subject_digest'],
         properties: {
           to: { type: 'string' },
-          template: { type: 'string', enum: ['payment_due', 'delivery_dispatched', 'receipt_pending'] },
+          template: {
+            type: 'string',
+            enum: ['payment_due', 'delivery_dispatched', 'receipt_pending'],
+          },
           /** The khata document the reminder is about — never free text from the runner. */
           subject_digest: { type: 'string' },
           due_at: { type: 'string' },
@@ -273,7 +277,8 @@ export const USA_PACK_MANIFEST: PluginManifest = {
   plugin_id: COUNTRY_PACK_IDS.us,
   version: '1.0.0',
   display_name: 'Country pack — USA',
-  short_description: 'ACH and card settlement status, sales-tax rates, invoice terms, and SMS or email notices.',
+  short_description:
+    'ACH and card settlement status, sales-tax rates, invoice terms, and SMS or email notices.',
   execution: { mode: 'runner' },
   capabilities: [
     {
@@ -404,7 +409,10 @@ export const USA_PACK_MANIFEST: PluginManifest = {
         properties: {
           to: { type: 'string' },
           channel: { type: 'string', enum: ['sms', 'email'] },
-          template: { type: 'string', enum: ['invoice_issued', 'payment_due', 'delivery_dispatched'] },
+          template: {
+            type: 'string',
+            enum: ['invoice_issued', 'payment_due', 'delivery_dispatched'],
+          },
           subject_digest: { type: 'string' },
           due_at: { type: 'string' },
           amount: MONEY_SCHEMA,

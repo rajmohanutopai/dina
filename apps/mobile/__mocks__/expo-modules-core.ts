@@ -19,6 +19,13 @@ export function requireNativeModule(): never {
   throw new Error('requireNativeModule is unavailable under Jest');
 }
 
-export class NativeModule {}
-export class EventEmitter {}
-export class SharedObject {}
+// Stand-in classes: the marker field keeps each a real (non-empty) class.
+export class NativeModule {
+  readonly mockName = 'NativeModule';
+}
+export class EventEmitter {
+  readonly mockName = 'EventEmitter';
+}
+export class SharedObject {
+  readonly mockName = 'SharedObject';
+}

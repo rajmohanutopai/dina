@@ -10,7 +10,11 @@ import { getReviewPublishRepository } from '@dina/core';
 
 import { getBootedNode } from '../hooks/useNodeBootstrap';
 
-import { INJECT_SENTINEL_PUBLISHER, injectPublish, isTestPublishConfigured } from './inject_publish';
+import {
+  INJECT_SENTINEL_PUBLISHER,
+  injectPublish,
+  isTestPublishConfigured,
+} from './inject_publish';
 import { submitReviewPublish, type SubmitOutcome } from './submit_review_publish';
 
 import type { AttestationDraftBody } from './review_draft_body';

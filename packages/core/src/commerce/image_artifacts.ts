@@ -68,7 +68,9 @@ function u16be(bytes: Uint8Array, at: number): number {
 
 function u32be(bytes: Uint8Array, at: number): number {
   return (
-    (((bytes[at] ?? 0) << 24) | ((bytes[at + 1] ?? 0) << 16) | ((bytes[at + 2] ?? 0) << 8) |
+    (((bytes[at] ?? 0) << 24) |
+      ((bytes[at + 1] ?? 0) << 16) |
+      ((bytes[at + 2] ?? 0) << 8) |
       (bytes[at + 3] ?? 0)) >>>
     0
   );
@@ -96,7 +98,8 @@ function parsePng(bytes: Uint8Array): ParsedImageHeader {
       return { ok: false, refusal: 'malformed_image: animated PNG is not a photograph' };
     }
     if (type === 0x49444154 /* IDAT — headers precede data; stop scanning */) break;
-    if (length > bytes.length) return { ok: false, refusal: 'malformed_image: chunk overruns file' };
+    if (length > bytes.length)
+      return { ok: false, refusal: 'malformed_image: chunk overruns file' };
     at += 12 + length;
   }
   return { ok: true, mime: 'image/png', width, height };
@@ -254,7 +257,10 @@ export async function ingestCommerceImage(args: {
   if (args.bytes.byteLength > MAX_PAGE_IMAGE_BYTES) {
     return { ok: false, refusal: 'oversize_page' };
   }
-  if (args.repository.draftBytes(args.ownerDraftId) + args.bytes.byteLength > MAX_AGGREGATE_IMAGE_BYTES) {
+  if (
+    args.repository.draftBytes(args.ownerDraftId) + args.bytes.byteLength >
+    MAX_AGGREGATE_IMAGE_BYTES
+  ) {
     return { ok: false, refusal: 'oversize_draft_aggregate' };
   }
 

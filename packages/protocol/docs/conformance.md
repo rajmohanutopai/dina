@@ -37,15 +37,15 @@ Out of scope (implementation choice, no conformance requirement):
 
 ## 2. Normative references
 
-| Artefact                                       | Path                                              |
-|------------------------------------------------|---------------------------------------------------|
-| Source of truth — constants                    | `packages/protocol/src/constants.ts`              |
-| Source of truth — types (DID/d2d/RPC/auth/cap) | `packages/protocol/src/types/`                    |
-| Source of truth — canonical signing            | `packages/protocol/src/canonical_sign.ts`         |
-| Source of truth — envelope builders            | `packages/protocol/src/envelope_builder.ts`       |
-| Source of truth — validators                   | `packages/protocol/src/validators.ts`             |
-| JSON fixtures                                  | `packages/fixtures/`                              |
-| Test vectors                                   | `packages/protocol/conformance/vectors/`          |
+| Artefact                                       | Path                                        |
+| ---------------------------------------------- | ------------------------------------------- |
+| Source of truth — constants                    | `packages/protocol/src/constants.ts`        |
+| Source of truth — types (DID/d2d/RPC/auth/cap) | `packages/protocol/src/types/`              |
+| Source of truth — canonical signing            | `packages/protocol/src/canonical_sign.ts`   |
+| Source of truth — envelope builders            | `packages/protocol/src/envelope_builder.ts` |
+| Source of truth — validators                   | `packages/protocol/src/validators.ts`       |
+| JSON fixtures                                  | `packages/fixtures/`                        |
+| Test vectors                                   | `packages/protocol/conformance/vectors/`    |
 
 When the source and this document disagree, **the source is
 authoritative**. Report the drift as a bug.
@@ -55,12 +55,12 @@ authoritative**. Report the drift as a bug.
 Implementations are graded by the smallest level of conformance they
 meet. Each level subsumes the previous.
 
-| Level | Name          | Requirement                                                                   |
-|-------|---------------|-------------------------------------------------------------------------------|
-| L1    | Shape         | Emits + parses all wire types with correct field names + types.               |
-| L2    | Byte-exact    | Assembled envelopes + canonical strings are byte-identical to the reference. |
-| L3    | Signed round-trip | Can Ed25519-sign a canonical payload that the reference verifies — and can verify a reference-signed payload. |
-| L4    | Full peer     | Completes a handshake over MsgBox + exchanges at least one `service.query` / `service.response` round-trip with a reference node. |
+| Level | Name              | Requirement                                                                                                                       |
+| ----- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| L1    | Shape             | Emits + parses all wire types with correct field names + types.                                                                   |
+| L2    | Byte-exact        | Assembled envelopes + canonical strings are byte-identical to the reference.                                                      |
+| L3    | Signed round-trip | Can Ed25519-sign a canonical payload that the reference verifies — and can verify a reference-signed payload.                     |
+| L4    | Full peer         | Completes a handshake over MsgBox + exchanges at least one `service.query` / `service.response` round-trip with a reference node. |
 
 M1 ship of Home Node Lite targets L4 by definition (two Lite nodes
 must talk to each other). External implementations don't need to
@@ -80,14 +80,14 @@ MUST be exactly:
 
 with the following pinned semantics:
 
-| Field          | Format                                          | Example                                |
-|----------------|-------------------------------------------------|----------------------------------------|
-| `METHOD`       | Uppercase HTTP method                           | `POST`                                 |
-| `PATH`         | URL path, leading slash, no host                | `/v1/vault/query`                      |
-| `QUERY`        | Query string without leading `?`, empty if none | `persona=personal&limit=10`            |
-| `TIMESTAMP`    | RFC3339 UTC                                     | `2026-04-22T10:30:00Z`                 |
-| `NONCE`        | Random hex string, ≥ 16 bytes of entropy        | `f0e8...7a2b`                          |
-| `BODY_HASH_HEX`| Lowercase hex of `SHA-256(body_bytes)`          | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty-body case) |
+| Field           | Format                                          | Example                                                                              |
+| --------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `METHOD`        | Uppercase HTTP method                           | `POST`                                                                               |
+| `PATH`          | URL path, leading slash, no host                | `/v1/vault/query`                                                                    |
+| `QUERY`         | Query string without leading `?`, empty if none | `persona=personal&limit=10`                                                          |
+| `TIMESTAMP`     | RFC3339 UTC                                     | `2026-04-22T10:30:00Z`                                                               |
+| `NONCE`         | Random hex string, ≥ 16 bytes of entropy        | `f0e8...7a2b`                                                                        |
+| `BODY_HASH_HEX` | Lowercase hex of `SHA-256(body_bytes)`          | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` (empty-body case) |
 
 Separators are ASCII newline (`0x0A`). No trailing newline. The
 reference implementation is `buildCanonicalPayload` in
@@ -115,12 +115,12 @@ implementations.
 The sender MUST attach these four headers, computed from the
 canonical payload + its private key:
 
-| Header         | Source                                              |
-|----------------|-----------------------------------------------------|
-| `X-DID`        | The sender's DID in `did:plc:...` form              |
-| `X-Timestamp`  | Same RFC3339 value used in the canonical payload    |
-| `X-Nonce`      | Same hex nonce                                      |
-| `X-Signature`  | Base64url of `Ed25519.Sign(privateKey, canonical)`  |
+| Header        | Source                                             |
+| ------------- | -------------------------------------------------- |
+| `X-DID`       | The sender's DID in `did:plc:...` form             |
+| `X-Timestamp` | Same RFC3339 value used in the canonical payload   |
+| `X-Nonce`     | Same hex nonce                                     |
+| `X-Signature` | Base64url of `Ed25519.Sign(privateKey, canonical)` |
 
 The receiver recomputes the canonical string from the request, hashes
 the body bytes, and verifies `X-Signature` against `X-DID`'s
@@ -146,8 +146,16 @@ body
 ```
 
 Reference:
+
 ```json
-{"id":"m-42","type":"nudge","from":"did:plc:a","to":["did:plc:b"],"created_time":1745318400,"body":"PGJhc2U2NCBjb250ZW50Pg=="}
+{
+  "id": "m-42",
+  "type": "nudge",
+  "from": "did:plc:a",
+  "to": ["did:plc:b"],
+  "created_time": 1745318400,
+  "body": "PGJhc2U2NCBjb250ZW50Pg=="
+}
 ```
 
 Go-interop note: this order matches Go's declaration-order
@@ -216,6 +224,7 @@ On WebSocket connect, the flow is exactly three frames (shapes from
    `\n` is one ASCII newline (0x0A). `{nonce}` is the exact hex
    string the server sent; `{ts}` is the integer Unix-seconds value
    rendered as a decimal string.
+
 3. **Server → Client** — `{"type":"auth_success"}` (introduced in
    msgbox 0.14, strict fail-closed), optionally with `"features":[…]`
    naming the features granted (§7.1).
@@ -245,7 +254,7 @@ subset; unknown names are dropped). One feature is defined:
     refuses (does not write) a message it cannot keep;
   - the recipient acknowledges an envelope once it has handled it, with a
     binary frame `{"type":"ack","id":"<envelope id>","from_did":"<envelope
-    from_did>"}`. The relay deletes only the recipient's own message with
+from_did>"}`. The relay deletes only the recipient's own message with
     that sender and id; an unknown or repeated ack is a no-op;
   - a recipient SHOULD ack only after handling (not on receipt), SHOULD
     NOT ack an envelope nothing could take (so it is sent again), and MUST
@@ -308,7 +317,7 @@ wire break — bump the protocol minor and update §15.
 Mapping (frozen):
 
 | Message type            | Scenario       |
-|-------------------------|----------------|
+| ----------------------- | -------------- |
 | `presence.signal`       | `presence`     |
 | `coordination.request`  | `coordination` |
 | `coordination.response` | `coordination` |
@@ -437,11 +446,11 @@ describe the network-level exchange but require a live loopback.
   `{v: 1, kind, ...}` with kind `request` (`request_id, service_at, crates`,
   and `postal_code` only under the buyer's onward-sharing grant), `option`
   (a firm option: `option_id, request_id, service_at, crates, fee_minor,
-  currency: INR, issued_at, hold_until, lead_time_s, model_version`; the fee is
+currency: INR, issued_at, hold_until, lead_time_s, model_version`; the fee is
   the shipper's own asking price), `decline` (`request_id, reason: no_run |
-  no_price | full | too_soon | closed`), `acceptance` (`option_id,
-  accepted_at`), `receipt` (`option_id, answer: admitted |
-  arrived_after_grace, at` — the shipper's one stored answer, the same to
+no_price | full | too_soon | closed`), `acceptance` (`option_id,
+accepted_at`), `receipt` (`option_id, answer: admitted |
+arrived_after_grace, at` — the shipper's one stored answer, the same to
   every resend), `status_query` (`option_id`), and `fallback` (seller to
   buyer: `purchase_order_id, quote_id, alternative_id, at` — the run the order
   took ended without fault, and the order stands on the quote's own terms;
@@ -453,7 +462,7 @@ describe the network-level exchange but require a live loopback.
 - **2026-10-16** — **`coordination.booked` (additive).** A group plan's
   organiser tells each confirmed guest what the two of them agreed:
   `{v: 1, record_id, seq, state: booked | cancelled, title, slot,
-  organiser_did, guest_did, issued_at}` — one pair only, never another
+organiser_did, guest_did, issued_at}` — one pair only, never another
   guest; organiser and guest differ. `seq` rises by one each time the
   organiser's word for the pair changes; a receiver keeps the highest it has
   seen, a cancellation included, and ignores the rest. The receiver binds
@@ -543,7 +552,7 @@ describe the network-level exchange but require a live loopback.
   §7: `auth_response` and `auth_success` gain an optional `features`
   string array (`AuthResponseFrame.features`, `AuthSuccessFrame.features`);
   new §7.1 defines the `ack` feature, the client-to-relay `{"type":"ack",
-  "id","from_did"}` frame, and that a relayed cancel carries a relay-minted
+"id","from_did"}` frame, and that a relayed cancel carries a relay-minted
   `id`. ADDITIVE: a client that sends no `features` and a relay that grants
   none behave exactly as before (delete-on-write), the three-frame
   handshake and its signed payload are unchanged, and no frozen

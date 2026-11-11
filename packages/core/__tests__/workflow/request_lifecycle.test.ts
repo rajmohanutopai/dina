@@ -35,7 +35,10 @@ type Sender = ConstructorParameters<typeof WorkflowService>[0]['responseBridgeSe
 function wire(sender?: Sender): { repo: SQLiteWorkflowRepository; service: WorkflowService } {
   const repo = new SQLiteWorkflowRepository(openDB());
   setWorkflowRepository(repo);
-  const service = new WorkflowService({ repository: repo, ...(sender ? { responseBridgeSender: sender } : {}) });
+  const service = new WorkflowService({
+    repository: repo,
+    ...(sender ? { responseBridgeSender: sender } : {}),
+  });
   setWorkflowService(service);
   return { repo, service };
 }
@@ -51,11 +54,27 @@ const execPayload = (from: string, query: string, capability = 'eta_query', ttl 
     service_name: 'x',
   });
 
-function delegation(service: WorkflowService, id: string, payload: string, extra: object = {}): void {
-  service.create({ id, kind: 'delegation', description: 'd', payload, initialState: 'queued', ...extra } as never);
+function delegation(
+  service: WorkflowService,
+  id: string,
+  payload: string,
+  extra: object = {},
+): void {
+  service.create({
+    id,
+    kind: 'delegation',
+    description: 'd',
+    payload,
+    initialState: 'queued',
+    ...extra,
+  } as never);
 }
 
-function runToCompletion(repo: SQLiteWorkflowRepository, service: WorkflowService, id: string): void {
+function runToCompletion(
+  repo: SQLiteWorkflowRepository,
+  service: WorkflowService,
+  id: string,
+): void {
   const claimed = repo.claimDelegationTask(AGENT, Date.now(), 60_000)!;
   expect(claimed.id).toBe(id);
   service.complete(claimed.id, '{"ok":true}', 'done', AGENT, claimed.claim_id);

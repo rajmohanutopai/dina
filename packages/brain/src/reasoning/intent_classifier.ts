@@ -201,7 +201,10 @@ const DEFAULT_CLASSIFICATION: Readonly<IntentClassification> = Object.freeze({
 
 export class IntentClassifier {
   private readonly llm: IntentClassifierLLM;
-  private readonly tocFetcher: (releaseSession?: string, askAuthority?: string) => Promise<TocEntry[]>;
+  private readonly tocFetcher: (
+    releaseSession?: string,
+    askAuthority?: string,
+  ) => Promise<TocEntry[]>;
 
   /**
    * `tocFetcher` receives the conversation the topics are released into

@@ -39,7 +39,15 @@ function readMessage(threadId: string, raw: unknown): StoredChatMessage | null {
   const sources = Array.isArray(m.sources)
     ? (m.sources as unknown[]).filter((s): s is string => typeof s === 'string')
     : [];
-  return { id: m.id, threadId, type: m.type, content: m.content, metadata, sources, timestamp: m.timestamp };
+  return {
+    id: m.id,
+    threadId,
+    type: m.type,
+    content: m.content,
+    metadata,
+    sources,
+    timestamp: m.timestamp,
+  };
 }
 
 export function registerChatThreadRoutes(router: CoreRouter): void {
@@ -60,7 +68,8 @@ export function registerChatThreadRoutes(router: CoreRouter): void {
     const threadId = req.params.id ?? '';
     if (threadId === '') return { status: 400, body: { error: 'thread id required' } };
     const raw = Number(req.query.limit);
-    const limit = Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), MAX_LIMIT) : MAX_LIMIT;
+    const limit =
+      Number.isFinite(raw) && raw > 0 ? Math.min(Math.floor(raw), MAX_LIMIT) : MAX_LIMIT;
     // The repository's own LIMIT keeps the OLDEST rows; history needs the
     // newest, so read the thread and keep its tail (oldest first).
     const all = await repo.listByThread(threadId);

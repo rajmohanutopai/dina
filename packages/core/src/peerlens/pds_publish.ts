@@ -149,9 +149,7 @@ function validateSubjectRef(ref: SubjectRef, errors: string[]): void {
     return;
   }
   if (!ref.type || !SUBJECT_TYPES.has(ref.type)) {
-    errors.push(
-      `subject.type must be one of: ${[...SUBJECT_TYPES].sort().join(', ')}`,
-    );
+    errors.push(`subject.type must be one of: ${[...SUBJECT_TYPES].sort().join(', ')}`);
   }
   if (ref.did !== undefined) {
     if (
@@ -166,7 +164,11 @@ function validateSubjectRef(ref: SubjectRef, errors: string[]): void {
     }
   }
   if (ref.uri !== undefined) {
-    if (typeof ref.uri !== 'string' || ref.uri.length < MIN_URI_LEN || ref.uri.length > MAX_URI_LEN) {
+    if (
+      typeof ref.uri !== 'string' ||
+      ref.uri.length < MIN_URI_LEN ||
+      ref.uri.length > MAX_URI_LEN
+    ) {
       errors.push(`subject.uri must be a string ${MIN_URI_LEN}–${MAX_URI_LEN} chars`);
     }
   }
@@ -250,7 +252,10 @@ function validateEvidence(evidence: EvidenceItem[], errors: string[]): void {
       }
     }
     if (e.description !== undefined) {
-      if (typeof e.description !== 'string' || e.description.length > MAX_EVIDENCE_DESCRIPTION_LEN) {
+      if (
+        typeof e.description !== 'string' ||
+        e.description.length > MAX_EVIDENCE_DESCRIPTION_LEN
+      ) {
         errors.push(`evidence[${i}].description must be a string ≤300 chars`);
       }
     }

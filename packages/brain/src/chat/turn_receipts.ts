@@ -14,14 +14,19 @@ const KEEP_TURNS = 10;
 function ownerTurnMessage(thread: string, question: string) {
   const recent = getRecentMessages(thread, 40);
   for (let i = recent.length - 1; i >= 0; i--) {
-    const m = recent[i]!;
+    const m = recent[i];
+    if (m === undefined) continue;
     if (m.type === 'user' && m.content === question) return m;
   }
   return undefined;
 }
 
 /** Record this turn's receipts on the owner's message for the turn. */
-export function storeTurnReceipts(thread: string, question: string, receipts: readonly ActionReceipt[]): void {
+export function storeTurnReceipts(
+  thread: string,
+  question: string,
+  receipts: readonly ActionReceipt[],
+): void {
   if (receipts.length === 0) return;
   const turn = ownerTurnMessage(thread, question);
   if (turn !== undefined) updateMessageMetadataById(thread, turn.id, { receipts });
@@ -30,7 +35,9 @@ export function storeTurnReceipts(thread: string, question: string, receipts: re
 /** Receipts from the thread's earlier turns (the last ten), oldest first. */
 export function earlierReceipts(thread: string, question: string): ActionReceipt[] {
   const current = ownerTurnMessage(thread, question);
-  const turns = getRecentMessages(thread, 80).filter((m) => m.type === 'user' && m.id !== current?.id);
+  const turns = getRecentMessages(thread, 80).filter(
+    (m) => m.type === 'user' && m.id !== current?.id,
+  );
   const out: ActionReceipt[] = [];
   for (const m of turns.slice(-KEEP_TURNS)) {
     const r = m.metadata?.receipts;
@@ -49,7 +56,7 @@ export function earlierActionsBlock(receipts: readonly ActionReceipt[], timeZone
   if (receipts.length === 0) return '';
   const lines = receipts.map((r) => `- ${receiptLine(r, true, timeZone)}`);
   return [
-    'Done earlier in this conversation, from Dina\'s own records. Each line is an action a tool carried out in an earlier turn: it happened. Do not take it back or say it was not done.',
+    "Done earlier in this conversation, from Dina's own records. Each line is an action a tool carried out in an earlier turn: it happened. Do not take it back or say it was not done.",
     ...lines,
   ].join('\n');
 }

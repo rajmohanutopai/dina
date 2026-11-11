@@ -27,7 +27,11 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
-import { commerceRecordDigest, type CommerceOrderStatus, type Sha256Fn } from '@dina/commerce-protocol';
+import {
+  commerceRecordDigest,
+  type CommerceOrderStatus,
+  type Sha256Fn,
+} from '@dina/commerce-protocol';
 
 import { selectFencePredecessor } from '../../src/commerce/status_chain';
 

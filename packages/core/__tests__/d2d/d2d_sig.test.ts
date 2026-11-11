@@ -11,7 +11,6 @@ import { signMessage, verifyMessage, verifyMessageSingle } from '../../src/d2d/s
 
 import type { DinaMessage } from '../../src/d2d/envelope';
 
-
 describe('D2D Message Signature', () => {
   const msg: DinaMessage = {
     id: 'msg_sig_test_001',

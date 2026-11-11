@@ -339,7 +339,7 @@ export function createCoordinatorAskHandler(opts: CreateCoordinatorAskHandlerOpt
     if (record === null) {
       // Nothing can finish this row. It says so, and the owner can ask again.
       if (isOpenPlaceholder) {
-        const text = "I lost track of that question. Please ask again.";
+        const text = 'I lost track of that question. Please ask again.';
         updateAskLifecycle(threadId, askId, { status: 'expired', error: text }, text);
       } else {
         updateMessageMetadataById(threadId, row.id, { askStatus: 'expired' });
@@ -819,8 +819,16 @@ function postQuoteRequestDraftCard(threadId: string, answer: unknown): void {
 /** Post the readable export's card (REAL_LIFE_FIXES_2 §5): manifest and id only. */
 function postExportCard(threadId: string, answer: unknown): void {
   if (typeof answer !== 'object' || answer === null) return;
-  const raw = (answer as Record<string, unknown>).exportCard as { exportId?: unknown; manifest?: unknown } | undefined;
-  if (raw === undefined || typeof raw.exportId !== 'string' || typeof raw.manifest !== 'object' || raw.manifest === null) return;
+  const raw = (answer as Record<string, unknown>).exportCard as
+    | { exportId?: unknown; manifest?: unknown }
+    | undefined;
+  if (
+    raw === undefined ||
+    typeof raw.exportId !== 'string' ||
+    typeof raw.manifest !== 'object' ||
+    raw.manifest === null
+  )
+    return;
   const lifecycle: ExportLifecycle = {
     kind: 'export',
     status: 'ready',

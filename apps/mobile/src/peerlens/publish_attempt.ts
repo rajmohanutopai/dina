@@ -52,8 +52,7 @@ export async function attemptClaimedPublish(
   const publishToPDS = deps.publishToPDS ?? publishAttestationToPDS;
   return publishClaimedReview(job, {
     repo: deps.repo,
-    publish: (_job, record) =>
-      publishToPDS(deps.publisher, job.ownerDid, record, job.rkey),
+    publish: (_job, record) => publishToPDS(deps.publisher, job.ownerDid, record, job.rkey),
     classifyError: classifyPublishError,
     ...(deps.now !== undefined ? { now: deps.now } : {}),
   });

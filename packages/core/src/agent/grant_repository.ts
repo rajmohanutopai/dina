@@ -240,10 +240,10 @@ export class SQLiteAgentGrantRepository implements AgentGrantRepository {
   }
 
   revokeForPersona(persona: string, now: number): number {
-    return this.db.run('UPDATE agent_persona_grants SET revoked_at = ? WHERE persona = ? AND revoked_at IS NULL', [
-      now,
-      persona,
-    ]);
+    return this.db.run(
+      'UPDATE agent_persona_grants SET revoked_at = ? WHERE persona = ? AND revoked_at IS NULL',
+      [now, persona],
+    );
   }
 
   revokeForSession(agentDID: string, sessionId: string, now: number): number {
@@ -431,6 +431,7 @@ function rowToGrant(row: DBRow): AgentPersonaGrant {
     active: Number(row.active ?? 1) === 1,
     askId: row.ask_id === null || row.ask_id === undefined ? null : String(row.ask_id),
     grantKind: row.grant_kind === 'standing' ? 'standing' : 'session',
-    grantedTier: row.granted_tier === null || row.granted_tier === undefined ? null : String(row.granted_tier),
+    grantedTier:
+      row.granted_tier === null || row.granted_tier === undefined ? null : String(row.granted_tier),
   };
 }

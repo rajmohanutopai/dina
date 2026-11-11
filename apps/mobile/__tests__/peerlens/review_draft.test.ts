@@ -24,22 +24,12 @@ import {
   readLifecycle,
   type ReviewDraftLifecycle,
 } from '@dina/brain/chat';
+import * as vaultCrud from '@dina/core';
 
-import {
-  startReviewDraft,
-  mergeDraftIntoFormState,
-} from '../../src/peerlens/review_draft';
-import {
-  emptyWriteFormState,
-  serializeFormToV2Extras,
-} from '../../src/peerlens/write_form_data';
+import { startReviewDraft, mergeDraftIntoFormState } from '../../src/peerlens/review_draft';
+import { emptyWriteFormState, serializeFormToV2Extras } from '../../src/peerlens/write_form_data';
 
-import type {
-  ChatMessage,
-  ChatOptions,
-  ChatResponse,
-  LLMProvider,
-} from '@dina/brain/llm';
+import type { ChatMessage, ChatOptions, ChatResponse, LLMProvider } from '@dina/brain/llm';
 
 jest.mock('@dina/core', () => ({
   __esModule: true,
@@ -49,10 +39,7 @@ jest.mock('@dina/core', () => ({
   isPersonaOpen: jest.fn(() => true),
 }));
 
-import * as vaultCrud from '@dina/core';
-const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<
-  typeof vaultCrud.queryVault
->;
+const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<typeof vaultCrud.queryVault>;
 
 beforeEach(() => {
   resetThreads();
@@ -251,7 +238,11 @@ describe('startReviewDraft', () => {
     const card = messages.find((m) => readLifecycle(m)?.kind === 'review_draft')!;
     const lc = readLifecycle(card) as ReviewDraftLifecycle;
     expect(lc.status).toBe('ready');
-    const values = lc.values as { sentiment?: string; headline?: string; useCases?: readonly string[] };
+    const values = lc.values as {
+      sentiment?: string;
+      headline?: string;
+      useCases?: readonly string[];
+    };
     expect(values.sentiment).toBe('positive');
     expect(values.headline).toBe('Comfortable for daily work');
     expect(values.useCases).toEqual(['professional']);
@@ -260,8 +251,8 @@ describe('startReviewDraft', () => {
   it('patches the card to "failed" when the inferer throws', async () => {
     const llm: LLMProvider = {
       ...stubLLM(''),
-      chat: jest.fn<(messages: ChatMessage[], opts?: ChatOptions) => Promise<ChatResponse>>(
-        () => Promise.reject(new Error('boom')),
+      chat: jest.fn<(messages: ChatMessage[], opts?: ChatOptions) => Promise<ChatResponse>>(() =>
+        Promise.reject(new Error('boom')),
       ),
     };
     await startReviewDraft({

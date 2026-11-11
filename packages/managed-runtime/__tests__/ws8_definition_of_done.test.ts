@@ -217,7 +217,10 @@ describe('8.3 — the managed store is tenant-owned and exportable', () => {
     store.put(ALICE, 'a2.json', new TextEncoder().encode('aa'));
     store.put(BOB, 'b1.json', new TextEncoder().encode('b'));
 
-    const names = store.list(ALICE).map((b) => b.name).sort();
+    const names = store
+      .list(ALICE)
+      .map((b) => b.name)
+      .sort();
     expect(names).toEqual(['a1.json', 'a2.json']);
   });
 

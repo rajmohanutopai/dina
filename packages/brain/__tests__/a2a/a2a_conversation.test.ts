@@ -20,7 +20,12 @@ import { MockCoreClient, makeVaultItem, resetFactoryCounters } from '@dina/test-
 
 import { askConversation, releaseSessionId } from '../../src/a2a/conversation';
 import { InMemoryAskAdapter } from '../../src/ask/ask_registry';
-import { handleChat, resetAskCommandHandler, setAskCommandHandler, setOwnerTurnRecorder } from '../../src/chat/orchestrator';
+import {
+  handleChat,
+  resetAskCommandHandler,
+  setAskCommandHandler,
+  setOwnerTurnRecorder,
+} from '../../src/chat/orchestrator';
 import { resetThreads } from '../../src/chat/thread';
 import { buildAgenticExecuteFn } from '../../src/composition/ask_coordinator';
 import { createCoordinatorAskHandler } from '../../src/composition/coordinator_ask_handler';
@@ -32,11 +37,18 @@ import {
   createListPersonasTool,
   createVaultSearchTool,
 } from '../../src/reasoning/vault_tool';
-import { setAccessiblePersonas, setVaultReadBackend, vaultReadBackendFromCore } from '../../src/vault_context/assembly';
+import {
+  setAccessiblePersonas,
+  setVaultReadBackend,
+  vaultReadBackendFromCore,
+} from '../../src/vault_context/assembly';
 
 describe('session ids', () => {
   it('names a chat thread, or the ask alone', () => {
-    expect(askConversation('ask-1', 'main')).toEqual({ releaseSession: 'chat:main', replyTo: 'main' });
+    expect(askConversation('ask-1', 'main')).toEqual({
+      releaseSession: 'chat:main',
+      replyTo: 'main',
+    });
     expect(askConversation('ask-1', undefined)).toEqual({ releaseSession: 'ask:ask-1' });
   });
 
@@ -95,11 +107,17 @@ describe('the chat path hands its thread to the coordinator', () => {
     const coordinator = {
       handleAsk: async (req: unknown) => {
         seen.push(req);
-        return { status: 200, body: { status: 'complete', request_id: 'a1', answer: { text: 'ok' } } };
+        return {
+          status: 200,
+          body: { status: 'complete', request_id: 'a1', answer: { text: 'ok' } },
+        };
       },
       subscribe: () => () => undefined,
     };
-    const { handler } = createCoordinatorAskHandler({ coordinator: coordinator as never, requesterDid: 'did:plc:owner' });
+    const { handler } = createCoordinatorAskHandler({
+      coordinator: coordinator as never,
+      requesterDid: 'did:plc:owner',
+    });
     await handler('question', { threadId: 'trip-planning' });
     expect(seen[0]).toMatchObject({ question: 'question', conversation: 'trip-planning' });
   });
@@ -149,12 +167,24 @@ describe('the vault tools name the conversation on both read paths', () => {
     afterEach(() => setVaultReadBackend(null));
 
     it('search, browse and get each pass the release session where Core reads it', async () => {
-      await createVaultSearchTool({ releaseSession: CTX }).execute({ query: 'dentist', persona: 'general' });
+      await createVaultSearchTool({ releaseSession: CTX }).execute({
+        query: 'dentist',
+        persona: 'general',
+      });
       await createBrowseVaultTool({ releaseSession: CTX }).execute({ persona: 'general' });
-      await createGetFullContentTool({ releaseSession: CTX }).execute({ persona: 'general', item_id: 'i1' });
+      await createGetFullContentTool({ releaseSession: CTX }).execute({
+        persona: 'general',
+        item_id: 'i1',
+      });
       expect(calls).toEqual([
-        { method: 'vaultQuery', args: ['general', expect.objectContaining({ text: 'dentist', releaseSession: CTX })] },
-        { method: 'vaultList', args: ['general', expect.objectContaining({ releaseSession: CTX })] },
+        {
+          method: 'vaultQuery',
+          args: ['general', expect.objectContaining({ text: 'dentist', releaseSession: CTX })],
+        },
+        {
+          method: 'vaultList',
+          args: ['general', expect.objectContaining({ releaseSession: CTX })],
+        },
         { method: 'vaultGet', args: ['general', 'i1', { releaseSession: CTX }] },
       ]);
     });
@@ -168,7 +198,10 @@ describe('the vault tools name the conversation on both read paths', () => {
       clearVaults();
       resetPersonaState();
       createPersona('general', 'default');
-      storeItem('general', makeVaultItem({ id: 'n1', summary: 'Dentist is Dr. Rao', body: 'Dr. Rao, Tuesday.' }));
+      storeItem(
+        'general',
+        makeVaultItem({ id: 'n1', summary: 'Dentist is Dr. Rao', body: 'Dr. Rao, Tuesday.' }),
+      );
       setAccessiblePersonas(['general']);
       setVaultReleaseRecorder({
         items: (ctx, persona, items) => released.push([ctx, persona, items.map((i) => i.id)]),
@@ -181,10 +214,16 @@ describe('the vault tools name the conversation on both read paths', () => {
     });
 
     it('search, browse, list and get each record a release into the conversation', async () => {
-      await createVaultSearchTool({ releaseSession: CTX }).execute({ query: 'dentist', persona: 'general' });
+      await createVaultSearchTool({ releaseSession: CTX }).execute({
+        query: 'dentist',
+        persona: 'general',
+      });
       await createBrowseVaultTool({ releaseSession: CTX }).execute({ persona: 'general' });
       await createListPersonasTool({ releaseSession: CTX }).execute({});
-      await createGetFullContentTool({ releaseSession: CTX }).execute({ persona: 'general', item_id: 'n1' });
+      await createGetFullContentTool({ releaseSession: CTX }).execute({
+        persona: 'general',
+        item_id: 'n1',
+      });
       expect(released).toHaveLength(4);
       for (const [ctx, persona, ids] of released) {
         expect(ctx).toEqual({ sessionId: CTX, audience: 'brain' });
@@ -207,13 +246,20 @@ describe('both read paths release the same items into the conversation', () => {
     releasedVia[label] = [];
     setVaultReleaseRecorder({
       items: (ctx, persona, items) => {
-        if (ctx.sessionId === 'chat:main') releasedVia[label]?.push([persona, items.map((i) => i.id).sort()]);
+        if (ctx.sessionId === 'chat:main')
+          releasedVia[label]?.push([persona, items.map((i) => i.id).sort()]);
       },
       topics: () => undefined,
     });
-    await createVaultSearchTool({ releaseSession: 'chat:main' }).execute({ query: 'dentist', persona: 'general' });
+    await createVaultSearchTool({ releaseSession: 'chat:main' }).execute({
+      query: 'dentist',
+      persona: 'general',
+    });
     await createBrowseVaultTool({ releaseSession: 'chat:main' }).execute({ persona: 'general' });
-    await createGetFullContentTool({ releaseSession: 'chat:main' }).execute({ persona: 'general', item_id: 'n3' });
+    await createGetFullContentTool({ releaseSession: 'chat:main' }).execute({
+      persona: 'general',
+      item_id: 'n3',
+    });
   }
 
   beforeEach(() => {
@@ -222,7 +268,15 @@ describe('both read paths release the same items into the conversation', () => {
     resetPersonaState();
     createPersona('general', 'default');
     for (let i = 0; i < 12; i += 1) {
-      storeItem('general', makeVaultItem({ id: `n${i}`, summary: `Dentist visit ${i}`, body: `Visit ${i}.`, timestamp: 1000 + i }));
+      storeItem(
+        'general',
+        makeVaultItem({
+          id: `n${i}`,
+          summary: `Dentist visit ${i}`,
+          body: `Visit ${i}.`,
+          timestamp: 1000 + i,
+        }),
+      );
     }
     setAccessiblePersonas(['general']);
   });
@@ -280,8 +334,17 @@ describe('the coordinator hands the conversation to everything that reads for an
         return null;
       },
     });
-    await execute({ id: 'ask-1', question: 'Book a table', requesterDid: 'did:plc:owner', conversation: 'trip' });
-    expect(seen.tools).toMatchObject({ askId: 'ask-1', releaseSession: 'chat:trip', replyTo: 'trip' });
+    await execute({
+      id: 'ask-1',
+      question: 'Book a table',
+      requesterDid: 'did:plc:owner',
+      conversation: 'trip',
+    });
+    expect(seen.tools).toMatchObject({
+      askId: 'ask-1',
+      releaseSession: 'chat:trip',
+      replyTo: 'trip',
+    });
     expect(seen.classify).toEqual({ releaseSession: 'chat:trip' });
     expect(seen.preFlight).toMatchObject({ releaseSession: 'chat:trip' });
 

@@ -21,10 +21,7 @@ import {
   type ClassificationResult as SilenceResult,
 } from '../guardian/silence';
 import { assembleNudge } from '../nudge/assembler';
-import {
-  writeCheckpoint,
-  deleteCheckpoint,
-} from '../scratchpad/lifecycle';
+import { writeCheckpoint, deleteCheckpoint } from '../scratchpad/lifecycle';
 
 export type EventType =
   | 'approval_needed'
@@ -204,17 +201,8 @@ function handleStagingBatch(input: EventInput): EventResult {
  * glitch.
  */
 async function handleD2DReceived(input: EventInput): Promise<EventResult> {
-  const {
-    task_id,
-    item_id,
-    sender_did,
-    sender_name,
-    persona,
-    summary,
-    body,
-    type,
-    source,
-  } = input.data;
+  const { task_id, item_id, sender_did, sender_name, persona, summary, body, type, source } =
+    input.data;
 
   // `task_id` is the correlator for scratchpad + eventual ack; when
   // the caller supplies one, we use it. Otherwise synthesise from
@@ -279,9 +267,7 @@ async function handleD2DReceived(input: EventInput): Promise<EventResult> {
     try {
       const nudge = assembleNudge(
         sender_did,
-        typeof sender_name === 'string' && sender_name !== ''
-          ? sender_name
-          : sender_did,
+        typeof sender_name === 'string' && sender_name !== '' ? sender_name : sender_did,
         typeof persona === 'string' && persona !== '' ? [persona] : undefined,
       );
       if (nudge !== null) {
@@ -321,9 +307,7 @@ async function handleD2DReceived(input: EventInput): Promise<EventResult> {
     result: {
       type: 'notification',
       taskId,
-      title: typeof sender_name === 'string' && sender_name !== ''
-        ? sender_name
-        : 'New message',
+      title: typeof sender_name === 'string' && sender_name !== '' ? sender_name : 'New message',
       body: nudgeSummary,
       persona: String(persona ?? 'general'),
       priority,

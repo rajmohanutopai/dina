@@ -52,7 +52,9 @@ function ownerReq(path: string, body: Record<string, unknown>): CoreRequest {
   } as unknown as CoreRequest;
 }
 
-function actionMessage(over: Partial<MessageRecord> & { message_id: string; run_id: string }): MessageRecord {
+function actionMessage(
+  over: Partial<MessageRecord> & { message_id: string; run_id: string },
+): MessageRecord {
   return {
     reservation_id: null,
     dedup_key: `dedup-${over.message_id}`,

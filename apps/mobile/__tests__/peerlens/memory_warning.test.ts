@@ -43,12 +43,13 @@ describe('registerTrustCacheMemoryWarning (TN-MOB-006)', () => {
 
   it('handler shrinks cache to MEMORY_WARNING_TARGET when fired', async () => {
     let captured: ((s: unknown) => void) | null = null;
-    const spy = jest
-      .spyOn(AppState, 'addEventListener')
-      .mockImplementation(((_evt: string, fn: (s: unknown) => void) => {
-        captured = fn;
-        return { remove: () => undefined };
-      }) as unknown as typeof AppState.addEventListener);
+    const spy = jest.spyOn(AppState, 'addEventListener').mockImplementation(((
+      _evt: string,
+      fn: (s: unknown) => void,
+    ) => {
+      captured = fn;
+      return { remove: () => undefined };
+    }) as unknown as typeof AppState.addEventListener);
 
     registerTrustCacheMemoryWarning();
     expect(captured).not.toBeNull();

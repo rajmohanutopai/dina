@@ -226,8 +226,7 @@ export class AISDKAdapter implements LLMProvider {
     // `this.name` alone is just the provider ('openrouter'). Parity with
     // the GeminiGenaiAdapter's [LLM-USAGE] line.
     const resolvedModelId = modelIdOf(model) || this.name;
-    const cachedTokens =
-      (result.usage as { cachedInputTokens?: number }).cachedInputTokens ?? 0;
+    const cachedTokens = (result.usage as { cachedInputTokens?: number }).cachedInputTokens ?? 0;
     console.log(
       `[LLM-USAGE] provider=${this.name} model=${resolvedModelId} in=${result.usage.inputTokens ?? 0} out=${result.usage.outputTokens ?? 0} cached=${cachedTokens} tools=${toolCalls.length}`,
     );
@@ -449,14 +448,10 @@ function safeParseJSON(s: string): unknown {
  * OR forwards the upstream model's effort floor identically, so the
  * mapping is shared.
  */
-export function lowestSupportedOpenAIEffort(
-  modelId: string,
-): 'none' | 'minimal' | 'medium' | null {
+export function lowestSupportedOpenAIEffort(modelId: string): 'none' | 'minimal' | 'medium' | null {
   // OR namespaces OpenAI ids as `openai/gpt-...`. Strip the prefix
   // so the same matchers below cover both direct + routed calls.
-  const id = modelId.startsWith('openai/')
-    ? modelId.slice('openai/'.length)
-    : modelId;
+  const id = modelId.startsWith('openai/') ? modelId.slice('openai/'.length) : modelId;
   // gpt-5.5-pro is reasoning-only; lowest it accepts is `medium`.
   // Check this BEFORE the gpt-5.5 prefix so we match the more
   // specific id first.

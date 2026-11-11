@@ -20,11 +20,11 @@ test loop is broken.
 
 ## Drivers
 
-| Surface | Selector strategy | Open command |
-|---|---|---|
-| `web`     | `data-testid="<id>"` via `read_page` + `computer`  | `navigate http://127.0.0.1:18290/` |
-| `ios`     | iOS accessibility-id, same value as RN `testID`    | `idb launch com.dinakernel.mobile` |
-| `android` | Android resource-id, same value as RN `testID`     | `adb shell am start -n com.dinakernel.mobile/.MainActivity` |
+| Surface   | Selector strategy                                 | Open command                                                |
+| --------- | ------------------------------------------------- | ----------------------------------------------------------- |
+| `web`     | `data-testid="<id>"` via `read_page` + `computer` | `navigate http://127.0.0.1:18290/`                          |
+| `ios`     | iOS accessibility-id, same value as RN `testID`   | `idb launch com.dinakernel.mobile`                          |
+| `android` | Android resource-id, same value as RN `testID`    | `adb shell am start -n com.dinakernel.mobile/.MainActivity` |
 
 ## Steps (driver-agnostic)
 
@@ -74,8 +74,8 @@ ANY of the following FAILS the scenario:
 
 Written to `results/welcome_screen_renders/<platform>/`:
 
-- `01_open.png`    — initial render
-- `result.md`      — PASS / FAIL + visible text dump + console dump
+- `01_open.png` — initial render
+- `result.md` — PASS / FAIL + visible text dump + console dump
 - `accessibility_tree.txt` — `read_page filter=all` output (web only)
 
 ## Notes

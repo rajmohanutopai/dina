@@ -14,7 +14,9 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 import {
   A2AStore,
   type PermitRow,
-  type RemoteAgentRow, type NewA2ATask } from '../../src/a2a/store';
+  type RemoteAgentRow,
+  type NewA2ATask,
+} from '../../src/a2a/store';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { SQLiteWorkflowRepository } from '../../src/workflow/repository';
@@ -118,7 +120,9 @@ const permit = (operationRef: number, over: Partial<PermitRow> = {}): PermitRow 
 describe('migration v53', () => {
   it('creates every A2A table (M1a v53, M1b v54–v55, M2 v56, M3 v57, M4 v58, M5 v59) with foreign keys on', () => {
     const tables = db
-      .query<{ name: string }>(`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'a2a_%' ORDER BY name`)
+      .query<{
+        name: string;
+      }>(`SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'a2a_%' ORDER BY name`)
       .map((r) => r.name);
     expect(tables).toEqual([
       'a2a_cancel_requests',
@@ -151,7 +155,10 @@ describe('migration v53', () => {
     const upgradeDir = mkdtempSync(path.join(tmpdir(), 'a2a-upgrade-'));
     const old = openDb(upgradeDir);
     try {
-      applyMigrations(old, IDENTITY_MIGRATIONS.filter((m) => m.version <= 52));
+      applyMigrations(
+        old,
+        IDENTITY_MIGRATIONS.filter((m) => m.version <= 52),
+      );
       const repo = new SQLiteWorkflowRepository(old);
       repo.create({
         id: 'pre-existing',
@@ -179,18 +186,38 @@ describe('migration v53', () => {
     const upgradeDir = mkdtempSync(path.join(tmpdir(), 'a2a-v61-'));
     const old = openDb(upgradeDir);
     try {
-      applyMigrations(old, IDENTITY_MIGRATIONS.filter((m) => m.version <= 60));
+      applyMigrations(
+        old,
+        IDENTITY_MIGRATIONS.filter((m) => m.version <= 60),
+      );
       const before = new A2AStore(old);
       // Running since its send: that status time is the send time.
       const running = before.insertTask(
-        operation({ state: 'running', submission_phase: 'acknowledged', message_id: 'm-1', remote_task_id: 'rt-1', status_updated_at: NOW - 5_000 }),
+        operation({
+          state: 'running',
+          submission_phase: 'acknowledged',
+          message_id: 'm-1',
+          remote_task_id: 'rt-1',
+          status_updated_at: NOW - 5_000,
+        }),
       );
       // Ended: its status time is the end, not the send.
-      const ended = before.insertTask(operation({ state: 'completed', submission_phase: 'terminal', message_id: 'm-2', status_updated_at: NOW }));
+      const ended = before.insertTask(
+        operation({
+          state: 'completed',
+          submission_phase: 'terminal',
+          message_id: 'm-2',
+          status_updated_at: NOW,
+        }),
+      );
       const queued = before.insertTask(operation({ state: 'queued', submission_phase: 'built' }));
       applyMigrations(old, IDENTITY_MIGRATIONS);
       const after = new A2AStore(old);
-      expect([running, ended, queued].map((o) => after.getTask(o.id)?.sent_at)).toEqual([NOW - 5_000, null, null]);
+      expect([running, ended, queued].map((o) => after.getTask(o.id)?.sent_at)).toEqual([
+        NOW - 5_000,
+        null,
+        null,
+      ]);
     } finally {
       old.close();
       rmSync(upgradeDir, { recursive: true, force: true });
@@ -201,7 +228,10 @@ describe('migration v53', () => {
     const upgradeDir = mkdtempSync(path.join(tmpdir(), 'a2a-v62-'));
     const old = openDb(upgradeDir);
     try {
-      applyMigrations(old, IDENTITY_MIGRATIONS.filter((m) => m.version <= 61));
+      applyMigrations(
+        old,
+        IDENTITY_MIGRATIONS.filter((m) => m.version <= 61),
+      );
       const store = new A2AStore(old);
       const repo = new SQLiteWorkflowRepository(old);
       const task = (id: string) =>
@@ -218,15 +248,34 @@ describe('migration v53', () => {
           updated_at: NOW,
         });
       const event = (taskId: string) =>
-        repo.appendEvent({ task_id: taskId, at: NOW, event_kind: 'completed', needs_delivery: true, delivery_attempts: 0, delivery_failed: false, details: '{}' });
-      const op = store.insertTask(operation({ direction: 'inbound', principal: 'a2a:ac_1', state: 'open' }));
+        repo.appendEvent({
+          task_id: taskId,
+          at: NOW,
+          event_kind: 'completed',
+          needs_delivery: true,
+          delivery_attempts: 0,
+          delivery_failed: false,
+          details: '{}',
+        });
+      const op = store.insertTask(
+        operation({ direction: 'inbound', principal: 'a2a:ac_1', state: 'open' }),
+      );
       task('inbound-child');
-      store.insertChild({ child_task_id: 'inbound-child', operation_ref: op.id, generation: 0, role: 'execution', created_at: NOW, pep_did: null });
+      store.insertChild({
+        child_task_id: 'inbound-child',
+        operation_ref: op.id,
+        generation: 0,
+        role: 'execution',
+        created_at: NOW,
+        pep_did: null,
+      });
       event('inbound-child');
       task('owner-task');
       event('owner-task');
       applyMigrations(old, IDENTITY_MIGRATIONS);
-      const queued = repo.listUndeliveredEvents(Number.MAX_SAFE_INTEGER, 0, 100).map((e) => e.task_id);
+      const queued = repo
+        .listUndeliveredEvents(Number.MAX_SAFE_INTEGER, 0, 100)
+        .map((e) => e.task_id);
       expect(queued).toEqual(['owner-task']);
     } finally {
       old.close();
@@ -240,11 +289,14 @@ describe('migration v53', () => {
     // children's rows (design §9).
     const referenced = new Set<string>();
     for (const m of IDENTITY_MIGRATIONS) {
-      for (const match of m.sql.matchAll(/REFERENCES\s+(\w+)\s*\(/gi)) referenced.add((match[1] ?? '').toLowerCase());
+      for (const match of m.sql.matchAll(/REFERENCES\s+(\w+)\s*\(/gi))
+        referenced.add((match[1] ?? '').toLowerCase());
     }
     const offenders: string[] = [];
     for (const m of IDENTITY_MIGRATIONS) {
-      for (const match of m.sql.matchAll(/DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)|ALTER\s+TABLE\s+(\w+)\s+RENAME\s+TO/gi)) {
+      for (const match of m.sql.matchAll(
+        /DROP\s+TABLE\s+(?:IF\s+EXISTS\s+)?(\w+)|ALTER\s+TABLE\s+(\w+)\s+RENAME\s+TO/gi,
+      )) {
         const table = (match[1] ?? match[2] ?? '').toLowerCase();
         if (referenced.has(table)) offenders.push(`v${m.version}: ${table}`);
       }
@@ -259,7 +311,9 @@ describe('remote agents, credentials, bindings', () => {
   it('allows one live registration per card URL, and a new one after revocation', () => {
     store.insertAgent(agent());
     expect(() => store.insertAgent(agent({ agent_id: 'ra-2' }))).toThrow(/UNIQUE/);
-    expect(store.setAgentStatus('ra-1', ['candidate', 'active', 'changed'], 'revoked', NOW + 1)).toBe(true);
+    expect(
+      store.setAgentStatus('ra-1', ['candidate', 'active', 'changed'], 'revoked', NOW + 1),
+    ).toBe(true);
     store.insertAgent(agent({ agent_id: 'ra-2' }));
     expect(store.getLiveAgentByUrl(agent().card_url)?.agent_id).toBe('ra-2');
   });
@@ -275,7 +329,16 @@ describe('remote agents, credentials, bindings', () => {
     store.insertAgent(agent({ status: 'active' }));
     const ok = store.repinChangedCard(
       'ra-1',
-      { name: 'New', card_json: '{"x":1}', card_hash: 'b'.repeat(64), endpoint: 'https://agent.example/v2', endpoint_tenant: '', schemes_json: '{}', signature_state: 'unsigned', signature_detail: '' },
+      {
+        name: 'New',
+        card_json: '{"x":1}',
+        card_hash: 'b'.repeat(64),
+        endpoint: 'https://agent.example/v2',
+        endpoint_tenant: '',
+        schemes_json: '{}',
+        signature_state: 'unsigned',
+        signature_detail: '',
+      },
       NOW + 1,
     );
     expect(ok).toBe(true);
@@ -314,14 +377,26 @@ describe('remote agents, credentials, bindings', () => {
       revoked_at: null,
     });
     const key = { remote_agent_id: 'ra-1', card_hash: 'a'.repeat(64), skill: 'summarize' };
-    const first = store.upsertBinding({ ...key, action_class: 'read', result_schema_json: null, credential_ref: 'cr-1' }, NOW);
+    const first = store.upsertBinding(
+      { ...key, action_class: 'read', result_schema_json: null, credential_ref: 'cr-1' },
+      NOW,
+    );
     expect(first.revision).toBe(1);
-    const second = store.upsertBinding({ ...key, action_class: 'write', result_schema_json: null, credential_ref: 'cr-1' }, NOW + 1);
+    const second = store.upsertBinding(
+      { ...key, action_class: 'write', result_schema_json: null, credential_ref: 'cr-1' },
+      NOW + 1,
+    );
     expect(second).toMatchObject({ revision: 2, action_class: 'write' });
     expect(store.revokeBinding('ra-1', key.card_hash, 'summarize', NOW + 2)).toBe(true);
-    expect(store.getBinding('ra-1', key.card_hash, 'summarize')).toMatchObject({ revision: 3, revoked_at: NOW + 2 });
+    expect(store.getBinding('ra-1', key.card_hash, 'summarize')).toMatchObject({
+      revision: 3,
+      revoked_at: NOW + 2,
+    });
     expect(store.revokeBinding('ra-1', key.card_hash, 'summarize', NOW + 3)).toBe(false);
-    const third = store.upsertBinding({ ...key, action_class: 'read', result_schema_json: null, credential_ref: 'cr-1' }, NOW + 4);
+    const third = store.upsertBinding(
+      { ...key, action_class: 'read', result_schema_json: null, credential_ref: 'cr-1' },
+      NOW + 4,
+    );
     expect(third).toMatchObject({ revision: 4, revoked_at: null });
   });
 });
@@ -346,7 +421,11 @@ describe('operations', () => {
   it('keeps external ids unique per direction and principal', () => {
     store.insertTask(operation({ external_id: 'same' }));
     expect(() => store.insertTask(operation({ external_id: 'same' }))).toThrow(/UNIQUE/);
-    expect(store.insertTask(operation({ external_id: 'same', principal: 'a2a:client-1', direction: 'inbound' })).id).toBeGreaterThan(0);
+    expect(
+      store.insertTask(
+        operation({ external_id: 'same', principal: 'a2a:client-1', direction: 'inbound' }),
+      ).id,
+    ).toBeGreaterThan(0);
   });
 
   it('lists newest status first', () => {
@@ -362,10 +441,15 @@ describe('permits', () => {
     const op = store.insertTask(operation());
     const first = permit(op.id);
     store.insertPermit(first);
-    expect(() => store.insertPermit(permit(op.id, { execution_child_id: 'other' }))).toThrow(/UNIQUE/);
+    expect(() => store.insertPermit(permit(op.id, { execution_child_id: 'other' }))).toThrow(
+      /UNIQUE/,
+    );
     expect(store.voidPermit(first.permit_id, 'cancelled')).toBe(true);
     expect(() => store.insertPermit(permit(op.id))).toThrow(/UNIQUE/);
-    expect(store.getOutboundPermitByApproval('appr-1')).toMatchObject({ state: 'void', void_reason: 'cancelled' });
+    expect(store.getOutboundPermitByApproval('appr-1')).toMatchObject({
+      state: 'void',
+      void_reason: 'cancelled',
+    });
   });
 
   it('consumes a minted, unexpired permit exactly once', () => {
@@ -415,12 +499,16 @@ describe('guard jobs', () => {
     const j = job(op.id);
     store.insertGuardJob(j);
     expect(store.nextClaimableGuardJob(NOW)?.job_id).toBe(j.job_id);
-    expect(store.claimGuardJob(j.job_id, { state: 'pending', claimId: null }, 'c1', NOW + 100)).toBe(true);
+    expect(
+      store.claimGuardJob(j.job_id, { state: 'pending', claimId: null }, 'c1', NOW + 100),
+    ).toBe(true);
     expect(store.nextClaimableGuardJob(NOW + 50)).toBeNull();
     // The lease lapses; a second worker takes over.
     const lapsed = store.nextClaimableGuardJob(NOW + 100);
     expect(lapsed?.claim_id).toBe('c1');
-    expect(store.claimGuardJob(j.job_id, { state: 'claimed', claimId: 'c1' }, 'c2', NOW + 300)).toBe(true);
+    expect(
+      store.claimGuardJob(j.job_id, { state: 'claimed', claimId: 'c1' }, 'c2', NOW + 300),
+    ).toBe(true);
     // The first worker's verdict lost its claim.
     expect(store.resolveGuardJob(j.job_id, 'c1', 'passed', '{}', NOW + 150)).toBe(false);
     expect(store.resolveGuardJob(j.job_id, 'c2', 'passed', '{}', NOW + 150)).toBe(true);
@@ -452,12 +540,35 @@ describe('cancel requests', () => {
     const op = store.insertTask(operation());
     expect(store.requestCancel(op.id, NOW)).toBe(true);
     expect(store.requestCancel(op.id, NOW + 1)).toBe(false);
-    expect(store.updateCancelRequest(op.id, ['requested'], 'attempting', { resolvingClaimId: 'claim-a', nowMs: NOW + 2 })).toBe(true);
+    expect(
+      store.updateCancelRequest(op.id, ['requested'], 'attempting', {
+        resolvingClaimId: 'claim-a',
+        nowMs: NOW + 2,
+      }),
+    ).toBe(true);
     // A re-claim re-binds the request; the old claim can no longer resolve it.
-    expect(store.updateCancelRequest(op.id, ['attempting'], 'attempting', { resolvingClaimId: 'claim-b', nowMs: NOW + 3 })).toBe(true);
-    expect(store.updateCancelRequest(op.id, ['attempting'], 'confirmed', { requireClaimId: 'claim-a', nowMs: NOW + 4 })).toBe(false);
-    expect(store.updateCancelRequest(op.id, ['attempting'], 'confirmed', { requireClaimId: 'claim-b', nowMs: NOW + 5 })).toBe(true);
-    expect(store.getCancelRequest(op.id)).toMatchObject({ state: 'confirmed', resolved_at: NOW + 5 });
+    expect(
+      store.updateCancelRequest(op.id, ['attempting'], 'attempting', {
+        resolvingClaimId: 'claim-b',
+        nowMs: NOW + 3,
+      }),
+    ).toBe(true);
+    expect(
+      store.updateCancelRequest(op.id, ['attempting'], 'confirmed', {
+        requireClaimId: 'claim-a',
+        nowMs: NOW + 4,
+      }),
+    ).toBe(false);
+    expect(
+      store.updateCancelRequest(op.id, ['attempting'], 'confirmed', {
+        requireClaimId: 'claim-b',
+        nowMs: NOW + 5,
+      }),
+    ).toBe(true);
+    expect(store.getCancelRequest(op.id)).toMatchObject({
+      state: 'confirmed',
+      resolved_at: NOW + 5,
+    });
   });
 });
 
@@ -480,7 +591,13 @@ describe('one commit across the A2A and workflow stores', () => {
     expect(() =>
       store.transaction(() => {
         repo.create(task);
-        store.insertChild({ child_task_id: 'child-1', operation_ref: op.id, generation: 0, role: 'dispatch', created_at: NOW });
+        store.insertChild({
+          child_task_id: 'child-1',
+          operation_ref: op.id,
+          generation: 0,
+          role: 'dispatch',
+          created_at: NOW,
+        });
         throw new Error('crash before commit');
       }),
     ).toThrow('crash before commit');
@@ -489,7 +606,13 @@ describe('one commit across the A2A and workflow stores', () => {
 
     const value = store.transaction(() => {
       repo.create(task);
-      store.insertChild({ child_task_id: 'child-1', operation_ref: op.id, generation: 0, role: 'dispatch', created_at: NOW });
+      store.insertChild({
+        child_task_id: 'child-1',
+        operation_ref: op.id,
+        generation: 0,
+        role: 'dispatch',
+        created_at: NOW,
+      });
       return 'done';
     });
     expect(value).toBe('done');

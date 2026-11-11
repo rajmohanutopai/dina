@@ -120,19 +120,13 @@ describe('filterMatches (task 4.81)', () => {
 
   it('drops matches whose value is allow-listed globally', () => {
     const al = new AllowList().add('B12');
-    const matches = [
-      match('PAN', 'B12', 0),
-      match('EMAIL', 'a@b.com', 10),
-    ];
+    const matches = [match('PAN', 'B12', 0), match('EMAIL', 'a@b.com', 10)];
     expect(filterMatches(matches, al)).toEqual([matches[1]]);
   });
 
   it('drops only the specified type when allow-list entry is type-scoped', () => {
     const al = new AllowList().add('john@dina.app', { type: 'EMAIL' });
-    const matches = [
-      match('EMAIL', 'john@dina.app', 0),
-      match('UPI', 'john@dina.app', 20),
-    ];
+    const matches = [match('EMAIL', 'john@dina.app', 0), match('UPI', 'john@dina.app', 20)];
     const out = filterMatches(matches, al);
     expect(out.map((m) => m.type)).toEqual(['UPI']);
   });

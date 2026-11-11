@@ -21,7 +21,7 @@ type ResolveRequest = (context: unknown, moduleName: string, platform: string | 
 function metroResolve(): ResolveRequest {
   // The app's real Metro config; its hook hands anything it does not shim to
   // the context's resolver, faked here to answer with a chosen file.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
+
   const config = require('../../metro.config.js') as {
     resolver: { resolveRequest: ResolveRequest };
   };

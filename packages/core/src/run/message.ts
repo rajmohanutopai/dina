@@ -338,7 +338,9 @@ export class SQLiteMessageRepository implements MessageRepository {
   }
 
   getById(messageId: string): MessageRecord | null {
-    const rows = this.db.query('SELECT * FROM run_messages WHERE message_id = ? LIMIT 1', [messageId]);
+    const rows = this.db.query('SELECT * FROM run_messages WHERE message_id = ? LIMIT 1', [
+      messageId,
+    ]);
     return rows.length > 0 ? rowToMsg(rows[0]) : null;
   }
 
@@ -372,12 +374,10 @@ export class SQLiteMessageRepository implements MessageRepository {
   transition(messageId: string, from: MessageState, to: MessageState, nowMs: number): boolean {
     if (!isValidMessageTransition(from, to)) return false;
     return (
-      this.db.run('UPDATE run_messages SET state = ?, updated_at = ? WHERE message_id = ? AND state = ?', [
-        to,
-        nowMs,
-        messageId,
-        from,
-      ]) > 0
+      this.db.run(
+        'UPDATE run_messages SET state = ?, updated_at = ? WHERE message_id = ? AND state = ?',
+        [to, nowMs, messageId, from],
+      ) > 0
     );
   }
 
@@ -420,11 +420,10 @@ export class SQLiteMessageRepository implements MessageRepository {
 
   setDelegationId(messageId: string, delegationId: string, nowMs: number): boolean {
     return (
-      this.db.run('UPDATE run_messages SET delegation_id = ?, updated_at = ? WHERE message_id = ?', [
-        delegationId,
-        nowMs,
-        messageId,
-      ]) > 0
+      this.db.run(
+        'UPDATE run_messages SET delegation_id = ?, updated_at = ? WHERE message_id = ?',
+        [delegationId, nowMs, messageId],
+      ) > 0
     );
   }
 
@@ -439,19 +438,19 @@ export class SQLiteMessageRepository implements MessageRepository {
       arr = [];
     }
     arr.push(JSON.parse(evidenceJson));
-    this.db.run('UPDATE run_messages SET reconciliation_evidence = ?, updated_at = ? WHERE message_id = ?', [
-      JSON.stringify(arr),
-      nowMs,
-      messageId,
-    ]);
+    this.db.run(
+      'UPDATE run_messages SET reconciliation_evidence = ?, updated_at = ? WHERE message_id = ?',
+      [JSON.stringify(arr), nowMs, messageId],
+    );
   }
 
   fenceOpen(runId: string, terminal: 'cancelled' | 'expired', nowMs: number): string[] {
     const ids = this.db
-      .query<{ message_id: string }>(
-        `SELECT message_id FROM run_messages WHERE run_id = ? AND state IN ${FENCEABLE_SQL}`,
-        [runId],
-      )
+      .query<{
+        message_id: string;
+      }>(`SELECT message_id FROM run_messages WHERE run_id = ? AND state IN ${FENCEABLE_SQL}`, [
+        runId,
+      ])
       .map((r) => String(r.message_id));
     this.db.run(
       `UPDATE run_messages SET state = ?, updated_at = ? WHERE run_id = ? AND state IN ${FENCEABLE_SQL}`,
@@ -470,12 +469,9 @@ export class SQLiteMessageRepository implements MessageRepository {
     // per-message. Either makes a decidable row terminal-`expired`.
     const where = `run_id = ? AND state IN ${EXPIRABLE_SQL} AND (expires_at <= ? OR ? <= ?)`;
     const ids = this.db
-      .query<{ message_id: string }>(`SELECT message_id FROM run_messages WHERE ${where}`, [
-        runId,
-        nowMs,
-        runExpiresAt,
-        nowMs,
-      ])
+      .query<{
+        message_id: string;
+      }>(`SELECT message_id FROM run_messages WHERE ${where}`, [runId, nowMs, runExpiresAt, nowMs])
       .map((r) => String(r.message_id));
     if (ids.length > 0) {
       // R2-03 — the message-state UPDATE and the caller's job-fencing (onExpired)
@@ -663,11 +659,7 @@ export class InMemoryMessageRepository implements MessageRepository {
     const runExpired = runExpiresAt <= nowMs;
     const out: string[] = [];
     for (const r of this.rows.values()) {
-      if (
-        r.run_id === runId &&
-        expirable.has(r.state) &&
-        (r.expires_at <= nowMs || runExpired)
-      ) {
+      if (r.run_id === runId && expirable.has(r.state) && (r.expires_at <= nowMs || runExpired)) {
         out.push(r.message_id);
         r.state = 'expired';
         r.updated_at = nowMs;
@@ -696,7 +688,11 @@ export class InMemoryMessageRepository implements MessageRepository {
   stampTerminalShredDeadlines(windowMs: number): number {
     let stamped = 0;
     for (const r of this.rows.values()) {
-      if (MESSAGE_TERMINAL_STATES.has(r.state) && r.payload_ref !== null && r.shred_after === null) {
+      if (
+        MESSAGE_TERMINAL_STATES.has(r.state) &&
+        r.payload_ref !== null &&
+        r.shred_after === null
+      ) {
         r.shred_after = r.updated_at + windowMs;
         stamped += 1;
       }

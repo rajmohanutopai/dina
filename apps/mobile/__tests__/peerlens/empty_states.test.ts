@@ -76,15 +76,15 @@ describe('classifyEmptyState — search', () => {
 
 describe('classifyEmptyState — subject', () => {
   it('zero reviews + no contacts → no_contacts (deeper fix surfaces)', () => {
-    expect(
-      classifyEmptyState({ kind: 'subject', reviewCount: 0, viewerContactCount: 0 }),
-    ).toBe('no_contacts');
+    expect(classifyEmptyState({ kind: 'subject', reviewCount: 0, viewerContactCount: 0 })).toBe(
+      'no_contacts',
+    );
   });
 
   it('zero reviews + has contacts → zero_reviews', () => {
-    expect(
-      classifyEmptyState({ kind: 'subject', reviewCount: 0, viewerContactCount: 5 }),
-    ).toBe('zero_reviews');
+    expect(classifyEmptyState({ kind: 'subject', reviewCount: 0, viewerContactCount: 5 })).toBe(
+      'zero_reviews',
+    );
   });
 
   it('has reviews → null regardless of contact count', () => {
@@ -157,21 +157,17 @@ describe('classifyEmptyState — subject', () => {
     // identically. Pinning the search branch separately so a future
     // per-kind divergence (e.g., search uses Math.max(0, n) but
     // subject uses atOrBelowZero) would fail loudly.
-    expect(
-      classifyEmptyState({ kind: 'search', resultCount: Number.NaN }),
-    ).toBe('no_results');
-    expect(
-      classifyEmptyState({ kind: 'search', resultCount: Number.POSITIVE_INFINITY }),
-    ).toBe('no_results');
+    expect(classifyEmptyState({ kind: 'search', resultCount: Number.NaN })).toBe('no_results');
+    expect(classifyEmptyState({ kind: 'search', resultCount: Number.POSITIVE_INFINITY })).toBe(
+      'no_results',
+    );
   });
 
   it('non-finite contacts contactCount coerces to no_contacts', () => {
-    expect(
-      classifyEmptyState({ kind: 'contacts', contactCount: Number.NaN }),
-    ).toBe('no_contacts');
-    expect(
-      classifyEmptyState({ kind: 'contacts', contactCount: Number.POSITIVE_INFINITY }),
-    ).toBe('no_contacts');
+    expect(classifyEmptyState({ kind: 'contacts', contactCount: Number.NaN })).toBe('no_contacts');
+    expect(classifyEmptyState({ kind: 'contacts', contactCount: Number.POSITIVE_INFINITY })).toBe(
+      'no_contacts',
+    );
   });
 });
 
@@ -204,14 +200,14 @@ describe('emptyStateContentFor', () => {
   });
 
   it('routes the subject branch to no_contacts when the ring is empty', () => {
-    expect(
-      emptyStateContentFor({ kind: 'subject', reviewCount: 0, viewerContactCount: 0 }),
-    ).toBe(EMPTY_STATE_CONTENT.no_contacts);
+    expect(emptyStateContentFor({ kind: 'subject', reviewCount: 0, viewerContactCount: 0 })).toBe(
+      EMPTY_STATE_CONTENT.no_contacts,
+    );
   });
 
   it('routes the subject branch to zero_reviews when the ring is non-empty', () => {
-    expect(
-      emptyStateContentFor({ kind: 'subject', reviewCount: 0, viewerContactCount: 3 }),
-    ).toBe(EMPTY_STATE_CONTENT.zero_reviews);
+    expect(emptyStateContentFor({ kind: 'subject', reviewCount: 0, viewerContactCount: 3 })).toBe(
+      EMPTY_STATE_CONTENT.zero_reviews,
+    );
   });
 });

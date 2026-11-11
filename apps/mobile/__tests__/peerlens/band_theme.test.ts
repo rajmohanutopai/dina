@@ -71,9 +71,7 @@ describe('band_theme — total coverage', () => {
   });
 
   it('BAND_COLOUR and BAND_LABEL share identical key sets', () => {
-    expect(Object.keys(BAND_COLOUR).sort()).toEqual(
-      Object.keys(BAND_LABEL).sort(),
-    );
+    expect(Object.keys(BAND_COLOUR).sort()).toEqual(Object.keys(BAND_LABEL).sort());
   });
 });
 

@@ -76,7 +76,9 @@ describe('createClassifyIntentTool', () => {
 
   it('delegates to classifier on a real query and returns its result verbatim', async () => {
     const tool = createClassifyIntentTool({ classifier: fakeClassifier(DEFAULT_OUTPUT) });
-    const out = (await tool.execute({ query: 'Where is my Aeron chair used?' })) as IntentClassification;
+    const out = (await tool.execute({
+      query: 'Where is my Aeron chair used?',
+    })) as IntentClassification;
     expect(out).toEqual(DEFAULT_OUTPUT);
   });
 });

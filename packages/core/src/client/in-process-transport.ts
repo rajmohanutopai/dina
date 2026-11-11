@@ -30,7 +30,6 @@ import { readGroupPlanHandles, readGroupPlanWire } from '../coordination/plan_wi
 import { storedNotificationToWire, wireToStoredNotification } from '../notifications/repository';
 import { readPiiNamesResult, type PiiNamesResult } from '../pii/names';
 
-
 import {
   a2aDelegateBody,
   a2aGuardVerdictBody,
@@ -46,7 +45,9 @@ import {
   parseOpenGroupPlanResponse,
   updateContactBody,
   WorkflowConflictError,
- readAccessDecision, readAccessDecisions } from './core-client';
+  readAccessDecision,
+  readAccessDecisions,
+} from './core-client';
 import { CoreHttpError } from './http-transport';
 import {
   parseUcpFetchResponse,
@@ -324,7 +325,11 @@ export class InProcessTransport implements CoreClient {
     return expectOk<VaultQueryResult>(res, `vaultQuery(persona=${persona})`);
   }
 
-  async vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null> {
+  async vaultGet(
+    persona: string,
+    itemId: string,
+    opts?: VaultReleaseOptions,
+  ): Promise<VaultQueryItem | null> {
     const res = await this.router.handle(
       blankRequest({
         method: 'GET',
@@ -526,10 +531,21 @@ export class InProcessTransport implements CoreClient {
   async serviceProviderStanding(dids: string[]): Promise<Set<string>> {
     if (dids.length === 0) return new Set();
     const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: '/v1/service/provider-standing', query: { dids: dids.join(',') } }),
+      blankRequest({
+        method: 'GET',
+        path: '/v1/service/provider-standing',
+        query: { dids: dids.join(',') },
+      }),
     );
-    const raw = expectOk<{ standing: Record<string, { ejected: boolean }> }>(res, 'serviceProviderStanding');
-    return new Set(Object.entries(raw.standing ?? {}).filter(([, s]) => s.ejected).map(([d]) => d));
+    const raw = expectOk<{ standing: Record<string, { ejected: boolean }> }>(
+      res,
+      'serviceProviderStanding',
+    );
+    return new Set(
+      Object.entries(raw.standing ?? {})
+        .filter(([, s]) => s.ejected)
+        .map(([d]) => d),
+    );
   }
 
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
@@ -598,7 +614,9 @@ export class InProcessTransport implements CoreClient {
   async chatThreadIds(): Promise<string[]> {
     const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/chat/threads' }));
     const raw = expectOk<{ threads?: unknown }>(res, 'chatThreadIds');
-    return Array.isArray(raw.threads) ? raw.threads.filter((t): t is string => typeof t === 'string') : [];
+    return Array.isArray(raw.threads)
+      ? raw.threads.filter((t): t is string => typeof t === 'string')
+      : [];
   }
 
   async chatDeleteThread(threadId: string): Promise<boolean> {
@@ -651,13 +669,20 @@ export class InProcessTransport implements CoreClient {
     return readAccessDecision(expectOk<Record<string, unknown>>(res, 'agentPersonaAccessRequest'));
   }
 
-  async getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }> {
-    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/settings/guard-modes' }));
+  async getGuardModes(): Promise<{
+    action_claims: 'report' | 'enforce';
+    regulated: 'report' | 'enforce';
+  }> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/settings/guard-modes' }),
+    );
     return expectOk(res, 'getGuardModes');
   }
 
   async getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
-    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/settings/owner-timezone' }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/settings/owner-timezone' }),
+    );
     return expectOk(res, 'getOwnerTimeZone');
   }
 
@@ -683,7 +708,11 @@ export class InProcessTransport implements CoreClient {
 
   async commitmentBrainView(kind: string): Promise<CommitmentBrainView> {
     const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: `/v1/commitment/brain/${encodeURIComponent(kind)}`, params: { kind } }),
+      blankRequest({
+        method: 'GET',
+        path: `/v1/commitment/brain/${encodeURIComponent(kind)}`,
+        params: { kind },
+      }),
     );
     return expectOk<CommitmentBrainView>(res, 'commitmentBrainView');
   }
@@ -725,7 +754,10 @@ export class InProcessTransport implements CoreClient {
     return expectOk<{ ok: true; share_bps: number }>(res, 'commitmentSetSavingShare');
   }
 
-  async forgetPropose(input: { proof: OwnerWordsProof; request: ForgetRequestBody }): Promise<ForgetProposeResult> {
+  async forgetPropose(input: {
+    proof: OwnerWordsProof;
+    request: ForgetRequestBody;
+  }): Promise<ForgetProposeResult> {
     const res = await this.router.handle(
       blankRequest({
         method: 'POST',
@@ -744,74 +776,126 @@ export class InProcessTransport implements CoreClient {
   }
 
   async ownerExportPrepare(): Promise<{ id: string; manifest: OwnerExportManifest }> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/owner-export/prepare', body: {} }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/owner-export/prepare', body: {} }),
+    );
     return expectOk(res, 'ownerExportPrepare');
   }
 
-  async standingReplyPropose(input: { proof: OwnerWordsProof; contacts: string[]; replyText: string; until: string }): Promise<Record<string, unknown>> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/standing-replies/propose', body: {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      contacts: input.contacts,
-      reply_text: input.replyText,
-      until: input.until,
-    } }));
+  async standingReplyPropose(input: {
+    proof: OwnerWordsProof;
+    contacts: string[];
+    replyText: string;
+    until: string;
+  }): Promise<Record<string, unknown>> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/standing-replies/propose',
+        body: {
+          release_session: input.proof.releaseSession,
+          turn_id: input.proof.turnId,
+          turn_text: input.proof.turnText,
+          start: input.proof.start,
+          end: input.proof.end,
+          contacts: input.contacts,
+          reply_text: input.replyText,
+          until: input.until,
+        },
+      }),
+    );
     return expectOk(res, 'standingReplyPropose');
   }
 
-  async standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }> {
-    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/standing-replies' }));
+  async standingReplyList(): Promise<{
+    rules: {
+      id: string;
+      state: string;
+      reply_text: string;
+      contacts: string[];
+      expires_at: string;
+    }[];
+  }> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/standing-replies' }),
+    );
     return expectOk(res, 'standingReplyList');
   }
 
   async standingReplyRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
     const res = await this.router.handle(
-      blankRequest({ method: 'POST', path: `/v1/standing-replies/${encodeURIComponent(id)}/revoke`, params: { id }, body: {
-      release_session: proof.releaseSession,
-      turn_id: proof.turnId,
-      turn_text: proof.turnText,
-      start: proof.start,
-      end: proof.end,
-    } }),
+      blankRequest({
+        method: 'POST',
+        path: `/v1/standing-replies/${encodeURIComponent(id)}/revoke`,
+        params: { id },
+        body: {
+          release_session: proof.releaseSession,
+          turn_id: proof.turnId,
+          turn_text: proof.turnText,
+          start: proof.start,
+          end: proof.end,
+        },
+      }),
     );
     return expectOk(res, 'standingReplyRevoke');
   }
 
-  async spendAllowancePropose(input: { proof: OwnerWordsProof; agent: string; amountMinor: number; currency: string; period: string; category: string; perItemCapMinor?: number; until?: string }): Promise<Record<string, unknown>> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/spend-allowances/propose', body: {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      agent: input.agent,
-      amount_minor: input.amountMinor,
-      currency: input.currency,
-      period: input.period,
-      category: input.category,
-      ...(input.perItemCapMinor !== undefined ? { per_item_cap_minor: input.perItemCapMinor } : {}),
-      ...(input.until !== undefined ? { until: input.until } : {}),
-    } }));
+  async spendAllowancePropose(input: {
+    proof: OwnerWordsProof;
+    agent: string;
+    amountMinor: number;
+    currency: string;
+    period: string;
+    category: string;
+    perItemCapMinor?: number;
+    until?: string;
+  }): Promise<Record<string, unknown>> {
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/spend-allowances/propose',
+        body: {
+          release_session: input.proof.releaseSession,
+          turn_id: input.proof.turnId,
+          turn_text: input.proof.turnText,
+          start: input.proof.start,
+          end: input.proof.end,
+          agent: input.agent,
+          amount_minor: input.amountMinor,
+          currency: input.currency,
+          period: input.period,
+          category: input.category,
+          ...(input.perItemCapMinor !== undefined
+            ? { per_item_cap_minor: input.perItemCapMinor }
+            : {}),
+          ...(input.until !== undefined ? { until: input.until } : {}),
+        },
+      }),
+    );
     return expectOk(res, 'spendAllowancePropose');
   }
 
   async spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[] }> {
-    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/spend-allowances' }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/spend-allowances' }),
+    );
     return expectOk(res, 'spendAllowanceList');
   }
 
   async spendAllowanceRevoke(id: string, proof: OwnerWordsProof): Promise<{ revoked: boolean }> {
     const res = await this.router.handle(
-      blankRequest({ method: 'POST', path: `/v1/spend-allowances/${encodeURIComponent(id)}/revoke`, params: { id }, body: {
-      release_session: proof.releaseSession,
-      turn_id: proof.turnId,
-      turn_text: proof.turnText,
-      start: proof.start,
-      end: proof.end,
-    } }),
+      blankRequest({
+        method: 'POST',
+        path: `/v1/spend-allowances/${encodeURIComponent(id)}/revoke`,
+        params: { id },
+        body: {
+          release_session: proof.releaseSession,
+          turn_id: proof.turnId,
+          turn_text: proof.turnText,
+          start: proof.start,
+          end: proof.end,
+        },
+      }),
     );
     return expectOk(res, 'spendAllowanceRevoke');
   }
@@ -831,13 +915,13 @@ export class InProcessTransport implements CoreClient {
         method: 'POST',
         path: '/v1/talk/send',
         body: {
-      release_session: input.proof.releaseSession,
-      turn_id: input.proof.turnId,
-      turn_text: input.proof.turnText,
-      start: input.proof.start,
-      end: input.proof.end,
-      contact: input.contact,
-      proposed_text: input.proposedText,
+          release_session: input.proof.releaseSession,
+          turn_id: input.proof.turnId,
+          turn_text: input.proof.turnText,
+          start: input.proof.start,
+          end: input.proof.end,
+          contact: input.contact,
+          proposed_text: input.proposedText,
         },
       }),
     );
@@ -941,7 +1025,11 @@ export class InProcessTransport implements CoreClient {
       blankRequest({
         method: 'POST',
         path: '/v1/staging/fail',
-        body: { id: itemId, reason, ...(claimToken !== undefined ? { claim_token: claimToken } : {}) },
+        body: {
+          id: itemId,
+          reason,
+          ...(claimToken !== undefined ? { claim_token: claimToken } : {}),
+        },
       }),
     );
     const raw = expectOk<{ id: string; retry_count: number }>(res, `stagingFail(itemId=${itemId})`);
@@ -957,7 +1045,11 @@ export class InProcessTransport implements CoreClient {
       blankRequest({
         method: 'POST',
         path: '/v1/staging/extend-lease',
-        body: { id: itemId, seconds, ...(claimToken !== undefined ? { claim_token: claimToken } : {}) },
+        body: {
+          id: itemId,
+          seconds,
+          ...(claimToken !== undefined ? { claim_token: claimToken } : {}),
+        },
       }),
     );
     const raw = expectOk<{ id: string; extended_by: number }>(
@@ -1197,7 +1289,10 @@ export class InProcessTransport implements CoreClient {
     const res = await this.router.handle(
       blankRequest({ method: 'GET', path: '/v1/plugins/tool-capabilities' }),
     );
-    const raw = expectOk<{ capabilities?: PluginToolCapability[] }>(res, 'listPluginToolCapabilities()');
+    const raw = expectOk<{ capabilities?: PluginToolCapability[] }>(
+      res,
+      'listPluginToolCapabilities()',
+    );
     return Array.isArray(raw.capabilities) ? raw.capabilities : [];
   }
 
@@ -1234,27 +1329,38 @@ export class InProcessTransport implements CoreClient {
 
   async getA2AOperation(operationId: string): Promise<A2AOperationStatus | null> {
     const res = await this.router.handle(
-      blankRequest({ method: 'GET', path: `/v1/a2a/operations/${encodeURIComponent(operationId)}` }),
+      blankRequest({
+        method: 'GET',
+        path: `/v1/a2a/operations/${encodeURIComponent(operationId)}`,
+      }),
     );
     if (res.status === 404) return null;
     return expectOk<A2AOperationStatus>(res, 'getA2AOperation()');
   }
 
   async claimA2AGuardJob(): Promise<A2AGuardWork | null> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/a2a/guard/next', body: {} }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/a2a/guard/next', body: {} }),
+    );
     if (res.status === 204) return null;
     return expectOk<A2AGuardWork>(res, 'claimA2AGuardJob()');
   }
 
   async submitA2AGuardVerdict(input: A2AGuardVerdictInput): Promise<A2AGuardVerdictResult> {
     const res = await this.router.handle(
-      blankRequest({ method: 'POST', path: '/v1/a2a/guard/verdict', body: a2aGuardVerdictBody(input) }),
+      blankRequest({
+        method: 'POST',
+        path: '/v1/a2a/guard/verdict',
+        body: a2aGuardVerdictBody(input),
+      }),
     );
     return parseA2AGuardVerdictResponse(res.status, res.body);
   }
 
   async searchUcp(input: UcpSearchInput): Promise<UcpSearchResult> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/search', body: ucpSearchBody(input) }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ucp/search', body: ucpSearchBody(input) }),
+    );
     return parseUcpSearchResponse(res.status, res.body);
   }
 
@@ -1277,34 +1383,52 @@ export class InProcessTransport implements CoreClient {
     return parseUcpFetchResponse(res.status, res.body);
   }
 
-  async raiseUcpSearchReview(input: Omit<UcpSearchInput, 'reviewId'>): Promise<UcpSearchReviewResult> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/search/review', body: ucpSearchBody(input) }));
+  async raiseUcpSearchReview(
+    input: Omit<UcpSearchInput, 'reviewId'>,
+  ): Promise<UcpSearchReviewResult> {
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ucp/search/review', body: ucpSearchBody(input) }),
+    );
     return parseUcpSearchReviewResponse(res.status, res.body);
   }
 
   async ucpCart(input: UcpCartCall): Promise<UcpShopResult> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/cart', body: ucpCartBody(input) }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ucp/cart', body: ucpCartBody(input) }),
+    );
     return parseUcpShopResponse(res.status, res.body);
   }
 
   async ucpCheckout(input: UcpCheckoutCall): Promise<UcpShopResult> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/checkout', body: ucpCheckoutBody(input) }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ucp/checkout', body: ucpCheckoutBody(input) }),
+    );
     return parseUcpShopResponse(res.status, res.body);
   }
 
   async claimUcpGuardJob(): Promise<UcpGuardWork | null> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/guard/next', body: {} }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/ucp/guard/next', body: {} }),
+    );
     if (res.status === 204) return null;
     return expectOk<UcpGuardWork>(res, 'claimUcpGuardJob()');
   }
 
   async submitUcpGuardVerdict(input: UcpGuardVerdictInput): Promise<UcpGuardVerdictResult> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/ucp/guard/verdict', body: ucpGuardVerdictBody(input) }));
+    const res = await this.router.handle(
+      blankRequest({
+        method: 'POST',
+        path: '/v1/ucp/guard/verdict',
+        body: ucpGuardVerdictBody(input),
+      }),
+    );
     return parseUcpGuardVerdictResponse(res.status, res.body);
   }
 
   async recordOwnerTurn(input: OwnerTurnInput): Promise<boolean> {
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/a2a/turns', body: ownerTurnBody(input) }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/a2a/turns', body: ownerTurnBody(input) }),
+    );
     return parseOwnerTurnResponse(res.status, res.body);
   }
 
@@ -1318,7 +1442,9 @@ export class InProcessTransport implements CoreClient {
       candidates: input.candidates,
       ...(input.windowSeconds !== undefined ? { window_seconds: input.windowSeconds } : {}),
     };
-    const res = await this.router.handle(blankRequest({ method: 'POST', path: '/v1/coordination/plans', body }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'POST', path: '/v1/coordination/plans', body }),
+    );
     return parseOpenGroupPlanResponse(res.status, res.body);
   }
 
@@ -1332,7 +1458,9 @@ export class InProcessTransport implements CoreClient {
   }
 
   async listGroupPlanHandles(): Promise<GroupPlanHandleWire[]> {
-    const res = await this.router.handle(blankRequest({ method: 'GET', path: '/v1/coordination/handles' }));
+    const res = await this.router.handle(
+      blankRequest({ method: 'GET', path: '/v1/coordination/handles' }),
+    );
     const raw = expectOk<{ plans?: unknown }>(res, 'listGroupPlanHandles()');
     return readGroupPlanHandles(raw.plans);
   }
@@ -1341,7 +1469,12 @@ export class InProcessTransport implements CoreClient {
     const body: Record<string, unknown> = {
       ...(opts?.scope !== undefined ? { scope: opts.scope } : {}),
       ...(opts?.pluginGrant !== undefined
-        ? { plugin_grant: { type: opts.pluginGrant.type, ...(opts.pluginGrant.hours !== undefined ? { hours: opts.pluginGrant.hours } : {}) } }
+        ? {
+            plugin_grant: {
+              type: opts.pluginGrant.type,
+              ...(opts.pluginGrant.hours !== undefined ? { hours: opts.pluginGrant.hours } : {}),
+            },
+          }
         : {}),
     };
     return this.workflowAction(id, 'approve', Object.keys(body).length > 0 ? body : undefined);
@@ -1864,7 +1997,11 @@ export class InProcessTransport implements CoreClient {
 
   async askRecordPut(record: StoredAskRecord): Promise<void> {
     const res = await this.router.handle(
-      blankRequest({ method: 'POST', path: '/v1/ask-records', body: storedAskRecordToWire(record) }),
+      blankRequest({
+        method: 'POST',
+        path: '/v1/ask-records',
+        body: storedAskRecordToWire(record),
+      }),
     );
     if (res.status !== 200) throw new Error(`askRecordPut failed: ${res.status}`);
   }

@@ -57,7 +57,6 @@ import { colors, spacing, radius, textStyles } from '../../src/theme';
 
 import type { SubjectReview } from '../../src/peerlens/subject_card';
 
-
 /**
  * How long the screen waits for `data` before surfacing a
  * "couldn't reach PeerLens" error. 5s is generous for the
@@ -132,9 +131,7 @@ export default function SubjectDetailScreen(
   // `subjectId` explicitly (production path); tests always pass it
   // and the param value is ignored.
   const params = useLocalSearchParams<{ subjectId?: string | string[] }>();
-  const paramSubjectId = Array.isArray(params.subjectId)
-    ? params.subjectId[0]
-    : params.subjectId;
+  const paramSubjectId = Array.isArray(params.subjectId) ? params.subjectId[0] : params.subjectId;
   const router = useRouter();
   // Local state lets the screen surface a graceful "couldn't reach the
   // PeerLens" error after the load-budget elapses, rather than
@@ -199,8 +196,7 @@ export default function SubjectDetailScreen(
       const writeParams: Record<string, string> = { subjectId: id };
       if (data?.title) writeParams.subjectName = data.title;
       if (data?.subjectKind) writeParams.subjectKind = data.subjectKind;
-      if (data?.subjectIdentifier)
-        writeParams.subjectIdentifier = data.subjectIdentifier;
+      if (data?.subjectIdentifier) writeParams.subjectIdentifier = data.subjectIdentifier;
       if (data?.subjectDid) writeParams.subjectDid = data.subjectDid;
       router.push({ pathname: '/peerlens/write', params: writeParams });
     },
@@ -233,8 +229,7 @@ export default function SubjectDetailScreen(
       if (review.sentiment) params.editingSentiment = review.sentiment;
       if (data?.title) params.subjectName = data.title;
       if (data?.subjectKind) params.subjectKind = data.subjectKind;
-      if (data?.subjectIdentifier)
-        params.subjectIdentifier = data.subjectIdentifier;
+      if (data?.subjectIdentifier) params.subjectIdentifier = data.subjectIdentifier;
       if (data?.subjectDid) params.subjectDid = data.subjectDid;
       router.push({ pathname: '/peerlens/write', params });
     },
@@ -250,7 +245,9 @@ export default function SubjectDetailScreen(
     if (subjectId === '') return;
     if (runnerEngaged) return;
     const id = setTimeout(() => {
-      setAutoError(`Couldn't reach ${FEATURE_NAMES.peerlens}. Check your connection and try again.`);
+      setAutoError(
+        `Couldn't reach ${FEATURE_NAMES.peerlens}. Check your connection and try again.`,
+      );
     }, LOAD_BUDGET_MS);
     return () => clearTimeout(id);
   }, [subjectId, retryNonce, props.data, props.error, runnerEngaged]);
@@ -366,10 +363,7 @@ export default function SubjectDetailScreen(
           header.priceTier) && (
           <View style={styles.contextChips} testID="subject-detail-context">
             {header.regionPill && (
-              <View
-                style={[styles.contextChip, styles.warningChip]}
-                testID="subject-detail-region"
-              >
+              <View style={[styles.contextChip, styles.warningChip]} testID="subject-detail-region">
                 <Text style={styles.contextChipText} numberOfLines={1}>
                   {header.regionPill}
                 </Text>
@@ -440,10 +434,7 @@ export default function SubjectDetailScreen(
       {onWriteReview && (
         <Pressable
           onPress={() => onWriteReview(subjectId)}
-          style={({ pressed }) => [
-            styles.writeBtn,
-            pressed && styles.writeBtnPressed,
-          ]}
+          style={({ pressed }) => [styles.writeBtn, pressed && styles.writeBtnPressed]}
           testID="subject-detail-write-cta"
           accessibilityRole="button"
           accessibilityLabel="Write a review"
@@ -540,11 +531,15 @@ function ImportedSourcesSection(props: ImportedSourcesSectionProps): React.React
         {total === 1 ? '1 review from elsewhere' : `${total} reviews from elsewhere`}
       </Text>
       <Text style={styles.importedSubtitle}>
-        Published by a review source, not by anyone in your network. They colour the
-        rating; they do not earn trust.
+        Published by a review source, not by anyone in your network. They colour the rating; they do
+        not earn trust.
       </Text>
       {sources.map((source) => (
-        <View key={source.feed} style={styles.importedSource} testID={`subject-detail-imported-${source.feed}`}>
+        <View
+          key={source.feed}
+          style={styles.importedSource}
+          testID={`subject-detail-imported-${source.feed}`}
+        >
           <Text style={styles.importedSourceName}>
             {source.name ?? source.feed}
             {source.market !== null ? ` · ${source.market}` : ''}
@@ -559,7 +554,10 @@ function ImportedSourcesSection(props: ImportedSourcesSectionProps): React.React
               accessibilityRole="link"
               accessibilityLabel={`Read this review at ${source.name ?? source.feed}`}
               testID={`subject-detail-imported-link-${entry.uri}`}
-              style={({ pressed }) => [styles.importedLink, pressed && styles.alternativeCardPressed]}
+              style={({ pressed }) => [
+                styles.importedLink,
+                pressed && styles.alternativeCardPressed,
+              ]}
             >
               <Text style={styles.importedLinkText} numberOfLines={2}>
                 {entry.text !== null && entry.text.trim() !== ''
@@ -584,7 +582,9 @@ function AlternativesStrip(props: AlternativesStripProps): React.ReactElement {
   return (
     <View style={styles.alternativesStrip} testID="subject-detail-alternatives">
       <Text style={styles.alternativesTitle}>
-        {alternatives.length === 1 ? '1 trusted alternative' : `${alternatives.length} trusted alternatives`}
+        {alternatives.length === 1
+          ? '1 trusted alternative'
+          : `${alternatives.length} trusted alternatives`}
       </Text>
       <View style={styles.alternativesRow}>
         {alternatives.map((alt) => (
@@ -654,9 +654,7 @@ function ReviewSection(props: ReviewSectionProps): React.ReactElement | null {
     <View style={styles.section} testID={`subject-detail-section-${testIdPrefix}`}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
-        {reviews.length > 0 && (
-          <Text style={styles.sectionCount}>{reviews.length}</Text>
-        )}
+        {reviews.length > 0 && <Text style={styles.sectionCount}>{reviews.length}</Text>}
       </View>
       {subtitle && <Text style={styles.sectionSubtitle}>{subtitle}</Text>}
 
@@ -714,14 +712,7 @@ interface ReviewRowProps {
 }
 
 function ReviewRow(props: ReviewRowProps): React.ReactElement {
-  const {
-    review,
-    testID,
-    onPress,
-    onPressOwnReview,
-    onPressOwnReviewEdit,
-    viewerDid,
-  } = props;
+  const { review, testID, onPress, onPressOwnReview, onPressOwnReviewEdit, viewerDid } = props;
   // Use the canonical band derivation rather than hand-coding the
   // threshold ladder — keeps the screen in lockstep with score_helpers
   // when the bands ever change (currently 0.8 / 0.5 / 0.3, but those
@@ -737,9 +728,7 @@ function ReviewRow(props: ReviewRowProps): React.ReactElement {
   // lands later without needing another mobile pass.
   const isSelf =
     review.ring === 'self' ||
-    (typeof viewerDid === 'string' &&
-      viewerDid.length > 0 &&
-      review.reviewerDid === viewerDid);
+    (typeof viewerDid === 'string' && viewerDid.length > 0 && review.reviewerDid === viewerDid);
 
   // Capture the DID into a local so the closure below sees the
   // narrowed `string` type without an `as` cast.
@@ -762,8 +751,8 @@ function ReviewRow(props: ReviewRowProps): React.ReactElement {
   // structural fix is siblings, not nesting: the row is a plain View;
   // the body and pill are independent Pressables side-by-side.
   if (isSelf) {
-    const editEnabled =
-      onPressOwnReviewEdit !== undefined && review.attestationUri != null;
+    const onEdit = onPressOwnReviewEdit;
+    const editEnabled = onEdit !== undefined && review.attestationUri != null;
     return (
       <View style={styles.reviewRow} testID={testID}>
         <View style={styles.reviewHeader}>
@@ -780,11 +769,7 @@ function ReviewRow(props: ReviewRowProps): React.ReactElement {
             <Text style={styles.reviewerName}>Your review</Text>
           </Pressable>
           <Pressable
-            onPress={
-              editEnabled
-                ? () => onPressOwnReviewEdit!(review)
-                : undefined
-            }
+            onPress={editEnabled && onEdit !== undefined ? () => onEdit(review) : undefined}
             style={({ pressed }) => [
               styles.editPill,
               pressed && editEnabled ? styles.editPillPressed : null,

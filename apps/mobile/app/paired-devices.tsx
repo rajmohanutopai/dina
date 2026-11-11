@@ -158,7 +158,9 @@ export default function PairedDevicesScreen() {
   const [role, setRole] = useState<PairableRole>('agent');
   // REAL_LIFE_FIXES_2 §7.2: work-type personas a new agent may read from the
   // start. None ticked by default; an unticked one raises a card when asked.
-  const [standardPersonas, setStandardPersonas] = useState<{ name: string; description: string }[]>([]);
+  const [standardPersonas, setStandardPersonas] = useState<{ name: string; description: string }[]>(
+    [],
+  );
   const [allowedPersonas, setAllowedPersonas] = useState<ReadonlySet<string>>(new Set());
   const [generating, setGenerating] = useState(false);
   const [liveCode, setLiveCode] = useState<LiveCode | null>(null);
@@ -660,8 +662,8 @@ export default function PairedDevicesScreen() {
           {role === 'agent' && standardPersonas.length > 0 && (
             <View testID="paired-devices-standard-personas">
               <Text style={styles.help}>
-                Vaults this agent may read without asking you each time. Leave them off and
-                Dina asks you when it wants one.
+                Vaults this agent may read without asking you each time. Leave them off and Dina
+                asks you when it wants one.
               </Text>
               {standardPersonas.map((p) => (
                 <View key={p.name} style={styles.roleRow}>
@@ -715,11 +717,7 @@ export default function PairedDevicesScreen() {
               agent host — it carries the relay address, this node's identity, and the pairing code,
               so there's nothing else to type.
             </Text>
-            <Text
-              testID="paired-devices-setup-code"
-              selectable
-              style={styles.setupCode}
-            >
+            <Text testID="paired-devices-setup-code" selectable style={styles.setupCode}>
               {liveCode.setupCode}
             </Text>
             <Pressable
@@ -735,9 +733,7 @@ export default function PairedDevicesScreen() {
             </Pressable>
             <Text style={styles.codeMeta}>
               Pairing <Text style={styles.mono}>{liveCode.deviceName}</Text> as{' '}
-              <Text style={styles.mono}>
-                {ROLE_LABEL[liveCode.role].toLowerCase()}
-              </Text>
+              <Text style={styles.mono}>{ROLE_LABEL[liveCode.role].toLowerCase()}</Text>
             </Text>
             <Text style={[styles.codeMeta, secondsRemaining < 60 && styles.codeExpiring]}>
               Expires in {formatDuration(secondsRemaining)}

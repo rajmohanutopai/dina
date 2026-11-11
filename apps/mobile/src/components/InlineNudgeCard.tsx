@@ -80,7 +80,10 @@ const TIER_DOT: Record<1 | 2 | 3, string> = {
   3: colors.textMuted, // engagement — quiet
 };
 
-export function InlineNudgeCard({ message, onAct }: InlineNudgeCardProps): React.JSX.Element | null {
+export function InlineNudgeCard({
+  message,
+  onAct,
+}: InlineNudgeCardProps): React.JSX.Element | null {
   const meta = readMetadata(message);
   const [resolved, setResolved] = useState<'acted' | 'dismissed' | null>(null);
 
@@ -113,8 +116,12 @@ export function InlineNudgeCard({ message, onAct }: InlineNudgeCardProps): React
         <View style={[styles.tierDot, { backgroundColor: TIER_DOT[meta.tier] }]} />
         <Text style={styles.label}>{tierLabel(meta.tier)}</Text>
       </View>
-      <Text testID={`nudge-card-title-${meta.nudgeId}`} style={styles.title}>{meta.title}</Text>
-      <Text testID={`nudge-card-body-${meta.nudgeId}`} style={styles.body}>{meta.body}</Text>
+      <Text testID={`nudge-card-title-${meta.nudgeId}`} style={styles.title}>
+        {meta.title}
+      </Text>
+      <Text testID={`nudge-card-body-${meta.nudgeId}`} style={styles.body}>
+        {meta.body}
+      </Text>
       {meta.contactName !== null && (
         <Text style={styles.contactLine} numberOfLines={1}>
           {meta.contactName}

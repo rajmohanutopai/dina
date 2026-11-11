@@ -58,10 +58,7 @@
 
 import type { AskExecuteFn, ExecuteOutcome } from './ask_handler';
 import type { AskEvent, AskRegistry } from './ask_registry';
-import type {
-  AgenticLoopResult,
-  PausedAgenticState,
-} from '../reasoning/agentic_loop';
+import type { AgenticLoopResult, PausedAgenticState } from '../reasoning/agentic_loop';
 import type { IntentSource } from '../reasoning/intent_classifier';
 
 export type AskApprovalResumerEvent =

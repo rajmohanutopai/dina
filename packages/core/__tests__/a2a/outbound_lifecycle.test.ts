@@ -49,7 +49,13 @@ beforeEach(async () => {
 afterEach(() => world.close());
 
 function propose(text = 'Summarize the attached note.', skill = 'summarize') {
-  const out = proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill, text, replyTo: 'main' });
+  const out = proposeDelegation(world.runtime, {
+    releaseSession: SESSION,
+    agentId,
+    skill,
+    text,
+    replyTo: 'main',
+  });
   if (!out.ok) throw new Error(`propose: ${out.reason}`);
   return out;
 }
@@ -109,9 +115,15 @@ describe('every ending tells the conversation exactly once (A2A-I7)', () => {
 
   it('the authority moved between proposal and approval (after the owner pressed Send)', () => {
     const p = propose();
-    world.db.run(`UPDATE a2a_skill_bindings SET revision = revision + 1 WHERE remote_agent_id = ? AND skill = 'summarize'`, [agentId]);
+    world.db.run(
+      `UPDATE a2a_skill_bindings SET revision = revision + 1 WHERE remote_agent_id = ? AND skill = 'summarize'`,
+      [agentId],
+    );
     world.workflow.approve(p.approvalTaskId);
-    expect(op(p.operationId)).toMatchObject({ state: 'stale_authority', reason_code: 'binding_changed' });
+    expect(op(p.operationId)).toMatchObject({
+      state: 'stale_authority',
+      reason_code: 'binding_changed',
+    });
     expect(a2aEvents(p.operationId)).toEqual(ENDED);
   });
 
@@ -130,7 +142,10 @@ describe('every ending tells the conversation exactly once (A2A-I7)', () => {
     const p = propose();
     world.workflow.approve(p.approvalTaskId);
     const claim = claimDispatch();
-    world.db.run(`UPDATE a2a_skill_bindings SET revision = revision + 1 WHERE remote_agent_id = ? AND skill = 'summarize'`, [agentId]);
+    world.db.run(
+      `UPDATE a2a_skill_bindings SET revision = revision + 1 WHERE remote_agent_id = ? AND skill = 'summarize'`,
+      [agentId],
+    );
     beginOutboundDispatch(world.runtime, claim);
     expect(a2aEvents(p.operationId)).toEqual(ENDED_ON_DISPATCH);
   });
@@ -147,14 +162,23 @@ describe('every ending tells the conversation exactly once (A2A-I7)', () => {
   it('the sweeper expires a queued operation whose child died, and closes a running one that ended unreported', () => {
     const queued = propose('q');
     world.workflow.approve(queued.approvalTaskId);
-    const child = world.store.childrenOf(op(queued.operationId).id, 'dispatch')[0]?.child_task_id ?? '';
+    const child =
+      world.store.childrenOf(op(queued.operationId).id, 'dispatch')[0]?.child_task_id ?? '';
     world.db.run(`UPDATE workflow_tasks SET state = 'failed' WHERE id = ?`, [child]);
     const running = sending('r');
-    world.db.run(`UPDATE workflow_tasks SET state = 'failed' WHERE id = ?`, [running.claim.childTaskId]);
+    world.db.run(`UPDATE workflow_tasks SET state = 'failed' WHERE id = ?`, [
+      running.claim.childTaskId,
+    ]);
     sweepA2AOutbound(world.runtime);
     sweepA2AOutbound(world.runtime);
-    expect(op(queued.operationId)).toMatchObject({ state: 'expired', reason_code: 'dispatch_expired' });
-    expect(op(running.p.operationId)).toMatchObject({ state: 'outcome_unknown', reason_code: 'dispatch_ended_unreported' });
+    expect(op(queued.operationId)).toMatchObject({
+      state: 'expired',
+      reason_code: 'dispatch_expired',
+    });
+    expect(op(running.p.operationId)).toMatchObject({
+      state: 'outcome_unknown',
+      reason_code: 'dispatch_ended_unreported',
+    });
     expect(a2aEvents(queued.operationId)).toEqual(ENDED_ON_DISPATCH);
     expect(a2aEvents(running.p.operationId)).toEqual(ENDED_ON_DISPATCH);
   });
@@ -164,7 +188,13 @@ describe('every ending tells the conversation exactly once (A2A-I7)', () => {
     recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'ok' }] });
     const work = claimNextGuardJob(world.runtime);
     if (work === null) throw new Error('no work');
-    submitGuardVerdict(world.runtime, { jobId: work.job_id, claimId: work.claim_id, digest: work.digest, verdict: 'passed', code: 'model_pass' });
+    submitGuardVerdict(world.runtime, {
+      jobId: work.job_id,
+      claimId: work.claim_id,
+      digest: work.digest,
+      verdict: 'passed',
+      code: 'model_pass',
+    });
     sweepA2AOutbound(world.runtime);
     expect(a2aEvents(p.operationId)).toEqual([['dispatch', A2A_RESULT_RELEASED_EVENT]]);
   });
@@ -174,22 +204,77 @@ describe('every drift class voids the dispatch in its transaction (§6.3)', () =
   type Tamper = (row: ReturnType<typeof op>, claim: DispatchClaim) => void;
   const cases: [string, Tamper][] = [
     // A new pin the owner bound and approved again: bindings follow the pin.
-    ['card_changed', (row) => {
-      world.db.run(`UPDATE a2a_remote_agents SET card_hash = 'x' WHERE agent_id = ?`, [row.remote_agent_id]);
-      world.db.run(`UPDATE a2a_skill_bindings SET card_hash = 'x' WHERE remote_agent_id = ?`, [row.remote_agent_id]);
-    }],
-    ['endpoint_changed', (row) => world.db.run(`UPDATE a2a_remote_agents SET endpoint = 'https://elsewhere.example/rpc' WHERE agent_id = ?`, [row.remote_agent_id])],
-    ['binding_changed', (row) => world.db.run(`UPDATE a2a_skill_bindings SET revision = revision + 1 WHERE remote_agent_id = ? AND skill = 'summarize'`, [row.remote_agent_id])],
-    ['credential_changed', (row) => world.db.run(`UPDATE a2a_remote_credentials SET revision = revision + 1 WHERE remote_agent_id = ?`, [row.remote_agent_id])],
-    ['credential_revoked', (row) => world.db.run(`UPDATE a2a_remote_credentials SET status = 'revoked', revoked_at = 1 WHERE remote_agent_id = ?`, [row.remote_agent_id])],
-    ['agent_revoked', (row) => world.db.run(`UPDATE a2a_remote_agents SET status = 'revoked' WHERE agent_id = ?`, [row.remote_agent_id])],
-    ['approval_not_intact', (row) => {
-      const approval = world.store.childrenOf(row.id, 'approval')[0]?.child_task_id ?? '';
-      world.db.run(`UPDATE workflow_tasks SET state = 'cancelled' WHERE id = ?`, [approval]);
-    }],
-    ['no_permit', (row) => world.db.run(`UPDATE a2a_permits SET state = 'void' WHERE operation_ref = ?`, [row.id])],
-    ['snapshot_unreadable', (row) => world.db.run(`UPDATE a2a_tasks SET snapshot_json = '{' WHERE id = ?`, [row.id])],
-    ['consent_mismatch', (row) => world.db.run(`UPDATE a2a_permits SET payload_hash = 'f' WHERE operation_ref = ?`, [row.id])],
+    [
+      'card_changed',
+      (row) => {
+        world.db.run(`UPDATE a2a_remote_agents SET card_hash = 'x' WHERE agent_id = ?`, [
+          row.remote_agent_id,
+        ]);
+        world.db.run(`UPDATE a2a_skill_bindings SET card_hash = 'x' WHERE remote_agent_id = ?`, [
+          row.remote_agent_id,
+        ]);
+      },
+    ],
+    [
+      'endpoint_changed',
+      (row) =>
+        world.db.run(
+          `UPDATE a2a_remote_agents SET endpoint = 'https://elsewhere.example/rpc' WHERE agent_id = ?`,
+          [row.remote_agent_id],
+        ),
+    ],
+    [
+      'binding_changed',
+      (row) =>
+        world.db.run(
+          `UPDATE a2a_skill_bindings SET revision = revision + 1 WHERE remote_agent_id = ? AND skill = 'summarize'`,
+          [row.remote_agent_id],
+        ),
+    ],
+    [
+      'credential_changed',
+      (row) =>
+        world.db.run(
+          `UPDATE a2a_remote_credentials SET revision = revision + 1 WHERE remote_agent_id = ?`,
+          [row.remote_agent_id],
+        ),
+    ],
+    [
+      'credential_revoked',
+      (row) =>
+        world.db.run(
+          `UPDATE a2a_remote_credentials SET status = 'revoked', revoked_at = 1 WHERE remote_agent_id = ?`,
+          [row.remote_agent_id],
+        ),
+    ],
+    [
+      'agent_revoked',
+      (row) =>
+        world.db.run(`UPDATE a2a_remote_agents SET status = 'revoked' WHERE agent_id = ?`, [
+          row.remote_agent_id,
+        ]),
+    ],
+    [
+      'approval_not_intact',
+      (row) => {
+        const approval = world.store.childrenOf(row.id, 'approval')[0]?.child_task_id ?? '';
+        world.db.run(`UPDATE workflow_tasks SET state = 'cancelled' WHERE id = ?`, [approval]);
+      },
+    ],
+    [
+      'no_permit',
+      (row) =>
+        world.db.run(`UPDATE a2a_permits SET state = 'void' WHERE operation_ref = ?`, [row.id]),
+    ],
+    [
+      'snapshot_unreadable',
+      (row) => world.db.run(`UPDATE a2a_tasks SET snapshot_json = '{' WHERE id = ?`, [row.id]),
+    ],
+    [
+      'consent_mismatch',
+      (row) =>
+        world.db.run(`UPDATE a2a_permits SET payload_hash = 'f' WHERE operation_ref = ?`, [row.id]),
+    ],
   ];
 
   it.each(cases)('%s', (reason, tamper) => {
@@ -197,7 +282,11 @@ describe('every drift class voids the dispatch in its transaction (§6.3)', () =
     world.workflow.approve(p.approvalTaskId);
     const claim = claimDispatch();
     tamper(op(p.operationId), claim);
-    expect(beginOutboundDispatch(world.runtime, claim)).toEqual({ kind: 'settled', state: 'stale_authority', reason });
+    expect(beginOutboundDispatch(world.runtime, claim)).toEqual({
+      kind: 'settled',
+      state: 'stale_authority',
+      reason,
+    });
     const row = op(p.operationId);
     expect(row).toMatchObject({ state: 'stale_authority', reason_code: reason, message_id: null });
     expect(world.store.permitsOf(row.id).every((permit) => permit.state === 'void')).toBe(true);
@@ -228,7 +317,10 @@ describe('a restart at any stage loses nothing and re-sends nothing', () => {
     const p = propose();
     world.workflow.approve(p.approvalTaskId);
     world.restart();
-    expect(beginOutboundDispatch(world.runtime, claimDispatch())).toMatchObject({ kind: 'send', operationId: p.operationId });
+    expect(beginOutboundDispatch(world.runtime, claimDispatch())).toMatchObject({
+      kind: 'send',
+      operationId: p.operationId,
+    });
   });
 
   it('transmitting: never sent again; the operation ends outcome_unknown', () => {
@@ -236,7 +328,11 @@ describe('a restart at any stage loses nothing and re-sends nothing', () => {
     world.restart();
     world.clock += LEASE_MS + 1;
     world.repo.expireLeasedTasks(world.clock);
-    expect(beginOutboundDispatch(world.runtime, claimDispatch())).toEqual({ kind: 'settled', state: 'outcome_unknown', reason: 'lease_lost_after_send' });
+    expect(beginOutboundDispatch(world.runtime, claimDispatch())).toEqual({
+      kind: 'settled',
+      state: 'outcome_unknown',
+      reason: 'lease_lost_after_send',
+    });
     expect(a2aEvents(p.operationId)).toEqual([['dispatch', A2A_OPERATION_ENDED_EVENT]]);
   });
 
@@ -259,12 +355,23 @@ describe('a restart at any stage loses nothing and re-sends nothing', () => {
 
   it('quarantined: the held result waits for the guard and releases once', () => {
     const { p, claim } = sending();
-    recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'kept across the restart' }] });
+    recordRemoteOutcome(world.runtime, claim, {
+      kind: 'result',
+      parts: [{ text: 'kept across the restart' }],
+    });
     world.restart();
     const work = claimNextGuardJob(world.runtime);
     if (work === null) throw new Error('no work');
     expect(work.content).toEqual({ version: 1, parts: [{ text: 'kept across the restart' }] });
-    expect(submitGuardVerdict(world.runtime, { jobId: work.job_id, claimId: work.claim_id, digest: work.digest, verdict: 'passed', code: 'model_pass' })).toEqual({ ok: true, state: 'completed' });
+    expect(
+      submitGuardVerdict(world.runtime, {
+        jobId: work.job_id,
+        claimId: work.claim_id,
+        digest: work.digest,
+        verdict: 'passed',
+        code: 'model_pass',
+      }),
+    ).toEqual({ ok: true, state: 'completed' });
     expect(a2aEvents(p.operationId)).toEqual([['dispatch', A2A_RESULT_RELEASED_EVENT]]);
   });
 });
@@ -281,7 +388,10 @@ describe('a JSON-RPC error to SendMessage (A2A-I8)', () => {
     world.workflow.approve(p.approvalTaskId);
     const claim = claimDispatch();
     beginOutboundDispatch(world.runtime, claim);
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'send_error', code })).toEqual({ ok: true, state });
+    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'send_error', code })).toEqual({
+      ok: true,
+      state,
+    });
     expect(op(p.operationId)).toMatchObject({ state, reason_code: reason });
   });
 });
@@ -297,8 +407,15 @@ describe('every action class, after the send: no side effect possible ends faile
   ] as const;
 
   /** `summarize`, bound under `actionClass`, sent and in flight. */
-  function sentAs(actionClass: OutboundActionClass): { p: ReturnType<typeof propose>; claim: DispatchClaim } {
-    const rebound = bindRemoteSkill({ store: world.store, nowMs: () => world.clock }, agentId, { skill: 'summarize', actionClass, credentialRef });
+  function sentAs(actionClass: OutboundActionClass): {
+    p: ReturnType<typeof propose>;
+    claim: DispatchClaim;
+  } {
+    const rebound = bindRemoteSkill({ store: world.store, nowMs: () => world.clock }, agentId, {
+      skill: 'summarize',
+      actionClass,
+      credentialRef,
+    });
     if (!rebound.ok) throw new Error(rebound.reason);
     const p = propose();
     world.workflow.approve(p.approvalTaskId);
@@ -309,36 +426,75 @@ describe('every action class, after the send: no side effect possible ends faile
 
   it.each(CLASSES)('an internal error answering SendMessage (%s): %s', (actionClass, state) => {
     const { p, claim } = sentAs(actionClass);
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'send_error', code: -32603 })).toEqual({ ok: true, state });
-    expect(op(p.operationId)).toMatchObject({ state, reason_code: state === 'failed' ? 'remote_error' : 'remote_error_after_send' });
+    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'send_error', code: -32603 })).toEqual(
+      { ok: true, state },
+    );
+    expect(op(p.operationId)).toMatchObject({
+      state,
+      reason_code: state === 'failed' ? 'remote_error' : 'remote_error_after_send',
+    });
   });
 
-  it.each(CLASSES)('a result Dina refuses, the remote having reported it done (%s): %s', (actionClass, state) => {
-    const { p, claim } = sentAs(actionClass);
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ url: 'https://agent.example/f.pdf' }] })).toEqual({ ok: true, state });
-    expect(op(p.operationId)).toMatchObject({ state, reason_code: 'result_refused:url_part_refused', result_json: null });
-  });
+  it.each(CLASSES)(
+    'a result Dina refuses, the remote having reported it done (%s): %s',
+    (actionClass, state) => {
+      const { p, claim } = sentAs(actionClass);
+      expect(
+        recordRemoteOutcome(world.runtime, claim, {
+          kind: 'result',
+          parts: [{ url: 'https://agent.example/f.pdf' }],
+        }),
+      ).toEqual({ ok: true, state });
+      expect(op(p.operationId)).toMatchObject({
+        state,
+        reason_code: 'result_refused:url_part_refused',
+        result_json: null,
+      });
+    },
+  );
 
-  it.each(CLASSES)('an error that says the remote refused before acting (%s): failed, whatever the class', (actionClass) => {
-    const { p, claim } = sentAs(actionClass);
-    expect(recordRemoteOutcome(world.runtime, claim, { kind: 'send_error', code: -32602 })).toEqual({ ok: true, state: 'failed' });
-    expect(op(p.operationId)).toMatchObject({ state: 'failed', reason_code: 'remote_rejected' });
-  });
+  it.each(CLASSES)(
+    'an error that says the remote refused before acting (%s): failed, whatever the class',
+    (actionClass) => {
+      const { p, claim } = sentAs(actionClass);
+      expect(
+        recordRemoteOutcome(world.runtime, claim, { kind: 'send_error', code: -32602 }),
+      ).toEqual({ ok: true, state: 'failed' });
+      expect(op(p.operationId)).toMatchObject({ state: 'failed', reason_code: 'remote_rejected' });
+    },
+  );
 });
 
 describe('what leaves carries no original (D7, §6.2 step 3)', () => {
   it('scrubs personal details in data keys and in numbers, not only in strings', () => {
     const out = buildOutgoingProjection({
       text: 'x',
-      data: { 'alonso@example.com': 'x', phone: 14155550134, card: 4111111111111111, count: 3, nested: { 'ssn 123-45-6789': true } },
+      data: {
+        'alonso@example.com': 'x',
+        phone: 14155550134,
+        card: 4111111111111111,
+        count: 3,
+        nested: { 'ssn 123-45-6789': true },
+      },
     });
     if (!out.ok) throw new Error(out.reason);
     const sent = JSON.stringify(out.parts);
-    for (const original of ['alonso@example.com', '14155550134', '4111111111111111', '123-45-6789']) {
+    for (const original of [
+      'alonso@example.com',
+      '14155550134',
+      '4111111111111111',
+      '123-45-6789',
+    ]) {
       expect(sent).not.toContain(original);
     }
     expect(out.parts[1]).toEqual({
-      data: { '[EMAIL_1]': 'x', card: '[CREDIT_CARD_1]', count: 3, nested: { 'ssn [SSN_1]': true }, phone: '[PHONE_1]' },
+      data: {
+        '[EMAIL_1]': 'x',
+        card: '[CREDIT_CARD_1]',
+        count: 3,
+        nested: { 'ssn [SSN_1]': true },
+        phone: '[PHONE_1]',
+      },
     });
   });
 
@@ -356,7 +512,10 @@ describe('what leaves carries no original (D7, §6.2 step 3)', () => {
   });
 
   it('refuses keys that become one after cleaning, rather than drop one', () => {
-    expect(buildOutgoingProjection({ data: { ab: 1, 'a\u200bb': 2 } })).toEqual({ ok: false, reason: 'data_key_collision' });
+    expect(buildOutgoingProjection({ data: { ab: 1, 'a\u200bb': 2 } })).toEqual({
+      ok: false,
+      reason: 'data_key_collision',
+    });
   });
 
   it.each([
@@ -394,7 +553,10 @@ describe('an ending never commits without its event', () => {
   it('a result whose quarantine cannot be read ends blocked, told once', () => {
     const { p, claim } = sending();
     recordRemoteOutcome(world.runtime, claim, { kind: 'result', parts: [{ text: 'x' }] });
-    world.db.run('UPDATE a2a_tasks SET result_quarantine = ? WHERE id = ?', ['{', op(p.operationId).id]);
+    world.db.run('UPDATE a2a_tasks SET result_quarantine = ? WHERE id = ?', [
+      '{',
+      op(p.operationId).id,
+    ]);
     expect(claimNextGuardJob(world.runtime)).toBeNull();
     expect(claimNextGuardJob(world.runtime)).toBeNull();
     expect(a2aEvents(p.operationId)).toEqual([['dispatch', A2A_RESULT_BLOCKED_EVENT]]);
@@ -428,10 +590,19 @@ describe('ended operations purge with everything that references them (§9)', ()
   it('deletes children first after the retention window, and nothing earlier', () => {
     // One blocked result (guard job, quarantine) and one owner-cancelled run (cancel request).
     const blocked = sending('b');
-    recordRemoteOutcome(world.runtime, blocked.claim, { kind: 'result', parts: [{ text: 'held' }] });
+    recordRemoteOutcome(world.runtime, blocked.claim, {
+      kind: 'result',
+      parts: [{ text: 'held' }],
+    });
     const work = claimNextGuardJob(world.runtime);
     if (work === null) throw new Error('no work');
-    submitGuardVerdict(world.runtime, { jobId: work.job_id, claimId: work.claim_id, digest: work.digest, verdict: 'blocked', code: 'model_block' });
+    submitGuardVerdict(world.runtime, {
+      jobId: work.job_id,
+      claimId: work.claim_id,
+      digest: work.digest,
+      verdict: 'blocked',
+      code: 'model_block',
+    });
     const cancelled = sending('c');
     cancelOutboundOperation(world.runtime, cancelled.p.operationId);
     recordRemoteOutcome(world.runtime, cancelled.claim, { kind: 'cancelled' });
@@ -440,7 +611,11 @@ describe('ended operations purge with everything that references them (§9)', ()
       const row = op(id);
       return { id, ref: row.id, tasks: world.store.childrenOf(row.id).map((c) => c.child_task_id) };
     });
-    expect(world.db.query(`SELECT COUNT(*) AS n FROM a2a_cancel_requests WHERE operation_ref = ?`, [ended[1]?.ref])[0]).toEqual({ n: 1 });
+    expect(
+      world.db.query(`SELECT COUNT(*) AS n FROM a2a_cancel_requests WHERE operation_ref = ?`, [
+        ended[1]?.ref,
+      ])[0],
+    ).toEqual({ n: 1 });
 
     world.clock += A2A_ENDED_RETENTION_MS - 1;
     expect(purgeEndedA2AOperations(world.runtime)).toBe(0);
@@ -449,8 +624,15 @@ describe('ended operations purge with everything that references them (§9)', ()
 
     for (const { id, ref, tasks } of ended) {
       expect(world.store.getTaskByExternal('outbound', 'owner', id)).toBeNull();
-      for (const table of ['a2a_guard_jobs', 'a2a_permits', 'a2a_task_children', 'a2a_cancel_requests']) {
-        expect(world.db.query(`SELECT COUNT(*) AS n FROM ${table} WHERE operation_ref = ?`, [ref])[0]).toEqual({ n: 0 });
+      for (const table of [
+        'a2a_guard_jobs',
+        'a2a_permits',
+        'a2a_task_children',
+        'a2a_cancel_requests',
+      ]) {
+        expect(
+          world.db.query(`SELECT COUNT(*) AS n FROM ${table} WHERE operation_ref = ?`, [ref])[0],
+        ).toEqual({ n: 0 });
       }
       // The consent card (the approved message) and the dispatch child go too, with their events.
       expect(tasks).toHaveLength(2);
@@ -467,14 +649,33 @@ describe('ended operations purge with everything that references them (§9)', ()
 describe('proposal bounds', () => {
   it('refuses more than the hourly cap, then allows again an hour later', () => {
     for (let i = 0; i < MAX_PROPOSALS_PER_HOUR; i += 1) {
-      const out = proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill: 'summarize', text: `n${i}` });
+      const out = proposeDelegation(world.runtime, {
+        releaseSession: SESSION,
+        agentId,
+        skill: 'summarize',
+        text: `n${i}`,
+      });
       if (!out.ok) throw new Error(out.reason);
       world.workflow.cancel(out.approvalTaskId, 'no');
     }
-    expect(proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill: 'summarize', text: 'one more' })).toEqual({ ok: false, reason: 'too_many_recent' });
+    expect(
+      proposeDelegation(world.runtime, {
+        releaseSession: SESSION,
+        agentId,
+        skill: 'summarize',
+        text: 'one more',
+      }),
+    ).toEqual({ ok: false, reason: 'too_many_recent' });
     world.clock += 60 * 60_000;
     world.turn(); // the owner speaks again: proposals belong to a live turn
-    expect(proposeDelegation(world.runtime, { releaseSession: SESSION, agentId, skill: 'summarize', text: 'later' }).ok).toBe(true);
+    expect(
+      proposeDelegation(world.runtime, {
+        releaseSession: SESSION,
+        agentId,
+        skill: 'summarize',
+        text: 'later',
+      }).ok,
+    ).toBe(true);
   });
 });
 

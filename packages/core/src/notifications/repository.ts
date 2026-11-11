@@ -105,7 +105,8 @@ export function wireToStoredNotification(raw: unknown): StoredNotificationItem |
     readAt: typeof o.read_at === 'number' && Number.isFinite(o.read_at) ? o.read_at : null,
     sourceId: typeof o.source_id === 'string' ? o.source_id : '',
     deepLink: typeof o.deep_link === 'string' ? o.deep_link : null,
-    expiresAt: typeof o.expires_at === 'number' && Number.isFinite(o.expires_at) ? o.expires_at : null,
+    expiresAt:
+      typeof o.expires_at === 'number' && Number.isFinite(o.expires_at) ? o.expires_at : null,
     dataScope: typeof o.data_scope === 'string' && o.data_scope !== '' ? o.data_scope : 'user',
   };
 }
@@ -303,10 +304,9 @@ export class SqliteNotificationLogRepository implements NotificationLogRepositor
   }
 
   async purgeByScopePrefix(prefix: string): Promise<number> {
-    return this.db.run(
-      `DELETE FROM notification_log WHERE data_scope LIKE ? ESCAPE '\\'`,
-      [`${escapeLike(prefix)}%`],
-    );
+    return this.db.run(`DELETE FROM notification_log WHERE data_scope LIKE ? ESCAPE '\\'`, [
+      `${escapeLike(prefix)}%`,
+    ]);
   }
 
   async reset(): Promise<void> {

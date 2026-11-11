@@ -93,13 +93,18 @@ describe('d2d_send — the sender is this node', () => {
 
 describe('publication_candidate — Core validates, and does not publish', () => {
   const make = (
-    options: { supplier?: string | null; mayPublish?: boolean; findings?: { refusal: string; detail: string }[] } = {},
+    options: {
+      supplier?: string | null;
+      mayPublish?: boolean;
+      findings?: { refusal: string; detail: string }[];
+    } = {},
   ) =>
     makePublicationCandidateOperation({
       // `'supplier' in options` rather than `??`, because the two cases this
       // must distinguish are "not specified" and "explicitly null" — and `??`
       // collapses them, so the null case silently tested the default.
-      supplierDid: () => ('supplier' in options ? options.supplier ?? null : 'did:plc:chairmaker'),
+      supplierDid: () =>
+        'supplier' in options ? (options.supplier ?? null) : 'did:plc:chairmaker',
       mayPublish: () => options.mayPublish !== false,
       validateCandidate: () => options.findings ?? [],
     });
@@ -130,9 +135,7 @@ describe('publication_candidate — Core validates, and does not publish', () =>
     // A candidate naming another supplier would publish under somebody else's
     // scope, and a `manufacturer_sku` only means something scoped to its
     // issuer.
-    const outcome = await make()(
-      ctx({ candidate: {}, supplier_did: 'did:plc:rival' }),
-    );
+    const outcome = await make()(ctx({ candidate: {}, supplier_did: 'did:plc:rival' }));
     expect(outcome).toMatchObject({ kind: 'failed' });
   });
 

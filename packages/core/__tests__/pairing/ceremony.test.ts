@@ -30,7 +30,10 @@ import {
   verifyPairingIdentityBinding,
   deriveAlphanumericCode,
 } from '../../src/pairing/ceremony';
-import { SQLitePluginInstallRepository, setPluginInstallRepository } from '../../src/plugins/registry';
+import {
+  SQLitePluginInstallRepository,
+  setPluginInstallRepository,
+} from '../../src/plugins/registry';
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
@@ -276,7 +279,7 @@ describe('Device Pairing Ceremony', () => {
     it('paired device resolves as callerType=device', () => {
       const { resolveCallerType } = require('../../src/auth/caller_type');
       const { deriveDIDKey } = require('../../src/identity/did');
-      const { getPublicKey: getPub } = require('../../src/crypto/ed25519');
+      const { getPublicKey: _getPub } = require('../../src/crypto/ed25519');
 
       const { code } = generatePairingCode();
       completePairing(code, 'TestPhone', testMultibase1);
@@ -433,7 +436,11 @@ describe('Device Pairing Ceremony', () => {
 
     it('the device that uses the code is bound to exactly that pending install, before the code is spent', () => {
       const installId = pendingRunner();
-      const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
+      const { code } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: installId,
+      });
       expect(getPairingIntent(code)?.pluginInstallId).toBe(installId);
 
       completePairing(code, 'runner', testMultibase1, 'plugin', 'runner');
@@ -444,31 +451,61 @@ describe('Device Pairing Ceremony', () => {
     it('a code whose install is gone, expired, or held by another runner refuses to pair and registers nothing', () => {
       // Gone.
       const gone = pendingRunner();
-      const { code: goneCode } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: gone });
+      const { code: goneCode } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: gone,
+      });
       installs.remove(gone);
-      expect(() => completePairing(goneCode, 'runner', testMultibase1, 'plugin', 'runner')).toThrow(/no longer pending/);
+      expect(() => completePairing(goneCode, 'runner', testMultibase1, 'plugin', 'runner')).toThrow(
+        /no longer pending/,
+      );
       expect(isCodeValid(goneCode)).toBe(false);
 
       // Expired install (the code itself is still fresh).
       const expired = pendingRunner(-1);
-      const { code: expiredCode } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: expired });
-      expect(() => completePairing(expiredCode, 'runner', testMultibase2, 'plugin', 'runner')).toThrow(/expired/);
+      const { code: expiredCode } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: expired,
+      });
+      expect(() =>
+        completePairing(expiredCode, 'runner', testMultibase2, 'plugin', 'runner'),
+      ).toThrow(/expired/);
 
       // Already bound to another runner.
       const held = pendingRunner();
-      const { code: first } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: held });
-      const { code: second } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: held });
+      const { code: first } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: held,
+      });
+      const { code: second } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: held,
+      });
       completePairing(first, 'runner', testMultibase2, 'plugin', 'runner');
-      expect(() => completePairing(second, 'runner', testMultibase3, 'plugin', 'runner')).toThrow(/already bound/);
+      expect(() => completePairing(second, 'runner', testMultibase3, 'plugin', 'runner')).toThrow(
+        /already bound/,
+      );
       expect(installs.getById(held)?.deviceDid).toBe(`did:key:${testMultibase2}`);
 
       // Only the one successful runner exists as a device.
-      expect(listDevices().filter((d) => !d.revoked).map((d) => d.publicKeyMultibase)).toEqual([testMultibase2]);
+      expect(
+        listDevices()
+          .filter((d) => !d.revoked)
+          .map((d) => d.publicKeyMultibase),
+      ).toEqual([testMultibase2]);
     });
 
     it('a storage fault during the bind rolls the device back and keeps the code live for a retry', () => {
       const installId = pendingRunner();
-      const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
+      const { code } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: installId,
+      });
       // A repository whose bind throws (SQLITE_BUSY / I/O), wrapped around the real one.
       let faultOnce = true;
       setPluginInstallRepository(
@@ -487,7 +524,9 @@ describe('Device Pairing Ceremony', () => {
           },
         }),
       );
-      expect(() => completePairing(code, 'runner', testMultibase1, 'plugin', 'runner')).toThrow(/bind failed/);
+      expect(() => completePairing(code, 'runner', testMultibase1, 'plugin', 'runner')).toThrow(
+        /bind failed/,
+      );
       // No unreferenced plugin device survives, and the code was NOT spent.
       expect(listDevices().filter((d) => !d.revoked)).toEqual([]);
       expect(installs.getById(installId)?.deviceDid).toBeUndefined();
@@ -499,7 +538,11 @@ describe('Device Pairing Ceremony', () => {
 
     it('restorePairingCode does not revive a runner code whose install is gone', () => {
       const installId = pendingRunner();
-      const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
+      const { code } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: installId,
+      });
       completePairing(code, 'runner', testMultibase1, 'plugin', 'runner');
       // The durable-persist rollback's cascade removes the pending install.
       installs.remove(installId);
@@ -515,8 +558,14 @@ describe('Device Pairing Ceremony', () => {
     it('the same runner may retry its own code binding (idempotent for the same device)', () => {
       const installId = pendingRunner();
       installs.bindPendingDevice(installId, `did:key:${testMultibase1}`, NOW);
-      const { code } = generatePairingCode({ role: 'plugin', scope: 'runner', pluginInstallId: installId });
-      expect(() => completePairing(code, 'runner', testMultibase1, 'plugin', 'runner')).not.toThrow();
+      const { code } = generatePairingCode({
+        role: 'plugin',
+        scope: 'runner',
+        pluginInstallId: installId,
+      });
+      expect(() =>
+        completePairing(code, 'runner', testMultibase1, 'plugin', 'runner'),
+      ).not.toThrow();
     });
   });
 });

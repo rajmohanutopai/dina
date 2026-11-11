@@ -131,8 +131,7 @@ export class ApprovalRegistry {
    */
   request(input: ApprovalRequestInput): ApprovalRequest {
     if (!input.action) throw new Error('ApprovalRegistry.request: action is required');
-    if (!input.requesterDid)
-      throw new Error('ApprovalRegistry.request: requesterDid is required');
+    if (!input.requesterDid) throw new Error('ApprovalRegistry.request: requesterDid is required');
     if (!input.persona) throw new Error('ApprovalRegistry.request: persona is required');
 
     const ttl = input.ttlMs ?? this.defaultTtlMs;
@@ -225,9 +224,7 @@ export class ApprovalRegistry {
 
   /** All requests (pending + terminal). Ordered by createdAtMs. */
   all(): ApprovalRequest[] {
-    return Array.from(this.requests.values()).sort(
-      (a, b) => a.createdAtMs - b.createdAtMs,
-    );
+    return Array.from(this.requests.values()).sort((a, b) => a.createdAtMs - b.createdAtMs);
   }
 
   /** Count of requests currently in memory (pending + terminal). */

@@ -601,7 +601,8 @@ export async function reloadLoadedThreads(): Promise<void> {
     const before = threads.get(threadId)?.length ?? 0;
     await hydrateThread(threadId, { force: true });
     const after = threads.get(threadId) ?? [];
-    if (after.length !== before && after.length > 0) fireSubscribers(after[after.length - 1]!);
+    const latest = after[after.length - 1];
+    if (after.length !== before && latest !== undefined) fireSubscribers(latest);
   }
 }
 

@@ -20,7 +20,11 @@ import {
 
 import { getBootedNode } from '../hooks/useNodeBootstrap';
 
-import { INJECT_SENTINEL_PUBLISHER, injectPublish, isTestPublishConfigured } from './inject_publish';
+import {
+  INJECT_SENTINEL_PUBLISHER,
+  injectPublish,
+  isTestPublishConfigured,
+} from './inject_publish';
 import {
   runReviewPublishTick,
   type DrainResult,
@@ -37,7 +41,11 @@ interface BootedNodeView {
 export interface ReviewPublishAutodrainSeams {
   getRepo?: () => ReviewPublishRepository | null;
   getNode?: () => BootedNodeView | null;
-  runTick?: (repo: ReviewPublishRepository, did: string, publisher: PDSPublisher) => Promise<DrainResult>;
+  runTick?: (
+    repo: ReviewPublishRepository,
+    did: string,
+    publisher: PDSPublisher,
+  ) => Promise<DrainResult>;
   /** Injectable clock for the lease reaper; defaults to `Date.now`. */
   now?: () => number;
 }
@@ -112,7 +120,9 @@ export function canDrainReviewPublish(seams: ReviewPublishAutodrainSeams = {}): 
  *      forever with no Cancel/Dismiss path until credentials returned.
  *   2. PUBLISH — only if a publish strategy exists.
  */
-export async function drainReviewPublishNow(seams: ReviewPublishAutodrainSeams = {}): Promise<void> {
+export async function drainReviewPublishNow(
+  seams: ReviewPublishAutodrainSeams = {},
+): Promise<void> {
   const repo = (seams.getRepo ?? getReviewPublishRepository)();
   const node = (seams.getNode ?? getBootedNode)();
   if (repo === null || node === null || node.did.length === 0) return;

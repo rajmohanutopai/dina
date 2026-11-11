@@ -55,7 +55,11 @@ function makeFakeWorkflowClient(): {
   const client: VaultApprovalWorkflowClient = {
     async createWorkflowTask(input: CreateWorkflowTaskInput) {
       if (tasks.has(input.id)) throw new Error(`duplicate: ${input.id}`);
-      const task: FakeTask = { id: input.id, status: input.initialState ?? 'pending_approval', payload: input.payload };
+      const task: FakeTask = {
+        id: input.id,
+        status: input.initialState ?? 'pending_approval',
+        payload: input.payload,
+      };
       tasks.set(input.id, task);
       return { task: task as unknown as WorkflowTask, deduped: false };
     },
@@ -68,7 +72,14 @@ function makeFakeWorkflowClient(): {
       return t as unknown as WorkflowTask;
     },
   };
-  return { client, tasks, setStatus: (id, status) => { const t = tasks.get(id); if (t) t.status = status; } };
+  return {
+    client,
+    tasks,
+    setStatus: (id, status) => {
+      const t = tasks.get(id);
+      if (t) t.status = status;
+    },
+  };
 }
 
 /**
@@ -89,8 +100,12 @@ function workflowTaskSource(
       if (t.status === 'cancelled' || t.status === 'failed') return 'denied';
       return 'expired';
     },
-    approve(id: string) { approve(id); },
-    deny(id: string) { deny(id); },
+    approve(id: string) {
+      approve(id);
+    },
+    deny(id: string) {
+      deny(id);
+    },
   };
 }
 
@@ -108,7 +123,8 @@ const personaTable: Record<string, PersonaInfo> = {
 
 function personaResolver(question: string): string {
   const lower = question.toLowerCase();
-  if (lower.includes('balance') || lower.includes('finance') || lower.includes('bank')) return 'financial';
+  if (lower.includes('balance') || lower.includes('finance') || lower.includes('bank'))
+    return 'financial';
   return 'general';
 }
 
@@ -132,10 +148,16 @@ interface Harness {
 function buildHarness(): Harness {
   const registry = new AskRegistry({ adapter: new InMemoryAskAdapter(), defaultTtlMs: 30_000 });
   const { client, tasks, setStatus } = makeFakeWorkflowClient();
-  const executeFn = buildPersonaGuardedExecuteFn({ personaResolver, personaLookup, coreClient: client, llm, callerRole: 'brain' });
+  const executeFn = buildPersonaGuardedExecuteFn({
+    personaResolver,
+    personaLookup,
+    coreClient: client,
+    llm,
+    callerRole: 'brain',
+  });
   const approvalSource = workflowTaskSource(
     tasks,
-    (id) => setStatus(id, 'queued'),    // approve → queued
+    (id) => setStatus(id, 'queued'), // approve → queued
     (id) => setStatus(id, 'cancelled'), // deny → cancelled
   );
   const gateway = new AskApprovalGateway({ askRegistry: registry, approvalSource });
@@ -150,19 +172,28 @@ function buildHarness(): Harness {
 describe('/ask × persona-gate × approval — E2E (Jest)', () => {
   it('default persona answers immediately (fast path, 200 + complete)', async () => {
     const h = buildHarness();
-    const result = await h.handleAsk({ question: "what's the weather in San Francisco?", requesterDid: REQUESTER_DID });
+    const result = await h.handleAsk({
+      question: "what's the weather in San Francisco?",
+      requesterDid: REQUESTER_DID,
+    });
     expect(result.kind).toBe('fast_path');
     if (result.kind !== 'fast_path') return;
     expect(result.status).toBe(200);
     expect(result.body.status).toBe('complete');
-    expect(result.body.answer).toEqual({ text: "[general] answer to: what's the weather in San Francisco?", persona: 'general' });
+    expect(result.body.answer).toEqual({
+      text: "[general] answer to: what's the weather in San Francisco?",
+      persona: 'general',
+    });
     // No approval task created — the gate allowed it outright.
     expect(h.workflowTasks.size).toBe(0);
   });
 
   it('sensitive persona returns pending_approval with a fresh approval_id', async () => {
     const h = buildHarness();
-    const result = await h.handleAsk({ question: "what's my bank balance?", requesterDid: REQUESTER_DID });
+    const result = await h.handleAsk({
+      question: "what's my bank balance?",
+      requesterDid: REQUESTER_DID,
+    });
     expect(result.kind).toBe('fast_path');
     if (result.kind !== 'fast_path') return;
     expect(result.status).toBe(200);
@@ -186,7 +217,10 @@ describe('/ask × persona-gate × approval — E2E (Jest)', () => {
 
   it('operator approves → ask resumes to in_flight → re-run executeFn → answer', async () => {
     const h = buildHarness();
-    const submit = await h.handleAsk({ question: 'show me my finance summary', requesterDid: REQUESTER_DID });
+    const submit = await h.handleAsk({
+      question: 'show me my finance summary',
+      requesterDid: REQUESTER_DID,
+    });
     expect(submit.kind).toBe('fast_path');
     if (submit.kind !== 'fast_path') return;
     expect(submit.body.status).toBe('pending_approval');
@@ -203,10 +237,17 @@ describe('/ask × persona-gate × approval — E2E (Jest)', () => {
 
     // Re-issue executeFn (production wires via approval_resumed event).
     // executeFn sees task in queued → completes task → runs LLM.
-    const second = await h.executeFn({ id: askId, question: 'show me my finance summary', requesterDid: REQUESTER_DID });
+    const second = await h.executeFn({
+      id: askId,
+      question: 'show me my finance summary',
+      requesterDid: REQUESTER_DID,
+    });
     expect(second.kind).toBe('answer');
     if (second.kind !== 'answer') return;
-    expect(second.answer).toEqual({ text: '[financial] answer to: show me my finance summary', persona: 'financial' });
+    expect(second.answer).toEqual({
+      text: '[financial] answer to: show me my finance summary',
+      persona: 'financial',
+    });
     await h.registry.markComplete(askId, JSON.stringify(second.answer));
 
     const final = await h.registry.get(askId);
@@ -218,7 +259,10 @@ describe('/ask × persona-gate × approval — E2E (Jest)', () => {
 
   it('operator denies → ask transitions to failed with operator reason', async () => {
     const h = buildHarness();
-    const submit = await h.handleAsk({ question: 'send 1000 USD to my bank', requesterDid: REQUESTER_DID });
+    const submit = await h.handleAsk({
+      question: 'send 1000 USD to my bank',
+      requesterDid: REQUESTER_DID,
+    });
     expect(submit.kind).toBe('fast_path');
     if (submit.kind !== 'fast_path') return;
     expect(submit.body.status).toBe('pending_approval');

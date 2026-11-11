@@ -19,12 +19,7 @@ import { unwrapSeed, type WrappedSeed } from '../crypto/aesgcm';
 import { deriveRootSigningKey } from '../crypto/slip0010';
 import { deriveDIDKey } from '../identity/did';
 import { initializeRotation } from '../identity/rotation';
-import {
-  createPersona,
-  openBootPersonas,
-  listPersonas,
-  resetPersonaState,
-} from '../persona/service';
+import { createPersona, openBootPersonas, listPersonas } from '../persona/service';
 
 import { markSecretsRestored } from './sleep_wake';
 

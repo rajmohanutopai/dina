@@ -132,7 +132,9 @@ export function didAuthenticationKeys(document: unknown, did: string): Uint8Arra
   return keys;
 }
 
-type KeysResult = { kind: 'keys'; keys: Uint8Array[] } | Exclude<A2ADidResolution, { kind: 'document' }>;
+type KeysResult =
+  | { kind: 'keys'; keys: Uint8Array[] }
+  | Exclude<A2ADidResolution, { kind: 'document' }>;
 
 /** The keys `did` may sign Dina requests with now, or why there are none to read. */
 async function signingKeysOf(did: string): Promise<KeysResult> {
@@ -163,16 +165,24 @@ export type ChallengeResult =
  * names; an unused earlier one for the client stops working. The owner's
  * expected DID, when set, must be the one named.
  */
-export function issueDidChallenge(store: A2AStore, clientId: string, did: unknown, nowMs: number): ChallengeResult {
+export function issueDidChallenge(
+  store: A2AStore,
+  clientId: string,
+  did: unknown,
+  nowMs: number,
+): ChallengeResult {
   const client = getA2AClient(store, clientId);
   if (client === null) return { ok: false, reason: 'not_found' };
   if (client.status !== 'active') return { ok: false, reason: 'revoked' };
   if (typeof did !== 'string' || !DID_RE.test(did)) return { ok: false, reason: 'did_malformed' };
-  if (client.expected_did !== null && client.expected_did !== did) return { ok: false, reason: 'did_not_expected' };
+  if (client.expected_did !== null && client.expected_did !== did)
+    return { ok: false, reason: 'did_not_expected' };
   const challenge = `dch_${base64urlEncode(randomBytes(32))}`;
   const expiresAt = nowMs + DID_CHALLENGE_TTL_MS;
   store.transaction(() => {
-    store.db.run('DELETE FROM a2a_did_challenges WHERE client_id = ? AND used_at IS NULL', [clientId]);
+    store.db.run('DELETE FROM a2a_did_challenges WHERE client_id = ? AND used_at IS NULL', [
+      clientId,
+    ]);
     store.db.execute(
       'INSERT INTO a2a_did_challenges (challenge_hash, client_id, did, expires_at, used_at, created_at) VALUES (?, ?, ?, ?, NULL, ?)',
       [challengeHash(challenge), clientId, did, expiresAt, nowMs],
@@ -181,9 +191,16 @@ export function issueDidChallenge(store: A2AStore, clientId: string, did: unknow
   return { ok: true, challenge, did, expires_at: expiresAt };
 }
 
-export type BindingRefusal = 'request_malformed' | 'challenge_invalid' | 'did_unresolvable' | 'signature_invalid' | 'did_in_use';
+export type BindingRefusal =
+  | 'request_malformed'
+  | 'challenge_invalid'
+  | 'did_unresolvable'
+  | 'signature_invalid'
+  | 'did_in_use';
 
-export type BindingResult = { ok: true; clientId: string; did: string } | { ok: false; reason: BindingRefusal };
+export type BindingResult =
+  | { ok: true; clientId: string; did: string }
+  | { ok: false; reason: BindingRefusal };
 
 interface ChallengeRow {
   challenge_hash: string;
@@ -197,7 +214,12 @@ function challengeHash(challenge: string): string {
 }
 
 /** The live challenge with this value for this DID, or null. */
-function liveChallenge(store: A2AStore, challenge: string, did: string, nowMs: number): ChallengeRow | null {
+function liveChallenge(
+  store: A2AStore,
+  challenge: string,
+  did: string,
+  nowMs: number,
+): ChallengeRow | null {
   const rows = store.db.query(
     'SELECT challenge_hash, client_id, did FROM a2a_did_challenges WHERE challenge_hash = ? AND did = ? AND used_at IS NULL AND expires_at > ?',
     [challengeHash(challenge), did, nowMs],
@@ -215,12 +237,18 @@ export async function completeDidBinding(
   const found = liveChallenge(store, request.challenge, request.did, args.nowMs());
   if (found === null) return { ok: false, reason: 'challenge_invalid' };
   const clientId = found.client_id;
-  if (getA2AClient(store, clientId)?.status !== 'active') return { ok: false, reason: 'challenge_invalid' };
+  if (getA2AClient(store, clientId)?.status !== 'active')
+    return { ok: false, reason: 'challenge_invalid' };
 
   const keys = await signingKeysOf(request.did);
   if (keys.kind !== 'keys') return { ok: false, reason: 'did_unresolvable' };
   const input = new TextEncoder().encode(
-    didBindingSigningInput({ nodeDid: args.nodeDid, clientId, did: request.did, challenge: request.challenge }),
+    didBindingSigningInput({
+      nodeDid: args.nodeDid,
+      clientId,
+      did: request.did,
+      challenge: request.challenge,
+    }),
   );
   const signature = hexToBytes(request.signature);
   const signer = keys.keys.find((key) => {
@@ -237,18 +265,23 @@ export async function completeDidBinding(
   return store.transaction((): BindingResult => {
     const now = args.nowMs();
     const still = liveChallenge(store, request.challenge, request.did, now);
-    if (still === null || still.client_id !== clientId) return { ok: false, reason: 'challenge_invalid' };
-    if (getA2AClient(store, clientId)?.status !== 'active') return { ok: false, reason: 'challenge_invalid' };
+    if (still === null || still.client_id !== clientId)
+      return { ok: false, reason: 'challenge_invalid' };
+    if (getA2AClient(store, clientId)?.status !== 'active')
+      return { ok: false, reason: 'challenge_invalid' };
     const holder = store.db.query(
       "SELECT client_id FROM a2a_clients WHERE bound_did = ? AND status = 'active' AND client_id != ?",
       [request.did, clientId],
     );
     if (holder.length > 0) return { ok: false, reason: 'did_in_use' };
-    store.db.run('UPDATE a2a_did_challenges SET used_at = ? WHERE challenge_hash = ?', [now, challengeHash(request.challenge)]);
-    store.db.execute(`UPDATE a2a_credential_bindings SET revoked_at = ? WHERE client_id = ? AND revoked_at IS NULL`, [
+    store.db.run('UPDATE a2a_did_challenges SET used_at = ? WHERE challenge_hash = ?', [
       now,
-      clientId,
+      challengeHash(request.challenge),
     ]);
+    store.db.execute(
+      `UPDATE a2a_credential_bindings SET revoked_at = ? WHERE client_id = ? AND revoked_at IS NULL`,
+      [now, clientId],
+    );
     store.db.execute(
       `INSERT INTO a2a_credential_bindings (client_id, binding_type, value_hash, created_at, revoked_at)
        VALUES (?, 'did', ?, ?, NULL)`,
@@ -283,7 +316,11 @@ export async function ingressCompleteDidBinding(
   envelope: GatewayEnvelope,
   nodeDid: string | null,
 ): Promise<GatewayAnswer> {
-  if (envelope.request.method !== 'POST' || envelope.request.path !== A2A_DID_BINDING_PATH || envelope.request.query !== '') {
+  if (
+    envelope.request.method !== 'POST' ||
+    envelope.request.path !== A2A_DID_BINDING_PATH ||
+    envelope.request.query !== ''
+  ) {
     return { status: 400, body: { error: 'external_mismatch' } };
   }
   if (nodeDid === null) return { status: 503, body: { error: 'unavailable' } };
@@ -294,9 +331,16 @@ export async function ingressCompleteDidBinding(
   if (!rt.budgets.chargeMiss(a2aPrincipal(found.client_id), rt.a2a.nowMs())) {
     return { status: 429, headers: { 'retry-after': '60' }, body: { error: 'rate_limited' } };
   }
-  const out = await completeDidBinding(rt.a2a.store, { nodeDid, body: envelope.request.body, nowMs: rt.a2a.nowMs });
+  const out = await completeDidBinding(rt.a2a.store, {
+    nodeDid,
+    body: envelope.request.body,
+    nowMs: rt.a2a.nowMs,
+  });
   if (!out.ok) return { status: BINDING_STATUS[out.reason], body: { error: out.reason } };
-  return { status: 200, body: { client_id: out.clientId, principal: a2aPrincipal(out.clientId), did: out.did } };
+  return {
+    status: 200,
+    body: { client_id: out.clientId, principal: a2aPrincipal(out.clientId), did: out.did },
+  };
 }
 
 export interface DidRefreshCounts {
@@ -323,7 +367,10 @@ export interface DidRefreshCounts {
  * it is the directory's error. The host calls this every
  * `DID_REFRESH_INTERVAL_MS`, off the request path.
  */
-export async function refreshBoundDidKeys(store: A2AStore, nowMs: () => number): Promise<DidRefreshCounts> {
+export async function refreshBoundDidKeys(
+  store: A2AStore,
+  nowMs: () => number,
+): Promise<DidRefreshCounts> {
   const counts: DidRefreshCounts = { checked: 0, suspended: 0, unresolved: 0 };
   const bound = store.db.query(
     `SELECT client_id, bound_did, bound_key FROM a2a_clients
@@ -336,7 +383,11 @@ export async function refreshBoundDidKeys(store: A2AStore, nowMs: () => number):
       counts.unresolved += 1;
       continue;
     }
-    if (found.kind === 'keys' && found.keys.some((key) => publicKeyToMultibase(key) === client.bound_key)) continue;
+    if (
+      found.kind === 'keys' &&
+      found.keys.some((key) => publicKeyToMultibase(key) === client.bound_key)
+    )
+      continue;
     const suspended = store.transaction(() => {
       const now = nowMs();
       const changed = store.db.run(

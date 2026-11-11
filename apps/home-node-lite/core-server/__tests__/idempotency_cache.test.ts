@@ -123,7 +123,8 @@ describe('IdempotencyCache (task 4.49)', () => {
       expect(cache.lookup(SENDER_A, 'req-1')).not.toBeNull();
       // Something else got evicted. We don't pin which (impl detail) but
       // at least one of {req-2, req-3} should be gone.
-      const survived = Number(cache.lookup(SENDER_A, 'req-2') !== null) +
+      const survived =
+        Number(cache.lookup(SENDER_A, 'req-2') !== null) +
         Number(cache.lookup(SENDER_A, 'req-3') !== null);
       expect(survived).toBeLessThanOrEqual(1);
     });
@@ -140,9 +141,9 @@ describe('IdempotencyCache (task 4.49)', () => {
 
     it('rejects recordResponse where requestId != response.request_id', () => {
       const cache = new IdempotencyCache();
-      expect(() =>
-        cache.recordResponse(SENDER_A, 'req-1', makeResponse('req-2')),
-      ).toThrow(/request_id mismatch/);
+      expect(() => cache.recordResponse(SENDER_A, 'req-1', makeResponse('req-2'))).toThrow(
+        /request_id mismatch/,
+      );
     });
   });
 

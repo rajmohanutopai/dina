@@ -35,7 +35,15 @@ import {
 import { A2A_FETCH_LIMITS, a2aFetch, type A2ATransportError } from './host_transport';
 
 export type ParsedJwk =
-  | { kty: 'EC'; crv: 'P-256'; x: Uint8Array; y: Uint8Array; kid?: string; use?: string; alg?: string }
+  | {
+      kty: 'EC';
+      crv: 'P-256';
+      x: Uint8Array;
+      y: Uint8Array;
+      kid?: string;
+      use?: string;
+      alg?: string;
+    }
   | { kty: 'OKP'; crv: 'Ed25519'; x: Uint8Array; kid?: string; use?: string; alg?: string };
 
 function fixed(value: unknown, length: number): Uint8Array | null {
@@ -102,7 +110,10 @@ export function verifyWithJwk(
 
 export type KeySetFetch =
   | { ok: true; keys: JsonValue[] }
-  | { ok: false; reason: A2ATransportError | 'status' | 'not_json' | 'not_a_key_set' | 'too_many_keys' };
+  | {
+      ok: false;
+      reason: A2ATransportError | 'status' | 'not_json' | 'not_a_key_set' | 'too_many_keys';
+    };
 
 /**
  * Keys one set may hold, and keys tried for one signature. Rotation needs a
@@ -129,7 +140,13 @@ export async function fetchKeySet(url: string): Promise<KeySetFetch> {
 export interface KeyResolutionNote {
   kid: string;
   jku?: string;
-  outcome: 'verified' | 'no_jku' | 'key_set_unavailable' | 'too_many_key_sets' | 'no_matching_key' | 'bad_signature';
+  outcome:
+    | 'verified'
+    | 'no_jku'
+    | 'key_set_unavailable'
+    | 'too_many_key_sets'
+    | 'no_matching_key'
+    | 'bad_signature';
 }
 
 /** Distinct `jku` key sets fetched for one card at most; each fetch has its own deadline. */
@@ -147,7 +164,11 @@ export function createJkuVerifier(
   const sets = new Map<string, Promise<KeySetFetch>>();
   return async ({ header, signingInputs, signature }): Promise<JwsVerdict> => {
     const note = (outcome: KeyResolutionNote['outcome']): void => {
-      notes.push({ kid: header.kid, ...(header.jku !== undefined ? { jku: header.jku } : {}), outcome });
+      notes.push({
+        kid: header.kid,
+        ...(header.jku !== undefined ? { jku: header.jku } : {}),
+        outcome,
+      });
     };
     if (header.jku === undefined) {
       note('no_jku');

@@ -1,14 +1,10 @@
-import { InMemoryAgentGrantRepository, setAgentGrantRepository } from '../../../src/agent/grant_repository';
+import {
+  InMemoryAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../../src/agent/grant_repository';
 import { resetCallerTypeState } from '../../../src/auth/caller_type';
-import {
-  getDevice,
-  registerDevice,
-  resetDeviceRegistry,
-} from '../../../src/devices/registry';
-import {
-  setDeviceRepository,
-  type DeviceRepository,
-} from '../../../src/devices/repository';
+import { getDevice, registerDevice, resetDeviceRegistry } from '../../../src/devices/registry';
+import { setDeviceRepository, type DeviceRepository } from '../../../src/devices/repository';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerDevicesRoutes } from '../../../src/server/routes/devices';
 

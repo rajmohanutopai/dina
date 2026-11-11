@@ -43,7 +43,12 @@ export interface PushSubscriptionRepository {
   /** The authorization lookup (§8 step 4): an active (not revoked, not expired)
    *  subscription matching the arrival's identity, or null (default-deny). */
   getActive(
-    args: { provider_did: string; service_uri: string; push_capability: string; subscription_id: string },
+    args: {
+      provider_did: string;
+      service_uri: string;
+      push_capability: string;
+      subscription_id: string;
+    },
     nowMs: number,
   ): PushSubscriptionRecord | null;
   listByPersona(persona: string): PushSubscriptionRecord[];
@@ -60,11 +65,28 @@ export interface PushSubscriptionRepository {
 }
 
 const COLS = [
-  'subscription_id', 'provider_did', 'service_uri', 'push_capability', 'persona', 'topic_id',
-  'condition_ref', 'condition_json', 'priority_ceiling', 'rate_budget_tokens', 'rate_window_seconds',
-  'rate_tokens_remaining', 'rate_window_started_at', 'fulfilment', 'poll_interval_seconds',
-  'delivery_evidence', 'cry_wolf_dismissals', 'suspicion_score', 'expires_at', 'revoked_at',
-  'created_at', 'updated_at',
+  'subscription_id',
+  'provider_did',
+  'service_uri',
+  'push_capability',
+  'persona',
+  'topic_id',
+  'condition_ref',
+  'condition_json',
+  'priority_ceiling',
+  'rate_budget_tokens',
+  'rate_window_seconds',
+  'rate_tokens_remaining',
+  'rate_window_started_at',
+  'fulfilment',
+  'poll_interval_seconds',
+  'delivery_evidence',
+  'cry_wolf_dismissals',
+  'suspicion_score',
+  'expires_at',
+  'revoked_at',
+  'created_at',
+  'updated_at',
 ] as const;
 
 function rowToSub(row: DBRow): PushSubscriptionRecord {
@@ -98,7 +120,13 @@ function rowToSub(row: DBRow): PushSubscriptionRecord {
 /** Refill the token bucket if the window elapsed; returns the possibly-updated
  *  {remaining, windowStart}. Pure. */
 function refill(
-  sub: Pick<PushSubscriptionRecord, 'rate_budget_tokens' | 'rate_window_seconds' | 'rate_tokens_remaining' | 'rate_window_started_at'>,
+  sub: Pick<
+    PushSubscriptionRecord,
+    | 'rate_budget_tokens'
+    | 'rate_window_seconds'
+    | 'rate_tokens_remaining'
+    | 'rate_window_started_at'
+  >,
   nowMs: number,
 ): { remaining: number; windowStart: number } {
   const windowMs = sub.rate_window_seconds * 1000;
@@ -119,11 +147,19 @@ export class SQLitePushSubscriptionRepository implements PushSubscriptionReposit
     );
   }
   getById(subscriptionId: string): PushSubscriptionRecord | null {
-    const rows = this.db.query('SELECT * FROM push_subscriptions WHERE subscription_id = ? LIMIT 1', [subscriptionId]);
+    const rows = this.db.query(
+      'SELECT * FROM push_subscriptions WHERE subscription_id = ? LIMIT 1',
+      [subscriptionId],
+    );
     return rows.length > 0 ? rowToSub(rows[0]) : null;
   }
   getActive(
-    args: { provider_did: string; service_uri: string; push_capability: string; subscription_id: string },
+    args: {
+      provider_did: string;
+      service_uri: string;
+      push_capability: string;
+      subscription_id: string;
+    },
     nowMs: number,
   ): PushSubscriptionRecord | null {
     const rows = this.db.query(
@@ -135,10 +171,19 @@ export class SQLitePushSubscriptionRepository implements PushSubscriptionReposit
     return rows.length > 0 ? rowToSub(rows[0]) : null;
   }
   listByPersona(persona: string): PushSubscriptionRecord[] {
-    return this.db.query('SELECT * FROM push_subscriptions WHERE persona = ? ORDER BY created_at ASC', [persona]).map(rowToSub);
+    return this.db
+      .query('SELECT * FROM push_subscriptions WHERE persona = ? ORDER BY created_at ASC', [
+        persona,
+      ])
+      .map(rowToSub);
   }
   revoke(subscriptionId: string, nowMs: number): boolean {
-    return this.db.run('UPDATE push_subscriptions SET revoked_at = ?, updated_at = ? WHERE subscription_id = ? AND revoked_at IS NULL', [nowMs, nowMs, subscriptionId]) > 0;
+    return (
+      this.db.run(
+        'UPDATE push_subscriptions SET revoked_at = ?, updated_at = ? WHERE subscription_id = ? AND revoked_at IS NULL',
+        [nowMs, nowMs, subscriptionId],
+      ) > 0
+    );
   }
   consumeToken(subscriptionId: string, nowMs: number): boolean {
     const sub = this.getById(subscriptionId);
@@ -146,18 +191,30 @@ export class SQLitePushSubscriptionRepository implements PushSubscriptionReposit
     const { remaining, windowStart } = refill(sub, nowMs);
     if (remaining <= 0) {
       // persist any window reset even on empty
-      this.db.run('UPDATE push_subscriptions SET rate_tokens_remaining = ?, rate_window_started_at = ?, updated_at = ? WHERE subscription_id = ?', [remaining, windowStart, nowMs, subscriptionId]);
+      this.db.run(
+        'UPDATE push_subscriptions SET rate_tokens_remaining = ?, rate_window_started_at = ?, updated_at = ? WHERE subscription_id = ?',
+        [remaining, windowStart, nowMs, subscriptionId],
+      );
       return false;
     }
-    this.db.run('UPDATE push_subscriptions SET rate_tokens_remaining = ?, rate_window_started_at = ?, updated_at = ? WHERE subscription_id = ?', [remaining - 1, windowStart, nowMs, subscriptionId]);
+    this.db.run(
+      'UPDATE push_subscriptions SET rate_tokens_remaining = ?, rate_window_started_at = ?, updated_at = ? WHERE subscription_id = ?',
+      [remaining - 1, windowStart, nowMs, subscriptionId],
+    );
     return true;
   }
   recordDismissal(subscriptionId: string, nowMs: number): number {
-    this.db.run('UPDATE push_subscriptions SET cry_wolf_dismissals = cry_wolf_dismissals + 1, updated_at = ? WHERE subscription_id = ?', [nowMs, subscriptionId]);
+    this.db.run(
+      'UPDATE push_subscriptions SET cry_wolf_dismissals = cry_wolf_dismissals + 1, updated_at = ? WHERE subscription_id = ?',
+      [nowMs, subscriptionId],
+    );
     return this.getById(subscriptionId)?.cry_wolf_dismissals ?? 0;
   }
   addSuspicion(subscriptionId: string, delta: number, nowMs: number): number {
-    this.db.run('UPDATE push_subscriptions SET suspicion_score = suspicion_score + ?, updated_at = ? WHERE subscription_id = ?', [delta, nowMs, subscriptionId]);
+    this.db.run(
+      'UPDATE push_subscriptions SET suspicion_score = suspicion_score + ?, updated_at = ? WHERE subscription_id = ?',
+      [delta, nowMs, subscriptionId],
+    );
     return this.getById(subscriptionId)?.suspicion_score ?? 0;
   }
   size(): number {
@@ -174,14 +231,30 @@ export class InMemoryPushSubscriptionRepository implements PushSubscriptionRepos
     const r = this.rows.get(id);
     return r ? { ...r } : null;
   }
-  getActive(a: { provider_did: string; service_uri: string; push_capability: string; subscription_id: string }, nowMs: number): PushSubscriptionRecord | null {
+  getActive(
+    a: {
+      provider_did: string;
+      service_uri: string;
+      push_capability: string;
+      subscription_id: string;
+    },
+    nowMs: number,
+  ): PushSubscriptionRecord | null {
     const r = this.rows.get(a.subscription_id);
     if (!r || r.revoked_at !== null || r.expires_at <= nowMs) return null;
-    if (r.provider_did !== a.provider_did || r.service_uri !== a.service_uri || r.push_capability !== a.push_capability) return null;
+    if (
+      r.provider_did !== a.provider_did ||
+      r.service_uri !== a.service_uri ||
+      r.push_capability !== a.push_capability
+    )
+      return null;
     return { ...r };
   }
   listByPersona(persona: string): PushSubscriptionRecord[] {
-    return [...this.rows.values()].filter((r) => r.persona === persona).sort((a, b) => a.created_at - b.created_at).map((r) => ({ ...r }));
+    return [...this.rows.values()]
+      .filter((r) => r.persona === persona)
+      .sort((a, b) => a.created_at - b.created_at)
+      .map((r) => ({ ...r }));
   }
   revoke(id: string, nowMs: number): boolean {
     const r = this.rows.get(id);

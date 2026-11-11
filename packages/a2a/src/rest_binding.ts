@@ -59,9 +59,30 @@ const LIST_TASKS_QUERY = {
 } as const;
 
 const ROUTES: readonly RestRoute[] = [
-  { method: 'POST', pattern: /^\/message:send$/, operation: 'SendMessage', ids: [], body: 'required', query: {} },
-  { method: 'POST', pattern: /^\/message:stream$/, operation: 'SendStreamingMessage', ids: [], body: 'required', query: {} },
-  { method: 'GET', pattern: /^\/tasks$/, operation: 'ListTasks', ids: [], body: 'none', query: LIST_TASKS_QUERY },
+  {
+    method: 'POST',
+    pattern: /^\/message:send$/,
+    operation: 'SendMessage',
+    ids: [],
+    body: 'required',
+    query: {},
+  },
+  {
+    method: 'POST',
+    pattern: /^\/message:stream$/,
+    operation: 'SendStreamingMessage',
+    ids: [],
+    body: 'required',
+    query: {},
+  },
+  {
+    method: 'GET',
+    pattern: /^\/tasks$/,
+    operation: 'ListTasks',
+    ids: [],
+    body: 'none',
+    query: LIST_TASKS_QUERY,
+  },
   {
     method: 'GET',
     pattern: new RegExp(`^/tasks/${SEG}$`),
@@ -79,8 +100,22 @@ const ROUTES: readonly RestRoute[] = [
     query: {},
   },
   // The proto says GET, the prose POST (unresolved upstream): the reference SDK serves both.
-  { method: 'GET', pattern: new RegExp(`^/tasks/${SEG}:subscribe$`), operation: 'SubscribeToTask', ids: ['id'], body: 'none', query: {} },
-  { method: 'POST', pattern: new RegExp(`^/tasks/${SEG}:subscribe$`), operation: 'SubscribeToTask', ids: ['id'], body: 'optional', query: {} },
+  {
+    method: 'GET',
+    pattern: new RegExp(`^/tasks/${SEG}:subscribe$`),
+    operation: 'SubscribeToTask',
+    ids: ['id'],
+    body: 'none',
+    query: {},
+  },
+  {
+    method: 'POST',
+    pattern: new RegExp(`^/tasks/${SEG}:subscribe$`),
+    operation: 'SubscribeToTask',
+    ids: ['id'],
+    body: 'optional',
+    query: {},
+  },
   {
     method: 'POST',
     pattern: new RegExp(`^/tasks/${SEG}/pushNotificationConfigs$`),
@@ -113,7 +148,14 @@ const ROUTES: readonly RestRoute[] = [
     body: 'none',
     query: {},
   },
-  { method: 'GET', pattern: /^\/extendedAgentCard$/, operation: 'GetExtendedAgentCard', ids: [], body: 'none', query: {} },
+  {
+    method: 'GET',
+    pattern: /^\/extendedAgentCard$/,
+    operation: 'GetExtendedAgentCard',
+    ids: [],
+    body: 'none',
+    query: {},
+  },
 ];
 
 /** A REST request matched to its operation, the ids its path names decoded. */
@@ -156,7 +198,10 @@ export function matchRestRequest(method: string, path: string): RestMatch | null
 export function restIngressPath(match: RestMatch): string {
   const route = A2A_DISPATCH_TABLE[match.operation];
   let path = route.path;
-  for (const [param, where] of Object.entries(route.ids) as [string, 'params.id' | 'params.taskId'][]) {
+  for (const [param, where] of Object.entries(route.ids) as [
+    string,
+    'params.id' | 'params.taskId',
+  ][]) {
     const id = where === 'params.id' ? match.ids.id : match.ids.taskId;
     path = path.replace(`:${param}`, encodeURIComponent(id ?? ''));
   }
@@ -169,10 +214,18 @@ export function restIngressPath(match: RestMatch): string {
  * take it, ids and all, so a path with an id no route accepts is a 404.
  */
 export function restMethodsFor(path: string): RestMethod[] {
-  return [...new Set(ROUTES.filter((r) => matchRestRequest(r.method, path) !== null).map((r) => r.method))];
+  return [
+    ...new Set(
+      ROUTES.filter((r) => matchRestRequest(r.method, path) !== null).map((r) => r.method),
+    ),
+  ];
 }
 
-export type RestParamsFailure = 'query_not_allowed' | 'body_not_allowed' | 'malformed_body' | 'id_mismatch';
+export type RestParamsFailure =
+  | 'query_not_allowed'
+  | 'body_not_allowed'
+  | 'malformed_body'
+  | 'id_mismatch';
 
 export type RestParams =
   | { ok: true; params: JsonObject; versionParameter?: string }
@@ -228,7 +281,8 @@ export function restParams(match: RestMatch, query: string, body: string): RestP
     return { ok: false, reason: 'malformed_body' };
   }
   for (const [name, value] of Object.entries(match.ids)) {
-    if (params[name] !== undefined && params[name] !== value) return { ok: false, reason: 'id_mismatch' };
+    if (params[name] !== undefined && params[name] !== value)
+      return { ok: false, reason: 'id_mismatch' };
     params[name] = value;
   }
   return { ok: true, params, ...(versionParameter === undefined ? {} : { versionParameter }) };
@@ -276,7 +330,9 @@ const REST_ERRORS: Readonly<Record<number, { http: number; status: string }>> = 
 export function restError(error: JsonRpcErrorObject): { status: number; body: JsonObject } {
   const mapped = REST_ERRORS[error.code] ?? { http: 500, status: 'INTERNAL' };
   const data = error.data ?? [];
-  const details: JsonObject[] = isA2AErrorInfo(data[0]) ? [...data] : [a2aErrorInfo(error.code), ...data];
+  const details: JsonObject[] = isA2AErrorInfo(data[0])
+    ? [...data]
+    : [a2aErrorInfo(error.code), ...data];
   return {
     status: mapped.http,
     body: { error: { code: mapped.http, status: mapped.status, message: error.message, details } },

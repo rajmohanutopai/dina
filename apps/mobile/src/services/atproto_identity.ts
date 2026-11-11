@@ -3,10 +3,7 @@ import { defaultFetch } from '@dina/core';
 import { loadInfraPreferences } from './infra_preferences';
 
 const DEFAULT_PLC_URL = 'https://plc.directory';
-const HANDLE_RESOLUTION_FALLBACKS = [
-  'https://bsky.social',
-  'https://public.api.bsky.app',
-] as const;
+const HANDLE_RESOLUTION_FALLBACKS = ['https://bsky.social', 'https://public.api.bsky.app'] as const;
 
 export interface PlcOperationData {
   did: string;
@@ -28,13 +25,21 @@ export async function resolveExistingAtprotoIdentity(
   options: ResolveExistingAtprotoIdentityOptions = {},
 ): Promise<PlcOperationData> {
   const fetchFn = options.fetchFn ?? defaultFetch();
-  const plcURL = (options.plcURL ?? process.env.EXPO_PUBLIC_DINA_PLC_URL ?? DEFAULT_PLC_URL)
-    .replace(/\/$/, '');
+  const plcURL = (
+    options.plcURL ??
+    process.env.EXPO_PUBLIC_DINA_PLC_URL ??
+    DEFAULT_PLC_URL
+  ).replace(/\/$/, '');
   const normalized = normalizeIdentifier(identifier);
   const did = normalized.startsWith('did:')
     ? validateDidPlc(normalized)
     : await resolveHandleToDid(normalized, fetchFn);
-  return fetchPlcOperationData(did, plcURL, fetchFn, normalized.startsWith('did:') ? null : normalized);
+  return fetchPlcOperationData(
+    did,
+    plcURL,
+    fetchFn,
+    normalized.startsWith('did:') ? null : normalized,
+  );
 }
 
 export function normalizeIdentifier(identifier: string): string {

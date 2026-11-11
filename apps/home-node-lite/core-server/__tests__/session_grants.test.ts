@@ -6,11 +6,7 @@
  * SQLCipher-backed storage) can't silently regress the semantics.
  */
 
-import {
-  SessionGrantRegistry,
-  type Grant,
-  type SessionEvent,
-} from '../src/persona/session_grants';
+import { SessionGrantRegistry, type Grant, type SessionEvent } from '../src/persona/session_grants';
 
 /** Tiny mock clock — every call advances by 1 ms so startedAtMs values are
  *  distinguishable in tests that assert on ordering. */
@@ -154,7 +150,10 @@ describe('SessionGrantRegistry (task 4.70)', () => {
       reg.addGrant('s1', { agentDid: agentA, persona: personaWork, mode: 'read' });
       reg.addGrant('s2', { agentDid: agentA, persona: personaHealth, mode: 'read' });
       reg.addGrant('s3', { agentDid: agentB, persona: personaWork, mode: 'read' });
-      const sessions = reg.sessionsForAgent(agentA).map((s) => s.id).sort();
+      const sessions = reg
+        .sessionsForAgent(agentA)
+        .map((s) => s.id)
+        .sort();
       expect(sessions).toEqual(['s1', 's2']);
     });
 
@@ -213,7 +212,12 @@ describe('SessionGrantRegistry (task 4.70)', () => {
       const revoked = events[2] as Extract<SessionEvent, { kind: 'grant_revoked' }>;
       expect(revoked.grant).toEqual(grant);
       const ended = events[3] as Extract<SessionEvent, { kind: 'session_ended' }>;
-      expect(ended).toMatchObject({ kind: 'session_ended', id: 's1', name: 'task', revokedCount: 1 });
+      expect(ended).toMatchObject({
+        kind: 'session_ended',
+        id: 's1',
+        name: 'task',
+        revokedCount: 1,
+      });
     });
 
     it('does not emit grant_added when the grant was already present', () => {

@@ -153,10 +153,9 @@ export class EvidenceStore {
   /** Records that came to stand broken since `sinceMs` (COMMITMENT_KERNEL §15 step 13). */
   brokenSince(sinceMs: number): Evidence[] {
     return this.db
-      .query(
-        `SELECT * FROM commitment_evidence WHERE outcome = 'broken' AND broken_since >= ?`,
-        [sinceMs],
-      )
+      .query(`SELECT * FROM commitment_evidence WHERE outcome = 'broken' AND broken_since >= ?`, [
+        sinceMs,
+      ])
       .map((r) => this.row(r) as Evidence);
   }
 

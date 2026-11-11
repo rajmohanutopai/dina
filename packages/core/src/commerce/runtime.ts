@@ -29,7 +29,11 @@ import {
   installOrderDigestLookup,
 } from '../commitment/option_handler';
 import { SellerOptionStore } from '../commitment/options';
-import { brainShareBps, SAVING_SHARE_BPS, StandingChoiceStore } from '../commitment/standing_choices';
+import {
+  brainShareBps,
+  SAVING_SHARE_BPS,
+  StandingChoiceStore,
+} from '../commitment/standing_choices';
 import { StrategyStore } from '../commitment/strategy_store';
 import { setTradeCounterpartyCheck, setTradeDocumentIngress } from '../d2d/trade_ingress_seam';
 import { getPluginInstallRepository, type PluginInstallStatus } from '../plugins/registry';
@@ -50,10 +54,7 @@ import {
   type BuyerQuoteRequestRepository,
 } from './buyer_requests';
 import { SQLiteBuyerStatusRepository, type BuyerStatusRepository } from './buyer_status';
-import {
-  SQLiteCatalogDraftRepository,
-  type CatalogDraftRepository,
-} from './catalog_draft_store';
+import { SQLiteCatalogDraftRepository, type CatalogDraftRepository } from './catalog_draft_store';
 import {
   SQLiteCatalogPointerRepository,
   type CatalogPointerRepository,
@@ -88,19 +89,13 @@ import {
 import { SQLiteInviteRepository, type InviteRepository } from './invite_store';
 import { CommerceLifecycleEngine } from './lifecycle_engine';
 import { SQLiteNegotiationRepository } from './negotiation_store';
-import {
-  SQLiteOrderApprovalRepository,
-  type OrderApprovalRepository,
-} from './order_approvals';
+import { SQLiteOrderApprovalRepository, type OrderApprovalRepository } from './order_approvals';
 import {
   SQLiteOrderAttachmentRepository,
   raiseCardsForRetainedAttachments,
   type OrderAttachmentRepository,
 } from './order_attachments';
-import {
-  SQLiteOrderDraftRepository,
-  type OrderDraftRepository,
-} from './order_draft_store';
+import { SQLiteOrderDraftRepository, type OrderDraftRepository } from './order_draft_store';
 import { SQLiteCommerceOrderRefRepository } from './order_refs';
 import { installStaffPresenceVerifier } from './owner_presence';
 import { SQLiteOwnerSupplierRepository, type OwnerSupplierRepository } from './owner_suppliers';
@@ -131,12 +126,13 @@ import {
   type CommerceSettingsRepository,
 } from './settings_store';
 import { SQLiteSkuLedgerRepository, type SkuLedgerRepository } from './sku_ledger';
-import {
-  SQLiteStaffClearanceRepository,
-  type StaffClearanceRepository,
-} from './staff_clearances';
+import { SQLiteStaffClearanceRepository, type StaffClearanceRepository } from './staff_clearances';
 import { SQLiteStaffGrantRepository, type StaffGrantRepository } from './staff_grants';
-import { SQLiteStaffPinRepository, verifyStaffPinGated, type StaffPinRepository } from './staff_pins';
+import {
+  SQLiteStaffPinRepository,
+  verifyStaffPinGated,
+  type StaffPinRepository,
+} from './staff_pins';
 import { StatusChainStore } from './status_chain';
 import { SQLiteCommerceStatusHeadRepository } from './status_heads';
 import { SQLiteTenderRepository } from './tender';
@@ -500,7 +496,6 @@ export type CommerceMoneyAccess =
   | { available: true; stores: CommerceMoneyStores; installId: string }
   | { available: false; reason: CommerceMoneyUnavailableReason; detail: string };
 
-
 /**
  * Resolve the money line from the plugin registry: an `active` first-party
  * Commerce Pack (buyer or supplier — a node holds money on whichever side it
@@ -674,7 +669,10 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
   return {
     goodsSellerModel: () => {
       try {
-        const loaded = new ValueModelStore(inputs.adapter).load('goods.seller', GOODS_SELLER_TOUCHES);
+        const loaded = new ValueModelStore(inputs.adapter).load(
+          'goods.seller',
+          GOODS_SELLER_TOUCHES,
+        );
         return { model: loaded.model, closedPersonas: loaded.closedPersonas };
       } catch {
         // Not "no rules": the rules exist and cannot be read, so whatever
@@ -719,7 +717,9 @@ export function createCommerceRuntime(inputs: CommerceRuntimeInputs): CommerceRu
     staffPins: new SQLiteStaffPinRepository(inputs.adapter),
     attributionBoundary: new SQLiteAttributionBoundaryRepository(inputs.adapter),
     invites: new SQLiteInviteRepository(inputs.adapter),
-    runInTransaction: (body) => { inputs.adapter.transaction(body); },
+    runInTransaction: (body) => {
+      inputs.adapter.transaction(body);
+    },
     now,
     watermarks: new SQLiteCommerceEpochWatermarkRepository(inputs.adapter),
     buyerOrders: new SQLiteBuyerOrderRepository(inputs.adapter),
@@ -814,13 +814,12 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
   runtime = value;
   // COMMITMENT_KERNEL §6 step 6: a supplier's fallback notice is checked
   // against this node's own orders and quotes before it is kept.
-  installFallbackNoticeCheck(
-    value === null ? null : (args) => checkFallbackNotice(value, args),
-  );
+  installFallbackNoticeCheck(value === null ? null : (args) => checkFallbackNotice(value, args));
   installOrderDigestLookup(
     value === null
       ? null
-      : (buyerDid, purchaseOrderId) => value.orders.load(buyerDid, purchaseOrderId)?.ref.orderDigest ?? null,
+      : (buyerDid, purchaseOrderId) =>
+          value.orders.load(buyerDid, purchaseOrderId)?.ref.orderDigest ?? null,
   );
   // §15 step 12 — the exit right, read from this node's own orders and quotes.
   installExitRightPort(
@@ -838,7 +837,11 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
           cancelForExit: (buyerDid, cancellation) => {
             // The right is the order's: the runner is not asked; the race
             // against dispatch still decides.
-            const outcome = value.lifecycle.resolveCancellation(cancellation, buyerDid, () => 'cancelled');
+            const outcome = value.lifecycle.resolveCancellation(
+              cancellation,
+              buyerDid,
+              () => 'cancelled',
+            );
             return 'error' in outcome ? 'error' : outcome.result;
           },
         },
@@ -892,7 +895,12 @@ export function installCommerceRuntime(value: CommerceRuntime | null): void {
       ? null
       : (did, kind, context) =>
           isOrderCounterparty(value, did, kind) ||
-          value.terms.gateAllows({ peerDid: did, kind, document: context.document, direction: context.direction }),
+          value.terms.gateAllows({
+            peerDid: did,
+            kind,
+            document: context.document,
+            direction: context.direction,
+          }),
   );
   // JIFFY_MERCHANT_INTEGRATION_PLAN §3.3 — a connector's attachment that
   // reached the buyer before the acceptance did waits, retained, for it.

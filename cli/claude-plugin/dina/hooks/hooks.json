@@ -17,7 +17,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/bin/dina-gate"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/bin/dina-gate\""
           }
         ]
       }

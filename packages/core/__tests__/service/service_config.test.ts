@@ -106,7 +106,9 @@ describe('validateServiceConfig', () => {
     // absent is fine (defaults to 'services' via effectiveSurface)
     expect(() => validateServiceConfig(validConfig)).not.toThrow();
     expect(() => validateServiceConfig({ ...validConfig, surface: 'public' })).toThrow(/surface/);
-    expect(() => validateServiceConfig({ ...validConfig, surface: 'known_only' })).toThrow(/surface/);
+    expect(() => validateServiceConfig({ ...validConfig, surface: 'known_only' })).toThrow(
+      /surface/,
+    );
   });
 
   it('accepts a boolean defaultOfferable and rejects a non-boolean (§5.1)', () => {
@@ -308,14 +310,18 @@ describe('isCapabilityConfigured — rkey-targeted (one listing == one contract)
     discoverability: 'public',
     status: 'active',
     name: 'Ride',
-    capabilities: { eta_query: { mcpServer: 'transit', mcpTool: 'eta_query', responsePolicy: 'auto' } },
+    capabilities: {
+      eta_query: { mcpServer: 'transit', mcpTool: 'eta_query', responsePolicy: 'auto' },
+    },
   };
   const shopConfig: ServiceConfig = {
     isDiscoverable: true,
     discoverability: 'public',
     status: 'active',
     name: 'Shop',
-    capabilities: { price_check: { mcpServer: 'shop', mcpTool: 'price_check', responsePolicy: 'auto' } },
+    capabilities: {
+      price_check: { mcpServer: 'shop', mcpTool: 'price_check', responsePolicy: 'auto' },
+    },
   };
 
   it('a service_uri targeting a specific rkey validates THAT listing only', () => {
@@ -412,7 +418,12 @@ describe('repository integration', () => {
 // issues.txt §4 — the durability + precedence the mobile boot now honours.
 describe('mobile boot precedence — real SQLite restart', () => {
   function openId(p: string, pass: string): NodeSQLiteAdapter {
-    const a = new NodeSQLiteAdapter({ path: p, passphraseHex: pass, journalMode: 'WAL', synchronous: 'NORMAL' });
+    const a = new NodeSQLiteAdapter({
+      path: p,
+      passphraseHex: pass,
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
     applyMigrations(a, IDENTITY_MIGRATIONS);
     return a;
   }
@@ -684,9 +695,9 @@ describe('plugin binding resolution at save (§23 FR-P2)', () => {
     // The §9.13 rebind flow updates the binding. Until it does, a listing
     // pinned to the old manifest promises terms the running code may not
     // honour, and ingress would refuse it anyway.
-    expect(codes(validateServiceConfigForSave(listing({ pluginManifestCid: 'bafyreiother' })))).toContain(
-      'plugin_binding_stale',
-    );
+    expect(
+      codes(validateServiceConfigForSave(listing({ pluginManifestCid: 'bafyreiother' }))),
+    ).toContain('plugin_binding_stale');
   });
 
   it('refuses a capability the manifest never declared', () => {
@@ -751,7 +762,13 @@ describe('the save refuses what Core would refuse to run or publish (A2A plan §
     'refuses an mcpServer naming the reserved lane %s',
     (lane) => {
       const config = saveable({
-        capabilities: { eta_query: { ...validConfig.capabilities.eta_query, category: 'transit', mcpServer: lane } },
+        capabilities: {
+          eta_query: {
+            ...validConfig.capabilities.eta_query,
+            category: 'transit',
+            mcpServer: lane,
+          },
+        },
       });
       expect(codes(validateServiceConfigForSave(config))).toContain('reserved_runner_lane');
     },
@@ -761,10 +778,14 @@ describe('the save refuses what Core would refuse to run or publish (A2A plan §
     let deep: Record<string, unknown> = { type: 'object' };
     for (let i = 0; i < 40; i += 1) deep = { type: 'object', properties: { x: deep } };
     for (const schemas of [
-      { eta_query: { ...validConfig.capabilitySchemas!.eta_query, description: 'bad \ud800 text' } },
+      {
+        eta_query: { ...validConfig.capabilitySchemas!.eta_query, description: 'bad \ud800 text' },
+      },
       { eta_query: { ...validConfig.capabilitySchemas!.eta_query, params: deep } },
     ]) {
-      expect(codes(validateServiceConfigForSave(saveable({ capabilitySchemas: schemas })))).toContain('schema_not_canonical');
+      expect(
+        codes(validateServiceConfigForSave(saveable({ capabilitySchemas: schemas }))),
+      ).toContain('schema_not_canonical');
     }
   });
 });
@@ -772,14 +793,23 @@ describe('the save refuses what Core would refuse to run or publish (A2A plan §
 describe('the published-listing limit (REAL_LIFE_FIXES §14)', () => {
   it('refuses the 101st published listing, and allows re-saving or unpublishing', async () => {
     const { MAX_PUBLISHED_LISTINGS } = await import('@dina/protocol');
-    const { setServiceConfigDurable, ListingLimitError } = await import('../../src/service/service_config');
-    for (let i = 0; i < MAX_PUBLISHED_LISTINGS; i++) await setServiceConfigDurable(validConfig, `l${i}`);
-    await expect(setServiceConfigDurable(validConfig, 'one-more')).rejects.toBeInstanceOf(ListingLimitError);
+    const { setServiceConfigDurable, ListingLimitError } =
+      await import('../../src/service/service_config');
+    for (let i = 0; i < MAX_PUBLISHED_LISTINGS; i++)
+      await setServiceConfigDurable(validConfig, `l${i}`);
+    await expect(setServiceConfigDurable(validConfig, 'one-more')).rejects.toBeInstanceOf(
+      ListingLimitError,
+    );
     // Re-saving a listing that is already published passes.
-    await expect(setServiceConfigDurable({ ...validConfig, name: 'Bus 42b' }, 'l0')).resolves.toBeUndefined();
+    await expect(
+      setServiceConfigDurable({ ...validConfig, name: 'Bus 42b' }, 'l0'),
+    ).resolves.toBeUndefined();
     // A friends-only listing is not published, so it does not count.
     await expect(
-      setServiceConfigDurable({ ...validConfig, isDiscoverable: false, discoverability: 'known_only' } as ServiceConfig, 'private'),
+      setServiceConfigDurable(
+        { ...validConfig, isDiscoverable: false, discoverability: 'known_only' } as ServiceConfig,
+        'private',
+      ),
     ).resolves.toBeUndefined();
   });
 });

@@ -16,10 +16,7 @@ import { NodeSQLiteAdapter } from '@dina/storage-node';
 import { installCommerceServiceQueryDispatch } from '../../../src/commerce/buyer_sender';
 import { installImageReencoder } from '../../../src/commerce/image_artifacts';
 import { installImageEgressBroker } from '../../../src/commerce/image_egress';
-import {
-  installCommerceObserver,
-  type CommerceEvent,
-} from '../../../src/commerce/observability';
+import { installCommerceObserver, type CommerceEvent } from '../../../src/commerce/observability';
 import {
   clearOwnerPresence,
   installOwnerPresenceVerifier,
@@ -47,16 +44,29 @@ let sent: { toDid: string }[];
 
 function pngPage(seed: number): Uint8Array {
   const u32 = (v: number): number[] => [
-    (v >>> 24) & 0xff, (v >>> 16) & 0xff, (v >>> 8) & 0xff, v & 0xff,
+    (v >>> 24) & 0xff,
+    (v >>> 16) & 0xff,
+    (v >>> 8) & 0xff,
+    v & 0xff,
   ];
   const chunk = (type: string, data: number[]): number[] => [
     ...u32(data.length),
     ...[...type].map((c) => c.charCodeAt(0)),
     ...data,
-    0, 0, 0, 0,
+    0,
+    0,
+    0,
+    0,
   ];
   return new Uint8Array([
-    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+    0x89,
+    0x50,
+    0x4e,
+    0x47,
+    0x0d,
+    0x0a,
+    0x1a,
+    0x0a,
     ...chunk('IHDR', [...u32(640), ...u32(480), 8, 6, 0, 0, 0]),
     ...chunk('IDAT', [seed, 2, 3]),
     ...chunk('IEND', []),
@@ -119,7 +129,11 @@ beforeEach(async () => {
       const rows: { page_index: number; cells: Record<string, string> }[] = [
         {
           page_index: 0,
-          cells: { text: '20 dining chairs - oak', quantity: '20', required_by: '2036-08-21T00:00:00.000Z' },
+          cells: {
+            text: '20 dining chairs - oak',
+            quantity: '20',
+            required_by: '2036-08-21T00:00:00.000Z',
+          },
         },
         { page_index: 0, cells: { text: '4ft teak benches', quantity: '6' } },
       ];
@@ -262,9 +276,7 @@ it('the whole §5 journey: photograph → gate → review → ceremony → send'
 
   // The read seam the screens live on sees all of it.
   const listed = await router.handle(read('/v1/commerce/orders/drafts', {}));
-  expect(
-    (listed.body as { drafts: { draft_id: string; state: string }[] }).drafts,
-  ).toEqual([
+  expect((listed.body as { drafts: { draft_id: string; state: string }[] }).drafts).toEqual([
     expect.objectContaining({ draft_id: cap.draft_id, state: 'awaiting_answers' }),
   ]);
 

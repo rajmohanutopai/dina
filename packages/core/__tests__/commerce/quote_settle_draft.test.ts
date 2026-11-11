@@ -18,6 +18,7 @@ import {
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { InMemoryTenderRepository } from '../../src/commerce/tender';
 import { InMemoryCommerceEpochWatermarkRepository } from '../../src/commerce/watermarks';
+
 import { BUYER_DID, makeQuoteRequest, makeRevision, makeSignedQuote } from './helpers';
 
 import type { SignedQuote } from '@dina/commerce-protocol';
@@ -112,7 +113,7 @@ beforeEach(() => {
   const buyerQuoteRequests = new InMemoryBuyerQuoteRequestRepository();
   buyerQuoteRequests.put(REQUEST, T0);
   installCommerceRuntime({
-      tenders: new InMemoryTenderRepository(),
+    tenders: new InMemoryTenderRepository(),
     nodeDid: () => BUYER_DID,
     watermarks: new InMemoryCommerceEpochWatermarkRepository(),
     buyerQuotes,

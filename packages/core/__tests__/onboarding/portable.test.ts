@@ -18,7 +18,6 @@ import {
 } from '../../src/onboarding/portable';
 import { deserializeWrappedSeed } from '../../src/storage/seed_file';
 
-
 describe('Portable Onboarding', () => {
   describe('runOnboarding', () => {
     // Argon2id is slow — share a single onboarding result across tests

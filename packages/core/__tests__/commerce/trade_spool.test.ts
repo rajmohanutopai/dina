@@ -48,8 +48,22 @@ afterEach(() => {
 describe('SQLiteTradeSpoolRepository (migration v43)', () => {
   it('holds rows in arrival order, counts them, removes by id', () => {
     expect(spool.count()).toBe(0);
-    expect(spool.put({ senderDid: 'did:plc:a', bodyJson: '{"n":1}', evidenceJson: '{}', receivedAt: T0 })).toBe(true);
-    expect(spool.put({ senderDid: 'did:plc:b', bodyJson: '{"n":2}', evidenceJson: '{"e":1}', receivedAt: T0 + 5 })).toBe(true);
+    expect(
+      spool.put({
+        senderDid: 'did:plc:a',
+        bodyJson: '{"n":1}',
+        evidenceJson: '{}',
+        receivedAt: T0,
+      }),
+    ).toBe(true);
+    expect(
+      spool.put({
+        senderDid: 'did:plc:b',
+        bodyJson: '{"n":2}',
+        evidenceJson: '{"e":1}',
+        receivedAt: T0 + 5,
+      }),
+    ).toBe(true);
     expect(spool.count()).toBe(2);
     const rows = spool.oldest(10);
     expect(rows.map((r) => r.bodyJson)).toEqual(['{"n":1}', '{"n":2}']);
@@ -62,9 +76,23 @@ describe('SQLiteTradeSpoolRepository (migration v43)', () => {
 
   it('is bounded: past the ceiling the newest is refused and the oldest kept', () => {
     for (let i = 0; i < MAX_TRADE_SPOOL_ROWS; i++) {
-      expect(spool.put({ senderDid: 'did:plc:a', bodyJson: `{"n":${i}}`, evidenceJson: '{}', receivedAt: T0 + i })).toBe(true);
+      expect(
+        spool.put({
+          senderDid: 'did:plc:a',
+          bodyJson: `{"n":${i}}`,
+          evidenceJson: '{}',
+          receivedAt: T0 + i,
+        }),
+      ).toBe(true);
     }
-    expect(spool.put({ senderDid: 'did:plc:a', bodyJson: '{"late":true}', evidenceJson: '{}', receivedAt: T0 + 9999 })).toBe(false);
+    expect(
+      spool.put({
+        senderDid: 'did:plc:a',
+        bodyJson: '{"late":true}',
+        evidenceJson: '{}',
+        receivedAt: T0 + 9999,
+      }),
+    ).toBe(false);
     expect(spool.count()).toBe(MAX_TRADE_SPOOL_ROWS);
     expect(spool.oldest(1)[0]?.bodyJson).toBe('{"n":0}');
   });
@@ -74,8 +102,18 @@ describe('SQLiteTradeSpoolRepository (migration v43)', () => {
     // them (nothing lands), the rows go, and each replay was handed ITS OWN
     // `receivedAt` as the clock — observable through the runtime the drain uses.
     const clocks: number[] = [];
-    spool.put({ senderDid: 'did:plc:a', bodyJson: '{"kind":"nope"}', evidenceJson: '{}', receivedAt: T0 + 10 });
-    spool.put({ senderDid: 'did:plc:a', bodyJson: '{"kind":"nope"}', evidenceJson: '{}', receivedAt: T0 + 20 });
+    spool.put({
+      senderDid: 'did:plc:a',
+      bodyJson: '{"kind":"nope"}',
+      evidenceJson: '{}',
+      receivedAt: T0 + 10,
+    });
+    spool.put({
+      senderDid: 'did:plc:a',
+      bodyJson: '{"kind":"nope"}',
+      evidenceJson: '{}',
+      receivedAt: T0 + 20,
+    });
     const runtime = {
       money: moneyOpen({ tradeDocuments: new InMemoryTradeDocumentRepository() }),
       tradeSpool: spool,

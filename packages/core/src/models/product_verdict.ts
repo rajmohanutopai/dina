@@ -93,7 +93,7 @@ export function validateVerdict(verdict: ProductVerdict): string[] {
  */
 export function serializeVerdict(verdict: ProductVerdict, excludeSignature?: boolean): string {
   if (excludeSignature) {
-    const { signature_hex, signer_did, ...rest } = verdict;
+    const { signature_hex: _signature_hex, signer_did: _signer_did, ...rest } = verdict;
     return JSON.stringify(rest);
   }
   return JSON.stringify(verdict);

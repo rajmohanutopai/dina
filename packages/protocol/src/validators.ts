@@ -156,10 +156,10 @@ function hasUnsafeTalkText(value: string, allowNewlineAndTab: boolean): boolean 
  * string on the first violated invariant.
  */
 /** AT-Proto NSID collection that service listings are published under. */
-export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile'
+export const SERVICE_PROFILE_COLLECTION = 'com.dinakernel.service.profile';
 /** AT-Proto record-key charset; bounds rkey length so a listing uri can't
  *  smuggle an unbounded blob into the provider's execution context. */
-const SERVICE_LISTING_RKEY_RE = /^[A-Za-z0-9._~-]{1,512}$/
+const SERVICE_LISTING_RKEY_RE = /^[A-Za-z0-9._~-]{1,512}$/;
 
 /**
  * Validate a service-listing record key (the `<rkey>` in
@@ -175,9 +175,9 @@ const SERVICE_LISTING_RKEY_RE = /^[A-Za-z0-9._~-]{1,512}$/
  * default) is valid.
  */
 export function isValidServiceListingRkey(rkey: string): boolean {
-  if (typeof rkey !== 'string') return false
-  if (rkey === '.' || rkey === '..') return false
-  return SERVICE_LISTING_RKEY_RE.test(rkey)
+  if (typeof rkey !== 'string') return false;
+  if (rkey === '.' || rkey === '..') return false;
+  return SERVICE_LISTING_RKEY_RE.test(rkey);
 }
 
 /**
@@ -191,20 +191,18 @@ export function isValidServiceListingRkey(rkey: string): boolean {
  * opaque text. The caller (Core's `/v1/service/query` route) additionally
  * binds `did` to the request's `to_did`.
  */
-export function parseServiceListingUri(
-  uri: string,
-): { did: string; rkey: string } | null {
-  if (typeof uri !== 'string' || !uri.startsWith('at://')) return null
-  const parts = uri.slice('at://'.length).split('/')
-  if (parts.length !== 3) return null
-  const [authority, collection, rkey] = parts
+export function parseServiceListingUri(uri: string): { did: string; rkey: string } | null {
+  if (typeof uri !== 'string' || !uri.startsWith('at://')) return null;
+  const parts = uri.slice('at://'.length).split('/');
+  if (parts.length !== 3) return null;
+  const [authority, collection, rkey] = parts;
   // Narrow off `string | undefined` (noUncheckedIndexedAccess) — length===3
   // guarantees all three, but TS doesn't infer that from `.length`.
-  if (authority === undefined || collection === undefined || rkey === undefined) return null
-  if (!authority.startsWith('did:') || authority.length < 8) return null
-  if (collection !== SERVICE_PROFILE_COLLECTION) return null
-  if (!isValidServiceListingRkey(rkey)) return null
-  return { did: authority, rkey }
+  if (authority === undefined || collection === undefined || rkey === undefined) return null;
+  if (!authority.startsWith('did:') || authority.length < 8) return null;
+  if (collection !== SERVICE_PROFILE_COLLECTION) return null;
+  if (!isValidServiceListingRkey(rkey)) return null;
+  return { did: authority, rkey };
 }
 
 /**

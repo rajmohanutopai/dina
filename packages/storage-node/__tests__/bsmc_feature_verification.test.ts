@@ -37,9 +37,7 @@ describe('BSMC feature verification — FTS5', () => {
 
       // Query with a non-diacritic form — should hit the diacritic row
       // because the tokenizer strips diacritics on ingestion + query.
-      const rows = db
-        .prepare('SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank')
-        .all('cafe');
+      const rows = db.prepare('SELECT body FROM docs WHERE docs MATCH ? ORDER BY rank').all('cafe');
       expect(rows).toHaveLength(1);
       expect((rows[0] as { body: string }).body).toBe('Café résumé');
     } finally {
@@ -109,4 +107,3 @@ describe('BSMC feature verification — WAL journal mode', () => {
     }
   });
 });
-

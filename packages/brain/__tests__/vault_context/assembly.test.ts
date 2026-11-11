@@ -6,7 +6,17 @@
  * Source: brain/tests/test_vault_context.py
  */
 
-import { storeItem, clearVaults , DEFAULT_TEST_PERSONAS , createPersona, resetPersonaState, openPersona , addContact, resetContactDirectory, setPeopleRepository } from '@dina/core';
+import {
+  storeItem,
+  clearVaults,
+  DEFAULT_TEST_PERSONAS,
+  createPersona,
+  resetPersonaState,
+  openPersona,
+  addContact,
+  resetContactDirectory,
+  setPeopleRepository,
+} from '@dina/core';
 import { createReminder, resetReminderState } from '@dina/core/reminders';
 import { makeVaultItem, resetFactoryCounters, makeFakePeopleRepo } from '@dina/test-harness';
 
@@ -157,7 +167,7 @@ describe('Vault Context Assembly', () => {
     });
 
     it('uses LLM provider when registered (no tool calls)', async () => {
-      registerReasoningProvider(async (messages: LLMMessage[]) => ({
+      registerReasoningProvider(async (_messages: LLMMessage[]) => ({
         role: 'assistant' as const,
         content: "Emma's birthday is March 15th.",
       }));
@@ -176,7 +186,7 @@ describe('Vault Context Assembly', () => {
     it('executes tool calls in multi-turn loop', async () => {
       storeItem('general', makeVaultItem({ summary: 'Budget report Q4', body: '' }));
       let turn = 0;
-      registerReasoningProvider(async (messages: LLMMessage[]) => {
+      registerReasoningProvider(async (_messages: LLMMessage[]) => {
         turn++;
         if (turn === 1) {
           return {
@@ -542,9 +552,7 @@ describe('Vault Context Assembly', () => {
         return {
           role: 'assistant' as const,
           content: '',
-          toolCalls: [
-            { name: 'search_peerlens', args: { query: 'Acme', type: 'entity_reviews' } },
-          ],
+          toolCalls: [{ name: 'search_peerlens', args: { query: 'Acme', type: 'entity_reviews' } }],
         };
       });
       const ctx = { items: [], tokenEstimate: 0, personas: ['general'] };

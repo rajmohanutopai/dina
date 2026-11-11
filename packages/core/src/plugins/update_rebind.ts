@@ -354,7 +354,8 @@ export class UpdateRebindCoordinator {
     //   three LIFECYCLE handlers §9.13 names. Retaining quoting or ordering
     //   authority as well would let a superseded major keep taking NEW
     //   business, which is the opposite of draining.
-    const releaseMajorChanged = releaseMajorOf(install.currentVersion) !== releaseMajorOf(nextVersion);
+    const releaseMajorChanged =
+      releaseMajorOf(install.currentVersion) !== releaseMajorOf(nextVersion);
     const capabilities = install.manifest.capabilities ?? [];
     const now = this.deps.now();
     const drainMs = this.deps.drainMs ?? DEFAULT_DRAIN_MS;

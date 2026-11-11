@@ -11,21 +11,21 @@
 
 export const FEATURE_NAMES = {
   // Core product features
-  identity:   'Sovereign Identity',
-  vault:      'Your Vault',
-  reminders:  'Reminders',
-  talk:       'Dina-to-Dina Talk',
+  identity: 'Sovereign Identity',
+  vault: 'Your Vault',
+  reminders: 'Reminders',
+  talk: 'Dina-to-Dina Talk',
   agentTasks: 'Agent Tasks',
-  security:   'Approvals & Security',
-  peerlens:   'PeerLens',
-  services:   'Services',
+  security: 'Approvals & Security',
+  peerlens: 'PeerLens',
+  services: 'Services',
   // Navigation / utility
-  chat:          'Chat',
-  people:        'People',
+  chat: 'Chat',
+  people: 'People',
   notifications: 'Notifications',
-  settings:      'Settings',
-  help:          'Help',
-  signOut:       'Sign out',
+  settings: 'Settings',
+  help: 'Help',
+  signOut: 'Sign out',
 } as const;
 
 export type FeatureKey = keyof typeof FEATURE_NAMES;

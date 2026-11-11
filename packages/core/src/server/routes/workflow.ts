@@ -40,7 +40,10 @@ import {
 import { getAgentGrantRepository } from '../../agent/grant_repository';
 import { ORDER_CHECKOUT_LINK_TYPE, PAYMENT_EVIDENCE_RECORD_TYPE } from '../../commerce/integration';
 import { INTEGRATION_SETTINGS_PROPOSAL_TYPE } from '../../commerce/integration_settings';
-import { NEGOTIATION_PRICE_APPROVAL_TYPE, TENDER_READY_TYPE } from '../../commerce/negotiation_policy';
+import {
+  NEGOTIATION_PRICE_APPROVAL_TYPE,
+  TENDER_READY_TYPE,
+} from '../../commerce/negotiation_policy';
 import { ownerPresenceCanBeEstablished, ownerPresenceRefusal } from '../../commerce/owner_presence';
 import { getCommerceRuntime } from '../../commerce/runtime';
 import {
@@ -56,20 +59,23 @@ import { UCP_LINK_HANDOFF_TYPE } from '../../commerce/ucp/link_card';
 import { UCP_ORDER_NOTICE_TYPE } from '../../commerce/ucp/order_notice_card';
 import { isUcpTaskNamespace, UCP_SEARCH_REVIEW_TYPE } from '../../commerce/ucp/search_projection';
 import { UCP_CHECKOUT_START_TYPE } from '../../commerce/ucp/start_card';
-import {
-  admitSupplierRecords,
-  WATERMARK_REFUSAL,
-} from '../../commerce/watermark_gate';
-import {
-  EARNED_ROOM_CARD_TYPES,
-  EARNED_ROOM_OFFER_TYPE,
-} from '../../commitment/earned_room';
+import { admitSupplierRecords, WATERMARK_REFUSAL } from '../../commerce/watermark_gate';
+import { EARNED_ROOM_CARD_TYPES, EARNED_ROOM_OFFER_TYPE } from '../../commitment/earned_room';
 import { EVIDENCE_ASK_TYPE } from '../../commitment/evidence_handler';
 import { MODEL_CHANGE_CARD } from '../../commitment/model_changes';
-import { OPTION_CARD_TYPES, OPTION_CLEAR_TYPE, OPTION_EXIT_TYPE } from '../../commitment/option_handler';
+import {
+  OPTION_CARD_TYPES,
+  OPTION_CLEAR_TYPE,
+  OPTION_EXIT_TYPE,
+} from '../../commitment/option_handler';
 import { STRATEGY_QUESTION_TYPE } from '../../commitment/owner_questions';
 import { DISCLOSURE_REVIEW_APPROVAL_TYPE } from '../../coordination/disclosure_egress';
-import { approveForget, cancelForget, isOwnerForgetApproval, OWNER_FORGET_APPROVAL_TYPE } from '../../forget/forget';
+import {
+  approveForget,
+  cancelForget,
+  isOwnerForgetApproval,
+  OWNER_FORGET_APPROVAL_TYPE,
+} from '../../forget/forget';
 import { claimPluginTask } from '../../plugins/claim_guard';
 import { validatePluginResult } from '../../plugins/dispatch';
 import { getPluginGrantRepository } from '../../plugins/grants';
@@ -99,7 +105,11 @@ import {
   isStandingReplyApproval,
   OWNER_STANDING_REPLY_TYPE,
 } from '../../standing/standing_replies';
-import { isOwnerTalkSendApproval, OWNER_TALK_SEND_APPROVAL_TYPE, sendApprovedOwnerTalk } from '../../talk/owner_send';
+import {
+  isOwnerTalkSendApproval,
+  OWNER_TALK_SEND_APPROVAL_TYPE,
+  sendApprovedOwnerTalk,
+} from '../../talk/owner_send';
 import {
   WorkflowTaskKind,
   WorkflowTaskState,
@@ -179,7 +189,10 @@ function payloadDeclaresPluginType(payload: unknown): boolean {
 function a2aLaneTaskGuard(id: string): CoreResponse | null {
   const task = id === '' ? null : (getWorkflowService()?.store().getById(id) ?? null);
   if (task === null || !isA2ALane(task.requested_runner ?? '')) return null;
-  return j(403, { error: 'a2a_lane_reserved', reason: 'tasks on an A2A lane are moved by Core only' });
+  return j(403, {
+    error: 'a2a_lane_reserved',
+    reason: 'tasks on an A2A lane are moved by Core only',
+  });
 }
 
 /**
@@ -194,12 +207,18 @@ function inboundPinnedChildGuard(req: CoreRequest, id: string, verb: boolean): C
   const pep = id === '' ? null : (getA2AStore()?.getChild(id)?.pep_did ?? null);
   if (pep === null) return null;
   if ((req.headers['x-did'] ?? '') !== pep) {
-    return j(403, { error: 'access_denied', reason: 'only the runner this call is pinned to may act on it' });
+    return j(403, {
+      error: 'access_denied',
+      reason: 'only the runner this call is pinned to may act on it',
+    });
   }
   if (!verb) return null;
   const claimId = (req.body as Record<string, unknown> | undefined)?.claim_id;
   if (typeof claimId !== 'string' || claimId === '') {
-    return j(400, { error: 'claim_id is required', reason: 'an A2A child is reported on with the claim token minted at claim' });
+    return j(400, {
+      error: 'claim_id is required',
+      reason: 'an A2A child is reported on with the claim token minted at claim',
+    });
   }
   return null;
 }
@@ -213,7 +232,10 @@ function inboundPinnedChildGuard(req: CoreRequest, id: string, verb: boolean): C
 function inboundChildCancelGuard(req: CoreRequest, id: string): CoreResponse | null {
   const child = id === '' ? null : (getA2AStore()?.getChild(id) ?? null);
   if (child === null || req.callerType !== 'brain') return null;
-  return j(403, { error: 'access_denied', reason: 'an inbound A2A call is cancelled by its caller or the owner' });
+  return j(403, {
+    error: 'access_denied',
+    reason: 'an inbound A2A call is cancelled by its caller or the owner',
+  });
 }
 
 /**
@@ -227,7 +249,10 @@ function inboundChildCancelGuard(req: CoreRequest, id: string): CoreResponse | n
 function inboundChildBrainGuard(req: CoreRequest, id: string): CoreResponse | null {
   if (req.callerType !== 'brain' || id === '') return null;
   if ((getA2AStore()?.getChild(id) ?? null) === null) return null;
-  return j(403, { error: 'access_denied', reason: 'an inbound A2A call is reported by the runner that claimed it' });
+  return j(403, {
+    error: 'access_denied',
+    reason: 'an inbound A2A call is reported by the runner that claimed it',
+  });
 }
 
 /**
@@ -240,7 +265,10 @@ function inboundChildBrainGuard(req: CoreRequest, id: string): CoreResponse | nu
  */
 function inboundChildBrainReadGuard(req: CoreRequest, id: string): CoreResponse | null {
   if (req.callerType !== 'brain' || !isInboundExecutionChild(id)) return null;
-  return j(403, { error: 'access_denied', reason: 'an inbound A2A call is read by the runner that claimed it' });
+  return j(403, {
+    error: 'access_denied',
+    reason: 'an inbound A2A call is read by the runner that claimed it',
+  });
 }
 
 function isInboundExecutionChild(id: string): boolean {
@@ -249,7 +277,12 @@ function isInboundExecutionChild(id: string): boolean {
 
 /** The A2A rules for an executor verb on task `id`. */
 function a2aTaskGuard(req: CoreRequest, id: string): CoreResponse | null {
-  return a2aLaneTaskGuard(id) ?? ucpTaskGuard(id) ?? inboundChildBrainGuard(req, id) ?? inboundPinnedChildGuard(req, id, true);
+  return (
+    a2aLaneTaskGuard(id) ??
+    ucpTaskGuard(id) ??
+    inboundChildBrainGuard(req, id) ??
+    inboundPinnedChildGuard(req, id, true)
+  );
 }
 
 /**
@@ -285,12 +318,21 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
   router.get('/v1/workflow/tasks/:id', getTask);
   router.get('/v1/workflow/tasks', listTasks);
   router.post('/v1/workflow/tasks/claim', claimTask);
-  router.post('/v1/workflow/tasks/:id/heartbeat', async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? heartbeatTask(req));
-  router.post('/v1/workflow/tasks/:id/progress', async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? progressTask(req));
+  router.post(
+    '/v1/workflow/tasks/:id/heartbeat',
+    async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? heartbeatTask(req),
+  );
+  router.post(
+    '/v1/workflow/tasks/:id/progress',
+    async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? progressTask(req),
+  );
   // A2A multi-turn (§7.7): the runner holding an inbound round's claim asks
   // the caller for more input. The same guard as every executor verb on an
   // A2A child: the pinned runner, the claim token.
-  router.post('/v1/workflow/tasks/:id/input-required', async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? inputRequiredTask(req));
+  router.post(
+    '/v1/workflow/tasks/:id/input-required',
+    async (req) => a2aTaskGuard(req, req.params.id ?? '') ?? inputRequiredTask(req),
+  );
   // dina-agent calls /running after claim to confirm task ownership;
   // TS Core's claim already transitions to running, so this is an
   // idempotent no-op that just echoes the current task.
@@ -303,7 +345,10 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     if (task === null) return j(404, { error: 'task not found' });
     // round-10 #2: own-task-only for agents; an A2A child pinned to a
     // runner only to that runner (§7.3).
-    const denied = inboundChildBrainReadGuard(req, id) ?? inboundPinnedChildGuard(req, id, false) ?? agentReadGuard(req, task);
+    const denied =
+      inboundChildBrainReadGuard(req, id) ??
+      inboundPinnedChildGuard(req, id, false) ??
+      agentReadGuard(req, task);
     if (denied !== null) return denied;
     return j(200, forCaller(req, task));
   });
@@ -315,7 +360,11 @@ export function registerWorkflowRoutes(router: CoreRouter, ownerCapability?: str
     );
   });
   router.post('/v1/workflow/tasks/:id/cancel', async (req) => {
-    return decisionGuard(req) ?? inboundChildCancelGuard(req, req.params.id ?? '') ?? runAction(req, cancelTask);
+    return (
+      decisionGuard(req) ??
+      inboundChildCancelGuard(req, req.params.id ?? '') ??
+      runAction(req, cancelTask)
+    );
   });
   router.post('/v1/workflow/tasks/:id/complete', async (req) => {
     const guard = a2aTaskGuard(req, req.params.id ?? '') ?? agentCompletionGuard(req);
@@ -535,12 +584,19 @@ async function createTask(req: CoreRequest): Promise<CoreResponse> {
       isA2ATaskNamespace(idempotencyKey) ||
       isUcpTaskNamespace(idempotencyKey))
   ) {
-    return j(400, { error: 'reserved_idempotency_key', reason: 'this key namespace is minted by Core' });
+    return j(400, {
+      error: 'reserved_idempotency_key',
+      reason: 'this key namespace is minted by Core',
+    });
   }
   // Likewise the A2A and UCP task ids: Core names the consent card, the
   // dispatch child, and the search review card (UCP plan §3.18).
   if (isA2ATaskNamespace(optStrField(body.id)) || isUcpTaskNamespace(optStrField(body.id))) {
-    return j(400, { error: 'reserved_task_id', reason: 'this id namespace is minted by Core', field: 'id' });
+    return j(400, {
+      error: 'reserved_task_id',
+      reason: 'this id namespace is minted by Core',
+      field: 'id',
+    });
   }
   const input = {
     id: strField(body.id),
@@ -640,7 +696,8 @@ function redactCardForBrain(payload: string): string {
   // COMMITMENT_KERNEL §15 step 5 — a value-model change card quotes the owner's
   // entries, which may hold values (switched off since) or sit in a persona
   // Brain may no longer read. Brain learns only that one exists.
-  if (card.type === MODEL_CHANGE_CARD) return JSON.stringify({ type: card.type, redacted: 'owner_only' });
+  if (card.type === MODEL_CHANGE_CARD)
+    return JSON.stringify({ type: card.type, redacted: 'owner_only' });
   // COMMITMENT_KERNEL §15 step 13 — earned room names the owner's automatic
   // limits and the figures said yes to: never Brain's to read.
   if (typeof card.type === 'string' && EARNED_ROOM_CARD_TYPES.includes(card.type))
@@ -649,8 +706,16 @@ function redactCardForBrain(payload: string): string {
   // asked about and holding counts: the owner's alone. Brain learns which
   // card and which negotiation, never a number.
   if (typeof card.type === 'string' && TERM_CARD_TYPES.includes(card.type)) {
-    const { card_id: cardId, request_id: requestId } = parsed as { card_id?: unknown; request_id?: unknown };
-    return JSON.stringify({ type: card.type, card_id: cardId, request_id: requestId, redacted: 'owner_only' });
+    const { card_id: cardId, request_id: requestId } = parsed as {
+      card_id?: unknown;
+      request_id?: unknown;
+    };
+    return JSON.stringify({
+      type: card.type,
+      card_id: cardId,
+      request_id: requestId,
+      redacted: 'owner_only',
+    });
   }
   if (card.type !== NEGOTIATION_PRICE_APPROVAL_TYPE) return payload;
   const lines = Array.isArray(card.lines)
@@ -677,13 +742,33 @@ function forCaller(req: CoreRequest, task: WorkflowTask): Record<string, unknown
   // An order notice names a merchant, an order and its link: the owner's, not Brain's. Its
   // mirror from the owner's server node (§3.9) carries the same words.
   if (body?.type === UCP_ORDER_NOTICE_TYPE || isMirroredOrderNotice(body?.type, body?.agent_did))
-    return { ...redacted, description: 'An order notice for the owner', result: undefined, result_summary: '' };
+    return {
+      ...redacted,
+      description: 'An order notice for the owner',
+      result: undefined,
+      result_summary: '',
+    };
   if (body?.type === MODEL_CHANGE_CARD)
-    return { ...redacted, description: 'A change to the owner’s deal values', result: undefined, result_summary: '' };
+    return {
+      ...redacted,
+      description: 'A change to the owner’s deal values',
+      result: undefined,
+      result_summary: '',
+    };
   if (typeof body?.type === 'string' && EARNED_ROOM_CARD_TYPES.includes(body.type))
-    return { ...redacted, description: 'A card about the owner’s automatic limits', result: undefined, result_summary: '' };
+    return {
+      ...redacted,
+      description: 'A card about the owner’s automatic limits',
+      result: undefined,
+      result_summary: '',
+    };
   if (isUcpLinkCard(body?.type, body?.agent_did))
-    return { ...redacted, description: 'A link card for the owner', result: undefined, result_summary: '' };
+    return {
+      ...redacted,
+      description: 'A link card for the owner',
+      result: undefined,
+      result_summary: '',
+    };
   return isUcpCheckoutCard(body?.type, body?.agent_did)
     ? {
         ...redacted,
@@ -703,7 +788,8 @@ function isUcpCheckoutCard(type: unknown, agentDid?: unknown): boolean {
   // The same cards mirrored here from the owner's server node (§3.9): their display text and
   // link are the merchant's words too.
   return (
-    (type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE || type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE) &&
+    (type === REMOTE_FACADE_APPROVAL_PAYLOAD_TYPE ||
+      type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE) &&
     agentDid === 'ucp:checkout'
   );
 }
@@ -769,7 +855,9 @@ async function getTask(req: CoreRequest): Promise<CoreResponse> {
   const task = service.store().getById(id);
   if (task === null) return j(404, { error: 'task not found' });
   const denied =
-    inboundChildBrainReadGuard(req, id) ?? (req.callerType === 'agent' ? inboundPinnedChildGuard(req, id, false) : null) ?? agentReadGuard(req, task);
+    inboundChildBrainReadGuard(req, id) ??
+    (req.callerType === 'agent' ? inboundPinnedChildGuard(req, id, false) : null) ??
+    agentReadGuard(req, task);
   if (denied !== null) return denied;
   return j(200, { task: forCaller(req, withCancelReason(service, task)) });
 }
@@ -786,7 +874,10 @@ async function listTasks(req: CoreRequest): Promise<CoreResponse> {
   const limit = clampLimit(requested);
   const listed = service.store().listByKindAndState(kind, stateRaw as WorkflowTaskState, limit);
   // Brain reads no inbound A2A execution child (`inboundChildBrainReadGuard`).
-  const tasks = req.callerType === 'brain' ? listed.filter((task) => !isInboundExecutionChild(task.id)) : listed;
+  const tasks =
+    req.callerType === 'brain'
+      ? listed.filter((task) => !isInboundExecutionChild(task.id))
+      : listed;
   return j(200, {
     tasks: tasks.map((task) => forCaller(req, withCancelReason(service, task))),
     count: tasks.length,
@@ -900,15 +991,24 @@ async function inputRequiredTask(req: CoreRequest): Promise<CoreResponse> {
   const agentDID = req.headers['x-did'] ?? '';
   if (agentDID === '') return j(400, { error: 'X-DID header is required' });
   const body = req.body;
-  if (body === null || typeof body !== 'object' || Array.isArray(body)) return j(400, { error: 'request_malformed' });
+  if (body === null || typeof body !== 'object' || Array.isArray(body))
+    return j(400, { error: 'request_malformed' });
   const { claim_id: claimId, ...request } = body as Record<string, unknown>;
-  if (typeof claimId !== 'string' || claimId === '') return j(400, { error: 'claim_id is required' });
+  if (typeof claimId !== 'string' || claimId === '')
+    return j(400, { error: 'claim_id is required' });
   const verdict = requestInboundInput({ taskId: id, claimantDid: agentDID, claimId, request });
   switch (verdict.kind) {
     case 'parked':
-      return j(200, { status: 'awaiting_input', task_id: id, expires_at: verdict.question.expires_at });
+      return j(200, {
+        status: 'awaiting_input',
+        task_id: id,
+        expires_at: verdict.question.expires_at,
+      });
     case 'not_inbound':
-      return j(409, { error: 'not_an_a2a_call', reason: 'only a call from an A2A client can ask its caller for input' });
+      return j(409, {
+        error: 'not_an_a2a_call',
+        reason: 'only a call from an A2A client can ask its caller for input',
+      });
     case 'refused':
       return j(INPUT_REQUIRED_STATUS[verdict.reason], { error: verdict.reason });
   }
@@ -1144,9 +1244,14 @@ async function approveTask(
   // that belief stand.
   if (
     body?.plugin_grant !== undefined &&
-    (before === null || before.status !== WorkflowTaskState.PendingApproval || invocationIdentity(before) === null)
+    (before === null ||
+      before.status !== WorkflowTaskState.PendingApproval ||
+      invocationIdentity(before) === null)
   ) {
-    throw new WorkflowValidationError('plugin_grant applies only to a pending plugin invocation', 'plugin_grant');
+    throw new WorkflowValidationError(
+      'plugin_grant applies only to a pending plugin invocation',
+      'plugin_grant',
+    );
   }
 
   // Session-scoped approval: if the caller passes scope='session' the
@@ -1189,7 +1294,10 @@ async function approveTask(
     const cardPayload = parseAgentPersonaAccessPayload(before.payload);
     if (cardPayload !== null && isRevokedAgentDevice(cardPayload.agent_did)) {
       service.cancel(id, 'requester device revoked');
-      throw new WorkflowValidationError('the device that asked for this access was revoked', 'grant');
+      throw new WorkflowValidationError(
+        'the device that asked for this access was revoked',
+        'grant',
+      );
     }
     // Round-16 #1 + PLG-28 #1: RESERVE the durable grant before the transition,
     // ACTIVATE it after. Reserving first (a) proves the grant repo works — a
@@ -1272,23 +1380,37 @@ async function approveTask(
   }
 
   // REAL_LIFE_FIXES_2 §15: approving an allowance card makes it live.
-  if (isSpendAllowanceApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+  if (
+    isSpendAllowanceApproval(before) &&
+    before !== null &&
+    before.status === WorkflowTaskState.PendingApproval
+  ) {
     const approved = service.approve(id);
-    if (await activateAllowance(approved)) return settleApprovedCard(service, id, JSON.stringify({ active: true }), 'allowance on');
+    if (await activateAllowance(approved))
+      return settleApprovedCard(service, id, JSON.stringify({ active: true }), 'allowance on');
     return service.fail(id, 'allowance could not be turned on');
   }
 
   // REAL_LIFE_FIXES_2 §14: approving a standing-reply card makes it live.
-  if (isStandingReplyApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+  if (
+    isStandingReplyApproval(before) &&
+    before !== null &&
+    before.status === WorkflowTaskState.PendingApproval
+  ) {
     const approved = service.approve(id);
     const live = await activateStandingReply(approved);
-    if (live) return settleApprovedCard(service, id, JSON.stringify({ active: true }), 'standing reply on');
+    if (live)
+      return settleApprovedCard(service, id, JSON.stringify({ active: true }), 'standing reply on');
     return service.fail(id, 'standing reply could not be turned on');
   }
 
   // REAL_LIFE_FIXES_2 §4: approving a forget card runs the durable job; the
   // card completes only when every step ran (or every open persona's did).
-  if (isOwnerForgetApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+  if (
+    isOwnerForgetApproval(before) &&
+    before !== null &&
+    before.status === WorkflowTaskState.PendingApproval
+  ) {
     const approved = service.approve(id);
     let state: Awaited<ReturnType<typeof approveForget>> = null;
     try {
@@ -1298,20 +1420,35 @@ async function approveTask(
       // settles the card itself; nothing is reported done before then.
       return approved;
     }
-    if (state === 'done') return settleApprovedCard(service, id, JSON.stringify({ forgotten: true }), 'forgotten');
+    if (state === 'done')
+      return settleApprovedCard(service, id, JSON.stringify({ forgotten: true }), 'forgotten');
     if (state === 'waiting_on_unlock') {
-      return settleApprovedCard(service, id, JSON.stringify({ forgotten: true, waiting_on_unlock: true }), 'forgotten; the rest when a closed vault is next unlocked');
+      return settleApprovedCard(
+        service,
+        id,
+        JSON.stringify({ forgotten: true, waiting_on_unlock: true }),
+        'forgotten; the rest when a closed vault is next unlocked',
+      );
     }
     return approved;
   }
 
   // REAL_LIFE_FIXES §7: approving an owner-talk confirm card sends exactly
   // the frozen recipient and text, then completes the card.
-  if (isOwnerTalkSendApproval(before) && before !== null && before.status === WorkflowTaskState.PendingApproval) {
+  if (
+    isOwnerTalkSendApproval(before) &&
+    before !== null &&
+    before.status === WorkflowTaskState.PendingApproval
+  ) {
     const approved = service.approve(id);
     const sent = await sendApprovedOwnerTalk(approved);
     if (sent.status === 'sent') {
-      return settleApprovedCard(service, id, JSON.stringify({ sent: true }), `sent to ${sent.recipient_name}`);
+      return settleApprovedCard(
+        service,
+        id,
+        JSON.stringify({ sent: true }),
+        `sent to ${sent.recipient_name}`,
+      );
     }
     return service.fail(id, `send failed: ${'reason' in sent ? sent.reason : sent.status}`);
   }
@@ -1361,9 +1498,10 @@ async function approveTask(
   // widens future invocations. The grant is CREATED before the approve CAS
   // and revoked if the transition fails — the agent-grant precedent — so no
   // standing authority ever outlives a failed approval.
-  const invocation = before !== null && before.status === WorkflowTaskState.PendingApproval
-    ? invocationIdentity(before)
-    : null;
+  const invocation =
+    before !== null && before.status === WorkflowTaskState.PendingApproval
+      ? invocationIdentity(before)
+      : null;
   if (invocation !== null) {
     const grantRequest = parseApprovalGrantRequest(body?.plugin_grant);
     if (grantRequest === 'invalid') {
@@ -1393,7 +1531,12 @@ async function approveTask(
     }
     recordInvocationDecision(invocation, 'invocation_approved', 'owner approved the card', nowMs);
     if (grantId !== null) {
-      recordInvocationDecision(invocation, 'grant_created', `${grantRequest?.type} grant ${grantId}`, nowMs);
+      recordInvocationDecision(
+        invocation,
+        'grant_created',
+        `${grantRequest?.type} grant ${grantId}`,
+        nowMs,
+      );
     }
     return approved;
   }
@@ -1407,10 +1550,25 @@ async function approveTask(
     // counts against the agent's live allowance, once.
     // Awaited, so the count is written before the agent can learn of the
     // approval; a crash in between is settled at boot (reconcileSpend).
-    const spend = before !== null ? (safeParseBody(before.payload) as { type?: unknown; spend?: { request_key?: unknown }; agent_did?: unknown } | null) : null;
-    if (spend?.type === 'intent_validation' && typeof spend.spend?.request_key === 'string' && typeof spend.agent_did === 'string') {
+    const spend =
+      before !== null
+        ? (safeParseBody(before.payload) as {
+            type?: unknown;
+            spend?: { request_key?: unknown };
+            agent_did?: unknown;
+          } | null)
+        : null;
+    if (
+      spend?.type === 'intent_validation' &&
+      typeof spend.spend?.request_key === 'string' &&
+      typeof spend.agent_did === 'string'
+    ) {
       try {
-        await recordApprovedSpend({ agentDid: spend.agent_did, requestKey: spend.spend.request_key, proposalId: id });
+        await recordApprovedSpend({
+          agentDid: spend.agent_did,
+          requestKey: spend.spend.request_key,
+          proposalId: id,
+        });
       } catch {
         /* settled at boot */
       }
@@ -1501,7 +1659,9 @@ function cancelTask(
   // §15.5 — a denied plugin invocation is recorded as the owner's decision
   // once the cancel has actually landed (below).
   const invocation =
-    before !== null && before.status === WorkflowTaskState.PendingApproval ? invocationIdentity(before) : null;
+    before !== null && before.status === WorkflowTaskState.PendingApproval
+      ? invocationIdentity(before)
+      : null;
   // PLG-30 #7: WIN the state transition BEFORE dead-lettering the staged data.
   // `denyApproval` forces the pending_unlock staging rows to `failed` with
   // retry_count past the sweep ceiling — irreversible. If it ran first and
@@ -1694,10 +1854,7 @@ function presenceGatedCardGuard(req: CoreRequest, id: string): CoreResponse | nu
   if (detail === undefined) return null;
   // A mirror's yes is reported to the server as made in person: a node that cannot tell
   // never makes one.
-  if (
-    type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE &&
-    !ownerPresenceCanBeEstablished()
-  )
+  if (type === REMOTE_PRESENCE_APPROVAL_PAYLOAD_TYPE && !ownerPresenceCanBeEstablished())
     return j(403, { error: 'no_user_presence', detail });
   return ownerPresenceRefusal(req, Date.now(), detail);
 }

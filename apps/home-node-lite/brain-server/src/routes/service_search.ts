@@ -32,9 +32,7 @@ function finiteNumber(value: unknown): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
 }
 
-function validateBody(
-  body: SearchBody,
-):
+function validateBody(body: SearchBody):
   | {
       ok: true;
       input: {
@@ -81,7 +79,10 @@ function validateBody(
   const rawLimit = finiteNumber(body.limit);
   if (
     body.limit !== undefined &&
-    (rawLimit === undefined || !Number.isInteger(rawLimit) || rawLimit < 1 || rawLimit > MAX_RESULTS)
+    (rawLimit === undefined ||
+      !Number.isInteger(rawLimit) ||
+      rawLimit < 1 ||
+      rawLimit > MAX_RESULTS)
   ) {
     return { ok: false, error: `limit must be an integer from 1 to ${MAX_RESULTS}` };
   }
@@ -126,7 +127,7 @@ export function registerServiceSearchRoutes(
               ]
             : (
                 await options.appView.searchCapabilities({
-                  intent: input.intent!,
+                  intent: requireIntent(input.intent),
                   ...(input.lat !== undefined ? { lat: input.lat } : {}),
                   ...(input.lng !== undefined ? { lng: input.lng } : {}),
                 })
@@ -158,11 +159,15 @@ export function registerServiceSearchRoutes(
         });
       } catch (error) {
         const status =
-          error instanceof AppViewError && error.status !== null && error.status < 500
-            ? 502
-            : 503;
+          error instanceof AppViewError && error.status !== null && error.status < 500 ? 502 : 503;
         return reply.status(status).send({ error: 'service directory unavailable' });
       }
     },
   );
+}
+
+/** parseServiceSearchBody guarantees intent is set when capability is not. */
+function requireIntent(intent: string | undefined): string {
+  if (intent === undefined) throw new Error('service search: intent missing');
+  return intent;
 }

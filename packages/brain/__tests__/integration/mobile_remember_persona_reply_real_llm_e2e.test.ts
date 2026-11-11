@@ -39,13 +39,15 @@
 
 import {
   clearVaults,
-  DEFAULT_TEST_PERSONAS,
-
   resetStagingState,
   stagingGetItem as getStagingItem,
   createPersona,
   openPersona,
-  resetPersonaState, configureRateLimiter , createCoreRouter , InProcessTransport } from '@dina/core';
+  resetPersonaState,
+  configureRateLimiter,
+  createCoreRouter,
+  InProcessTransport,
+} from '@dina/core';
 
 import {
   handleChat,
@@ -56,12 +58,8 @@ import { getThread } from '../../src/chat/thread';
 import { GeminiGenaiAdapter } from '../../src/llm/adapters/gemini_genai';
 import { LLMRouter, RoutedLLMProvider } from '../../src/llm/router_dispatch';
 import { createGeminiClassifier } from '../../src/routing/gemini_classify';
-import {
-  registerPersonaSelector,
-  resetPersonaSelector,
-} from '../../src/routing/persona_selector';
+import { registerPersonaSelector, resetPersonaSelector } from '../../src/routing/persona_selector';
 import { StagingDrainScheduler } from '../../src/staging/scheduler';
-
 
 import {
   closeSQLiteVault,
@@ -221,7 +219,6 @@ describeReal('/remember reply pins persona name (real Gemini + real SQLCipher)',
       const replyText =
         resp.response !== '' ? resp.response : (dinaMsgs[dinaMsgs.length - 1]?.content ?? '');
       if (!replyText.includes(expectedPhrase)) {
-         
         console.log(
           `[${scenario.label}] expected "${expectedPhrase}" in reply, got:\n  ${replyText}`,
         );

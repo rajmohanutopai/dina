@@ -253,7 +253,10 @@ describe('the DID binding challenge (§5.1, M4)', () => {
       [id],
     ) as { challenge_hash: string; did: string }[];
     expect(live).toEqual([
-      { challenge_hash: bytesToHex(sha256(new TextEncoder().encode(String(second.challenge)))), did: ALICE_DID },
+      {
+        challenge_hash: bytesToHex(sha256(new TextEncoder().encode(String(second.challenge)))),
+        did: ALICE_DID,
+      },
     ]);
     const listed = json(await call('owner', 'GET', '/v1/owner/a2a/clients')) as {
       clients: { client_id: string; credential: string }[];
@@ -264,11 +267,19 @@ describe('the DID binding challenge (§5.1, M4)', () => {
   it.each([
     ['no DID', {}, 400, 'did_malformed'],
     ['a DID that is not one', { did: 'alice' }, 400, 'did_malformed'],
-    ['another DID than the client\'s expected one', { did: 'did:plc:mallory00000000000000000' }, 400, 'did_not_expected'],
+    [
+      "another DID than the client's expected one",
+      { did: 'did:plc:mallory00000000000000000' },
+      400,
+      'did_not_expected',
+    ],
   ])('refuses %s', async (_name, body, status, error) => {
     setNodeDID('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
     const created = json(
-      await call('owner', 'POST', '/v1/owner/a2a/clients', { display_name: 'Pinned', expected_did: ALICE_DID }),
+      await call('owner', 'POST', '/v1/owner/a2a/clients', {
+        display_name: 'Pinned',
+        expected_did: ALICE_DID,
+      }),
     );
     const id = (created.client as { client_id: string }).client_id;
     const out = await call('owner', 'POST', `/v1/owner/a2a/clients/${id}/did-challenge`, body);
@@ -277,7 +288,9 @@ describe('the DID binding challenge (§5.1, M4)', () => {
 
   it('refuses an unknown client', async () => {
     setNodeDID('did:plc:ewvi7nxzyoun6zhxrhs64oiz');
-    const out = await call('owner', 'POST', '/v1/owner/a2a/clients/ac_missing/did-challenge', { did: ALICE_DID });
+    const out = await call('owner', 'POST', '/v1/owner/a2a/clients/ac_missing/did-challenge', {
+      did: ALICE_DID,
+    });
     expect(out.status).toBe(404);
   });
 });

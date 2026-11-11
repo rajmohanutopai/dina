@@ -372,8 +372,8 @@ export default function ShelfSpaceScreen(): React.ReactElement {
                   />
                 </View>
                 <Text style={styles.small}>
-                  The listing is public. It carries no rent, share or rule of yours, and not who
-                  may ask.
+                  The listing is public. It carries no rent, share or rule of yours, and not who may
+                  ask.
                 </Text>
                 <Pressable
                   style={styles.button}

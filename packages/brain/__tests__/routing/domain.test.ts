@@ -10,8 +10,6 @@
 
 import { classifyDomain, classifyAndResolve } from '../../src/routing/domain';
 
-import type { ClassificationInput } from '../../src/routing/domain';
-
 describe('Domain Classifier', () => {
   describe('health domain', () => {
     it('"lab results" → health', () => {

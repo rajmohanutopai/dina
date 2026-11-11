@@ -33,12 +33,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4i task 4.73.
  */
 
-import {
-  buildAuditEntry,
-  computeEntryHash,
-  GENESIS_MARKER,
-  type AuditHashEntry,
-} from '@dina/core';
+import { buildAuditEntry, computeEntryHash, GENESIS_MARKER, type AuditHashEntry } from '@dina/core';
 
 /** Re-export the canonical entry shape so callers don't import from `@dina/core` directly. */
 export type AuditEntry = AuditHashEntry;
@@ -175,14 +170,12 @@ export class AuditLog {
   verifyChain(): VerifyResult {
     if (this.entries.length === 0) return { valid: true, brokenAt: -1 };
 
-    for (let i = 0; i < this.entries.length; i++) {
-      const entry = this.entries[i]!;
-      if (i > 0) {
-        const prior = this.entries[i - 1]!;
-        if (entry.prev_hash !== prior.entry_hash) {
-          return { valid: false, brokenAt: i };
-        }
+    let prior: AuditEntry | undefined;
+    for (const [i, entry] of this.entries.entries()) {
+      if (prior !== undefined && entry.prev_hash !== prior.entry_hash) {
+        return { valid: false, brokenAt: i };
       }
+      prior = entry;
       const { entry_hash: _discard, ...partial } = entry;
       if (computeEntryHash(partial) !== entry.entry_hash) {
         return { valid: false, brokenAt: i };
@@ -210,7 +203,9 @@ export class AuditLog {
     }
     const cutoffTs = Math.floor(this.nowMsFn() / 1000) - retentionDays * 86400;
     let removed = 0;
-    while (this.entries.length > 0 && this.entries[0]!.ts < cutoffTs) {
+    for (;;) {
+      const first = this.entries[0];
+      if (first === undefined || first.ts >= cutoffTs) break;
       this.entries.shift();
       removed++;
     }
@@ -232,8 +227,9 @@ export class AuditLog {
    * been purged. Useful for ops visibility + cross-node parity.
    */
   anchorHash(): string {
-    if (this.entries.length === 0) return this.lastEntryHash || GENESIS_MARKER;
-    return this.entries[0]!.prev_hash;
+    const first = this.entries[0];
+    if (first === undefined) return this.lastEntryHash || GENESIS_MARKER;
+    return first.prev_hash;
   }
 
   /**

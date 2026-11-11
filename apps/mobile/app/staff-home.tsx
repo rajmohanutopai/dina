@@ -66,7 +66,9 @@ export default function StaffHomeScreen(): React.ReactElement {
       return null;
     }
     setBusinessName(identity.deviceName);
-    clientRef.current = new StaffCoreClient(staffTransportFor(identity, makeStaffWebSocket, 30_000));
+    clientRef.current = new StaffCoreClient(
+      staffTransportFor(identity, makeStaffWebSocket, 30_000),
+    );
     return clientRef.current;
   }, [router]);
 

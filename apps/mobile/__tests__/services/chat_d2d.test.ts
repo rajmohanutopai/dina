@@ -22,7 +22,6 @@ import {
   type ServiceQueryDispatcher,
 } from '../../src/services/chat_d2d';
 
-
 const PEER = 'did:plc:testdemoprovider';
 
 beforeEach(() => {
@@ -167,7 +166,12 @@ describe('sendServiceQuery (Contact Services seam 5)', () => {
     const dispatcher: ServiceQueryDispatcher = {
       issueQueryToDID: async (req) => {
         calls.push(req as unknown as Record<string, unknown>);
-        return { queryId, taskId, toDID: req.toDID, serviceName: req.serviceName ?? req.capability };
+        return {
+          queryId,
+          taskId,
+          toDID: req.toDID,
+          serviceName: req.serviceName ?? req.capability,
+        };
       },
     };
     return { dispatcher, calls };
@@ -182,9 +186,7 @@ describe('sendServiceQuery (Contact Services seam 5)', () => {
   it('rejects empty peer DID', async () => {
     const { dispatcher } = makeStubDispatcher();
     setServiceQueryDispatcher(dispatcher);
-    await expect(
-      sendServiceQuery('', 'availability_coordination', {}),
-    ).rejects.toThrow(/peerDID/);
+    await expect(sendServiceQuery('', 'availability_coordination', {})).rejects.toThrow(/peerDID/);
   });
 
   it('rejects empty capability', async () => {
@@ -254,27 +256,37 @@ describe('sendServiceQuery (Contact Services seam 5)', () => {
   it("forwards the offer's defaultTtlSeconds when no explicit ttl is given (P3-b)", async () => {
     const { dispatcher, calls } = makeStubDispatcher();
     setServiceQueryDispatcher(dispatcher);
-    await sendServiceQuery(PEER, 'availability_coordination', {}, {
-      offer: {
-        grantId: 'g',
-        serviceUri: 'at://did:plc:testdemoprovider/com.dinakernel.service.profile/sched',
-        defaultTtlSeconds: 300,
+    await sendServiceQuery(
+      PEER,
+      'availability_coordination',
+      {},
+      {
+        offer: {
+          grantId: 'g',
+          serviceUri: 'at://did:plc:testdemoprovider/com.dinakernel.service.profile/sched',
+          defaultTtlSeconds: 300,
+        },
       },
-    });
+    );
     expect(calls[0].ttlSeconds).toBe(300);
   });
 
   it('an explicit ttlSeconds overrides the offer default (P3-b precedence)', async () => {
     const { dispatcher, calls } = makeStubDispatcher();
     setServiceQueryDispatcher(dispatcher);
-    await sendServiceQuery(PEER, 'availability_coordination', {}, {
-      ttlSeconds: 120,
-      offer: {
-        grantId: 'g',
-        serviceUri: 'at://did:plc:testdemoprovider/com.dinakernel.service.profile/sched',
-        defaultTtlSeconds: 300,
+    await sendServiceQuery(
+      PEER,
+      'availability_coordination',
+      {},
+      {
+        ttlSeconds: 120,
+        offer: {
+          grantId: 'g',
+          serviceUri: 'at://did:plc:testdemoprovider/com.dinakernel.service.profile/sched',
+          defaultTtlSeconds: 300,
+        },
       },
-    });
+    );
     expect(calls[0].ttlSeconds).toBe(120);
   });
 
@@ -292,9 +304,9 @@ describe('sendServiceQuery (Contact Services seam 5)', () => {
       },
     };
     setServiceQueryDispatcher(dispatcher);
-    await expect(
-      sendServiceQuery(PEER, 'availability_coordination', {}),
-    ).rejects.toThrow(/relay down/);
+    await expect(sendServiceQuery(PEER, 'availability_coordination', {})).rejects.toThrow(
+      /relay down/,
+    );
     const thread = getThread(PEER);
     // No pending card was left behind (the dispatch never produced a taskId);
     // the user sees a standalone error row instead of a phantom "pending".
@@ -317,9 +329,9 @@ describe('sendServiceQuery (Contact Services seam 5)', () => {
       }),
     };
     setServiceQueryDispatcher(dispatcher);
-    await expect(
-      sendServiceQuery(PEER, 'availability_coordination', {}),
-    ).rejects.toThrow(/no task id|uncorrelatable/i);
+    await expect(sendServiceQuery(PEER, 'availability_coordination', {})).rejects.toThrow(
+      /no task id|uncorrelatable/i,
+    );
     const thread = getThread(PEER);
     // Exactly one error row, NO service_query lifecycle card.
     expect(thread).toHaveLength(1);
@@ -384,8 +396,6 @@ describe('sendGrantRequest (Contact Services §5.2 bootstrap)', () => {
     setD2DSender(async () => {
       throw new Error('relay down');
     });
-    await expect(
-      sendGrantRequest(PEER, 'availability_coordination'),
-    ).rejects.toThrow(/relay down/);
+    await expect(sendGrantRequest(PEER, 'availability_coordination')).rejects.toThrow(/relay down/);
   });
 });

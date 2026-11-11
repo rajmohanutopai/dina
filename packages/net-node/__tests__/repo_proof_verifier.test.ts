@@ -131,7 +131,9 @@ async function mintRepo(
 }
 
 /** A VALID release: rkey = f(record CID). */
-async function mintRelease(keypair: Keypair): Promise<{ car: Uint8Array; cid: string; rkey: string }> {
+async function mintRelease(
+  keypair: Keypair,
+): Promise<{ car: Uint8Array; cid: string; rkey: string }> {
   // Store once at a throwaway rkey to learn the content CID, derive the
   // content-addressed rkey, then mint the repo at that rkey (same CID).
   const probe = await mintRepo(keypair, '3jzfcijpj2z2a');
@@ -301,7 +303,12 @@ describe('createRepoProofVerifier (§5.C1)', () => {
     const good = didDocFor(keypair.did());
 
     const cases: { name: string; resolveDid: () => Promise<DidDoc | null> }[] = [
-      { name: 'resolver throws', resolveDid: async () => { throw new Error('plc down'); } },
+      {
+        name: 'resolver throws',
+        resolveDid: async () => {
+          throw new Error('plc down');
+        },
+      },
       { name: 'resolver returns null', resolveDid: async () => null },
       { name: 'no signing key', resolveDid: async () => ({ ...good, verificationMethod: [] }) },
       { name: 'no PDS service', resolveDid: async () => ({ ...good, service: [] }) },
@@ -313,7 +320,13 @@ describe('createRepoProofVerifier (§5.C1)', () => {
         name: 'a PDS service of the wrong type',
         resolveDid: async () => ({
           ...good,
-          service: [{ id: '#atproto_pds', type: 'SomethingElse', serviceEndpoint: 'https://pds.example.com' }],
+          service: [
+            {
+              id: '#atproto_pds',
+              type: 'SomethingElse',
+              serviceEndpoint: 'https://pds.example.com',
+            },
+          ],
         }),
       },
     ];
@@ -321,7 +334,10 @@ describe('createRepoProofVerifier (§5.C1)', () => {
       const result = await createRepoProofVerifier({ fetch, resolveDid: c.resolveDid })(req);
       expect({ name: c.name, ok: result.ok }).toEqual({ name: c.name, ok: false });
       if (!result.ok) {
-        expect({ name: c.name, code: result.code }).toEqual({ name: c.name, code: 'did_resolution_failed' });
+        expect({ name: c.name, code: result.code }).toEqual({
+          name: c.name,
+          code: 'did_resolution_failed',
+        });
         expect(result.transient).toBe(true);
       }
     }
@@ -368,7 +384,12 @@ describe('createRepoProofVerifier (§5.C1)', () => {
     });
     const streamed = await createRepoProofVerifier({
       maxCarBytes: 4096,
-      fetch: async () => ({ ok: true, status: 200, body: endless, arrayBuffer: async () => new ArrayBuffer(0) }),
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        body: endless,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      }),
       resolveDid: async () => doc,
     })({ did: REPO_DID, collection: COLLECTION, rkey });
     expect(streamed.ok).toBe(false);
@@ -384,7 +405,12 @@ describe('createRepoProofVerifier (§5.C1)', () => {
       },
     });
     const viaStream = await createRepoProofVerifier({
-      fetch: async () => ({ ok: true, status: 200, body: chunked, arrayBuffer: async () => new ArrayBuffer(0) }),
+      fetch: async () => ({
+        ok: true,
+        status: 200,
+        body: chunked,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      }),
       resolveDid: async () => doc,
     })({ did: REPO_DID, collection: COLLECTION, rkey });
     expect(viaStream.ok).toBe(true);
@@ -429,8 +455,14 @@ describe('selfCheckRepoProofChain (§5.C1 — does the chain run on this host?)'
     const repo = await esmImport<Record<string, unknown>>('@atproto/repo');
     const lying: AtprotoLibs = {
       identity: realLibs.identity,
-      repo: async () => ({ ...repo, verifyCommitSig: async () => false }) as unknown as Awaited<ReturnType<AtprotoLibs['repo']>>,
+      repo: async () =>
+        ({ ...repo, verifyCommitSig: async () => false }) as unknown as Awaited<
+          ReturnType<AtprotoLibs['repo']>
+        >,
     };
-    await expect(selfCheckRepoProofChain(lying)).resolves.toMatchObject({ ok: false, fault: 'signature_invalid' });
+    await expect(selfCheckRepoProofChain(lying)).resolves.toMatchObject({
+      ok: false,
+      fault: 'signature_invalid',
+    });
   });
 });

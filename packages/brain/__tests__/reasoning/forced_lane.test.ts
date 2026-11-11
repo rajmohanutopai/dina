@@ -138,7 +138,9 @@ describe('scopeToolsForLane', () => {
 
 describe('classifyPeerlensResult (P2a: presence is not evidence)', () => {
   it('subject with attestations > 0 → backed', () => {
-    expect(classifyPeerlensResult({ subject: { attestationSummary: { total: 9 } } })).toBe('backed');
+    expect(classifyPeerlensResult({ subject: { attestationSummary: { total: 9 } } })).toBe(
+      'backed',
+    );
   });
   it('search with results → backed', () => {
     expect(classifyPeerlensResult({ search: { results: [{ id: 'a' }] } })).toBe('backed');

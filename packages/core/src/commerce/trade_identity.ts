@@ -37,7 +37,9 @@ export const TAX_REGISTRATION_SCHEMES = ['gstin', 'pan', 'ein', 'sales_tax'] as 
 export type TaxRegistrationScheme = (typeof TAX_REGISTRATION_SCHEMES)[number];
 
 export function isTaxRegistrationScheme(value: unknown): value is TaxRegistrationScheme {
-  return typeof value === 'string' && (TAX_REGISTRATION_SCHEMES as readonly string[]).includes(value);
+  return (
+    typeof value === 'string' && (TAX_REGISTRATION_SCHEMES as readonly string[]).includes(value)
+  );
 }
 
 /** One registration a party holds. `value` is stored in its canonical case. */
@@ -161,7 +163,11 @@ export function validateTaxRegistrations(
     }
     const key = `${entry.scheme}:${entry.value}`;
     if (seen.has(key)) {
-      findings.push({ refusal: 'duplicate_registration', field: at, detail: `this ${entry.scheme} is listed twice` });
+      findings.push({
+        refusal: 'duplicate_registration',
+        field: at,
+        detail: `this ${entry.scheme} is listed twice`,
+      });
       return;
     }
     seen.add(key);
@@ -187,13 +193,24 @@ export function normalisePostalAddress(raw: PostalAddress): PostalAddress {
 }
 
 /** Validate an already-normalised address. */
-export function validatePostalAddress(address: PostalAddress, field: string): TradeIdentityFinding[] {
+export function validatePostalAddress(
+  address: PostalAddress,
+  field: string,
+): TradeIdentityFinding[] {
   const findings: TradeIdentityFinding[] = [];
   if (address.line1 === '') {
-    findings.push({ refusal: 'malformed_address', field: `${field}.line1`, detail: 'a street line is required' });
+    findings.push({
+      refusal: 'malformed_address',
+      field: `${field}.line1`,
+      detail: 'a street line is required',
+    });
   }
   if (address.city === '') {
-    findings.push({ refusal: 'malformed_address', field: `${field}.city`, detail: 'a city is required' });
+    findings.push({
+      refusal: 'malformed_address',
+      field: `${field}.city`,
+      detail: 'a city is required',
+    });
   }
   if (!ISO_COUNTRY.test(address.country)) {
     findings.push({
@@ -207,7 +224,9 @@ export function validatePostalAddress(address: PostalAddress, field: string): Tr
 
 /** Trim and bound a legal name; validation is separate, as everywhere here. */
 export function normaliseLegalName(raw: unknown): string {
-  return typeof raw === 'string' ? raw.trim().replace(/\s+/g, ' ').slice(0, MAX_LEGAL_NAME_CHARS) : '';
+  return typeof raw === 'string'
+    ? raw.trim().replace(/\s+/g, ' ').slice(0, MAX_LEGAL_NAME_CHARS)
+    : '';
 }
 
 /** The registration for a scheme, when the party holds one. */

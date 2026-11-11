@@ -9,6 +9,9 @@
 
 import { mkdirSync, rmSync } from 'node:fs';
 
+import * as Notifications from 'expo-notifications';
+import * as Keychain from 'react-native-keychain';
+
 import {
   createPersona,
   generateMnemonic,
@@ -18,8 +21,6 @@ import {
   listPersonas,
 } from '@dina/core';
 import { createReminder, listByPersona } from '@dina/core/reminders';
-import * as Notifications from 'expo-notifications';
-import * as Keychain from 'react-native-keychain';
 
 import { resetKeychainMock } from '../../__mocks__/react-native-keychain';
 import { peekActiveProvider, saveActiveProvider } from '../../src/ai/active_provider';

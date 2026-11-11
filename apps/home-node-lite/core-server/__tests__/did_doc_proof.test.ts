@@ -54,9 +54,7 @@ describe('selfCertifyDIDDoc + verifyDIDDocProof (task 4.58)', () => {
       });
       expect(proof.type).toBe('Ed25519Signature2020');
       expect(proof.proofPurpose).toBe('assertionMethod');
-      expect(proof.verificationMethod).toBe(
-        'did:plc:homenode-abcd#dina_signing',
-      );
+      expect(proof.verificationMethod).toBe('did:plc:homenode-abcd#dina_signing');
       expect(proof.created).toBe('2026-04-22T12:34:56.000Z');
       expect(proof.signatureHex).toMatch(/^[0-9a-f]{128}$/);
 

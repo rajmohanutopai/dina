@@ -113,11 +113,12 @@ function fakeRelay(behavior: FakeRelayBehavior): {
             nodeSeed,
           );
           if (behavior.breakResponseSignature === true) signed.signature = '00'.repeat(64);
-          const responseCiphertext = behavior.plaintextSuccess === true
-            ? JSON.stringify(signed)
-            : Buffer.from(
-                sealEncrypt(new TextEncoder().encode(JSON.stringify(signed)), devicePub),
-              ).toString('base64');
+          const responseCiphertext =
+            behavior.plaintextSuccess === true
+              ? JSON.stringify(signed)
+              : Buffer.from(
+                  sealEncrypt(new TextEncoder().encode(JSON.stringify(signed)), devicePub),
+                ).toString('base64');
           queueMicrotask(() => {
             ws.onmessage?.({
               data: JSON.stringify({
@@ -181,10 +182,7 @@ describe('the sealed round trip', () => {
           : { status: 401, body: JSON.stringify({ error: 'bad signature' }) };
       },
     });
-    const res = await client(makeWebSocket).request(
-      'GET',
-      '/v1/commerce/trade/inbox?limit=5',
-    );
+    const res = await client(makeWebSocket).request('GET', '/v1/commerce/trade/inbox?limit=5');
     expect(res.status).toBe(200);
     expect(JSON.parse(res.body)).toEqual({ ok: true, echo: '/v1/commerce/trade/inbox?limit=5' });
     expect(seen.envelope).toMatchObject({
@@ -209,7 +207,9 @@ describe('the sealed round trip', () => {
     );
     expect(res.status).toBe(201);
     expect(seen.envelope?.subtype).toBe('pair');
-    expect((seen.inner as { headers: Record<string, string> }).headers['X-Signature']).toBeUndefined();
+    expect(
+      (seen.inner as { headers: Record<string, string> }).headers['X-Signature'],
+    ).toBeUndefined();
   });
 
   it('a plaintext SUCCESS is refused unconditionally — a clerk phone has no dev mode', async () => {

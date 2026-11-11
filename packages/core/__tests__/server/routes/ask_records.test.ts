@@ -45,7 +45,12 @@ describe('/v1/ask-records', () => {
   let router: CoreRouter;
 
   const open = (): void => {
-    db = new NodeSQLiteAdapter({ path: dbPath, passphraseHex, journalMode: 'WAL', synchronous: 'NORMAL' });
+    db = new NodeSQLiteAdapter({
+      path: dbPath,
+      passphraseHex,
+      journalMode: 'WAL',
+      synchronous: 'NORMAL',
+    });
     applyMigrations(db, IDENTITY_MIGRATIONS);
     setAskRecordRepository(new SQLiteAskRecordRepository(db));
   };
@@ -99,7 +104,9 @@ describe('/v1/ask-records', () => {
   });
 
   it('refuses a record that has ended, and deletes on request', async () => {
-    await expect(core.askRecordPut({ ...RECORD, status: 'complete' as never })).rejects.toThrow('400');
+    await expect(core.askRecordPut({ ...RECORD, status: 'complete' as never })).rejects.toThrow(
+      '400',
+    );
     await core.askRecordPut(RECORD);
     expect(await core.askRecordDelete('ask-1')).toBe(true);
     expect(await core.askRecordDelete('ask-1')).toBe(false);

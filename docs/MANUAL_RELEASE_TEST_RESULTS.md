@@ -2484,7 +2484,7 @@ uses that account's PDS for public PeerLens + services records.
 **Test account configured (real Bluesky account):**
 - Handle: **@rspam.bsky.social**
 - Credential: a Bluesky **App Password** (scoped + revocable — NOT the main
-  account password), stored in the gitignored `tests/sanity/.env.sanity` as
+  account password), then stored in the gitignored `tests/sanity/.env.sanity` as
   `SANITY_BSKY_IDENTIFIER` / `SANITY_BSKY_APP_PASSWORD`. (The value is NOT in
   this doc or any tracked file.)
 

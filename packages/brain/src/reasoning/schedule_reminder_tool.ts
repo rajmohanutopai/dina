@@ -215,7 +215,14 @@ function zoneOffsetMs(utcMs: number, timeZone: string): number {
       second: '2-digit',
     }).formatToParts(new Date(utcMs));
     const get = (t: string): number => Number(parts.find((x) => x.type === t)?.value ?? '0');
-    const asUtc = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'), get('second'));
+    const asUtc = Date.UTC(
+      get('year'),
+      get('month') - 1,
+      get('day'),
+      get('hour'),
+      get('minute'),
+      get('second'),
+    );
     return asUtc - Math.floor(utcMs / 1000) * 1000;
   } catch {
     return 0;
@@ -266,7 +273,14 @@ export function deriveEventReminders(
   timeZone: string,
 ): { ok: true; reminders: DerivedReminder[] } | { ok: false; error: string } {
   const { month, day } = ev;
-  if (!Number.isInteger(month) || month < 1 || month > 12 || !Number.isInteger(day) || day < 1 || day > 31) {
+  if (
+    !Number.isInteger(month) ||
+    month < 1 ||
+    month > 12 ||
+    !Number.isInteger(day) ||
+    day < 1 ||
+    day > 31
+  ) {
     return { ok: false, error: 'event month/day are not a calendar date' };
   }
   const title = (ev.title ?? '').trim();
@@ -295,7 +309,10 @@ export function deriveEventReminders(
     target = dateIn(typeof ev.year === 'number' ? ev.year : today.y);
     const dayOf = wallClockToEpoch(target.y, target.m, target.d, dayOfHour, dayOfMinute, timeZone);
     if (dayOf < nowMs - 60_000) {
-      return { ok: false, error: 'that date has already passed; ask the user which date they mean' };
+      return {
+        ok: false,
+        error: 'that date has already passed; ask the user which date they mean',
+      };
     }
   }
 
@@ -313,7 +330,10 @@ export function deriveEventReminders(
   const note = (ev.prep_note ?? '').trim();
   const reminders: DerivedReminder[] = [];
   if (prepMs >= nowMs) {
-    reminders.push({ message: `${title} is tomorrow${note !== '' ? ` — ${note}` : ''}`, dueAtMs: prepMs });
+    reminders.push({
+      message: `${title} is tomorrow${note !== '' ? ` — ${note}` : ''}`,
+      dueAtMs: prepMs,
+    });
   }
   if (dayOfMs >= nowMs - 60_000) reminders.push({ message: `${title} is today`, dueAtMs: dayOfMs });
   return { ok: true, reminders };
@@ -358,18 +378,22 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
         event: {
           type: 'object',
           description:
-            "A dated event (use instead of message/due_at for birthdays, anniversaries and dated occasions). Dina derives a reminder the day before (with prep_note) and one on the day.",
+            'A dated event (use instead of message/due_at for birthdays, anniversaries and dated occasions). Dina derives a reminder the day before (with prep_note) and one on the day.',
           properties: {
             kind: { type: 'string', enum: ['birthday', 'anniversary', 'one_time'] },
             month: { type: 'number', description: '1-12' },
             day: { type: 'number', description: '1-31' },
             year: { type: 'number', description: 'OPTIONAL. Only when the user stated it.' },
-            title: { type: 'string', description: "How to name it, e.g. \"Emma's birthday\"." },
+            title: { type: 'string', description: 'How to name it, e.g. "Emma\'s birthday".' },
             prep_note: {
               type: 'string',
-              description: 'OPTIONAL. What helps the user prepare, from what Dina knows (e.g. "she loves dinosaurs").',
+              description:
+                'OPTIONAL. What helps the user prepare, from what Dina knows (e.g. "she loves dinosaurs").',
             },
-            time: { type: 'string', description: 'OPTIONAL "HH:MM", one_time only, when the user gave a time.' },
+            time: {
+              type: 'string',
+              description: 'OPTIONAL "HH:MM", one_time only, when the user gave a time.',
+            },
           },
           required: ['kind', 'month', 'day', 'title'],
         },
@@ -397,7 +421,11 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
       if (ev !== null) {
         if (sourceText !== undefined) {
           const excerpt = normalizeSourceText(String(args.source_excerpt ?? '').trim());
-          if (excerpt === '' || !normalizeSourceText(sourceText).includes(excerpt) || !hasTemporalSourceBasis(String(args.source_excerpt ?? ''))) {
+          if (
+            excerpt === '' ||
+            !normalizeSourceText(sourceText).includes(excerpt) ||
+            !hasTemporalSourceBasis(String(args.source_excerpt ?? ''))
+          ) {
             return {
               status: 'rejected',
               error:
@@ -411,7 +439,8 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
           return { status: 'rejected', error: 'both reminder times have passed' };
         }
         const outs: ScheduleReminderOutcome[] = [];
-        for (const r of derived.reminders) outs.push(await scheduleOne(r.message, r.dueAtMs, args.persona));
+        for (const r of derived.reminders)
+          outs.push(await scheduleOne(r.message, r.dueAtMs, args.persona));
         const ok = outs.filter((o) => o.status !== 'rejected');
         return ok.length === 0
           ? { status: 'rejected', error: outs[0]?.error ?? 'could not schedule', reminders: outs }
@@ -468,67 +497,25 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
     dueAtMs: number,
     personaArg: unknown,
   ): Promise<ScheduleReminderOutcome> {
-      // Persona precedence: the LLM's explicit arg wins; otherwise fall
-      // back to the persona the item was just routed to (remember loop),
-      // and only then to the static default. This keeps the reminder in
-      // the same vault as the item so the chat-card lookup finds it.
-      const explicitPersona =
-        typeof personaArg === 'string' && personaArg !== '' ? personaArg : '';
-      const fallbackPersona = (resolvePersona?.() ?? '').trim();
-      const persona =
-        explicitPersona !== ''
-          ? explicitPersona
-          : fallbackPersona !== ''
-            ? fallbackPersona
-            : defaultPersona;
+    // Persona precedence: the LLM's explicit arg wins; otherwise fall
+    // back to the persona the item was just routed to (remember loop),
+    // and only then to the static default. This keeps the reminder in
+    // the same vault as the item so the chat-card lookup finds it.
+    const explicitPersona = typeof personaArg === 'string' && personaArg !== '' ? personaArg : '';
+    const fallbackPersona = (resolvePersona?.() ?? '').trim();
+    const persona =
+      explicitPersona !== ''
+        ? explicitPersona
+        : fallbackPersona !== ''
+          ? fallbackPersona
+          : defaultPersona;
 
-      if (opts.deferCreate !== undefined) {
-        try {
-          await opts.deferCreate({
-            message,
-            dueAtMs,
-            persona,
-            timezone: defaultTimezone,
-          });
-        } catch (err) {
-          return {
-            status: 'rejected',
-            error: err instanceof Error ? err.message : String(err),
-          };
-        }
-        return {
-          status: 'scheduled',
-          due_at_ms: dueAtMs,
-          message,
-          persona,
-        };
-      }
-
-      // Detect a true duplicate reliably + deterministically: check whether
-      // an identical manual reminder already exists BEFORE creating. The
-      // service dedupes on (source_item_id, kind, due_at, persona, message),
-      // and agentic-ask always uses source_item_id='' + kind='manual', so a
-      // match on (manual, due_at, message) in this persona is exactly the
-      // row the create would dedup onto. (The old `source`-based heuristic
-      // broke once `message` joined the dedup key — a dup returns a
-      // same-source row, so it never tripped.)
-      const alreadyExists = (await listRemindersByPersonaRouted(persona)).some(
-        (r) =>
-          r.kind === 'manual' &&
-          r.due_at === dueAtMs &&
-          r.message === message &&
-          r.source_item_id === sourceItemId,
-      );
-
-      let reminder: Reminder;
+    if (opts.deferCreate !== undefined) {
       try {
-        reminder = await createReminderRouted({
+        await opts.deferCreate({
           message,
-          due_at: dueAtMs,
+          dueAtMs,
           persona,
-          kind: 'manual',
-          source_item_id: sourceItemId,
-          source: 'agentic_ask',
           timezone: defaultTimezone,
         });
       } catch (err) {
@@ -537,14 +524,55 @@ export function createScheduleReminderTool(opts: ScheduleReminderToolOptions = {
           error: err instanceof Error ? err.message : String(err),
         };
       }
-
       return {
-        status: alreadyExists ? 'duplicate' : 'scheduled',
-        reminder_id: reminder.id,
-        short_id: reminder.short_id,
-        due_at_ms: reminder.due_at,
-        message: reminder.message,
-        persona: reminder.persona,
+        status: 'scheduled',
+        due_at_ms: dueAtMs,
+        message,
+        persona,
       };
+    }
+
+    // Detect a true duplicate reliably + deterministically: check whether
+    // an identical manual reminder already exists BEFORE creating. The
+    // service dedupes on (source_item_id, kind, due_at, persona, message),
+    // and agentic-ask always uses source_item_id='' + kind='manual', so a
+    // match on (manual, due_at, message) in this persona is exactly the
+    // row the create would dedup onto. (The old `source`-based heuristic
+    // broke once `message` joined the dedup key — a dup returns a
+    // same-source row, so it never tripped.)
+    const alreadyExists = (await listRemindersByPersonaRouted(persona)).some(
+      (r) =>
+        r.kind === 'manual' &&
+        r.due_at === dueAtMs &&
+        r.message === message &&
+        r.source_item_id === sourceItemId,
+    );
+
+    let reminder: Reminder;
+    try {
+      reminder = await createReminderRouted({
+        message,
+        due_at: dueAtMs,
+        persona,
+        kind: 'manual',
+        source_item_id: sourceItemId,
+        source: 'agentic_ask',
+        timezone: defaultTimezone,
+      });
+    } catch (err) {
+      return {
+        status: 'rejected',
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+
+    return {
+      status: alreadyExists ? 'duplicate' : 'scheduled',
+      reminder_id: reminder.id,
+      short_id: reminder.short_id,
+      due_at_ms: reminder.due_at,
+      message: reminder.message,
+      persona: reminder.persona,
+    };
   }
 }

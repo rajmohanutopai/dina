@@ -260,8 +260,10 @@ describe('lowestSupportedOpenAIEffort — model-id-aware reasoning floor', () =>
   // Probed live against /v1/responses on 2026-05-22; if a future
   // model loosens its floor, the worst outcome is a slightly
   // higher-than-needed effort gets requested.
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
-  const { lowestSupportedOpenAIEffort } = require('../../../../packages/brain/src/llm/adapters/aisdk');
+
+  const {
+    lowestSupportedOpenAIEffort,
+  } = require('../../../../packages/brain/src/llm/adapters/aisdk');
 
   it('returns "none" for gpt-5.5 base — the cheapest tier (no reasoning tokens billed)', () => {
     expect(lowestSupportedOpenAIEffort('gpt-5.5')).toBe('none');
@@ -322,7 +324,6 @@ describe('lowestSupportedOpenAIEffort — model-id-aware reasoning floor', () =>
 });
 
 describe('parseOpenAIModelId — pseudo-id unpacker', () => {
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { parseOpenAIModelId } = require('../../src/ai/provider');
 
   it('passes plain model ids through with no effort override', () => {

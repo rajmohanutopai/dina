@@ -108,10 +108,7 @@ describe('createServiceQueryPreflight (task 6.24)', () => {
 
     it('minAction=proceed filters out cautions', async () => {
       const preflight = createServiceQueryPreflight({
-        searchFn: okSearch([
-          candidate({ operatorDid: DID_A }),
-          candidate({ operatorDid: DID_B }),
-        ]),
+        searchFn: okSearch([candidate({ operatorDid: DID_A }), candidate({ operatorDid: DID_B })]),
         trustFn: okTrust({
           [DID_A]: { score: 0.9, confidence: 0.8, ring: 1, flagCount: 0 }, // proceed
           [DID_B]: { score: 0.5, confidence: 0.5, ring: 2, flagCount: 0 }, // caution
@@ -243,18 +240,24 @@ describe('createServiceQueryPreflight (task 6.24)', () => {
     it.each([
       ['invalid capability', { capability: 'BAD-CAP', context: 'read' }],
       ['uppercase capability', { capability: 'ETA', context: 'read' }],
-      ['invalid context', {
-        capability: 'eta_query',
-        context: 'nonsense' as unknown as 'read',
-      }],
+      [
+        'invalid context',
+        {
+          capability: 'eta_query',
+          context: 'nonsense' as unknown as 'read',
+        },
+      ],
       ['limit too big', { capability: 'eta_query', context: 'read', limit: 100 }],
       ['limit < 1', { capability: 'eta_query', context: 'read', limit: 0 }],
       ['non-integer limit', { capability: 'eta_query', context: 'read', limit: 1.5 }],
-      ['bad minAction', {
-        capability: 'eta_query',
-        context: 'read',
-        minAction: 'bogus' as unknown as 'proceed',
-      }],
+      [
+        'bad minAction',
+        {
+          capability: 'eta_query',
+          context: 'read',
+          minAction: 'bogus' as unknown as 'proceed',
+        },
+      ],
     ])('rejects %s', async (_label, input) => {
       const preflight = createServiceQueryPreflight({
         searchFn: okSearch([]),
@@ -410,10 +413,7 @@ describe('createServiceQueryPreflight (task 6.24)', () => {
       // under-report when the trust resolver itself is flapping).
       const events: PreflightEvent[] = [];
       const preflight = createServiceQueryPreflight({
-        searchFn: okSearch([
-          candidate({ operatorDid: DID_A }),
-          candidate({ operatorDid: DID_B }),
-        ]),
+        searchFn: okSearch([candidate({ operatorDid: DID_A }), candidate({ operatorDid: DID_B })]),
         trustFn: okTrust({
           [DID_A]: { score: 0.95, confidence: 0.9, flagCount: 0 },
           // DID_B not in map → trust_failed

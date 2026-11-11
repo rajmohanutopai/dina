@@ -358,9 +358,7 @@ describe('deriveSubjectCard — host chip (TN-V2-P1-001)', () => {
     // Defensive: a future caller threading host from a non-enricher
     // source might surface uppercase or whitespace-padded values.
     // The data layer normalises so the view stays a pure renderer.
-    expect(deriveSubjectCard(input({ host: '  AMAZON.CO.UK  ' })).host).toBe(
-      'amazon.co.uk',
-    );
+    expect(deriveSubjectCard(input({ host: '  AMAZON.CO.UK  ' })).host).toBe('amazon.co.uk');
   });
 
   it('omitted / null / empty / whitespace-only host → null (not "")', () => {
@@ -390,9 +388,7 @@ describe('deriveSubjectCard — language chip (TN-V2-P1-002)', () => {
     expect(deriveSubjectCard(input({ language: 'en' })).language).toBe('EN');
     expect(deriveSubjectCard(input({ language: 'pt-br' })).language).toBe('PT-BR');
     // Trim defends against a wire-format quirk inserting whitespace.
-    expect(deriveSubjectCard(input({ language: '  zh-Hans  ' })).language).toBe(
-      'ZH-HANS',
-    );
+    expect(deriveSubjectCard(input({ language: '  zh-Hans  ' })).language).toBe('ZH-HANS');
   });
 
   it('omitted / null / empty / whitespace-only language → null', () => {
@@ -460,9 +456,7 @@ describe('deriveSubjectCard — location chip (TN-V2-P1-003)', () => {
     // Defensive: `(-0).toFixed(2)` returns "-0.00" which would render
     // as "-0.00°N" (semantically nonsense). The formatter wraps in
     // Math.abs so the cardinal letter carries the sign cleanly.
-    const r = deriveSubjectCard(
-      input({ subjectKind: 'place', coordinates: { lat: -0, lng: -0 } }),
-    );
+    const r = deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: -0, lng: -0 } }));
     expect(r.location).toBe('0.00°N, 0.00°E');
   });
 
@@ -495,46 +489,38 @@ describe('deriveSubjectCard — location chip (TN-V2-P1-003)', () => {
     // Lat in [-90, 90], lng in [-180, 180]. Anything else is malformed
     // wire data and shouldn't render.
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: 91, lng: 0 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: 91, lng: 0 } })).location,
     ).toBeNull();
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: -91, lng: 0 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: -91, lng: 0 } }))
+        .location,
     ).toBeNull();
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: 0, lng: 181 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: 0, lng: 181 } }))
+        .location,
     ).toBeNull();
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: 0, lng: -181 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: 0, lng: -181 } }))
+        .location,
     ).toBeNull();
   });
 
   it('accepts the boundaries (±90 lat, ±180 lng)', () => {
     // ±90 / ±180 are valid points on the globe (poles + dateline).
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: 90, lng: 180 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: 90, lng: 180 } }))
+        .location,
     ).toBe('90.00°N, 180.00°E');
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: -90, lng: -180 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: -90, lng: -180 } }))
+        .location,
     ).toBe('90.00°S, 180.00°W');
   });
 
   it('returns null for NaN / Infinity coords', () => {
     expect(
-      deriveSubjectCard(
-        input({ subjectKind: 'place', coordinates: { lat: Number.NaN, lng: 0 } }),
-      ).location,
+      deriveSubjectCard(input({ subjectKind: 'place', coordinates: { lat: Number.NaN, lng: 0 } }))
+        .location,
     ).toBeNull();
     expect(
       deriveSubjectCard(
@@ -595,9 +581,7 @@ describe('deriveSubjectCard — price tier chip (TN-V2-RANK-013)', () => {
     // type-narrow on input since we're testing what the runtime
     // guard does with bad values that violate the static contract.
     type Tier = SubjectCardInput['priceTier'];
-    expect(
-      deriveSubjectCard(input({ priceTier: '$$$$' as unknown as Tier })).priceTier,
-    ).toBeNull();
+    expect(deriveSubjectCard(input({ priceTier: '$$$$' as unknown as Tier })).priceTier).toBeNull();
     expect(deriveSubjectCard(input({ priceTier: '' as unknown as Tier })).priceTier).toBeNull();
     expect(
       deriveSubjectCard(input({ priceTier: 'cheap' as unknown as Tier })).priceTier,
@@ -655,15 +639,11 @@ describe('deriveRecencyBadge — null/missing inputs', () => {
 
   it('returns null for non-finite lastActiveMs (NaN, Infinity)', () => {
     expect(deriveRecencyBadge('tech/laptop', Number.NaN, NOW_MS)).toBeNull();
-    expect(
-      deriveRecencyBadge('tech/laptop', Number.POSITIVE_INFINITY, NOW_MS),
-    ).toBeNull();
+    expect(deriveRecencyBadge('tech/laptop', Number.POSITIVE_INFINITY, NOW_MS)).toBeNull();
   });
 
   it('returns null for non-finite nowMs (defensive)', () => {
-    expect(
-      deriveRecencyBadge('tech/laptop', NOW_MS - MS_PER_YEAR, Number.NaN),
-    ).toBeNull();
+    expect(deriveRecencyBadge('tech/laptop', NOW_MS - MS_PER_YEAR, Number.NaN)).toBeNull();
   });
 
   it('returns null when lastActiveMs is in the future (clock-skew defence)', () => {
@@ -678,70 +658,58 @@ describe('deriveRecencyBadge — null/missing inputs', () => {
 describe('deriveRecencyBadge — per-category thresholds', () => {
   it('tech: 1-year threshold — fresh below, stale above', () => {
     // Fresh: 11 months — under the 1-year threshold.
-    expect(
-      deriveRecencyBadge('tech/laptop', NOW_MS - 11 * MS_PER_MONTH, NOW_MS),
-    ).toBeNull();
+    expect(deriveRecencyBadge('tech/laptop', NOW_MS - 11 * MS_PER_MONTH, NOW_MS)).toBeNull();
     // Stale: 18 months — above. "1 year old" (floored).
-    expect(
-      deriveRecencyBadge('tech/laptop', NOW_MS - 18 * MS_PER_MONTH, NOW_MS),
-    ).toBe('1 year old');
+    expect(deriveRecencyBadge('tech/laptop', NOW_MS - 18 * MS_PER_MONTH, NOW_MS)).toBe(
+      '1 year old',
+    );
   });
 
-  it('books: 5-year threshold — book reviews don\'t go stale fast', () => {
+  it("books: 5-year threshold — book reviews don't go stale fast", () => {
     // 4-year-old book review — still fresh.
-    expect(
-      deriveRecencyBadge('books/fiction', NOW_MS - 4 * MS_PER_YEAR, NOW_MS),
-    ).toBeNull();
+    expect(deriveRecencyBadge('books/fiction', NOW_MS - 4 * MS_PER_YEAR, NOW_MS)).toBeNull();
     // 7-year-old — stale.
-    expect(
-      deriveRecencyBadge('books/fiction', NOW_MS - 7 * MS_PER_YEAR, NOW_MS),
-    ).toBe('7 years old');
+    expect(deriveRecencyBadge('books/fiction', NOW_MS - 7 * MS_PER_YEAR, NOW_MS)).toBe(
+      '7 years old',
+    );
   });
 
   it('restaurant: 1-year threshold — menus and ownership change', () => {
-    expect(
-      deriveRecencyBadge('restaurant/bistro', NOW_MS - 6 * MS_PER_MONTH, NOW_MS),
-    ).toBeNull();
-    expect(
-      deriveRecencyBadge('restaurant/bistro', NOW_MS - 25 * MS_PER_MONTH, NOW_MS),
-    ).toBe('2 years old');
+    expect(deriveRecencyBadge('restaurant/bistro', NOW_MS - 6 * MS_PER_MONTH, NOW_MS)).toBeNull();
+    expect(deriveRecencyBadge('restaurant/bistro', NOW_MS - 25 * MS_PER_MONTH, NOW_MS)).toBe(
+      '2 years old',
+    );
   });
 
   it('office_furniture: 3-year threshold — long-lived, low signal-to-noise before then', () => {
     expect(
       deriveRecencyBadge('office_furniture/chair', NOW_MS - 2 * MS_PER_YEAR, NOW_MS),
     ).toBeNull();
-    expect(
-      deriveRecencyBadge('office_furniture/chair', NOW_MS - 4 * MS_PER_YEAR, NOW_MS),
-    ).toBe('4 years old');
+    expect(deriveRecencyBadge('office_furniture/chair', NOW_MS - 4 * MS_PER_YEAR, NOW_MS)).toBe(
+      '4 years old',
+    );
   });
 
   it('unknown category falls back to default 2-year threshold', () => {
     expect(
       deriveRecencyBadge('made_up_category/sub', NOW_MS - 18 * MS_PER_MONTH, NOW_MS),
     ).toBeNull();
-    expect(
-      deriveRecencyBadge('made_up_category/sub', NOW_MS - 30 * MS_PER_MONTH, NOW_MS),
-    ).toBe('2 years old');
+    expect(deriveRecencyBadge('made_up_category/sub', NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe(
+      '2 years old',
+    );
   });
 
   it('null/empty category also falls back to default', () => {
-    expect(deriveRecencyBadge(null, NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe(
-      '2 years old',
-    );
-    expect(deriveRecencyBadge('', NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe(
-      '2 years old',
-    );
-    expect(deriveRecencyBadge('   ', NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe(
-      '2 years old',
-    );
+    expect(deriveRecencyBadge(null, NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe('2 years old');
+    expect(deriveRecencyBadge('', NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe('2 years old');
+    expect(deriveRecencyBadge('   ', NOW_MS - 30 * MS_PER_MONTH, NOW_MS)).toBe('2 years old');
   });
 
   it('uses only the FIRST path segment for category lookup', () => {
     // 'TECH/anything' lowercases to 'tech', resolves to 1y threshold.
-    expect(
-      deriveRecencyBadge('TECH/something_specific', NOW_MS - 18 * MS_PER_MONTH, NOW_MS),
-    ).toBe('1 year old');
+    expect(deriveRecencyBadge('TECH/something_specific', NOW_MS - 18 * MS_PER_MONTH, NOW_MS)).toBe(
+      '1 year old',
+    );
   });
 
   it('the threshold table itself is well-formed (sanity check)', () => {
@@ -761,15 +729,13 @@ describe('deriveRecencyBadge — formatting', () => {
   it('singular "1 year old" for exactly 1 year past threshold', () => {
     // 'tech' threshold is 1y; need an age >=1y AND >threshold.
     // 13 months floors to 1 year.
-    expect(
-      deriveRecencyBadge('tech/laptop', NOW_MS - 13 * MS_PER_MONTH, NOW_MS),
-    ).toBe('1 year old');
+    expect(deriveRecencyBadge('tech/laptop', NOW_MS - 13 * MS_PER_MONTH, NOW_MS)).toBe(
+      '1 year old',
+    );
   });
 
   it('plural "N years old" for N >= 2', () => {
-    expect(
-      deriveRecencyBadge('tech/laptop', NOW_MS - 3 * MS_PER_YEAR, NOW_MS),
-    ).toBe('3 years old');
+    expect(deriveRecencyBadge('tech/laptop', NOW_MS - 3 * MS_PER_YEAR, NOW_MS)).toBe('3 years old');
   });
 
   it('months when below 1 year (post-threshold edge case)', () => {
@@ -785,9 +751,7 @@ describe('deriveRecencyBadge — formatting', () => {
     // the year-vs-month boundary contract.
     //
     // 11 months on a 1y-threshold category → no badge (still fresh).
-    expect(
-      deriveRecencyBadge('tech/laptop', NOW_MS - 11 * MS_PER_MONTH, NOW_MS),
-    ).toBeNull();
+    expect(deriveRecencyBadge('tech/laptop', NOW_MS - 11 * MS_PER_MONTH, NOW_MS)).toBeNull();
   });
 
   it('"recent" fallback for sub-month ages (only reachable if a future threshold drops below 30d)', () => {
@@ -906,20 +870,15 @@ describe('deriveRegionPill — inclusion logic', () => {
     // shouldn't crash the chip — drop the bad entries, render the
     // valid one. Pinning the runtime guard.
     type Regions = readonly string[];
-    expect(
-      deriveRegionPill(
-        [123, null, 'GB', undefined, {}] as unknown as Regions,
-        'US',
-      ),
-    ).toBe('📍 GB only');
+    expect(deriveRegionPill([123, null, 'GB', undefined, {}] as unknown as Regions, 'US')).toBe(
+      '📍 GB only',
+    );
   });
 
   it('returns null when ALL entries are non-string (wire-format violation guard)', () => {
     // Same as above but no valid string survives — no pill.
     type Regions = readonly string[];
-    expect(
-      deriveRegionPill([123, null, undefined] as unknown as Regions, 'US'),
-    ).toBeNull();
+    expect(deriveRegionPill([123, null, undefined] as unknown as Regions, 'US')).toBeNull();
   });
 });
 
@@ -934,9 +893,9 @@ describe('deriveRegionPill — multi-region formatting', () => {
 
   it('compresses 4+ regions with a "+N" suffix', () => {
     expect(deriveRegionPill(['US', 'CA', 'GB', 'AU'], 'JP')).toBe('📍 US, CA, GB +1 only');
-    expect(
-      deriveRegionPill(['US', 'CA', 'GB', 'AU', 'NZ', 'IE'], 'JP'),
-    ).toBe('📍 US, CA, GB +3 only');
+    expect(deriveRegionPill(['US', 'CA', 'GB', 'AU', 'NZ', 'IE'], 'JP')).toBe(
+      '📍 US, CA, GB +3 only',
+    );
   });
 
   it('preserves the input order — wire is responsible for canonicalisation', () => {
@@ -949,18 +908,16 @@ describe('deriveRegionPill — multi-region formatting', () => {
 
 describe('deriveSubjectCard — region pill wired through (TN-V2-RANK-012)', () => {
   it('passes the pill onto the display when viewer NOT in availability', () => {
-    const display = deriveSubjectCard(
-      input({ availabilityRegions: ['UK'] }),
-      { viewerRegion: 'US' },
-    );
+    const display = deriveSubjectCard(input({ availabilityRegions: ['UK'] }), {
+      viewerRegion: 'US',
+    });
     expect(display.regionPill).toBe('📍 UK only');
   });
 
   it('display.regionPill is null when viewer IS in availability', () => {
-    const display = deriveSubjectCard(
-      input({ availabilityRegions: ['UK', 'US'] }),
-      { viewerRegion: 'US' },
-    );
+    const display = deriveSubjectCard(input({ availabilityRegions: ['UK', 'US'] }), {
+      viewerRegion: 'US',
+    });
     expect(display.regionPill).toBeNull();
   });
 

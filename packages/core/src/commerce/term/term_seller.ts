@@ -452,7 +452,11 @@ function issueFirstOffer(
   // §15 step 11: with Brain chosen for shelf deals, the opening offer is
   // Brain's. The offer waits for its turn; the fixed style plays it if Brain
   // does not answer in time (`fallBackStaleSellerTurns`).
-  if (args.proposed === undefined && args.fixedStyle !== true && handFirstOfferTurn(ctx, request, general))
+  if (
+    args.proposed === undefined &&
+    args.fixedStyle !== true &&
+    handFirstOfferTurn(ctx, request, general)
+  )
     return null;
   const asking = {} as Record<TermName, bigint>;
   for (const name of TERM_NAMES) asking[name] = BigInt(resource.asking[name]);
@@ -742,7 +746,13 @@ function alternativesForHead(
   const policy = currentTermPolicy(ctx);
   const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
   if (resource === undefined) return [];
-  return alternativesFor(ctx, resource, boundsFor(ctx, policy, resource, head.general), head.general, base);
+  return alternativesFor(
+    ctx,
+    resource,
+    boundsFor(ctx, policy, resource, head.general),
+    head.general,
+    base,
+  );
 }
 
 function signRevision(
@@ -771,7 +781,8 @@ function signRevision(
     revision: head.revision + 1,
     previous_offer_digest: head.offer_digest,
   };
-  if (message !== undefined && partsOnOffer(draft).includes(message.part)) Object.assign(draft, { message });
+  if (message !== undefined && partsOnOffer(draft).includes(message.part))
+    Object.assign(draft, { message });
   const next = sealTermRecord('term_offer', draft, hash) as unknown as TermOffer;
   if (validateTermOffer(next, hash) !== null || verifyTermOfferRevision(head, next) !== null) {
     ctx.log('term.revision_unbuildable', { request: head.request_id });
@@ -1170,7 +1181,13 @@ function raiseDecisionCard(
         ? shelfWorth(ctx, {
             kind: SHELF_HOST_KIND,
             holder: 'seller',
-            limits: boundsFor(ctx, policy, resourceFor, proposal.general, proposal.replaces_proposal_digest),
+            limits: boundsFor(
+              ctx,
+              policy,
+              resourceFor,
+              proposal.general,
+              proposal.replaces_proposal_digest,
+            ),
             terms: proposal.terms,
             promises: proposal.promises ?? [],
             general: proposal.general,
@@ -1340,7 +1357,8 @@ function acceptanceFailure(
     general: proposal.general,
     approvedInPerson: true,
   });
-  if (verdict.outcome === 'refused') return verdict.reason === 'past_hard_limit' ? 'below the floor in force' : verdict.reason;
+  if (verdict.outcome === 'refused')
+    return verdict.reason === 'past_hard_limit' ? 'below the floor in force' : verdict.reason;
   const rule = holdingRuleFor(policy, proposal.general.tag);
   const held = heldCountFor(ctx, policy, {
     tag: proposal.general.tag,
@@ -1406,7 +1424,8 @@ export function resumeFirstOffer(
  */
 export function resumeDecision(ctx: TermContext, proposalDigest: string): void {
   const proposal = readTermProposalRow(ctx.store.getDocument(proposalDigest));
-  if (proposal === null || termAgreementStatus(ctx.store, proposalDigest).state !== 'proposed') return;
+  if (proposal === null || termAgreementStatus(ctx.store, proposalDigest).state !== 'proposed')
+    return;
   const requestId = ctx.store.requestOf(proposalDigest) ?? '';
   const base = `term-decision-${proposalDigest.slice(0, 32)}`;
   const cards = ctx.store
@@ -1433,7 +1452,8 @@ export function resumeCounter(ctx: TermContext, counterDigest: string): void {
   if (Date.parse(head.valid_until) <= ctx.now()) return;
   const policy = currentTermPolicy(ctx);
   const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
-  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null) return;
+  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null)
+    return;
   answerCounter(ctx, { counter, head, policy, resource });
 }
 
@@ -1445,7 +1465,8 @@ export function resumeConcession(ctx: TermContext, requestId: string): void {
 /** The wait for a persona ended unopened: the brand gets the uniform rejection. */
 export function endDecisionWait(ctx: TermContext, proposalDigest: string): void {
   const proposal = readTermProposalRow(ctx.store.getDocument(proposalDigest));
-  if (proposal === null || termAgreementStatus(ctx.store, proposalDigest).state !== 'proposed') return;
+  if (proposal === null || termAgreementStatus(ctx.store, proposalDigest).state !== 'proposed')
+    return;
   const requestId = ctx.store.requestOf(proposalDigest) ?? '';
   for (const card of ctx.store.cardsForRequest(requestId, TERM_DECISION_CARD)) {
     if (card.refDigest === proposalDigest && card.state === 'pending')
@@ -1484,7 +1505,12 @@ function handFirstOfferTurn(ctx: TermContext, request: TermRequest, general: Ter
   if (!strategyBudgetLeft(ctx, SHELF_HOST_KIND, requestId)) return false;
   const submitted = strategy.submit(firstOfferBrief(ctx, request, general, settings.valuesOn));
   if (submitted === null) return false;
-  ctx.store.putTurn({ requestId, turn: FIRST_OFFER_TURN, taskId: submitted.taskId, createdAt: ctx.now() });
+  ctx.store.putTurn({
+    requestId,
+    turn: FIRST_OFFER_TURN,
+    taskId: submitted.taskId,
+    createdAt: ctx.now(),
+  });
   return true;
 }
 
@@ -1505,7 +1531,12 @@ function handSellerTurn(ctx: TermContext, counter: TermCounter, head: TermOffer)
   if (!strategyBudgetLeft(ctx, SHELF_HOST_KIND, requestId)) return false;
   const submitted = strategy.submit(sellerCounterBrief(ctx, counter, head, settings.valuesOn));
   if (submitted === null) return false;
-  ctx.store.putTurn({ requestId, turn: counter.round, taskId: submitted.taskId, createdAt: ctx.now() });
+  ctx.store.putTurn({
+    requestId,
+    turn: counter.round,
+    taskId: submitted.taskId,
+    createdAt: ctx.now(),
+  });
   return true;
 }
 
@@ -1553,17 +1584,27 @@ function firstOfferBrief(
  * deal stands (after the owner answered Brain's question). Null when the
  * turn no longer stands: an offer went out, the counter was overtaken.
  */
-export function sellerTurnBrief(ctx: TermContext, requestId: string, turn: number): NegotiationBrief | null {
+export function sellerTurnBrief(
+  ctx: TermContext,
+  requestId: string,
+  turn: number,
+): NegotiationBrief | null {
   const settings = ctx.deps.strategy?.settings(SHELF_HOST_KIND);
   if (settings === undefined) return null;
   if (turn !== FIRST_OFFER_TURN) {
     const target = sellerTurnTarget(ctx, requestId, turn);
-    return target === null ? null : sellerCounterBrief(ctx, target.counter, target.head, settings.valuesOn);
+    return target === null
+      ? null
+      : sellerCounterBrief(ctx, target.counter, target.head, settings.valuesOn);
   }
-  const row = ctx.store.listByRequest(requestId, 'term_request').find((r) => r.direction === 'inbound');
+  const row = ctx.store
+    .listByRequest(requestId, 'term_request')
+    .find((r) => r.direction === 'inbound');
   const request = row === undefined ? null : readTermRequestRow(row);
   if (request === null || ctx.store.listByRequest(requestId, 'term_offer').length > 0) return null;
-  const resource = currentTermPolicy(ctx).resources.find((r) => r.resource_ref === request.resource_ref);
+  const resource = currentTermPolicy(ctx).resources.find(
+    (r) => r.resource_ref === request.resource_ref,
+  );
   if (resource === undefined) return null;
   return firstOfferBrief(ctx, request, generalFor(request, resource), settings.valuesOn);
 }
@@ -1581,22 +1622,20 @@ function sellerCounterBrief(
     revision: offer.revision,
     terms: offer.terms,
   }));
-  const counters = ctx.store
-    .listByRequest(requestId, 'term_counter')
-    .flatMap((row) => {
-      const c = readTermCounterRow(row);
-      return c === null
-        ? []
-        : [
-            {
-              by: 'them',
-              round: c.round,
-              targets: c.targets,
-              // Core's own sentence for the brand's message: never the brand's words.
-              ...(c.message !== undefined ? { said: renderTermMessage(c.message) } : {}),
-            },
-          ];
-    });
+  const counters = ctx.store.listByRequest(requestId, 'term_counter').flatMap((row) => {
+    const c = readTermCounterRow(row);
+    return c === null
+      ? []
+      : [
+          {
+            by: 'them',
+            round: c.round,
+            targets: c.targets,
+            // Core's own sentence for the brand's message: never the brand's words.
+            ...(c.message !== undefined ? { said: renderTermMessage(c.message) } : {}),
+          },
+        ];
+  });
   // Only what Brain may read now: untagged entries and Brain-readable personas.
   const model = ctx.deps.strategy?.brainModel(SHELF_HOST_KIND) ?? undefined;
   const policy = currentTermPolicy(ctx);
@@ -1615,7 +1654,10 @@ function sellerCounterBrief(
       },
     },
     history: [...chain, ...counters],
-    model: model === undefined ? { constrained: [] } : { ...projectModel(model, { valuesOn, firstOfferOut: true }) },
+    model:
+      model === undefined
+        ? { constrained: [] }
+        : { ...projectModel(model, { valuesOn, firstOfferOut: true }) },
     roundsLeft: Math.max(0, policy.maxRounds - head.revision),
     deadlineAt: head.valid_until,
     rules: [
@@ -1632,17 +1674,24 @@ function sellerTurnTarget(
   ctx: TermContext,
   requestId: string,
   turn: number,
-): { counter: TermCounter; head: TermOffer; policy: TermPolicy; resource: TermResourcePolicy } | null {
+): {
+  counter: TermCounter;
+  head: TermOffer;
+  policy: TermPolicy;
+  resource: TermResourcePolicy;
+} | null {
   const counter = ctx.store
     .listByRequest(requestId, 'term_counter')
     .map((row) => readTermCounterRow(row))
     .find((c): c is TermCounter => c !== null && c.round === turn);
   const head = offerChain(ctx, requestId, 'outbound').at(-1)?.offer;
-  if (counter === undefined || head === undefined || head.offer_digest !== counter.offer_digest) return null;
+  if (counter === undefined || head === undefined || head.offer_digest !== counter.offer_digest)
+    return null;
   if (Date.parse(head.valid_until) <= ctx.now()) return null;
   const policy = currentTermPolicy(ctx);
   const resource = policy.resources.find((r) => r.resource_ref === head.resource_ref);
-  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null) return null;
+  if (!policy.enabled || resource === undefined || ctx.deps.activePack('term_seller') === null)
+    return null;
   return { counter, head, policy, resource };
 }
 
@@ -1679,7 +1728,10 @@ export function applySellerStrategyMove(
       turn: args.turn,
       question: args.move.question,
       // The revision must go out while the counter waits for it and the offer it answers stands.
-      dealDeadlineMs: Math.min(Date.parse(target.counter.respond_by), Date.parse(target.head.valid_until)),
+      dealDeadlineMs: Math.min(
+        Date.parse(target.counter.respond_by),
+        Date.parse(target.head.valid_until),
+      ),
     })
       ? { outcome: 'asked_owner' }
       : fixed('fixed_style');
@@ -1717,11 +1769,16 @@ export function applySellerStrategyMove(
  * spent budget lets the fixed style open. The request must still stand, with
  * no offer out.
  */
-function applyFirstOfferMove(ctx: TermContext, requestId: string, move: StrategyMove): { outcome: string } {
+function applyFirstOfferMove(
+  ctx: TermContext,
+  requestId: string,
+  move: StrategyMove,
+): { outcome: string } {
   const requestRow = ctx.store
     .listByRequest(requestId, 'term_request')
     .find((row) => row.direction === 'inbound');
-  const close = (state: 'applied' | 'fallen_back') => ctx.store.closeTurn(requestId, FIRST_OFFER_TURN, state);
+  const close = (state: 'applied' | 'fallen_back') =>
+    ctx.store.closeTurn(requestId, FIRST_OFFER_TURN, state);
   if (requestRow === undefined) {
     close('applied');
     return { outcome: 'negotiation_moved_on' };
@@ -1779,7 +1836,9 @@ function applyFirstOfferMove(ctx: TermContext, requestId: string, move: Strategy
 export function playSellerTurnFixed(ctx: TermContext, requestId: string, turn: number): void {
   if (!ctx.store.closeTurn(requestId, turn, 'fallen_back')) return;
   if (turn === FIRST_OFFER_TURN) {
-    const row = ctx.store.listByRequest(requestId, 'term_request').find((r) => r.direction === 'inbound');
+    const row = ctx.store
+      .listByRequest(requestId, 'term_request')
+      .find((r) => r.direction === 'inbound');
     if (row !== undefined) resumeFirstOffer(ctx, row.recordDigest, { fixedStyle: true });
     return;
   }

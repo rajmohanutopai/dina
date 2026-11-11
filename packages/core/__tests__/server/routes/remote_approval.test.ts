@@ -81,7 +81,10 @@ describe('remote approval synchronization routes', () => {
     const router = createCoreRouter();
     // The node made the card 30 s ahead of the phone's clock, to live an hour.
     const nodeNowMs = Date.now() + 30_000;
-    const card = { created_at: nodeNowMs, expires_at: Math.floor((nodeNowMs + SEARCH_REVIEW_TTL_MS) / 1000) };
+    const card = {
+      created_at: nodeNowMs,
+      expires_at: Math.floor((nodeNowMs + SEARCH_REVIEW_TTL_MS) / 1000),
+    };
     const expiresAt = mirrorExpiresAt(card);
     expect(expiresAt).toBe(Math.floor(nodeNowMs / 1000) + 14 * 60);
     const res = await router.handle(
@@ -116,7 +119,9 @@ describe('remote approval synchronization routes', () => {
       display_detail: 'Exactly what will be sent:\noat milk',
       source_device_name: 'your Home Node',
     });
-    const first = await router.handle(asNode(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body)));
+    const first = await router.handle(
+      asNode(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body)),
+    );
     expect(first.status).toBe(201);
     const id = String((first.body as Record<string, unknown>).proposal_id);
     expect(JSON.parse(getTask(id).payload)).toMatchObject({
@@ -126,13 +131,24 @@ describe('remote approval synchronization routes', () => {
     // The device is re-paired under another name; its retry of the same proposal is the same proposal.
     resetDeviceRegistry();
     registerDevice('Office server', 'z6MkRemoteLaptop', 'agent');
-    const retry = await router.handle(asNode(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body)));
+    const retry = await router.handle(
+      asNode(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body)),
+    );
     expect(retry.status).toBe(200);
     // A device this node does not know carries no name: the phone says "a paired device".
     const stranger = await router.handle(
-      asNode(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, { ...body, source_task_id: 'other-1' }, OTHER)),
+      asNode(
+        request(
+          'POST',
+          `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
+          { ...body, source_task_id: 'other-1' },
+          OTHER,
+        ),
+      ),
     );
-    const strangerPayload = JSON.parse(getTask(String((stranger.body as Record<string, unknown>).proposal_id)).payload);
+    const strangerPayload = JSON.parse(
+      getTask(String((stranger.body as Record<string, unknown>).proposal_id)).payload,
+    );
     expect(strangerPayload.source_device_name).toBeUndefined();
   });
 
@@ -169,10 +185,17 @@ describe('remote approval synchronization routes', () => {
     // A retry resends the same body: one body, built once (its expiry is read
     // from the clock, so two builds can straddle a second).
     const body = proposal();
-    const first = await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body));
-    const second = await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body));
+    const first = await router.handle(
+      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body),
+    );
+    const second = await router.handle(
+      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, body),
+    );
     const conflict = await router.handle(
-      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, { ...body, source_payload_hash: 'b'.repeat(64) }),
+      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, {
+        ...body,
+        source_payload_hash: 'b'.repeat(64),
+      }),
     );
 
     expect(first.status).toBe(201);
@@ -255,7 +278,13 @@ describe('remote approval synchronization routes', () => {
     expect(approved.status).toBe(200);
 
     const status = await router.handle(
-      request('GET', `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}/status`, undefined, DEVICE, 'device'),
+      request(
+        'GET',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}/status`,
+        undefined,
+        DEVICE,
+        'device',
+      ),
     );
     expect(status.status).toBe(200);
     expect((status.body as Record<string, unknown>).decision).toBe('approved');
@@ -383,14 +412,28 @@ describe('a mirrored card whose yes needs a person present (UCP plan §3.9)', ()
     await proveOwnerPresence('pass phrase', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     expect((await owner(`/v1/workflow/tasks/${id}/approve`)).status).toBe(200);
     const status = await router.handle(
-      request('GET', `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}/status`, undefined, DEVICE, 'device'),
+      request(
+        'GET',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}/status`,
+        undefined,
+        DEVICE,
+        'device',
+      ),
     );
     expect(status.body).toMatchObject({ decision: 'approved', presence_verified: true });
   });
 
   it('Brain on the phone reads none of the mirrored card’s words or its link', async () => {
     const router = createCoreRouter();
-    await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, handoff({ agent_did: 'ucp:checkout' }), DEVICE, 'device'));
+    await router.handle(
+      request(
+        'POST',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
+        handoff({ agent_did: 'ucp:checkout' }),
+        DEVICE,
+        'device',
+      ),
+    );
     const id = remoteApprovalProposalId(DEVICE, 'ucp-checkout-handoff-1:w1');
     const wf = new CoreRouter();
     registerWorkflowRoutes(wf, 'cap');
@@ -413,7 +456,13 @@ describe('a mirrored card whose yes needs a person present (UCP plan §3.9)', ()
   it('the owner’s server node (an agent paired with the `node` scope) may send one; a coding agent may not', async () => {
     const router = createCoreRouter();
     const asAgent = (scope: 'node' | 'coding', id: string) => ({
-      ...request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, handoff({ source_task_id: id }), DEVICE, 'agent'),
+      ...request(
+        'POST',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals`,
+        handoff({ source_task_id: id }),
+        DEVICE,
+        'agent',
+      ),
       agentScope: scope,
     });
     expect((await router.handle(asAgent('node', 'n:w1') as CoreRequest)).status).toBe(201);
@@ -426,7 +475,12 @@ describe('a mirrored card whose yes needs a person present (UCP plan §3.9)', ()
       handoff(),
       handoff({ presence_required: undefined }),
       handoff({ presence_required: undefined, link_url: undefined }),
-      proposal({ action: 'ucp_search', proposal_type: 'facade_action', display_title: 'Search?', display_detail: 'x' }),
+      proposal({
+        action: 'ucp_search',
+        proposal_type: 'facade_action',
+        display_title: 'Search?',
+        display_detail: 'x',
+      }),
     ]) {
       const res = await router.handle(
         request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, forged, DEVICE, 'agent'),
@@ -437,7 +491,9 @@ describe('a mirrored card whose yes needs a person present (UCP plan §3.9)', ()
 
   it('a node that cannot tell whether a person is present never says yes to one', async () => {
     const router = createCoreRouter();
-    await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, handoff(), DEVICE, 'device'));
+    await router.handle(
+      request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, handoff(), DEVICE, 'device'),
+    );
     const id = remoteApprovalProposalId(DEVICE, 'ucp-checkout-handoff-1:w1');
     const refused = await owner(`/v1/workflow/tasks/${id}/approve`);
     expect(refused.status).toBe(403);
@@ -453,7 +509,9 @@ describe('a mirrored card whose yes needs a person present (UCP plan §3.9)', ()
       handoff({ presence_required: false }),
       proposal({ link_url: 'https://shop.example/x' }),
     ]) {
-      const res = await router.handle(request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, bad, DEVICE, 'device'));
+      const res = await router.handle(
+        request('POST', `${REMOTE_APPROVAL_API_PREFIX}/proposals`, bad, DEVICE, 'device'),
+      );
       expect(res.status).toBe(400);
     }
     const plain = await router.handle(
@@ -472,7 +530,13 @@ describe('a mirrored card whose yes needs a person present (UCP plan §3.9)', ()
     );
     expect((await owner(`/v1/workflow/tasks/${id}/approve`)).status).toBe(200);
     const status = await router.handle(
-      request('GET', `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}/status`, undefined, DEVICE, 'device'),
+      request(
+        'GET',
+        `${REMOTE_APPROVAL_API_PREFIX}/proposals/${id}/status`,
+        undefined,
+        DEVICE,
+        'device',
+      ),
     );
     expect(status.body).not.toHaveProperty('presence_verified');
   });

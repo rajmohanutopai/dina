@@ -114,10 +114,7 @@ export function MultiSelectScreen<T extends string>(
     [selectedSet, onToggle, testIdPrefix],
   );
 
-  const keyExtractor = useCallback(
-    (item: MultiSelectOption<T>) => item.value,
-    [],
-  );
+  const keyExtractor = useCallback((item: MultiSelectOption<T>) => item.value, []);
 
   return (
     <View style={styles.container}>
@@ -193,26 +190,19 @@ interface RowProps<T extends string> {
 
 function Row<T extends string>(props: RowProps<T>): React.ReactElement {
   const { option, isSelected, onToggle, testIdPrefix } = props;
-  const handlePress = useCallback(
-    () => onToggle(option.value),
-    [option.value, onToggle],
-  );
+  const handlePress = useCallback(() => onToggle(option.value), [option.value, onToggle]);
   return (
     <Pressable
       style={({ pressed }) => [styles.row, pressed && styles.rowPressed]}
       onPress={handlePress}
       accessibilityRole="checkbox"
       accessibilityState={{ checked: isSelected }}
-      accessibilityLabel={`${option.label}${
-        option.description ? `, ${option.description}` : ''
-      }`}
+      accessibilityLabel={`${option.label}${option.description ? `, ${option.description}` : ''}`}
       testID={`${testIdPrefix}-row-${option.value}`}
     >
       <View style={styles.rowMain}>
         <Text style={styles.rowLabel}>{option.label}</Text>
-        {option.description && (
-          <Text style={styles.rowDescription}>{option.description}</Text>
-        )}
+        {option.description && <Text style={styles.rowDescription}>{option.description}</Text>}
       </View>
       {isSelected && (
         <Ionicons
@@ -233,10 +223,7 @@ function Row<T extends string>(props: RowProps<T>): React.ReactElement {
  * untouched (so the in-memory snapshot's referential-stability
  * contract holds).
  */
-export function toggleArrayValue<T extends string>(
-  arr: readonly T[],
-  value: T,
-): T[] {
+export function toggleArrayValue<T extends string>(arr: readonly T[], value: T): T[] {
   return arr.includes(value) ? arr.filter((v) => v !== value) : [...arr, value];
 }
 

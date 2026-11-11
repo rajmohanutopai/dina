@@ -21,7 +21,13 @@ import {
 } from '@dina/core';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
-import { MODEL_FAILED_NOTE, buildDayPlan, fixedOrderPlan, readModelPlan, type PlannerTask } from '../../src/plan/day_planner';
+import {
+  MODEL_FAILED_NOTE,
+  buildDayPlan,
+  fixedOrderPlan,
+  readModelPlan,
+  type PlannerTask,
+} from '../../src/plan/day_planner';
 import { draftGoalPlan, suggestPhaseTasks } from '../../src/plan/goal_planner';
 import { createPlanTools } from '../../src/plan/plan_tools';
 
@@ -370,7 +376,9 @@ describe('keeping the day from chat (§25–§26)', () => {
 
   it('finishes, puts off, drops and reopens any task by its words', async () => {
     const t = store.addOwnerTask({ title: 'Renew the car insurance' }, T);
-    expect(await call('update_task', { task: 'renewed car insurance', action: 'done' })).toMatchObject({
+    expect(
+      await call('update_task', { task: 'renewed car insurance', action: 'done' }),
+    ).toMatchObject({
       task: t.title,
       changed: 'done',
     });
@@ -416,13 +424,13 @@ describe('keeping the day from chat (§25–§26)', () => {
     });
     // Three copies: naming the job finishes one, without asking which.
     const copies = [1, 2, 3].map(() => store.addOwnerTask({ title: 'Renew car insurance' }, T));
-    expect(await call('update_task', { task: 'renewed the insurance', action: 'done' })).toMatchObject(
-      { task: 'Renew car insurance' },
-    );
+    expect(
+      await call('update_task', { task: 'renewed the insurance', action: 'done' }),
+    ).toMatchObject({ task: 'Renew car insurance' });
     expect(copies.filter((c) => store.getTask(c.id)?.status === 'done')).toHaveLength(1);
-    expect(await call('update_task', { task: 'Renew car insurance', action: 'done' })).toMatchObject(
-      { changed: 'done' },
-    );
+    expect(
+      await call('update_task', { task: 'Renew car insurance', action: 'done' }),
+    ).toMatchObject({ changed: 'done' });
     expect(copies.filter((c) => store.getTask(c.id)?.status === 'done')).toHaveLength(2);
   });
 
@@ -445,7 +453,9 @@ describe('keeping the day from chat (§25–§26)', () => {
     const tool = createPlanTools({ store: () => store, now: () => T, planDay: null }).find(
       (x) => x.name === 'plan_day',
     );
-    expect(await tool?.execute({})).toMatchObject({ error: expect.stringMatching(/not available/) });
+    expect(await tool?.execute({})).toMatchObject({
+      error: expect.stringMatching(/not available/),
+    });
   });
 
   it('sets a routine in each shape, makes its turn, and stops it', async () => {
@@ -471,9 +481,9 @@ describe('keeping the day from chat (§25–§26)', () => {
     expect(await call('set_routine', { title: 'Nap', times_per_week: 9 })).toMatchObject({
       error: expect.stringMatching(/1 to 7/),
     });
-    expect(await call('set_routine', { title: 'Nap', days: ['x'], times_per_week: 2 })).toMatchObject(
-      { added: true },
-    );
+    expect(
+      await call('set_routine', { title: 'Nap', days: ['x'], times_per_week: 2 }),
+    ).toMatchObject({ added: true });
     expect(await call('set_routine', { title: 'Boat', stop: true })).toMatchObject({
       error: expect.stringMatching(/no single routine/),
     });
@@ -488,10 +498,12 @@ describe('keeping the day from chat (§25–§26)', () => {
     const g = store.addGoal('Get fit', '', T);
     await call('set_routine', { title: 'Run', times_per_week: 3, goal: 'fit' });
     const shown = await call('show_goal', { goal: 'fit' });
-    expect(shown.repeats).toEqual([{ title: 'Run', rule: '3 times a week', progress: '0 of 3 this week' }]);
-    expect(await call('set_routine', { title: 'Swim', times_per_week: 1, goal: 'boat' })).toMatchObject(
-      { error: expect.stringMatching(/goal/) },
-    );
+    expect(shown.repeats).toEqual([
+      { title: 'Run', rule: '3 times a week', progress: '0 of 3 this week' },
+    ]);
+    expect(
+      await call('set_routine', { title: 'Swim', times_per_week: 1, goal: 'boat' }),
+    ).toMatchObject({ error: expect.stringMatching(/goal/) });
     expect((await call('show_plan')).other_open.map((t: { title: string }) => t.title)).toEqual([
       'Run',
     ]);
@@ -568,10 +580,13 @@ describe('the day plan from a model that answers as it likes', () => {
 
   it('asks for JSON, and reads it through prose and fences', async () => {
     let prompt = '';
-    const plan = await buildDayPlan({ ...base, tasks: [task('a', 'One')] }, async ({ systemPrompt }) => {
-      prompt = systemPrompt;
-      return 'Here you go:\n```json\n{"entries":[{"task_id":"a","reason":"First"}]}\n```\nEnjoy!';
-    });
+    const plan = await buildDayPlan(
+      { ...base, tasks: [task('a', 'One')] },
+      async ({ systemPrompt }) => {
+        prompt = systemPrompt;
+        return 'Here you go:\n```json\n{"entries":[{"task_id":"a","reason":"First"}]}\n```\nEnjoy!';
+      },
+    );
     expect(prompt).toContain('{"entries":[{"task_id"');
     expect(plan).toMatchObject({ by: 'model', entries: [{ taskId: 'a', reason: 'First' }] });
   });
@@ -680,7 +695,12 @@ describe('the review round in chat and the planner', () => {
   it('show_plan leaves out a task put off or waiting after the plan was made', async () => {
     const a = store.addOwnerTask({ title: 'Call Sam' }, T);
     const b = store.addOwnerTask({ title: 'Book dentist' }, T);
-    store.putDay('2026-11-03', [a, b].map((x) => ({ taskId: x.id, reason: '' })), '', T);
+    store.putDay(
+      '2026-11-03',
+      [a, b].map((x) => ({ taskId: x.id, reason: '' })),
+      '',
+      T,
+    );
     await call('update_task', { task: 'Call Sam', action: 'put_off' });
     const shown = await call('show_plan');
     expect(shown.plan.map((p: { title: string }) => p.title)).toEqual(['Book dentist']);
@@ -690,7 +710,11 @@ describe('the review round in chat and the planner', () => {
   it('a wait with no date comes back after a week, and says so', async () => {
     const g = store.addGoal('House', '', T);
     const t = store.addOwnerTask({ title: 'Builder quote', goalId: g.id }, T);
-    const r = await call('update_goal_task', { goal: 'House', task: 'builder quote', waiting_on: 'Mike' });
+    const r = await call('update_goal_task', {
+      goal: 'House',
+      task: 'builder quote',
+      waiting_on: 'Mike',
+    });
     expect(r.changed[0]).toMatch(/no date given.*2026-11-10/);
     expect(planDayKey(store.getTask(t.id)?.waitingUntil as number)).toBe('2026-11-10');
   });
@@ -712,7 +736,10 @@ describe('the review round in chat and the planner', () => {
 
   it('a payment in chat goes toward the quote it names, and a deposit leaves the rest', async () => {
     const g = store.addGoal('House', '', T);
-    store.addCost({ goalId: g.id, label: 'Roof quote from Mike', kind: 'quote', amountCents: 10_000 }, T);
+    store.addCost(
+      { goalId: g.id, label: 'Roof quote from Mike', kind: 'quote', amountCents: 10_000 },
+      T,
+    );
     store.addCost({ goalId: g.id, label: 'Plumbing quote', kind: 'quote', amountCents: 5_000 }, T);
     await call('update_goal_task', {
       goal: 'House',
@@ -773,10 +800,10 @@ describe('the review round in chat and the planner', () => {
 
   it('at the limit, urgent work takes the place of work that can wait', () => {
     const fill = Array.from({ length: 12 }, (_, i) => pt(`t${i}`));
-    const plan = readModelPlan(
-      answer(fill.map((t) => ({ task_id: t.id, reason: 'x' }))),
-      { ...input, tasks: [...fill, pt('rent', { dueAt: input.dayEnd - 1 })] },
-    );
+    const plan = readModelPlan(answer(fill.map((t) => ({ task_id: t.id, reason: 'x' }))), {
+      ...input,
+      tasks: [...fill, pt('rent', { dueAt: input.dayEnd - 1 })],
+    });
     expect(plan?.entries).toHaveLength(12);
     expect(plan?.entries.map((e) => e.taskId)).toContain('rent');
     expect(plan?.entries.map((e) => e.taskId)).not.toContain('t11');
@@ -794,7 +821,11 @@ describe('the review round in chat and the planner', () => {
   });
 
   it('the fixed order never plans an empty day while there is work', () => {
-    const plan = fixedOrderPlan({ ...input, capacityMin: 10, tasks: [pt('big', { effortMin: 600 })] });
+    const plan = fixedOrderPlan({
+      ...input,
+      capacityMin: 10,
+      tasks: [pt('big', { effortMin: 600 })],
+    });
     expect(plan.entries.map((e) => e.taskId)).toEqual(['big']);
   });
 
@@ -829,8 +860,14 @@ describe('the review round in chat and the planner', () => {
   it('a payment goes to the quote it names, even on a task with several', async () => {
     const g = store.addGoal('House', '', T);
     const t = store.addOwnerTask({ title: 'Roof', goalId: g.id }, T);
-    store.addCost({ goalId: g.id, taskId: t.id, label: 'Roof survey', kind: 'quote', amountCents: 100_00 }, T);
-    const tiles = store.addCost({ goalId: g.id, taskId: t.id, label: 'Roof tiles', kind: 'quote', amountCents: 200_00 }, T);
+    store.addCost(
+      { goalId: g.id, taskId: t.id, label: 'Roof survey', kind: 'quote', amountCents: 100_00 },
+      T,
+    );
+    const tiles = store.addCost(
+      { goalId: g.id, taskId: t.id, label: 'Roof tiles', kind: 'quote', amountCents: 200_00 },
+      T,
+    );
     const r = await call('update_goal_task', {
       goal: 'House',
       task: 'Roof',
@@ -842,10 +879,16 @@ describe('the review round in chat and the planner', () => {
 
   it('plumber finds the plumbing quote; an unclear payment asks and records nothing', async () => {
     const g = store.addGoal('House', '', T);
-    const q = store.addCost({ goalId: g.id, label: 'Plumbing quote', kind: 'quote', amountCents: 100_00 }, T);
+    const q = store.addCost(
+      { goalId: g.id, label: 'Plumbing quote', kind: 'quote', amountCents: 100_00 },
+      T,
+    );
     store.addCost({ goalId: g.id, label: 'Roof quote', kind: 'quote', amountCents: 300_00 }, T);
     expect(
-      await call('update_goal_task', { goal: 'House', cost: { amount: 100, kind: 'paid', label: 'Paid the plumber' } }),
+      await call('update_goal_task', {
+        goal: 'House',
+        cost: { amount: 100, kind: 'paid', label: 'Paid the plumber' },
+      }),
     ).toMatchObject({ changed: [expect.stringContaining('toward "Plumbing quote"')] });
     expect(store.getCost(q.id)?.settled).toBe(true);
 
@@ -854,7 +897,9 @@ describe('the review round in chat and the planner', () => {
       goal: 'House',
       cost: { amount: 50, kind: 'paid', label: 'Architect' },
     });
-    expect(unclear.open_quotes).toEqual([expect.objectContaining({ label: 'Roof quote', amount: '$300' })]);
+    expect(unclear.open_quotes).toEqual([
+      expect.objectContaining({ label: 'Roof quote', amount: '$300' }),
+    ]);
     expect(store.listCosts(g.id)).toHaveLength(before);
     await call('update_goal_task', {
       goal: 'House',
@@ -871,7 +916,10 @@ describe('the review round in chat and the planner', () => {
   it('"none" means no quote, even on a task that has one', async () => {
     const g = store.addGoal('House', '', T);
     const t = store.addOwnerTask({ title: 'Roof', goalId: g.id }, T);
-    const q = store.addCost({ goalId: g.id, taskId: t.id, label: 'Tiles', kind: 'quote', amountCents: 100_00 }, T);
+    const q = store.addCost(
+      { goalId: g.id, taskId: t.id, label: 'Tiles', kind: 'quote', amountCents: 100_00 },
+      T,
+    );
     await call('update_goal_task', {
       goal: 'House',
       task: 'Roof',
@@ -992,10 +1040,12 @@ describe('the review round in chat and the planner', () => {
   it('saying done twice is not an error: the second call says it is already done', async () => {
     const t = store.addOwnerTask({ title: 'Write the letter' }, T);
     await call('update_task', { task: 'Write the letter', action: 'done' });
-    expect(await call('update_task', { task: 'I wrote the letter', action: 'done' })).toMatchObject({
-      task: 'Write the letter',
-      changed: 'already done',
-    });
+    expect(await call('update_task', { task: 'I wrote the letter', action: 'done' })).toMatchObject(
+      {
+        task: 'Write the letter',
+        changed: 'already done',
+      },
+    );
     expect(store.getTask(t.id)?.status).toBe('done');
     const d = store.addOwnerTask({ title: 'Buy a gym bag' }, T);
     await call('update_task', { task: 'Buy a gym bag', action: 'drop' });
@@ -1055,7 +1105,9 @@ describe('the review round in chat and the planner', () => {
     const g = store.addGoal('House', '', T);
     const other = store.addGoal('Boat', '', T);
     store.addOwnerTask({ title: 'Order paint', goalId: g.id }, T);
-    expect(await call('add_task', { title: 'Order paint', goal: 'Boat' })).toMatchObject({ added: true });
+    expect(await call('add_task', { title: 'Order paint', goal: 'Boat' })).toMatchObject({
+      added: true,
+    });
     store.updateGoal(g.id, { active: false }, T);
     store.updateGoal(other.id, { active: false }, T);
     expect(await call('add_task', { title: 'Order paint' })).toMatchObject({ added: true });

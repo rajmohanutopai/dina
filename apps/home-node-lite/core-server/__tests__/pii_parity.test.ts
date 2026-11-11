@@ -208,8 +208,7 @@ describe('Tier 1 regex parity vs Go scrubber (task 4.80)', () => {
   describe('rehydrate round-trip (Go ScrubRehydrate parity)', () => {
     it('scrub → rehydrate restores every input byte-for-byte', async () => {
       const { rehydratePII: rehydrate } = await import('@dina/core');
-      const original =
-        'email a@b.com, call 555-123-4567, SSN 123-45-6789, PAN ABCDE1234F';
+      const original = 'email a@b.com, call 555-123-4567, SSN 123-45-6789, PAN ABCDE1234F';
       const scrubbed = scrubPII(original);
       const restored = rehydrate(
         scrubbed.scrubbed,

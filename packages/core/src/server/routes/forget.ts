@@ -10,12 +10,19 @@
  * thread copies when it changed.
  */
 
-import { forgetEpoch, proposeForget, resumeForgetJobs, type ForgetRequest } from '../../forget/forget';
+import {
+  forgetEpoch,
+  proposeForget,
+  resumeForgetJobs,
+  type ForgetRequest,
+} from '../../forget/forget';
 
 import type { CoreRouter } from '../router';
 
 function isBrain(req: { callerType?: string; trustedInProcess?: boolean }): boolean {
-  return req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined);
+  return (
+    req.callerType === 'brain' || (req.trustedInProcess === true && req.callerType === undefined)
+  );
 }
 
 function parseRequest(raw: unknown): ForgetRequest | null {
@@ -25,10 +32,13 @@ function parseRequest(raw: unknown): ForgetRequest | null {
   if (keys.length !== 1) return null;
   if (typeof r.person === 'string') return { person: r.person };
   if (typeof r.persona === 'string') {
-    const keep = Array.isArray(r.keep_item_ids) ? r.keep_item_ids.filter((x): x is string => typeof x === 'string') : undefined;
+    const keep = Array.isArray(r.keep_item_ids)
+      ? r.keep_item_ids.filter((x): x is string => typeof x === 'string')
+      : undefined;
     return { persona: r.persona, ...(keep !== undefined ? { keep_item_ids: keep } : {}) };
   }
-  if (Array.isArray(r.item_ids) && r.item_ids.every((x) => typeof x === 'string')) return { item_ids: r.item_ids as string[] };
+  if (Array.isArray(r.item_ids) && r.item_ids.every((x) => typeof x === 'string'))
+    return { item_ids: r.item_ids as string[] };
   return null;
 }
 
@@ -46,9 +56,15 @@ export function registerForgetRoutes(router: CoreRouter): void {
       typeof end !== 'number' ||
       request === null
     ) {
-      return { status: 400, body: { error: 'a span proof and exactly one of person, persona or item_ids are required' } };
+      return {
+        status: 400,
+        body: { error: 'a span proof and exactly one of person, persona or item_ids are required' },
+      };
     }
-    const out = await proposeForget({ proof: { releaseSession: rs, turnId, turnText, start, end }, request });
+    const out = await proposeForget({
+      proof: { releaseSession: rs, turnId, turnText, start, end },
+      request,
+    });
     return { status: 200, body: out };
   });
 

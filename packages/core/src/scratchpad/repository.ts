@@ -54,12 +54,7 @@ export function getScratchpadRepository(): ScratchpadRepository | null {
 export class SQLiteScratchpadRepository implements ScratchpadRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
-  upsert(
-    taskId: string,
-    step: number,
-    context: Record<string, unknown>,
-    nowMs: number,
-  ): void {
+  upsert(taskId: string, step: number, context: Record<string, unknown>, nowMs: number): void {
     const contextJson = JSON.stringify(context);
     this.db.run(
       `INSERT INTO scratchpad (task_id, step, context, created_at, updated_at)
@@ -98,10 +93,9 @@ export class SQLiteScratchpadRepository implements ScratchpadRepository {
 
   sweep(nowMs: number, staleMs: number): number {
     const cutoff = nowMs - staleMs;
-    const rows = this.db.query(
-      `SELECT COUNT(*) as n FROM scratchpad WHERE updated_at < ?`,
-      [cutoff],
-    );
+    const rows = this.db.query(`SELECT COUNT(*) as n FROM scratchpad WHERE updated_at < ?`, [
+      cutoff,
+    ]);
     const count = rows.length > 0 ? Number((rows[0] as DBRow).n ?? 0) : 0;
     if (count > 0) {
       this.db.run(`DELETE FROM scratchpad WHERE updated_at < ?`, [cutoff]);
@@ -118,12 +112,7 @@ export class SQLiteScratchpadRepository implements ScratchpadRepository {
 export class InMemoryScratchpadRepository implements ScratchpadRepository {
   private readonly rows = new Map<string, ScratchpadEntry>();
 
-  upsert(
-    taskId: string,
-    step: number,
-    context: Record<string, unknown>,
-    nowMs: number,
-  ): void {
+  upsert(taskId: string, step: number, context: Record<string, unknown>, nowMs: number): void {
     const existing = this.rows.get(taskId);
     this.rows.set(taskId, {
       taskId,

@@ -40,9 +40,7 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
   // back to Chat, and the Settings entry point (no from / from='/settings')
   // goes back to Settings.
   const backTarget: string =
-    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//')
-      ? from
-      : '/settings';
+    typeof from === 'string' && from.startsWith('/') && !from.startsWith('//') ? from : '/settings';
   const [mode, setMode] = useState<Mode>('gate');
   const [passphrase, setPassphrase] = useState('');
   const [error, setError] = useState('');
@@ -154,8 +152,8 @@ export default function ConfirmRecoveryPhraseScreen(): React.ReactElement {
 
       <View style={styles.hint}>
         <Text style={styles.hintText}>
-          We'll only check a few words. You don't have to type all 24. After this we'll stop
-          showing the reminder banner.
+          We'll only check a few words. You don't have to type all 24. After this we'll stop showing
+          the reminder banner.
         </Text>
       </View>
     </ScrollView>

@@ -43,11 +43,11 @@ jest.mock('expo-router', () => {
       // push of `/peerlens/reviewer/did%3Aplc%3A…`.
       did: encodeURIComponent(SANCHO_DID),
     }),
-    useFocusEffect: (effect: () => void | (() => void)) => {
+    useFocusEffect: (effect: () => unknown) => {
       React.useEffect(() => {
         const cleanup = effect();
-        return typeof cleanup === 'function' ? cleanup : undefined;
-        // eslint-disable-next-line react-hooks/exhaustive-deps
+        return typeof cleanup === 'function' ? (cleanup as () => void) : undefined;
+        // Once on mount: `effect` stays out of the dependency list on purpose.
       }, []);
     },
     useRouter: () => ({

@@ -8,22 +8,20 @@
  * Source: brain/tests/test_vault_context.py
  */
 
-import { embedMaybeSensitive } from '../embedding/safe_embed';
-import { hasCloudEmbeddingProvider, hasLocalEmbeddingProvider } from '../embedding/generation';
-import { queryVault, getItem, browseRecent , listPersonas ,
+import {
+  queryVault,
+  getItem,
+  browseRecent,
+  listPersonas,
   getContact,
   resolveByName,
   findByAlias,
-  listContacts,
 } from '@dina/core';
-import {
-  searchTrustNetwork,
-  type PeerlensSearchQuery,
-  type SearchType,
- CoreClient, VaultQueryItem } from '@dina/core';
+import { searchTrustNetwork, type SearchType, CoreClient, VaultQueryItem } from '@dina/core';
 
+import { hasCloudEmbeddingProvider, hasLocalEmbeddingProvider } from '../embedding/generation';
+import { embedMaybeSensitive } from '../embedding/safe_embed';
 import { listPendingRemindersRouted } from '../reminders/backend';
-
 
 /**
  * Vault-read backend the brain uses for out-of-process Core deployments
@@ -56,7 +54,8 @@ export function vaultReadBackendFromCore(
     vaultQuery: (persona, query) => core.vaultQuery(persona, query),
     vaultGet: (persona, itemId, opts) => core.vaultGet(persona, itemId, opts),
     vaultList: (persona, opts) => core.vaultList(persona, opts),
-    vaultItemsForPerson: (persona, personId, limit, opts) => core.vaultItemsForPerson(persona, personId, limit, opts),
+    vaultItemsForPerson: (persona, personId, limit, opts) =>
+      core.vaultItemsForPerson(persona, personId, limit, opts),
   };
 }
 
@@ -161,7 +160,9 @@ function changeLink(contradicts: unknown): { replaces?: string; conflictsWith?: 
   if (typeof contradicts !== 'string') return {};
   const m = /^(supersedes|conflicts):(.+)$/.exec(contradicts);
   if (m === null) return {};
-  return m[1] === 'supersedes' ? { replaces: m[2]! } : { conflictsWith: m[2]! };
+  const target = m[2];
+  if (target === undefined) throw new Error('changeLink: target group did not match');
+  return m[1] === 'supersedes' ? { replaces: target } : { conflictsWith: target };
 }
 
 export interface AssembledContext {
@@ -404,7 +405,7 @@ function rankScore(index: number): number {
 export async function assembleContext(
   query: string,
   maxTokens?: number,
-  requestId?: string,
+  _requestId?: string,
 ): Promise<AssembledContext> {
   const budget = maxTokens ?? DEFAULT_MAX_TOKENS;
   const personas = getAccessiblePersonas();
@@ -423,7 +424,7 @@ export async function assembleContext(
     perPersonaHits[persona] = results.length;
     allItems.push(...results);
   }
-   
+
   console.info('[vault_context] assemble', {
     event: 'vault_context.searched',
     query_preview: query.slice(0, 80),

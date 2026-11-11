@@ -79,7 +79,10 @@ export const DELIVERY_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] a
  * The day a delivery falls on in the owner's own time zone ("Tuesday" is the
  * owner's Tuesday, not UTC's); null when the moment is not a date.
  */
-export function deliveryDayOf(atMs: number, timeZone: string): (typeof DELIVERY_DAYS)[number] | null {
+export function deliveryDayOf(
+  atMs: number,
+  timeZone: string,
+): (typeof DELIVERY_DAYS)[number] | null {
   if (Number.isNaN(atMs)) return null;
   try {
     const name = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone })
@@ -181,7 +184,6 @@ export const DEAL_KINDS: readonly DealKind[] = [
     promiseWords: {},
   },
 ];
-
 
 /**
  * COMMITMENT_KERNEL §15 step 11 — the organiser of a group booking. It has

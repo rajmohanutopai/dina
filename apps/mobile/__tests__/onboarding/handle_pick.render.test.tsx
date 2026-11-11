@@ -47,9 +47,7 @@ function stubFetch(
 ): jest.Mock {
   const fn = jest.fn(async (input: unknown) => {
     const url = typeof input === 'string' ? input : String(input);
-    const handleParam = decodeURIComponent(
-      new URL(url).searchParams.get('handle') ?? '',
-    );
+    const handleParam = decodeURIComponent(new URL(url).searchParams.get('handle') ?? '');
     const r = responses[handleParam] ?? { status: defaultStatus };
     return {
       ok: r.status >= 200 && r.status < 300,
@@ -83,11 +81,7 @@ describe('HandlePicker', () => {
       [`raju.${PDS_HOST}`]: { status: 400 }, // available
     });
     const { getByTestId } = render(
-      <HandlePicker
-        seedPrefix="raju"
-        onContinue={() => undefined}
-        onBack={() => undefined}
-      />,
+      <HandlePicker seedPrefix="raju" onContinue={() => undefined} onBack={() => undefined} />,
     );
     await flushDebounceAndFetch();
     expect(getByTestId('handle-status-available')).toBeTruthy();
@@ -100,11 +94,7 @@ describe('HandlePicker', () => {
       [`raju.${PDS_HOST}`]: { status: 200, did: 'did:plc:abc' },
     });
     const { getByTestId } = render(
-      <HandlePicker
-        seedPrefix="raju"
-        onContinue={() => undefined}
-        onBack={() => undefined}
-      />,
+      <HandlePicker seedPrefix="raju" onContinue={() => undefined} onBack={() => undefined} />,
     );
     await flushDebounceAndFetch();
     expect(getByTestId('handle-status-taken')).toBeTruthy();
@@ -119,11 +109,7 @@ describe('HandlePicker', () => {
     });
     const onContinue = jest.fn();
     const { getByTestId } = render(
-      <HandlePicker
-        seedPrefix="raju"
-        onContinue={onContinue}
-        onBack={() => undefined}
-      />,
+      <HandlePicker seedPrefix="raju" onContinue={onContinue} onBack={() => undefined} />,
     );
     await flushDebounceAndFetch();
     // First suggestion row — find the test ID by querying the list.
@@ -147,11 +133,7 @@ describe('HandlePicker', () => {
   it('treats PDS unreachable as a soft-warn (continue allowed)', async () => {
     stubFetch({}, 500); // every handle = HTTP 500
     const { getByTestId } = render(
-      <HandlePicker
-        seedPrefix="raju"
-        onContinue={() => undefined}
-        onBack={() => undefined}
-      />,
+      <HandlePicker seedPrefix="raju" onContinue={() => undefined} onBack={() => undefined} />,
     );
     await flushDebounceAndFetch();
     expect(getByTestId('handle-status-unknown')).toBeTruthy();

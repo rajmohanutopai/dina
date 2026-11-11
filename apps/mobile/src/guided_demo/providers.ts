@@ -23,7 +23,6 @@
 import { router } from 'expo-router';
 import { Alert } from 'react-native';
 
-
 import { addLifecycleMessage, addMessage, clearThreadMessages } from '@dina/brain/chat';
 import {
   currentDataScope,
@@ -36,7 +35,6 @@ import { addSystemNotification } from '../hooks/useChatThread';
 
 import { DEMO_SALON, nextNovember7, type DemoMode, type DemoNavTarget } from './content';
 import { describePeerLensReview, type GuidedDemoSeams } from './runner';
-
 
 const MAIN_THREAD = 'main';
 
@@ -205,7 +203,11 @@ export function makeGuidedDemoSeams(): GuidedDemoSeams {
           DEMO_SALON.publishPrompt.title,
           DEMO_SALON.publishPrompt.message,
           [
-            { text: DEMO_SALON.publishPrompt.cancel, style: 'cancel', onPress: () => resolve(false) },
+            {
+              text: DEMO_SALON.publishPrompt.cancel,
+              style: 'cancel',
+              onPress: () => resolve(false),
+            },
             { text: DEMO_SALON.publishPrompt.confirm, onPress: () => resolve(true) },
           ],
           { cancelable: true, onDismiss: () => resolve(false) },

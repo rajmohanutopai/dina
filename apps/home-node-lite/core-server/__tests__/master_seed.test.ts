@@ -161,9 +161,7 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
       try {
         await loadOrGenerateSeed(dir); // create the keyfile
         await fs.chmod(path.join(dir, KEYFILE_NAME), 0o644);
-        await expect(loadOrGenerateSeed(dir)).rejects.toThrow(
-          /keyfile mode is 644, expected 600/,
-        );
+        await expect(loadOrGenerateSeed(dir)).rejects.toThrow(/keyfile mode is 644, expected 600/);
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
@@ -174,9 +172,7 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
       try {
         await loadOrGenerateSeed(dir);
         await fs.chmod(path.join(dir, KEYFILE_NAME), 0o604);
-        await expect(loadOrGenerateSeed(dir)).rejects.toThrow(
-          /keyfile mode is 604, expected 600/,
-        );
+        await expect(loadOrGenerateSeed(dir)).rejects.toThrow(/keyfile mode is 604, expected 600/);
       } finally {
         await fs.rm(dir, { recursive: true, force: true });
       }
@@ -235,7 +231,9 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
         // Simulate an operator who migrated to wrapped-seed but
         // forgot to delete the old keyfile. Wrapped wins; we never
         // silently fall back to the less-secure convenience seed.
-        await fs.writeFile(path.join(dir, KEYFILE_NAME), Buffer.alloc(SEED_LEN_BYTES), { mode: 0o600 });
+        await fs.writeFile(path.join(dir, KEYFILE_NAME), Buffer.alloc(SEED_LEN_BYTES), {
+          mode: 0o600,
+        });
         await fs.writeFile(path.join(dir, WRAPPED_SEED_NAME), Buffer.from([1, 2]), { mode: 0o600 });
         const res = await loadOrGenerateSeed(dir);
         expect(res.kind).toBe('wrapped');
@@ -327,7 +325,10 @@ describe('loadOrGenerateSeed (tasks 4.51 + 4.52)', () => {
         expect(first.kind).toBe('generated');
         expect(wrappedSeedPathOf(first)).toBe(path.join(dir, 'vault', WRAPPED_SEED_NAME));
         // The trailing newline is not part of the passphrase.
-        const phrase = await recoveryPhraseFromWrapped(path.join(dir, 'vault'), 'cell passphrase 1');
+        const phrase = await recoveryPhraseFromWrapped(
+          path.join(dir, 'vault'),
+          'cell passphrase 1',
+        );
         expect(first.kind === 'generated' && first.mnemonic).toBe(phrase);
         // A later boot reads it again from a fresh fd.
         resetUnlockPassphraseForTest();

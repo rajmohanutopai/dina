@@ -165,11 +165,13 @@ export const DEMO_STEPS: readonly DemoStep[] = [
     // Scripted enrichment cards — the "it connected the dinosaurs fact" payoff
     // without a live LLM round-trip.
     reminders: [
-      { text: "Emma's birthday is in a week (Nov 7). She loves dinosaurs, so maybe a dinosaur-themed gift.", daysBefore: 7 },
+      {
+        text: "Emma's birthday is in a week (Nov 7). She loves dinosaurs, so maybe a dinosaur-themed gift.",
+        daysBefore: 7,
+      },
       { text: "Today is Emma's birthday! Wish your daughter a happy birthday." },
     ],
-    caption:
-      'Add a date and Dina sets a reminder. It links to what Dina already knows about Emma.',
+    caption: 'Add a date and Dina sets a reminder. It links to what Dina already knows about Emma.',
   },
   {
     id: 'chair_ask',
@@ -317,7 +319,8 @@ export const DEMO_D2D = {
    *  and all the real text shows. (Pragmatic demo workaround for a stubborn RN
    *  async-measure quirk specific to this card; the sync birthday reminders are
    *  unaffected. Not worth a deeper fix for a demo item.) */
-  reminder: 'Alonso is coming over tomorrow morning.\nHe loves his cold brew, so maybe\nhave some ready.\n',
+  reminder:
+    'Alonso is coming over tomorrow morning.\nHe loves his cold brew, so maybe\nhave some ready.\n',
   caption:
     'Talk to your friends over end-to-end encrypted channels. Dina reads what comes in, tells you what matters, and sets reminders enriched with what it already knows. Only people you have both added as contacts can reach you.',
 } as const;
@@ -386,7 +389,7 @@ export const DEMO_SALON = {
   publishCaption:
     'This is your services page — your salon listing. It is not live yet. Tap Publish to make it discoverable to other Dinas; it still answers only from your Salon vault.',
   bookingCaption:
-    'Now a customer\'s Dina asks your salon for a slot. It reads only your Salon vault, and books nothing without your OK.',
+    "Now a customer's Dina asks your salon for a slot. It reads only your Salon vault, and books nothing without your OK.",
   replyCaption:
     'You approved, so Dina booked it and replied. A whole service, run from your phone.',
 } as const;

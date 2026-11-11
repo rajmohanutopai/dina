@@ -40,11 +40,7 @@ export type TimestampValidationResult =
   | { ok: true; timestampMs: number }
   | { ok: false; reason: TimestampRejectionReason; detail?: string };
 
-export type TimestampRejectionReason =
-  | 'missing'
-  | 'malformed'
-  | 'too_old'
-  | 'too_future';
+export type TimestampRejectionReason = 'missing' | 'malformed' | 'too_old' | 'too_future';
 
 /**
  * Validate an `X-Timestamp` header value against the server clock.

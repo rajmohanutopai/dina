@@ -96,7 +96,9 @@ describe('catalog integrity — shipped catalog', () => {
 
 describe('catalog integrity — fail-loud on authoring bugs (spec §41)', () => {
   it('rejects a duplicate category id', () => {
-    expect(() => validateCatalogIntegrity([CAT_A, { ...CAT_A }], [CAP_A])).toThrow(/duplicate category id/i);
+    expect(() => validateCatalogIntegrity([CAT_A, { ...CAT_A }], [CAP_A])).toThrow(
+      /duplicate category id/i,
+    );
   });
 
   it('rejects a duplicate capability id', () => {
@@ -120,15 +122,15 @@ describe('catalog integrity — fail-loud on authoring bugs (spec §41)', () => 
     expect(() => validateCatalogIntegrity([CAT_A], [{ ...CAP_A, id: 'com.acme.thing' }])).toThrow(
       /reserved for namespaced custom/i,
     );
-    expect(() => validateCatalogIntegrity([CAT_A], [{ ...CAP_A, aliases: ['com.acme.thing'] }])).toThrow(
-      /reserved for namespaced custom/i,
-    );
+    expect(() =>
+      validateCatalogIntegrity([CAT_A], [{ ...CAP_A, aliases: ['com.acme.thing'] }]),
+    ).toThrow(/reserved for namespaced custom/i);
   });
 
   it('rejects an id/alias that is not trimmed-lowercase', () => {
-    expect(() => validateCatalogIntegrity([CAT_A], [{ ...CAP_A, aliases: ['Thing_State'] }])).toThrow(
-      /trimmed \+ lowercase/i,
-    );
+    expect(() =>
+      validateCatalogIntegrity([CAT_A], [{ ...CAP_A, aliases: ['Thing_State'] }]),
+    ).toThrow(/trimmed \+ lowercase/i);
   });
 
   it('rejects a category reference to an unknown category', () => {
@@ -153,8 +155,15 @@ describe('catalog integrity — fail-loud on authoring bugs (spec §41)', () => 
   });
 
   it('rejects a booking/write/payment/agentic capability with approval_policy_hint "none"', () => {
-    const booking: CapabilityDefinition = { ...CAP_A, id: 'book_thing', action_class: 'booking', approval_policy_hint: 'none' };
-    expect(() => validateCatalogIntegrity([CAT_A], [booking])).toThrow(/must carry a non-"none" approval/i);
+    const booking: CapabilityDefinition = {
+      ...CAP_A,
+      id: 'book_thing',
+      action_class: 'booking',
+      approval_policy_hint: 'none',
+    };
+    expect(() => validateCatalogIntegrity([CAT_A], [booking])).toThrow(
+      /must carry a non-"none" approval/i,
+    );
   });
 
   it('rejects a subject-scoped capability marked intent_routable (taxonomy §3)', () => {
@@ -351,9 +360,18 @@ describe('catalog-aware resolver (knows the WHOLE catalog, not just the 3 seed)'
   });
 
   it('classifyCatalogCapability splits official / custom / unknown (anti-spoof)', () => {
-    expect(classifyCatalogCapability('eta_query')).toEqual({ kind: 'official', canonical: 'eta_query' });
-    expect(classifyCatalogCapability('bus_eta')).toEqual({ kind: 'official', canonical: 'eta_query' });
-    expect(classifyCatalogCapability('deploy_status')).toEqual({ kind: 'official', canonical: 'deploy_status' });
+    expect(classifyCatalogCapability('eta_query')).toEqual({
+      kind: 'official',
+      canonical: 'eta_query',
+    });
+    expect(classifyCatalogCapability('bus_eta')).toEqual({
+      kind: 'official',
+      canonical: 'eta_query',
+    });
+    expect(classifyCatalogCapability('deploy_status')).toEqual({
+      kind: 'official',
+      canonical: 'deploy_status',
+    });
     expect(classifyCatalogCapability('com.acme.widget_price')).toEqual({
       kind: 'custom',
       canonical: 'com.acme.widget_price',

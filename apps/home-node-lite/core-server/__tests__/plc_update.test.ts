@@ -101,21 +101,21 @@ describe('buildUpdateOperation (task 4.60)', () => {
 
   describe('validation', () => {
     it('rejects non-did:plc input', () => {
-      expect(() =>
-        buildUpdateOperation({ ...validParams(), did: 'did:key:z' }),
-      ).toThrow(/did must start with "did:plc:"/);
+      expect(() => buildUpdateOperation({ ...validParams(), did: 'did:key:z' })).toThrow(
+        /did must start with "did:plc:"/,
+      );
     });
 
     it('rejects empty prev', () => {
-      expect(() =>
-        buildUpdateOperation({ ...validParams(), prev: '' }),
-      ).toThrow(/prev is required/);
+      expect(() => buildUpdateOperation({ ...validParams(), prev: '' })).toThrow(
+        /prev is required/,
+      );
     });
 
     it('rejects empty rotationKeys', () => {
-      expect(() =>
-        buildUpdateOperation({ ...validParams(), rotationKeys: [] }),
-      ).toThrow(/rotationKeys must be non-empty/);
+      expect(() => buildUpdateOperation({ ...validParams(), rotationKeys: [] })).toThrow(
+        /rotationKeys must be non-empty/,
+      );
     });
 
     it('rejects non-didkey rotation key', () => {
@@ -238,7 +238,7 @@ describe('updateDIDPLC (task 4.60)', () => {
         ok: false,
         status: 400,
         text: async () => 'invalid prev cid',
-      } as Response);
+      }) as Response;
 
     await expect(
       updateDIDPLC(

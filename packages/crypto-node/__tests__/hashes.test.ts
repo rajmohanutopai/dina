@@ -84,9 +84,7 @@ describe('NodeCryptoAdapter — hashes (task 3.24)', () => {
     });
 
     it('rejects outLen < 1', async () => {
-      await expect(adapter.blake2b(new Uint8Array(0), 0)).rejects.toThrow(
-        /outLen must be 1\.\.64/,
-      );
+      await expect(adapter.blake2b(new Uint8Array(0), 0)).rejects.toThrow(/outLen must be 1\.\.64/);
     });
 
     it('rejects outLen > 64', async () => {

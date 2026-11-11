@@ -90,11 +90,7 @@ describe('D2D Message Delivery', () => {
       setDeliveryFetchFn(async () => {
         throw new Error('ECONNREFUSED');
       });
-      const result = await deliverMessage(
-        'did:plc:r',
-        new Uint8Array(0),
-        'wss://unreachable.com',
-      );
+      const result = await deliverMessage('did:plc:r', new Uint8Array(0), 'wss://unreachable.com');
       expect(result.delivered).toBe(false);
       expect(result.error).toContain('ECONNREFUSED');
     });

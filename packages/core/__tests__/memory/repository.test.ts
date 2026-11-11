@@ -196,7 +196,8 @@ for (const backend of ['InMemory' /* , 'SQLite' — see note below */] as const)
     describe('TopHonoursLimit', () => {
       it('returns exactly `limit` entries, in descending salience order', async () => {
         // Three topics touched a different number of times at T0.
-        for (let i = 0; i < 5; i++) await repo.touch({ topic: 'alpha', kind: 'theme', nowUnix: T0 });
+        for (let i = 0; i < 5; i++)
+          await repo.touch({ topic: 'alpha', kind: 'theme', nowUnix: T0 });
         for (let i = 0; i < 3; i++) await repo.touch({ topic: 'beta', kind: 'theme', nowUnix: T0 });
         await repo.touch({ topic: 'gamma', kind: 'theme', nowUnix: T0 });
         const top = await repo.top(3, T0);

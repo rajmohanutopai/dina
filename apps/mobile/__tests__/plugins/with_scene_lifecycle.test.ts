@@ -13,7 +13,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 
 // The plugin is a CommonJS config plugin run by `expo prebuild`.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const plugin = require('../../plugins/with-scene-lifecycle') as {
   adoptSceneLifecycle: (contents: string) => string;
   SCENE_MANIFEST: Record<string, unknown>;

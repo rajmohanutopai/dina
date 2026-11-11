@@ -47,9 +47,9 @@ describe('computePassphraseRecord + verifyPassphrase (task 4.69)', () => {
   });
 
   it('rejects passphrases shorter than MIN_PASSPHRASE_LENGTH at record-create', async () => {
-    await expect(
-      computePassphraseRecord('short', { params: fastParams }),
-    ).rejects.toThrow(/at least 8 characters/);
+    await expect(computePassphraseRecord('short', { params: fastParams })).rejects.toThrow(
+      /at least 8 characters/,
+    );
     expect(MIN_PASSPHRASE_LENGTH).toBe(8);
   });
 

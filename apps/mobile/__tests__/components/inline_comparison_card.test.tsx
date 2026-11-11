@@ -60,7 +60,12 @@ describe('InlineComparisonCard', () => {
       version: 1,
       blocks: [
         { kind: 'title', text: 'Where to buy' },
-        { kind: 'link', label: 'Acme Timber', url: 'https://shop.example.com/x', action: 'open_url' },
+        {
+          kind: 'link',
+          label: 'Acme Timber',
+          url: 'https://shop.example.com/x',
+          action: 'open_url',
+        },
       ],
     });
 

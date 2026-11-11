@@ -130,6 +130,16 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         ): Promise<{ uri: string; cid: string }> =>
           publishAttestationToPDS(pdsPublisher, ownerDid, record, job.rkey)
       : undefined;
+  // Read at execute time, after the handler checked owner DID, publisher and
+  // store are present.
+  const reviewPublishDeps = () => {
+    const owner = options.ownerDid;
+    const repo = reviewRepo();
+    if (owner === undefined || repo === null || publishReview === undefined) {
+      throw new Error('review publish: owner DID, store or publisher missing');
+    }
+    return { ownerDid: owner, repo, publish: publishReview, now: options.now ?? Date.now };
+  };
   return {
     ...createConnectedBrainAgentFacades(),
     // 5c — dina_remember: provenance-preserving ingress.
@@ -594,7 +604,8 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
           },
         };
       }
-      if (reviewRepo() === null) {
+      const repo = reviewRepo();
+      if (repo === null) {
         return { status: 503, body: { error: 'review publish store not wired' } };
       }
       const parsed = parseAgentAttestation(ctx.body.record, options.now ?? Date.now);
@@ -603,10 +614,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
       }
       const taskId = facadeActionTaskId(ctx.agentDid, ctx.sessionId, 'review', requestId);
       const jobId = reviewJobId(taskId);
-      if (
-        reviewRepo()!.getById(jobId) === null &&
-        reviewRepo()!.countActive(options.ownerDid) >= MAX_PUBLISH_QUEUE
-      ) {
+      if (repo.getById(jobId) === null && repo.countActive(options.ownerDid) >= MAX_PUBLISH_QUEUE) {
         return { status: 429, body: { error: 'review_publish_queue_full' } };
       }
       const subjectLabel =
@@ -629,13 +637,7 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         actionPayload: { record: parsed.record },
         displayTitle: 'Publish a public review',
         displayDetail: detail,
-        execute: (taskId, payload) =>
-          executeReviewPublish(taskId, payload, {
-            ownerDid: options.ownerDid!,
-            repo: reviewRepo()!,
-            publish: publishReview!,
-            now: options.now ?? Date.now,
-          }),
+        execute: (taskId, payload) => executeReviewPublish(taskId, payload, reviewPublishDeps()),
       });
     },
     peerlensStatus: async (ctx) => {
@@ -674,14 +676,11 @@ export function createAgentFacades(options: CreateAgentFacadesOptions = {}): Age
         displayTitle: payload.display_title,
         displayDetail: payload.display_detail,
         execute: (taskId, actionPayload) =>
-          executeReviewPublish(taskId, actionPayload, {
-            ownerDid: options.ownerDid!,
-            repo: reviewRepo()!,
-            publish: publishReview!,
-            now: options.now ?? Date.now,
-          }),
+          executeReviewPublish(taskId, actionPayload, reviewPublishDeps()),
       });
-      return projectReviewStatus(action, reviewRepo()!, id);
+      const repoAfter = reviewRepo();
+      if (repoAfter === null) throw new Error('peerlensStatus: review publish store missing');
+      return projectReviewStatus(action, repoAfter, id);
     },
     vaults: (ctx) => {
       const now = (options.now ?? Date.now)();

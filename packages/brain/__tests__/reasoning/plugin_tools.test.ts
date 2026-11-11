@@ -8,7 +8,10 @@
  * args before Core is asked.
  */
 
-import { createInvokePluginTool, createListPluginCapabilitiesTool } from '../../src/reasoning/plugin_tools';
+import {
+  createInvokePluginTool,
+  createListPluginCapabilitiesTool,
+} from '../../src/reasoning/plugin_tools';
 
 import type { PluginToolCoreClient } from '../../src/reasoning/plugin_tools';
 import type { InvokePluginToolResult, PluginToolCapability } from '@dina/core';
@@ -46,7 +49,9 @@ describe('list_plugin_capabilities', () => {
 
   it('an empty install set is an empty list, not an error', async () => {
     const { core } = fakeCore({ ok: false, code: 'x', message: 'x' }, []);
-    await expect(createListPluginCapabilitiesTool({ core }).execute({})).resolves.toEqual({ capabilities: [] });
+    await expect(createListPluginCapabilitiesTool({ core }).execute({})).resolves.toEqual({
+      capabilities: [],
+    });
   });
 });
 
@@ -64,11 +69,20 @@ describe('invoke_plugin', () => {
       mode: 'approval_required',
       taskId: 'plgx_1',
       executionId: 'plgx_1',
-      card: { riskLevel: 'HIGH', reasons: ['High-risk action'], paramsText: '{"utr":"314159265358"}' },
+      card: {
+        riskLevel: 'HIGH',
+        reasons: ['High-risk action'],
+        paramsText: '{"utr":"314159265358"}',
+      },
     });
     const tool = createInvokePluginTool({ core });
     expect(tool.terminal).toBe(true);
-    const out = (await tool.execute({ ...ARGS, resource: 'sneaky', value: 9, idempotency_key: 'k' })) as {
+    const out = (await tool.execute({
+      ...ARGS,
+      resource: 'sneaky',
+      value: 9,
+      idempotency_key: 'k',
+    })) as {
       status: string;
       task_id: string;
       note: string;
@@ -88,14 +102,28 @@ describe('invoke_plugin', () => {
   });
 
   it('a grant-silenced dispatch says so and names the task', async () => {
-    const { core } = fakeCore({ ok: true, mode: 'dispatched', taskId: 'plgx_2', executionId: 'plgx_2', grantId: 'g1' });
-    const out = (await createInvokePluginTool({ core }).execute(ARGS)) as { status: string; task_id: string; note: string };
+    const { core } = fakeCore({
+      ok: true,
+      mode: 'dispatched',
+      taskId: 'plgx_2',
+      executionId: 'plgx_2',
+      grantId: 'g1',
+    });
+    const out = (await createInvokePluginTool({ core }).execute(ARGS)) as {
+      status: string;
+      task_id: string;
+      note: string;
+    };
     expect(out).toMatchObject({ status: 'dispatched', task_id: 'plgx_2' });
     expect(out.note).toMatch(/standing approval/);
   });
 
   it("Core's refusal is thrown with its typed code — a terminal tool's VALUE would end the turn with nothing said", async () => {
-    const { core } = fakeCore({ ok: false, code: 'params_invalid', message: 'params violate the consented params_schema' });
+    const { core } = fakeCore({
+      ok: false,
+      code: 'params_invalid',
+      message: 'params violate the consented params_schema',
+    });
     await expect(createInvokePluginTool({ core }).execute(ARGS)).rejects.toThrow(
       /invoke_plugin refused \(params_invalid\): params violate/,
     );
@@ -107,7 +135,11 @@ describe('invoke_plugin', () => {
       code: 'response_malformed',
       message: 'Core accepted the ask (HTTP 202) but its reply could not be read.',
     });
-    const out = (await createInvokePluginTool({ core }).execute(ARGS)) as { status: string; task_id: string; note: string };
+    const out = (await createInvokePluginTool({ core }).execute(ARGS)) as {
+      status: string;
+      task_id: string;
+      note: string;
+    };
     expect(out.status).toBe('approval_required');
     expect(out.task_id).toBe('');
     expect(out.note).toMatch(/could not be read/);
@@ -115,26 +147,53 @@ describe('invoke_plugin', () => {
   });
 
   it('refuses malformed args before Core is asked, and never logs the params', async () => {
-    const { core, invoke } = fakeCore({ ok: true, mode: 'dispatched', taskId: 't', executionId: 't' });
+    const { core, invoke } = fakeCore({
+      ok: true,
+      mode: 'dispatched',
+      taskId: 't',
+      executionId: 't',
+    });
     const events: Record<string, unknown>[] = [];
     const tool = createInvokePluginTool({ core, logger: (e) => events.push(e) });
-    await expect(tool.execute({ ...ARGS, install_id: '' })).rejects.toThrow(/install_id and capability_id/);
-    await expect(tool.execute({ ...ARGS, params: 'not an object' })).rejects.toThrow(/params must be an object/);
-    await expect(tool.execute({ ...ARGS, params: [1, 2] })).rejects.toThrow(/params must be an object/);
+    await expect(tool.execute({ ...ARGS, install_id: '' })).rejects.toThrow(
+      /install_id and capability_id/,
+    );
+    await expect(tool.execute({ ...ARGS, params: 'not an object' })).rejects.toThrow(
+      /params must be an object/,
+    );
+    await expect(tool.execute({ ...ARGS, params: [1, 2] })).rejects.toThrow(
+      /params must be an object/,
+    );
     // The classification the caller sent is the one Core judges (§11.5): a
     // mistyped list is refused, never quietly narrowed to "unclassified".
-    await expect(tool.execute({ ...ARGS, param_categories: 'payment' })).rejects.toThrow(/param_categories must be an array of strings/);
-    await expect(tool.execute({ ...ARGS, param_categories: ['payment', 42] })).rejects.toThrow(/param_categories must be an array of strings/);
+    await expect(tool.execute({ ...ARGS, param_categories: 'payment' })).rejects.toThrow(
+      /param_categories must be an array of strings/,
+    );
+    await expect(tool.execute({ ...ARGS, param_categories: ['payment', 42] })).rejects.toThrow(
+      /param_categories must be an array of strings/,
+    );
     expect(invoke).not.toHaveBeenCalled();
     // An explicitly EMPTY classification is allowed through — Core cards unclassified params.
     await tool.execute({ ...ARGS, param_categories: [] });
     expect(invoke).toHaveBeenLastCalledWith(expect.objectContaining({ paramCategories: [] }));
     expect(JSON.stringify(events)).not.toContain('314159265358');
-    expect(events.at(-1)).toEqual({ event: 'plugin_invoked', capability_id: CAP.capability_id, outcome: 'dispatched' });
+    expect(events.at(-1)).toEqual({
+      event: 'plugin_invoked',
+      capability_id: CAP.capability_id,
+      outcome: 'dispatched',
+    });
     // A refusal is logged by its code before it is thrown.
     const refusing = fakeCore({ ok: false, code: 'blocked', message: 'payment class' });
     const refusedEvents: Record<string, unknown>[] = [];
-    await expect(createInvokePluginTool({ core: refusing.core, logger: (e) => refusedEvents.push(e) }).execute(ARGS)).rejects.toThrow();
-    expect(refusedEvents.at(-1)).toEqual({ event: 'plugin_invoked', capability_id: CAP.capability_id, outcome: 'refused:blocked' });
+    await expect(
+      createInvokePluginTool({ core: refusing.core, logger: (e) => refusedEvents.push(e) }).execute(
+        ARGS,
+      ),
+    ).rejects.toThrow();
+    expect(refusedEvents.at(-1)).toEqual({
+      event: 'plugin_invoked',
+      capability_id: CAP.capability_id,
+      outcome: 'refused:blocked',
+    });
   });
 });

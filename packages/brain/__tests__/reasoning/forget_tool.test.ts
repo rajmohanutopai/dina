@@ -12,7 +12,11 @@ function tool() {
     core: {
       forgetPropose: async (input) => {
         calls.push(input);
-        return { status: 'confirm_pending', task_id: 'forget-9', summary: 'Forget everything about Ines' };
+        return {
+          status: 'confirm_pending',
+          task_id: 'forget-9',
+          summary: 'Forget everything about Ines',
+        };
       },
     },
   });
@@ -20,16 +24,29 @@ function tool() {
 }
 
 it('asks Core with a proof of the whole owner turn and one request', async () => {
-  setCurrentOwnerTurn('main', { releaseSession: 'chat:main', turnId: 't1', text: 'forget everything about Ines', at: Date.now() });
+  setCurrentOwnerTurn('main', {
+    releaseSession: 'chat:main',
+    turnId: 't1',
+    text: 'forget everything about Ines',
+    at: Date.now(),
+  });
   const { t, calls } = tool();
   const out = await t.execute({ person: 'Ines' });
   expect(out).toMatchObject({ status: 'confirm_pending', task_id: 'forget-9' });
   expect(calls).toHaveLength(1);
-  expect(calls[0]).toMatchObject({ request: { person: 'Ines' }, proof: { turnId: 't1', turnText: 'forget everything about Ines' } });
+  expect(calls[0]).toMatchObject({
+    request: { person: 'Ines' },
+    proof: { turnId: 't1', turnText: 'forget everything about Ines' },
+  });
 });
 
 it('needs exactly one of person, persona or item ids', async () => {
-  setCurrentOwnerTurn('main', { releaseSession: 'chat:main', turnId: 't2', text: 'forget it all', at: Date.now() });
+  setCurrentOwnerTurn('main', {
+    releaseSession: 'chat:main',
+    turnId: 't2',
+    text: 'forget it all',
+    at: Date.now(),
+  });
   const { t, calls } = tool();
   expect(await t.execute({})).toHaveProperty('error');
   expect(await t.execute({ person: 'Ines', persona: 'work' })).toHaveProperty('error');

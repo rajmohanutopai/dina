@@ -112,11 +112,7 @@ export interface ServiceProfileRecord {
 }
 
 export const SERVICE_PROFILE_TYPE = 'com.dinakernel.service.profile' as const;
-const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set([
-  'auto',
-  'review',
-  'manual',
-]);
+const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set(['auto', 'review', 'manual']);
 
 /**
  * Build a `com.dinakernel.service.profile` record ready to be written via
@@ -124,9 +120,7 @@ const VALID_POLICIES: ReadonlySet<ResponsePolicy> = new Set([
  * `TypeError` with a descriptive message on invalid input — the
  * caller (admin UI "publish profile" button) surfaces this directly.
  */
-export function buildServiceProfile(
-  input: BuildProfileInput,
-): ServiceProfileRecord {
+export function buildServiceProfile(input: BuildProfileInput): ServiceProfileRecord {
   // Clone first so we can mutate locally without touching the caller's object.
   const cloned = structuredClone(input);
 
@@ -154,7 +148,7 @@ export function buildServiceProfile(
   // Build each capability schema record.
   const capabilitySchemas: Record<string, CapabilitySchemaRecord> = {};
   for (const cap of capabilities) {
-    const raw = cloned.capabilitySchemas[cap]!;
+    const raw = cloned.capabilitySchemas[cap];
     validateCapabilitySchema(cap, raw);
     // schema_hash covers only {description, params, result} — NOT the
     // hash itself, and NOT any future fields. Matches the requester /
@@ -223,9 +217,7 @@ function validateCapabilitySchema(
   schema: unknown,
 ): asserts schema is CapabilitySchemaInput {
   if (schema === null || typeof schema !== 'object') {
-    throw new TypeError(
-      `buildServiceProfile: capability "${cap}" schema must be an object`,
-    );
+    throw new TypeError(`buildServiceProfile: capability "${cap}" schema must be an object`);
   }
   const s = schema as Partial<CapabilitySchemaInput>;
   if (typeof s.description !== 'string' || s.description.trim() === '') {
@@ -272,9 +264,7 @@ function validateResponsePolicy(
   }
 }
 
-function validateServiceArea(
-  area: unknown,
-): asserts area is ServiceAreaInput {
+function validateServiceArea(area: unknown): asserts area is ServiceAreaInput {
   if (area === null || typeof area !== 'object' || Array.isArray(area)) {
     throw new TypeError('buildServiceProfile: serviceArea must be an object');
   }
@@ -290,10 +280,7 @@ function validateServiceArea(
   }
 }
 
-function validateCapabilityListMatches(
-  provided: string[],
-  derived: string[],
-): void {
+function validateCapabilityListMatches(provided: string[], derived: string[]): void {
   if (!Array.isArray(provided)) {
     throw new TypeError('buildServiceProfile: capabilities, when set, must be an array');
   }

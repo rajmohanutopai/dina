@@ -36,7 +36,11 @@ describe('REQ-05: asks end', () => {
     const after = new AskRegistry({ adapter, nowMsFn: c.now });
     const summary = await after.restoreOnStartup();
 
-    expect(summary).toMatchObject({ expiredOnRestore: 1, stillInFlight: 0, stillPendingApproval: 1 });
+    expect(summary).toMatchObject({
+      expiredOnRestore: 1,
+      stillInFlight: 0,
+      stillPendingApproval: 1,
+    });
     expect((await after.get('dead-exec'))?.status).toBe('expired');
     expect((await after.get('waiting'))?.status).toBe('pending_approval');
   });
@@ -64,7 +68,11 @@ describe('REQ-05: asks end', () => {
 
   it('a card outlives the 60 s ask deadline: pending_approval waits for it', async () => {
     const c = clock();
-    const registry = new AskRegistry({ adapter: new InMemoryAskAdapter(), nowMsFn: c.now, defaultTtlMs: 60_000 });
+    const registry = new AskRegistry({
+      adapter: new InMemoryAskAdapter(),
+      nowMsFn: c.now,
+      defaultTtlMs: 60_000,
+    });
     await registry.enqueue({ id: 'a', question: 'q', requesterDid: REQUESTER });
     await registry.markPendingApproval('a', 'appr', '{"paused":1}');
     c.advance(14 * 60_000);
@@ -86,7 +94,11 @@ describe('REQ-05: asks end', () => {
 
   it('a resume gets a new deadline, so the sweep does not kill it at once', async () => {
     const c = clock();
-    const registry = new AskRegistry({ adapter: new InMemoryAskAdapter(), nowMsFn: c.now, defaultTtlMs: 60_000 });
+    const registry = new AskRegistry({
+      adapter: new InMemoryAskAdapter(),
+      nowMsFn: c.now,
+      defaultTtlMs: 60_000,
+    });
     await registry.enqueue({ id: 'a', question: 'q', requesterDid: REQUESTER });
     await registry.markPendingApproval('a', 'appr');
     c.advance(14 * 60_000);
@@ -139,7 +151,10 @@ describe('REQ-16: a repeated request id', () => {
     const first = await handle({ question: 'q', requesterDid: REQUESTER, requestIdHeader: id });
     const again = await handle({ question: 'q', requesterDid: REQUESTER, requestIdHeader: id });
     expect(first.status).toBe(200);
-    expect(again).toMatchObject({ status: 200, body: { request_id: id, status: 'complete', content: 'hi' } });
+    expect(again).toMatchObject({
+      status: 200,
+      body: { request_id: id, status: 'complete', content: 'hi' },
+    });
     expect(calls).toBe(1);
   });
 
@@ -168,7 +183,11 @@ describe('REQ-16: a repeated request id', () => {
       executeFn: async (input) => ({ kind: 'answer', answer: { text: input.requesterDid } }),
     });
     await handle({ question: 'q', requesterDid: REQUESTER, requestIdHeader: id });
-    const other = await handle({ question: 'q', requesterDid: 'did:plc:other', requestIdHeader: id });
+    const other = await handle({
+      question: 'q',
+      requesterDid: 'did:plc:other',
+      requestIdHeader: id,
+    });
     expect(other.status).toBe(200);
     if (other.kind !== 'fast_path') throw new Error(other.kind);
     expect(other.body.request_id).not.toBe(id);
@@ -185,14 +204,22 @@ describe('REQ-17: a second approval on the re-run path', () => {
     });
     resumer = new AskApprovalResumer({
       registry,
-      executeFn: async () => ({ kind: 'approval', approvalId: 'appr-2', pausedStateJson: '{"at":"second"}' }),
+      executeFn: async () => ({
+        kind: 'approval',
+        approvalId: 'appr-2',
+        pausedStateJson: '{"at":"second"}',
+      }),
     });
     await registry.enqueue({ id: 'a', question: 'q', requesterDid: REQUESTER });
     await registry.markPendingApproval('a', 'appr-1');
     await registry.resumeAfterApproval('a');
     await flush();
     const row = await registry.get('a');
-    expect(row).toMatchObject({ status: 'pending_approval', approvalId: 'appr-2', pausedStateJson: '{"at":"second"}' });
+    expect(row).toMatchObject({
+      status: 'pending_approval',
+      approvalId: 'appr-2',
+      pausedStateJson: '{"at":"second"}',
+    });
   });
 });
 
@@ -222,7 +249,9 @@ describe('REQ-19 + REQ-03: what a card means to the ask waiting on it', () => {
       approvalSource: sourceFor({ status: 'failed', error: 'expired' }),
     });
     await gateway.reconcile();
-    expect(JSON.parse((await registry.get('a'))?.errorJson ?? '{}').reason).toBe('approval_expired');
+    expect(JSON.parse((await registry.get('a'))?.errorJson ?? '{}').reason).toBe(
+      'approval_expired',
+    );
   });
 
   it('an ask never resumes twice on one approval with no owner action between', async () => {

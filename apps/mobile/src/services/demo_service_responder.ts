@@ -75,7 +75,7 @@ export function createDemoServiceResponder(
 ): DemoServiceResponder {
   const busDID = options.busDID ?? DEMO_DEMO_PROVIDER_DID;
   const buildResult = options.buildResult ?? defaultEtaResult;
-  const log = options.log ?? (() => {});
+  const log = options.log ?? ((): void => undefined);
 
   return {
     wrap(realSendD2D) {
@@ -182,7 +182,8 @@ function defaultEtaResult(params: EtaQueryParams): EtaQueryResult {
     typeof params.location.lng === 'number'
       ? params.location
       : FALLBACK_LOCATION;
-  const routeId = typeof params.route_id === 'string' && params.route_id !== '' ? params.route_id : '42';
+  const routeId =
+    typeof params.route_id === 'string' && params.route_id !== '' ? params.route_id : '42';
   return {
     eta_minutes: 12,
     vehicle_type: 'Bus',

@@ -59,7 +59,12 @@ export function checkSignedCall(
   const timestamp = header(call.headers, 'X-Timestamp');
   const nonce = header(call.headers, 'X-Nonce');
   const sigHex = header(call.headers, 'X-Signature');
-  if (keyHex === undefined || timestamp === undefined || nonce === undefined || sigHex === undefined) {
+  if (
+    keyHex === undefined ||
+    timestamp === undefined ||
+    nonce === undefined ||
+    sigHex === undefined
+  ) {
     return 'missing_headers';
   }
   if (keyHex.length !== 64 || !HEX.test(keyHex)) return 'key_does_not_match_id';

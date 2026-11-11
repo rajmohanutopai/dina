@@ -119,7 +119,7 @@ export async function verifyPlcChain(
   // Validate shape for every op up-front — cheap + catches obviously
   // malformed chains before spending crypto cycles.
   for (let i = 0; i < ops.length; i++) {
-    const shapeError = validateShape(ops[i]!);
+    const shapeError = validateShape(ops[i]);
     if (shapeError !== null) {
       return {
         ok: false,
@@ -131,7 +131,8 @@ export async function verifyPlcChain(
   }
 
   // Genesis: prev must be null.
-  const genesis = ops[0]!;
+  const genesis = ops[0];
+  if (genesis === undefined) throw new Error('verifyPlcChain: genesis op missing');
   if (genesis.prev !== null) {
     return {
       ok: false,
@@ -144,12 +145,7 @@ export async function verifyPlcChain(
   // Genesis is self-signed: one of its own rotationKeys must verify
   // the signature.
   const genesisBytes = serialiseFn(genesis);
-  const genesisOk = await anyKeyVerifies(
-    verifyFn,
-    genesisBytes,
-    genesis.sig,
-    genesis.rotationKeys,
-  );
+  const genesisOk = await anyKeyVerifies(verifyFn, genesisBytes, genesis.sig, genesis.rotationKeys);
   if (!genesisOk) {
     return {
       ok: false,
@@ -165,7 +161,8 @@ export async function verifyPlcChain(
   let prevTimestamp = genesis.createdAtMs;
 
   for (let i = 1; i < ops.length; i++) {
-    const op = ops[i]!;
+    const op = ops[i];
+    if (op === undefined) throw new Error(`verifyPlcChain: op ${i} missing`);
     if (op.prev !== prevCid) {
       return {
         ok: false,
@@ -183,12 +180,7 @@ export async function verifyPlcChain(
       };
     }
     const messageBytes = serialiseFn(op);
-    const signerOk = await anyKeyVerifies(
-      verifyFn,
-      messageBytes,
-      op.sig,
-      prevRotationKeys,
-    );
+    const signerOk = await anyKeyVerifies(verifyFn, messageBytes, op.sig, prevRotationKeys);
     if (!signerOk) {
       return {
         ok: false,
@@ -226,11 +218,7 @@ function validateShape(op: unknown): string | null {
       return 'op.rotationKeys entries must be non-empty strings';
     }
   }
-  if (
-    typeof o.createdAtMs !== 'number' ||
-    !Number.isInteger(o.createdAtMs) ||
-    o.createdAtMs < 0
-  ) {
+  if (typeof o.createdAtMs !== 'number' || !Number.isInteger(o.createdAtMs) || o.createdAtMs < 0) {
     return 'op.createdAtMs must be a non-negative integer';
   }
   return null;

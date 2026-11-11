@@ -129,13 +129,18 @@ it('with no dispatcher yet (still booting) it says so rather than guessing', asy
 describe('the Slot Pack (SHELF_SPACE_NEGOTIATION §4), through the same ceremony', () => {
   it('each half installs on its own, behind a person-present check, and neither turns on the other', async () => {
     installOwnerPresenceVerifier(async (p) => p === 'correct horse');
-    await expect(activateSlotPack('seller')).rejects.toMatchObject({ errorKey: 'no_user_presence' });
+    await expect(activateSlotPack('seller')).rejects.toMatchObject({
+      errorKey: 'no_user_presence',
+    });
     expect(getPluginInstallRepository()?.list() ?? []).toEqual([]);
 
     await proveOwnerPresence('correct horse', Date.now(), OWNER_IN_PROCESS_PRINCIPAL);
     const seller = await activateSlotPack('seller');
     if (!seller.ok) throw new Error(seller.error);
-    expect(await slotPackStatus('seller')).toEqual({ state: 'active', installId: seller.installId });
+    expect(await slotPackStatus('seller')).toEqual({
+      state: 'active',
+      installId: seller.installId,
+    });
     expect(await slotPackStatus('buyer')).toEqual({ state: 'absent' });
     // The Commerce Pack is a different pack: this is not it.
     expect(await buyerInstallStatus()).toEqual({ state: 'absent' });

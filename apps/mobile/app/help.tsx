@@ -15,9 +15,9 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 
 import { FEATURE_NAMES } from '@dina/core';
 
-import { FEATURES, FeatureIcon } from '../src/features';
+import { FeatureIcon } from '../src/features';
 import { requestGuidedDemoReplay } from '../src/guided_demo/replay_request';
-import { colors, fonts, radius, shadows, spacing, textStyles } from '../src/theme';
+import { colors, radius, shadows, spacing, textStyles } from '../src/theme';
 
 interface CapabilityCard {
   icon: import('../src/features').FeatureKey;
@@ -54,7 +54,8 @@ const REMINDER_CARDS: CapabilityCard[] = [
     title: 'Reminders, set automatically',
     description:
       'Mention a date and Dina sets the reminder for you, enriched with what it already knows instead of a bare alarm.',
-    example: '"Emma\'s birthday is Nov 7." The day before, Dina reminds you and suggests a dinosaur gift, because it knows she loves them.',
+    example:
+      '"Emma\'s birthday is Nov 7." The day before, Dina reminds you and suggests a dinosaur gift, because it knows she loves them.',
   },
 ];
 
@@ -94,7 +95,8 @@ const SERVICES_CARDS: CapabilityCard[] = [
     title: 'Ranked Reviews',
     description:
       'Reviews of anything (products, places, videos, people) signed by real reviewers and ranked by trust, not ad spend. A review from someone many people trust counts more. You can publish your own reviews too, so others benefit.',
-    example: '"Is the Calmly mattress any good?" Dina pulls signed reviews and weights them by who said them.',
+    example:
+      '"Is the Calmly mattress any good?" Dina pulls signed reviews and weights them by who said them.',
   },
   {
     icon: 'services',
@@ -141,8 +143,7 @@ const PRIVACY_CARDS: CapabilityCard[] = [
   {
     icon: 'settings',
     title: 'Admin and diagnostics',
-    description:
-      'See your DID, runtime warnings, sign out, or erase everything on this device.',
+    description: 'See your DID, runtime warnings, sign out, or erase everything on this device.',
     href: '/admin',
   },
 ];
@@ -192,6 +193,7 @@ export default function HelpScreen(): React.ReactElement {
               for the app icon; reusing it here is an intentional exception for
               the "see Dina in action" CTA.) */}
           <Image
+            // eslint-disable-next-line @typescript-eslint/no-require-imports -- Metro bundles image assets only through a static require()
             source={require('../assets/branding/dina-icon.png')}
             style={styles.demoCtaIcon}
             resizeMode="cover"
@@ -210,7 +212,11 @@ export default function HelpScreen(): React.ReactElement {
         <CardSection title="Reminders" cards={REMINDER_CARDS} onPress={onCardPress} />
         <CardSection title={FEATURE_NAMES.talk} cards={TALK_CARDS} onPress={onCardPress} />
         <CardSection title={FEATURE_NAMES.agentTasks} cards={AGENT_CARDS} onPress={onCardPress} />
-        <CardSection title={`${FEATURE_NAMES.services} and Ranked Reviews`} cards={SERVICES_CARDS} onPress={onCardPress} />
+        <CardSection
+          title={`${FEATURE_NAMES.services} and Ranked Reviews`}
+          cards={SERVICES_CARDS}
+          onPress={onCardPress}
+        />
         <CardSection title="Offer your own service" cards={PROVIDER_CARDS} onPress={onCardPress} />
         <CardSection title="Privacy and control" cards={PRIVACY_CARDS} onPress={onCardPress} />
 
@@ -242,7 +248,10 @@ function CardSection({
           key={card.title}
           onPress={() => onPress(card)}
           disabled={card.href === undefined}
-          testID={`help-card-${card.title.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '')}`}
+          testID={`help-card-${card.title
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '-')
+            .replace(/^-+|-+$/g, '')}`}
           accessibilityRole="button"
           style={({ pressed }) => [
             styles.card,

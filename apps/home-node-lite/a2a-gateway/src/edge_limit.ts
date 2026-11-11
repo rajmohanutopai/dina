@@ -59,7 +59,9 @@ function ipv6Groups(address: string): number[] {
   const left = head === '' ? [] : head.split(':');
   const right = rest === undefined || rest === '' ? [] : rest.split(':');
   const fill = rest === undefined ? 0 : 8 - tail.length - left.length - right.length;
-  return [...left, ...Array<string>(fill).fill('0'), ...right].map((g) => parseInt(g, 16)).concat(tail);
+  return [...left, ...Array<string>(fill).fill('0'), ...right]
+    .map((g) => parseInt(g, 16))
+    .concat(tail);
 }
 
 export class EdgeLimiter {

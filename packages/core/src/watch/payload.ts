@@ -74,12 +74,19 @@ export function parseWatchPollPayload(raw: string | undefined | null): WatchPoll
   const capability = parsed.capability;
   const poll_interval_sec = parsed.poll_interval_sec;
   if (
-    typeof subscription_id !== 'string' || subscription_id === '' ||
-    typeof persona !== 'string' || persona === '' ||
-    typeof service_uri !== 'string' || service_uri === '' ||
-    typeof provider_did !== 'string' || provider_did === '' ||
-    typeof capability !== 'string' || capability === '' ||
-    typeof poll_interval_sec !== 'number' || !Number.isFinite(poll_interval_sec) || poll_interval_sec <= 0
+    typeof subscription_id !== 'string' ||
+    subscription_id === '' ||
+    typeof persona !== 'string' ||
+    persona === '' ||
+    typeof service_uri !== 'string' ||
+    service_uri === '' ||
+    typeof provider_did !== 'string' ||
+    provider_did === '' ||
+    typeof capability !== 'string' ||
+    capability === '' ||
+    typeof poll_interval_sec !== 'number' ||
+    !Number.isFinite(poll_interval_sec) ||
+    poll_interval_sec <= 0
   ) {
     return null;
   }

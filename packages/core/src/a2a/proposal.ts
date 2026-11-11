@@ -40,18 +40,19 @@ import { credentialScopeOf } from './credentials';
 import { canonicalDigest } from './digest';
 import { ENTITY_MAX_LIFE_MS, ENTITY_SEAL_PURPOSE, entityAad } from './entities';
 import { a2aConsentKey, a2aConsentTaskId, newA2AId } from './ids';
-import {
-  resolveProvenance,
-  restrictedReads,
-  singleSourceOf,
-  type SpanSource,
-} from './provenance';
+import { resolveProvenance, restrictedReads, singleSourceOf, type SpanSource } from './provenance';
 import { cleanForProvenance } from './provenance_text';
 import { getA2AReleaseLog } from './release_log';
 import { a2aDisplayText, liveRemoteBindings, pinnedRemoteSkills } from './remote_agents';
 
 import type { A2ARuntime } from './runtime';
-import type { EntityRow, OutboundActionClass, RemoteAgentRow, RemoteCredentialRow, SkillBindingRow } from './store';
+import type {
+  EntityRow,
+  OutboundActionClass,
+  RemoteAgentRow,
+  RemoteCredentialRow,
+  SkillBindingRow,
+} from './store';
 
 export const A2A_DELEGATION_CONSENT_TYPE = 'a2a_delegation_consent';
 export const A2A_DISPATCH_PAYLOAD_TYPE = 'a2a_dispatch';
@@ -72,7 +73,11 @@ const DATA_MAX_DEPTH = A2A_LIMITS.maxJsonDepth - 5;
 
 export type OutgoingPart = { text: string } | { data: JsonObject };
 
-export type ConsentLabel = 'may_contain_sensitive' | 'placeholders' | 'restricted_source' | 'unverified';
+export type ConsentLabel =
+  | 'may_contain_sensitive'
+  | 'placeholders'
+  | 'restricted_source'
+  | 'unverified';
 
 /** A part of the message Core proved the source of (§6.2 step 2), in the form that is sent. */
 export interface ProvenanceEntry {
@@ -254,7 +259,12 @@ class PlaceholderScrubber {
  * phone or card number sent as a JSON number becomes its placeholder (a
  * string) like the same digits in text would.
  */
-function cleanData(value: unknown, depth: number, scrubber: PlaceholderScrubber, keepSkill?: string): JsonValue {
+function cleanData(
+  value: unknown,
+  depth: number,
+  scrubber: PlaceholderScrubber,
+  keepSkill?: string,
+): JsonValue {
   if (depth > DATA_MAX_DEPTH) throw new ProjectionRefusal('data_too_deep');
   if (value === null || typeof value === 'boolean') return value;
   if (typeof value === 'number') {
@@ -270,11 +280,17 @@ function cleanData(value: unknown, depth: number, scrubber: PlaceholderScrubber,
     for (const key of Object.keys(value).sort()) {
       const cleanKey = scrubber.scrub(cleanForProvenance(key));
       if (cleanKey === FORBIDDEN_MEMBER_NAME) throw new ProjectionRefusal('data_forbidden_key');
-      if (Object.prototype.hasOwnProperty.call(out, cleanKey)) throw new ProjectionRefusal('data_key_collision');
+      if (Object.prototype.hasOwnProperty.call(out, cleanKey))
+        throw new ProjectionRefusal('data_key_collision');
       const member = value[key];
       // The envelope's skill, when it is the bound skill: the remote card's own word, sent back as written.
       // `keepSkill` is given for the top-level object only, and never passed down.
-      if (key === 'skill' && typeof member === 'string' && keepSkill !== undefined && cleanForProvenance(member) === keepSkill) {
+      if (
+        key === 'skill' &&
+        typeof member === 'string' &&
+        keepSkill !== undefined &&
+        cleanForProvenance(member) === keepSkill
+      ) {
         out[cleanKey] = keepSkill;
         continue;
       }
@@ -293,14 +309,23 @@ export type ProjectionOutcome =
  * What would be sent: a text part, a data part, or both, cleaned (invisible
  * characters removed, NFC — the form provenance is proven on) and scrubbed.
  */
-export function buildOutgoingProjection(input: { text?: unknown; data?: unknown }): ProjectionOutcome {
+export function buildOutgoingProjection(input: {
+  text?: unknown;
+  data?: unknown;
+}): ProjectionOutcome {
   const out = projectWith(input, new PlaceholderScrubber());
   return out.ok ? { ok: true, parts: out.parts, placeholders: out.placeholders } : out;
 }
 
 /** A projection, plus where its text part's placeholders stand and the data part as sent. */
 type MappedProjection =
-  | { ok: true; parts: OutgoingPart[]; placeholders: { type: string; count: number }[]; textMap: ScrubMap | null; dataJson: string }
+  | {
+      ok: true;
+      parts: OutgoingPart[];
+      placeholders: { type: string; count: number }[];
+      textMap: ScrubMap | null;
+      dataJson: string;
+    }
   | { ok: false; reason: string };
 
 /**
@@ -323,7 +348,8 @@ function projectWith(
       if (typeof input.text !== 'string') return { ok: false, reason: 'text_not_string' };
       textMap = scrubber.scrubMapped(cleanForProvenance(input.text));
       const text = textMap.out;
-      if ([...text].length > A2A_LIMITS.maxTextCodePoints) return { ok: false, reason: 'text_too_long' };
+      if ([...text].length > A2A_LIMITS.maxTextCodePoints)
+        return { ok: false, reason: 'text_too_long' };
       if (text.trim() !== '') parts.push({ text });
     }
     if (input.data !== undefined) {
@@ -385,7 +411,8 @@ export function currentAuthority(
   const binding = liveRemoteBindings(runtime.store, agent).find((b) => b.skill === skill);
   if (binding === undefined) return { ok: false, reason: 'skill_not_bound' };
   const credential = runtime.store.getCredential(binding.credential_ref);
-  if (credential === null || credential.status !== 'active') return { ok: false, reason: 'credential_revoked' };
+  if (credential === null || credential.status !== 'active')
+    return { ok: false, reason: 'credential_revoked' };
   return { ok: true, agent, binding, credential };
 }
 
@@ -403,9 +430,13 @@ function credentialSentence(credential: RemoteCredentialRow): string {
   if (scope.kind === 'none') return 'No credential. The agent receives no secret from Dina.';
   const all = 'Whatever that credential allows at the agent, the agent can do with this request.';
   const revision = `revision ${credential.revision}`;
-  if (scope.kind === 'api_key') return `An API key in the ${bounded(scope.header, 64)} header (${revision}). ${all}`;
+  if (scope.kind === 'api_key')
+    return `An API key in the ${bounded(scope.header, 64)} header (${revision}). ${all}`;
   if (scope.kind === 'bearer') return `A bearer token (${revision}). ${all}`;
-  const scopes = scope.scopes.length > 0 ? scope.scopes.map((x) => bounded(x, 60)).join(', ') : 'no named scopes';
+  const scopes =
+    scope.scopes.length > 0
+      ? scope.scopes.map((x) => bounded(x, 60)).join(', ')
+      : 'no named scopes';
   return `An OAuth client that gets tokens from ${bounded(new URL(scope.token_url).host, 120)} for ${scopes} (${revision}). ${all}`;
 }
 
@@ -431,16 +462,25 @@ function sealOriginal(
 ): Pick<EntityRow, 'seal' | 'persona' | 'sealed'> | null {
   const bytes = new TextEncoder().encode(value);
   if (source.kind === 'owner') return { seal: 'identity_db', persona: null, sealed: bytes };
-  const sealed = sealForPersonaPurpose(source.persona, ENTITY_SEAL_PURPOSE, entityAad(operationId, placeholder), bytes);
+  const sealed = sealForPersonaPurpose(
+    source.persona,
+    ENTITY_SEAL_PURPOSE,
+    entityAad(operationId, placeholder),
+    bytes,
+  );
   return sealed === null ? null : { seal: 'persona_dek', persona: source.persona, sealed };
 }
 
 /** Whether a pinned card declares Dina's invocation extension: its data parts are Dina envelopes. */
 function speaksDina(cardJson: string): boolean {
   const card = parseStrictJson(cardJson);
-  if (!card.ok || !isPlainObject(card.value) || !isPlainObject(card.value.capabilities)) return false;
+  if (!card.ok || !isPlainObject(card.value) || !isPlainObject(card.value.capabilities))
+    return false;
   const extensions = card.value.capabilities.extensions;
-  return Array.isArray(extensions) && extensions.some((e) => isPlainObject(e) && e.uri === DINA_A2A_EXTENSION_URI);
+  return (
+    Array.isArray(extensions) &&
+    extensions.some((e) => isPlainObject(e) && e.uri === DINA_A2A_EXTENSION_URI)
+  );
 }
 
 export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): ProposalOutcome {
@@ -453,14 +493,19 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
   if (log === null) return { ok: false, reason: 'a2a_unavailable' };
   const releaseSession = parseReleaseSession(input.releaseSession);
   const turn = releaseSession === null ? null : log.latestUtterance(releaseSession);
-  if (releaseSession === null || turn === null || runtime.nowMs() - turn.recorded_at > OWNER_TURN_LIVE_MS) {
+  if (
+    releaseSession === null ||
+    turn === null ||
+    runtime.nowMs() - turn.recorded_at > OWNER_TURN_LIVE_MS
+  ) {
     return { ok: false, reason: 'no_owner_turn' };
   }
 
   // The hourly cap counts refusals too, so a refused claim is no free oracle.
   const hourAgo = runtime.nowMs() - HOUR_MS;
   if (
-    runtime.store.countOutboundCreatedAfter(hourAgo) + runtime.store.countProposalRefusalsAfter(hourAgo) >=
+    runtime.store.countOutboundCreatedAfter(hourAgo) +
+      runtime.store.countProposalRefusalsAfter(hourAgo) >=
     MAX_PROPOSALS_PER_HOUR
   ) {
     return { ok: false, reason: 'too_many_recent' };
@@ -473,7 +518,11 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
   // A Dina remote runs the skill its envelope names: that must be the skill the owner bound,
   // exactly as the card writes it.
   const dina = speaksDina(agent.card_json);
-  if (dina && isPlainObject(input.data) && Object.prototype.hasOwnProperty.call(input.data, 'skill')) {
+  if (
+    dina &&
+    isPlainObject(input.data) &&
+    Object.prototype.hasOwnProperty.call(input.data, 'skill')
+  ) {
     if (input.data.skill !== binding.skill) return refuse('envelope_skill_not_bound');
   }
   const scrubber = new PlaceholderScrubber();
@@ -483,13 +532,18 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
   // so another key (`sk\u200Bill`) can become `skill` only now. What the remote reads is checked.
   if (dina) {
     const sent = projection.parts.find((p): p is { data: JsonObject } => 'data' in p)?.data;
-    if (sent !== undefined && Object.prototype.hasOwnProperty.call(sent, 'skill') && sent.skill !== binding.skill) {
+    if (
+      sent !== undefined &&
+      Object.prototype.hasOwnProperty.call(sent, 'skill') &&
+      sent.skill !== binding.skill
+    ) {
       return refuse('envelope_skill_not_bound');
     }
   }
 
   // Step 2: provenance, proven by Core from its own log or refused.
-  if (input.sources !== undefined && typeof input.text !== 'string') return refuse('source_not_in_message');
+  if (input.sources !== undefined && typeof input.text !== 'string')
+    return refuse('source_not_in_message');
   const resolved =
     typeof input.text === 'string'
       ? resolveProvenance(log, releaseSession, input.text, input.sources)
@@ -508,7 +562,9 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
   // conversation that read one (it inherits the read set's taint).
   const restrictedPersonas = [
     ...new Set([
-      ...spans.flatMap((sp) => (sp.source.kind === 'vault' && sp.source.restricted ? [sp.source.persona] : [])),
+      ...spans.flatMap((sp) =>
+        sp.source.kind === 'vault' && sp.source.restricted ? [sp.source.persona] : [],
+      ),
       ...(derived ? restrictedReads(log, releaseSession) : []),
     ]),
   ].sort();
@@ -523,7 +579,8 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
   // detail would show part of it, so it is refused.
   const provenance: ProvenanceEntry[] = [];
   for (const span of spans) {
-    const quote = projection.textMap === null ? null : scrubbedSlice(projection.textMap, span.start, span.end);
+    const quote =
+      projection.textMap === null ? null : scrubbedSlice(projection.textMap, span.start, span.end);
     if (quote === null) return refuse('source_cuts_personal_detail');
     provenance.push({
       quote,
@@ -545,7 +602,8 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
     provenance,
   };
   const consentHash = canonicalDigest(consent);
-  const skillName = pinnedRemoteSkills(agent).find((sk) => sk.id === binding.skill)?.name ?? binding.skill;
+  const skillName =
+    pinnedRemoteSkills(agent).find((sk) => sk.id === binding.skill)?.name ?? binding.skill;
   const now = runtime.nowMs();
   const operationId = newA2AId();
   const approvalTaskId = a2aConsentTaskId(operationId);
@@ -626,7 +684,12 @@ export function proposeDelegation(runtime: A2ARuntime, input: ProposalInput): Pr
       created_at: now,
     });
     for (const original of originals) {
-      runtime.store.insertEntity({ operation_ref: op.id, created_at: now, expires_at: now + ENTITY_MAX_LIFE_MS, ...original });
+      runtime.store.insertEntity({
+        operation_ref: op.id,
+        created_at: now,
+        expires_at: now + ENTITY_MAX_LIFE_MS,
+        ...original,
+      });
     }
     runtime.workflow.create({
       id: approvalTaskId,
@@ -694,7 +757,9 @@ export function delegationConsentMirror(
     d.effect,
     ...d.labels,
     ...(d.placeholders.length > 0
-      ? [`Replaced with placeholders: ${d.placeholders.map((x) => `${x.type} ×${x.count}`).join(', ')}`]
+      ? [
+          `Replaced with placeholders: ${d.placeholders.map((x) => `${x.type} ×${x.count}`).join(', ')}`,
+        ]
       : []),
     ...(Array.isArray(d.restricted_personas) && d.restricted_personas.length > 0
       ? [`Private vaults involved: ${d.restricted_personas.join(', ')}`]

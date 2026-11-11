@@ -16,7 +16,11 @@
 
 import { getMessageRepository, type MessageRepository } from './message';
 import { getRunRepository, type RunRepository } from './repository';
-import { getReservationRepository, type ReservationRecord, type ReservationRepository } from './reservation';
+import {
+  getReservationRepository,
+  type ReservationRecord,
+  type ReservationRepository,
+} from './reservation';
 import { RunService, type RunState } from './service';
 
 export interface ForceTerminateResult {
@@ -64,7 +68,9 @@ export class RunTerminationService {
     const messages = opts.messageRepo ?? getMessageRepository();
     const reservations = opts.reservationRepo ?? getReservationRepository();
     if (runRepo === null || messages === null || reservations === null) {
-      throw new Error('RunTerminationService: run + message + reservation repositories must be wired');
+      throw new Error(
+        'RunTerminationService: run + message + reservation repositories must be wired',
+      );
     }
     this.runRepo = runRepo;
     this.runService = opts.runService;
@@ -96,7 +102,8 @@ export class RunTerminationService {
     if (run.drain_deadline_at !== null && this.now() < run.drain_deadline_at) {
       return { terminated: false };
     }
-    const terminal: 'cancelled' | 'expired' = run.drain_cause === 'expiry' ? 'expired' : 'cancelled';
+    const terminal: 'cancelled' | 'expired' =
+      run.drain_cause === 'expiry' ? 'expired' : 'cancelled';
 
     // The deadline transition is ONE atomic Tier-0 transaction (§5.1 "one atomic
     // transition"): reconcile claimed effects, fence the undecided/in-flight set
@@ -119,7 +126,8 @@ export class RunTerminationService {
       //    or advance a pre-deadline verified_pending receipt).
       if (this.reconcileClaimed !== undefined) {
         for (const msg of this.messages.listByRun(runId)) {
-          if (msg.state === 'sending' || msg.state === 'dispatched') this.reconcileClaimed(msg.message_id);
+          if (msg.state === 'sending' || msg.state === 'dispatched')
+            this.reconcileClaimed(msg.message_id);
         }
       }
       // 2. Fence the still-undecided / in-flight set (+ cancel their jobs).
@@ -166,7 +174,8 @@ export class RunTerminationService {
     if (run === null || run.state !== 'draining' || run.drain_cause === null) {
       return { invalidated: 0, fenced: 0 };
     }
-    const terminal: 'cancelled' | 'expired' = run.drain_cause === 'expiry' ? 'expired' : 'cancelled';
+    const terminal: 'cancelled' | 'expired' =
+      run.drain_cause === 'expiry' ? 'expired' : 'cancelled';
     let fencedCount = 0;
     // Fence the undecided/in-flight (unclaimed) set ONLY for a fencing cause;
     // a permissive drain lets decided/claimed work complete (§5.1).

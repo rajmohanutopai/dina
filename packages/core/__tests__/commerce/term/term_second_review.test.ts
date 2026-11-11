@@ -55,13 +55,17 @@ function setUpStore(
   const store = fleet.add(did);
   const set = store.engine.setPolicy(policy);
   if (!set.ok) throw new Error(set.refusal);
-  const published = publishListing(store, {
-    listingId: 'slot-3',
-    resourceRef: 'slot-3',
-    kind: 'shelf',
-    region: { scheme: 'postal_area', value: 'IN-560034' },
-    tags: ['beverages.juice', 'snacks'],
-  }, access);
+  const published = publishListing(
+    store,
+    {
+      listingId: 'slot-3',
+      resourceRef: 'slot-3',
+      kind: 'shelf',
+      region: { scheme: 'postal_area', value: 'IN-560034' },
+      tags: ['beverages.juice', 'snacks'],
+    },
+    access,
+  );
   if (!published.ok) throw new Error(published.refusal);
   return { store, listing: published.listing, uri: published.uri };
 }
@@ -203,7 +207,9 @@ describe('second review fixes', () => {
     const { store, ...at } = setUpStore(fleet);
     const brand = fleet.add(BRAND_DID);
     const requestId = ask(brand, at);
-    const requestDigest = must(brand.store.listByRequest(requestId, 'term_request')[0]).recordDigest;
+    const requestDigest = must(
+      brand.store.listByRequest(requestId, 'term_request')[0],
+    ).recordDigest;
     // The request lands and is answered; the receipt and the offer are lost on the way back.
     fleet.pump(1);
     dropInFlight(fleet, 'term_receipt');
@@ -234,13 +240,21 @@ describe('second review fixes', () => {
     const { store } = setUpStore(fleet);
     // As a v71 node (or its archive) left it: one store-wide `access`, the listing's column at its default.
     store.store.putPolicy(JSON.stringify({ ...juicePolicy(), access: 'anyone' }), fleet.nowMs);
-    store.store.putListing({ ...must(store.store.getListing('slot-3')), access: 'contacts_or_card' });
+    store.store.putListing({
+      ...must(store.store.getListing('slot-3')),
+      access: 'contacts_or_card',
+    });
     // Read before any sweep: still on, its slots intact.
     expect(store.engine.policy().enabled).toBe(true);
-    expect(store.engine.policy().resources.map((r) => r.resource_ref)).toEqual(['slot-3', 'slot-4']);
+    expect(store.engine.policy().resources.map((r) => r.resource_ref)).toEqual([
+      'slot-3',
+      'slot-4',
+    ]);
     // The boot sweep moves the setting onto the listing and saves the policy without it.
     store.engine.sweep();
-    expect(store.engine.listings().map((l) => [l.state, l.access])).toEqual([['published', 'anyone']]);
+    expect(store.engine.listings().map((l) => [l.state, l.access])).toEqual([
+      ['published', 'anyone'],
+    ]);
     expect(JSON.parse(must(store.store.getPolicy()).policyJson)).not.toHaveProperty('access');
     // And the directory upkeep leaves the listing alone.
     installTermListingRepo({ put: async () => ({ cid: 'x' }), remove: async () => undefined });

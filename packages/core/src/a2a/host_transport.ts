@@ -13,7 +13,6 @@ import { checkOutboundUrl, type OutboundUrlCheck } from '@dina/a2a';
 
 import type { PolicySocket } from '@dina/net-policy';
 
-
 export type A2ATransportError =
   /** The URL fails Core's policy; nothing was resolved or sent. */
   | 'url_refused'
@@ -111,7 +110,10 @@ export async function a2aFetch(request: A2AHttpRequest): Promise<A2AHttpResult> 
   if (transport === null) return { ok: false, error: 'unavailable', sent: false };
   let timer: ReturnType<typeof setTimeout> | undefined;
   const deadline = new Promise<A2AHttpResult>((resolve) => {
-    timer = setTimeout(() => resolve({ ok: false, error: 'timeout', sent: true }), request.timeoutMs);
+    timer = setTimeout(
+      () => resolve({ ok: false, error: 'timeout', sent: true }),
+      request.timeoutMs,
+    );
   });
   try {
     return await Promise.race([
@@ -138,7 +140,8 @@ export function a2aTransportFromPolicySocket(socket: PolicySocket): A2AHostTrans
   return async (request: A2AHttpRequest): Promise<A2AHttpResult> => {
     if (!checkOutboundUrl(request.url).ok) return { ok: false, error: 'url_refused', sent: false };
     const headers: Record<string, string> = { ...request.headers, 'user-agent': 'dina-a2a/1' };
-    if (request.body !== undefined) headers['content-type'] = request.contentType ?? 'application/json';
+    if (request.body !== undefined)
+      headers['content-type'] = request.contentType ?? 'application/json';
     const result = await socket({
       method: request.method,
       url: request.url,
@@ -162,4 +165,3 @@ export function a2aTransportFromPolicySocket(socket: PolicySocket): A2AHostTrans
     return { ok: true, status: result.status, body, connectedAddress: result.connectedAddress };
   };
 }
-

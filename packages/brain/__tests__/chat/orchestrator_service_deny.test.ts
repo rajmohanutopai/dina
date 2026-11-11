@@ -12,7 +12,7 @@ import { resetThreads } from '../../src/chat/thread';
 import { CoreHttpError } from '../../src/errors';
 import { makeServiceDenyHandler } from '../../src/service/approve_command';
 
-import type { CoreClient , WorkflowTask } from '@dina/core';
+import type { CoreClient, WorkflowTask } from '@dina/core';
 
 describe('Chat orchestrator — /service_deny', () => {
   beforeEach(() => {
@@ -139,9 +139,7 @@ describe('makeServiceDenyHandler (BRAIN-P2-W05)', () => {
   }
 
   it('rejects a missing coreClient at build time', () => {
-    expect(() => makeServiceDenyHandler(undefined as unknown as CoreClient)).toThrow(
-      /coreClient/,
-    );
+    expect(() => makeServiceDenyHandler(undefined as unknown as CoreClient)).toThrow(/coreClient/);
   });
 
   it('sends unavailable response and does NOT double-cancel (review #1 happy path)', async () => {

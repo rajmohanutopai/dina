@@ -21,14 +21,27 @@ const item = (over: Record<string, unknown> = {}) => ({
 });
 /** A webhook event: it carries its webhook and no generation. */
 const hookItem = (over: Record<string, unknown> = {}) => {
-  const { credential_gen: _gen, ...base } = item({ id: 2, target: 'webhook', webhook: { url: 'https://h.test/x', headers: { authorization: 'Bearer z' } } });
+  const { credential_gen: _gen, ...base } = item({
+    id: 2,
+    target: 'webhook',
+    webhook: { url: 'https://h.test/x', headers: { authorization: 'Bearer z' } },
+  });
   return { ...base, ...over };
 };
-const claimOf = (over: Record<string, unknown> = {}) => ({ items: [item()], closed: [], fenced: [], ...over });
+const claimOf = (over: Record<string, unknown> = {}) => ({
+  items: [item()],
+  closed: [],
+  fenced: [],
+  ...over,
+});
 
 describe('parseDeliveryClaim (the gateway reads Core)', () => {
   it('reads streams, webhooks, closes and fences', () => {
-    const value = { items: [item({ credential_gen: 3 }), hookItem()], closed: ['t9'], fenced: [{ client: 'f'.repeat(32), before_gen: 2 }] };
+    const value = {
+      items: [item({ credential_gen: 3 }), hookItem()],
+      closed: ['t9'],
+      fenced: [{ client: 'f'.repeat(32), before_gen: 2 }],
+    };
     expect(parseDeliveryClaim(value)).toEqual(value);
     // The base the cases below start from reads.
     expect(parseDeliveryClaim(claimOf())).not.toBeNull();
@@ -36,20 +49,43 @@ describe('parseDeliveryClaim (the gateway reads Core)', () => {
 
   it.each([
     ['a webhook with no address', claimOf({ items: [hookItem({ webhook: undefined })] })],
-    ['a stream item carrying a webhook', claimOf({ items: [item({ webhook: { url: 'u', headers: {} } })] })],
-    ['a stream item with no credential generation', claimOf({ items: [item({ credential_gen: undefined })] })],
+    [
+      'a stream item carrying a webhook',
+      claimOf({ items: [item({ webhook: { url: 'u', headers: {} } })] }),
+    ],
+    [
+      'a stream item with no credential generation',
+      claimOf({ items: [item({ credential_gen: undefined })] }),
+    ],
     ['a negative credential generation', claimOf({ items: [item({ credential_gen: -1 })] })],
     ['a fractional credential generation', claimOf({ items: [item({ credential_gen: 1.5 })] })],
-    ['a webhook item carrying a credential generation', claimOf({ items: [hookItem({ credential_gen: 0 })] })],
-    ['an event with two payloads', claimOf({ items: [item({ event: { ...status('TASK_STATE_WORKING'), artifactUpdate: {} } })] })],
+    [
+      'a webhook item carrying a credential generation',
+      claimOf({ items: [hookItem({ credential_gen: 0 })] }),
+    ],
+    [
+      'an event with two payloads',
+      claimOf({
+        items: [item({ event: { ...status('TASK_STATE_WORKING'), artifactUpdate: {} } })],
+      }),
+    ],
     ['an event with neither payload', claimOf({ items: [item({ event: { task: {} } })] })],
     ['a non-numeric id', claimOf({ items: [item({ id: '1' })] })],
-    ['a header that is not text', claimOf({ items: [hookItem({ webhook: { url: 'u', headers: { a: 1 } } })] })],
+    [
+      'a header that is not text',
+      claimOf({ items: [hookItem({ webhook: { url: 'u', headers: { a: 1 } } })] }),
+    ],
     ['an empty closed task id', claimOf({ closed: [''] })],
     ['no fence list', { items: [item()], closed: [] }],
     ['a fence with no client', claimOf({ fenced: [{ before_gen: 1 }] })],
-    ['a fence whose client is not a stream client key', claimOf({ fenced: [{ client: 'ac_0123', before_gen: 1 }] })],
-    ['a fence before generation 0, which ends nothing', claimOf({ fenced: [{ client: 'f'.repeat(32), before_gen: 0 }] })],
+    [
+      'a fence whose client is not a stream client key',
+      claimOf({ fenced: [{ client: 'ac_0123', before_gen: 1 }] }),
+    ],
+    [
+      'a fence before generation 0, which ends nothing',
+      claimOf({ fenced: [{ client: 'f'.repeat(32), before_gen: 0 }] }),
+    ],
     ['a fence with no generation', claimOf({ fenced: [{ client: 'f'.repeat(32) }] })],
   ])('drops a claim with %s', (_name, value) => {
     expect(parseDeliveryClaim(value)).toBeNull();

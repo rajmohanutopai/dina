@@ -42,7 +42,6 @@ import {
   type ApprovalSourceStatus,
 } from '../ask/ask_approval_gateway';
 import { AskApprovalResumer } from '../ask/ask_approval_resumer';
-import { canKeepAskRecords, CoreAskAdapter } from '../ask/core_ask_adapter';
 import {
   createAskHandler,
   createAskStatusHandler,
@@ -59,14 +58,30 @@ import {
   type AskEvent,
   type AskPersistenceAdapter,
 } from '../ask/ask_registry';
+import { canKeepAskRecords, CoreAskAdapter } from '../ask/core_ask_adapter';
 import { buildTurnHistory, fenceNonce, outsideDataRule, recentTurnsBlock } from '../chat/history';
-import { crisisReply, humanConnectionDirective, isCompanyOffer, peoplePointerLine } from '../guardian/anti_her';
-import { classifyDeterministic, HUMAN_CONNECTION_KINDS, preScreenMessage, type AntiHerCategory } from '../guardian/anti_her_classify';
-import { checkActionClaims, receiptsFromToolCalls } from '../guardian/action_claims';
-import { checkRegulated, evidenceFromToolResults } from '../guardian/regulated';
-import { removeSentences, scanResponse, splitSentences, stripViolations } from '../guardian/guard_scan';
-import { earlierActionsBlock, earlierReceipts, storeTurnReceipts } from '../chat/turn_receipts';
 import { reloadLoadedThreads } from '../chat/thread';
+import { earlierActionsBlock, earlierReceipts, storeTurnReceipts } from '../chat/turn_receipts';
+import { checkActionClaims, receiptsFromToolCalls } from '../guardian/action_claims';
+import {
+  crisisReply,
+  humanConnectionDirective,
+  isCompanyOffer,
+  peoplePointerLine,
+} from '../guardian/anti_her';
+import {
+  classifyDeterministic,
+  HUMAN_CONNECTION_KINDS,
+  preScreenMessage,
+  type AntiHerCategory,
+} from '../guardian/anti_her_classify';
+import {
+  removeSentences,
+  scanResponse,
+  splitSentences,
+  stripViolations,
+} from '../guardian/guard_scan';
+import { checkRegulated, evidenceFromToolResults } from '../guardian/regulated';
 import {
   resumeAgenticTurn,
   runAgenticTurn,
@@ -260,7 +275,9 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
         buildToolsForAsk({
           askId: ctx.askId,
           requesterDid: ctx.requesterDid,
-          ...(ctx.sessionId !== undefined && ctx.sessionId !== '' ? { sessionId: ctx.sessionId } : {}),
+          ...(ctx.sessionId !== undefined && ctx.sessionId !== ''
+            ? { sessionId: ctx.sessionId }
+            : {}),
           ...(ctx.askAuthority !== undefined && ctx.askAuthority !== ''
             ? { askAuthority: ctx.askAuthority }
             : {}),
@@ -286,7 +303,13 @@ export function createAskCoordinator(opts: CreateAskCoordinatorOptions): AskCoor
         ),
         pausedState,
       });
-      return guardCompletedResult(opts.pipeline, result, ctx.question, classifyDeterministic(ctx.question).category, ctx.conversation);
+      return guardCompletedResult(
+        opts.pipeline,
+        result,
+        ctx.question,
+        classifyDeterministic(ctx.question).category,
+        ctx.conversation,
+      );
     },
     // On a completed resume, shape the FULL answer (text + serviceQueries +
     // reviewSource + missingCapabilities) AND apply the forced-lane gate, using
@@ -382,13 +405,14 @@ export function buildAgenticExecuteFn(args: {
       input.conversation !== '' &&
       (input.askAuthority === undefined || input.askAuthority === '') &&
       (pipeline.ownerDid === undefined || input.requesterDid === pipeline.ownerDid);
-    if (isOwnerChat) {
+    const ownerThread = isOwnerChat ? input.conversation : undefined;
+    if (ownerThread !== undefined) {
       // REAL_LIFE_FIXES_2 §4.4: after a forget, Brain's thread copies still
       // hold what Core deleted; reload them before reading history.
       await syncForgetEpoch(pipeline);
       fence = fenceNonce();
       try {
-        history = await buildTurnHistory(input.conversation!, {
+        history = await buildTurnHistory(ownerThread, {
           excludeQuestion: input.question,
           nonce: fence,
         });
@@ -526,7 +550,11 @@ export function buildAgenticExecuteFn(args: {
           ...relevantPersonas
             .filter((p) => typeof p === 'string' && p !== '')
             .slice(0, 2)
-            .map((persona) => ({ name: 'vault_search', arguments: { query: input.question, persona }, onlyIfNothingFound: true })),
+            .map((persona) => ({
+              name: 'vault_search',
+              arguments: { query: input.question, persona },
+              onlyIfNothingFound: true,
+            })),
         ];
       }
       if (input.signal !== undefined) {
@@ -541,9 +569,18 @@ export function buildAgenticExecuteFn(args: {
     // own turns and the retrieval block, never Dina's earlier replies.
     const evidence = [
       ...userMessage.split('\n'),
-      ...history.filter((m) => m.role === 'user').map((m) => (typeof m.content === 'string' ? m.content : '')),
+      ...history
+        .filter((m) => m.role === 'user')
+        .map((m) => (typeof m.content === 'string' ? m.content : '')),
     ];
-    result = await guardCompletedResult(pipeline, result, input.question, preScreen.category, isOwnerChat ? input.conversation : undefined, evidence);
+    result = await guardCompletedResult(
+      pipeline,
+      result,
+      input.question,
+      preScreen.category,
+      isOwnerChat ? input.conversation : undefined,
+      evidence,
+    );
     return translateLoopResult(result, input.question, input.forcedSources);
   };
 }
@@ -702,8 +739,15 @@ async function guardCompletedResult(
       nowMs: Date.now(),
     });
     if (checked.removed + checked.quoted > 0) {
-      const modes = pipeline.guardModes !== undefined ? await pipeline.guardModes() : { regulated: 'report' as const };
-      console.log('[guard] regulated', { mode: modes.regulated, removed: checked.removed, quoted: checked.quoted });
+      const modes =
+        pipeline.guardModes !== undefined
+          ? await pipeline.guardModes()
+          : { regulated: 'report' as const };
+      console.log('[guard] regulated', {
+        mode: modes.regulated,
+        removed: checked.removed,
+        quoted: checked.quoted,
+      });
       if (modes.regulated === 'enforce') out = { ...out, answer: checked.text };
     }
   } catch {
@@ -716,11 +760,19 @@ async function guardCompletedResult(
     const thread = conversation !== undefined && conversation !== '' ? conversation : undefined;
     const earlier = thread !== undefined ? earlierReceipts(thread, question) : [];
     if (thread !== undefined) storeTurnReceipts(thread, question, thisTurn);
-    const timeZone = pipeline.ownerTimeZone !== undefined ? await pipeline.ownerTimeZone() : undefined;
+    const timeZone =
+      pipeline.ownerTimeZone !== undefined ? await pipeline.ownerTimeZone() : undefined;
     const checked = checkActionClaims(out.answer, { thisTurn, earlier }, timeZone);
     if (checked.rewritten > 0) {
-      const modes = pipeline.guardModes !== undefined ? await pipeline.guardModes() : { action_claims: 'report' as const };
-      console.log('[guard] action claims', { mode: modes.action_claims, rewritten: checked.rewritten, unbacked: checked.unbacked });
+      const modes =
+        pipeline.guardModes !== undefined
+          ? await pipeline.guardModes()
+          : { action_claims: 'report' as const };
+      console.log('[guard] action claims', {
+        mode: modes.action_claims,
+        rewritten: checked.rewritten,
+        unbacked: checked.unbacked,
+      });
       if (modes.action_claims === 'enforce') out = { ...out, answer: checked.text };
     }
   } catch {
@@ -755,7 +807,10 @@ export function workflowTaskAsSource(core: AskCoordinatorCoreClient): ApprovalSo
       return 'expired';
     },
     async approve(id: string, opts?: { scope?: 'single' | 'session' }): Promise<void> {
-      await core.approveWorkflowTask(id, opts?.scope !== undefined ? { scope: opts.scope } : undefined);
+      await core.approveWorkflowTask(
+        id,
+        opts?.scope !== undefined ? { scope: opts.scope } : undefined,
+      );
     },
     async deny(id: string): Promise<void> {
       await core.cancelWorkflowTask(id, 'denied_by_operator');
@@ -837,10 +892,15 @@ export function translateLoopResult(
     }
     // REAL_LIFE_FIXES_2 §5 — the readable export's card (manifest + id only).
     for (let i = result.toolCalls.length - 1; i >= 0; i--) {
-      const call = result.toolCalls[i]!;
+      const call = result.toolCalls[i];
+      if (call === undefined) continue;
       if (call.name !== 'export_my_data' || !call.outcome.success) continue;
       const r = call.outcome.result as { export_id?: unknown; manifest?: unknown } | null;
-      if (typeof r?.export_id === 'string' && typeof r.manifest === 'object' && r.manifest !== null) {
+      if (
+        typeof r?.export_id === 'string' &&
+        typeof r.manifest === 'object' &&
+        r.manifest !== null
+      ) {
         answer.exportCard = { exportId: r.export_id, manifest: r.manifest };
       }
       break;
@@ -941,7 +1001,11 @@ export function translateLoopResult(
   // Out of steps with a written wrap-up (what was found, what is missing, at
   // most one question): that is the answer, unless the turn showed a missing
   // capability, which keeps its own notice.
-  if (result.wrappedUp === true && result.answer.trim() !== '' && failure.detail?.missingCapabilities === undefined) {
+  if (
+    result.wrappedUp === true &&
+    result.answer.trim() !== '' &&
+    failure.detail?.missingCapabilities === undefined
+  ) {
     return { kind: 'answer', answer: { text: result.answer } };
   }
   return { kind: 'failure', failure };
@@ -983,7 +1047,8 @@ export const AGENT_VAULT_FIRST_RULE =
   'This question comes from an agent acting for the user. Before answering from general knowledge, search the user\'s vault (vault_search) for it: names, projects and plans may be the user\'s own, not public ones. A persona marked "closed to this requester" in the Table of Contents can still be searched: Dina will ask the user to approve. Answer from general knowledge only when the vault has nothing on it, and say so.';
 
 /** What the owner reads when a turn produced neither text nor a card. */
-export const EMPTY_ANSWER_FALLBACK = "I couldn't put a reply together for that. Could you say it another way?";
+export const EMPTY_ANSWER_FALLBACK =
+  "I couldn't put a reply together for that. Could you say it another way?";
 
 function extractPluginInvocationNote(
   toolCalls: AgenticLoopResult['toolCalls'],

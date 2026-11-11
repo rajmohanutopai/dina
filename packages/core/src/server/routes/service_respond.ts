@@ -134,7 +134,10 @@ export function registerServiceRespondRoutes(
       // type to every caller, so the requester, query and capability on it
       // are ones Core checked. Any other approval card names a peer no query
       // came from, and answering it would open a window to that peer.
-      if (preflight.kind !== 'approval' || parseServiceQueryExecutionPayload(preflight.payload) === null) {
+      if (
+        preflight.kind !== 'approval' ||
+        parseServiceQueryExecutionPayload(preflight.payload) === null
+      ) {
         return j(403, {
           error: 'not_a_service_card',
           reason: 'only a service card Core admitted can be answered as a service query',

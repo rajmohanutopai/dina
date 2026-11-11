@@ -26,7 +26,10 @@ export function InlineExportCard({ message }: { message: ChatMessage }): React.R
       return;
     }
     setState('saving');
-    const res = await dispatcher.dispatch({ method: 'GET', path: `/v1/owner-export/${encodeURIComponent(lc.exportId)}` });
+    const res = await dispatcher.dispatch({
+      method: 'GET',
+      path: `/v1/owner-export/${encodeURIComponent(lc.exportId)}`,
+    });
     if (res.status === 404) {
       setState('gone');
       return;
@@ -35,7 +38,11 @@ export function InlineExportCard({ message }: { message: ChatMessage }): React.R
       setState('failed');
       return;
     }
-    setState((await shareReadableExport(JSON.stringify(res.body, null, 2))) === 'shared' ? 'saved' : 'failed');
+    setState(
+      (await shareReadableExport(JSON.stringify(res.body, null, 2))) === 'shared'
+        ? 'saved'
+        : 'failed',
+    );
   }, [lc]);
   if (lc === null || lc.kind !== 'export') return null;
 
@@ -50,7 +57,8 @@ export function InlineExportCard({ message }: { message: ChatMessage }): React.R
         </Text>
       ))}
       <Text style={styles.line}>
-        {lc.manifest.people} people · {lc.manifest.contacts} contacts · {lc.manifest.reminders} reminders
+        {lc.manifest.people} people · {lc.manifest.contacts} contacts · {lc.manifest.reminders}{' '}
+        reminders
       </Text>
       {excluded.map((p) => (
         <Text key={p.persona} style={styles.meta} testID={`export-card-excluded-${p.persona}`}>

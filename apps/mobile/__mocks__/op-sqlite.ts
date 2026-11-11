@@ -30,6 +30,8 @@
 
 import { join } from 'node:path';
 
+import BetterSqlite from 'better-sqlite3-multiple-ciphers';
+
 interface BetterSqliteStatement {
   reader: boolean;
   all: (...params: unknown[]) => Record<string, unknown>[];
@@ -40,8 +42,8 @@ interface BetterSqliteDb {
   exec: (sql: string) => void;
   close: () => void;
 }
- 
-const Database = require('better-sqlite3-multiple-ciphers') as new (path: string) => BetterSqliteDb;
+
+const Database = BetterSqlite as unknown as new (path: string) => BetterSqliteDb;
 
 interface OpenOptions {
   name: string;

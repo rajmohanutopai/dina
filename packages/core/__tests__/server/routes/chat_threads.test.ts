@@ -3,11 +3,19 @@
  */
 
 import { isAuthorized } from '../../../src/auth/authz';
-import { InMemoryChatMessageRepository, setChatMessageRepository } from '../../../src/chat/repository';
+import {
+  InMemoryChatMessageRepository,
+  setChatMessageRepository,
+} from '../../../src/chat/repository';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerChatThreadRoutes } from '../../../src/server/routes/chat_threads';
 
-function req(method: CoreRequest['method'], path: string, body?: unknown, query: Record<string, string> = {}): CoreRequest {
+function req(
+  method: CoreRequest['method'],
+  path: string,
+  body?: unknown,
+  query: Record<string, string> = {},
+): CoreRequest {
   const params: Record<string, string> = {};
   const m = /\/v1\/chat\/threads\/([^/]+)/.exec(path);
   if (m) params.id = decodeURIComponent(m[1]!);
@@ -44,9 +52,13 @@ afterEach(() => setChatMessageRepository(null));
 describe('/v1/chat/threads', () => {
   it('lists the NEWEST messages of a thread, oldest first', async () => {
     for (let i = 0; i < 30; i++) {
-      await router.handle(req('POST', '/v1/chat/threads/t1/messages', msg(`m${i}`, 1000 + i, `c${i}`)));
+      await router.handle(
+        req('POST', '/v1/chat/threads/t1/messages', msg(`m${i}`, 1000 + i, `c${i}`)),
+      );
     }
-    const res = await router.handle(req('GET', '/v1/chat/threads/t1/messages', undefined, { limit: '5' }));
+    const res = await router.handle(
+      req('GET', '/v1/chat/threads/t1/messages', undefined, { limit: '5' }),
+    );
     const ids = (res.body as { messages: { id: string }[] }).messages.map((m) => m.id);
     expect(ids).toEqual(['m25', 'm26', 'm27', 'm28', 'm29']);
   });

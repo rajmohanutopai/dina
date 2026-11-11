@@ -55,7 +55,11 @@ function registration(over: Partial<ContextCandidate['fields']> = {}): ContextCa
   };
 }
 
-function project(candidates: ContextCandidate[], actionClass = 'write', scope: PluginDataScope | undefined = SCOPE) {
+function project(
+  candidates: ContextCandidate[],
+  actionClass = 'write',
+  scope: PluginDataScope | undefined = SCOPE,
+) {
   return projectContextForCapability({ scope, actionClass, candidates, nowMs: NOW });
 }
 
@@ -129,7 +133,10 @@ describe('the scope is ONE capability’s, never a runner union', () => {
     );
     expect(projected.items).toHaveLength(3);
     // The contact was refused for its category, not counted against the cap.
-    expect(projected.excluded.map((e) => e.reason)).toEqual(['category_not_declared', 'over_item_cap']);
+    expect(projected.excluded.map((e) => e.reason)).toEqual([
+      'category_not_declared',
+      'over_item_cap',
+    ]);
   });
 });
 
@@ -180,10 +187,14 @@ describe('the FIELDS are Dina’s, narrowed by the action class', () => {
   });
 
   it('a category Dina has no template for projects nothing', () => {
-    const projected = project([{ category: 'delivery', fields: { state: 'dispatched' } }], 'write', {
-      categories: ['delivery'],
-      max_context_items: 4,
-    });
+    const projected = project(
+      [{ category: 'delivery', fields: { state: 'dispatched' } }],
+      'write',
+      {
+        categories: ['delivery'],
+        max_context_items: 4,
+      },
+    );
     expect(projected.items).toEqual([]);
     expect(projected.excluded[0].reason).toBe('category_not_projectable');
   });
@@ -239,7 +250,10 @@ describe('a value that does not fit its class is DROPPED, never coerced', () => 
 
   it('an item whose every field was dropped is excluded rather than sent empty', () => {
     const projected = project([
-      { category: 'business_registry', fields: { role: 7, legal_name: null, registration_scheme: 'nope' } },
+      {
+        category: 'business_registry',
+        fields: { role: 7, legal_name: null, registration_scheme: 'nope' },
+      },
     ]);
     expect(projected.items).toEqual([]);
     expect(projected.excluded[0].reason).toBe('no_projectable_fields');
@@ -300,11 +314,21 @@ describe('the projector cannot build a context the envelope would refuse', () =>
   });
 
   it('stays silent on adversarial values a store might hold', () => {
-    const projected = project([
-      registration({ legal_name: 'AAPFU0939F', registration_value: '4111 1111 1111 1111' }),
-      { category: 'address', fields: { role: 'self', line1: '2345', city: '67890123', country: 'IN' } },
-      { category: 'address', fields: { role: 'counterparty', line1: 'sk-abcdefghijklmnopqrst', country: 'IN' } },
-    ], 'write', { categories: ['business_registry', 'address'], max_context_items: 5 });
+    const projected = project(
+      [
+        registration({ legal_name: 'AAPFU0939F', registration_value: '4111 1111 1111 1111' }),
+        {
+          category: 'address',
+          fields: { role: 'self', line1: '2345', city: '67890123', country: 'IN' },
+        },
+        {
+          category: 'address',
+          fields: { role: 'counterparty', line1: 'sk-abcdefghijklmnopqrst', country: 'IN' },
+        },
+      ],
+      'write',
+      { categories: ['business_registry', 'address'], max_context_items: 5 },
+    );
     expect(contextScopeViolation(projected.items, 5)).toBeNull();
     const asJson = JSON.stringify(projected.items);
     expect(asJson).not.toContain('AAPFU0939F');
@@ -368,7 +392,9 @@ describe('gathering, per invocation', () => {
       return [registration(), { category: 'contact', fields: { role: 'counterparty' } }];
     });
     const projection = projectInvocationContext({
-      capability: capabilityOf({ data_scope: { categories: ['business_registry'], max_context_items: 4 } }),
+      capability: capabilityOf({
+        data_scope: { categories: ['business_registry'], max_context_items: 4 },
+      }),
       subject: {},
       nowMs: NOW,
     });
@@ -381,7 +407,9 @@ describe('gathering, per invocation', () => {
 
   it('names a declared category with no source, rather than passing it off as nothing to send', () => {
     const projection = projectInvocationContext({
-      capability: capabilityOf({ data_scope: { categories: ['delivery', 'tax'], max_context_items: 4 } }),
+      capability: capabilityOf({
+        data_scope: { categories: ['delivery', 'tax'], max_context_items: 4 },
+      }),
       subject: {},
       nowMs: NOW,
     });
@@ -394,7 +422,9 @@ describe('gathering, per invocation', () => {
       throw new Error('the settings store is shut');
     });
     const projection = projectInvocationContext({
-      capability: capabilityOf({ data_scope: { categories: ['business_registry'], max_context_items: 4 } }),
+      capability: capabilityOf({
+        data_scope: { categories: ['business_registry'], max_context_items: 4 },
+      }),
       subject: {},
       nowMs: NOW,
     });
@@ -409,7 +439,9 @@ describe('gathering, per invocation', () => {
       return [];
     });
     projectInvocationContext({
-      capability: capabilityOf({ data_scope: { categories: ['business_registry'], max_context_items: 4 } }),
+      capability: capabilityOf({
+        data_scope: { categories: ['business_registry'], max_context_items: 4 },
+      }),
       subject: { contactDid: 'did:plc:chairmaker99', documentDigest: 'abc123' },
       nowMs: NOW,
     });

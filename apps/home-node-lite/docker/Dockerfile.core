@@ -60,6 +60,9 @@ COPY packages/keystore-node/package.json packages/keystore-node/tsconfig.json pa
 COPY packages/adapters-node/package.json packages/adapters-node/tsconfig.json packages/adapters-node/
 COPY packages/fixtures/package.json packages/fixtures/
 COPY packages/test-harness/package.json packages/test-harness/tsconfig.json packages/test-harness/
+# core-server's tests use @dina/backup-service (a dev dependency); the builder
+# installs dev dependencies, so its manifest and sources must be present.
+COPY apps/backup-service/package.json apps/backup-service/tsconfig.json apps/backup-service/
 COPY apps/home-node-lite/core-server/package.json apps/home-node-lite/core-server/tsconfig.json apps/home-node-lite/core-server/
 
 # Install every workspace's deps — including tsx at the core-server
@@ -69,6 +72,7 @@ RUN npm ci --workspaces --include-workspace-root
 
 # Copy source. Split from deps so source-only edits don't re-run npm ci.
 COPY packages/ ./packages/
+COPY apps/backup-service/ ./apps/backup-service/
 COPY apps/home-node-lite/core-server/ ./apps/home-node-lite/core-server/
 
 # ─── Runtime stage — slim image, non-root, tini, healthcheck ──────────────

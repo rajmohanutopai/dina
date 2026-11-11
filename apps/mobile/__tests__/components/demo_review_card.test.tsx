@@ -10,7 +10,6 @@ import { InlineDemoReviewCard } from '../../src/components/InlineDemoReviewCard'
 
 import type { ChatMessage } from '@dina/brain/chat';
 
-
 function cardMessage(metadata: Record<string, unknown>): ChatMessage {
   return {
     id: 'm1',

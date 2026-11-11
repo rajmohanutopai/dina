@@ -92,10 +92,7 @@ interface HistogramEntry {
 export class MetricsRegistry {
   readonly buckets: readonly number[];
   private readonly counters = new Map<string, { key: CounterKey; count: number }>();
-  private readonly histograms = new Map<
-    string,
-    { key: HistogramKey; entry: HistogramEntry }
-  >();
+  private readonly histograms = new Map<string, { key: HistogramKey; entry: HistogramEntry }>();
   private totalRequests = 0;
   private totalErrors = 0;
 
@@ -104,16 +101,17 @@ export class MetricsRegistry {
     if (!Array.isArray(buckets) && !(buckets as readonly number[]).length) {
       throw new Error('MetricsRegistry: bucketsSec must be a non-empty array');
     }
-    for (let i = 0; i < buckets.length; i++) {
-      const b = buckets[i]!;
+    let prev: number | undefined;
+    for (const [i, b] of buckets.entries()) {
       if (!Number.isFinite(b) || b <= 0) {
         throw new Error(
           `MetricsRegistry: bucketsSec[${i}] must be a positive finite number (got ${b})`,
         );
       }
-      if (i > 0 && buckets[i - 1]! >= b) {
+      if (prev !== undefined && prev >= b) {
         throw new Error('MetricsRegistry: bucketsSec must be strictly ascending');
       }
+      prev = b;
     }
     this.buckets = buckets.slice();
   }
@@ -131,7 +129,9 @@ export class MetricsRegistry {
     const r = route && route.length > 0 ? route : 'unknown';
     const m = (method || 'UNKNOWN').toUpperCase();
     if (!Number.isFinite(status) || status < 0) {
-      throw new Error(`MetricsRegistry.record: status must be a non-negative number (got ${status})`);
+      throw new Error(
+        `MetricsRegistry.record: status must be a non-negative number (got ${status})`,
+      );
     }
     if (!Number.isFinite(durationSec) || durationSec < 0) {
       throw new Error(
@@ -165,9 +165,9 @@ export class MetricsRegistry {
     histo.entry.sum += durationSec;
     // Find the first bucket whose upper bound accepts this observation.
     let placed = false;
-    for (let i = 0; i < this.buckets.length; i++) {
-      if (durationSec <= this.buckets[i]!) {
-        histo.entry.bucketCounts[i]! += 1;
+    for (const [i, bound] of this.buckets.entries()) {
+      if (durationSec <= bound) {
+        histo.entry.bucketCounts[i] = bucketCountAt(histo.entry.bucketCounts, i) + 1;
         placed = true;
         break;
       }
@@ -191,7 +191,7 @@ export class MetricsRegistry {
       histograms.push({
         route: key.route,
         method: key.method,
-        buckets: this.buckets.map((le, i) => ({ le, count: entry.bucketCounts[i]! })),
+        buckets: this.buckets.map((le, i) => ({ le, count: bucketCountAt(entry.bucketCounts, i) })),
         overflow: entry.overflow,
         count: entry.count,
         sum: entry.sum,
@@ -238,4 +238,11 @@ function counterCompare(a: CounterSnapshot, b: CounterSnapshot): number {
 function histogramCompare(a: HistogramSnapshot, b: HistogramSnapshot): number {
   if (a.route !== b.route) return a.route < b.route ? -1 : 1;
   return a.method < b.method ? -1 : a.method > b.method ? 1 : 0;
+}
+
+/** bucketCounts holds one slot per registry bucket (filled with 0 on create). */
+function bucketCountAt(bucketCounts: readonly number[], i: number): number {
+  const count = bucketCounts[i];
+  if (count === undefined) throw new Error(`MetricsRegistry: bucket ${i} missing`);
+  return count;
 }

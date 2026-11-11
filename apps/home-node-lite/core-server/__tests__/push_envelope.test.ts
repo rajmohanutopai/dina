@@ -124,9 +124,9 @@ describe('buildPushEnvelope (task 4.38)', () => {
         plaintext: new Uint8Array(0),
       });
       const bogus = { ...frame, type: 'not_a_push_envelope' as typeof PUSH_ENVELOPE_TYPE };
-      expect(() =>
-        openPushEnvelope(bogus, device.root.privateKey, device.root.publicKey),
-      ).toThrow(/wrong frame type/);
+      expect(() => openPushEnvelope(bogus, device.root.privateKey, device.root.publicKey)).toThrow(
+        /wrong frame type/,
+      );
     });
 
     it('rejects future envelope version', () => {
@@ -137,9 +137,9 @@ describe('buildPushEnvelope (task 4.38)', () => {
         plaintext: new Uint8Array(0),
       });
       const bogus = { ...frame, v: 99 as typeof PUSH_ENVELOPE_VERSION };
-      expect(() =>
-        openPushEnvelope(bogus, device.root.privateKey, device.root.publicKey),
-      ).toThrow(/unsupported envelope version 99/);
+      expect(() => openPushEnvelope(bogus, device.root.privateKey, device.root.publicKey)).toThrow(
+        /unsupported envelope version 99/,
+      );
     });
   });
 });

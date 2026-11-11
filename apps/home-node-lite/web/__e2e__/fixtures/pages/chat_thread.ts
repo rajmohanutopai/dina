@@ -78,7 +78,9 @@ export class ChatThread {
     } catch {
       return null;
     }
-    const body = this.reminders().last().getByTestId(/^reminder-card-body-/);
+    const body = this.reminders()
+      .last()
+      .getByTestId(/^reminder-card-body-/);
     return (await body.innerText()).trim();
   }
 
@@ -93,7 +95,9 @@ export class ChatThread {
     } catch {
       return null;
     }
-    const header = this.reminders().last().getByTestId(/^reminder-card-header-/);
+    const header = this.reminders()
+      .last()
+      .getByTestId(/^reminder-card-header-/);
     return (await header.innerText()).trim();
   }
 }

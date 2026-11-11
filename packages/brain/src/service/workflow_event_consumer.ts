@@ -19,7 +19,6 @@
  * Source: SERVICE_DISCOVERY_DESIGN.md BRAIN-P2-W03 / MOBILE-009.
  */
 
-
 import { A2A_EVENT_KINDS, a2aDeliveryText, a2aOperationIdOf } from '../a2a/delivery_text';
 
 import { formatServiceQueryResult, type ServiceQueryEventDetails } from './result_formatter';
@@ -372,7 +371,11 @@ export class WorkflowEventConsumer {
         const err = e instanceof Error ? e : new Error(String(e));
         result.failed++;
         result.errors.push(err);
-        this.log({ event: 'workflow_event.a2a_fetch_failed', event_id: event.event_id, error: err.message });
+        this.log({
+          event: 'workflow_event.a2a_fetch_failed',
+          event_id: event.event_id,
+          error: err.message,
+        });
         await this.markDeliveryFailed(event, err);
         return;
       }

@@ -21,7 +21,6 @@ import { defaultFetch } from '../runtime/fetch';
 
 import { isDiscoverableURL } from './ssrf';
 
-
 export interface DeliveryResult {
   delivered: boolean;
   buffered: boolean;
@@ -253,9 +252,7 @@ export async function drainDeadDrop(): Promise<number> {
  * Checks the local cache first (10-min TTL). On cache miss,
  * delegates to the injected DID resolver.
  */
-export async function resolveMessagingEndpoint(
-  did: string,
-): Promise<{ endpoint: string } | null> {
+export async function resolveMessagingEndpoint(did: string): Promise<{ endpoint: string } | null> {
   // Check cache first
   const cached = lookupDIDCache(did);
   if (cached) return cached;

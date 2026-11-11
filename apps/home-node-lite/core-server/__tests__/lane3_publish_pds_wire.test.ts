@@ -29,9 +29,15 @@ afterEach(() => {
 
 /** A node whose publisher talks to the fake PDS through the real client, as boot wires it. */
 function wiredNode(): PubNode {
-  const repo = cardRepoOverPds(new PDSPublisher({ pdsUrl: PDS, handle: 'node.example', password: 'pw', fetch: pds.fetch }), NODE);
+  const repo = cardRepoOverPds(
+    new PDSPublisher({ pdsUrl: PDS, handle: 'node.example', password: 'pw', fetch: pds.fetch }),
+    NODE,
+  );
   // The lost-swap predicate boot passes.
-  return w.node(KEY_A, { repo, isLostSwap: (err) => err instanceof PDSPublisherError && err.casLost });
+  return w.node(KEY_A, {
+    repo,
+    isLostSwap: (err) => err instanceof PDSPublisherError && err.casLost,
+  });
 }
 
 // Plan E156
@@ -40,7 +46,9 @@ it('the first fence goes out with swapRecord: null on the wire, and a later one 
   expect((await n.publisher.activate({ refence: false })).ok).toBe(true);
   await n.publisher.flush();
   const [first] = pds.writesTo(A2A_FENCE_COLLECTION);
-  expect(first?.body).toEqual(expect.objectContaining({ swapCommit: 'bafyhead0', swapRecord: null }));
+  expect(first?.body).toEqual(
+    expect.objectContaining({ swapCommit: 'bafyhead0', swapRecord: null }),
+  );
   expect(Object.prototype.hasOwnProperty.call(first?.body, 'swapRecord')).toBe(true);
   const fenceCid = pds.records.get(`${A2A_FENCE_COLLECTION}/self`)?.cid;
   const head = pds.head;
@@ -63,45 +71,85 @@ describe('a server failure is not a lost swap', () => {
     // Two server failures in a row: 5 s, then 30 s.
     pds.failNext.set('com.atproto.repo.putRecord', { status: 503, error: 'InternalServerError' });
     await w.step(n);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', attempts: 1, next_retry_at: w.clock + PUBLISH_RETRY_DELAYS_MS[0] }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        attempts: 1,
+        next_retry_at: w.clock + PUBLISH_RETRY_DELAYS_MS[0],
+      }),
+    );
     w.clock += PUBLISH_RETRY_DELAYS_MS[0];
     pds.failNext.set('com.atproto.repo.putRecord', { status: 503, error: 'InternalServerError' });
     await w.step(n);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', attempts: 2, next_retry_at: w.clock + PUBLISH_RETRY_DELAYS_MS[1] }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        attempts: 2,
+        next_retry_at: w.clock + PUBLISH_RETRY_DELAYS_MS[1],
+      }),
+    );
     // Then a lost swap: back to the short delay, though two failures came before it.
     w.clock += PUBLISH_RETRY_DELAYS_MS[1];
     pds.failNext.set('com.atproto.repo.putRecord', { status: 400, error: 'InvalidSwap' });
     await w.step(n);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'failed', attempts: 3, next_retry_at: w.clock + PUBLISH_RETRY_DELAYS_MS[0] }));
+    expect(w.rowOf(n)).toEqual(
+      expect.objectContaining({
+        state: 'failed',
+        attempts: 3,
+        next_retry_at: w.clock + PUBLISH_RETRY_DELAYS_MS[0],
+      }),
+    );
     w.clock += PUBLISH_RETRY_DELAYS_MS[0];
     await w.step(n);
-    expect(JSON.parse(pds.card()?.card as string)).toEqual(expect.objectContaining({ name: 'Bus 55' }));
+    expect(JSON.parse(pds.card()?.card as string)).toEqual(
+      expect.objectContaining({ name: 'Bus 55' }),
+    );
   });
 
   it.each([
     ['answered 502', { status: 502, error: 'InternalServerError' }],
     ['answered with no cid', { status: 200, error: 'no_cid' }],
-  ])('a head read %s fails closed: nothing is claimed, written or stood down', async (_name, failure) => {
-    const n = wiredNode();
-    w.listOn(n);
-    expect((await n.publisher.activate({ refence: false })).ok).toBe(true);
-    await n.publisher.flush();
-    n.card = CARD('Bus 56');
-    await w.touchListing(n);
-    const posts = pds.calls.filter((c) => c.method === 'POST').length;
-    pds.failNext.set('com.atproto.sync.getLatestCommit', failure);
-    await w.step(n);
-    expect(pds.calls.filter((c) => c.method === 'POST').length).toBe(posts);
-    expect(w.rowOf(n)).toEqual(expect.objectContaining({ state: 'published', attempt_tuple_json: null, publication_active: 1, notice: null }));
-    await w.step(n);
-    expect(JSON.parse(pds.card()?.card as string)).toEqual(expect.objectContaining({ name: 'Bus 56' }));
-  });
+  ])(
+    'a head read %s fails closed: nothing is claimed, written or stood down',
+    async (_name, failure) => {
+      const n = wiredNode();
+      w.listOn(n);
+      expect((await n.publisher.activate({ refence: false })).ok).toBe(true);
+      await n.publisher.flush();
+      n.card = CARD('Bus 56');
+      await w.touchListing(n);
+      const posts = pds.calls.filter((c) => c.method === 'POST').length;
+      pds.failNext.set('com.atproto.sync.getLatestCommit', failure);
+      await w.step(n);
+      expect(pds.calls.filter((c) => c.method === 'POST').length).toBe(posts);
+      expect(w.rowOf(n)).toEqual(
+        expect.objectContaining({
+          state: 'published',
+          attempt_tuple_json: null,
+          publication_active: 1,
+          notice: null,
+        }),
+      );
+      await w.step(n);
+      expect(JSON.parse(pds.card()?.card as string)).toEqual(
+        expect.objectContaining({ name: 'Bus 56' }),
+      );
+    },
+  );
 });
 
 // Cold audit C3-13: every read names the node's own repository, whatever account the session holds
 it('a session signed in as another account still reads the node’s own fence and card: no false stand-down, no write anywhere', async () => {
-  const client = new PDSPublisher({ pdsUrl: PDS, handle: 'node.example', password: 'pw', fetch: pds.fetch });
-  const n = w.node(KEY_A, { repo: cardRepoOverPds(client, NODE), isLostSwap: (err) => err instanceof PDSPublisherError && err.casLost });
+  const client = new PDSPublisher({
+    pdsUrl: PDS,
+    handle: 'node.example',
+    password: 'pw',
+    fetch: pds.fetch,
+  });
+  const n = w.node(KEY_A, {
+    repo: cardRepoOverPds(client, NODE),
+    isLostSwap: (err) => err instanceof PDSPublisherError && err.casLost,
+  });
   w.listOn(n);
   expect((await n.publisher.activate({ refence: false })).ok).toBe(true);
   await n.publisher.flush();
@@ -126,5 +174,7 @@ it('a session signed in as another account still reads the node’s own fence an
   client.invalidateSession();
   w.clock += PUBLISH_RETRY_DELAYS_MS[1];
   await w.step(n);
-  expect(JSON.parse(pds.card()?.card as string)).toEqual(expect.objectContaining({ name: 'Bus 48' }));
+  expect(JSON.parse(pds.card()?.card as string)).toEqual(
+    expect.objectContaining({ name: 'Bus 48' }),
+  );
 });

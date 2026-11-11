@@ -32,15 +32,14 @@
 
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  ScrollView,
-  ActivityIndicator,
-} from 'react-native';
+import { View, Text, StyleSheet, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 
+import {
+  deriveNamespaceRows,
+  canAddNamespace,
+  nextNamespaceIndexFor,
+  type NamespaceRow,
+} from '../../src/peerlens/namespace_screen_data';
 import { colors, spacing, radius, textStyles } from '../../src/theme';
 
 /**
@@ -50,12 +49,6 @@ import { colors, spacing, radius, textStyles } from '../../src/theme';
  * a 5s budget catches "AppView unreachable" and unblocks the UI.
  */
 const LOAD_BUDGET_MS = 5000;
-import {
-  deriveNamespaceRows,
-  canAddNamespace,
-  nextNamespaceIndexFor,
-  type NamespaceRow,
-} from '../../src/peerlens/namespace_screen_data';
 
 export interface NamespaceScreenProps {
   /**
@@ -136,9 +129,8 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
       <View style={styles.header}>
         <Text style={styles.title}>Pseudonymous namespaces</Text>
         <Text style={styles.subtitle}>
-          Compartments of your identity. Each namespace publishes under its own key, so
-          attestations made under one are kept separate from your root identity's
-          PeerLens rating.
+          Compartments of your identity. Each namespace publishes under its own key, so attestations
+          made under one are kept separate from your root identity's PeerLens rating.
         </Text>
       </View>
 
@@ -147,8 +139,8 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
           <Ionicons name="cloud-offline-outline" size={36} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>DID document unavailable</Text>
           <Text style={styles.emptyBody}>
-            Couldn&apos;t reach PeerLens to read your namespaces. Check your
-            connection and try again.
+            Couldn&apos;t reach PeerLens to read your namespaces. Check your connection and try
+            again.
           </Text>
           <Pressable
             onPress={() => setRetryNonce((n) => n + 1)}
@@ -175,8 +167,8 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
           <Ionicons name="layers-outline" size={36} color={colors.textMuted} />
           <Text style={styles.emptyTitle}>No namespaces yet</Text>
           <Text style={styles.emptyBody}>
-            Tap below to create your first namespace. You can use it to publish
-            attestations under a separate compartment of your identity.
+            Tap below to create your first namespace. You can use it to publish attestations under a
+            separate compartment of your identity.
           </Text>
         </View>
       ) : (
@@ -208,9 +200,9 @@ export default function NamespaceScreen(props: NamespaceScreenProps = {}): React
       )}
 
       <Pressable
-        onPress={canAdd && nextIdx !== null && onAddNamespace
-          ? () => onAddNamespace(nextIdx)
-          : undefined}
+        onPress={
+          canAdd && nextIdx !== null && onAddNamespace ? () => onAddNamespace(nextIdx) : undefined
+        }
         disabled={!canAdd || nextIdx === null}
         style={({ pressed }) => [
           styles.cta,

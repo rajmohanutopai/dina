@@ -139,7 +139,9 @@ export function isReviewerProfileTappable(input: ReviewerLinkInput): boolean {
  */
 export function buildReviewerProfileDeepLink(input: ReviewerLinkInput): string {
   if (input.isSelf === true) {
-    throw new Error('buildReviewerProfileDeepLink: self-reviews do not drill (use isReviewerProfileTappable to guard)');
+    throw new Error(
+      'buildReviewerProfileDeepLink: self-reviews do not drill (use isReviewerProfileTappable to guard)',
+    );
   }
   if (typeof input.did !== 'string' || input.did.length === 0) {
     throw new Error('buildReviewerProfileDeepLink: did must be a non-empty string');
@@ -196,11 +198,7 @@ export function parseReviewerProfileDeepLink(url: unknown): ParsedReviewerProfil
   } catch {
     return null;
   }
-  if (
-    did.length < DID_MIN_LENGTH ||
-    did.length > DID_MAX_LENGTH ||
-    !DID_REGEX.test(did)
-  ) {
+  if (did.length < DID_MIN_LENGTH || did.length > DID_MAX_LENGTH || !DID_REGEX.test(did)) {
     return null;
   }
 

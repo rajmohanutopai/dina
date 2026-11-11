@@ -55,14 +55,7 @@ const USERNAME = 'dina_user_preferences';
 export type BudgetTier = '$' | '$$' | '$$$';
 
 /** Compatibility profile for product subjects (filters on `compat_tags`). */
-export type DeviceCompat =
-  | 'ios'
-  | 'android'
-  | 'macos'
-  | 'windows'
-  | 'linux'
-  | 'ipad'
-  | 'web';
+export type DeviceCompat = 'ios' | 'android' | 'macos' | 'windows' | 'linux' | 'ipad' | 'web';
 
 /** Dietary constraint. Optional — empty = no filter. */
 export type DietaryTag =
@@ -75,11 +68,7 @@ export type DietaryTag =
   | 'nut-free';
 
 /** Accessibility requirement. Optional — empty = no filter. */
-export type AccessibilityTag =
-  | 'wheelchair'
-  | 'captions'
-  | 'screen-reader'
-  | 'color-blind-safe';
+export type AccessibilityTag = 'wheelchair' | 'captions' | 'screen-reader' | 'color-blind-safe';
 
 /**
  * Full viewer profile. All fields are present (no optional `?`) so
@@ -498,14 +487,9 @@ function parsePreferences(raw: unknown): UserPreferences {
     region: 'region' in r ? parseRegion(r.region) : def.region,
     budget: 'budget' in r ? parseBudget(r.budget) : def.budget,
     devices:
-      'devices' in r
-        ? parseStringArray<DeviceCompat>(r.devices, DEVICE_VALUES)
-        : def.devices,
+      'devices' in r ? parseStringArray<DeviceCompat>(r.devices, DEVICE_VALUES) : def.devices,
     languages: 'languages' in r ? parseLanguages(r.languages) : def.languages,
-    dietary:
-      'dietary' in r
-        ? parseStringArray<DietaryTag>(r.dietary, DIETARY_VALUES)
-        : def.dietary,
+    dietary: 'dietary' in r ? parseStringArray<DietaryTag>(r.dietary, DIETARY_VALUES) : def.dietary,
     accessibility:
       'accessibility' in r
         ? parseStringArray<AccessibilityTag>(r.accessibility, ACCESSIBILITY_VALUES)
@@ -544,10 +528,7 @@ function parseBudget(raw: unknown): Readonly<Record<string, BudgetTier>> {
  * appear in the allowed-value set. De-duplicates because the settings
  * UI shouldn't be able to write `['ios', 'ios']`.
  */
-function parseStringArray<T extends string>(
-  raw: unknown,
-  allowed: ReadonlySet<T>,
-): readonly T[] {
+function parseStringArray<T extends string>(raw: unknown, allowed: ReadonlySet<T>): readonly T[] {
   if (!Array.isArray(raw)) return [];
   const seen = new Set<T>();
   const out: T[] = [];

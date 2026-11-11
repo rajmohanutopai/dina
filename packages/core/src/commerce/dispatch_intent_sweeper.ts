@@ -165,7 +165,10 @@ export class DispatchIntentSweeper {
             conversation.supplierDid,
             intent.purchaseOrderId,
           );
-          if (fromRecord !== null && (fromRecord.kind === 'uncertain' || fromRecord.kind === 'confirmed')) {
+          if (
+            fromRecord !== null &&
+            (fromRecord.kind === 'uncertain' || fromRecord.kind === 'confirmed')
+          ) {
             runtime.runInTransaction(() => {
               service.recordSubmitOutcome(draft.draftId, {
                 conversationId: conversation.conversationId,

@@ -18,9 +18,7 @@ describe('renderPrometheusText (task 4.85)', () => {
       expect(DEFAULT_METRIC_PREFIX).toBe('dina_core');
     });
     it('PROMETHEUS_CONTENT_TYPE is version=0.0.4', () => {
-      expect(PROMETHEUS_CONTENT_TYPE).toBe(
-        'text/plain; version=0.0.4; charset=utf-8',
-      );
+      expect(PROMETHEUS_CONTENT_TYPE).toBe('text/plain; version=0.0.4; charset=utf-8');
     });
   });
 
@@ -33,9 +31,7 @@ describe('renderPrometheusText (task 4.85)', () => {
       expect(text).toContain('dina_core_requests_error_total 0');
       // TYPE + HELP for the families must always be present.
       expect(text).toContain('# TYPE dina_core_requests_total counter');
-      expect(text).toContain(
-        '# TYPE dina_core_request_duration_seconds histogram',
-      );
+      expect(text).toContain('# TYPE dina_core_request_duration_seconds histogram');
       // Ends with a newline per Prometheus convention.
       expect(text.endsWith('\n')).toBe(true);
     });
@@ -100,15 +96,9 @@ describe('renderPrometheusText (task 4.85)', () => {
       reg.record('/b', 'POST', 500, 0.5);
       const text = renderPrometheusText(reg.snapshot());
 
-      expect(text).toContain(
-        'dina_core_requests_total{route="/a",method="GET",status="200"} 1',
-      );
-      expect(text).toContain(
-        'dina_core_requests_total{route="/a",method="GET",status="404"} 1',
-      );
-      expect(text).toContain(
-        'dina_core_requests_total{route="/b",method="POST",status="500"} 1',
-      );
+      expect(text).toContain('dina_core_requests_total{route="/a",method="GET",status="200"} 1');
+      expect(text).toContain('dina_core_requests_total{route="/a",method="GET",status="404"} 1');
+      expect(text).toContain('dina_core_requests_total{route="/b",method="POST",status="500"} 1');
       expect(text).toContain('dina_core_requests_total_all 3');
       expect(text).toContain('dina_core_requests_error_total 2'); // 404 + 500
     });

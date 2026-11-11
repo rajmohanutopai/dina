@@ -51,7 +51,10 @@ const HEX = 'a'.repeat(64);
 const CALLS: [string, () => Promise<unknown>][] = [
   ['listDrafts', () => client.listDrafts('main')],
   ['photoCapture', () => client.photoCapture('main', [B64])],
-  ['photoExtract', () => client.photoExtract({ catalogId: 'main', draftId: 'd', authorizationId: 'a' })],
+  [
+    'photoExtract',
+    () => client.photoExtract({ catalogId: 'main', draftId: 'd', authorizationId: 'a' }),
+  ],
   ['repair', () => client.repair({ draftId: 'd', row: 0, column: 'name', value: 'x' })],
   ['accept', () => client.accept('d', ['name'])],
   ['edit', () => client.edit({ draftId: 'd', field: 'name', value: 'x' })],
@@ -66,31 +69,91 @@ const CALLS: [string, () => Promise<unknown>][] = [
   ['orderPhotoExtract', () => client.orderPhotoExtract({ draftId: 'd', authorizationId: 'a' })],
   ['orderDrafts', () => client.orderDrafts()],
   ['orderDraft', () => client.orderDraft('d')],
-  ['orderRepairLine', () => client.orderRepairLine({ draftId: 'd', lineId: 'l', field: 'quantity', value: '1' })],
-  ['orderResolveLine', () => client.orderResolveLine({ draftId: 'd', lineId: 'l', resolution: { kind: 'unresolved' } as never })],
+  [
+    'orderRepairLine',
+    () => client.orderRepairLine({ draftId: 'd', lineId: 'l', field: 'quantity', value: '1' }),
+  ],
+  [
+    'orderResolveLine',
+    () =>
+      client.orderResolveLine({
+        draftId: 'd',
+        lineId: 'l',
+        resolution: { kind: 'unresolved' } as never,
+      }),
+  ],
   ['orderDeferLine', () => client.orderDeferLine('d', 'l')],
   ['orderAcceptFields', () => client.orderAcceptFields('d', [{ lineId: 'l', field: 'quantity' }])],
-  ['orderRequirement', () => client.orderRequirement({ draftId: 'd', key: 'r1', action: 'accept' })],
+  [
+    'orderRequirement',
+    () => client.orderRequirement({ draftId: 'd', key: 'r1', action: 'accept' }),
+  ],
   ['orderConfirm', () => client.orderConfirm('d')],
   ['orderReopen', () => client.orderReopen('d', 'c')],
   ['orderAbandon', () => client.orderAbandon('d')],
-  ['orderRequestQuote', () => client.orderRequestQuote({ draftId: 'd', supplierDid: 'did:x', projection: {} })],
-  ['orderApprove', () => client.orderApprove({ draftId: 'd', conversationId: 'c', quoteId: 'q', projection: {} })],
+  [
+    'orderRequestQuote',
+    () => client.orderRequestQuote({ draftId: 'd', supplierDid: 'did:x', projection: {} }),
+  ],
+  [
+    'orderApprove',
+    () => client.orderApprove({ draftId: 'd', conversationId: 'c', quoteId: 'q', projection: {} }),
+  ],
   ['orderSubmit', () => client.orderSubmit({ draftId: 'd', conversationId: 'c' })],
   ['tradeInbox', () => client.tradeInbox()],
   ['tradeStatement', () => client.tradeStatement('did:x', 'INR')],
   ['tradeStatement+role', () => client.tradeStatement('did:x', 'INR', 'supplier')],
-  ['issueDeliveryNote', () => client.issueDeliveryNote({ counterpartyDid: 'did:x', purchaseOrderId: 'po', supplierOrderId: 'so', lines: [] })],
-  ['issueDeliveryReceipt', () => client.issueDeliveryReceipt({ deliveryNoteDigest: HEX, lines: [] })],
-  ['issuePaymentNote', () => client.issuePaymentNote({ supplierDid: 'did:x', amount: { currency: 'INR', minor_units: '1' }, method: 'cash' })],
-  ['acknowledgePayment', () => client.acknowledgePayment({ paymentNoteDigest: HEX, kind: 'received', amountReceived: { currency: 'INR', minor_units: '1' } })],
+  [
+    'issueDeliveryNote',
+    () =>
+      client.issueDeliveryNote({
+        counterpartyDid: 'did:x',
+        purchaseOrderId: 'po',
+        supplierOrderId: 'so',
+        lines: [],
+      }),
+  ],
+  [
+    'issueDeliveryReceipt',
+    () => client.issueDeliveryReceipt({ deliveryNoteDigest: HEX, lines: [] }),
+  ],
+  [
+    'issuePaymentNote',
+    () =>
+      client.issuePaymentNote({
+        supplierDid: 'did:x',
+        amount: { currency: 'INR', minor_units: '1' },
+        method: 'cash',
+      }),
+  ],
+  [
+    'acknowledgePayment',
+    () =>
+      client.acknowledgePayment({
+        paymentNoteDigest: HEX,
+        kind: 'received',
+        amountReceived: { currency: 'INR', minor_units: '1' },
+      }),
+  ],
   ['booksExport', () => client.booksExport('INR')],
   ['mintInvite', () => client.mintInvite({ direction: 'you_supply_me', serviceRkeys: ['self'] })],
   ['redeemInvite', () => client.redeemInvite({ code: 'dinainvite1:x', serviceRkeys: ['self'] })],
   ['sendInvite', () => client.sendInvite({ nonce: 'f'.repeat(32), toDid: 'did:x' })],
   ['listInvites', () => client.listInvites()],
-  ['acceptHeldInvite', () => client.acceptHeldInvite({ nonce: 'f'.repeat(32), serviceRkeys: ['self'] })],
-  ['createStaffGrant', () => client.createStaffGrant({ deviceDid: 'did:x', scope: 'commerce_confirm', installs: 'both', pin: '4321' })],
+  [
+    'acceptHeldInvite',
+    () => client.acceptHeldInvite({ nonce: 'f'.repeat(32), serviceRkeys: ['self'] }),
+  ],
+  [
+    'createStaffGrant',
+    () =>
+      client.createStaffGrant({
+        deviceDid: 'did:x',
+        scope: 'commerce_confirm',
+        installs: 'both',
+        pin: '4321',
+      }),
+  ],
   ['listStaffGrants', () => client.listStaffGrants('did:x')],
   ['revokeStaffGrants', () => client.revokeStaffGrants('did:x')],
 ];

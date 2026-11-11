@@ -115,8 +115,12 @@ describe('NodeCryptoAdapter — argon2idHash (3.27)', () => {
     const adapter = new NodeCryptoAdapter();
     const pwd = new TextEncoder().encode('x');
     const salt = new Uint8Array(16);
-    await expect(adapter.argon2idHash(pwd, salt, 3, LOW_COST)).rejects.toThrow(/outLen must be 4\.\.1024/);
-    await expect(adapter.argon2idHash(pwd, salt, 1025, LOW_COST)).rejects.toThrow(/outLen must be 4\.\.1024/);
+    await expect(adapter.argon2idHash(pwd, salt, 3, LOW_COST)).rejects.toThrow(
+      /outLen must be 4\.\.1024/,
+    );
+    await expect(adapter.argon2idHash(pwd, salt, 1025, LOW_COST)).rejects.toThrow(
+      /outLen must be 4\.\.1024/,
+    );
   });
 
   it('rejects too-short salt (< 8 bytes, RFC 9106)', async () => {

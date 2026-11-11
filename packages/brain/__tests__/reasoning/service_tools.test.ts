@@ -205,9 +205,21 @@ describe('createSearchProviderServicesTool', () => {
     });
     // What the model sent live when the user named no place: lat 0, lng 0, radius 0 — the
     // AppView answered 400; its retry with radius 50 searched 50 km around nowhere and found nothing.
-    await tool.execute({ capability: 'eta_query', lat: 0, lng: 0, radius_km: 0, q: "Albert's Bakery" });
+    await tool.execute({
+      capability: 'eta_query',
+      lat: 0,
+      lng: 0,
+      radius_km: 0,
+      q: "Albert's Bakery",
+    });
     expect(calls[0]).toEqual({ capability: 'eta_query', q: "Albert's Bakery" });
-    await tool.execute({ capability: 'eta_query', lat: 0, lng: 0, radius_km: 50, q: "Albert's Bakery" });
+    await tool.execute({
+      capability: 'eta_query',
+      lat: 0,
+      lng: 0,
+      radius_km: 50,
+      q: "Albert's Bakery",
+    });
     expect(calls[1]).toEqual({ capability: 'eta_query', radiusKm: 50, q: "Albert's Bakery" });
     // A lone coordinate, a negative radius, and a non-finite value are dropped the same way.
     await tool.execute({ capability: 'eta_query', lat: 37.77, radius_km: -3 });
@@ -216,7 +228,13 @@ describe('createSearchProviderServicesTool', () => {
     expect(calls[3]).toEqual({ capability: 'eta_query', q: undefined });
     // A real place still goes through, and the equator or the meridian alone is a real place.
     await tool.execute({ capability: 'eta_query', lat: 0, lng: -78.5, radius_km: 5 });
-    expect(calls[4]).toEqual({ capability: 'eta_query', lat: 0, lng: -78.5, radiusKm: 5, q: undefined });
+    expect(calls[4]).toEqual({
+      capability: 'eta_query',
+      lat: 0,
+      lng: -78.5,
+      radiusKm: 5,
+      q: undefined,
+    });
   });
 
   it('search_capabilities drops null island the same way', async () => {
@@ -251,8 +269,13 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
-    expect(profile.service_uri).toBe('at://did:plc:demoprovider/com.dinakernel.service.profile/route-42');
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<
+      string,
+      unknown
+    >[];
+    expect(profile.service_uri).toBe(
+      'at://did:plc:demoprovider/com.dinakernel.service.profile/route-42',
+    );
   });
 
   it('omits service_uri when the profile carries no uri (#1)', async () => {
@@ -270,7 +293,10 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<
+      string,
+      unknown
+    >[];
     expect(profile.service_uri).toBeUndefined();
   });
 
@@ -302,7 +328,10 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<
+      string,
+      unknown
+    >[];
     expect(profile.capability_schemas).toBeUndefined();
   });
 
@@ -331,7 +360,10 @@ describe('createSearchProviderServicesTool', () => {
         },
       },
     });
-    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<string, unknown>[];
+    const [profile] = (await tool.execute({ capability: 'eta_query' })) as Record<
+      string,
+      unknown
+    >[];
     const schemas = profile.capability_schemas as Record<string, Record<string, unknown>>;
     expect(schemas.eta_query.schema_hash).toBe('sha256:abc');
     expect(schemas.eta_query.description).toBe('Returns ETA in minutes for a route');
@@ -405,7 +437,9 @@ describe('createQueryServiceTool', () => {
       params: { route: '42' },
       service_uri: 'at://did:plc:demoprovider/com.dinakernel.service.profile/route-42',
     });
-    expect(calls[0].serviceUri).toBe('at://did:plc:demoprovider/com.dinakernel.service.profile/route-42');
+    expect(calls[0].serviceUri).toBe(
+      'at://did:plc:demoprovider/com.dinakernel.service.profile/route-42',
+    );
   });
 
   it('omits service_uri when the model did not pass one (#1)', async () => {
@@ -597,12 +631,22 @@ describe('createQueryServiceTool', () => {
           throw new Error('send_failed');
         }
         calls.push(req as unknown as Record<string, unknown>);
-        return { queryId: 'q', taskId: 't', toDID: req.toDID, serviceName: req.toDID, deduped: false };
+        return {
+          queryId: 'q',
+          taskId: 't',
+          toDID: req.toDID,
+          serviceName: req.toDID,
+          deduped: false,
+        };
       },
     };
     const tool = createQueryServiceTool({ orchestrator });
     await expect(
-      tool.execute({ operator_did: 'did:plc:salonA', capability: 'appointment_availability', params: {} }),
+      tool.execute({
+        operator_did: 'did:plc:salonA',
+        capability: 'appointment_availability',
+        params: {},
+      }),
     ).rejects.toThrow(/send_failed/);
     // The first never succeeded → a retry of the SAME capability is allowed.
     await tool.execute({

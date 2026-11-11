@@ -17,7 +17,6 @@ import {
   setApprovalThreshold,
   getApprovalThreshold,
   resetApprovalThreshold,
-  type RiskLevel,
 } from '../../src/guardian/action_risk';
 
 describe('ActionRiskPolicy', () => {

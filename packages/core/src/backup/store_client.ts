@@ -92,7 +92,10 @@ export class BackupStoreClient {
     });
   }
 
-  private async fail(res: { status: number; text(): Promise<string> }, what: string): Promise<never> {
+  private async fail(
+    res: { status: number; text(): Promise<string> },
+    what: string,
+  ): Promise<never> {
     let reason = '';
     try {
       const parsed = JSON.parse(await res.text()) as { error?: unknown };

@@ -155,18 +155,29 @@ describe('JSON-RPC 2.0 request envelope', () => {
   });
 
   it.each([
-    ['the §7 example: method a number, params a string', '{"jsonrpc":"2.0","method":1,"params":"bar"}', 'method_required'],
+    [
+      'the §7 example: method a number, params a string',
+      '{"jsonrpc":"2.0","method":1,"params":"bar"}',
+      'method_required',
+    ],
     ['an empty object', '{}', 'jsonrpc_version'],
     ['jsonrpc 1.0', '{"jsonrpc":"1.0","method":"SendMessage"}', 'jsonrpc_version'],
-    ['params a scalar', '{"jsonrpc":"2.0","method":"SendMessage","params":5}', 'params_not_structured'],
+    [
+      'params a scalar',
+      '{"jsonrpc":"2.0","method":"SendMessage","params":5}',
+      'params_not_structured',
+    ],
     ['an unknown member', '{"jsonrpc":"2.0","method":"SendMessage","foo":"boo"}', 'unknown_member'],
-  ])('answers an id-less object that is not a valid Request (%s): -32600, id null (JSON-RPC 2.0 §5, §7)', (_name, text, reason) => {
-    const parsed = parseJsonRpcRequestText(text);
-    if (parsed.ok || 'notification' in parsed) throw new Error('expected an error reply');
-    expect(parsed.id).toBeNull();
-    expect(parsed.error.code).toBe(-32600);
-    expect(JSON.stringify(parsed.error)).toContain(reason);
-  });
+  ])(
+    'answers an id-less object that is not a valid Request (%s): -32600, id null (JSON-RPC 2.0 §5, §7)',
+    (_name, text, reason) => {
+      const parsed = parseJsonRpcRequestText(text);
+      if (parsed.ok || 'notification' in parsed) throw new Error('expected an error reply');
+      expect(parsed.id).toBeNull();
+      expect(parsed.error.code).toBe(-32600);
+      expect(JSON.stringify(parsed.error)).toContain(reason);
+    },
+  );
 
   it('echoes the id it could read on a refusal', () => {
     const parsed = parseJsonRpcRequest({ jsonrpc: '2.0', id: 'r1', method: 'nope' });
@@ -178,7 +189,12 @@ describe('JSON-RPC 2.0 request envelope', () => {
     'every error, %s among them, leads its data with A2A’s ErrorInfo and its UPPER_SNAKE reason',
     (kind) => {
       const [first] = a2aError(kind).data ?? [];
-      expect(first).toEqual(expect.objectContaining({ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', domain: 'a2a-protocol.org' }));
+      expect(first).toEqual(
+        expect.objectContaining({
+          '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+          domain: 'a2a-protocol.org',
+        }),
+      );
       expect(first?.reason).toMatch(/^[A-Z][A-Z_]+$/);
     },
   );
@@ -192,13 +208,29 @@ describe('JSON-RPC 2.0 request envelope', () => {
       error: {
         code: -32001,
         message: 'Task not found',
-        data: [{ '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'TASK_NOT_FOUND', domain: 'a2a-protocol.org', metadata: {} }],
+        data: [
+          {
+            '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+            reason: 'TASK_NOT_FOUND',
+            domain: 'a2a-protocol.org',
+            metadata: {},
+          },
+        ],
       },
     });
     // Dina's reason follows A2A's, in Dina's domain.
     expect(a2aError('versionNotSupported', 'only_1_0').data).toEqual([
-      { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'VERSION_NOT_SUPPORTED', domain: 'a2a-protocol.org', metadata: {} },
-      { '@type': 'type.googleapis.com/google.rpc.ErrorInfo', reason: 'only_1_0', domain: 'dinakernel.com' },
+      {
+        '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+        reason: 'VERSION_NOT_SUPPORTED',
+        domain: 'a2a-protocol.org',
+        metadata: {},
+      },
+      {
+        '@type': 'type.googleapis.com/google.rpc.ErrorInfo',
+        reason: 'only_1_0',
+        domain: 'dinakernel.com',
+      },
     ]);
     expect(buildJsonRpcRequest('q', 'SendMessage', {})).toEqual({
       jsonrpc: '2.0',
@@ -249,16 +281,29 @@ describe('JSON-RPC response parsing', () => {
   it.each([
     [-32700, 'Parse error'],
     [-32600, 'Invalid Request'],
-  ])('reads error %d sent with a null id, as JSON-RPC 2.0 §5 has a server that could not read the id answer', (code, message) => {
-    expect(parseJsonRpcResponse({ jsonrpc: '2.0', id: null, error: { code, message } }, 3)).toEqual({ ok: false, error: { code, message } });
-  });
+  ])(
+    'reads error %d sent with a null id, as JSON-RPC 2.0 §5 has a server that could not read the id answer',
+    (code, message) => {
+      expect(
+        parseJsonRpcResponse({ jsonrpc: '2.0', id: null, error: { code, message } }, 3),
+      ).toEqual({ ok: false, error: { code, message } });
+    },
+  );
 
   it.each([
     ['another id', { jsonrpc: '2.0', id: 4, result: {} }, 'id_mismatch'],
     // A null id comes only with the two errors a server sends when it could not read the id (§5).
     ['a result with a null id', { jsonrpc: '2.0', id: null, result: {} }, 'id_mismatch'],
-    ['another error with a null id', { jsonrpc: '2.0', id: null, error: { code: -32602, message: 'x' } }, 'id_mismatch'],
-    ['an A2A error with a null id', { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'x' } }, 'id_mismatch'],
+    [
+      'another error with a null id',
+      { jsonrpc: '2.0', id: null, error: { code: -32602, message: 'x' } },
+      'id_mismatch',
+    ],
+    [
+      'an A2A error with a null id',
+      { jsonrpc: '2.0', id: null, error: { code: -32001, message: 'x' } },
+      'id_mismatch',
+    ],
     ['both result and error', { jsonrpc: '2.0', id: 3, result: {}, error: {} }, 'result_xor_error'],
     ['neither', { jsonrpc: '2.0', id: 3 }, 'result_xor_error'],
     ['a bad error object', { jsonrpc: '2.0', id: 3, error: { code: 'x' } }, 'error_shape'],

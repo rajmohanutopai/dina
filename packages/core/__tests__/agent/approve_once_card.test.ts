@@ -5,7 +5,10 @@
  */
 
 import { requireAgentPersonaAccess } from '../../src/agent/access';
-import { InMemoryAgentGrantRepository, setAgentGrantRepository } from '../../src/agent/grant_repository';
+import {
+  InMemoryAgentGrantRepository,
+  setAgentGrantRepository,
+} from '../../src/agent/grant_repository';
 import { createPersona, resetPersonaState } from '../../src/persona/service';
 import { applyOwnerWorkflowDecision } from '../../src/server/routes/workflow';
 import { InMemoryWorkflowRepository, setWorkflowRepository } from '../../src/workflow/repository';

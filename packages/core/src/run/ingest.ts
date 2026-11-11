@@ -27,9 +27,18 @@
 import { PersonaLockedError } from '../errors';
 import { getDefaultRiskLevel } from '../gatekeeper/intent';
 
-import { getMessageRepository, type MessageKind, type MessageRecord, type MessageRepository } from './message';
+import {
+  getMessageRepository,
+  type MessageKind,
+  type MessageRecord,
+  type MessageRepository,
+} from './message';
 import { getRunRepository, type RunRepository } from './repository';
-import { getReservationRepository, type ReservationRecord, type ReservationRepository } from './reservation';
+import {
+  getReservationRepository,
+  type ReservationRecord,
+  type ReservationRepository,
+} from './reservation';
 
 import type { AdmissionService } from './admission';
 import type { RunClassifyService } from './classification';
@@ -37,7 +46,6 @@ import type { RunRecord } from './domain';
 import type { LockedArrivalStore } from './locked_arrival';
 import type { PayloadStore } from './payload_store';
 import type { RunService } from './service';
-
 
 /** A signed provider `RunMessage` AFTER verification (§6.2/§18) — the fields the
  *  ingress needs to store the payload + shape the message row. */
@@ -77,7 +85,8 @@ export function parseHeldMessageMeta(raw: string | null): HeldMessageMeta | null
   try {
     const p = JSON.parse(raw) as Partial<HeldMessageMeta>;
     if (
-      typeof p.message_id !== 'string' || p.message_id === '' ||
+      typeof p.message_id !== 'string' ||
+      p.message_id === '' ||
       typeof p.sequence !== 'number' ||
       typeof p.dedup_key !== 'string' ||
       (p.kind !== 'informational' && p.kind !== 'action') ||
@@ -310,7 +319,8 @@ export class RunResponseIngest {
     const dupById = this.messages.getById(message.message_id);
     const dupByKey =
       dupById === null && res.state === 'reserved'
-        ? (this.messages.listByRun(res.run_id).find((m) => m.dedup_key === message.dedup_key) ?? null)
+        ? (this.messages.listByRun(res.run_id).find((m) => m.dedup_key === message.dedup_key) ??
+          null)
         : null;
     const duplicate = dupById ?? dupByKey;
     if (duplicate !== null) {

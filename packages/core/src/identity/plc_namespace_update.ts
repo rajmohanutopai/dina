@@ -389,4 +389,3 @@ function readVerificationMethods(op: Record<string, unknown>): Record<string, st
   }
   return out;
 }
-

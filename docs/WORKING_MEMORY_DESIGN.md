@@ -467,8 +467,9 @@ A natural build order for fitting the pieces together:
 ## 15. Validation scenarios
 
 The fifteen routing-behavior scenarios this design must satisfy, to be
-exercised as real Telegram + Gemini end-to-end tests in
-`tests/sanity/test_working_memory_routing.py`. Grouped by the §6.5 matrix
+first exercised as real Telegram + Gemini end-to-end tests in a Python
+sanity suite (since removed); the TypeScript port is
+`apps/mobile/__tests__/integration/working_memory_routing.test.ts`. Grouped by the §6.5 matrix
 cell each lives in. Each scenario names the query, the pre-seeded vault
 state it assumes, the routing the classifier should emit, and the
 assertion on the final answer.
@@ -500,11 +501,9 @@ Each scenario has three failure modes we need to catch:
 - **Hallucinated answer**: source said no, LLM made something up. This is
   the worst failure — why case 15 is on the list.
 
-We write these as Telethon-driven tests using Alonso's bot, pre-seeding
-the vault per scenario via `/remember`, then sending the query via
-`/ask`. Actual Gemini — no mocks. The test file lives at
-`tests/sanity/test_working_memory_routing.py` and is gated behind
-`SANITY_WM_ENABLED=1` so normal test runs aren't billed on Gemini.
+The scenarios pre-seed the vault per scenario via `/remember`, then send
+the query via `/ask`, against a real model. The TypeScript port lives at
+`apps/mobile/__tests__/integration/working_memory_routing.test.ts`.
 
 
 ## 16. Anti-goals, restated

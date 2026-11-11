@@ -63,10 +63,7 @@ export function OnboardingShell(props: OnboardingShellProps): React.ReactElement
   const insets = useSafeAreaInsets();
 
   return (
-    <KeyboardAvoidingView
-      behavior="padding"
-      style={styles.root}
-    >
+    <KeyboardAvoidingView behavior="padding" style={styles.root}>
       <View style={styles.headerRow}>
         <View style={styles.headerSide}>
           {showBack ? (

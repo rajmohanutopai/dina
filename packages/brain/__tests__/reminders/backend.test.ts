@@ -9,10 +9,7 @@
  * lite. The wrappers are the single choke point that keeps that honest.
  */
 
-import {
-  listByPersona as listByPersonaInProcess,
-  resetReminderState,
-} from '@dina/core/reminders';
+import { listByPersona as listByPersonaInProcess, resetReminderState } from '@dina/core/reminders';
 import { MockCoreClient } from '@dina/test-harness';
 
 import {
@@ -41,7 +38,11 @@ describe('reminder backend routing', () => {
     it('listRemindersByPersonaRouted + listPendingRemindersRouted read in-process', async () => {
       const now = Date.now();
       await createReminderRouted({ message: 'due', due_at: now - 1000, persona: 'general' });
-      await createReminderRouted({ message: 'later', due_at: now + 10_000_000, persona: 'general' });
+      await createReminderRouted({
+        message: 'later',
+        due_at: now + 10_000_000,
+        persona: 'general',
+      });
       expect(await listRemindersByPersonaRouted('general')).toHaveLength(2);
       expect((await listPendingRemindersRouted(now)).map((r) => r.message)).toEqual(['due']);
     });

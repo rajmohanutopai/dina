@@ -169,15 +169,8 @@ describe('WorkflowTaskRegistry (task 4.82)', () => {
       expect(done.status).toBe('completed');
       expect(done.resultJson).toBe('{"ok":true}');
       expect(done.completedAtMs).toBe(clock.nowMsFn());
-      expect(events.map((e) => e.kind)).toEqual([
-        'enqueued',
-        'started',
-        'completed',
-      ]);
-      const completedEv = events[2] as Extract<
-        WorkflowEvent,
-        { kind: 'completed' }
-      >;
+      expect(events.map((e) => e.kind)).toEqual(['enqueued', 'started', 'completed']);
+      const completedEv = events[2] as Extract<WorkflowEvent, { kind: 'completed' }>;
       expect(completedEv.durationMs).toBe(500);
     });
 
@@ -187,10 +180,7 @@ describe('WorkflowTaskRegistry (task 4.82)', () => {
       });
       await reg.enqueue(sampleTask);
       await reg.markRunning('task-1');
-      const failed = await reg.markFailed(
-        'task-1',
-        JSON.stringify({ reason: 'upstream' }),
-      );
+      const failed = await reg.markFailed('task-1', JSON.stringify({ reason: 'upstream' }));
       expect(failed.status).toBe('failed');
       expect(failed.errorJson).toBe('{"reason":"upstream"}');
       expect(failed.attempts).toBe(1);
@@ -217,11 +207,12 @@ describe('WorkflowTaskRegistry (task 4.82)', () => {
       const reg = new WorkflowTaskRegistry({
         adapter: new InMemoryWorkflowAdapter(),
       });
-      const fn = method === 'markRunning'
-        ? () => reg.markRunning(id)
-        : method === 'markCompleted'
-        ? () => reg.markCompleted(id, '{}')
-        : () => reg.markFailed(id, '{}');
+      const fn =
+        method === 'markRunning'
+          ? () => reg.markRunning(id)
+          : method === 'markCompleted'
+            ? () => reg.markCompleted(id, '{}')
+            : () => reg.markFailed(id, '{}');
       await expect(fn()).rejects.toThrow(/not found/);
     });
 
@@ -230,9 +221,7 @@ describe('WorkflowTaskRegistry (task 4.82)', () => {
         adapter: new InMemoryWorkflowAdapter(),
       });
       await reg.enqueue(sampleTask);
-      await expect(reg.markCompleted('task-1', '{}')).rejects.toThrow(
-        /need running/,
-      );
+      await expect(reg.markCompleted('task-1', '{}')).rejects.toThrow(/need running/);
     });
 
     it('markRunning on a running task throws (no double-run)', async () => {

@@ -28,8 +28,7 @@ import {
 
 import { colors, radius, spacing, textStyles } from '../theme';
 
-export interface PassphraseFieldProps
-  extends Omit<TextInputProps, 'secureTextEntry' | 'style'> {
+export interface PassphraseFieldProps extends Omit<TextInputProps, 'secureTextEntry' | 'style'> {
   /** Optional caption rendered above the input (e.g. "PASSPHRASE"). */
   label?: string;
   /** Optional error message rendered below the input. */
@@ -77,9 +76,7 @@ export const PassphraseField = React.forwardRef<TextInput, PassphraseFieldProps>
             />
           </Pressable>
         </View>
-        {error !== undefined && error !== '' ? (
-          <Text style={styles.errorText}>{error}</Text>
-        ) : null}
+        {error !== undefined && error !== '' ? <Text style={styles.errorText}>{error}</Text> : null}
       </View>
     );
   },

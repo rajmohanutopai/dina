@@ -10,11 +10,7 @@
  * Source: ARCHITECTURE.md Task 9.1
  */
 
-import {
-  PeerlensQueryClient,
-  type PeerlensProfile,
-  type QueryResult,
-} from '../../src/peerlens/query_client';
+import { PeerlensQueryClient, type PeerlensProfile } from '../../src/peerlens/query_client';
 
 function createMockFetch(body: unknown, status = 200) {
   const calls: { url: string; method: string }[] = [];
@@ -131,17 +127,26 @@ describe('PeerlensQueryClient (9.1)', () => {
     });
 
     it('clamps overallTrustScore to [0, 1]', async () => {
-      const { mockFetch: highMock } = createMockFetch({ ...SAMPLE_PROFILE, overallTrustScore: 1.5 });
+      const { mockFetch: highMock } = createMockFetch({
+        ...SAMPLE_PROFILE,
+        overallTrustScore: 1.5,
+      });
       const high = await new PeerlensQueryClient({ fetch: highMock }).queryProfile('did:plc:test');
       expect(high.profile!.overallTrustScore).toBe(1);
 
-      const { mockFetch: lowMock } = createMockFetch({ ...SAMPLE_PROFILE, overallTrustScore: -0.4 });
+      const { mockFetch: lowMock } = createMockFetch({
+        ...SAMPLE_PROFILE,
+        overallTrustScore: -0.4,
+      });
       const low = await new PeerlensQueryClient({ fetch: lowMock }).queryProfile('did:plc:test');
       expect(low.profile!.overallTrustScore).toBe(0);
     });
 
     it('treats non-numeric overallTrustScore as null (renders as "unrated")', async () => {
-      const { mockFetch } = createMockFetch({ ...SAMPLE_PROFILE, overallTrustScore: 'not-a-number' });
+      const { mockFetch } = createMockFetch({
+        ...SAMPLE_PROFILE,
+        overallTrustScore: 'not-a-number',
+      });
       const client = new PeerlensQueryClient({ fetch: mockFetch });
 
       const result = await client.queryProfile('did:plc:test');

@@ -24,10 +24,12 @@ import { parseWatchPollPayload, type WatchPollPayload } from './payload';
 
 import type { WorkflowRepository } from '../workflow/repository';
 
-
 /** Composes + sends the `service.query` for a due watch. Wired by the platform
  *  (Brain/transport) — the sweeper only invokes it. May be async. */
-export type WatchPollHandler = (task: WorkflowTask, payload: WatchPollPayload) => void | Promise<void>;
+export type WatchPollHandler = (
+  task: WorkflowTask,
+  payload: WatchPollPayload,
+) => void | Promise<void>;
 
 export interface WatchPollSweeperOptions {
   repository: WorkflowRepository;

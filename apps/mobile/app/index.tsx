@@ -8,8 +8,8 @@
  * Styled with Dina warm design system (FAF8F5 palette).
  */
 
-import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useRouter } from 'expo-router';
+import { useHeaderHeight } from 'expo-router/react-navigation';
 import { StatusBar } from 'expo-status-bar';
 import React, { useState, useRef, useCallback } from 'react';
 import {
@@ -37,13 +37,13 @@ import { InlineCreditsCard } from '../src/components/InlineCreditsCard';
 import { InlineDemoApprovalCard } from '../src/components/InlineDemoApprovalCard';
 import { InlineDemoReviewCard } from '../src/components/InlineDemoReviewCard';
 import { InlineDemoServicePreviewCard } from '../src/components/InlineDemoServicePreviewCard';
+import { InlineExportCard } from '../src/components/InlineExportCard';
 import { InlineGroupPlanCard } from '../src/components/InlineGroupPlanCard';
 import { InlineMarkdownText } from '../src/components/InlineMarkdownText';
 import { InlineMissingCapabilityCard } from '../src/components/InlineMissingCapabilityCard';
 import { InlineNudgeCard } from '../src/components/InlineNudgeCard';
 import { InlinePromiseOfferCard } from '../src/components/InlinePromiseOfferCard';
 import { InlineQuarantineCard } from '../src/components/InlineQuarantineCard';
-import { InlineExportCard } from '../src/components/InlineExportCard';
 import { InlineQuoteRequestDraftCard } from '../src/components/InlineQuoteRequestDraftCard';
 import { InlineReasoningJobCard } from '../src/components/InlineReasoningJobCard';
 import { InlineReminderCard } from '../src/components/InlineReminderCard';
@@ -85,7 +85,6 @@ type UiMessage = ChatMessage & {
 // maps to kebab, e.g. `rowSeq` → `data-row-seq`); native RN ignores it.
 // The inner per-branch testIDs (`chat-card-*`, `chat-msg-*`, and each
 // card's `*-card-body-*`) are unchanged — this only adds an outer handle.
-
 
 /** A peer's literal D2D message renders as a left bubble with
  *  `displayType === 'dina'` + `metadata.source === 'd2d'` (mirrors

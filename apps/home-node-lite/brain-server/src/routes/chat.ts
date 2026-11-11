@@ -18,7 +18,6 @@
  * test loop without the mobile dev-client.
  */
 
-
 import {
   handleChat,
   addMessage,
@@ -75,9 +74,7 @@ interface ServiceResultBody {
  *  active (a cancelled/unknown watch arrives `active:false` → suppress, fail-closed)
  *  and its optional wake filter. Parsed from the untrusted `watch_policy` body
  *  field; a malformed value is treated as no policy (→ suppress). */
-function parseForwardedWatchPolicy(
-  raw: unknown,
-): { active: boolean; filter?: WatchFilter } | null {
+function parseForwardedWatchPolicy(raw: unknown): { active: boolean; filter?: WatchFilter } | null {
   if (raw === null || typeof raw !== 'object') return null;
   const obj = raw as { active?: unknown; filter?: unknown };
   if (typeof obj.active !== 'boolean') return null;
@@ -228,7 +225,9 @@ export function registerChatRoutes(
         return reply.status(400).send({ error: 'text, operation_id and event_id are required' });
       }
       const threadId =
-        typeof body.reply_to === 'string' && body.reply_to !== '' ? body.reply_to.slice(0, 200) : 'main';
+        typeof body.reply_to === 'string' && body.reply_to !== ''
+          ? body.reply_to.slice(0, 200)
+          : 'main';
       const message = deliverA2AOutcome({
         threadId,
         text: body.text,
@@ -251,12 +250,20 @@ export function registerChatRoutes(
       const body = req.body ?? {};
       const quarantineId = body.quarantine_id;
       const senderDID = body.sender_did;
-      const messageType = typeof body.message_type === 'string' ? body.message_type.slice(0, 100) : '';
-      if (typeof quarantineId !== 'string' || quarantineId === '' || typeof senderDID !== 'string' || senderDID === '') {
+      const messageType =
+        typeof body.message_type === 'string' ? body.message_type.slice(0, 100) : '';
+      if (
+        typeof quarantineId !== 'string' ||
+        quarantineId === '' ||
+        typeof senderDID !== 'string' ||
+        senderDID === ''
+      ) {
         return reply.status(400).send({ error: 'quarantine_id and sender_did are required' });
       }
       const already = getThread('main').some((m) => {
-        const lc = (m.metadata as { lifecycle?: { kind?: string; quarantineId?: string } } | undefined)?.lifecycle;
+        const lc = (
+          m.metadata as { lifecycle?: { kind?: string; quarantineId?: string } } | undefined
+        )?.lifecycle;
         return lc?.kind === 'quarantine_request' && lc.quarantineId === quarantineId;
       });
       if (!already) {
@@ -296,10 +303,7 @@ export function registerChatRoutes(
   // ────────────────────────────────────────────────────────────────
   app.get(
     `${prefix}/chat/stream`,
-    async (
-      req: FastifyRequest<{ Querystring: { threadId?: string } }>,
-      reply: FastifyReply,
-    ) => {
+    async (req: FastifyRequest<{ Querystring: { threadId?: string } }>, reply: FastifyReply) => {
       const threadId =
         typeof req.query.threadId === 'string' && req.query.threadId !== ''
           ? req.query.threadId

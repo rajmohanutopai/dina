@@ -240,9 +240,30 @@ describe('Persona Service', () => {
 
     it('hydratePersonas restores user rows, skipping builtins and already-registered', () => {
       const { repo } = makeMockRepo([
-        { name: 'salon', tier: 'standard', description: 'S', createdAt: 1, updatedAt: 1, isBuiltin: false },
-        { name: 'general', tier: 'default', description: 'G', createdAt: 0, updatedAt: 0, isBuiltin: true },
-        { name: 'work', tier: 'standard', description: 'W', createdAt: 2, updatedAt: 2, isBuiltin: false },
+        {
+          name: 'salon',
+          tier: 'standard',
+          description: 'S',
+          createdAt: 1,
+          updatedAt: 1,
+          isBuiltin: false,
+        },
+        {
+          name: 'general',
+          tier: 'default',
+          description: 'G',
+          createdAt: 0,
+          updatedAt: 0,
+          isBuiltin: true,
+        },
+        {
+          name: 'work',
+          tier: 'standard',
+          description: 'W',
+          createdAt: 2,
+          updatedAt: 2,
+          isBuiltin: false,
+        },
       ]);
       setPersonaRepository(repo);
       // 'work' is already registered this boot (e.g. code-seeded) — hydrate must

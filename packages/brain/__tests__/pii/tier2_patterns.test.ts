@@ -108,7 +108,9 @@ describe('Tier 2 PII Pattern Recognizers', () => {
     });
 
     it('is checksum-honest like Tier 1 (§5.D3): a bad Aadhaar check digit or a non-holder PAN letter is not PII', () => {
-      expect(detectIndianPII('ref 2345 6789 0123').some((m) => m.entity_type === 'AADHAAR_NUMBER')).toBe(false);
+      expect(
+        detectIndianPII('ref 2345 6789 0123').some((m) => m.entity_type === 'AADHAAR_NUMBER'),
+      ).toBe(false);
       expect(detectIndianPII('lot ABCDE1234F').some((m) => m.entity_type === 'IN_PAN')).toBe(false);
     });
 

@@ -51,7 +51,7 @@ export function isAppViewStub(value: unknown): boolean {
 
 export class AppViewStub {
   /** See `APPVIEW_STUB_BRAND` — used by `isAppViewStub()` detection. */
-  readonly [APPVIEW_STUB_BRAND]: true = true;
+  readonly [APPVIEW_STUB_BRAND] = true as const;
   private readonly profiles = new Map<string, ServiceProfile>();
 
   constructor(options: AppViewStubOptions = {}) {
@@ -184,7 +184,11 @@ export class AppViewStub {
     if (typeof intent === 'string' && intent.trim() !== '') {
       const intentTokens = tokenizeForRanking(intent);
       if (intentTokens.size > 0) {
-        const scored = out.map((c, i) => ({ c, i, score: overlapScoreForRanking(intentTokens, c) }));
+        const scored = out.map((c, i) => ({
+          c,
+          i,
+          score: overlapScoreForRanking(intentTokens, c),
+        }));
         scored.sort((a, b) => b.score - a.score || a.i - b.i);
         return scored.map((s) => s.c);
       }

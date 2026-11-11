@@ -28,7 +28,10 @@ export interface GroupPlanGuestWire {
   outcome: SpokeOutcome;
   reply: SpokeReply | null;
   disclosures: Disclosure[];
-  spokes: ({ round: number; stage: 'queried'; task_id: string } | { round: number; stage: 'grant_requested' })[];
+  spokes: (
+    | { round: number; stage: 'queried'; task_id: string }
+    | { round: number; stage: 'grant_requested' }
+  )[];
 }
 
 export interface GroupPlanFoldWire {
@@ -99,7 +102,13 @@ export function projectPlan(plan: GroupPlan): GroupPlanWire {
   };
 }
 
-const STATES: ReadonlySet<string> = new Set<GroupPlanState>(['proposing', 'folded', 'confirming', 'settled', 'abandoned']);
+const STATES: ReadonlySet<string> = new Set<GroupPlanState>([
+  'proposing',
+  'folded',
+  'confirming',
+  'settled',
+  'abandoned',
+]);
 
 /**
  * A wire plan as a client reads it back — the shape a route answers, checked
@@ -157,7 +166,8 @@ export function readGroupPlanHandles(value: unknown): GroupPlanHandleWire[] {
     if (v === null || typeof v !== 'object' || Array.isArray(v)) continue;
     const h = v as Record<string, unknown>;
     if (typeof h.plan_id !== 'string' || h.plan_id === '' || typeof h.intent !== 'string') continue;
-    if (typeof h.state !== 'string' || !STATES.has(h.state) || typeof h.round !== 'number') continue;
+    if (typeof h.state !== 'string' || !STATES.has(h.state) || typeof h.round !== 'number')
+      continue;
     out.push(h as unknown as GroupPlanHandleWire);
   }
   return out;

@@ -90,7 +90,11 @@ function escapeRe(s: string): string {
 
 export function mentionsWholeWord(text: string, surfaces: readonly string[]): boolean {
   if (text === '' || surfaces.length === 0) return false;
-  return surfaces.some((s) => s !== '' && new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(s)}($|[^\\p{L}\\p{N}])`, 'iu').test(text));
+  return surfaces.some(
+    (s) =>
+      s !== '' &&
+      new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRe(s)}($|[^\\p{L}\\p{N}])`, 'iu').test(text),
+  );
 }
 
 function label(text: string): string {
@@ -131,13 +135,17 @@ export async function planForget(request: ForgetRequest): Promise<PlanOutcome> {
         (p.canonicalName.toLowerCase() === want ||
           (p.surfaces ?? []).some((s) => s.status !== 'rejected' && s.normalizedSurface === want)),
     );
-    if (matches.length > 1) return { ok: false, reason: 'ambiguous', candidates: matches.map((m) => m.canonicalName) };
+    if (matches.length > 1)
+      return { ok: false, reason: 'ambiguous', candidates: matches.map((m) => m.canonicalName) };
     const person = matches[0];
     plan.personName = person?.canonicalName ?? request.person.trim();
     plan.personId = person?.personId ?? '';
     plan.surfaces = [
       ...new Set(
-        [plan.personName, ...(person?.surfaces ?? []).filter((s) => s.status !== 'rejected').map((s) => s.surface)]
+        [
+          plan.personName,
+          ...(person?.surfaces ?? []).filter((s) => s.status !== 'rejected').map((s) => s.surface),
+        ]
           .map((s) => s.trim().toLowerCase())
           .filter((s) => s.length >= 2),
       ),
@@ -146,7 +154,9 @@ export async function planForget(request: ForgetRequest): Promise<PlanOutcome> {
     for (const persona of open) {
       const repo = getVaultRepository(persona);
       if (repo === null) continue;
-      const linked = new Set(plan.personId !== '' ? repo.getItemIdsForPersonSync(plan.personId) : []);
+      const linked = new Set(
+        plan.personId !== '' ? repo.getItemIdsForPersonSync(plan.personId) : [],
+      );
       for (const item of repo.valuesSync()) {
         const text = `${item.summary} ${item.body}`;
         if (linked.has(item.id) || mentionsWholeWord(text, plan.surfaces)) {
@@ -163,16 +173,19 @@ export async function planForget(request: ForgetRequest): Promise<PlanOutcome> {
     } else {
       const keep = new Set(request.keep_item_ids ?? []);
       for (const item of getVaultRepository(persona)?.valuesSync() ?? []) {
-        if (!keep.has(item.id)) plan.items.push({ persona, id: item.id, label: label(item.summary || item.body) });
+        if (!keep.has(item.id))
+          plan.items.push({ persona, id: item.id, label: label(item.summary || item.body) });
       }
     }
   } else if ('item_ids' in request) {
-    if (!Array.isArray(request.item_ids) || request.item_ids.length === 0) return { ok: false, reason: 'bad_request' };
+    if (!Array.isArray(request.item_ids) || request.item_ids.length === 0)
+      return { ok: false, reason: 'bad_request' };
     plan.chosenByDina = true;
     const ids = new Set(request.item_ids);
     for (const persona of open) {
       for (const item of getVaultRepository(persona)?.valuesSync() ?? []) {
-        if (ids.has(item.id)) plan.items.push({ persona, id: item.id, label: label(item.summary || item.body) });
+        if (ids.has(item.id))
+          plan.items.push({ persona, id: item.id, label: label(item.summary || item.body) });
       }
     }
   } else {
@@ -194,7 +207,10 @@ export async function planForget(request: ForgetRequest): Promise<PlanOutcome> {
     const topics = getTopicRepository(persona);
     if (topics === null) continue;
     for (const t of await topics.top(500, Math.floor(Date.now() / 1000))) {
-      if (plan.surfaces.includes(t.topic.toLowerCase()) || (t.sample_item_id !== undefined && itemIds.has(t.sample_item_id))) {
+      if (
+        plan.surfaces.includes(t.topic.toLowerCase()) ||
+        (t.sample_item_id !== undefined && itemIds.has(t.sample_item_id))
+      ) {
         plan.topics.push({ persona, topic: t.topic });
       }
     }
@@ -206,12 +222,18 @@ export async function planForget(request: ForgetRequest): Promise<PlanOutcome> {
         // A contact's Talk thread (keyed by DID) is kept; the card says so.
         if (threadId.startsWith('did:')) continue;
         for (const m of await chat.listByThread(threadId)) {
-          if (mentionsWholeWord(m.content, plan.surfaces)) plan.chatMessages.push({ id: m.id, threadId });
+          if (mentionsWholeWord(m.content, plan.surfaces))
+            plan.chatMessages.push({ id: m.id, threadId });
         }
       }
     }
   }
-  if (plan.items.length === 0 && plan.reminders.length === 0 && plan.chatMessages.length === 0 && plan.personId === '') {
+  if (
+    plan.items.length === 0 &&
+    plan.reminders.length === 0 &&
+    plan.chatMessages.length === 0 &&
+    plan.personId === ''
+  ) {
     return { ok: false, reason: 'empty' };
   }
   return { ok: true, plan };
@@ -223,18 +245,35 @@ export function describePlan(plan: ForgetPlan): string {
     'person' in plan.request
       ? `everything about ${plan.personName}`
       : 'persona' in plan.request
-        ? `the items in ${plan.request.persona}${(plan.request.keep_item_ids ?? []).length > 0 ? ` except ${plan.request.keep_item_ids!.length} you keep` : ''}`
+        ? `the items in ${plan.request.persona}${(plan.request.keep_item_ids ?? []).length > 0 ? ` except ${(plan.request.keep_item_ids ?? []).length} you keep` : ''}`
         : `${plan.items.length} item${plan.items.length === 1 ? '' : 's'}${plan.chosenByDina ? ' (chosen by Dina: check them)' : ''}`;
   const lines = [`Forget ${what}:`];
-  if (plan.items.length > 0) lines.push(`- ${plan.items.length} note${plan.items.length === 1 ? '' : 's'}: ${plan.items.slice(0, 5).map((i) => `"${i.label}"`).join('; ')}${plan.items.length > 5 ? '; …' : ''}`);
-  if (plan.reminders.length > 0) lines.push(`- ${plan.reminders.length} reminder${plan.reminders.length === 1 ? '' : 's'}`);
-  if (plan.chatMessages.length > 0) lines.push(`- ${plan.chatMessages.length} chat message${plan.chatMessages.length === 1 ? '' : 's'}`);
+  if (plan.items.length > 0)
+    lines.push(
+      `- ${plan.items.length} note${plan.items.length === 1 ? '' : 's'}: ${plan.items
+        .slice(0, 5)
+        .map((i) => `"${i.label}"`)
+        .join('; ')}${plan.items.length > 5 ? '; …' : ''}`,
+    );
+  if (plan.reminders.length > 0)
+    lines.push(`- ${plan.reminders.length} reminder${plan.reminders.length === 1 ? '' : 's'}`);
+  if (plan.chatMessages.length > 0)
+    lines.push(
+      `- ${plan.chatMessages.length} chat message${plan.chatMessages.length === 1 ? '' : 's'}`,
+    );
   if (plan.personId !== '') lines.push(`- the person ${plan.personName} in People`);
   lines.push('This cannot be undone.');
   const kept: string[] = [];
-  if (plan.closedPersonas.length > 0) kept.push(`${plan.closedPersonas.join(', ')} ${plan.closedPersonas.length === 1 ? 'was' : 'were'} closed and not searched: unlock and ask again to include ${plan.closedPersonas.length === 1 ? 'it' : 'them'}`);
-  if (plan.conversationKept) kept.push('what you said about it in conversation stays; ask me to forget a person to remove that too');
-  if ('person' in plan.request) kept.push('a contact and your message thread with them stay (remove them in People)');
+  if (plan.closedPersonas.length > 0)
+    kept.push(
+      `${plan.closedPersonas.join(', ')} ${plan.closedPersonas.length === 1 ? 'was' : 'were'} closed and not searched: unlock and ask again to include ${plan.closedPersonas.length === 1 ? 'it' : 'them'}`,
+    );
+  if (plan.conversationKept)
+    kept.push(
+      'what you said about it in conversation stays; ask me to forget a person to remove that too',
+    );
+  if ('person' in plan.request)
+    kept.push('a contact and your message thread with them stay (remove them in People)');
   kept.push('backups made earlier, and messages already sent to other people, still hold it');
   lines.push(`Not reached: ${kept.join('; ')}.`);
   return lines.join('\n');
@@ -250,25 +289,41 @@ export type ForgetProposeOutcome =
   | { status: 'refused'; reason: string };
 
 /** Brain proposes with the owner's turn; Core plans and always raises a card. */
-export async function proposeForget(input: { proof: SpanProof; request: ForgetRequest }): Promise<ForgetProposeOutcome> {
+export async function proposeForget(input: {
+  proof: SpanProof;
+  request: ForgetRequest;
+}): Promise<ForgetProposeOutcome> {
   const checked = verifySpanProof(input.proof, 'forget');
-  if (!checked.ok) return { status: 'refused', reason: `owner turn not proven (${checked.reason})` };
+  if (!checked.ok)
+    return { status: 'refused', reason: `owner turn not proven (${checked.reason})` };
   // The owner's own turn must ask to forget, delete or archive something:
   // an agent's text or a contact's message cannot start this.
-  if (!FORGET_VERBS.test(checked.turnText)) return { status: 'refused', reason: 'the owner did not ask to forget anything' };
+  if (!FORGET_VERBS.test(checked.turnText))
+    return { status: 'refused', reason: 'the owner did not ask to forget anything' };
   if ('person' in input.request && !drawsOnlyFrom(input.request.person, checked.turnText)) {
-    return { status: 'refused', reason: 'the person must be named in the owner\'s words' };
+    return { status: 'refused', reason: "the person must be named in the owner's words" };
   }
   const outcome = await planForget(input.request);
   if (!outcome.ok) {
-    if (outcome.reason === 'ambiguous') return { status: 'ambiguous', candidates: outcome.candidates };
-    return { status: 'refused', reason: outcome.reason === 'empty' ? 'nothing to forget' : outcome.reason };
+    if (outcome.reason === 'ambiguous')
+      return { status: 'ambiguous', candidates: outcome.candidates };
+    return {
+      status: 'refused',
+      reason: outcome.reason === 'empty' ? 'nothing to forget' : outcome.reason,
+    };
   }
   const service = getWorkflowService();
   if (service === null) return { status: 'refused', reason: 'approvals are not available' };
   const jobId = `forget-${bytesToHex(randomBytes(8))}`;
   const summary = describePlan(outcome.plan);
-  await saveJob({ id: jobId, state: 'proposed', plan: outcome.plan, done: [], pending: [], createdAt: Date.now() });
+  await saveJob({
+    id: jobId,
+    state: 'proposed',
+    plan: outcome.plan,
+    done: [],
+    pending: [],
+    createdAt: Date.now(),
+  });
   service.create({
     id: jobId,
     kind: WorkflowTaskKind.Approval,
@@ -306,7 +361,18 @@ type Step =
   | 'epoch'
   | 'audit';
 
-const STEPS: readonly Step[] = ['items', 'vectors', 'links', 'reminders', 'chat_staging', 'person_topics', 'exports', 'card', 'epoch', 'audit'];
+const STEPS: readonly Step[] = [
+  'items',
+  'vectors',
+  'links',
+  'reminders',
+  'chat_staging',
+  'person_topics',
+  'exports',
+  'card',
+  'epoch',
+  'audit',
+];
 
 interface ForgetJob {
   id: string;
@@ -335,8 +401,18 @@ interface ForgetJob {
  */
 function contentFree(job: ForgetJob): ForgetJob {
   const p = job.plan;
-  const counts = job.counts ?? { items: p.items.length, reminders: p.reminders.length, chat: p.chatMessages.length, person: p.personId !== '' ? 1 : 0 };
-  const request: ForgetRequest = 'person' in p.request ? { person: '' } : 'persona' in p.request ? { persona: p.request.persona } : { item_ids: [] };
+  const counts = job.counts ?? {
+    items: p.items.length,
+    reminders: p.reminders.length,
+    chat: p.chatMessages.length,
+    person: p.personId !== '' ? 1 : 0,
+  };
+  const request: ForgetRequest =
+    'person' in p.request
+      ? { person: '' }
+      : 'persona' in p.request
+        ? { persona: p.request.persona }
+        : { item_ids: [] };
   return {
     ...job,
     counts,
@@ -402,7 +478,9 @@ export async function forgetEpoch(): Promise<number> {
 
 /** The text of every planned item, for scrubbing receipts that quote them. */
 function plannedTexts(plan: ForgetPlan): string[] {
-  return plan.items.map((i) => i.label.replace(/…$/, '').toLowerCase()).filter((t) => t.length >= 4);
+  return plan.items
+    .map((i) => i.label.replace(/…$/, '').toLowerCase())
+    .filter((t) => t.length >= 4);
 }
 
 async function runStep(job: ForgetJob, step: Step): Promise<void> {
@@ -412,7 +490,8 @@ async function runStep(job: ForgetJob, step: Step): Promise<void> {
       for (const item of plan.items) {
         if (!isPersonaOpen(item.persona)) {
           // Closed: finished inside its next unlock, before it opens.
-          if (!job.pending.some((p) => p.id === item.id)) job.pending.push({ persona: item.persona, id: item.id });
+          if (!job.pending.some((p) => p.id === item.id))
+            job.pending.push({ persona: item.persona, id: item.id });
           continue;
         }
         const repo = getVaultRepository(item.persona);
@@ -420,7 +499,8 @@ async function runStep(job: ForgetJob, step: Step): Promise<void> {
         if (repo === null) throw new Error('vault not loaded yet');
         repo.forgetItemSync(item.id);
       }
-      for (const persona of new Set(plan.items.map((i) => i.persona))) getVaultRepository(persona)?.checkpointSync();
+      for (const persona of new Set(plan.items.map((i) => i.persona)))
+        getVaultRepository(persona)?.checkpointSync();
       return;
     }
     case 'vectors':
@@ -462,9 +542,13 @@ async function runStep(job: ForgetJob, step: Step): Promise<void> {
           if (!Array.isArray(receipts)) continue;
           const kept = (receipts as { targets?: unknown; object?: unknown }[]).filter((r) => {
             const blob = `${Array.isArray(r.targets) ? r.targets.join(' ') : ''} ${typeof r.object === 'string' ? r.object : ''}`;
-            return !mentionsWholeWord(blob, plan.surfaces) && !texts.some((t) => blob.toLowerCase().includes(t));
+            return (
+              !mentionsWholeWord(blob, plan.surfaces) &&
+              !texts.some((t) => blob.toLowerCase().includes(t))
+            );
           });
-          if (kept.length !== receipts.length) await chat.append({ ...m, metadata: { ...m.metadata, receipts: kept } });
+          if (kept.length !== receipts.length)
+            await chat.append({ ...m, metadata: { ...m.metadata, receipts: kept } });
         }
       }
       return;
@@ -488,7 +572,13 @@ async function runStep(job: ForgetJob, step: Step): Promise<void> {
     case 'card': {
       const repo = getWorkflowService()?.store();
       const counts = `Forgotten: ${plan.items.length} notes, ${plan.reminders.length} reminders, ${plan.chatMessages.length} chat messages${plan.personId !== '' ? ', 1 person' : ''}.`;
-      if (repo !== undefined) required(repo.scrubCardText?.bind(repo), 'scrub card text')(job.id, counts, JSON.stringify({ type: OWNER_FORGET_APPROVAL_TYPE, job_id: job.id }), Date.now());
+      if (repo !== undefined)
+        required(repo.scrubCardText?.bind(repo), 'scrub card text')(
+          job.id,
+          counts,
+          JSON.stringify({ type: OWNER_FORGET_APPROVAL_TYPE, job_id: job.id }),
+          Date.now(),
+        );
       return;
     }
     case 'epoch':
@@ -532,7 +622,14 @@ export async function runForgetJob(jobId: string): Promise<ForgetJob['state'] | 
       j.pending = j.pending.filter((x) => x.persona !== persona);
     }
     const state: ForgetJob['state'] = j.pending.length > 0 ? 'waiting_on_unlock' : 'done';
-    await saveJob(contentFree({ ...j, state, closeIds: [], ...(state === 'done' ? { finishedAt: Date.now() } : {}) }));
+    await saveJob(
+      contentFree({
+        ...j,
+        state,
+        closeIds: [],
+        ...(state === 'done' ? { finishedAt: Date.now() } : {}),
+      }),
+    );
     return state;
   });
 }
@@ -565,7 +662,8 @@ async function overlappingProposals(job: ForgetJob): Promise<string[]> {
     const overlaps =
       (job.plan.personId !== '' && other.plan.personId === job.plan.personId) ||
       other.plan.items.some((i) => ids.has(i.id)) ||
-      (job.plan.surfaces.length > 0 && other.plan.surfaces.some((s) => job.plan.surfaces.includes(s)));
+      (job.plan.surfaces.length > 0 &&
+        other.plan.surfaces.some((s) => job.plan.surfaces.includes(s)));
     if (overlaps) out.push(other.id);
   }
   return out;
@@ -590,7 +688,13 @@ async function dropProposal(job: ForgetJob, cardText: string): Promise<void> {
   // Card first: if a crash comes between, the job is still 'proposed' with
   // its card no longer waiting, and the next resume drops it again.
   const repo = getWorkflowService()?.store();
-  if (repo !== undefined) required(repo.scrubCardText?.bind(repo), 'scrub card text')(job.id, cardText, JSON.stringify({ type: OWNER_FORGET_APPROVAL_TYPE, job_id: job.id }), Date.now());
+  if (repo !== undefined)
+    required(repo.scrubCardText?.bind(repo), 'scrub card text')(
+      job.id,
+      cardText,
+      JSON.stringify({ type: OWNER_FORGET_APPROVAL_TYPE, job_id: job.id }),
+      Date.now(),
+    );
   await saveJob(contentFree({ ...job, state: 'cancelled' }));
 }
 
@@ -612,7 +716,8 @@ export async function cancelForget(task: WorkflowTask): Promise<void> {
   const id = (JSON.parse(task.payload) as { job_id?: string }).job_id ?? '';
   await withJobLock(id, async () => {
     const job = await loadJob(id);
-    if (job !== null && job.state === 'proposed') await dropProposal(job, 'Not forgotten: you declined.');
+    if (job !== null && job.state === 'proposed')
+      await dropProposal(job, 'Not forgotten: you declined.');
   });
 }
 
@@ -639,31 +744,48 @@ async function resumeOnce(): Promise<number> {
     if (job !== null && job.state === 'proposed') {
       // The card was approved but a crash came before the job started; or
       // it expired or was declined without reaching cancelForget.
-      const task = getWorkflowService()?.store().getById(job.id) ?? null;
-      const approved = task !== null && (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running);
+      const jobId = job.id;
+      const task = getWorkflowService()?.store().getById(jobId) ?? null;
+      const approved =
+        task !== null &&
+        (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running);
       const waiting = task !== null && task.status === WorkflowTaskState.PendingApproval;
       if (approved) {
         await withJobLock(job.id, async () => {
-          const j = await loadJob(job!.id);
+          const j = await loadJob(jobId);
           if (j !== null && j.state === 'proposed') await saveJob({ ...j, state: 'running' });
         });
         job = await loadJob(job.id);
       } else if (!waiting) {
         await withJobLock(job.id, async () => {
-          const j = await loadJob(job!.id);
-          if (j !== null && j.state === 'proposed') await dropProposal(j, 'Not forgotten: the card expired.');
+          const j = await loadJob(jobId);
+          if (j !== null && j.state === 'proposed')
+            await dropProposal(j, 'Not forgotten: the card expired.');
         });
         continue;
       }
     }
-    if (job !== null && (job.state === 'running' || job.state === 'closing' || job.state === 'done' || job.state === 'waiting_on_unlock')) {
+    if (
+      job !== null &&
+      (job.state === 'running' ||
+        job.state === 'closing' ||
+        job.state === 'done' ||
+        job.state === 'waiting_on_unlock')
+    ) {
       try {
-        const state = job.state === 'running' || job.state === 'closing' ? await runForgetJob(job.id) : job.state;
+        const state =
+          job.state === 'running' || job.state === 'closing'
+            ? await runForgetJob(job.id)
+            : job.state;
         if (job.state === 'running' || job.state === 'closing') resumed++;
         // The card stayed open across the restart: settle it now.
         const service = getWorkflowService();
         const task = service?.store().getById(job.id) ?? null;
-        if (service !== null && task !== null && (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running)) {
+        if (
+          service !== null &&
+          task !== null &&
+          (task.status === WorkflowTaskState.Queued || task.status === WorkflowTaskState.Running)
+        ) {
           if (state === 'done' || state === 'waiting_on_unlock') {
             try {
               // queued → running → completed (see settleApprovedCard).
@@ -696,7 +818,8 @@ export async function finishPendingForgets(persona: string): Promise<boolean> {
       // Items gathered while the persona was closed wait in `pending` from
       // the first step on, whatever the job's state: the persona never opens
       // with them in it.
-      if (job === null || !['running', 'closing', 'waiting_on_unlock'].includes(job.state)) return true;
+      if (job === null || !['running', 'closing', 'waiting_on_unlock'].includes(job.state))
+        return true;
       const mine = job.pending.filter((p) => p.persona === persona);
       if (mine.length === 0) return true;
       const repo = getVaultRepository(persona);
@@ -723,7 +846,9 @@ export async function finishPendingForgets(persona: string): Promise<boolean> {
 }
 
 /** Jobs a reply may report on (owner-facing). */
-export async function forgetJobState(jobId: string): Promise<{ state: ForgetJob['state']; pendingPersonas: string[] } | null> {
+export async function forgetJobState(
+  jobId: string,
+): Promise<{ state: ForgetJob['state']; pendingPersonas: string[] } | null> {
   const job = await loadJob(jobId);
   if (job === null) return null;
   return { state: job.state, pendingPersonas: [...new Set(job.pending.map((p) => p.persona))] };

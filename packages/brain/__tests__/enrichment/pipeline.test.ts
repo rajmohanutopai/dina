@@ -147,7 +147,7 @@ describe('Enrichment Pipeline E2E', () => {
           l1: 'A detailed paragraph about the content.',
         }),
       );
-      registerCloudProvider('test-embed', async (text) => ({
+      registerCloudProvider('test-embed', async (_text) => ({
         vector: new Float32Array([0.1, 0.2, 0.3]),
         dimensions: 3,
         model: 'test-embed-v1',

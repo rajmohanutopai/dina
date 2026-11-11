@@ -271,7 +271,8 @@ describe('MemoryService.toc — errors and limits', () => {
   it('a persona with many hotter topics still leaves room for another', async () => {
     const busy = makeRepo();
     const quiet = makeRepo();
-    for (let i = 0; i < 6; i++) for (let j = 0; j <= i; j++) busy.touch({ topic: `hot${i}`, kind: 'theme', nowUnix: T0 });
+    for (let i = 0; i < 6; i++)
+      for (let j = 0; j <= i; j++) busy.touch({ topic: `hot${i}`, kind: 'theme', nowUnix: T0 });
     quiet.touch({ topic: 'launch', kind: 'theme', nowUnix: T0 });
     const toc = await makeService({ busy, quiet }).toc(undefined, 3);
     expect(toc.map((e) => e.topic)).toContain('launch');

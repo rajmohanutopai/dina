@@ -94,9 +94,7 @@ export function validatePlcDid(did: unknown): Did {
   const trimmed = did.trim();
   if (trimmed === '') throw new TypeError('did is empty');
   if (!DID_PLC_RE.test(trimmed)) {
-    throw new TypeError(
-      `did does not match did:plc:[a-z2-7]{24} (got "${trimmed}")`,
-    );
+    throw new TypeError(`did does not match did:plc:[a-z2-7]{24} (got "${trimmed}")`);
   }
   return trimmed;
 }
@@ -132,10 +130,7 @@ export function parsePlcDoc(raw: unknown): PlcDoc | null {
  * Resolve a `did:plc` identifier to its DID document. Orchestrates
  * the three steps: validate → fetch → parse. Never throws.
  */
-export async function resolveDid(
-  did: Did,
-  fetchFn: PlcFetchFn,
-): Promise<PlcResolveOutcome> {
+export async function resolveDid(did: Did, fetchFn: PlcFetchFn): Promise<PlcResolveOutcome> {
   if (typeof fetchFn !== 'function') {
     throw new TypeError('resolveDid: fetchFn is required');
   }
@@ -189,9 +184,7 @@ function parseHandles(raw: unknown): string[] {
   return out;
 }
 
-function parseVerificationMethods(
-  raw: unknown,
-): PlcVerificationMethod[] | null {
+function parseVerificationMethods(raw: unknown): PlcVerificationMethod[] | null {
   if (!Array.isArray(raw)) return [];
   const out: PlcVerificationMethod[] = [];
   for (const v of raw) {
@@ -200,10 +193,7 @@ function parseVerificationMethods(
     if (typeof rec.id !== 'string' || rec.id === '') return null;
     if (typeof rec.type !== 'string' || rec.type === '') return null;
     if (typeof rec.controller !== 'string' || rec.controller === '') return null;
-    if (
-      typeof rec.publicKeyMultibase !== 'string' ||
-      rec.publicKeyMultibase === ''
-    ) {
+    if (typeof rec.publicKeyMultibase !== 'string' || rec.publicKeyMultibase === '') {
       return null;
     }
     out.push({

@@ -197,10 +197,10 @@ service-search:
   [`appview/src/ingester/record-validator.ts`](../../../../appview/src/ingester/record-validator.ts)
   — closed `responsePolicy` enum, `schema_hash` hex regex.
 - Tests: [`appview/tests/unit/service_search.test.ts`](../../../../appview/tests/unit/service_search.test.ts)
-  + [`appview/tests/unit/service_profile_handler.test.ts`](../../../../appview/tests/unit/service_profile_handler.test.ts)
-  serve as reference vectors until the cross-language conformance
-  suite (`packages/protocol/conformance/`) is extended to cover
-  AppView.
+  - [`appview/tests/unit/service_profile_handler.test.ts`](../../../../appview/tests/unit/service_profile_handler.test.ts)
+    serve as reference vectors until the cross-language conformance
+    suite (`packages/protocol/conformance/`) is extended to cover
+    AppView.
 
 ## Vectors
 

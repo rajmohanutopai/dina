@@ -228,17 +228,23 @@ describe('createNetworkCache — TTL expiry', () => {
     // false`. A frequently-read graph must expire 60s after its
     // last `set`, not be kept alive by reads — so a graph mutation
     // propagates within the TTL window regardless of read pressure.
-    const c = createNetworkCache<FakeGraph>({ max: 100, ttlMs: SHORT_TTL_MS })
+    //
+    // Timeline (TTL 200ms): set at 0, reads at ~40/80/120, check at ~240.
+    // 240 is past set+TTL (200), so a strict TTL refetches; it is still
+    // before lastRead+TTL (320), so a read-extended TTL would not. 40ms of
+    // slack on each side keeps scheduler jitter from deciding the result.
+    const ttlMs = 200
+    const c = createNetworkCache<FakeGraph>({ max: 100, ttlMs })
     const fetcher = vi.fn().mockResolvedValueOnce(sampleGraph('did:plc:hot'))
     await c.getOrFetch('did:plc:hot', 1, undefined, fetcher)
     // Read several times within the TTL window.
     for (let i = 0; i < 3; i++) {
-      await sleep(SHORT_TTL_MS / 4)
+      await sleep(ttlMs / 5)
       await c.getOrFetch('did:plc:hot', 1, undefined, fetcher)
     }
     expect(fetcher).toHaveBeenCalledTimes(1)
-    // Then push past TTL.
-    await sleep(SHORT_TTL_MS)
+    // Then move past set+TTL but not past lastRead+TTL.
+    await sleep((ttlMs * 3) / 5)
     fetcher.mockResolvedValueOnce(sampleGraph('did:plc:hot', 99))
     await c.getOrFetch('did:plc:hot', 1, undefined, fetcher)
     expect(fetcher).toHaveBeenCalledTimes(2) // re-fetched

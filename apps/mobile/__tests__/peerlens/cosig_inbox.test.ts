@@ -23,10 +23,7 @@
  * Pure function — runs under plain Jest, no RN deps.
  */
 
-import {
-  buildCosigInboxRow,
-  type CosigInboxInput,
-} from '../../src/peerlens/cosig_inbox';
+import { buildCosigInboxRow, type CosigInboxInput } from '../../src/peerlens/cosig_inbox';
 
 import type { CosigRequest } from '@dina/protocol';
 
@@ -207,7 +204,9 @@ describe('buildCosigInboxRow — deep link', () => {
     const r = buildCosigInboxRow(
       input({
         subjectId: 'subj-aeron',
-        request: request({ attestationUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc' }),
+        request: request({
+          attestationUri: 'at://did:plc:author/com.dinakernel.peerlens.attestation/abc',
+        }),
       }),
     );
     expect(r.deepLink).toBe(
@@ -237,8 +236,8 @@ describe('buildCosigInboxRow — malformed input', () => {
   });
 
   it('throws on an empty expiresAt', () => {
-    expect(() =>
-      buildCosigInboxRow(input({ request: request({ expiresAt: '' }) })),
-    ).toThrow(/ISO-8601/);
+    expect(() => buildCosigInboxRow(input({ request: request({ expiresAt: '' }) }))).toThrow(
+      /ISO-8601/,
+    );
   });
 });

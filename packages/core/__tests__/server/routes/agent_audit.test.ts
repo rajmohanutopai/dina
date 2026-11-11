@@ -1,5 +1,5 @@
-import { appendAudit, resetAuditState } from '../../../src/audit/service';
 import { setAuditRepository } from '../../../src/audit/repository';
+import { appendAudit, resetAuditState } from '../../../src/audit/service';
 import { CoreRouter, type CoreRequest } from '../../../src/server/router';
 import { registerAgentAuditRoutes } from '../../../src/server/routes/agent_audit';
 

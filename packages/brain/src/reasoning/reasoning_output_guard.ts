@@ -7,10 +7,10 @@
  * Core contracts and must not be silently rewritten by a prose filter.
  */
 
+import { serviceSchemaError } from '@dina/core';
+
 import { classifyTier } from '../guardian/density';
 import { scanResponse, stripViolations } from '../guardian/guard_scan';
-
-import { serviceSchemaError } from '@dina/core';
 
 import type { ReasoningOutputGuardInput, ReasoningOutputGuardResult } from '@dina/core';
 
@@ -193,13 +193,15 @@ export function createReasoningOutputGuard(): (
         // out on their own (COMMITMENT_KERNEL §11).
         const body = record(input.result);
         const move = record(body?.move);
-        if (body === null || move === null) return { ok: false, error: 'negotiation move is not an object' };
+        if (body === null || move === null)
+          return { ok: false, error: 'negotiation move is not an object' };
         const words: Record<string, string> = {};
         if (typeof move.note === 'string') words.note = move.note;
         if (typeof move.question === 'string') words.question = move.question;
         if (Object.keys(words).length === 0) return { ok: true, result: input.result };
         const cleaned = await sanitizeJsonStrings(words, input);
-        if (!cleaned.ok) return { ok: false, error: 'negotiation words were removed by output policy' };
+        if (!cleaned.ok)
+          return { ok: false, error: 'negotiation words were removed by output policy' };
         return { ok: true, result: { ...body, move: { ...move, ...record(cleaned.value) } } };
       }
       case 'memory.structure':

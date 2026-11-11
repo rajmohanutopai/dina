@@ -46,9 +46,13 @@ export interface DeliveryPumpOptions {
 export function webhookOutcome(result: A2AHttpResult): DeliveryOutcome {
   if (result.ok) {
     if (result.status >= 200 && result.status < 300) return 'delivered';
-    return result.status === 408 || result.status === 429 || result.status >= 500 ? 'retry' : 'failed';
+    return result.status === 408 || result.status === 429 || result.status >= 500
+      ? 'retry'
+      : 'failed';
   }
-  return result.error === 'url_refused' || result.error === 'address_blocked' || result.error === 'redirect_refused'
+  return result.error === 'url_refused' ||
+    result.error === 'address_blocked' ||
+    result.error === 'redirect_refused'
     ? 'failed'
     : 'retry';
 }
@@ -96,7 +100,11 @@ export class DeliveryPump {
     const streamed: DeliveryAck[] = [];
     for (const item of items) {
       if (item.target === 'sse') {
-        this.options.hub.publish(item.task_id, { seq: item.seq, credentialGen: item.credential_gen }, item.event);
+        this.options.hub.publish(
+          item.task_id,
+          { seq: item.seq, credentialGen: item.credential_gen },
+          item.event,
+        );
         streamed.push({ id: item.id, claim_id: item.claim_id, outcome: 'delivered' });
       } else {
         this.post(item);
@@ -105,7 +113,12 @@ export class DeliveryPump {
     if (streamed.length > 0) await this.send(streamed);
     if (items.length > 0 || closed.length > 0 || fenced.length > 0) {
       this.options.logger.debug(
-        { streamed: streamed.length, webhooks: items.length - streamed.length, closed: closed.length, fenced: fenced.length },
+        {
+          streamed: streamed.length,
+          webhooks: items.length - streamed.length,
+          closed: closed.length,
+          fenced: fenced.length,
+        },
         'a2a delivery turn',
       );
     }
@@ -118,7 +131,10 @@ export class DeliveryPump {
       try {
         taken = await this.turn();
       } catch (err) {
-        this.options.logger.warn({ err: err instanceof Error ? err.name : 'unknown' }, 'a2a delivery turn failed');
+        this.options.logger.warn(
+          { err: err instanceof Error ? err.name : 'unknown' },
+          'a2a delivery turn failed',
+        );
       }
       if (!this.running) break;
       if (taken < this.options.claimLimit) await this.pause();
@@ -153,7 +169,11 @@ export class DeliveryPump {
       })
       .catch((): A2AHttpResult => ({ ok: false, error: 'io_error', sent: true }))
       .then((result) => {
-        this.finished.push({ id: item.id, claim_id: item.claim_id, outcome: webhookOutcome(result) });
+        this.finished.push({
+          id: item.id,
+          claim_id: item.claim_id,
+          outcome: webhookOutcome(result),
+        });
       })
       .finally(() => {
         this.inFlight.delete(job);
@@ -171,6 +191,10 @@ export class DeliveryPump {
   private async send(acks: DeliveryAck[]): Promise<void> {
     const sent = await this.options.core.ackEvents(acks);
     // Unreported claims lapse and come again; nothing is lost, only repeated.
-    if (!sent.ok) this.options.logger.warn({ core_status: sent.status, count: acks.length }, 'a2a delivery report refused');
+    if (!sent.ok)
+      this.options.logger.warn(
+        { core_status: sent.status, count: acks.length },
+        'a2a delivery report refused',
+      );
   }
 }

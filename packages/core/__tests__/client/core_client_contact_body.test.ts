@@ -54,8 +54,9 @@ describe('the contact-update wire body', () => {
 
   it('omits absent optional address parts rather than sending empty strings', () => {
     expect(
-      updateContactBody({ billingAddress: { line1: '4 Kalasipalya Road', city: 'Bengaluru', country: 'IN' } })
-        .billing_address,
+      updateContactBody({
+        billingAddress: { line1: '4 Kalasipalya Road', city: 'Bengaluru', country: 'IN' },
+      }).billing_address,
     ).toEqual({ line1: '4 Kalasipalya Road', city: 'Bengaluru', country: 'IN' });
   });
 

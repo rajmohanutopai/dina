@@ -13,10 +13,7 @@ specific conventions.
 
 ```json
 {
-  "@context": [
-    "https://www.w3.org/ns/did/v1",
-    "https://w3id.org/security/multikey/v1"
-  ],
+  "@context": ["https://www.w3.org/ns/did/v1", "https://w3id.org/security/multikey/v1"],
   "id": "did:plc:<24+ lowercase alphanumeric>",
   "verificationMethod": [
     {
@@ -26,9 +23,7 @@ specific conventions.
       "publicKeyMultibase": "z..."
     }
   ],
-  "authentication": [
-    "did:plc:...#dina_signing"
-  ],
+  "authentication": ["did:plc:...#dina_signing"],
   "service": [
     {
       "id": "did:plc:...#dina_messaging",
@@ -41,14 +36,14 @@ specific conventions.
 
 ## Dina-specific conventions
 
-| What            | Value                                                       |
-|-----------------|-------------------------------------------------------------|
-| Signing-key fragment | `#dina_signing` (underscore form — AT Protocol convention) |
-| Messaging-service fragment | `#dina_messaging`                                   |
-| Verification-method type | `Multikey` (NOT `Ed25519VerificationKey2020`)         |
-| Public-key encoding | Multibase base58btc (leading `z`)                        |
-| Multicodec for Ed25519-pub | 0xed 0x01 varint (same as the did:key encoding)    |
-| Service types | `DinaMsgBox` (relay — sole transport)                       |
+| What                       | Value                                                      |
+| -------------------------- | ---------------------------------------------------------- |
+| Signing-key fragment       | `#dina_signing` (underscore form — AT Protocol convention) |
+| Messaging-service fragment | `#dina_messaging`                                          |
+| Verification-method type   | `Multikey` (NOT `Ed25519VerificationKey2020`)              |
+| Public-key encoding        | Multibase base58btc (leading `z`)                          |
+| Multicodec for Ed25519-pub | 0xed 0x01 varint (same as the did:key encoding)            |
+| Service types              | `DinaMsgBox` (relay — sole transport)                      |
 
 **Backward-compat readers MUST also accept** the hyphenated forms
 `#dina-signing` and `#dina-messaging` — pre-0.14 Dina builds emitted
@@ -57,6 +52,7 @@ the hyphen form; it's still in the wild.
 ## How to use the document
 
 For outbound D2D delivery:
+
 1. Resolve the recipient's `did:plc:...` against your PLC directory.
 2. Extract `service[0].serviceEndpoint` (or look up by `#dina_messaging`
    fragment if `service[0]` doesn't match).
@@ -65,6 +61,7 @@ For outbound D2D delivery:
 5. Verify every inbound envelope's Ed25519 signature against that key.
 
 For inbound auth handshake:
+
 1. The `auth_response.pub` field MUST match the decoded multikey
    from the sender's `#dina_signing` verification method. A relay
    that sees a mismatch rejects the session.

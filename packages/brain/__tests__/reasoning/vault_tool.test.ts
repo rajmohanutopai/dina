@@ -3,10 +3,7 @@
  * `list_personas`, `browse_vault`, `get_full_content`.
  */
 
-import { clearVaults, storeItem ,
-  createPersona,
-  resetPersonaState,
-} from '@dina/core';
+import { clearVaults, storeItem, createPersona, resetPersonaState } from '@dina/core';
 
 import {
   createVaultSearchTool,
@@ -14,10 +11,7 @@ import {
   createBrowseVaultTool,
   createGetFullContentTool,
 } from '../../src/reasoning/vault_tool';
-import {
-  setAccessiblePersonas,
-  resetReasoningProvider,
-} from '../../src/vault_context/assembly';
+import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
 describe('createVaultSearchTool', () => {
   beforeEach(() => {
@@ -240,9 +234,7 @@ describe('createListPersonasTool', () => {
     expect(result.personas.length).toBe(3);
     const byName = new Map(result.personas.map((p) => [p.name, p]));
     expect(byName.get('general')!.item_count).toBe(2);
-    expect(byName.get('general')!.types).toEqual(
-      expect.arrayContaining(['user_memory', 'note']),
-    );
+    expect(byName.get('general')!.types).toEqual(expect.arrayContaining(['user_memory', 'note']));
     expect(byName.get('general')!.recent_summaries?.[0]).toMatch(/Emma|cold brew/);
     expect(byName.get('health')!.item_count).toBe(1);
   });
@@ -561,7 +553,9 @@ describe('vault tools — personaGuard (Pattern A approval bail)', () => {
     const guard = async (): Promise<string | null> => 'appr-full-1';
     const tool = createGetFullContentTool({ personaGuard: guard });
 
-    await expect(tool.execute({ persona: 'health', item_id: 'doesntmatter' })).rejects.toMatchObject({
+    await expect(
+      tool.execute({ persona: 'health', item_id: 'doesntmatter' }),
+    ).rejects.toMatchObject({
       name: 'ApprovalRequiredError',
       approvalId: 'appr-full-1',
       persona: 'health',

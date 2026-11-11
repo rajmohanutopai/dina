@@ -32,7 +32,6 @@ import { InMemoryServiceConfigRepository } from '../../../core/src/service/servi
 import { InMemoryWorkflowRepository } from '../../../core/src/workflow/repository';
 import { createNode, type DinaNode } from '../../src/services/bootstrap';
 
-
 import type { AppViewClient } from '../../../brain/src/appview_client/http';
 import type { PDSSession } from '../../../brain/src/pds/account';
 import type { ServiceConfig } from '../../../core/src/service/service_config';
@@ -242,7 +241,7 @@ describe('Service-query end-to-end runtime composition', () => {
       if (tasks.length === 0) {
         // Make the assertion failure actionable by dumping what the
         // handler actually did.
-         
+
         console.log('handler log:', JSON.stringify(handlerLog, null, 2));
       }
       expect(tasks).toHaveLength(1);

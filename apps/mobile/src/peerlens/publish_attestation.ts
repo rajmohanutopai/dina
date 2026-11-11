@@ -13,7 +13,10 @@ export {
   publishAttestationToPDS,
 } from '@dina/brain';
 
-export type PublishedAttestation = { uri: string; cid: string };
+export interface PublishedAttestation {
+  uri: string;
+  cid: string;
+}
 
 /** Existing form-validation seam: return one useful error, or null. */
 export function lexiconErrorFor(record: Record<string, unknown>): string | null {

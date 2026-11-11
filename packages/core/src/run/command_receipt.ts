@@ -159,7 +159,12 @@ export function recordOrReplayCommand<T>(input: RecordOrReplayInput<T>): RecordO
     // No durable store wired — execute without idempotency (dev/test fallback).
     return { response: input.compute(), replayed: false };
   }
-  const key = commandReceiptKey(input.ownerPrincipal, input.runId, input.route, input.idempotencyKey);
+  const key = commandReceiptKey(
+    input.ownerPrincipal,
+    input.runId,
+    input.route,
+    input.idempotencyKey,
+  );
   const reqHash = hashRequest(input.requestBody);
   const existing = store.get(key);
   if (existing !== null) {

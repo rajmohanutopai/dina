@@ -22,9 +22,7 @@ function mockEnv() {
       now += ms;
       // Fire any timer whose deadline has passed.
       while (true) {
-        const due = timers
-          .filter((t) => t.fireAt <= now)
-          .sort((a, b) => a.fireAt - b.fireAt);
+        const due = timers.filter((t) => t.fireAt <= now).sort((a, b) => a.fireAt - b.fireAt);
         if (due.length === 0) break;
         const next = due[0]!;
         const idx = timers.indexOf(next);
@@ -254,18 +252,19 @@ describe('AutoLockRegistry (task 4.71)', () => {
       expect(DEFAULT_AUTO_LOCK_TTL_MS).toBe(15 * 60 * 1000);
     });
     it('rejects missing lockFn', () => {
-      expect(() =>
-        // @ts-expect-error — deliberate missing required field
-        new AutoLockRegistry({}),
+      expect(
+        () =>
+          // @ts-expect-error — deliberate missing required field
+          new AutoLockRegistry({}),
       ).toThrow(/lockFn is required/);
     });
     it('rejects non-positive defaultTtlMs', () => {
-      expect(() =>
-        new AutoLockRegistry({ lockFn: () => undefined, defaultTtlMs: 0 }),
-      ).toThrow(/defaultTtlMs must be > 0/);
-      expect(() =>
-        new AutoLockRegistry({ lockFn: () => undefined, defaultTtlMs: NaN }),
-      ).toThrow(/defaultTtlMs must be > 0/);
+      expect(() => new AutoLockRegistry({ lockFn: () => undefined, defaultTtlMs: 0 })).toThrow(
+        /defaultTtlMs must be > 0/,
+      );
+      expect(() => new AutoLockRegistry({ lockFn: () => undefined, defaultTtlMs: NaN })).toThrow(
+        /defaultTtlMs must be > 0/,
+      );
     });
     it('rejects empty persona name', () => {
       const reg = new AutoLockRegistry({ lockFn: () => undefined });

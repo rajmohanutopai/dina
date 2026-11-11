@@ -232,7 +232,9 @@ describe('LLMRouter', () => {
         content: 'Sure. [PERSON_1] turns 7.',
         toolCalls: [{ id: 'c', name: 'vault_search', arguments: { query: 'PERSON_1 birthday' } }],
       });
-      const names = new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Emma'] }] }) });
+      const names = new NameLexicon({
+        fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Emma'] }] }),
+      });
       const response = await cloudRouter(stub.provider, names).chat({
         taskType: 'reason',
         systemPrompt: 'You help the owner. Emma is their daughter.',
@@ -267,7 +269,11 @@ describe('LLMRouter', () => {
 
     it('reads the installed lexicon when given none', async () => {
       const stub = makeStubProvider();
-      installNameLexicon(new NameLexicon({ fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Sancho'] }] }) }));
+      installNameLexicon(
+        new NameLexicon({
+          fetch: async () => ({ version: 'v1', groups: [{ group: 1, names: ['Sancho'] }] }),
+        }),
+      );
       try {
         await cloudRouter(stub.provider).chat({
           taskType: 'reason',
@@ -541,13 +547,21 @@ describe('LLMRouter — short thinking for short decisions', () => {
   const routerWith = (provider: LLMProvider) =>
     new LLMRouter({
       providers: { gemini: provider },
-      config: { localAvailable: false, cloudProviders: ['gemini'], sensitivePersonas: [], cloudConsentGranted: true },
+      config: {
+        localAvailable: false,
+        cloudProviders: ['gemini'],
+        sensitivePersonas: [],
+        cloudConsentGranted: true,
+      },
     });
   const tool = { name: 't', description: 'd', parameters: { type: 'object', properties: {} } };
 
   it('asks for low thinking on a lightweight task with no tools', async () => {
     const stub = makeStubProvider();
-    await routerWith(stub.provider).chat({ taskType: 'guard_scan', messages: [{ role: 'user', content: 'x' }] });
+    await routerWith(stub.provider).chat({
+      taskType: 'guard_scan',
+      messages: [{ role: 'user', content: 'x' }],
+    });
     expect(stub.lastOptions()?.reasoning).toBe('low');
   });
 
@@ -556,7 +570,11 @@ describe('LLMRouter — short thinking for short decisions', () => {
     const router = routerWith(stub.provider);
     await router.chat({ taskType: 'reason', messages: [{ role: 'user', content: 'x' }] });
     expect(stub.lastOptions()?.reasoning).toBeUndefined();
-    await router.chat({ taskType: 'classify', messages: [{ role: 'user', content: 'x' }], tools: [tool] as never });
+    await router.chat({
+      taskType: 'classify',
+      messages: [{ role: 'user', content: 'x' }],
+      tools: [tool] as never,
+    });
     expect(stub.lastOptions()?.reasoning).toBeUndefined();
   });
 });

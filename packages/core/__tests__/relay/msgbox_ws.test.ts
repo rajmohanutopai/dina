@@ -27,7 +27,6 @@ import {
   type MsgBoxEnvelope,
 } from '../../src/relay/msgbox_ws';
 
-
 /** Mock WebSocket for testing. */
 function createMockWS(): WSLike {
   const ws: WSLike = {

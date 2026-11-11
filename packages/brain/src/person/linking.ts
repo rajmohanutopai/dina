@@ -185,10 +185,7 @@ export function expandSearchTerms(person: ResolvedPerson): string[] {
  *
  * Mirrors `person_resolver.py::expand_search_terms`.
  */
-export function expandSearchTermsFromText(
-  text: string,
-  knownPeople: ResolvedPerson[],
-): string[] {
+export function expandSearchTermsFromText(text: string, knownPeople: ResolvedPerson[]): string[] {
   const resolved = resolveMultiple(text, knownPeople);
   const lower = text.toLowerCase();
   const out: string[] = [];
@@ -243,10 +240,8 @@ export function parseLLMOutput(output: string): PersonLink[] {
       const name = typeof rec.name === 'string' ? rec.name.trim() : '';
       if (name === '') continue;
       const rolePhraseRaw = typeof rec.role_phrase === 'string' ? rec.role_phrase : undefined;
-      const relationshipRaw =
-        typeof rec.relationship === 'string' ? rec.relationship : undefined;
-      const evidenceRaw =
-        typeof rec.evidence === 'string' ? rec.evidence.slice(0, 200) : undefined;
+      const relationshipRaw = typeof rec.relationship === 'string' ? rec.relationship : undefined;
+      const evidenceRaw = typeof rec.evidence === 'string' ? rec.evidence.slice(0, 200) : undefined;
       const confidenceRaw = String(rec.confidence ?? '').toLowerCase();
       const confidence: PersonLink['confidence'] =
         confidenceRaw === 'high' || confidenceRaw === 'medium' || confidenceRaw === 'low'

@@ -113,24 +113,19 @@ export interface SafeDbCloseResult {
  * log the outcome + decide whether to proceed with the next
  * shutdown step.
  */
-export async function safeDbClose(
-  opts: SafeDbCloseOptions,
-): Promise<SafeDbCloseResult> {
+export async function safeDbClose(opts: SafeDbCloseOptions): Promise<SafeDbCloseResult> {
   const { handle } = opts;
   if (!handle) {
     throw new Error('safeDbClose: handle is required');
   }
-  const checkpointTimeoutMs =
-    opts.checkpointTimeoutMs ?? DEFAULT_CHECKPOINT_TIMEOUT_MS;
+  const checkpointTimeoutMs = opts.checkpointTimeoutMs ?? DEFAULT_CHECKPOINT_TIMEOUT_MS;
   const closeTimeoutMs = opts.closeTimeoutMs ?? DEFAULT_CLOSE_TIMEOUT_MS;
   const closeOnCheckpointFail = opts.closeOnCheckpointFail ?? true;
   const nowMsFn = opts.nowMsFn ?? Date.now;
   const setTimerFn =
-    opts.setTimerFn ??
-    ((fn: () => void, ms: number): unknown => setTimeout(fn, ms));
+    opts.setTimerFn ?? ((fn: () => void, ms: number): unknown => setTimeout(fn, ms));
   const clearTimerFn =
-    opts.clearTimerFn ??
-    ((h: unknown): void => clearTimeout(h as ReturnType<typeof setTimeout>));
+    opts.clearTimerFn ?? ((h: unknown): void => clearTimeout(h as ReturnType<typeof setTimeout>));
 
   const onEvent = opts.onEvent;
   const errors: Partial<Record<DbCloseStage, string>> = {};
@@ -182,13 +177,7 @@ export async function safeDbClose(
   const clStart = nowMsFn();
   let closeOk = false;
   try {
-    await runWithTimeout(
-      () => handle.close(),
-      closeTimeoutMs,
-      'close',
-      setTimerFn,
-      clearTimerFn,
-    );
+    await runWithTimeout(() => handle.close(), closeTimeoutMs, 'close', setTimerFn, clearTimerFn);
     closeOk = true;
     onEvent?.({
       kind: 'stage_ok',

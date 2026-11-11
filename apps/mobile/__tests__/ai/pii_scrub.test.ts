@@ -8,7 +8,7 @@
  * 4. Full scrub→process→rehydrate cycle
  */
 
-import { scrubPII, rehydratePII, detectPII } from '../../../core/src/pii/patterns';
+import { scrubPII, rehydratePII } from '../../../core/src/pii/patterns';
 
 describe('PII Scrubbing', () => {
   describe('rehydratePII — replaces ALL occurrences (bug fix)', () => {
@@ -157,7 +157,7 @@ describe('PII Scrubbing', () => {
 
     it('roundtrips text with repeated PII in simulated LLM response', () => {
       const original = 'Contact alice@example.com for help';
-      const { scrubbed, entities } = scrubPII(original);
+      const { scrubbed: _scrubbed, entities } = scrubPII(original);
 
       // Simulate LLM repeating the token in its response
       const llmResponse = `You should email [EMAIL_1]. The address [EMAIL_1] is correct.`;

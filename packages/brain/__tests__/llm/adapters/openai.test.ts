@@ -357,7 +357,7 @@ describe('OpenAIAdapter', () => {
       (client.chat.completions.create as jest.Mock).mockReturnValue(
         new Promise(() => {}), // never resolves
       );
-      const adapter = new OpenAIAdapter(client);
+      const _adapter = new OpenAIAdapter(client);
 
       // Use a short timeout for testing by importing safeCall's timeout
       // The actual adapter uses 60s, but we can't wait that long in tests.

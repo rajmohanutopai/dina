@@ -12,7 +12,6 @@
  */
 
 import {
-  appendAudit,
   queryAudit,
   verifyAuditChain,
   auditCount,

@@ -216,7 +216,7 @@ describe('verifyPlcChain (task 6.8)', () => {
       expect(result.ok).toBe(true);
     });
 
-    it('rotation history: op2 keys != op1 keys, op2 signed by op1\'s old key', async () => {
+    it("rotation history: op2 keys != op1 keys, op2 signed by op1's old key", async () => {
       // Genesis MUST be signed by one of its OWN rotationKeys.
       const o1 = op({ sig: 'sig-by-K_OLD', rotationKeys: ['K_OLD'] });
       const o2 = op({
@@ -258,10 +258,10 @@ describe('verifyPlcChain (task 6.8)', () => {
     });
 
     it('null op in array rejected', async () => {
-      const result = await verifyPlcChain(
-        [null as unknown as PlcOperation],
-        { cidFn: scriptedCid(), verifyFn: scriptedVerify() },
-      );
+      const result = await verifyPlcChain([null as unknown as PlcOperation], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
       expect(result.ok).toBe(false);
       if (!result.ok) expect(result.reason).toBe('malformed_op');
     });
@@ -314,18 +314,12 @@ describe('verifyPlcChain (task 6.8)', () => {
     });
 
     it('non-string non-null prev → "null or a non-empty string" detail', async () => {
-      await shapeRejectsWith(
-        { prev: 42 as unknown as string },
-        /prev.*null or a non-empty string/,
-      );
+      await shapeRejectsWith({ prev: 42 as unknown as string }, /prev.*null or a non-empty string/);
     });
 
     it('empty-string prev → "null or a non-empty string" detail', async () => {
       // Empty string is distinct from null — must reject.
-      await shapeRejectsWith(
-        { prev: '' as unknown as string },
-        /prev.*null or a non-empty string/,
-      );
+      await shapeRejectsWith({ prev: '' as unknown as string }, /prev.*null or a non-empty string/);
     });
 
     it('non-array rotationKeys → "non-empty array" detail', async () => {
@@ -348,10 +342,7 @@ describe('verifyPlcChain (task 6.8)', () => {
 
     it('rotationKey entry empty string → "non-empty strings" detail', async () => {
       // Distinct from non-string — empty-string still has type=string.
-      await shapeRejectsWith(
-        { rotationKeys: [''] },
-        /rotationKeys entries.*non-empty strings/,
-      );
+      await shapeRejectsWith({ rotationKeys: [''] }, /rotationKeys entries.*non-empty strings/);
     });
 
     it('rotationKey entry null → "non-empty strings" detail', async () => {
@@ -377,10 +368,7 @@ describe('verifyPlcChain (task 6.8)', () => {
     });
 
     it('NaN createdAtMs → "non-negative integer" detail', async () => {
-      await shapeRejectsWith(
-        { createdAtMs: Number.NaN },
-        /createdAtMs.*non-negative integer/,
-      );
+      await shapeRejectsWith({ createdAtMs: Number.NaN }, /createdAtMs.*non-negative integer/);
     });
 
     it('Infinity createdAtMs → "non-negative integer" detail', async () => {
@@ -623,10 +611,10 @@ describe('verifyPlcChain (task 6.8)', () => {
     });
 
     it('malformed_op failure has detail field', async () => {
-      const result = await verifyPlcChain(
-        [{ ...op(), sig: '' } as PlcOperation],
-        { cidFn: scriptedCid(), verifyFn: scriptedVerify() },
-      );
+      const result = await verifyPlcChain([{ ...op(), sig: '' } as PlcOperation], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
       if (result.ok) throw new Error('expected ok:false');
       const { detail } = result;
       if (typeof detail !== 'string') throw new Error('expected detail string');
@@ -634,10 +622,10 @@ describe('verifyPlcChain (task 6.8)', () => {
     });
 
     it('genesis_prev_not_null failure has detail with the offending prev value', async () => {
-      const result = await verifyPlcChain(
-        [op({ prev: 'cid-fake' })],
-        { cidFn: scriptedCid(), verifyFn: scriptedVerify() },
-      );
+      const result = await verifyPlcChain([op({ prev: 'cid-fake' })], {
+        cidFn: scriptedCid(),
+        verifyFn: scriptedVerify(),
+      });
       if (result.ok) throw new Error('expected ok:false');
       expect(result.detail).toMatch(/cid-fake/);
     });

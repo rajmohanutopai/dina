@@ -123,7 +123,7 @@ export interface PlanAskRetrievalOptions {
 // Plan construction helpers
 // ---------------------------------------------------------------
 
-const EMPTY_PLAN: AskRetrievalPlan = {
+const _EMPTY_PLAN: AskRetrievalPlan = {
   personas: [],
   people: [],
   needs_peerlens: false,
@@ -242,7 +242,9 @@ export function parseAskRetrievalPlan(
 
   const installedNames = new Set(installed.map((p) => p.name));
   const personas = extractPersonas(obj.personas, installedNames);
-  const people = extractStringList(obj.people, 20).map((n) => n.trim()).filter(Boolean);
+  const people = extractStringList(obj.people, 20)
+    .map((n) => n.trim())
+    .filter(Boolean);
   // Accept the new `needs_peerlens` key; tolerate the legacy
   // `needs_trust_network` key in case an older model checkpoint still
   // emits the renamed field (handles in-flight upgrades).
@@ -258,10 +260,7 @@ export function parseAskRetrievalPlan(
   return { personas, people, needs_peerlens, intent, ...(inventory ? { inventory } : {}) };
 }
 
-function extractPersonas(
-  raw: unknown,
-  installedNames: Set<string>,
-): PlannedPersonaSearch[] {
+function extractPersonas(raw: unknown, installedNames: Set<string>): PlannedPersonaSearch[] {
   if (!Array.isArray(raw)) return [];
   const out: PlannedPersonaSearch[] = [];
   const seen = new Set<string>();
@@ -303,9 +302,7 @@ function renderPersonaMenu(personas: readonly InstalledPersona[]): string {
   if (personas.length === 0) return '(no personas installed)';
   return personas
     .map((p) =>
-      p.description && p.description.length > 0
-        ? `- ${p.name}: ${p.description}`
-        : `- ${p.name}`,
+      p.description && p.description.length > 0 ? `- ${p.name}: ${p.description}` : `- ${p.name}`,
     )
     .join('\n');
 }
@@ -488,6 +485,7 @@ export async function runAskPreFlightRetrieval(
 
   const personTasks: string[] = [...plan.people];
 
+  const findPerson = fetchers.findPerson;
   const [vaultResults, personResults] = await Promise.all([
     Promise.all(
       vaultTasks.map(async (t) => {
@@ -495,20 +493,25 @@ export async function runAskPreFlightRetrieval(
           return await fetchers.vaultSearch(
             t.persona,
             t.query,
-            opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : undefined,
+            opts?.releaseSession !== undefined
+              ? { releaseSession: opts.releaseSession }
+              : undefined,
           );
         } catch (err) {
-          console.log('[ask_retrieval] search failed', { status: (err as { status?: number }).status, message: err instanceof Error ? err.message.slice(0, 160) : '' });
+          console.log('[ask_retrieval] search failed', {
+            status: (err as { status?: number }).status,
+            message: err instanceof Error ? err.message.slice(0, 160) : '',
+          });
           return [] as RetrievedVaultItem[];
         }
       }),
     ),
-    fetchers.findPerson === undefined
+    findPerson === undefined
       ? Promise.resolve([] as (readonly RetrievedPersonMatch[])[])
       : Promise.all(
           personTasks.map(async (name) => {
             try {
-              return await fetchers.findPerson!(name);
+              return await findPerson.call(fetchers, name);
             } catch {
               return [] as RetrievedPersonMatch[];
             }
@@ -517,18 +520,25 @@ export async function runAskPreFlightRetrieval(
   ]);
 
   // Inventory questions: the newest items of each picked persona too.
+  const recent = fetchers.recent;
   const recentResults =
-    plan.inventory === true && fetchers.recent !== undefined
+    plan.inventory === true && recent !== undefined
       ? await Promise.all(
           picks.map(async (pick) => {
             try {
-              return await fetchers.recent!(
+              return await recent.call(
+                fetchers,
                 pick.persona,
                 INVENTORY_RECENT,
-                opts?.releaseSession !== undefined ? { releaseSession: opts.releaseSession } : undefined,
+                opts?.releaseSession !== undefined
+                  ? { releaseSession: opts.releaseSession }
+                  : undefined,
               );
             } catch (err) {
-              console.log('[ask_retrieval] recent fetch failed', { status: (err as { status?: number }).status, message: err instanceof Error ? err.message.slice(0, 160) : '' });
+              console.log('[ask_retrieval] recent fetch failed', {
+                status: (err as { status?: number }).status,
+                message: err instanceof Error ? err.message.slice(0, 160) : '',
+              });
               return [] as RetrievedVaultItem[];
             }
           }),
@@ -538,7 +548,9 @@ export async function runAskPreFlightRetrieval(
   const hits: Record<string, number> = {};
   const grouped = new Map<string, RetrievedVaultItem[]>();
   recentResults.forEach((items, i) => {
-    const persona = picks[i]!.persona;
+    const pick = picks[i];
+    if (pick === undefined) throw new Error('ask_retrieval: recent result has no matching pick');
+    const persona = pick.persona;
     const bucket = grouped.get(persona) ?? [];
     for (const item of items) if (!bucket.some((e) => e.id === item.id)) bucket.push(item);
     grouped.set(persona, bucket);
@@ -602,9 +614,7 @@ interface FormatRetrievalContextBlockInput {
  * grouped by persona. Within a persona, top hits first (the fetcher
  * already orders by relevance).
  */
-export function formatRetrievalContextBlock(
-  input: FormatRetrievalContextBlockInput,
-): string {
+export function formatRetrievalContextBlock(input: FormatRetrievalContextBlockInput): string {
   const lines: string[] = [];
   const intent = input.plan.intent.trim();
   if (intent !== '') {
@@ -658,9 +668,7 @@ function formatPeopleLines(
     }
     for (const hit of hits) {
       const role =
-        hit.relationshipHint && hit.relationshipHint.length > 0
-          ? ` (${hit.relationshipHint})`
-          : '';
+        hit.relationshipHint && hit.relationshipHint.length > 0 ? ` (${hit.relationshipHint})` : '';
       const surfaces = hit.surfaceSummary ? ` — ${hit.surfaceSummary}` : '';
       out.push(`  - ${hit.canonicalName}${role}${surfaces}`);
     }

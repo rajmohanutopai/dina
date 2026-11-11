@@ -20,7 +20,6 @@ import {
 import { signMessage, verifyMessage, verifyMessageSingle } from '../../src/d2d/signature';
 import { mapTierToPriority } from '../../src/notify/priority';
 
-
 describe('Dina-to-Dina Integration', () => {
   const senderPriv = TEST_ED25519_SEED;
   const senderPub = getPublicKey(senderPriv);

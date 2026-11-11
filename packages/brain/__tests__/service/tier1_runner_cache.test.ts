@@ -49,11 +49,13 @@ function scriptedProvider(): { provider: LLMProvider; calls: () => number } {
 
 /** A cacheable listing: auto policy, read capability, a published schema that
  *  declares `defaultTtlSeconds` (the freshness window). */
-function etaConfig(over: {
-  responsePolicy?: 'auto' | 'review';
-  defaultTtlSeconds?: number;
-  instructionUpdatedAt?: number;
-} = {}): ServiceConfig {
+function etaConfig(
+  over: {
+    responsePolicy?: 'auto' | 'review';
+    defaultTtlSeconds?: number;
+    instructionUpdatedAt?: number;
+  } = {},
+): ServiceConfig {
   return {
     isDiscoverable: true,
     discoverability: 'public',
@@ -114,7 +116,10 @@ function makeRunner(config: () => ServiceConfig, nowMsFn: () => number) {
 
 describe('Tier-1 runner — provider answer cache', () => {
   it('serves 3 identical auto/read queries with ONE LLM call', async () => {
-    const { runner, calls } = makeRunner(() => etaConfig({ defaultTtlSeconds: 60 }), () => NOW);
+    const { runner, calls } = makeRunner(
+      () => etaConfig({ defaultTtlSeconds: 60 }),
+      () => NOW,
+    );
     const r1 = await runner('eta_query', { route_id: '42' }, task('a'));
     const r2 = await runner('eta_query', { route_id: '42' }, task('b'));
     const r3 = await runner('eta_query', { route_id: '42' }, task('c'));
@@ -135,7 +140,10 @@ describe('Tier-1 runner — provider answer cache', () => {
   });
 
   it('does NOT cache when the provider declares no freshness (defaultTtlSeconds)', async () => {
-    const { runner, calls } = makeRunner(() => etaConfig({}), () => NOW);
+    const { runner, calls } = makeRunner(
+      () => etaConfig({}),
+      () => NOW,
+    );
     await runner('eta_query', { route_id: '42' }, task('a'));
     await runner('eta_query', { route_id: '42' }, task('b'));
     expect(calls()).toBe(2);
@@ -143,7 +151,10 @@ describe('Tier-1 runner — provider answer cache', () => {
 
   it('recomputes after the freshness window expires', async () => {
     let now = NOW;
-    const { runner, calls } = makeRunner(() => etaConfig({ defaultTtlSeconds: 60 }), () => now);
+    const { runner, calls } = makeRunner(
+      () => etaConfig({ defaultTtlSeconds: 60 }),
+      () => now,
+    );
     await runner('eta_query', { route_id: '42' }, task('a'));
     now = NOW + 60_000; // one full TTL later
     await runner('eta_query', { route_id: '42' }, task('b'));
@@ -163,7 +174,10 @@ describe('Tier-1 runner — provider answer cache', () => {
   });
 
   it('keys separate params to separate cache entries', async () => {
-    const { runner, calls } = makeRunner(() => etaConfig({ defaultTtlSeconds: 60 }), () => NOW);
+    const { runner, calls } = makeRunner(
+      () => etaConfig({ defaultTtlSeconds: 60 }),
+      () => NOW,
+    );
     await runner('eta_query', { route_id: '42' }, task('a', { route_id: '42' }));
     await runner('eta_query', { route_id: '7' }, task('b', { route_id: '7' }));
     await runner('eta_query', { route_id: '42' }, task('c', { route_id: '42' })); // hit

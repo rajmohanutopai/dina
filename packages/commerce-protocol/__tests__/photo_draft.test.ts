@@ -104,7 +104,11 @@ function makeConversationSnapshot(
     supplier_did: SUPPLIER,
     request_digest: hexOf('quote-request'),
     lines: [
-      { line_id: 'line-1', generation: 1, vouch_receipt_digest: vouchReceiptDigest(makeVouch(), hash) },
+      {
+        line_id: 'line-1',
+        generation: 1,
+        vouch_receipt_digest: vouchReceiptDigest(makeVouch(), hash),
+      },
     ],
     requirements: [{ key: 'required_by', omitted: false, value: '2026-08-21', generation: 1 }],
     ...overrides,
@@ -184,7 +188,7 @@ describe('extraction commitment', () => {
     );
   });
 
-  it('CROSS-DRAFT: draft A\'s commitment can never stand for draft B\'s', () => {
+  it("CROSS-DRAFT: draft A's commitment can never stand for draft B's", () => {
     // The whole point of draft_id being in the preimage. Without it these
     // two digests would be equal and the chain would prove nothing.
     const a = extractionCommitmentDigest('order', makeCommitment({ draft_id: 'draft-a' }), hash);
@@ -192,7 +196,7 @@ describe('extraction commitment', () => {
     expect(a).not.toBe(b);
   });
 
-  it('SUBSTITUTED MANIFEST: swapping one page\'s bytes changes the digest', () => {
+  it("SUBSTITUTED MANIFEST: swapping one page's bytes changes the digest", () => {
     const original = makeCommitment();
     const substituted = makeCommitment({
       manifest: [
@@ -212,7 +216,9 @@ describe('extraction commitment', () => {
         { artifact_id: 'img-2', content_hash: hexOf('page-2-bytes'), page_index: 0 },
       ],
     });
-    expect(validateExtractionCommitment(commitment)).toContain('page_index must equal its position');
+    expect(validateExtractionCommitment(commitment)).toContain(
+      'page_index must equal its position',
+    );
   });
 
   it('refuses an empty manifest, an unknown schema, a header row, and an off-manifest row', () => {
@@ -290,9 +296,9 @@ describe('catalog extraction binding', () => {
   });
 
   it('refuses a wrong version, a bad revision, and a malformed digest', () => {
-    expect(
-      validateCatalogExtractionBinding({ ...binding, binding_version: 2 }),
-    ).toContain('binding_version must be 1');
+    expect(validateCatalogExtractionBinding({ ...binding, binding_version: 2 })).toContain(
+      'binding_version must be 1',
+    );
     expect(validateCatalogExtractionBinding({ ...binding, content_revision: -1 })).toContain(
       'non-negative',
     );
@@ -430,8 +436,9 @@ describe('approval source binding', () => {
       'requirement_generations',
       'snapshot_digest',
     ]) {
-      const partial = { ...makeSourceBinding() } as Record<string, unknown>;
-      delete partial[field];
+      const partial: Record<string, unknown> = Object.fromEntries(
+        Object.entries(makeSourceBinding()).filter(([key]) => key !== field),
+      );
       expect(validateApprovalSourceBinding(partial)).not.toBeNull();
     }
   });

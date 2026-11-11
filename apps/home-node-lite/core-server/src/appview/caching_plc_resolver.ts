@@ -39,22 +39,11 @@
  */
 
 import { resolveTtl, PLC_DEFAULT_TTL_MS } from './cache_ttl';
-import {
-  parsePlcDoc,
-  validatePlcDid,
-  type Did,
-  type PlcDoc,
-} from './plc_resolver';
-import {
-  SwrCache,
-  type SwrCacheOptions,
-  type SwrEvent,
-} from './stale_while_revalidate';
+import { parsePlcDoc, validatePlcDid, type Did, type PlcDoc } from './plc_resolver';
+import { SwrCache, type SwrCacheOptions, type SwrEvent } from './stale_while_revalidate';
 
 /** One outcome stored in the cache — either a valid doc or a negative hit. */
-export type PlcCacheEntry =
-  | { kind: 'found'; doc: PlcDoc }
-  | { kind: 'not_found' };
+export type PlcCacheEntry = { kind: 'found'; doc: PlcDoc } | { kind: 'not_found' };
 
 export interface FetchWithHeadersResult {
   /** Parsed JSON body, or null on 404. */
@@ -94,11 +83,7 @@ export type CachingResolveOutcome =
   | { ok: false; kind: 'malformed_doc'; detail: string }
   | { ok: false; kind: 'network_error'; error: string };
 
-export type PlcSourceTag =
-  | 'fresh'
-  | 'stale-while-revalidate'
-  | 'network'
-  | 'error-fallback';
+export type PlcSourceTag = 'fresh' | 'stale-while-revalidate' | 'network' | 'error-fallback';
 
 export const DEFAULT_NOT_FOUND_TTL_MS = 60 * 1000;
 
@@ -234,12 +219,7 @@ interface CachedEntry {
 }
 
 function mapSource(
-  s:
-    | 'fresh-hit'
-    | 'stale-while-revalidate'
-    | 'revalidate-blocking'
-    | 'miss'
-    | 'error-fallback',
+  s: 'fresh-hit' | 'stale-while-revalidate' | 'revalidate-blocking' | 'miss' | 'error-fallback',
 ): PlcSourceTag {
   switch (s) {
     case 'fresh-hit':

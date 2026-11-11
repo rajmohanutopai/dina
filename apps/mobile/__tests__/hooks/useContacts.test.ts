@@ -20,7 +20,6 @@ import {
   resetContacts,
 } from '../../src/hooks/useContacts';
 
-
 describe('Contacts Tab Hook (6.16)', () => {
   beforeEach(() => {
     resetContacts();

@@ -10,7 +10,7 @@ import {
 
 const DID = 'did:plc:abcdefghijklmnopqrstuvwx';
 
-function validProfile(did: string = DID): Record<string, unknown> {
+function validProfile(_did: string = DID): Record<string, unknown> {
   return {
     $type: 'com.dinakernel.service.profile',
     name: 'SF Transit Authority',
@@ -40,10 +40,7 @@ function okBody(overrides: Record<string, unknown> = {}): Record<string, unknown
   };
 }
 
-function stubFetch(
-  body: Record<string, unknown> | null,
-  status = 200,
-): GetProfileFetchFn {
+function stubFetch(body: Record<string, unknown> | null, status = 200): GetProfileFetchFn {
   return async () => ({ body, status });
 }
 
@@ -61,10 +58,7 @@ describe('createGetProfileClient (task 6.13)', () => {
   describe('happy path', () => {
     it('returns parsed profile', async () => {
       const get = createGetProfileClient({ fetchFn: stubFetch(okBody()) });
-      const out = (await get({ operatorDid: DID })) as Extract<
-        GetProfileOutcome,
-        { ok: true }
-      >;
+      const out = (await get({ operatorDid: DID })) as Extract<GetProfileOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
       expect(out.response.operatorDid).toBe(DID);
       expect(out.response.profile.name).toBe('SF Transit Authority');
@@ -91,10 +85,7 @@ describe('createGetProfileClient (task 6.13)', () => {
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody({ profile })),
       });
-      const out = (await get({ operatorDid: DID })) as Extract<
-        GetProfileOutcome,
-        { ok: true }
-      >;
+      const out = (await get({ operatorDid: DID })) as Extract<GetProfileOutcome, { ok: true }>;
       expect(out.response.profile.serviceArea).toBeUndefined();
     });
 
@@ -102,10 +93,7 @@ describe('createGetProfileClient (task 6.13)', () => {
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody({ trustScore: null, trustRing: null })),
       });
-      const out = (await get({ operatorDid: DID })) as Extract<
-        GetProfileOutcome,
-        { ok: true }
-      >;
+      const out = (await get({ operatorDid: DID })) as Extract<GetProfileOutcome, { ok: true }>;
       expect(out.response.trustScore).toBeNull();
       expect(out.response.trustRing).toBeNull();
     });
@@ -114,10 +102,7 @@ describe('createGetProfileClient (task 6.13)', () => {
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody({ trustRing: 99 })),
       });
-      const out = (await get({ operatorDid: DID })) as Extract<
-        GetProfileOutcome,
-        { ok: true }
-      >;
+      const out = (await get({ operatorDid: DID })) as Extract<GetProfileOutcome, { ok: true }>;
       expect(out.response.trustRing).toBeNull();
     });
 
@@ -127,10 +112,7 @@ describe('createGetProfileClient (task 6.13)', () => {
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody({ profile })),
       });
-      const out = (await get({ operatorDid: DID })) as Extract<
-        GetProfileOutcome,
-        { ok: true }
-      >;
+      const out = (await get({ operatorDid: DID })) as Extract<GetProfileOutcome, { ok: true }>;
       // Unknown capability still lands (we don't cross-check against
       // capabilities) — but invalid policy VALUES are dropped.
       expect(out.response.profile.responsePolicy).toHaveProperty('stray_cap', 'auto');
@@ -142,10 +124,7 @@ describe('createGetProfileClient (task 6.13)', () => {
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody({ profile })),
       });
-      const out = (await get({ operatorDid: DID })) as Extract<
-        GetProfileOutcome,
-        { ok: true }
-      >;
+      const out = (await get({ operatorDid: DID })) as Extract<GetProfileOutcome, { ok: true }>;
       expect(out.response.profile.responsePolicy).not.toHaveProperty('eta_query');
     });
   });
@@ -259,8 +238,7 @@ describe('createGetProfileClient (task 6.13)', () => {
       ['schema is boolean', true],
     ])('parseCapabilitySchema rejects: %s', async (_label, schemaValue) => {
       const profile = validProfile();
-      (profile.capabilitySchemas as Record<string, unknown>).eta_query =
-        schemaValue as unknown;
+      (profile.capabilitySchemas as Record<string, unknown>).eta_query = schemaValue as unknown;
       const get = createGetProfileClient({ fetchFn: stubFetch(okBody({ profile })) });
       const out = await get({ operatorDid: DID });
       expect(out.ok).toBe(false);
@@ -439,7 +417,11 @@ describe('createGetProfileClient (task 6.13)', () => {
 
   describe('events', () => {
     it('fetched event carries capability count', async () => {
-      interface Ev { kind: 'fetched'; operatorDid: string; capabilityCount: number }
+      interface Ev {
+        kind: 'fetched';
+        operatorDid: string;
+        capabilityCount: number;
+      }
       const events: Ev[] = [];
       const get = createGetProfileClient({
         fetchFn: stubFetch(okBody()),

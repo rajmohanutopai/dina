@@ -85,9 +85,7 @@ export interface UseViewerPreferencesResult {
    * Two such calls in quick succession compose: the second sees the
    * effect of the first.
    */
-  readonly mutate: (
-    updater: (current: UserPreferences) => UserPreferences,
-  ) => Promise<void>;
+  readonly mutate: (updater: (current: UserPreferences) => UserPreferences) => Promise<void>;
 }
 
 export function useViewerPreferences(): UseViewerPreferencesResult {

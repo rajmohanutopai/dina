@@ -14,10 +14,7 @@ import {
   validateQuoteDecline,
   verifyQuoteDeclineAgainstRequest,
 } from '../src/quote_decline';
-import {
-  TRADE_DIGEST_DOMAINS,
-  tradeRecordDigest,
-} from '../src/trade_digest';
+import { TRADE_DIGEST_DOMAINS, tradeRecordDigest } from '../src/trade_digest';
 import {
   KNOWN_DELIVERY_RECEIPT_REASONS,
   MAX_TRADE_LINES,
@@ -39,7 +36,8 @@ import {
 
 import type { QuoteRequest } from '../src/quote';
 
-const hash = (data: Uint8Array): Uint8Array => new Uint8Array(createHash('sha256').update(data).digest());
+const hash = (data: Uint8Array): Uint8Array =>
+  new Uint8Array(createHash('sha256').update(data).digest());
 
 const HEX = 'a'.repeat(64);
 const BUYER = 'did:plc:buyer0000000000000000000';
@@ -87,7 +85,10 @@ function makeNote(overrides: Partial<DeliveryNote> = {}): DeliveryNote {
   }) as DeliveryNote;
 }
 
-function makeReceipt(note: DeliveryNote, overrides: Partial<DeliveryReceipt> = {}): DeliveryReceipt {
+function makeReceipt(
+  note: DeliveryNote,
+  overrides: Partial<DeliveryReceipt> = {},
+): DeliveryReceipt {
   return sealed('delivery_receipt', 'receipt_digest', {
     protocol_version: note.protocol_version,
     delivery_receipt_id: 'dr-1',
@@ -149,7 +150,14 @@ function makeAck(
 describe('trade digest family', () => {
   it('covers exactly the six trade domains', () => {
     expect([...TRADE_DIGEST_DOMAINS].sort()).toEqual(
-      ['delivery_note', 'delivery_receipt', 'order_attachment', 'payment_ack', 'payment_note', 'quote_decline'].sort(),
+      [
+        'delivery_note',
+        'delivery_receipt',
+        'order_attachment',
+        'payment_ack',
+        'payment_note',
+        'quote_decline',
+      ].sort(),
     );
   });
 
@@ -184,7 +192,9 @@ describe('QuoteDecline (§3.4)', () => {
 
   it('the reason vocabulary is open but bounded, and the known set is pinned', () => {
     expect([...KNOWN_QUOTE_DECLINE_REASONS]).toEqual(['out_of_region', 'capacity', 'policy']);
-    expect(validateQuoteDecline(makeDecline({ reason_code: 'my_own_policy_code' }), hash)).toBeNull();
+    expect(
+      validateQuoteDecline(makeDecline({ reason_code: 'my_own_policy_code' }), hash),
+    ).toBeNull();
     expect(validateQuoteDecline(makeDecline({ reason_code: '' }), hash)).toContain('reason_code');
     expect(validateQuoteDecline(makeDecline({ reason_code: 'x'.repeat(65) }), hash)).toContain(
       'reason_code',
@@ -248,7 +258,9 @@ describe('DeliveryNote (§4.2)', () => {
   });
 
   it('expected_by is optional but must be ISO UTC when present', () => {
-    expect(validateDeliveryNote(makeNote({ expected_by: '2026-08-20T00:00:00.000Z' }), hash)).toBeNull();
+    expect(
+      validateDeliveryNote(makeNote({ expected_by: '2026-08-20T00:00:00.000Z' }), hash),
+    ).toBeNull();
     expect(validateDeliveryNote(makeNote({ expected_by: 'tomorrow' }), hash)).toContain(
       'expected_by',
     );
@@ -326,22 +338,19 @@ describe('PaymentNote (§4.2)', () => {
   it('a valid note reads typed; zero and unknown methods refuse', () => {
     expect(readPaymentNote(makePaymentNote(), hash).ok).toBe(true);
     expect(
-      validatePaymentNote(
-        makePaymentNote({ amount: { currency: 'INR', minor_units: '0' } }),
-        hash,
-      ),
+      validatePaymentNote(makePaymentNote({ amount: { currency: 'INR', minor_units: '0' } }), hash),
     ).toContain('positive');
-    expect(
-      validatePaymentNote(makePaymentNote({ method: 'barter' as never }), hash),
-    ).toContain('method');
+    expect(validatePaymentNote(makePaymentNote({ method: 'barter' as never }), hash)).toContain(
+      'method',
+    );
   });
 
   it('order_refs stay advisory: bounded, unique, and optional', () => {
     expect(validatePaymentNote(makePaymentNote({ order_refs: ['po-1', 'po-2'] }), hash)).toBeNull();
     expect(validatePaymentNote(makePaymentNote({ order_refs: [] }), hash)).toContain('non-empty');
-    expect(
-      validatePaymentNote(makePaymentNote({ order_refs: ['po-1', 'po-1'] }), hash),
-    ).toContain('duplicate');
+    expect(validatePaymentNote(makePaymentNote({ order_refs: ['po-1', 'po-1'] }), hash)).toContain(
+      'duplicate',
+    );
   });
 });
 

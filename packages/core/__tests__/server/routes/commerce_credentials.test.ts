@@ -184,8 +184,9 @@ describe('rotation (§18.3)', () => {
       operations: ['read_catalog'],
     };
     for (const field of ['material', 'install_id', 'operations'] as const) {
-      const body: Record<string, unknown> = { ...complete };
-      delete body[field];
+      const body: Record<string, unknown> = Object.fromEntries(
+        Object.entries(complete).filter(([key]) => key !== field),
+      );
       const response = await router.handle(
         request('PUT', '/v1/commerce/credentials/erp.primary', body),
       );

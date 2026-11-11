@@ -126,10 +126,9 @@ export class RepositoryPersonResolver implements PersonResolver {
 
   displayName(personIdOrDid: string): string | null {
     if (personIdOrDid === '') return null;
-    const person =
-      personIdOrDid.startsWith('did:')
-        ? this.repo.findByContactDid(personIdOrDid)
-        : this.repo.getPerson(personIdOrDid);
+    const person = personIdOrDid.startsWith('did:')
+      ? this.repo.findByContactDid(personIdOrDid)
+      : this.repo.getPerson(personIdOrDid);
     if (person === null) return null;
     if (person.canonicalName !== '') return person.canonicalName;
     const confirmed = (person.surfaces ?? []).filter((s) => s.status === 'confirmed');

@@ -22,10 +22,7 @@ import {
 import type { OwnerDispatcher } from './owner-dispatch';
 import type { MerchantTrust } from '../commerce/ucp/merchant_trust';
 import type { UcpOrderView } from '../commerce/ucp/order_view';
-import type {
-  UcpPublicationAction,
-  UcpPublicationView,
-} from '../commerce/ucp/publication_control';
+import type { UcpPublicationAction, UcpPublicationView } from '../commerce/ucp/publication_control';
 import type { OwnerSearchView } from '../commerce/ucp/search';
 import type { UcpSettings } from '../commerce/ucp/settings';
 import type { CoreResponse } from '../server/router';

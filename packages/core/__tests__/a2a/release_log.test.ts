@@ -56,7 +56,12 @@ beforeEach(() => {
   createPersona('general', 'default');
   createPersona('health', 'sensitive');
   dir = mkdtempSync(path.join(tmpdir(), 'a2a-release-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'identity.sqlite'), passphraseHex: 'ab'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'identity.sqlite'),
+    passphraseHex: 'ab'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   clock = NOW;
   log = new A2AReleaseLog(db, () => clock);
@@ -71,7 +76,10 @@ afterEach(() => {
 });
 
 function seed() {
-  const note = makeVaultItem({ summary: 'Dentist is Dr. Rao', body: 'Call Dr. Rao at the clinic on Tuesday.' });
+  const note = makeVaultItem({
+    summary: 'Dentist is Dr. Rao',
+    body: 'Call Dr. Rao at the clinic on Tuesday.',
+  });
   const scan = makeVaultItem({ summary: 'Blood test', body: 'Cholesterol 190.' });
   storeItem('general', note);
   storeItem('health', scan);
@@ -84,7 +92,9 @@ const rows = () =>
 describe('the read functions record a release into a conversation', () => {
   it('search, get, list, browse and subject recall each record what they return', () => {
     const { note, scan } = seed();
-    expect(queryVault('general', { mode: 'fts5', text: 'dentist', limit: 5 }, CHAT).map((i) => i.id)).toEqual([note.id]);
+    expect(
+      queryVault('general', { mode: 'fts5', text: 'dentist', limit: 5 }, CHAT).map((i) => i.id),
+    ).toEqual([note.id]);
     expect(getItem('health', scan.id, CHAT)?.id).toBe(scan.id);
     expect(listRecentItems('general', 5, undefined, CHAT)).toHaveLength(1);
     expect(browseRecent('health', 0, Number.MAX_SAFE_INTEGER, 5, CHAT)).toHaveLength(1);
@@ -135,7 +145,9 @@ describe('the read functions record a release into a conversation', () => {
 
   it('records a topic list as a release that taints, under an id no item has', () => {
     log.recordTopics(CHAT, 'health', ['diabetes', 'cholesterol']);
-    expect(log.readSet('chat:main').map((r) => [r.persona, r.persona_tier, r.item_id])).toEqual([['health', 'sensitive', '#topics']]);
+    expect(log.readSet('chat:main').map((r) => [r.persona, r.persona_tier, r.item_id])).toEqual([
+      ['health', 'sensitive', '#topics'],
+    ]);
   });
 
   it('expires releases after the window', () => {
@@ -150,7 +162,9 @@ describe('the read functions record a release into a conversation', () => {
     const { scan } = seed();
     getItem('health', scan.id, CHAT);
     deletePersona('health');
-    expect(log.readSet('chat:main').map((r) => [r.persona, r.persona_tier, r.item_id])).toEqual([['health', 'sensitive', '#forgotten']]);
+    expect(log.readSet('chat:main').map((r) => [r.persona, r.persona_tier, r.item_id])).toEqual([
+      ['health', 'sensitive', '#forgotten'],
+    ]);
     expect(log.releasesOf('chat:main', 'health', scan.id)).toEqual([]);
     expect(restrictedReads(log, 'chat:main')).toEqual(['health']);
   });
@@ -185,15 +199,31 @@ describe('both boots log identically', () => {
 
   /** Seven general items, newest last, so a page and its look-ahead differ. */
   function seedMany() {
-    const items = Array.from({ length: 7 }, (_, i) => makeVaultItem({ summary: `Dentist note ${i}`, body: `Visit ${i}.`, timestamp: 1000 + i }));
+    const items = Array.from({ length: 7 }, (_, i) =>
+      makeVaultItem({ summary: `Dentist note ${i}`, body: `Visit ${i}.`, timestamp: 1000 + i }),
+    );
     for (const item of items) storeItem('general', item);
     return items;
   }
 
   async function routeReads(caller: Partial<CoreRequest>) {
     const r = router();
-    await r.handle(request({ ...caller, method: 'POST', path: '/v1/vault/query', query: { persona: 'general' }, body: { text: 'dentist', limit: 3, release_session: 'chat:main' } }));
-    await r.handle(request({ ...caller, path: '/v1/vault/list', query: { persona: 'general', limit: '2', offset: '1', release_session: 'chat:main' } }));
+    await r.handle(
+      request({
+        ...caller,
+        method: 'POST',
+        path: '/v1/vault/query',
+        query: { persona: 'general' },
+        body: { text: 'dentist', limit: 3, release_session: 'chat:main' },
+      }),
+    );
+    await r.handle(
+      request({
+        ...caller,
+        path: '/v1/vault/list',
+        query: { persona: 'general', limit: '2', offset: '1', release_session: 'chat:main' },
+      }),
+    );
   }
 
   it('the server’s Brain, the phone’s in-process router calls and its direct calls record the same rows', async () => {
@@ -215,8 +245,13 @@ describe('both boots log identically', () => {
     for (let i = 0; i < MAX_LIST_OFFSET + 3; i += 1) {
       storeItem('general', makeVaultItem({ id: `bulk-${i}`, summary: `Item ${i}`, timestamp: i }));
     }
-    expect(listRecentPage('general', { offset: MAX_LIST_OFFSET, limit: 1 }, CHAT).items).toHaveLength(1);
-    expect(listRecentPage('general', { offset: MAX_LIST_OFFSET + 1, limit: 1 }, CHAT)).toEqual({ items: [], more: false });
+    expect(
+      listRecentPage('general', { offset: MAX_LIST_OFFSET, limit: 1 }, CHAT).items,
+    ).toHaveLength(1);
+    expect(listRecentPage('general', { offset: MAX_LIST_OFFSET + 1, limit: 1 }, CHAT)).toEqual({
+      items: [],
+      more: false,
+    });
     expect(log.readSet('chat:main')).toHaveLength(1);
   });
 
@@ -224,11 +259,21 @@ describe('both boots log identically', () => {
     const { note } = seed();
     const r = router();
     const agent = await r.handle(
-      request({ path: `/v1/vault/item/${note.id}`, query: { persona: 'general', release_session: 'chat:main' }, callerType: 'device', callerDID: 'did:key:dev', trustedInProcess: true }),
+      request({
+        path: `/v1/vault/item/${note.id}`,
+        query: { persona: 'general', release_session: 'chat:main' },
+        callerType: 'device',
+        callerDID: 'did:key:dev',
+        trustedInProcess: true,
+      }),
     );
     expect(agent).toMatchObject({ status: 403, body: { error: 'release_session_brain_only' } });
     const bad = await r.handle(
-      request({ path: `/v1/vault/item/${note.id}`, query: { persona: 'general', release_session: 'chat:%' }, trustedInProcess: true }),
+      request({
+        path: `/v1/vault/item/${note.id}`,
+        query: { persona: 'general', release_session: 'chat:%' },
+        trustedInProcess: true,
+      }),
     );
     expect(bad).toMatchObject({ status: 400, body: { error: 'release_session_invalid' } });
     expect(log.readSet('chat:main')).toEqual([]);
@@ -237,19 +282,40 @@ describe('both boots log identically', () => {
   it('records the owner’s turn once, through Brain’s door only', async () => {
     const r = router();
     const turn = (caller: Partial<CoreRequest>, text: string) =>
-      r.handle(request({ ...caller, method: 'POST', path: '/v1/a2a/turns', body: { release_session: 'chat:main', turn_id: 'turn-1', text } }));
-    expect((await turn({ trustedInProcess: true }, 'Book Dr. Rao for Tuesday')).body).toEqual({ recorded: true });
-    expect((await turn({ trustedInProcess: true }, 'something else')).body).toEqual({ recorded: false });
-    expect((await turn({ callerType: 'device', callerDID: 'did:key:d', trustedInProcess: true }, 'x')).status).toBe(403);
+      r.handle(
+        request({
+          ...caller,
+          method: 'POST',
+          path: '/v1/a2a/turns',
+          body: { release_session: 'chat:main', turn_id: 'turn-1', text },
+        }),
+      );
+    expect((await turn({ trustedInProcess: true }, 'Book Dr. Rao for Tuesday')).body).toEqual({
+      recorded: true,
+    });
+    expect((await turn({ trustedInProcess: true }, 'something else')).body).toEqual({
+      recorded: false,
+    });
+    expect(
+      (await turn({ callerType: 'device', callerDID: 'did:key:d', trustedInProcess: true }, 'x'))
+        .status,
+    ).toBe(403);
     // Core keeps the digest of the turn's message, never the words.
-    expect(log.utterances('chat:main').map((u) => u.digest)).toEqual([utteranceDigest('Book Dr. Rao for Tuesday')]);
+    expect(log.utterances('chat:main').map((u) => u.digest)).toEqual([
+      utteranceDigest('Book Dr. Rao for Tuesday'),
+    ]);
     expect(log.latestUtterance('chat:main')?.turn_id).toBe('turn-1');
   });
 
   it('answers 503 for turns on a host with no release log', async () => {
     installA2AReleaseLog(null);
     const resp = await router().handle(
-      request({ method: 'POST', path: '/v1/a2a/turns', body: { release_session: 'chat:main', turn_id: 't', text: 'x' }, trustedInProcess: true }),
+      request({
+        method: 'POST',
+        path: '/v1/a2a/turns',
+        body: { release_session: 'chat:main', turn_id: 't', text: 'x' },
+        trustedInProcess: true,
+      }),
     );
     expect(resp.status).toBe(503);
   });

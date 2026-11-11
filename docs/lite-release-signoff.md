@@ -1,8 +1,7 @@
 # Home Node Lite — release sign-off checklist (task 9.20)
 
 Per-milestone acceptance criteria for cutting a `home-node-lite-vX.Y.Z`
-tag. Pairs with the skip registry (`tests/integration/LITE_SKIPS.md`)
-+ milestone map (`docs/HOME_NODE_LITE_TASKS.md` § *Milestone map*) +
+tag. Pairs with the milestone map (`docs/HOME_NODE_LITE_TASKS.md` § *Milestone map*) +
 changelog (`CHANGELOG.md`).
 
 Release-day playbook at the bottom.
@@ -76,11 +75,6 @@ schemas, cart handover, deep links.
 - [ ] PeerLens query from Lite → AppView → response visible
 - [ ] Service discovery + query/response round-trip via D2D
 - [ ] BusDriver scenario runs (the README demo)
-- [ ] Phase 8g: cross-stack compat — **8.60** (Lite Core + Python
-      Brain) and **8.61** (Go Core + Lite Brain) both pass smoke
-      tests; impedance mismatches documented in
-      `docs/lite-impedance-mismatches.md`
-- [ ] `LITE_SKIPS.md` skip percentage ≤ 5%
 
 ## M4 — v0.4.0 (Robustness)
 
@@ -111,8 +105,8 @@ wire format, remaining arch validation.
 
 - [ ] Phase 8e: tasks 8.34–8.51 green + task 8.52 M5 gate
 - [ ] Phase 9b: Story 10 (Operator journey) passes
-- [ ] Phase 9c: `tests/release/` REL-001..REL-023 all pass against
-      Lite (task 9.17) + dummy-agent container compat verified
+- [ ] Phase 9c: the `docs/RELEASE_TEST_PLAN.md` checks pass against
+      Lite + dummy-agent container compat verified
       (task 9.18) + CLI pairing scenarios pass (task 9.19)
 - [ ] Phase 11d: Pi 5 8GB first-boot wall-clock + idle memory +
       FTS/HNSW latency all within x86_64 baseline × 3 (task 11.17–11.20)
@@ -168,6 +162,5 @@ The pre-release mark is reversible; an incorrect tag rewrite isn't.
 ## See also
 
 - `docs/HOME_NODE_LITE_TASKS.md` § *Milestone map*
-- `tests/integration/LITE_SKIPS.md` — skip acceptance per milestone
 - `CHANGELOG.md` — release notes
 - `.github/workflows/home-node-lite-release.yml` — native release pipeline

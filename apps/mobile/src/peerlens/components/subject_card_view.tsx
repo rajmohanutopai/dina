@@ -208,9 +208,7 @@ export function SubjectCardView(props: SubjectCardViewProps): React.ReactElement
             style={[styles.maturityBadge, maturityStyleFor(display.reviewCount)]}
             testID={`subject-card-maturity-${subjectId}`}
           >
-            <Text style={styles.maturityText}>
-              {maturityLabel(display.reviewCount)}
-            </Text>
+            <Text style={styles.maturityText}>{maturityLabel(display.reviewCount)}</Text>
           </View>
         )}
         <Text style={styles.reviewCount}>
@@ -280,9 +278,7 @@ export function buildA11yLabel(display: SubjectCardDisplay): string {
   if (display.location) parts.push(display.location);
   if (display.priceTier) parts.push(display.priceTier);
   parts.push(`trust ${BAND_LABEL[display.score.band]}`);
-  parts.push(
-    `${display.reviewCount} ${display.reviewCount === 1 ? 'review' : 'reviews'}`,
-  );
+  parts.push(`${display.reviewCount} ${display.reviewCount === 1 ? 'review' : 'reviews'}`);
   if (display.friendsPill) {
     parts.push(
       `${display.friendsPill.friendsCount} ${

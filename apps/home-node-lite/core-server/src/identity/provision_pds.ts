@@ -114,9 +114,7 @@ export interface ProvisionPdsOptions {
  * masterSeed) tuple — the persisted file is the source of truth on
  * subsequent boots.
  */
-export async function loadOrProvisionPdsIdentity(
-  opts: ProvisionPdsOptions,
-): Promise<PdsIdentity> {
+export async function loadOrProvisionPdsIdentity(opts: ProvisionPdsOptions): Promise<PdsIdentity> {
   if (!opts.vaultDir) throw new Error('loadOrProvisionPdsIdentity: vaultDir required');
   if (!opts.handle) throw new Error('loadOrProvisionPdsIdentity: handle required');
   if (!opts.pdsUrl) throw new Error('loadOrProvisionPdsIdentity: pdsUrl required');
@@ -296,7 +294,11 @@ export function derivePdsPassword(masterSeed: Uint8Array): string {
  * is reserved by RFC 2606 and won't collide with real mailboxes.
  */
 function defaultEmailForHandle(handle: string): string {
-  const local = handle.split('.')[0]?.toLowerCase().replace(/[^a-z0-9]/g, '') || 'dina';
+  const local =
+    handle
+      .split('.')[0]
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]/g, '') || 'dina';
   return `${local}@dina.invalid`;
 }
 
@@ -334,10 +336,7 @@ async function fileExists(p: string): Promise<boolean> {
 async function writeAtomic(filePath: string, content: string): Promise<void> {
   const dir = path.dirname(filePath);
   const base = path.basename(filePath);
-  const tmp = path.join(
-    dir,
-    `.${base}.tmp-${process.pid}-${process.hrtime.bigint().toString(36)}`,
-  );
+  const tmp = path.join(dir, `.${base}.tmp-${process.pid}-${process.hrtime.bigint().toString(36)}`);
   try {
     await fs.writeFile(tmp, content, { mode: PDS_IDENTITY_MODE });
     await fs.chmod(tmp, PDS_IDENTITY_MODE);

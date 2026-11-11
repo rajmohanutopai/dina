@@ -30,7 +30,11 @@ import {
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
-import { WorkflowService, getWorkflowService, setWorkflowService } from '../../src/workflow/service';
+import {
+  WorkflowService,
+  getWorkflowService,
+  setWorkflowService,
+} from '../../src/workflow/service';
 
 const SESSION = 'chat:main';
 let dir: string;
@@ -44,12 +48,23 @@ async function turn(text: string): Promise<SpanProof> {
   await new Promise((r) => setTimeout(r, 3));
   const id = `t${++n}`;
   log.recordUtterance(SESSION, id, text);
-  return { releaseSession: SESSION, turnId: id, turnText: text, start: 0, end: cleanForProvenance(text).length };
+  return {
+    releaseSession: SESSION,
+    turnId: id,
+    turnText: text,
+    start: 0,
+    end: cleanForProvenance(text).length,
+  };
 }
 
 beforeEach(async () => {
   dir = mkdtempSync(path.join(tmpdir(), 'spend-'));
-  db = new NodeSQLiteAdapter({ path: path.join(dir, 'id.sqlite'), passphraseHex: 'ee'.repeat(32), journalMode: 'WAL', synchronous: 'NORMAL' });
+  db = new NodeSQLiteAdapter({
+    path: path.join(dir, 'id.sqlite'),
+    passphraseHex: 'ee'.repeat(32),
+    journalMode: 'WAL',
+    synchronous: 'NORMAL',
+  });
   applyMigrations(db, IDENTITY_MIGRATIONS);
   log = new A2AReleaseLog(db, () => Date.now(), { chatLivesIn: 'brain' });
   installA2AReleaseLog(log);
@@ -84,7 +99,11 @@ async function liveAllowance(amountMinor = 500_000, perItemCapMinor?: number): P
   return out.task_id;
 }
 
-const buy = (value: unknown, key: string, over: Partial<{ currency: string; category: string }> = {}) =>
+const buy = (
+  value: unknown,
+  key: string,
+  over: Partial<{ currency: string; category: string }> = {},
+) =>
   evaluateSpend({
     agentDid,
     amount: { value_minor: value, currency: over.currency ?? 'INR' },
@@ -147,7 +166,7 @@ it("periods are the allowance's own zone, pinned when it was set", () => {
   expect(periodKey(at, 'month', 'UTC')).toBe('2026-10');
 });
 
-it('the category must be the owner\'s words, and only a paired agent can be named', async () => {
+it("the category must be the owner's words, and only a paired agent can be named", async () => {
   const words = await proposeAllowance({
     proof: await turn('let pantry-bot spend up to 5000 a month on household supplies'),
     agent: 'pantry-bot',
@@ -177,7 +196,11 @@ it('an approved purchase counts once, even if recorded twice; a crash before cou
     id: review.proposalId,
     kind: 'approval' as never,
     description: 'purchase',
-    payload: JSON.stringify({ type: 'intent_validation', agent_did: agentDid, spend: { request_key: 'big-1' } }),
+    payload: JSON.stringify({
+      type: 'intent_validation',
+      agent_did: agentDid,
+      spend: { request_key: 'big-1' },
+    }),
     expiresAtSec: Math.floor(Date.now() / 1000) + 600,
     origin: 'agent',
     initialState: 'pending_approval' as never,
@@ -190,9 +213,13 @@ it('an approved purchase counts once, even if recorded twice; a crash before cou
   expect(status!.spentMinor).toBe(600_000);
   // A different card id cannot claim this purchase.
   await recordApprovedSpend({ agentDid, requestKey: 'big-1', proposalId: 'prop-intent-other' });
-  expect((await allowanceStatus()).find((x) => x.allowance.state === 'active')!.spentMinor).toBe(600_000);
+  expect((await allowanceStatus()).find((x) => x.allowance.state === 'active')!.spentMinor).toBe(
+    600_000,
+  );
   const uses = await listSpendUses();
-  expect(uses.map((u) => [u.decision, u.amountMinor, u.merchant])).toEqual([['approved', 600_000, 'Kirana Plus']]);
+  expect(uses.map((u) => [u.decision, u.amountMinor, u.merchant])).toEqual([
+    ['approved', 600_000, 'Kirana Plus'],
+  ]);
 });
 
 it('cards show the currency in its own decimals', async () => {
@@ -208,7 +235,6 @@ it('cards show the currency in its own decimals', async () => {
   if (out.status !== 'confirm_pending') throw new Error(JSON.stringify(out));
   expect(out.summary).toContain('JPY 5000');
 });
-
 
 it('boot settles the card of a budget that went live before its card was settled', async () => {
   const out = await proposeAllowance({

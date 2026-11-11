@@ -5,11 +5,7 @@
  * downstream callers.
  */
 
-import {
-  TRUST_TOOL_NAMES,
-  isTrustTool,
-  trustToolUsed,
-} from '../../src/guardian/peerlens_tools';
+import { TRUST_TOOL_NAMES, isTrustTool, trustToolUsed } from '../../src/guardian/peerlens_tools';
 
 describe('peerlens_tools', () => {
   describe('isTrustTool', () => {

@@ -64,16 +64,36 @@ describe('SQLiteServiceDecisionRepository', () => {
   });
 
   it('lists newest-first by created_at', () => {
-    repo.record({ requesterDid: 'did:plc:a', capability: 'x', decision: 'granted', createdAt: 100 });
-    repo.record({ requesterDid: 'did:plc:b', capability: 'x', decision: 'granted', createdAt: 300 });
-    repo.record({ requesterDid: 'did:plc:c', capability: 'x', decision: 'granted', createdAt: 200 });
+    repo.record({
+      requesterDid: 'did:plc:a',
+      capability: 'x',
+      decision: 'granted',
+      createdAt: 100,
+    });
+    repo.record({
+      requesterDid: 'did:plc:b',
+      capability: 'x',
+      decision: 'granted',
+      createdAt: 300,
+    });
+    repo.record({
+      requesterDid: 'did:plc:c',
+      capability: 'x',
+      decision: 'granted',
+      createdAt: 200,
+    });
     const rows = repo.list();
     expect(rows.map((r) => r.requesterDid)).toEqual(['did:plc:b', 'did:plc:c', 'did:plc:a']);
   });
 
   it('honours the limit (newest kept)', () => {
     for (let i = 0; i < 5; i++) {
-      repo.record({ requesterDid: `did:plc:${i}`, capability: 'x', decision: 'granted', createdAt: i });
+      repo.record({
+        requesterDid: `did:plc:${i}`,
+        capability: 'x',
+        decision: 'granted',
+        createdAt: i,
+      });
     }
     const rows = repo.list(2);
     expect(rows).toHaveLength(2);
@@ -96,7 +116,12 @@ describe('SQLiteServiceDecisionRepository', () => {
     // 3, the oldest rows are pruned on insert and only the newest 3 survive.
     const capped = new SQLiteServiceDecisionRepository(adapter, 3);
     for (let i = 0; i < 6; i++) {
-      capped.record({ requesterDid: `did:plc:${i}`, capability: 'x', decision: 'granted', createdAt: i });
+      capped.record({
+        requesterDid: `did:plc:${i}`,
+        capability: 'x',
+        decision: 'granted',
+        createdAt: i,
+      });
     }
     const rows = capped.list(100);
     expect(rows).toHaveLength(3);

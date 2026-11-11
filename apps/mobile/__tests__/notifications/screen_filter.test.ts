@@ -34,21 +34,27 @@ describe('applyNotificationFilter (5.67)', () => {
   });
 
   it('"unread" returns only items where readAt === null', () => {
-    expect(applyNotificationFilter(items, 'unread').map((i) => i.id).sort()).toEqual(
-      ['a1', 'aa1', 'n1', 'r1'].sort(),
-    );
+    expect(
+      applyNotificationFilter(items, 'unread')
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual(['a1', 'aa1', 'n1', 'r1'].sort());
   });
 
   it('"reminder" returns only reminder-kind items (read or unread)', () => {
-    expect(applyNotificationFilter(items, 'reminder').map((i) => i.id).sort()).toEqual(
-      ['r1', 'r2'].sort(),
-    );
+    expect(
+      applyNotificationFilter(items, 'reminder')
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual(['r1', 'r2'].sort());
   });
 
   it('"needs_action" includes BOTH approval and ask_approval kinds', () => {
-    expect(applyNotificationFilter(items, 'needs_action').map((i) => i.id).sort()).toEqual(
-      ['a1', 'aa1'].sort(),
-    );
+    expect(
+      applyNotificationFilter(items, 'needs_action')
+        .map((i) => i.id)
+        .sort(),
+    ).toEqual(['a1', 'aa1'].sort());
   });
 
   it('preserves input order', () => {

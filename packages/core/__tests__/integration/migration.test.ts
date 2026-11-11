@@ -21,15 +21,13 @@ import {
 import { deriveDIDKey } from '../../src/identity/did';
 import {
   initializeRotation,
-  getCurrentPublicKey,
   signWithCurrentKey,
   verifyWithAnyKey,
   resetRotationState,
 } from '../../src/identity/rotation';
 import { runOnboarding } from '../../src/onboarding/portable';
 import { createPersona, listPersonas, resetPersonaState } from '../../src/persona/service';
-import { storeItem, getItem, queryVault, clearVaults } from '../../src/vault/crud';
-
+import { storeItem, queryVault, clearVaults } from '../../src/vault/crud';
 
 describe('Cross-Device Migration (Task 9.6)', () => {
   beforeEach(() => {

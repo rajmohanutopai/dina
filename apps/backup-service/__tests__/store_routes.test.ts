@@ -77,7 +77,8 @@ describe('backup store', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  const client = (id = alonso) => new BackupStoreClient('https://backup.test', id, injectFetch(app), () => clock);
+  const client = (id = alonso) =>
+    new BackupStoreClient('https://backup.test', id, injectFetch(app), () => clock);
 
   it('keeps copies byte-identical, lists them and returns the latest', async () => {
     const c = client();
@@ -131,7 +132,14 @@ describe('backup store', () => {
     expect(replay.json()).toEqual({ error: 'replayed_nonce' });
 
     const old = {
-      ...signBackupRequest(alonso, 'PUT', `/v1/backups/${alonso.backupId}/2`, '', body, new Date(clock - 6 * 60_000)),
+      ...signBackupRequest(
+        alonso,
+        'PUT',
+        `/v1/backups/${alonso.backupId}/2`,
+        '',
+        body,
+        new Date(clock - 6 * 60_000),
+      ),
       'content-type': 'application/octet-stream',
     };
     const stale = await app.inject({
@@ -146,7 +154,10 @@ describe('backup store', () => {
     const changed = await app.inject({
       method: 'PUT',
       url: p3,
-      headers: { ...signBackupRequest(alonso, 'PUT', p3, '', body), 'content-type': 'application/octet-stream' },
+      headers: {
+        ...signBackupRequest(alonso, 'PUT', p3, '', body),
+        'content-type': 'application/octet-stream',
+      },
       payload: Buffer.from([7, 7]),
     });
     expect(changed.json()).toEqual({ error: 'bad_signature' });

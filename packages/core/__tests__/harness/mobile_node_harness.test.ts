@@ -16,12 +16,10 @@
  * Gate with LIVE_HARNESS=1 so CI never runs this.
  */
 
- 
-
 // Node `ws` has no bundled .d.ts. The shape we need (`send`, `close`,
 // event emitter) is stable across versions; cast to a local structural
 // type so ts-jest doesn't need @types/ws installed.
-// eslint-disable-next-line @typescript-eslint/no-require-imports
+
 const WebSocket = require('ws') as unknown as new (url: string) => NodeWS;
 interface NodeWS {
   readyState: number;

@@ -209,17 +209,13 @@ describe('buildPlcUpdateOp (task 6.7)', () => {
     // Pin the remaining branches in `validateOptions`.
     it('throws when opts is undefined', async () => {
       await expect(
-        buildPlcUpdateOp(
-          undefined as unknown as Parameters<typeof buildPlcUpdateOp>[0],
-        ),
+        buildPlcUpdateOp(undefined as unknown as Parameters<typeof buildPlcUpdateOp>[0]),
       ).rejects.toThrow(/options required/);
     });
 
     it('throws when opts is null', async () => {
       await expect(
-        buildPlcUpdateOp(
-          null as unknown as Parameters<typeof buildPlcUpdateOp>[0],
-        ),
+        buildPlcUpdateOp(null as unknown as Parameters<typeof buildPlcUpdateOp>[0]),
       ).rejects.toThrow(/options required/);
     });
 
@@ -242,9 +238,7 @@ describe('buildPlcUpdateOp (task 6.7)', () => {
         buildPlcUpdateOp({
           prevCid: PREV_CID,
           prev: PREV,
-          update: undefined as unknown as Parameters<
-            typeof buildPlcUpdateOp
-          >[0]['update'],
+          update: undefined as unknown as Parameters<typeof buildPlcUpdateOp>[0]['update'],
           signFn: stubSigner(),
         }),
       ).rejects.toThrow(/update is required/);
@@ -255,9 +249,7 @@ describe('buildPlcUpdateOp (task 6.7)', () => {
         buildPlcUpdateOp({
           prevCid: PREV_CID,
           prev: PREV,
-          update: null as unknown as Parameters<
-            typeof buildPlcUpdateOp
-          >[0]['update'],
+          update: null as unknown as Parameters<typeof buildPlcUpdateOp>[0]['update'],
           signFn: stubSigner(),
         }),
       ).rejects.toThrow(/update is required/);
@@ -533,12 +525,7 @@ describe('buildPlcUpdateOp (task 6.7)', () => {
         update: { rotationKeys: ['K3'], signerPublicKey: 'K1' },
         signFn: stubSigner(),
       })) as Extract<BuildUpdateOutcome, { ok: true }>;
-      expect(Object.keys(out.op).sort()).toEqual([
-        'createdAtMs',
-        'prev',
-        'rotationKeys',
-        'sig',
-      ]);
+      expect(Object.keys(out.op).sort()).toEqual(['createdAtMs', 'prev', 'rotationKeys', 'sig']);
     });
 
     it('full output op has rotation + verificationMethod + services + alsoKnownAs', async () => {
@@ -581,11 +568,7 @@ describe('buildPlcUpdateOp (task 6.7)', () => {
       });
       if (!seenBytes) throw new Error('signer not called');
       const decoded = JSON.parse(new TextDecoder().decode(seenBytes));
-      expect(Object.keys(decoded).sort()).toEqual([
-        'createdAtMs',
-        'prev',
-        'rotationKeys',
-      ]);
+      expect(Object.keys(decoded).sort()).toEqual(['createdAtMs', 'prev', 'rotationKeys']);
       expect(decoded).not.toHaveProperty('sig');
     });
 

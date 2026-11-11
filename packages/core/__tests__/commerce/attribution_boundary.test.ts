@@ -167,11 +167,18 @@ describe('enumerateV1Records', () => {
       order,
       context: {
         actingBusinessDid: order.buyer_did,
-        principal: { principalDid: 'did:plc:owner', authorityDomain: 'procurement', policyRevision: null },
+        principal: {
+          principalDid: 'did:plc:owner',
+          authorityDomain: 'procurement',
+          policyRevision: null,
+        },
         serviceUri: `at://${order.supplier_did}/com.dinakernel.service.profile/self`,
         displayedLabels: Object.fromEntries(order.accepted_lines.map((l) => [l.line_id, 'item'])),
         productKeys: Object.fromEntries(
-          quote.lines.map((l) => [l.line_id, `${l.offered_product.scheme}:${l.offered_product.value}`]),
+          quote.lines.map((l) => [
+            l.line_id,
+            `${l.offered_product.scheme}:${l.offered_product.value}`,
+          ]),
         ),
         linePrices: Object.fromEntries(quote.lines.map((l) => [l.line_id, l.unit_price])),
         charges: [],

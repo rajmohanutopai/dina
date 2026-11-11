@@ -11,11 +11,16 @@ import { join } from 'node:path';
 
 import { loadServiceKey } from './service_key';
 
-export async function ensureServiceKey(dir: string, file: string): Promise<{ did: string; created: boolean }> {
+export async function ensureServiceKey(
+  dir: string,
+  file: string,
+): Promise<{ did: string; created: boolean }> {
   const existing = await loadServiceKey(dir, file);
   if (existing.ok) return { did: existing.key.did, created: false };
   if (existing.reason !== 'key_missing' || dir === '') {
-    throw new Error(`cannot create the gateway key: ${dir === '' ? 'no key directory' : existing.reason}`);
+    throw new Error(
+      `cannot create the gateway key: ${dir === '' ? 'no key directory' : existing.reason}`,
+    );
   }
   await mkdir(dir, { recursive: true, mode: 0o700 });
   // `wx`: never replace a key another process wrote in the meantime.

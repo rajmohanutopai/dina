@@ -329,7 +329,8 @@ async function savingShareInUse(strategy: 'fixed' | 'brain'): Promise<SavingShar
     if (models === null) return { set_by: 'unreadable' };
     const { model, closedPersonas } = models.load('goods.seller', GOODS_SELLER_TOUCHES);
     if (closedPersonas.length > 0) return { set_by: 'closed', personas: closedPersonas };
-    const standing = (await getStandingChoiceStore())?.get('goods.seller', SAVING_SHARE_BPS) ?? null;
+    const standing =
+      (await getStandingChoiceStore())?.get('goods.seller', SAVING_SHARE_BPS) ?? null;
     const choice = shareChoice(model, brainShareBps(strategy, standing));
     if (choice.bps !== undefined) return { set_by: 'brain', share_bps: choice.bps };
     const owned = Object.keys(model.choiceValues.saving_share ?? {}).length > 0;

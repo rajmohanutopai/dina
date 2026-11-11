@@ -41,7 +41,9 @@ describe('watch payload', () => {
   });
 
   it('omits an absent or empty schema_hash', () => {
-    expect(parseWatchPollPayload(serializeWatchPollPayload(base))).not.toHaveProperty('schema_hash');
+    expect(parseWatchPollPayload(serializeWatchPollPayload(base))).not.toHaveProperty(
+      'schema_hash',
+    );
     const out = parseWatchPollPayload(JSON.stringify({ ...base, schema_hash: '' }));
     expect(out).not.toHaveProperty('schema_hash');
   });

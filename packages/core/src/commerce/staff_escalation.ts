@@ -188,7 +188,9 @@ export function consumeStaffEscalation(taskId: string, spentOn: string, nowMs: n
   if (service === null) return false;
   try {
     if (
-      !service.store().transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs)
+      !service
+        .store()
+        .transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs)
     ) {
       return false;
     }
@@ -207,9 +209,15 @@ function finishSpend(taskId: string, nowMs: number): boolean {
     const task = service.store().getById(taskId);
     if (task === null) return false;
     if (task.status === WorkflowTaskState.Queued) {
-      service.store().transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
+      service
+        .store()
+        .transition(taskId, WorkflowTaskState.Queued, WorkflowTaskState.Running, nowMs);
     }
-    service.complete(taskId, JSON.stringify({ spent: true }), 'spent (finished after an interruption)');
+    service.complete(
+      taskId,
+      JSON.stringify({ spent: true }),
+      'spent (finished after an interruption)',
+    );
     return true;
   } catch {
     return false;

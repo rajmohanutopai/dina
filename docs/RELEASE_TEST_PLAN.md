@@ -70,11 +70,13 @@ Purpose:
 Typical commands:
 
 ```bash
-python scripts/test_status.py --restart
-./run_user_story_tests.sh
-python -m pytest
-go test ./...
+npm test                 # Jest across every package and app
+npm run typecheck
+npm run lint
 ```
+
+The Home Node Lite web end-to-end runs live under `apps/home-node-lite/web/__e2e__/`
+(see `docs/E2E_TESTING.md`); phone flows run under Maestro in `apps/mobile/maestro/`.
 
 ### 4.2 Fresh VM / Fresh VPS
 
@@ -1587,9 +1589,8 @@ Verify the full black-box install lifecycle in a fresh directory: install.sh →
 
 ### Suggested Automation
 
-- Fully automated via `tests/release/test_rel_028_install_lifecycle.py`
-- Also available as faster unit tests in `tests/install/` (25 tests covering subsets of this flow)
-- Run via `./scripts/test_install.sh`
+- Manual for now. The old Python install tests covered the Go/Python
+  installer and were removed with it.
 
 ---
 
@@ -1641,9 +1642,8 @@ Verify that an external agent can send a schema-driven `service.query` from Dina
 
 ### Suggested Automation
 
-- Fully automated via `tests/release/test_rel_029_service_query.py`
-- Depends on the same `release_services` / `agent_paired` fixtures as REL-023
-- Uses the same stack as the E2E Suite 25 (`tests/e2e/test_suite_25_provider_service_query.py`) — a passing E2E suite is a good precondition before running REL-029
+- Manual for now. The old Python harness for this check was removed with the
+  Go/Python stack.
 
 ---
 
@@ -1651,22 +1651,11 @@ Verify that an external agent can send a schema-driven `service.query` from Dina
 
 This plan should reuse and extend existing test assets where possible:
 
-1. [legacy/go-core/test/TEST_PLAN.md](../legacy/go-core/test/TEST_PLAN.md)
-2. [legacy/python-brain/tests/TEST_PLAN.md](../legacy/python-brain/tests/TEST_PLAN.md)
-3. [tests/INTEGRATION_TEST_PLAN.md](../tests/INTEGRATION_TEST_PLAN.md)
-4. [tests/E2E_TEST_PLAN.md](../tests/E2E_TEST_PLAN.md)
-5. [MANUAL_TEST_GUIDE.md](./MANUAL_TEST_GUIDE.md)
-6. [run_user_story_tests.sh](../run_user_story_tests.sh)
-7. [scripts/test_status.py](../scripts/test_status.py)
-8. [tests/install/](../tests/install/) — 25 pexpect-based black-box install tests
-9. [scripts/test_install.sh](../scripts/test_install.sh) — install test runner
-
-The release implementation should not duplicate those suites blindly. It should:
-
-1. reuse existing automated coverage where it already proves the invariant
-2. add release-only scenarios that current suites do not cover
-3. attach artifacts and evidence collection
-4. separate human-judgment steps from deterministic assertions
+1. Jest suites under `packages/*/__tests__` and `apps/*/__tests__` (`npm test`)
+2. [docs/E2E_TESTING.md](./E2E_TESTING.md) and [docs/E2E_TEST_PLAN.md](./E2E_TEST_PLAN.md) — Home Node Lite web end-to-end runs
+3. `apps/mobile/maestro/` — phone flows on the simulator
+4. `appview/tests/` — AppView unit and integration suites
+5. `packages/protocol/conformance/` — wire-format conformance vectors
 
 ## 9. Implementation Guidance for Future Harness Work
 

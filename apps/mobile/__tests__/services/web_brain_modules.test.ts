@@ -13,7 +13,6 @@ import { resolveServiceConfigCoreClient } from '../../src/services/service_confi
 import { loadTradeDetails } from '../../src/services/trade_details_source.web';
 import {
   BRAIN,
-  configLoaded,
   installBrainStreams,
   installCoreServedPage,
   streamDelivered,

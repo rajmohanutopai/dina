@@ -10,7 +10,6 @@ import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { createOpenAI } from '@ai-sdk/openai';
 
 import { createOpenRouterJevBackend, type DecisionBackend } from '@dina/brain';
-
 import {
   AISDKAdapter,
   GeminiGenaiAdapter,
@@ -529,10 +528,11 @@ export async function createScrubbedLLMProvider(
  * use the owner's model (REAL_LIFE_FIXES_2 §18). An on-device model (Laya)
  * is not offered yet.
  */
-export async function createDecisionBackend(provider: ProviderType): Promise<DecisionBackend | undefined> {
+export async function createDecisionBackend(
+  provider: ProviderType,
+): Promise<DecisionBackend | undefined> {
   if (provider !== 'openrouter') return undefined;
   const resolved = await resolveProviderKey('openrouter');
   if (resolved === null) return undefined;
   return createOpenRouterJevBackend({ apiKey: resolved.apiKey, baseUrl: OPENROUTER_BASE_URL });
 }
-

@@ -32,11 +32,7 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4f task 4.47.
  */
 
-import {
-  buildSignedResponse,
-  sealRPCResponse,
-  type CoreRPCResponse,
-} from '@dina/core';
+import { buildSignedResponse, sealRPCResponse, type CoreRPCResponse } from '@dina/core';
 
 export interface SealOutboundRpcInput {
   /** Matches the inbound `request_id` — binds the response. */

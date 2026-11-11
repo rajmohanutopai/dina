@@ -35,13 +35,17 @@ function setUpStore(
   const store = fleet.add(STORE_DID);
   const set = store.engine.setPolicy(policy);
   if (!set.ok) throw new Error(set.refusal);
-  const published = publishListing(store, {
-    listingId: 'slot-3',
-    resourceRef: 'slot-3',
-    kind: 'shelf',
-    region: { scheme: 'postal_area', value: 'IN-560034' },
-    tags: ['beverages.juice', 'snacks'],
-  }, access);
+  const published = publishListing(
+    store,
+    {
+      listingId: 'slot-3',
+      resourceRef: 'slot-3',
+      kind: 'shelf',
+      region: { scheme: 'postal_area', value: 'IN-560034' },
+      tags: ['beverages.juice', 'snacks'],
+    },
+    access,
+  );
   if (!published.ok) throw new Error(published.refusal);
   return { store, listing: published.listing, uri: published.uri };
 }
@@ -254,20 +258,20 @@ describe('term negotiation scenarios', () => {
       // Two strangers: one asks about the open slot and gets an offer at once.
       const first = fleet.add(BRAND_DID);
       const openRequest = first.engine.startNegotiation({
-          listing: open.listing,
-          listingUri: open.uri,
-          tag: 'snacks',
-          attributes: { skus: 2 },
-          start: '2027-02-01T00:00:00Z',
-          end: '2027-08-01T00:00:00Z',
-          policy: {
-            currency: 'INR',
-            targets: { fee: '170000', share_bps: '0' },
-            ceilings: { fee: '300000', share_bps: '0' },
-            max_rounds: 3,
-            deadline_seconds: (3 * DAY) / 1000,
-          },
-        });
+        listing: open.listing,
+        listingUri: open.uri,
+        tag: 'snacks',
+        attributes: { skus: 2 },
+        start: '2027-02-01T00:00:00Z',
+        end: '2027-08-01T00:00:00Z',
+        policy: {
+          currency: 'INR',
+          targets: { fee: '170000', share_bps: '0' },
+          ceilings: { fee: '300000', share_bps: '0' },
+          max_rounds: 3,
+          deadline_seconds: (3 * DAY) / 1000,
+        },
+      });
       if (!openRequest.ok) throw new Error(openRequest.refusal);
       fleet.pump();
       expect(offers(first, openRequest.request.request_id).length).toBeGreaterThan(0);
@@ -281,11 +285,7 @@ describe('term negotiation scenarios', () => {
     });
 
     it('under contacts_or_card a stranger is held, the owner is asked once, and a yes lets the request run', () => {
-      const { store, listing, uri } = setUpStore(
-        fleet,
-        juicePolicy(),
-        'contacts_or_card',
-      );
+      const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
       fleet.pump();
@@ -311,11 +311,7 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a no refuses the request and the brand learns it', () => {
-      const { store, listing, uri } = setUpStore(
-        fleet,
-        juicePolicy(),
-        'contacts_or_card',
-      );
+      const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
       fleet.pump();
@@ -329,11 +325,7 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a contact skips the card even under contacts_or_card', () => {
-      const { store, listing, uri } = setUpStore(
-        fleet,
-        juicePolicy(),
-        'contacts_or_card',
-      );
+      const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
       store.contacts.add(BRAND_DID);
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
@@ -343,11 +335,7 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a stranger the owner never answers is refused when its request expires', () => {
-      const { store, listing, uri } = setUpStore(
-        fleet,
-        juicePolicy(),
-        'contacts_or_card',
-      );
+      const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri);
       fleet.pump();
@@ -375,11 +363,7 @@ describe('term negotiation scenarios', () => {
     });
 
     it('a card raised before the inbox existed is raised by the next sweep', () => {
-      const { store, listing, uri } = setUpStore(
-        fleet,
-        juicePolicy(),
-        'contacts_or_card',
-      );
+      const { store, listing, uri } = setUpStore(fleet, juicePolicy(), 'contacts_or_card');
       const brand = fleet.add(BRAND_DID);
       // The inbox is not there yet: the raise is lost, the card is kept.
       const raise = store.engine.ctx.deps.cards.raise;
@@ -625,7 +609,13 @@ describe('term negotiation scenarios', () => {
       const brand = fleet.add(BRAND_DID);
       const requestId = ask(brand, listing, uri, { maxRounds: 2 });
       fleet.pump();
-      return { store, brand, requestId, policy, floorCard: must(card(store, TERM_FLOOR_CARD, requestId)) };
+      return {
+        store,
+        brand,
+        requestId,
+        policy,
+        floorCard: must(card(store, TERM_FLOOR_CARD, requestId)),
+      };
     };
     const brandApproves = (brand: Node, requestId: string) => {
       const proposalCard = must(card(brand, TERM_PROPOSAL_CARD, requestId));

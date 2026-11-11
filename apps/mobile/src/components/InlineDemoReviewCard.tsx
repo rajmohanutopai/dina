@@ -107,7 +107,12 @@ const styles = StyleSheet.create({
   },
   product: { ...textStyles.bodyStrong, color: colors.textPrimary, flex: 1 },
   stars: { ...textStyles.body, color: colors.accent },
-  body: { ...textStyles.bodySmall, color: colors.textSecondary, marginTop: spacing.xs, fontStyle: 'italic' },
+  body: {
+    ...textStyles.bodySmall,
+    color: colors.textSecondary,
+    marginTop: spacing.xs,
+    fontStyle: 'italic',
+  },
   publishBtn: {
     alignSelf: 'flex-start',
     marginTop: spacing.sm,

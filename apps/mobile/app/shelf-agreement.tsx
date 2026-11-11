@@ -172,61 +172,64 @@ export default function ShelfAgreementScreen(): React.ReactElement {
                     : ''}
                 </Text>
               )}
-              {holdsTakings && (slot.settlementDigest === null || slot.answer === 'disputed' || cutShort) && (
-                <View style={styles.row}>
-                  <TextInput
-                    style={[styles.input, styles.flex]}
-                    value={gross[key] ?? ''}
-                    onChangeText={(v) => setGross({ ...gross, [key]: v })}
-                    placeholder={
-                      slot.answer === 'disputed' || cutShort
-                        ? 'Corrected sales this period'
-                        : 'Sales this period'
-                    }
-                    placeholderTextColor={colors.textMuted}
-                    keyboardType="decimal-pad"
-                    testID={`period-${key.slice(0, 10)}-gross`}
-                  />
-                  <Pressable
-                    style={styles.buttonSmall}
-                    accessibilityRole="button"
-                    testID={`period-${key.slice(0, 10)}-settle`}
-                    onPress={() => {
-                      // A signed note: an untouched field must not claim zero sales.
-                      const typed = (gross[key] ?? '').trim();
-                      if (typed === '') {
-                        setProblem('Type the sales for this period (0 if there were none).');
-                        return;
+              {holdsTakings &&
+                (slot.settlementDigest === null || slot.answer === 'disputed' || cutShort) && (
+                  <View style={styles.row}>
+                    <TextInput
+                      style={[styles.input, styles.flex]}
+                      value={gross[key] ?? ''}
+                      onChangeText={(v) => setGross({ ...gross, [key]: v })}
+                      placeholder={
+                        slot.answer === 'disputed' || cutShort
+                          ? 'Corrected sales this period'
+                          : 'Sales this period'
                       }
-                      const minor = toMinorUnits(typed, currencyExponent(currency));
-                      if (minor === null || client === null) {
-                        setProblem('Sales is an amount, like 25000.');
-                        return;
-                      }
-                      // A disputed note, or one a termination cut short, is replaced
-                      // by a correction (§5.6), never edited.
-                      const replaces =
-                        (slot.answer === 'disputed' || cutShort) && slot.settlementDigest !== null
-                          ? { replaces_settlement_digest: slot.settlementDigest }
-                          : {};
-                      void act(
-                        () =>
-                          client.issueTermSettlement(digest, {
-                            period_start: slot.start,
-                            period_end: slot.end,
-                            gross_minor: minor,
-                            ...replaces,
-                          }),
-                        'Sent. The other side accepts or disputes the figures.',
-                      );
-                    }}
-                  >
-                    <Text style={styles.buttonText}>
-                      {slot.answer === 'disputed' || cutShort ? 'Send corrected figures' : 'Settle'}
-                    </Text>
-                  </Pressable>
-                </View>
-              )}
+                      placeholderTextColor={colors.textMuted}
+                      keyboardType="decimal-pad"
+                      testID={`period-${key.slice(0, 10)}-gross`}
+                    />
+                    <Pressable
+                      style={styles.buttonSmall}
+                      accessibilityRole="button"
+                      testID={`period-${key.slice(0, 10)}-settle`}
+                      onPress={() => {
+                        // A signed note: an untouched field must not claim zero sales.
+                        const typed = (gross[key] ?? '').trim();
+                        if (typed === '') {
+                          setProblem('Type the sales for this period (0 if there were none).');
+                          return;
+                        }
+                        const minor = toMinorUnits(typed, currencyExponent(currency));
+                        if (minor === null || client === null) {
+                          setProblem('Sales is an amount, like 25000.');
+                          return;
+                        }
+                        // A disputed note, or one a termination cut short, is replaced
+                        // by a correction (§5.6), never edited.
+                        const replaces =
+                          (slot.answer === 'disputed' || cutShort) && slot.settlementDigest !== null
+                            ? { replaces_settlement_digest: slot.settlementDigest }
+                            : {};
+                        void act(
+                          () =>
+                            client.issueTermSettlement(digest, {
+                              period_start: slot.start,
+                              period_end: slot.end,
+                              gross_minor: minor,
+                              ...replaces,
+                            }),
+                          'Sent. The other side accepts or disputes the figures.',
+                        );
+                      }}
+                    >
+                      <Text style={styles.buttonText}>
+                        {slot.answer === 'disputed' || cutShort
+                          ? 'Send corrected figures'
+                          : 'Settle'}
+                      </Text>
+                    </Pressable>
+                  </View>
+                )}
               {slot.answer === 'accepted' && <Text style={styles.cardLine}>Accepted</Text>}
               {slot.answer === 'disputed' && (
                 <Text style={styles.cardLine} testID={`period-${key.slice(0, 10)}-disputed`}>

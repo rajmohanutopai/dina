@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { PLUGIN_NSIDS, type PluginManifest } from '@dina/protocol';
+import { PLUGIN_NSIDS, type PluginManifest, ServiceConfig } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
@@ -17,7 +17,10 @@ import {
   resetDeviceRegistry,
   revokeDeviceDurable,
 } from '../../src/devices/registry';
-import { SQLitePluginDecisionRepository, setPluginDecisionRepository } from '../../src/plugins/decisions';
+import {
+  SQLitePluginDecisionRepository,
+  setPluginDecisionRepository,
+} from '../../src/plugins/decisions';
 import { SQLitePluginGrantRepository, setPluginGrantRepository } from '../../src/plugins/grants';
 import { uninstall } from '../../src/plugins/install_service';
 import {
@@ -40,8 +43,6 @@ import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService, setWorkflowService } from '../../src/workflow/service';
-
-import type { ServiceConfig } from '@dina/protocol';
 
 const T0 = 1_800_000_000_000;
 const CAP = 'com.acme.rails.do-it';
@@ -194,7 +195,7 @@ it('a sound listing, and a listing with no binding, are left alone', async () =>
   expect(getServiceConfig('plain')?.status).toBe('active');
 });
 
-it('with no plugin registry wired, boot changes nothing: it can\'t tell', async () => {
+it("with no plugin registry wired, boot changes nothing: it can't tell", async () => {
   const repo = new InMemoryServiceConfigRepository();
   setServiceConfigRepository(repo);
   await repo.put('self', JSON.stringify(listing()), T0);
@@ -205,9 +206,8 @@ it('with no plugin registry wired, boot changes nothing: it can\'t tell', async 
 
 describe('SERVICE-1: the record that a deleted listing is still to be unpublished', () => {
   it('SQLite: remove writes it, put and clear end it, and it survives in the table', async () => {
-    const { SQLiteServiceConfigRepository } = await import(
-      '../../src/service/service_config_repository'
-    );
+    const { SQLiteServiceConfigRepository } =
+      await import('../../src/service/service_config_repository');
     const repo = new SQLiteServiceConfigRepository(adapter);
     await repo.put('a', '{}', T0);
     expect(await repo.listPendingUnpublish()).toEqual([]);

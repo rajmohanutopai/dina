@@ -147,7 +147,7 @@ export function parseArxiv(input: string): ParsedIdentifier | null {
   }
   // Pre-2007: archive/YYMMNNN with optional .subject prefix on the
   // archive name (e.g. `cond-mat/9612001`).
-  if (/^[a-z][a-z\-]*(?:\.[A-Z]{2})?\/\d{7}(?:v\d+)?$/.test(body)) {
+  if (/^[a-z][a-z-]*(?:\.[A-Z]{2})?\/\d{7}(?:v\d+)?$/.test(body)) {
     return { type: 'arxiv', value: body, raw };
   }
   return null;
@@ -243,7 +243,7 @@ export function parseAsin(input: string): ParsedIdentifier | null {
 export function parsePlaceId(input: string): ParsedIdentifier | null {
   const raw = input.trim();
   if (raw.length < 20) return null;
-  if (!/^(?:ChIJ|Eo)[A-Za-z0-9_\-]{16,}$/.test(raw)) return null;
+  if (!/^(?:ChIJ|Eo)[A-Za-z0-9_-]{16,}$/.test(raw)) return null;
   return { type: 'place_id', value: raw, raw };
 }
 

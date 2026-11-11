@@ -120,9 +120,7 @@ describe('buildReviewerProfileDeepLink — plain (no namespace)', () => {
 describe('buildReviewerProfileDeepLink — namespaced', () => {
   it('appends ?namespace=<frag> for a valid namespace', () => {
     const out = buildReviewerProfileDeepLink({ did: VALID_DID, namespace: VALID_NAMESPACE });
-    expect(out).toBe(
-      `/peerlens/reviewer/${encodeURIComponent(VALID_DID)}?namespace=namespace_3`,
-    );
+    expect(out).toBe(`/peerlens/reviewer/${encodeURIComponent(VALID_DID)}?namespace=namespace_3`);
   });
 
   it('encoded namespace stays alphanumeric (no encoding needed for the regex-allowed charset)', () => {
@@ -136,9 +134,9 @@ describe('buildReviewerProfileDeepLink — namespaced', () => {
 
 describe('buildReviewerProfileDeepLink — validation', () => {
   it('throws on self rows (use isReviewerProfileTappable to guard)', () => {
-    expect(() =>
-      buildReviewerProfileDeepLink({ did: VALID_DID, isSelf: true }),
-    ).toThrow(/self-reviews/);
+    expect(() => buildReviewerProfileDeepLink({ did: VALID_DID, isSelf: true })).toThrow(
+      /self-reviews/,
+    );
   });
 
   it('throws on null did', () => {
@@ -168,9 +166,9 @@ describe('buildReviewerProfileDeepLink — validation', () => {
   });
 
   it('throws on empty-string namespace (vs null = "intentionally root")', () => {
-    expect(() =>
-      buildReviewerProfileDeepLink({ did: VALID_DID, namespace: '' }),
-    ).toThrow(/at least 1 char/);
+    expect(() => buildReviewerProfileDeepLink({ did: VALID_DID, namespace: '' })).toThrow(
+      /at least 1 char/,
+    );
   });
 
   it('throws on non-string namespace', () => {

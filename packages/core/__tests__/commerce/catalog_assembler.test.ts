@@ -16,11 +16,7 @@
 
 import { sha256 } from '@noble/hashes/sha2.js';
 
-import {
-  validateCatalogItem,
-  type RegionRef,
-  type Sha256Fn,
-} from '@dina/commerce-protocol';
+import { validateCatalogItem, type RegionRef, type Sha256Fn } from '@dina/commerce-protocol';
 
 import {
   assembleCatalogItems,
@@ -31,7 +27,6 @@ import { createCatalogDraft, sourceFromDraftRows } from '../../src/commerce/cata
 import { InMemoryCatalogDraftRepository } from '../../src/commerce/catalog_draft_store';
 import { importCatalogRows } from '../../src/commerce/catalog_import';
 import { buildCatalogSnapshot } from '../../src/commerce/catalog_publisher';
-
 
 import type { CatalogImportItem } from '../../src/commerce/catalog_import';
 
@@ -97,10 +92,13 @@ describe('what the assembler produces', () => {
     // A model reading a price list cannot know where a seller ships, and free
     // text off that list ("Pickles & Preserves") cannot be a category id at
     // all. Both come from the person. This is the lane's central claim.
-    const result = assemble([row({ category: 'Pickles & Preserves' })], settings({
-      categoryIds: ['food.preserves'],
-      fulfilmentRegions: [{ scheme: 'country', value: 'IN' }],
-    }));
+    const result = assemble(
+      [row({ category: 'Pickles & Preserves' })],
+      settings({
+        categoryIds: ['food.preserves'],
+        fulfilmentRegions: [{ scheme: 'country', value: 'IN' }],
+      }),
+    );
     if (!result.ok) throw new Error(JSON.stringify(result.findings));
     expect(result.items[0]?.category_ids).toEqual(['food.preserves']);
     expect(result.items[0]?.fulfilment_regions).toEqual([{ scheme: 'country', value: 'IN' }]);
@@ -326,7 +324,10 @@ describe('assembler → publisher, end to end', () => {
   const hash: Sha256Fn = (data) => sha256(data);
 
   it('produces items the publisher can build a snapshot from', () => {
-    const assembled = assemble([row(), row({ product: { scheme: 'gtin', value: '05012345678900' } , name: 'Elm stool' })]);
+    const assembled = assemble([
+      row(),
+      row({ product: { scheme: 'gtin', value: '05012345678900' }, name: 'Elm stool' }),
+    ]);
     if (!assembled.ok) throw new Error(JSON.stringify(assembled.findings));
 
     const built = buildCatalogSnapshot({
@@ -351,7 +352,12 @@ describe('assembler → publisher, end to end', () => {
     // published item type. An assembler that emitted a field the gate rejects
     // would fail here rather than at a supplier's first publication.
     const assembled = assemble([
-      row({ sku: 'SKU-9', brand: 'ChairMaker', description: 'An oak chair.', list_price: { currency: 'INR', minor_units: '18000' } }),
+      row({
+        sku: 'SKU-9',
+        brand: 'ChairMaker',
+        description: 'An oak chair.',
+        list_price: { currency: 'INR', minor_units: '18000' },
+      }),
     ]);
     if (!assembled.ok) throw new Error(JSON.stringify(assembled.findings));
 
@@ -409,7 +415,10 @@ describe('two rows, one product identity', () => {
     // state, so publishing the row that happened to assemble would withdraw
     // the one that did not.
     const assembled = assemble([
-      row({ product: { scheme: 'manufacturer_sku', value: 'STOOL-1', issuer_did: SUPPLIER }, name: 'Stool' }),
+      row({
+        product: { scheme: 'manufacturer_sku', value: 'STOOL-1', issuer_did: SUPPLIER },
+        name: 'Stool',
+      }),
       row({ name: 'Chair' }),
       row({ name: 'Chair again' }),
     ]);
@@ -423,7 +432,13 @@ describe('two rows, one product identity', () => {
     // key is what stops one field's content spilling into the next.
     const assembled = assemble([
       row(),
-      row({ product: { scheme: 'manufacturer_sku', value: 'CHAIR-1', issuer_did: 'did:plc:otherfactory' } }),
+      row({
+        product: {
+          scheme: 'manufacturer_sku',
+          value: 'CHAIR-1',
+          issuer_did: 'did:plc:otherfactory',
+        },
+      }),
     ]);
 
     expect(assembled).toMatchObject({ ok: true });
@@ -432,7 +447,14 @@ describe('two rows, one product identity', () => {
   it('and a variant of a product is a different product', () => {
     const assembled = assemble([
       row(),
-      row({ product: { scheme: 'manufacturer_sku', value: 'CHAIR-1', issuer_did: SUPPLIER, variant_digest: 'a'.repeat(64) } }),
+      row({
+        product: {
+          scheme: 'manufacturer_sku',
+          value: 'CHAIR-1',
+          issuer_did: SUPPLIER,
+          variant_digest: 'a'.repeat(64),
+        },
+      }),
     ]);
 
     expect(assembled).toMatchObject({ ok: true });
@@ -450,7 +472,15 @@ describe('a photographed price list that names no currency', () => {
   it('imports when the supplier has a trading currency', () => {
     const imported = importCatalogRows({
       source: sourceFromDraftRows([
-        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', list_price_minor_units: '1800000' } },
+        {
+          row: 2,
+          cells: {
+            sku: 'CM-CHAIR-1',
+            name: 'Oak dining chair',
+            unit_code: 'each',
+            list_price_minor_units: '1800000',
+          },
+        },
       ]),
       defaultScheme: 'sku',
       supplierDid: SUPPLIER,
@@ -467,7 +497,16 @@ describe('a photographed price list that names no currency', () => {
     // rows that state nothing, not a licence to overwrite the ones that do.
     const imported = importCatalogRows({
       source: sourceFromDraftRows([
-        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', currency: 'EUR', list_price_minor_units: '1800000' } },
+        {
+          row: 2,
+          cells: {
+            sku: 'CM-CHAIR-1',
+            name: 'Oak dining chair',
+            unit_code: 'each',
+            currency: 'EUR',
+            list_price_minor_units: '1800000',
+          },
+        },
       ]),
       defaultScheme: 'sku',
       supplierDid: SUPPLIER,
@@ -482,7 +521,15 @@ describe('a photographed price list that names no currency', () => {
   it('and with NO currency anywhere the refusal names the currency, not the price', () => {
     const imported = importCatalogRows({
       source: sourceFromDraftRows([
-        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', list_price_minor_units: '1800000' } },
+        {
+          row: 2,
+          cells: {
+            sku: 'CM-CHAIR-1',
+            name: 'Oak dining chair',
+            unit_code: 'each',
+            list_price_minor_units: '1800000',
+          },
+        },
       ]),
       defaultScheme: 'sku',
       supplierDid: SUPPLIER,
@@ -497,7 +544,15 @@ describe('a photographed price list that names no currency', () => {
     // Both directions, or the fix above would just be "always blame currency".
     const imported = importCatalogRows({
       source: sourceFromDraftRows([
-        { row: 2, cells: { sku: 'CM-CHAIR-1', name: 'Oak dining chair', unit_code: 'each', list_price_minor_units: '18,000' } },
+        {
+          row: 2,
+          cells: {
+            sku: 'CM-CHAIR-1',
+            name: 'Oak dining chair',
+            unit_code: 'each',
+            list_price_minor_units: '18,000',
+          },
+        },
       ]),
       defaultScheme: 'sku',
       supplierDid: SUPPLIER,
@@ -521,7 +576,15 @@ describe('the draft class decides whether a row category is read (JIFFY review i
     createCatalogDraft(deps(), {
       catalogId: CATALOG,
       source: sourceFromDraftRows([
-        { row: 2, cells: { sku: 'JAR-1', name: 'Lime pickle', unit_code: 'each', category: 'food.preserves' } },
+        {
+          row: 2,
+          cells: {
+            sku: 'JAR-1',
+            name: 'Lime pickle',
+            unit_code: 'each',
+            category: 'food.preserves',
+          },
+        },
       ]),
       defaultScheme: 'sku',
       identity: { supplierDid: SUPPLIER, catalogId: CATALOG },

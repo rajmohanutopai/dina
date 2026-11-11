@@ -45,7 +45,13 @@ function request(
 const IDENTITY: BusinessSettings = {
   legalName: 'Utopai Furniture LLP',
   registrations: [{ scheme: 'gstin', value: GSTIN }],
-  address: { line1: '12 Nehru Road', city: 'Bengaluru', region: 'Karnataka', postalCode: '560001', country: 'IN' },
+  address: {
+    line1: '12 Nehru Road',
+    city: 'Bengaluru',
+    region: 'Karnataka',
+    postalCode: '560001',
+    country: 'IN',
+  },
 };
 
 let settings: CommerceSettingsRepository;
@@ -75,7 +81,10 @@ describe('GET /v1/commerce/settings/business', () => {
     expect(res.status).toBe(200);
     expect(res.body).toMatchObject({
       configured: true,
-      settings: { legalName: 'Utopai Furniture LLP', registrations: [{ scheme: 'gstin', value: GSTIN }] },
+      settings: {
+        legalName: 'Utopai Furniture LLP',
+        registrations: [{ scheme: 'gstin', value: GSTIN }],
+      },
     });
   });
 
@@ -134,7 +143,9 @@ describe('PUT /v1/commerce/settings/business', () => {
 
   it('refuses a body that is not an object', async () => {
     const res = await router.handle(
-      request('PUT', '/v1/commerce/settings/business', undefined, { body: 'nope' } as Partial<CoreRequest>),
+      request('PUT', '/v1/commerce/settings/business', undefined, {
+        body: 'nope',
+      } as Partial<CoreRequest>),
     );
     expect(res.status).toBe(400);
   });
@@ -152,7 +163,9 @@ describe('PUT /v1/commerce/settings/business', () => {
 
   it('answers 503 when commerce is not wired at all', async () => {
     installCommerceRuntime(null);
-    const res = await router.handle(request('PUT', '/v1/commerce/settings/business', { ...IDENTITY }));
+    const res = await router.handle(
+      request('PUT', '/v1/commerce/settings/business', { ...IDENTITY }),
+    );
     expect(res.status).toBe(503);
   });
 });

@@ -240,10 +240,9 @@ export class SQLiteTradeDocumentRepository implements TradeDocumentRepository {
   }
 
   get(recordDigest: string): TradeDocumentRow | null {
-    const rows = this.db.query(
-      `SELECT * FROM commerce_trade_documents WHERE record_digest = ?`,
-      [recordDigest],
-    );
+    const rows = this.db.query(`SELECT * FROM commerce_trade_documents WHERE record_digest = ?`, [
+      recordDigest,
+    ]);
     return rows[0] === undefined ? null : rowFromDb(rows[0]);
   }
 
@@ -469,7 +468,10 @@ export function verifyInboundDeliveryNote(args: {
 
   const order = args.readOrder(note.purchase_order_id);
   if (order === null) {
-    return { outcome: 'refused', detail: `deliveryNote: no retained order ${note.purchase_order_id}` };
+    return {
+      outcome: 'refused',
+      detail: `deliveryNote: no retained order ${note.purchase_order_id}`,
+    };
   }
   if (order.supplier_did !== args.senderDid) {
     return { outcome: 'not_ours', detail: 'deliveryNote: sender is not the order supplier' };
@@ -478,7 +480,10 @@ export function verifyInboundDeliveryNote(args: {
     return { outcome: 'not_ours', detail: 'deliveryNote: this node is not the order buyer' };
   }
   if (note.order_digest !== order.order_digest) {
-    return { outcome: 'refused', detail: 'deliveryNote: order_digest does not match the retained order' };
+    return {
+      outcome: 'refused',
+      detail: 'deliveryNote: order_digest does not match the retained order',
+    };
   }
   if (args.isOrderRejected?.(note.purchase_order_id) === true) {
     return { outcome: 'refused', detail: 'deliveryNote: the supplier rejected this order' };
@@ -565,7 +570,8 @@ export function verifyInboundDeliveryReceipt(args: {
       ? { outcome: 'duplicate', recordDigest: digest }
       : {
           outcome: 'conflict',
-          detail: 'deliveryReceipt: the note already has a different receipt — the first answer stands',
+          detail:
+            'deliveryReceipt: the note already has a different receipt — the first answer stands',
           recordDigest: existing[0]?.recordDigest ?? '',
         };
   }
@@ -601,7 +607,10 @@ export function verifyInboundPaymentNote(args: {
   if (!read.ok) return { outcome: 'unreadable', detail: read.error };
   const note = read.note;
   if (note.buyer_did !== args.senderDid) {
-    return { outcome: 'not_ours', detail: 'paymentNote: buyer_did is not the authenticated sender' };
+    return {
+      outcome: 'not_ours',
+      detail: 'paymentNote: buyer_did is not the authenticated sender',
+    };
   }
   if (note.supplier_did !== args.selfDid) {
     return { outcome: 'not_ours', detail: 'paymentNote: supplier_did is not this node' };
@@ -663,7 +672,8 @@ export function verifyInboundPaymentAck(args: {
       ? { outcome: 'duplicate', recordDigest: digest }
       : {
           outcome: 'conflict',
-          detail: 'paymentAck: the note already has a different acknowledgement — the first answer stands',
+          detail:
+            'paymentAck: the note already has a different acknowledgement — the first answer stands',
           recordDigest: existing[0]?.recordDigest ?? '',
         };
   }

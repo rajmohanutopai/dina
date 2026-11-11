@@ -209,7 +209,7 @@ describe('service reasoning execution', () => {
   });
 
   test('rejects completion when the exact known-only grant is revoked after claim', async () => {
-    let revokedAt: number | undefined;
+    let revokedAt: number | undefined = undefined;
     const config: ServiceConfig = {
       isDiscoverable: false,
       discoverability: 'known_only',

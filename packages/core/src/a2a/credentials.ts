@@ -18,10 +18,22 @@
  * secret; a second wrapping would need its key in the same place.
  */
 
-import { a2aDisplayText, base64Encode, canonicalize, isPlainObject, parseStrictJson, type JsonObject } from '@dina/a2a';
+import {
+  a2aDisplayText,
+  base64Encode,
+  canonicalize,
+  isPlainObject,
+  parseStrictJson,
+  type JsonObject,
+} from '@dina/a2a';
 
 import { sha256HexOfText } from './digest';
-import { A2A_FETCH_LIMITS, a2aFetch, checkOutboundUrl, type A2ATransportError } from './host_transport';
+import {
+  A2A_FETCH_LIMITS,
+  a2aFetch,
+  checkOutboundUrl,
+  type A2ATransportError,
+} from './host_transport';
 import { newA2AId } from './ids';
 
 import type { RemoteAgentDeps } from './remote_agents';
@@ -35,9 +47,14 @@ export type CredentialScope =
   | { kind: 'bearer'; scheme: string }
   | { kind: 'oauth2_client'; scheme: string; token_url: string; scopes: string[] };
 
-type Material = { value: string } | { token: string } | { client_id: string; client_secret: string };
+type Material =
+  | { value: string }
+  | { token: string }
+  | { client_id: string; client_secret: string };
 
-export type CreateCredentialOutcome = { ok: true; credential: RemoteCredentialRow } | { ok: false; reason: string };
+export type CreateCredentialOutcome =
+  | { ok: true; credential: RemoteCredentialRow }
+  | { ok: false; reason: string };
 
 /** Header names the transport owns, or that would change how the request is framed. */
 const RESERVED_HEADERS: ReadonlySet<string> = new Set([
@@ -66,7 +83,8 @@ const SCOPE_TEXT = /^[\x21-\x7e]{1,200}$/;
 
 function schemesOf(schemesJson: string): Record<string, JsonObject> {
   const parsed = parseStrictJson(schemesJson);
-  if (!parsed.ok || !isPlainObject(parsed.value) || !isPlainObject(parsed.value.securitySchemes)) return {};
+  if (!parsed.ok || !isPlainObject(parsed.value) || !isPlainObject(parsed.value.securitySchemes))
+    return {};
   const out: Record<string, JsonObject> = {};
   for (const [name, scheme] of Object.entries(parsed.value.securitySchemes)) {
     if (isPlainObject(scheme)) out[name] = scheme as JsonObject;
@@ -95,7 +113,8 @@ function scopeFor(
     if (!isPlainObject(s)) return { reason: 'scheme_kind_mismatch' };
     if (s.location !== 'header') return { reason: 'api_key_not_in_header' };
     const header = typeof s.name === 'string' ? s.name : '';
-    if (!HEADER_NAME.test(header) || RESERVED_HEADERS.has(header.toLowerCase())) return { reason: 'api_key_header_refused' };
+    if (!HEADER_NAME.test(header) || RESERVED_HEADERS.has(header.toLowerCase()))
+      return { reason: 'api_key_header_refused' };
     const value = secretField(secret, 'value');
     if (value === null) return { reason: 'secret_invalid' };
     return { scope: { kind, scheme: schemeName, header }, material: { value } };
@@ -117,7 +136,11 @@ function scopeFor(
     if (!checkOutboundUrl(tokenUrl).ok) return { reason: 'token_url_refused' };
     if (!Array.isArray(requestedScopes)) return { reason: 'scopes_required' };
     const scopes = [...new Set(requestedScopes)].sort();
-    if (scopes.some((sc) => typeof sc !== 'string' || !SCOPE_TEXT.test(sc) || !offeredScopes.includes(sc))) {
+    if (
+      scopes.some(
+        (sc) => typeof sc !== 'string' || !SCOPE_TEXT.test(sc) || !offeredScopes.includes(sc),
+      )
+    ) {
       return { reason: 'scope_not_on_card' };
     }
     const clientId = secretField(secret, 'client_id', CLIENT_TEXT);
@@ -173,11 +196,25 @@ export function createRemoteCredential(
   if (typeof input.scheme !== 'string') return { ok: false, reason: 'scheme_required' };
   const offered = cardSchemeChoices(agent.schemes_json).find((c) => c.name === input.scheme);
   const scheme = offered === undefined ? undefined : schemesOf(agent.schemes_json)[input.scheme];
-  if (offered === undefined || scheme === undefined) return { ok: false, reason: 'scheme_not_on_card' };
-  const made = scopeFor(input.kind, input.scheme, scheme, input.secret, input.scopes, offered.scopes ?? []);
+  if (offered === undefined || scheme === undefined)
+    return { ok: false, reason: 'scheme_not_on_card' };
+  const made = scopeFor(
+    input.kind,
+    input.scheme,
+    scheme,
+    input.secret,
+    input.scopes,
+    offered.scopes ?? [],
+  );
   if ('reason' in made) return { ok: false, reason: made.reason };
   const now = (deps.nowMs ?? Date.now)();
-  return deps.store.transaction(() => ({ ok: true, credential: insertNew(deps.store, agentId, made.scope, made.material, now) }) as const);
+  return deps.store.transaction(
+    () =>
+      ({
+        ok: true,
+        credential: insertNew(deps.store, agentId, made.scope, made.material, now),
+      }) as const,
+  );
 }
 
 /**
@@ -269,7 +306,13 @@ function basicAuth(clientId: string, clientSecret: string): string {
  * address or answer. A URL or address the policy refuses, a redirect, an
  * answer of the wrong kind or size, or a host with no transport never pass.
  */
-const TRANSIENT_TRANSPORT: ReadonlySet<A2ATransportError> = new Set(['dns_failed', 'connect_failed', 'tls_failed', 'timeout', 'io_error']);
+const TRANSIENT_TRANSPORT: ReadonlySet<A2ATransportError> = new Set([
+  'dns_failed',
+  'connect_failed',
+  'tls_failed',
+  'timeout',
+  'io_error',
+]);
 
 /**
  * A token from the credential's token endpoint. `token_unavailable` when the
@@ -302,8 +345,12 @@ async function oauthToken(
     contentType: 'application/x-www-form-urlencoded',
     ...A2A_FETCH_LIMITS.token,
   });
-  if (!response.ok) return TRANSIENT_TRANSPORT.has(response.error) ? { ok: false, reason: 'token_unavailable' } : unusable;
-  if (response.status === 429 || response.status >= 500) return { ok: false, reason: 'token_unavailable' };
+  if (!response.ok)
+    return TRANSIENT_TRANSPORT.has(response.error)
+      ? { ok: false, reason: 'token_unavailable' }
+      : unusable;
+  if (response.status === 429 || response.status >= 500)
+    return { ok: false, reason: 'token_unavailable' };
   if (response.status !== 200) return unusable;
   const parsed = parseStrictJson(response.body);
   if (!parsed.ok || !isPlainObject(parsed.value)) return unusable;
@@ -311,11 +358,16 @@ async function oauthToken(
   if (typeof token !== 'string' || !ACCESS_TOKEN.test(token)) return unusable;
   if (typeof type !== 'string' || type.toLowerCase() !== 'bearer') return unusable;
   const life =
-    typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn * 1000 : TOKEN_DEFAULT_LIFE_MS;
+    typeof expiresIn === 'number' && Number.isFinite(expiresIn) && expiresIn > 0
+      ? expiresIn * 1000
+      : TOKEN_DEFAULT_LIFE_MS;
   // The fetch took time: a credential revoked or rotated meanwhile must not
   // leave a token in the cache, nor have this one used.
   if (store.getCredential(credential.credential_ref)?.status !== 'active') return unusable;
-  tokenCache.set(credential.credential_ref, { token, expiresAtMs: nowMs + Math.max(0, life - TOKEN_EARLY_MS) });
+  tokenCache.set(credential.credential_ref, {
+    token,
+    expiresAtMs: nowMs + Math.max(0, life - TOKEN_EARLY_MS),
+  });
   return { ok: true, token };
 }
 
@@ -325,7 +377,9 @@ async function oauthToken(
  */
 export type AuthProblem = 'credential_unusable' | 'token_unavailable';
 
-export type AuthHeaders = { ok: true; headers: Record<string, string> } | { ok: false; reason: AuthProblem };
+export type AuthHeaders =
+  | { ok: true; headers: Record<string, string> }
+  | { ok: false; reason: AuthProblem };
 
 /**
  * The headers one request to the remote carries for `credentialRef`, built
@@ -337,17 +391,23 @@ export async function remoteAuthHeaders(
   nowMs: number = Date.now(),
 ): Promise<AuthHeaders> {
   const credential = store.getCredential(credentialRef);
-  if (credential === null || credential.status !== 'active') return { ok: false, reason: 'credential_unusable' };
+  if (credential === null || credential.status !== 'active')
+    return { ok: false, reason: 'credential_unusable' };
   if (credential.kind === 'none') return { ok: true, headers: {} };
   const parsed = parseStrictJson(credential.scope_json);
-  if (!parsed.ok || !isPlainObject(parsed.value)) return { ok: false, reason: 'credential_unusable' };
+  if (!parsed.ok || !isPlainObject(parsed.value))
+    return { ok: false, reason: 'credential_unusable' };
   const scope = parsed.value as unknown as CredentialScope;
   if (scope.kind === 'api_key') {
-    const headers = useRemoteCredentialSecret(store, credentialRef, (m) => ({ [scope.header]: m.value ?? '' }));
+    const headers = useRemoteCredentialSecret(store, credentialRef, (m) => ({
+      [scope.header]: m.value ?? '',
+    }));
     return headers === null ? { ok: false, reason: 'credential_unusable' } : { ok: true, headers };
   }
   if (scope.kind === 'bearer') {
-    const headers = useRemoteCredentialSecret(store, credentialRef, (m) => ({ Authorization: `Bearer ${m.token ?? ''}` }));
+    const headers = useRemoteCredentialSecret(store, credentialRef, (m) => ({
+      Authorization: `Bearer ${m.token ?? ''}`,
+    }));
     return headers === null ? { ok: false, reason: 'credential_unusable' } : { ok: true, headers };
   }
   const token = await oauthToken(store, credential, scope, nowMs);
@@ -373,18 +433,26 @@ export function credentialFitsCard(credential: RemoteCredentialRow, schemesJson:
     const card = schemesOf(schemesJson)[scope.scheme];
     const flow = card?.oauth2SecurityScheme;
     const tokenUrl =
-      isPlainObject(flow) && isPlainObject(flow.flows) && isPlainObject(flow.flows.clientCredentials)
+      isPlainObject(flow) &&
+      isPlainObject(flow.flows) &&
+      isPlainObject(flow.flows.clientCredentials)
         ? flow.flows.clientCredentials.tokenUrl
         : undefined;
-    return tokenUrl === scope.token_url && scope.scopes.every((sc) => (choice.scopes ?? []).includes(sc));
+    return (
+      tokenUrl === scope.token_url && scope.scopes.every((sc) => (choice.scopes ?? []).includes(sc))
+    );
   }
   return true;
 }
 
 /** What the owner's card shows about a credential's scope, never its material. */
-export function credentialScopeOf(credential: RemoteCredentialRow): CredentialScope | { kind: 'none' } | null {
+export function credentialScopeOf(
+  credential: RemoteCredentialRow,
+): CredentialScope | { kind: 'none' } | null {
   const parsed = parseStrictJson(credential.scope_json);
-  return parsed.ok && isPlainObject(parsed.value) ? (parsed.value as unknown as CredentialScope | { kind: 'none' }) : null;
+  return parsed.ok && isPlainObject(parsed.value)
+    ? (parsed.value as unknown as CredentialScope | { kind: 'none' })
+    : null;
 }
 
 /** A scheme the pinned card declares, as the owner chooses among them; never a secret. */
@@ -414,8 +482,13 @@ export function cardSchemeChoices(schemesJson: string): SchemeChoice[] {
       const apiKey = scheme.apiKeySecurityScheme;
       if (isPlainObject(apiKey)) {
         const header = typeof apiKey.name === 'string' ? apiKey.name : '';
-        const usable = apiKey.location === 'header' && HEADER_NAME.test(header) && !RESERVED_HEADERS.has(header.toLowerCase());
-        return usable ? { name, label, kind: 'api_key', header } : { name, label, kind: 'unsupported' };
+        const usable =
+          apiKey.location === 'header' &&
+          HEADER_NAME.test(header) &&
+          !RESERVED_HEADERS.has(header.toLowerCase());
+        return usable
+          ? { name, label, kind: 'api_key', header }
+          : { name, label, kind: 'unsupported' };
       }
       const http = scheme.httpAuthSecurityScheme;
       if (isPlainObject(http)) {
@@ -424,7 +497,10 @@ export function cardSchemeChoices(schemesJson: string): SchemeChoice[] {
           : { name, label, kind: 'unsupported' };
       }
       const oauth = scheme.oauth2SecurityScheme;
-      const flow = isPlainObject(oauth) && isPlainObject(oauth.flows) ? oauth.flows.clientCredentials : undefined;
+      const flow =
+        isPlainObject(oauth) && isPlainObject(oauth.flows)
+          ? oauth.flows.clientCredentials
+          : undefined;
       if (isPlainObject(flow) && typeof flow.tokenUrl === 'string') {
         const check = checkOutboundUrl(flow.tokenUrl);
         if (!check.ok) return { name, label, kind: 'unsupported' };

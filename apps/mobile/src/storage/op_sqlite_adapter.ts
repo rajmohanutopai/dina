@@ -42,7 +42,9 @@ interface OpSQLiteDB {
   close: () => void;
 }
 
-type OpenFn = (options: { name: string; location?: string }) => OpSQLiteDB;
+// Returns `unknown`: op-sqlite's own DB type is cast to the narrow
+// `OpSQLiteDB` surface in `open()`.
+type OpenFn = (options: { name: string; location?: string }) => unknown;
 
 /**
  * Production database adapter backed by op-sqlite + SQLCipher.
@@ -66,7 +68,7 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
   open(name: string, location: string, dekHex: string, openFn: OpenFn): void {
     if (this._isOpen) throw new Error('op-sqlite: already open');
 
-    this.db = openFn({ name, location }) as unknown as OpSQLiteDB;
+    this.db = openFn({ name, location }) as OpSQLiteDB;
 
     // SQLCipher encryption
     if (dekHex) {
@@ -83,13 +85,11 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
   }
 
   execute(sql: string, params?: unknown[]): void {
-    this.assertOpen();
-    this.db!.executeSync(sql, params);
+    this.openDB().executeSync(sql, params);
   }
 
   query<T extends DBRow = DBRow>(sql: string, params?: unknown[]): T[] {
-    this.assertOpen();
-    const result = this.db!.executeSync(sql, params);
+    const result = this.openDB().executeSync(sql, params);
     // Unwrap both `rows` shapes. In op-sqlite ≥ 15 the sync result's
     // `rows` is a flat `Array<Record<…>>`; older versions exposed
     // `{_array}`. Defence-in-depth in case a future release normalises
@@ -103,7 +103,7 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
   }
 
   run(sql: string, params?: unknown[]): number {
-    this.assertOpen();
+    const db = this.openDB();
     // Return the REAL changed-row count (`sqlite3_changes()`), not a constant.
     // The durable-job state machine's CAS transitions (`UPDATE … WHERE …
     // status=?`) read this to know whether the guarded row actually matched;
@@ -111,18 +111,17 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
     // could both "claim"/"complete" the same job and lost leases counted as
     // publishes. `?? 0` fails CLOSED (treat as "did not apply") if a future
     // op-sqlite ever omits the field — safer than a false success.
-    const result = this.db!.executeSync(sql, params) as { rowsAffected?: number };
+    const result = db.executeSync(sql, params) as { rowsAffected?: number };
     return result.rowsAffected ?? 0;
   }
 
   transaction(fn: () => void): void {
-    this.assertOpen();
-    this.db!.executeSync('BEGIN');
+    this.openDB().executeSync('BEGIN');
     try {
       fn();
-      this.db!.executeSync('COMMIT');
+      this.openDB().executeSync('COMMIT');
     } catch (err) {
-      this.db!.executeSync('ROLLBACK');
+      this.openDB().executeSync('ROLLBACK');
       throw err;
     }
   }
@@ -140,7 +139,9 @@ export class OpSQLiteAdapter implements DatabaseAdapter {
     this._isOpen = false;
   }
 
-  private assertOpen(): void {
+  /** The open handle; throws when the database is not open. */
+  private openDB(): OpSQLiteDB {
     if (!this._isOpen || !this.db) throw new Error('op-sqlite: database not open');
+    return this.db;
   }
 }

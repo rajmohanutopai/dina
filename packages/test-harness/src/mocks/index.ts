@@ -642,11 +642,11 @@ export class MockKeyConverter implements KeyConverter {
   publicResult: Uint8Array = new Uint8Array(32);
   error?: Error;
 
-  async ed25519ToX25519Private(ed25519Priv: Uint8Array) {
+  async ed25519ToX25519Private(_ed25519Priv: Uint8Array) {
     if (this.error) throw this.error;
     return this.privateResult;
   }
-  async ed25519ToX25519Public(ed25519Pub: Uint8Array) {
+  async ed25519ToX25519Public(_ed25519Pub: Uint8Array) {
     if (this.error) throw this.error;
     return this.publicResult;
   }
@@ -961,7 +961,7 @@ export class MockApprovalManager implements ApprovalManager {
     this.requests.push({ ...req, id, status: 'pending' });
     return id;
   }
-  async approveRequest(id: string, scope: string, grantedBy: string) {
+  async approveRequest(id: string, scope: string, _grantedBy: string) {
     const r = this.requests.find((req) => req.id === id);
     if (!r) throw new NotFoundError(id);
     r.status = 'approved';

@@ -157,7 +157,9 @@ export function buildServiceQueryExecutionPayload(
  * a reader must treat as no continuation (Core's claim check, which binds
  * the permit to the payload it hashed, then refuses the run).
  */
-export function parseServiceExecutionContinuation(raw: unknown): ServiceExecutionContinuation | undefined {
+export function parseServiceExecutionContinuation(
+  raw: unknown,
+): ServiceExecutionContinuation | undefined {
   if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const turns = (raw as { turns?: unknown }).turns;
   if (!Array.isArray(turns) || turns.length === 0) return undefined;
@@ -166,11 +168,20 @@ export function parseServiceExecutionContinuation(raw: unknown): ServiceExecutio
     if (t === null || typeof t !== 'object' || Array.isArray(t)) return undefined;
     const turn = t as Record<string, unknown>;
     const schema = turn.input_schema;
-    if (typeof turn.prompt !== 'string' || schema === null || typeof schema !== 'object' || Array.isArray(schema)) {
+    if (
+      typeof turn.prompt !== 'string' ||
+      schema === null ||
+      typeof schema !== 'object' ||
+      Array.isArray(schema)
+    ) {
       return undefined;
     }
     if (!('input' in turn)) return undefined;
-    out.push({ prompt: turn.prompt, input_schema: schema as Record<string, unknown>, input: turn.input });
+    out.push({
+      prompt: turn.prompt,
+      input_schema: schema as Record<string, unknown>,
+      input: turn.input,
+    });
   }
   return { turns: out };
 }

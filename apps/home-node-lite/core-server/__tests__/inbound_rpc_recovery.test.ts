@@ -3,10 +3,7 @@
  */
 
 import { CancelRegistry } from '../src/msgbox/cancel_registry';
-import {
-  InboundRpcRecovery,
-  type RecoveryEvent,
-} from '../src/msgbox/inbound_rpc_recovery';
+import { InboundRpcRecovery, type RecoveryEvent } from '../src/msgbox/inbound_rpc_recovery';
 
 const SENDER_A = 'did:plc:alice';
 const SENDER_B = 'did:plc:bob';

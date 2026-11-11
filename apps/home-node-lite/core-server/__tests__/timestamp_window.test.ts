@@ -6,10 +6,7 @@
  * directions, boundary ±5 min, and the full rejection-reason enum.
  */
 
-import {
-  validateTimestamp,
-  TIMESTAMP_WINDOW_MS,
-} from '../src/auth/timestamp_window';
+import { validateTimestamp, TIMESTAMP_WINDOW_MS } from '../src/auth/timestamp_window';
 
 // Anchor the "server clock" at a fixed instant for every test.
 const SERVER_NOW_MS = Date.parse('2026-04-21T22:00:00.000Z');

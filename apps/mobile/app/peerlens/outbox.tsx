@@ -18,7 +18,10 @@ import { View, Text, StyleSheet, Pressable, ScrollView, AppState } from 'react-n
 import { type PublishJob } from '@dina/core';
 
 import { describePublishErrorCode } from '../../src/peerlens/classify_publish_error';
-import { cancelReviewPublishJob, retryReviewPublishJob } from '../../src/peerlens/review_publish_actions';
+import {
+  cancelReviewPublishJob,
+  retryReviewPublishJob,
+} from '../../src/peerlens/review_publish_actions';
 import { drainReviewPublishNow } from '../../src/peerlens/review_publish_autodrain';
 import { useReviewPublishOutbox } from '../../src/peerlens/useReviewPublishOutbox';
 import { colors, spacing, radius, textStyles } from '../../src/theme';
@@ -59,7 +62,11 @@ export default function OutboxScreen(props: OutboxScreenProps = {}): React.JSX.E
   const failures = rows.filter((r) => r.status === 'failed');
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} testID="outbox-screen">
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      testID="outbox-screen"
+    >
       <View style={styles.header}>
         <Text style={styles.subtitle}>
           Reviews waiting to publish, plus any that didn&apos;t go through.
@@ -155,7 +162,9 @@ function FailureRow({ job }: { job: PublishJob }): React.JSX.Element {
           {draftHeadline(job)}
         </Text>
         <Text style={styles.rowMeta} numberOfLines={2}>
-          {job.lastErrorCode !== null ? describePublishErrorCode(job.lastErrorCode) : "Couldn't publish."}
+          {job.lastErrorCode !== null
+            ? describePublishErrorCode(job.lastErrorCode)
+            : "Couldn't publish."}
         </Text>
       </View>
       <Pressable

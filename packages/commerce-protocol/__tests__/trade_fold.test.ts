@@ -147,7 +147,14 @@ describe('golden vector 4 — half-even ties round to even', () => {
 describe('refusals', () => {
   it('a second currency refuses — one currency per ledger, no conversion ever', () => {
     const order = chairsOrder({
-      charges: [{ kind: 'tax', label: 'gst', amount: { currency: 'USD', minor_units: '1' }, operation: 'add' }],
+      charges: [
+        {
+          kind: 'tax',
+          label: 'gst',
+          amount: { currency: 'USD', minor_units: '1' },
+          operation: 'add',
+        },
+      ],
     });
     const result = fold({ orders: [order] });
     expect(result.ok).toBe(false);
@@ -169,7 +176,9 @@ describe('refusals', () => {
 
   it('net charges driving the goods total negative refuses (computeTotal parity)', () => {
     const order = chairsOrder({
-      charges: [{ kind: 'discount', label: 'scheme', amount: INR('9999999'), operation: 'subtract' }],
+      charges: [
+        { kind: 'discount', label: 'scheme', amount: INR('9999999'), operation: 'subtract' },
+      ],
       receipted: [
         { line_id: 'line-1', delivered_quantity: EACH('1'), accepted_quantity: EACH('1') },
       ],
@@ -180,9 +189,7 @@ describe('refusals', () => {
 
   it('an incomparable unit against the price basis refuses', () => {
     const order = chairsOrder({
-      receipted: [
-        { line_id: 'line-1', delivered_quantity: KG('1'), accepted_quantity: KG('1') },
-      ],
+      receipted: [{ line_id: 'line-1', delivered_quantity: KG('1'), accepted_quantity: KG('1') }],
     });
     const result = fold({ orders: [order] });
     expect(result.ok).toBe(false);

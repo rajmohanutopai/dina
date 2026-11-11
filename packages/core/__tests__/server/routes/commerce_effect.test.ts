@@ -425,8 +425,9 @@ describe('crossing the boundary', () => {
       operation: 'submit_purchase_order',
     };
     for (const field of Object.keys(complete)) {
-      const body: Record<string, unknown> = { ...complete };
-      delete body[field];
+      const body: Record<string, unknown> = Object.fromEntries(
+        Object.entries(complete).filter(([key]) => key !== field),
+      );
       expect(
         (await router.handle(request('POST', '/v1/commerce/orders/effect', body))).status,
       ).toBe(400);

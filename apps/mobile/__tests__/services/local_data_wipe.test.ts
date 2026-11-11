@@ -22,6 +22,16 @@ import {
   __throwOnDelete,
   __resetFileSystemMock,
 } from 'expo-file-system';
+import * as Notifications from 'expo-notifications';
+
+import { closeVault, resetUnlockState } from '../../src/hooks/useUnlock';
+import { clearDisplayNameOverride } from '../../src/services/display_name_override';
+import { clearPersistedDid } from '../../src/services/identity_record';
+import { clearIdentitySeeds } from '../../src/services/identity_store';
+import { clearOrphanKeychainState, writeInstallMarker } from '../../src/services/install_marker';
+import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_data_wipe';
+import { clearAutoPassphrase } from '../../src/services/startup_preferences';
+import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
 
 // Hoisted mocks for every module the helper composes. Each one records
 // call order so we can assert on the strict sequence (keys-last so a
@@ -100,17 +110,6 @@ jest.mock('../../src/hooks/useUnlock', () => ({
     callLog.push('resetUnlockState');
   }),
 }));
-
-import * as Notifications from 'expo-notifications';
-
-import { closeVault, resetUnlockState } from '../../src/hooks/useUnlock';
-import { clearDisplayNameOverride } from '../../src/services/display_name_override';
-import { clearPersistedDid } from '../../src/services/identity_record';
-import { clearIdentitySeeds } from '../../src/services/identity_store';
-import { clearOrphanKeychainState, writeInstallMarker } from '../../src/services/install_marker';
-import { signOutLocal, eraseEverythingLocal } from '../../src/services/local_data_wipe';
-import { clearAutoPassphrase } from '../../src/services/startup_preferences';
-import { clearWrappedSeed } from '../../src/services/wrapped_seed_store';
 
 describe('signOutLocal', () => {
   beforeEach(() => {

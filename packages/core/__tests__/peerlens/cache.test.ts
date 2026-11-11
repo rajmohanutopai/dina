@@ -83,9 +83,9 @@ describe('Trust Cache', () => {
     });
 
     it('overwrites existing entry', async () => {
-      await cacheTrustScore(makeScore('did:plc:alice', 0.60));
-      await cacheTrustScore(makeScore('did:plc:alice', 0.90));
-      expect((await getCachedTrust('did:plc:alice'))!.score).toBe(0.90);
+      await cacheTrustScore(makeScore('did:plc:alice', 0.6));
+      await cacheTrustScore(makeScore('did:plc:alice', 0.9));
+      expect((await getCachedTrust('did:plc:alice'))!.score).toBe(0.9);
     });
   });
 
@@ -160,10 +160,10 @@ describe('Trust Cache', () => {
       // when both default to Date.now() the entry is always fresh.
       // This test pins that observed behaviour.
       const now = Date.now();
-      await cacheTrustScore(makeScore('did:plc:alice', 0.50), now);
+      await cacheTrustScore(makeScore('did:plc:alice', 0.5), now);
       registerTrustFetcher(async (did) => makeScore(did, 0.95));
       const result = await getTrustWithRefresh('did:plc:alice');
-      expect(result!.score).toBe(0.50);
+      expect(result!.score).toBe(0.5);
     });
 
     it('returns null when no fetcher and no cache', async () => {

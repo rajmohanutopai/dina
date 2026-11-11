@@ -131,7 +131,9 @@ describe('Anti-Her Safeguard', () => {
     });
 
     it('keeps a specific offer', () => {
-      expect(isEngagementHook("Let me know if you want me to add the pickup to Kavi's week.")).toBe(false);
+      expect(isEngagementHook("Let me know if you want me to add the pickup to Kavi's week.")).toBe(
+        false,
+      );
     });
 
     it('does NOT flag the user asking Dina the same shape', () => {

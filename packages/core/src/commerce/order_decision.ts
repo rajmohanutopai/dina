@@ -244,9 +244,19 @@ export function settleInboundOrderDecision(args: {
   // buyer already holds on the countered quote. A malformed one is left to
   // admission, which refuses it with its own reason.
   if (decision.kind === 'counterproposal') {
-    const refused = replacementOutOfBounds(runtime, args.buyerDid, args.purchaseOrderId, decision.replacementQuote);
+    const refused = replacementOutOfBounds(
+      runtime,
+      args.buyerDid,
+      args.purchaseOrderId,
+      decision.replacementQuote,
+    );
     if (refused !== null) {
-      appendAudit('negotiation', 'runner_counter_withheld', args.purchaseOrderId, `reason=${refused}`);
+      appendAudit(
+        'negotiation',
+        'runner_counter_withheld',
+        args.purchaseOrderId,
+        `reason=${refused}`,
+      );
       return {
         ok: false,
         refusal: 'counter_out_of_bounds',

@@ -31,10 +31,10 @@ processes are adapters around the same TS behavior. They should not
 become a second product or preserve the previous Go/Python process
 shape as a compatibility requirement.
 
-| Role    | Pure package      | App wrapper                   | Responsibility |
-|---------|-------------------|-------------------------------|----------------|
-| Core    | `@dina/core`      | `apps/home-node-lite/core-server/`  | Vault keeper. Owns SQLCipher files + Ed25519 keys. Never interprets, never calls external APIs. |
-| Brain   | `@dina/brain`     | `apps/home-node-lite/brain-server/` | Analyst. Thinks, searches, reasons, delegates fetching via MCP. Never holds keys. |
+| Role  | Pure package  | App wrapper                         | Responsibility                                                                                  |
+| ----- | ------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Core  | `@dina/core`  | `apps/home-node-lite/core-server/`  | Vault keeper. Owns SQLCipher files + Ed25519 keys. Never interprets, never calls external APIs. |
+| Brain | `@dina/brain` | `apps/home-node-lite/brain-server/` | Analyst. Thinks, searches, reasons, delegates fetching via MCP. Never holds keys.               |
 
 Brain talks to Core through the transport-agnostic `CoreClient`
 interface (`@dina/core`) — on the Node server target that's the
@@ -100,15 +100,16 @@ DINA_BRAIN_DEV_UI=1 npm start
 
 HTTP surface exposed:
 
-| Route                          | Purpose                                         |
-|--------------------------------|-------------------------------------------------|
-| `POST /api/v1/chat`            | `{text, threadId?}` → `ChatResponse` (mobile-parity) |
-| `POST /api/v1/chat/reset`      | `{threadId?}` — wipes the thread (dev convenience)   |
-| `GET /dev`                     | Single-page HTML chat UI (only when `DINA_BRAIN_DEV_UI=1`) |
+| Route                     | Purpose                                                    |
+| ------------------------- | ---------------------------------------------------------- |
+| `POST /api/v1/chat`       | `{text, threadId?}` → `ChatResponse` (mobile-parity)       |
+| `POST /api/v1/chat/reset` | `{threadId?}` — wipes the thread (dev convenience)         |
+| `GET /dev`                | Single-page HTML chat UI (only when `DINA_BRAIN_DEV_UI=1`) |
 
 The orchestrator needs Core wired (vault writes go through it), so
 start the Core server first and configure `DINA_BRAIN_CORE_BASE_URL`
-+ service keys before hitting the dev UI.
+
+- service keys before hitting the dev UI.
 
 ### Full Web UI (React Native Web bundle)
 
@@ -230,12 +231,12 @@ file at `docker/docker-compose.lite.yml`.
 
 ## Milestone roadmap (see `docs/HOME_NODE_LITE_TASKS.md`)
 
-| Milestone | Scope                                                           | Target |
-|-----------|-----------------------------------------------------------------|--------|
-| **M1**    | Pair + ask + remember + D2D delivery, basic PII, default persona | 4-5 weeks |
-| **M2**    | 4-tier persona gating, passphrase, audit, storage tiers          | 6-7 weeks |
-| **M3**    | PeerLens, service query/response, cart handover             | 8-9 weeks |
-| **M4**    | Chaos, crash recovery, perf targets                              | 9-10 weeks |
+| Milestone | Scope                                                            | Target      |
+| --------- | ---------------------------------------------------------------- | ----------- |
+| **M1**    | Pair + ask + remember + D2D delivery, basic PII, default persona | 4-5 weeks   |
+| **M2**    | 4-tier persona gating, passphrase, audit, storage tiers          | 6-7 weeks   |
+| **M3**    | PeerLens, service query/response, cart handover                  | 8-9 weeks   |
+| **M4**    | Chaos, crash recovery, perf targets                              | 9-10 weeks  |
 | **M5**    | Full Home Node scenario parity with mobile/shared TS runtime     | 10-12 weeks |
 
 ## See also

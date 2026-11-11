@@ -253,9 +253,12 @@ describe('DeviceTokenRegistry.list* (task 4.64)', () => {
     const a = reg.issue({ deviceName: 'a' });
     const b = reg.issue({ deviceName: 'b' });
     reg.revoke(a.deviceId);
-    expect(reg.listAll().map((d) => d.deviceId).sort()).toEqual(
-      [a.deviceId, b.deviceId].sort(),
-    );
+    expect(
+      reg
+        .listAll()
+        .map((d) => d.deviceId)
+        .sort(),
+    ).toEqual([a.deviceId, b.deviceId].sort());
   });
 });
 

@@ -16,7 +16,6 @@ import {
   rpcReady,
   handleRPCCancel,
   setRPCRouter,
-  sendD2DViaWS,
   type RPCRouterFn,
 } from './msgbox_handlers';
 import {
@@ -136,7 +135,9 @@ export async function bootstrapMsgBox(config: MsgBoxBootConfig): Promise<void> {
       result.senderDID !== undefined
     ) {
       if (config.onBypassedD2D === undefined) {
-        console.warn(`[d2d] service ${result.messageType} dropped: no service dispatcher on this node`);
+        console.warn(
+          `[d2d] service ${result.messageType} dropped: no service dispatcher on this node`,
+        );
         result.commitReplay?.();
         return undefined;
       }

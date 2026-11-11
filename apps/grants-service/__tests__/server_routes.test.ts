@@ -42,9 +42,15 @@ const okDeviceState: DeviceState = {
 const okProvisioner: KeyProvisioner = {
   createCappedKey: async () => ({ key: 'sk-or-v1-minted', orKeyId: 'h' }),
 };
-const okLedger: GrantLedger = { insert: () => undefined, countSince: () => 0, close: () => undefined };
+const okLedger: GrantLedger = {
+  insert: () => undefined,
+  countSince: () => 0,
+  close: () => undefined,
+};
 
-async function makeApp(over: Partial<Parameters<typeof buildServer>[0]> = {}): Promise<FastifyInstance> {
+async function makeApp(
+  over: Partial<Parameters<typeof buildServer>[0]> = {},
+): Promise<FastifyInstance> {
   return buildServer({
     config: makeConfig(),
     deviceStates: { ios: okDeviceState, android: okDeviceState },

@@ -91,9 +91,7 @@ export type BuildUpdateOutcome =
  * Build a signed PLC update operation. Returns a structured
  * outcome; never throws.
  */
-export async function buildPlcUpdateOp(
-  opts: BuildUpdateOptions,
-): Promise<BuildUpdateOutcome> {
+export async function buildPlcUpdateOp(opts: BuildUpdateOptions): Promise<BuildUpdateOutcome> {
   validateOptions(opts);
   const { prevCid, prev, update, signFn } = opts;
   const nowMsFn = opts.nowMsFn ?? (() => Date.now());
@@ -147,16 +145,12 @@ export async function buildPlcUpdateOp(
     (body as Record<string, unknown>).verificationMethod = verificationMethod;
   }
   const services =
-    update.services !== undefined
-      ? update.services
-      : (prev as { services?: unknown }).services;
+    update.services !== undefined ? update.services : (prev as { services?: unknown }).services;
   if (services !== undefined) {
     (body as Record<string, unknown>).services = services;
   }
   const alsoKnownAs =
-    update.handles !== undefined
-      ? update.handles
-      : (prev as { alsoKnownAs?: unknown }).alsoKnownAs;
+    update.handles !== undefined ? update.handles : (prev as { alsoKnownAs?: unknown }).alsoKnownAs;
   if (alsoKnownAs !== undefined) {
     (body as Record<string, unknown>).alsoKnownAs = alsoKnownAs;
   }

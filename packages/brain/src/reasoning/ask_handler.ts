@@ -36,10 +36,7 @@ import {
   PRODUCTS_BEFORE_PROVIDERS_LINE,
   PROVIDER_SERVICES_ROUTING_BLOCK,
 } from './forced_lane';
-import {
-  IntentClassifier,
-  type IntentClassification,
-} from './intent_classifier';
+import { IntentClassifier, type IntentClassification } from './intent_classifier';
 
 import type { GuardScanner } from './guard_scanner';
 import type { ToolRegistry } from './tool_registry';
@@ -251,7 +248,10 @@ function indent(text: string, spaces: number): string {
  * Pure for testability — accepts an injected clock (defaults to
  * `Date.now`) so tests can assert deterministic output.
  */
-export function formatCurrentTimeBlock(nowMsFn: () => number = Date.now, ownerTimeZone?: string): string {
+export function formatCurrentTimeBlock(
+  nowMsFn: () => number = Date.now,
+  ownerTimeZone?: string,
+): string {
   const now = new Date(nowMsFn());
   let timezone = 'UTC';
   try {
@@ -266,10 +266,28 @@ export function formatCurrentTimeBlock(nowMsFn: () => number = Date.now, ownerTi
   // out, so "this week", "overdue" and "next Monday" are worked out from
   // dates rather than guessed.
   const day = (ms: number) =>
-    new Date(ms).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', timeZone: timezone });
+    new Date(ms).toLocaleDateString('en-GB', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      year: 'numeric',
+      timeZone: timezone,
+    });
   const weekday = now.toLocaleDateString('en-US', { weekday: 'long', timeZone: timezone });
-  const localTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: timezone });
-  const dow = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(weekday);
+  const localTime = now.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: timezone,
+  });
+  const dow = [
+    'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+  ].indexOf(weekday);
   const sinceMonday = (dow + 6) % 7;
   const D = 86_400_000;
   const nowMs = now.getTime();
@@ -348,7 +366,10 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     if (options.preFlight !== undefined) {
       let preFlight: PreFlightRetrievalResult | null = null;
       try {
-        preFlight = await options.preFlight(query, recentTurns !== '' ? { recentTurns } : undefined);
+        preFlight = await options.preFlight(
+          query,
+          recentTurns !== '' ? { recentTurns } : undefined,
+        );
       } catch {
         preFlight = null;
       }
@@ -463,8 +484,10 @@ export function makeAgenticAskHandler(options: AgenticAskHandlerOptions): AskCom
     // the turn showed a missing capability, which keeps its own notice.
     const useWrapUp =
       result.wrappedUp !== true ||
-      (missingCapabilities.length === 0 && missingCapabilityFromAskFallback(query, result.toolCalls) === null);
-    let answer = result.answer !== '' && useWrapUp ? result.answer : fallbackAnswer(result.finishReason);
+      (missingCapabilities.length === 0 &&
+        missingCapabilityFromAskFallback(query, result.toolCalls) === null);
+    let answer =
+      result.answer !== '' && useWrapUp ? result.answer : fallbackAnswer(result.finishReason);
 
     // Guard-scan post-process (Laws 1 + 4). Strips Anti-Her sentences
     // unconditionally; strips fabricated/consensus/unsolicited only

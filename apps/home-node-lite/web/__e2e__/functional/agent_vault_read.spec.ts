@@ -164,7 +164,10 @@ test.describe('MRS-07 — Agent vault-read persona gate', () => {
     expect(nbody.error, 'C4: a fresh session re-prompts (approval_required)').toBe(
       'approval_required',
     );
-    expect(nbody.task_id, 'C4: a distinct approval task is raised for the new session').toBeTruthy();
+    expect(
+      nbody.task_id,
+      'C4: a distinct approval task is raised for the new session',
+    ).toBeTruthy();
     expect(nbody.task_id, 'C4: the new-session task is distinct from the approved one').not.toBe(
       taskId,
     );

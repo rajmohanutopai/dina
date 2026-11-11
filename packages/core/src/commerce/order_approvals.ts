@@ -166,9 +166,7 @@ export class SQLiteOrderApprovalRepository implements OrderApprovalRepository {
 
   listApprovalDigests(): string[] {
     return this.db
-      .query<{ approval_digest: string }>(
-        `SELECT approval_digest FROM commerce_order_approvals`,
-      )
+      .query<{ approval_digest: string }>(`SELECT approval_digest FROM commerce_order_approvals`)
       .map((row) => String(row.approval_digest));
   }
 

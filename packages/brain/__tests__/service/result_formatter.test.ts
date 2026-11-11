@@ -186,9 +186,15 @@ describe('formatServiceQueryResult', () => {
         response_status: 'success',
         capability: 'mystery_cap',
         service_name: 'Mystery Service',
-        result: { value: 42, next_step: 'call back', slots: [{ time: '09:00' }, { time: '11:30' }] },
+        result: {
+          value: 42,
+          next_step: 'call back',
+          slots: [{ time: '09:00' }, { time: '11:30' }],
+        },
       });
-      expect(out).toBe('Mystery Service\nvalue: 42\nnext step: call back\nslots: time 09:00, time 11:30');
+      expect(out).toBe(
+        'Mystery Service\nvalue: 42\nnext step: call back\nslots: time 09:00, time 11:30',
+      );
       expect(out).not.toMatch(/[{}"]/);
     });
 
@@ -210,7 +216,14 @@ describe('formatServiceQueryResult', () => {
         response_status: 'success',
         capability: 'appointment_availability',
         service_name: 'Harbour Dental',
-        result: { status: 'ok', date: '2026-11-02', slots: [{ time: '09:15', date: '2026-11-02' }, { time: '14:40', date: '2026-11-02' }] },
+        result: {
+          status: 'ok',
+          date: '2026-11-02',
+          slots: [
+            { time: '09:15', date: '2026-11-02' },
+            { time: '14:40', date: '2026-11-02' },
+          ],
+        },
       });
       expect(out).toBe('Harbour Dental — free on 2026-11-02 at 09:15 and 14:40.');
     });

@@ -2,11 +2,7 @@
  * Task 6.16 — SwrCache tests.
  */
 
-import {
-  SwrCache,
-  type SwrEvent,
-  type SwrResult,
-} from '../src/appview/stale_while_revalidate';
+import { SwrCache, type SwrEvent, type SwrResult } from '../src/appview/stale_while_revalidate';
 
 interface FakeClock {
   now: number;
@@ -26,7 +22,6 @@ function fakeClock(start = 0): FakeClock {
     },
   };
 }
-
 
 describe('SwrCache (task 6.16)', () => {
   describe('construction validation', () => {
@@ -125,7 +120,7 @@ describe('SwrCache (task 6.16)', () => {
           return v;
         },
         ttlMsFn: () => 60_000, // 1 min fresh
-        staleTtlMs: 300_000,   // 5 min stale window
+        staleTtlMs: 300_000, // 5 min stale window
         nowMsFn: clock.nowMsFn,
         onEvent: (e) => events.push(e),
       });
@@ -153,12 +148,7 @@ describe('SwrCache (task 6.16)', () => {
 
       // Events fired.
       expect(events.map((e) => e.kind)).toEqual(
-        expect.arrayContaining([
-          'miss',
-          'revalidate_succeeded',
-          'stale_served',
-          'fresh_hit',
-        ]),
+        expect.arrayContaining(['miss', 'revalidate_succeeded', 'stale_served', 'fresh_hit']),
       );
     });
 

@@ -24,19 +24,20 @@ describe('cues that call the classifier', () => {
 });
 
 describe('"I need someone to talk to"', () => {
-  it.each(['I just need someone to talk to.', 'honestly i need somebody to listen tonight', 'I need anyone to talk to right now'])(
-    '"%s" is isolation',
-    (text) => {
-      expect(classifyDeterministic(text).category).toBe('isolation');
-    },
-  );
+  it.each([
+    'I just need someone to talk to.',
+    'honestly i need somebody to listen tonight',
+    'I need anyone to talk to right now',
+  ])('"%s" is isolation', (text) => {
+    expect(classifyDeterministic(text).category).toBe('isolation');
+  });
 
-  it.each(['I need someone to talk to the bank about the loan', 'I need somebody to talk to my landlord for me'])(
-    '"%s" is a task, not isolation',
-    (text) => {
-      expect(classifyDeterministic(text).category).not.toBe('isolation');
-    },
-  );
+  it.each([
+    'I need someone to talk to the bank about the loan',
+    'I need somebody to talk to my landlord for me',
+  ])('"%s" is a task, not isolation', (text) => {
+    expect(classifyDeterministic(text).category).not.toBe('isolation');
+  });
 });
 
 describe('Dina offering herself as company', () => {
@@ -64,8 +65,11 @@ describe('Dina offering herself as company', () => {
 
 describe('removing sentences keeps the layout', () => {
   it('drops only the named sentence and keeps paragraphs and lists', () => {
-    const text = 'First, call your mum.\n\n- Draft a text\n- Set a reminder\n\nI\'m here. Sleep when you can.';
-    expect(removeSentences(text, ["I'm here."])).toBe('First, call your mum.\n\n- Draft a text\n- Set a reminder\n\nSleep when you can.');
+    const text =
+      "First, call your mum.\n\n- Draft a text\n- Set a reminder\n\nI'm here. Sleep when you can.";
+    expect(removeSentences(text, ["I'm here."])).toBe(
+      'First, call your mum.\n\n- Draft a text\n- Set a reminder\n\nSleep when you can.',
+    );
   });
 });
 

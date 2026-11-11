@@ -51,8 +51,8 @@ export function bytesEqual(a: Uint8Array, b: Uint8Array): boolean {
  * Check if a Uint8Array is all zeros.
  */
 export function isAllZero(bytes: Uint8Array): boolean {
-  for (let i = 0; i < bytes.length; i++) {
-    if (bytes[i] !== 0) return false;
+  for (const byte of bytes) {
+    if (byte !== 0) return false;
   }
   return true;
 }

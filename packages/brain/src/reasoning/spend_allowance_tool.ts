@@ -10,13 +10,16 @@
  * used this period; `cancel` stops one.
  */
 
-import { getCurrentOwnerTurn, proveOwnerWords } from '../chat/owner_turns';
-
 import { currencyExponent, type CoreClient } from '@dina/core';
+
+import { getCurrentOwnerTurn, proveOwnerWords } from '../chat/owner_turns';
 
 import type { AgentTool } from './tool_registry';
 
-type Core = Pick<CoreClient, 'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'>;
+type Core = Pick<
+  CoreClient,
+  'spendAllowancePropose' | 'spendAllowanceList' | 'spendAllowanceRevoke'
+>;
 
 export function createSpendAllowanceTool(opts: { thread: string; core: Core }): AgentTool {
   return {
@@ -49,13 +52,20 @@ export function createSpendAllowanceTool(opts: { thread: string; core: Core }): 
         return opts.core.spendAllowanceRevoke(args.id, proven.proof);
       }
       if (args.action !== 'set') return { error: 'action must be set, list or cancel' };
-      if (typeof args.currency !== 'string' || !/^[A-Za-z]{3}$/.test(args.currency)) return { error: 'currency must be a three-letter code' };
+      if (typeof args.currency !== 'string' || !/^[A-Za-z]{3}$/.test(args.currency))
+        return { error: 'currency must be a three-letter code' };
       const currency = args.currency.toUpperCase();
       // The currency's own minor unit: ¥5,000 is 5000, ₹5,000 is 500000.
       const scale = 10 ** currencyExponent(currency);
-      const minor = (v: unknown): number | undefined => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * scale) : undefined);
+      const minor = (v: unknown): number | undefined =>
+        typeof v === 'number' && Number.isFinite(v) ? Math.round(v * scale) : undefined;
       const amountMinor = minor(args.amount);
-      if (amountMinor === undefined || typeof args.agent !== 'string' || typeof args.period !== 'string' || typeof args.category !== 'string') {
+      if (
+        amountMinor === undefined ||
+        typeof args.agent !== 'string' ||
+        typeof args.period !== 'string' ||
+        typeof args.category !== 'string'
+      ) {
         return { error: 'agent, amount, currency, period and category are required' };
       }
       const cap = minor(args.per_item_cap);

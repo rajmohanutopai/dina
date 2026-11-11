@@ -48,7 +48,6 @@ import {
   type SkillBindingRow,
 } from './store';
 
-
 export { a2aDisplayText } from '@dina/a2a';
 
 export interface RemoteAgentDeps {
@@ -57,7 +56,6 @@ export interface RemoteAgentDeps {
   /** Key-set fetcher for signature checks; the outbound policy by default. */
   fetchKeySet?: (url: string) => Promise<KeySetFetch>;
 }
-
 
 export interface PinnedCard {
   card: JsonObject;
@@ -77,7 +75,10 @@ export type CardFetchOutcome = { ok: true; pinned: PinnedCard } | { ok: false; r
 function cardRequiresCredential(card: JsonObject): boolean {
   const nonEmpty = (v: unknown): boolean => Array.isArray(v) && v.length > 0;
   if (nonEmpty(card.securityRequirements)) return true;
-  return Array.isArray(card.skills) && card.skills.some((s) => isPlainObject(s) && nonEmpty(s.securityRequirements));
+  return (
+    Array.isArray(card.skills) &&
+    card.skills.some((s) => isPlainObject(s) && nonEmpty(s.securityRequirements))
+  );
 }
 
 function signatureSummary(state: SignatureState, notes: KeyResolutionNote[]): string {
@@ -88,7 +89,8 @@ function signatureSummary(state: SignatureState, notes: KeyResolutionNote[]): st
   }
   const why = notes.map((n) => n.outcome);
   if (why.length === 0) return 'The card carries signatures Dina could not read.';
-  if (why.every((o) => o === 'no_jku')) return 'The card is signed, but names no key set Dina can fetch.';
+  if (why.every((o) => o === 'no_jku'))
+    return 'The card is signed, but names no key set Dina can fetch.';
   if (why.includes('bad_signature')) return 'A signature does not match the card.';
   return 'The card is signed, but its key could not be found.';
 }
@@ -100,7 +102,12 @@ export async function fetchAndPinCard(
 ): Promise<CardFetchOutcome> {
   const url = checkOutboundUrl(cardUrl);
   if (!url.ok) return { ok: false, reason: `card_url_${url.reason}` };
-  const response = await a2aFetch({ method: 'GET', url: cardUrl, headers: {}, ...A2A_FETCH_LIMITS.card });
+  const response = await a2aFetch({
+    method: 'GET',
+    url: cardUrl,
+    headers: {},
+    ...A2A_FETCH_LIMITS.card,
+  });
   if (!response.ok) return { ok: false, reason: `card_fetch_${response.error}` };
   if (response.status !== 200) return { ok: false, reason: `card_fetch_status_${response.status}` };
   const parsed = parseStrictJson(response.body);
@@ -163,7 +170,8 @@ export async function registerRemoteAgent(
   cardUrl: string,
 ): Promise<RegisterOutcome> {
   const existing = deps.store.getLiveAgentByUrl(cardUrl);
-  if (existing !== null) return { ok: false, reason: 'already_registered', existingAgentId: existing.agent_id };
+  if (existing !== null)
+    return { ok: false, reason: 'already_registered', existingAgentId: existing.agent_id };
   const fetched = await fetchAndPinCard(cardUrl, deps.fetchKeySet);
   if (!fetched.ok) return fetched;
   const p = fetched.pinned;
@@ -204,7 +212,10 @@ export type VerifyOutcome =
   | { ok: false; reason: string };
 
 /** Re-fetch the live card. A different pin marks the agent `changed`. */
-export async function reverifyRemoteAgent(deps: RemoteAgentDeps, agentId: string): Promise<VerifyOutcome> {
+export async function reverifyRemoteAgent(
+  deps: RemoteAgentDeps,
+  agentId: string,
+): Promise<VerifyOutcome> {
   const agent = deps.store.getAgent(agentId);
   if (agent === null) return { ok: false, reason: 'not_found' };
   if (agent.status === 'revoked') return { ok: false, reason: 'revoked' };
@@ -245,7 +256,8 @@ export async function reverifyRemoteAgent(deps: RemoteAgentDeps, agentId: string
 export function revokeRemoteAgent(deps: RemoteAgentDeps, agentId: string): boolean {
   const now = (deps.nowMs ?? Date.now)();
   return deps.store.transaction(() => {
-    if (!deps.store.setAgentStatus(agentId, ['candidate', 'active', 'changed'], 'revoked', now)) return false;
+    if (!deps.store.setAgentStatus(agentId, ['candidate', 'active', 'changed'], 'revoked', now))
+      return false;
     for (const credential of deps.store.listCredentials(agentId)) {
       deps.store.revokeCredential(credential.credential_ref, now);
       deps.store.deleteCredentialSecret(credential.credential_ref);
@@ -262,27 +274,38 @@ export function revokeRemoteAgent(deps: RemoteAgentDeps, agentId: string): boole
  * reorders text, a control, or loose whitespace is not offered, and cannot
  * be bound.
  */
-export function pinnedRemoteSkills(agent: RemoteAgentRow): { id: string; name: string; description: string; tags: string[] }[] {
+export function pinnedRemoteSkills(
+  agent: RemoteAgentRow,
+): { id: string; name: string; description: string; tags: string[] }[] {
   const parsed = parseStrictJson(agent.card_json);
   if (!parsed.ok || !isPlainObject(parsed.value) || !Array.isArray(parsed.value.skills)) return [];
-  const plainId = (id: unknown): id is string => typeof id === 'string' && id !== '' && a2aDisplayText(id, MAX_ID_LENGTH) === id;
-  return parsed.value.skills.filter((s): s is JsonObject => isPlainObject(s) && plainId(s.id)).map((s) => ({
-    id: s.id as string,
-    name: a2aDisplayText(s.name, A2A_NAME_MAX_CODE_POINTS),
-    description: a2aDisplayText(s.description),
-    tags: Array.isArray(s.tags) ? s.tags.map((t) => a2aDisplayText(t, 60)).filter((t) => t !== '') : [],
-  }));
+  const plainId = (id: unknown): id is string =>
+    typeof id === 'string' && id !== '' && a2aDisplayText(id, MAX_ID_LENGTH) === id;
+  return parsed.value.skills
+    .filter((s): s is JsonObject => isPlainObject(s) && plainId(s.id))
+    .map((s) => ({
+      id: s.id as string,
+      name: a2aDisplayText(s.name, A2A_NAME_MAX_CODE_POINTS),
+      description: a2aDisplayText(s.description),
+      tags: Array.isArray(s.tags)
+        ? s.tags.map((t) => a2aDisplayText(t, 60)).filter((t) => t !== '')
+        : [],
+    }));
 }
 
 function cardRequiresCredentialRow(agent: RemoteAgentRow): boolean {
   const parsed = parseStrictJson(agent.card_json);
-  return parsed.ok && isPlainObject(parsed.value) && cardRequiresCredential(parsed.value as JsonObject);
+  return (
+    parsed.ok && isPlainObject(parsed.value) && cardRequiresCredential(parsed.value as JsonObject)
+  );
 }
 
 /** The `none` credential's scope: nothing is delegated, so there is nothing to scope. */
 const NONE_SCOPE_JSON = canonicalize({ kind: 'none' });
 
-export type CredentialOutcome = { ok: true; credential: RemoteCredentialRow } | { ok: false; reason: string };
+export type CredentialOutcome =
+  | { ok: true; credential: RemoteCredentialRow }
+  | { ok: false; reason: string };
 
 /**
  * A versioned "no credential" reference (design §5.3), refused for a card
@@ -334,18 +357,25 @@ export interface BindSkillInput {
 export type BindOutcome = { ok: true; binding: SkillBindingRow } | { ok: false; reason: string };
 
 /** Bind one skill of the agent's CURRENT pinned card (design §5.5). */
-export function bindRemoteSkill(deps: RemoteAgentDeps, agentId: string, input: BindSkillInput): BindOutcome {
+export function bindRemoteSkill(
+  deps: RemoteAgentDeps,
+  agentId: string,
+  input: BindSkillInput,
+): BindOutcome {
   const agent = deps.store.getAgent(agentId);
   if (agent === null) return { ok: false, reason: 'not_found' };
   if (agent.status === 'revoked') return { ok: false, reason: 'revoked' };
-  if (!pinnedRemoteSkills(agent).some((s) => s.id === input.skill)) return { ok: false, reason: 'skill_not_on_card' };
+  if (!pinnedRemoteSkills(agent).some((s) => s.id === input.skill))
+    return { ok: false, reason: 'skill_not_on_card' };
   const credential = deps.store.getCredential(input.credentialRef);
-  if (credential === null || credential.remote_agent_id !== agentId) return { ok: false, reason: 'credential_not_found' };
+  if (credential === null || credential.remote_agent_id !== agentId)
+    return { ok: false, reason: 'credential_not_found' };
   if (credential.status !== 'active') return { ok: false, reason: 'credential_revoked' };
   if (credential.kind === 'none' && cardRequiresCredentialRow(agent)) {
     return { ok: false, reason: 'credential_required_by_card' };
   }
-  if (!credentialFitsCard(credential, agent.schemes_json)) return { ok: false, reason: 'credential_not_on_card' };
+  if (!credentialFitsCard(credential, agent.schemes_json))
+    return { ok: false, reason: 'credential_not_on_card' };
   const check = validateSkillBinding({
     remoteAgentId: agentId,
     cardHash: agent.card_hash,
@@ -385,13 +415,17 @@ export function liveRemoteBindings(store: A2AStore, agent: RemoteAgentRow): Skil
  * Activate a candidate or a changed agent. The owner has reviewed the card
  * and bound at least one skill of its current pin.
  */
-export function activateRemoteAgent(deps: RemoteAgentDeps, agentId: string): { ok: true } | { ok: false; reason: string } {
+export function activateRemoteAgent(
+  deps: RemoteAgentDeps,
+  agentId: string,
+): { ok: true } | { ok: false; reason: string } {
   const agent = deps.store.getAgent(agentId);
   if (agent === null) return { ok: false, reason: 'not_found' };
   if (agent.status !== 'candidate' && agent.status !== 'changed') {
     return { ok: false, reason: agent.status === 'active' ? 'already_active' : 'revoked' };
   }
-  if (liveRemoteBindings(deps.store, agent).length === 0) return { ok: false, reason: 'no_bound_skill' };
+  if (liveRemoteBindings(deps.store, agent).length === 0)
+    return { ok: false, reason: 'no_bound_skill' };
   return deps.store.setAgentStatus(agentId, [agent.status], 'active', (deps.nowMs ?? Date.now)())
     ? { ok: true }
     : { ok: false, reason: 'raced' };

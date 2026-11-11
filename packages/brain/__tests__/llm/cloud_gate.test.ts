@@ -29,7 +29,11 @@ describe('Cloud LLM Gate', () => {
     });
 
     it('sensitive persona + cloud → scrubbed', async () => {
-      const result = await checkCloudGate('Patient john@example.com has lab results', 'health', 'claude');
+      const result = await checkCloudGate(
+        'Patient john@example.com has lab results',
+        'health',
+        'claude',
+      );
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(true);
       expect(result.scrubbedText).not.toContain('john@example.com');
@@ -38,16 +42,22 @@ describe('Cloud LLM Gate', () => {
     });
 
     it('financial persona + cloud → scrubbed', async () => {
-      const result = await checkCloudGate('Transfer to account 555-123-4567', 'financial', 'openai');
+      const result = await checkCloudGate(
+        'Transfer to account 555-123-4567',
+        'financial',
+        'openai',
+      );
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(true);
     });
 
     it('custom sensitive personas list', async () => {
-      const result = await checkCloudGate('Secret data with email test@secret.com', 'secret', 'claude', [
+      const result = await checkCloudGate(
+        'Secret data with email test@secret.com',
         'secret',
-        'classified',
-      ]);
+        'claude',
+        ['secret', 'classified'],
+      );
       expect(result.allowed).toBe(true);
       expect(result.scrubbed).toBe(true);
     });

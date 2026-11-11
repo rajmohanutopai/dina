@@ -18,7 +18,6 @@ import {
   sealRPCResponse,
 } from '../../src/relay/rpc_response';
 
-
 describe('Core RPC Response Auth', () => {
   const coreDID = 'did:plc:mobileCore123';
   const corePriv = TEST_ED25519_SEED;

@@ -6,10 +6,10 @@ no runtime code of its own.
 
 ## Who should use this vs the granular packages
 
-| Consumer | Import from |
-|---|---|
-| `apps/home-node-lite/*` (Fastify Core + Brain server inside this repo) | `@dina/adapters-node` |
-| External TS consumers who want a specific capability | the granular package (`@dina/fs-node`, `@dina/keystore-node`, `@dina/crypto-node`, `@dina/net-node`) |
+| Consumer                                                               | Import from                                                                                          |
+| ---------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `apps/home-node-lite/*` (Fastify Core + Brain server inside this repo) | `@dina/adapters-node`                                                                                |
+| External TS consumers who want a specific capability                   | the granular package (`@dina/fs-node`, `@dina/keystore-node`, `@dina/crypto-node`, `@dina/net-node`) |
 
 Apps get one stable import line. External consumers get minimal
 dependency graphs — no pull of libraries they don't need (native
@@ -32,11 +32,7 @@ import { Crypto, type CryptoAdapter } from '@dina/adapters-node';
 const crypto: CryptoAdapter = new Crypto();
 
 // Network (@dina/net-node)
-import {
-  HttpClient,
-  HttpClientWithRetry,
-  createCanonicalRequestSigner,
-} from '@dina/adapters-node';
+import { HttpClient, HttpClientWithRetry, createCanonicalRequestSigner } from '@dina/adapters-node';
 const http = new HttpClientWithRetry(new HttpClient(), { maxRetries: 3 });
 ```
 

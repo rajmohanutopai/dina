@@ -13,7 +13,12 @@
 
 import { kvGet, kvSet } from '../kv/store';
 
-import { getActiveDemo, setActiveDemo, updateActiveDemoStep, type ActiveDemoState } from './active_demo';
+import {
+  getActiveDemo,
+  setActiveDemo,
+  updateActiveDemoStep,
+  type ActiveDemoState,
+} from './active_demo';
 import { tearDownDataScope } from './cleanup_wiring';
 import {
   USER_SCOPE,

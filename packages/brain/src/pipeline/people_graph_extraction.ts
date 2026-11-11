@@ -137,7 +137,7 @@ export async function applyPeopleGraphExtraction(
   // out-of-process Brain runtimes (home-node-lite) where the people
   // repo lives on the Core side and an in-process `getPeopleRepository`
   // returns null by design.
-  const repo = apply !== undefined ? null : options.repo ?? getPeopleRepository();
+  const repo = apply !== undefined ? null : (options.repo ?? getPeopleRepository());
   if (apply === undefined && repo === null) {
     return { ok: false, reason: 'no_repo' };
   }

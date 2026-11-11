@@ -35,8 +35,8 @@ import { argon2id } from 'hash-wasm';
  * modern phone with the native react-native-argon2 binding this
  * finishes in ~400 ms; hash-wasm in Node CI handles it in ~2 s.
  *
- * Source of truth: core/internal/adapter/crypto/argon2.go +
- * packages/test-harness/src/fixtures/constants.ts.
+ * Source of truth: this table, mirrored in
+ * packages/test-harness/src/fixtures/constants.ts and scripts/wrap_seed.py.
  */
 export const ARGON2ID_PARAMS = {
   memorySize: 128 * 1024, // 131072 KiB = 128 MB

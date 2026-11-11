@@ -81,7 +81,11 @@ export type IngressFailureResponse =
  * and URLs are media types Dina does not support (spec §3.1.1: that MUST be
  * `ContentTypeNotSupportedError`).
  */
-const CONTENT_TYPE_FAILURES: ReadonlySet<IngressFailure> = new Set<IngressFailure>(['no_data_part', 'raw_part_refused', 'url_part_refused']);
+const CONTENT_TYPE_FAILURES: ReadonlySet<IngressFailure> = new Set<IngressFailure>([
+  'no_data_part',
+  'raw_part_refused',
+  'url_part_refused',
+]);
 
 /**
  * The caller-facing answer. A protocol error names its reason (it is about
@@ -89,6 +93,13 @@ const CONTENT_TYPE_FAILURES: ReadonlySet<IngressFailure> = new Set<IngressFailur
  * the reason for the receipt and the audit log only.
  */
 export function ingressFailureResponse(reason: IngressFailure): IngressFailureResponse {
-  if (INGRESS_OUTCOME_CLASS[reason] !== 'protocol_error') return { kind: 'rejected', view: REFUSAL_VIEW, reason };
-  return { kind: 'protocol_error', error: a2aError(CONTENT_TYPE_FAILURES.has(reason) ? 'contentTypeNotSupported' : 'invalidParams', reason) };
+  if (INGRESS_OUTCOME_CLASS[reason] !== 'protocol_error')
+    return { kind: 'rejected', view: REFUSAL_VIEW, reason };
+  return {
+    kind: 'protocol_error',
+    error: a2aError(
+      CONTENT_TYPE_FAILURES.has(reason) ? 'contentTypeNotSupported' : 'invalidParams',
+      reason,
+    ),
+  };
 }

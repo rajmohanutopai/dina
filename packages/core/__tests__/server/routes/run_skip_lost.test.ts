@@ -25,7 +25,11 @@ const NOW = 1_700_000_000_000;
 const FAR_FUTURE = Date.now() + 3_600_000;
 
 let keySeq = 0;
-function ownerReq(method: 'GET' | 'POST', path: string, body: Record<string, unknown> = {}): CoreRequest {
+function ownerReq(
+  method: 'GET' | 'POST',
+  path: string,
+  body: Record<string, unknown> = {},
+): CoreRequest {
   return {
     method,
     path,
@@ -101,10 +105,18 @@ describe('response_lost owner surface (R5-01/§7)', () => {
 
   it('/status surfaces lost slots in cursor order (metadata only)', async () => {
     const runId = startPausedRun();
-    reservations.create(lostReservation({ reservation_id: 'l2', run_id: runId, cursor: 3, error_reason: 'corrupt' }));
+    reservations.create(
+      lostReservation({ reservation_id: 'l2', run_id: runId, cursor: 3, error_reason: 'corrupt' }),
+    );
     reservations.create(lostReservation({ reservation_id: 'l1', run_id: runId, cursor: 1 }));
     reservations.create(
-      lostReservation({ reservation_id: 'c1', run_id: runId, cursor: 0, state: 'committed', error_reason: null }),
+      lostReservation({
+        reservation_id: 'c1',
+        run_id: runId,
+        cursor: 0,
+        state: 'committed',
+        error_reason: null,
+      }),
     );
 
     const res = await router.handle(ownerReq('GET', `/v1/run/${runId}/status`));
@@ -167,7 +179,13 @@ describe('response_lost owner surface (R5-01/§7)', () => {
   it('409s a reservation that is not response_lost (CAS guard)', async () => {
     const runId = startPausedRun();
     reservations.create(
-      lostReservation({ reservation_id: 'c1', run_id: runId, cursor: 0, state: 'committed', error_reason: null }),
+      lostReservation({
+        reservation_id: 'c1',
+        run_id: runId,
+        cursor: 0,
+        state: 'committed',
+        error_reason: null,
+      }),
     );
     const res = await router.handle(
       ownerReq('POST', `/v1/run/${runId}/skip-lost`, { reservation_id: 'c1' }),

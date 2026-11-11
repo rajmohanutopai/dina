@@ -9,7 +9,7 @@
  * To change an icon or route: edit FEATURES below.
  */
 
-import { Ionicons , MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import React from 'react';
 
 import { FEATURE_NAMES, type FeatureKey } from '@dina/core';

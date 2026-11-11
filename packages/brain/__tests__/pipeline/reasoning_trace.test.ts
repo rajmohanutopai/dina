@@ -4,11 +4,7 @@
  * Source: brain/src/service/guardian.py — reasoning trace audit
  */
 
-import {
-  TraceBuilder,
-  type ReasoningTrace,
-  type TraceStep,
-} from '../../src/pipeline/reasoning_trace';
+import { TraceBuilder } from '../../src/pipeline/reasoning_trace';
 
 describe('Reasoning Trace', () => {
   describe('TraceBuilder', () => {

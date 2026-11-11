@@ -23,12 +23,7 @@ import * as vaultCrud from '@dina/core';
 import { useComposeContext } from '../../src/peerlens/runners/use_compose_context';
 
 import type { ComposeContextResult } from '../../src/peerlens/compose_context';
-import type {
-  ChatMessage,
-  ChatOptions,
-  ChatResponse,
-  LLMProvider,
-} from '@dina/brain/llm';
+import type { ChatMessage, ChatOptions, ChatResponse, LLMProvider } from '@dina/brain/llm';
 
 const queryVaultMock = vaultCrud.queryVault as jest.MockedFunction<typeof vaultCrud.queryVault>;
 
@@ -169,9 +164,7 @@ describe('useComposeContext', () => {
         enrichment_version: '',
       },
     ] as never);
-    const { getByTestId } = render(
-      <ComposeProbe enabled={true} llmProvider={null} />,
-    );
+    const { getByTestId } = render(<ComposeProbe enabled={true} llmProvider={null} />);
     await flushAsync();
     const probe = readProbe(getByTestId('probe').props);
     expect(probe.loading).toBe(false);

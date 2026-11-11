@@ -8,11 +8,7 @@
 
 import { pino } from 'pino';
 
-import {
-  InMemoryCrashLogWriter,
-  installCrashLogHandlers,
-  type CrashEntry,
-} from '../src/crash_log';
+import { InMemoryCrashLogWriter, installCrashLogHandlers, type CrashEntry } from '../src/crash_log';
 
 function silentLogger() {
   return pino({ level: 'silent' });
@@ -101,11 +97,7 @@ describe('crash-log writer (task 4.11)', () => {
         flushTimeoutMs: 0,
       });
 
-      process.emit(
-        'unhandledRejection',
-        'raw string reason',
-        Promise.resolve(),
-      );
+      process.emit('unhandledRejection', 'raw string reason', Promise.resolve());
       await settle();
 
       expect(w.entries[0]?.message).toBe('raw string reason');

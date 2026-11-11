@@ -38,26 +38,21 @@ import {
   setDeviceRoleResolver,
 } from '../../src/auth/caller_type';
 import { signRequest } from '../../src/auth/canonical';
-import type { CoreRequest } from '../../src/server/router';
+import { registerPublicKeyResolver, resetMiddlewareState } from '../../src/auth/middleware';
 import { getPublicKey } from '../../src/crypto/ed25519';
 import { deriveDIDKey } from '../../src/identity/did';
-import {
-  registerPublicKeyResolver,
-  resetMiddlewareState,
-} from '../../src/auth/middleware';
 import { createCoreRouter } from '../../src/server/core_server';
 import { SessionRegistry, setSessionRegistry } from '../../src/session/registry';
+import { applyMigrations } from '../../src/storage/migration';
+import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import {
   InMemoryWorkflowRepository,
   SQLiteWorkflowRepository,
   setWorkflowRepository,
   getWorkflowRepository,
 } from '../../src/workflow/repository';
-import { applyMigrations } from '../../src/storage/migration';
-import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 
-
-
+import type { CoreRequest } from '../../src/server/router';
 
 interface Actor {
   did: string;
@@ -115,7 +110,7 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
     method: 'GET' | 'POST',
     path: string,
     body?: unknown,
-    bindSession: boolean = true,
+    bindSession = true,
   ): Promise<{ status: number; body: Record<string, unknown> }> {
     const effectiveBody =
       bindSession &&
@@ -162,7 +157,11 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
 
   describe('SAFE actions (synchronous auto_approve, no proposal)', () => {
     it('search → 200 auto_approve/SAFE', async () => {
-      const res = await send('POST', '/v1/agent/validate', intent('search', 'best ergonomic chair'));
+      const res = await send(
+        'POST',
+        '/v1/agent/validate',
+        intent('search', 'best ergonomic chair'),
+      );
       expect(res.status).toBe(200);
       expect(res.body).toMatchObject({
         action: 'auto_approve',
@@ -259,19 +258,10 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
 
   describe('status poll lifecycle', () => {
     it('requires the original live session and hides cross-session proposals', async () => {
-      const submit = await send(
-        'POST',
-        '/v1/agent/validate',
-        intent('send_email', 'send X'),
-      );
+      const submit = await send('POST', '/v1/agent/validate', intent('send_email', 'send X'));
       const id = submit.body.proposal_id as string;
 
-      const missing = await send(
-        'GET',
-        `/v1/intent/proposals/${id}/status`,
-        undefined,
-        false,
-      );
+      const missing = await send('GET', `/v1/intent/proposals/${id}/status`, undefined, false);
       expect(missing.status).toBe(401);
 
       const originalSessionId = sessionId;
@@ -286,11 +276,7 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
     });
 
     it('pending → approve → status=approved', async () => {
-      const submit = await send(
-        'POST',
-        '/v1/agent/validate',
-        intent('send_email', 'send X'),
-      );
+      const submit = await send('POST', '/v1/agent/validate', intent('send_email', 'send X'));
       const id = submit.body.proposal_id as string;
 
       let s = await send('GET', `/v1/intent/proposals/${id}/status`);
@@ -354,12 +340,7 @@ describe('agent intent validation — POST /v1/agent/validate + status', () => {
 
   describe('input validation', () => {
     it('rejects a missing or ended session before evaluating the action', async () => {
-      const missing = await send(
-        'POST',
-        '/v1/agent/validate',
-        intent('search', 'X'),
-        false,
-      );
+      const missing = await send('POST', '/v1/agent/validate', intent('search', 'X'), false);
       expect(missing.status).toBe(401);
       expect(missing.body.error).toBe('invalid_session');
 
@@ -593,14 +574,26 @@ describe('agent intent validation — SQLite-backed contract', () => {
 
   describe('declared purchases (REAL_LIFE_FIXES_2 §15)', () => {
     const buy = (key: string, extra: Record<string, unknown> = {}) =>
-      send('POST', '/v1/agent/validate', intent('purchase', 'rice and oil', { amount: { value_minor: 1500, currency: 'JPY' }, merchant: 'Kirana', category: 'household', request_key: key, ...extra }));
+      send(
+        'POST',
+        '/v1/agent/validate',
+        intent('purchase', 'rice and oil', {
+          amount: { value_minor: 1500, currency: 'JPY' },
+          merchant: 'Kirana',
+          category: 'household',
+          request_key: key,
+          ...extra,
+        }),
+      );
 
     it('a retry of a purchase under review returns the same card and raises no second one', async () => {
       const first = await buy('k-retry');
       const again = await buy('k-retry');
       expect(first.body.requires_approval).toBe(true);
       expect(again.body.proposal_id).toBe(first.body.proposal_id);
-      const cards = getWorkflowRepository()!.listByKindAndState('approval', 'pending_approval', 50).filter((t) => t.payload.includes('k-retry'));
+      const cards = getWorkflowRepository()!
+        .listByKindAndState('approval', 'pending_approval', 50)
+        .filter((t) => t.payload.includes('k-retry'));
       expect(cards).toHaveLength(1);
       // Yen has no minor unit: the card shows the amount as declared.
       expect(cards[0]!.description).toContain('JPY 1500');

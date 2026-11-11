@@ -14,7 +14,6 @@ import { NodeDBProvider, NodeDBProviderError } from '../src/provider';
 
 import type { DBProvider } from '@dina/core';
 
-
 const IDENTITY_KEY = '0'.repeat(64);
 const PERSONA_KEY = 'a'.repeat(64);
 
@@ -26,7 +25,11 @@ function newVaultDir(): string {
 }
 afterAll(() => {
   for (const dir of tmpDirs) {
-    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* swallow */ }
+    try {
+      fs.rmSync(dir, { recursive: true, force: true });
+    } catch {
+      /* swallow */
+    }
   }
 });
 
@@ -40,9 +43,21 @@ function makeProvider(dir?: string): NodeDBProvider {
 
 describe('NodeDBProvider — construction', () => {
   it.each([
-    ['empty vaultDir', { vaultDir: '', identityDekHex: IDENTITY_KEY, resolvePersonaDekHex: async () => PERSONA_KEY }, /invalid_vault_dir/],
-    ['non-hex identity key', { vaultDir: '/tmp/x', identityDekHex: 'nope', resolvePersonaDekHex: async () => PERSONA_KEY }, /invalid_identity_key/],
-    ['short identity key', { vaultDir: '/tmp/x', identityDekHex: 'ab', resolvePersonaDekHex: async () => PERSONA_KEY }, /invalid_identity_key/],
+    [
+      'empty vaultDir',
+      { vaultDir: '', identityDekHex: IDENTITY_KEY, resolvePersonaDekHex: async () => PERSONA_KEY },
+      /invalid_vault_dir/,
+    ],
+    [
+      'non-hex identity key',
+      { vaultDir: '/tmp/x', identityDekHex: 'nope', resolvePersonaDekHex: async () => PERSONA_KEY },
+      /invalid_identity_key/,
+    ],
+    [
+      'short identity key',
+      { vaultDir: '/tmp/x', identityDekHex: 'ab', resolvePersonaDekHex: async () => PERSONA_KEY },
+      /invalid_identity_key/,
+    ],
   ] as const)('rejects %s', (_label, opts, re) => {
     expect(() => new NodeDBProvider(opts)).toThrow(re);
   });
@@ -180,7 +195,9 @@ describe('NodeDBProvider — persona name validation', () => {
   const dir = newVaultDir();
   const p = makeProvider(dir);
 
-  afterAll(async () => { await p.closeAll(); });
+  afterAll(async () => {
+    await p.closeAll();
+  });
 
   it.each([
     ['empty string', ''],

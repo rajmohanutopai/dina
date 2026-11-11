@@ -19,11 +19,7 @@
  * (no real-time updates needed) and avoids wiring a vault-event bus.
  */
 
-import {
-  browseRecent,
-  deleteItem,
-  vaultItemCount,
-} from '@dina/core';
+import { browseRecent, deleteItem, vaultItemCount } from '@dina/core';
 
 import type { VaultItem } from '@dina/test-harness';
 

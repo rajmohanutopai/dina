@@ -66,9 +66,7 @@ export function costLedAlternatives(args: {
   // rule this code cannot read rules the day out rather than letting it by.
   const ruledOut = (day: string, totalMinor: bigint): boolean =>
     model.never.some(
-      (rule) =>
-        rule.all.length > 0 &&
-        rule.all.every((c) => holds(c, { day, share, totalMinor })),
+      (rule) => rule.all.length > 0 && rule.all.every((c) => holds(c, { day, share, totalMinor })),
     );
   // The other days of the week around the quote's own delivery date, three
   // either side, at its time of day, each once, and only days still ahead.
@@ -178,5 +176,7 @@ export function shareChoice(model: ValueModel, brainShareBps?: number): ShareCho
 
 /** The part of a saving passed on under a share choice, in whole rupees, rounded down. */
 export function passOf(saving: bigint, choice: ShareChoice): bigint {
-  return choice.bps === undefined ? shareOf(saving, choice.label) : (saving * BigInt(choice.bps)) / 10_000n;
+  return choice.bps === undefined
+    ? shareOf(saving, choice.label)
+    : (saving * BigInt(choice.bps)) / 10_000n;
 }

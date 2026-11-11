@@ -13,6 +13,7 @@ import * as path from 'node:path';
 import { pluginLane, type PluginManifest } from '@dina/protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
+import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { claimPluginTask } from '../../src/plugins/claim_guard';
 import { buildPluginEnvelope } from '../../src/plugins/dispatch';
 import {
@@ -28,7 +29,6 @@ import {
   type PluginInstall,
 } from '../../src/plugins/registry';
 import { applyMigrations } from '../../src/storage/migration';
-import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 import { InMemoryWorkflowRepository } from '../../src/workflow/repository';
 import { WorkflowService } from '../../src/workflow/service';

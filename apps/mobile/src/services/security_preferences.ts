@@ -42,11 +42,9 @@ export async function saveBackgroundTimeoutPreference(seconds: number): Promise<
   if (!Number.isFinite(seconds) || seconds < 0) {
     throw new Error('saveBackgroundTimeoutPreference: must be a non-negative integer');
   }
-  await Keychain.setGenericPassword(
-    SERVICE_BG_TIMEOUT,
-    String(Math.floor(seconds)),
-    { service: SERVICE_BG_TIMEOUT },
-  );
+  await Keychain.setGenericPassword(SERVICE_BG_TIMEOUT, String(Math.floor(seconds)), {
+    service: SERVICE_BG_TIMEOUT,
+  });
 }
 
 /** Clear the persisted preference. Used by full local wipe. */

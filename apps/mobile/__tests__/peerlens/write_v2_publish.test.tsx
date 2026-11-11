@@ -20,6 +20,12 @@
 import { render, fireEvent } from '@testing-library/react-native';
 import React from 'react';
 
+import { InMemoryReviewPublishRepository, setReviewPublishRepository } from '@dina/core';
+
+import WriteScreen from '../../app/peerlens/write';
+import * as appview from '../../src/peerlens/appview_runtime';
+import { emptyWriteFormState, type WriteFormState } from '../../src/peerlens/write_form_data';
+
 // Mock the AppView runtime BEFORE importing the screen so the screen
 // uses the mocked module. The mock surfaces every export the screen
 // imports + records calls to `injectAttestation` so the test can
@@ -41,11 +47,6 @@ jest.mock('../../src/hooks/useNodeBootstrap', () => ({
   subscribeBootedNode: jest.fn(() => () => undefined),
 }));
 
-import { InMemoryReviewPublishRepository, setReviewPublishRepository } from '@dina/core';
-
-import WriteScreen from '../../app/peerlens/write';
-import * as appview from '../../src/peerlens/appview_runtime';
-
 const injectMock = appview.injectAttestation as jest.MockedFunction<
   typeof appview.injectAttestation
 >;
@@ -64,7 +65,6 @@ afterEach(() => {
  * is publishable (sentiment/headline/confidence set), letting each
  * test override the V2 fields it cares about.
  */
-import { emptyWriteFormState, type WriteFormState } from '../../src/peerlens/write_form_data';
 
 function publishableInitial(extra: Partial<WriteFormState> = {}): WriteFormState {
   return {
@@ -292,9 +292,7 @@ describe('Publish wire body — full reviewer-opinion stack', () => {
           reviewerExperience: 'expert',
           recommendFor: ['professional'],
           notRecommendFor: ['gaming'],
-          alternatives: [
-            { kind: 'product', name: 'Steelcase Leap' },
-          ],
+          alternatives: [{ kind: 'product', name: 'Steelcase Leap' }],
           compliance: ['vegan'],
           accessibility: ['wheelchair'],
           compat: ['ios', 'usb_c'],
@@ -315,9 +313,7 @@ describe('Publish wire body — full reviewer-opinion stack', () => {
     expect(record.reviewerExperience).toBe('expert');
     expect(record.recommendFor).toEqual(['professional']);
     expect(record.notRecommendFor).toEqual(['gaming']);
-    expect(record.alternatives).toEqual([
-      { type: 'product', name: 'Steelcase Leap' },
-    ]);
+    expect(record.alternatives).toEqual([{ type: 'product', name: 'Steelcase Leap' }]);
     expect(record.compliance).toEqual(['vegan']);
     expect(record.accessibility).toEqual(['wheelchair']);
     expect(record.compat).toEqual(['ios', 'usb_c']);

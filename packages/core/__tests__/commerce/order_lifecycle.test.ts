@@ -6,10 +6,14 @@
  * call is the recorded failure mode of this subsystem.
  */
 
-import { DispatchIntentSweeper } from '../../src/commerce/dispatch_intent_sweeper';
 import { InMemoryBuyerOrderRepository } from '../../src/commerce/buyer_orders';
-import { newBuyerOrder, type BuyerOrderRecord } from '../../src/commerce/buyer_reconciliation';
+import {
+  newBuyerOrder,
+  type BuyerOrderRecord,
+  BuyerOrderState,
+} from '../../src/commerce/buyer_reconciliation';
 import { InMemoryBuyerQuoteRequestRepository } from '../../src/commerce/buyer_requests';
+import { DispatchIntentSweeper } from '../../src/commerce/dispatch_intent_sweeper';
 import { InMemoryOrderApprovalRepository } from '../../src/commerce/order_approvals';
 import {
   InMemoryOrderDraftRepository,
@@ -18,9 +22,8 @@ import {
 } from '../../src/commerce/order_draft_store';
 import { sweepOrderDraftLifecycle } from '../../src/commerce/order_lifecycle';
 import { installCommerceRuntime, type CommerceRuntime } from '../../src/commerce/runtime';
-import { makeQuoteRequest } from './helpers';
 
-import type { BuyerOrderState } from '../../src/commerce/buyer_reconciliation';
+import { makeQuoteRequest } from './helpers';
 
 const NOW = Date.parse('2026-08-16T12:00:00.000Z');
 const PAST = '2026-08-15T00:00:00.000Z';
@@ -152,9 +155,7 @@ afterEach(() => {
 it('TIMED OUT: no quote before the request expired — durable, with retry options upstream', () => {
   seed([conversation({ state: 'sent' })]);
   const events = sweepOrderDraftLifecycle(runtime(), NOW);
-  expect(events).toEqual([
-    { draftId: 'odr-1', conversationId: 'conv-1', transition: 'timed_out' },
-  ]);
+  expect(events).toEqual([{ draftId: 'odr-1', conversationId: 'conv-1', transition: 'timed_out' }]);
   expect(held().state).toBe('timed_out');
   expect(held().outcome).toBe('no_answer_before_expiry');
 });
@@ -195,9 +196,7 @@ it('ACCEPTED: the §12.7 record resolves the unconfirmed submit — lines record
   seed([conversation({ state: 'submitted_unconfirmed', purchaseOrderId: 'po-1' })]);
   buyerOrders.create(SUPPLIER, record('accepted'));
   const events = sweepOrderDraftLifecycle(runtime(), NOW);
-  expect(events).toEqual([
-    { draftId: 'odr-1', conversationId: 'conv-1', transition: 'submitted' },
-  ]);
+  expect(events).toEqual([{ draftId: 'odr-1', conversationId: 'conv-1', transition: 'submitted' }]);
   expect(held().state).toBe('submitted');
   expect(orderDrafts.get('odr-1')?.lines[0]?.submittedIn).toBe('conv-1');
 });
@@ -206,9 +205,7 @@ it('REJECTED: reason on the row; lines reopen by the explicit §5.1 action, not 
   seed([conversation({ state: 'submitted_unconfirmed', purchaseOrderId: 'po-1' })]);
   buyerOrders.create(SUPPLIER, record('rejected'));
   const events = sweepOrderDraftLifecycle(runtime(), NOW);
-  expect(events).toEqual([
-    { draftId: 'odr-1', conversationId: 'conv-1', transition: 'rejected' },
-  ]);
+  expect(events).toEqual([{ draftId: 'odr-1', conversationId: 'conv-1', transition: 'rejected' }]);
   expect(held().state).toBe('rejected');
   expect(held().outcome).toBe('supplier_rejected');
   // The sweep marks terminal; retiring assignments is the buyer's decision.

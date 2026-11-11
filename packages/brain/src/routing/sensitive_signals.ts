@@ -157,8 +157,9 @@ function mergeOverlapping(hits: SensitiveHit[]): SensitiveHit[] {
   // Group by domain
   const byDomain = new Map<string, SensitiveHit[]>();
   for (const h of hits) {
-    if (!byDomain.has(h.domain)) byDomain.set(h.domain, []);
-    byDomain.get(h.domain)!.push(h);
+    const group = byDomain.get(h.domain);
+    if (group === undefined) byDomain.set(h.domain, [h]);
+    else group.push(h);
   }
 
   const merged: SensitiveHit[] = [];

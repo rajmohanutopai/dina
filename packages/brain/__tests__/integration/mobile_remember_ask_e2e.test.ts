@@ -30,11 +30,14 @@
  * "I don't have any relevant information".
  */
 
-import { configureRateLimiter , createCoreRouter , resetStagingState ,
+import {
+  configureRateLimiter,
+  createCoreRouter,
+  resetStagingState,
   clearVaults,
   queryVault,
- InProcessTransport } from '@dina/core';
-
+  InProcessTransport,
+} from '@dina/core';
 import { makeStubRememberRuntime } from '@dina/test-harness';
 
 import { StagingDrainScheduler } from '../../src/staging/scheduler';

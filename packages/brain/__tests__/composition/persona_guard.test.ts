@@ -6,11 +6,7 @@
  * mock replaces `ApprovalManager` with a minimal `VaultApprovalWorkflowClient`.
  */
 
-import {
-  createPersona,
-  openPersona,
-  resetPersonaState,
-} from '@dina/core';
+import { createPersona, openPersona, resetPersonaState } from '@dina/core';
 
 import {
   approvalIdFor,
@@ -115,14 +111,22 @@ describe('createPersonaGuard — tier policy', () => {
   it('returns null for default tier (open)', async () => {
     createPersona('general', 'default');
     const { client } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     expect(await guard('general')).toBeNull();
   });
 
   it('asks for a standard persona (REAL_LIFE_FIXES_2 §7.2: agents need a grant)', async () => {
     createPersona('work', 'standard');
     const { client } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     expect(await guard('work')).toBe(approvalIdFor(ASK_ID, 'work'));
   });
 
@@ -130,14 +134,22 @@ describe('createPersonaGuard — tier policy', () => {
     // An empty or stale mirror must never let an agent read a persona
     // without the gate: unknown is treated as gated, not as open.
     const { client } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     expect(await guard('does_not_exist')).not.toBeNull();
   });
 
   it('returns approvalId for sensitive tier', async () => {
     createPersona('health', 'sensitive');
     const { client } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     const result = await guard('health');
     expect(result).toBe('appr-ask-1-health');
   });
@@ -145,7 +157,11 @@ describe('createPersonaGuard — tier policy', () => {
   it('returns approvalId for locked tier', async () => {
     createPersona('financial', 'locked');
     const { client } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     expect(await guard('financial')).toBe('appr-ask-1-financial');
   });
 });
@@ -154,7 +170,11 @@ describe('createPersonaGuard — approval registration', () => {
   it('creates a pending workflow task with the right payload', async () => {
     createPersona('health', 'sensitive');
     const { client, tasks } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     await guard('health');
 
     const task = tasks.get('appr-ask-1-health');
@@ -172,7 +192,11 @@ describe('createPersonaGuard — approval registration', () => {
   it('embeds the askId in the reason text', async () => {
     createPersona('health', 'sensitive');
     const { client, tasks } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: 'ask-xyz', requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: 'ask-xyz',
+      requesterDid: REQUESTER,
+    });
     await guard('health');
     const payload = JSON.parse(tasks.get('appr-ask-xyz-health')?.payload ?? '{}');
     expect(payload.reason).toContain('ask-xyz');
@@ -181,7 +205,11 @@ describe('createPersonaGuard — approval registration', () => {
   it('is idempotent on a re-call with pending task', async () => {
     createPersona('health', 'sensitive');
     const { client, tasks } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     const id1 = await guard('health');
     const id2 = await guard('health'); // task exists (pending_approval) → idempotent
     expect(id1).toBe(id2);
@@ -192,7 +220,11 @@ describe('createPersonaGuard — approval registration', () => {
     createPersona('health', 'sensitive');
     createPersona('financial', 'sensitive');
     const { client, tasks } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     expect(await guard('health')).toBe('appr-ask-1-health');
     expect(await guard('financial')).toBe('appr-ask-1-financial');
     expect(tasks.size).toBe(2);
@@ -201,8 +233,16 @@ describe('createPersonaGuard — approval registration', () => {
   it('mints distinct approval ids for the same persona across different asks', async () => {
     createPersona('health', 'sensitive');
     const { client, tasks } = makeFakeWorkflowClient();
-    const guard1 = createPersonaGuard({ coreClient: client, askId: 'ask-1', requesterDid: REQUESTER });
-    const guard2 = createPersonaGuard({ coreClient: client, askId: 'ask-2', requesterDid: REQUESTER });
+    const guard1 = createPersonaGuard({
+      coreClient: client,
+      askId: 'ask-1',
+      requesterDid: REQUESTER,
+    });
+    const guard2 = createPersonaGuard({
+      coreClient: client,
+      askId: 'ask-2',
+      requesterDid: REQUESTER,
+    });
     expect(await guard1('health')).toBe('appr-ask-1-health');
     expect(await guard2('health')).toBe('appr-ask-2-health');
     expect(tasks.size).toBe(2);
@@ -213,7 +253,11 @@ describe('createPersonaGuard — resume cycle (consume on second call)', () => {
   it('returns null after operator approves (task moves to queued)', async () => {
     createPersona('health', 'sensitive');
     const { client, setStatus } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
 
     // First call: mint pending task.
     const id = await guard('health');
@@ -229,7 +273,11 @@ describe('createPersonaGuard — resume cycle (consume on second call)', () => {
   it('completing the task marks it consumed (status → completed)', async () => {
     createPersona('health', 'sensitive');
     const { client, tasks, setStatus } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
 
     const id = await guard('health');
     setStatus(id!, 'queued');
@@ -241,7 +289,11 @@ describe('createPersonaGuard — resume cycle (consume on second call)', () => {
   it('a third call after consuming mints a fresh task', async () => {
     createPersona('health', 'sensitive');
     const { client, tasks, setStatus } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
 
     const firstId = await guard('health');
     setStatus(firstId!, 'queued');
@@ -259,7 +311,11 @@ describe('createPersonaGuard — resume cycle (consume on second call)', () => {
   it('a denied task (cancelled status) surfaces approvalId so the loop bails', async () => {
     createPersona('health', 'sensitive');
     const { client, setStatus } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     const id = await guard('health');
     setStatus(id!, 'cancelled');
 
@@ -279,7 +335,11 @@ describe('createPersonaGuard — interaction with persona unlock state', () => {
     createPersona('health', 'sensitive');
     openPersona('health', true);
     const { client } = makeFakeWorkflowClient();
-    const guard = createPersonaGuard({ coreClient: client, askId: ASK_ID, requesterDid: REQUESTER });
+    const guard = createPersonaGuard({
+      coreClient: client,
+      askId: ASK_ID,
+      requesterDid: REQUESTER,
+    });
     expect(await guard('health')).toBe('appr-ask-1-health');
   });
 });

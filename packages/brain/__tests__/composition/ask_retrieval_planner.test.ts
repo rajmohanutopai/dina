@@ -211,9 +211,7 @@ describe('runAskPreFlightRetrieval', () => {
             },
           ];
         }
-        return [
-          { id: 'g1', content_l0: 'Emma loves dinosaurs', persona },
-        ];
+        return [{ id: 'g1', content_l0: 'Emma loves dinosaurs', persona }];
       },
       findPerson: async () => [personMatch],
     });
@@ -269,9 +267,7 @@ describe('runAskPreFlightRetrieval', () => {
 
   it('dedupes items by id within a persona', async () => {
     const planTwoQueries: AskRetrievalPlan = {
-      personas: [
-        { persona: 'finance', queries: ['budget', 'spending'], why: 'cost' },
-      ],
+      personas: [{ persona: 'finance', queries: ['budget', 'spending'], why: 'cost' }],
       people: [],
       needs_peerlens: false,
       intent: '',
@@ -323,15 +319,13 @@ describe('formatRetrievalContextBlock', () => {
 
   it('puts people before vault items', () => {
     const grouped = new Map<string, RetrievedVaultItem[]>();
-    grouped.set('finance', [
-      { id: 'f1', content_l0: 'Budget: $25', persona: 'finance' },
-    ]);
+    grouped.set('finance', [{ id: 'f1', content_l0: 'Budget: $25', persona: 'finance' }]);
     const block = formatRetrievalContextBlock({
       plan: {
         personas: [],
         people: ['Emma'],
         needs_peerlens: false,
-        intent: 'Plan Emma\'s birthday gift',
+        intent: "Plan Emma's birthday gift",
       },
       grouped,
       personMatches: [
@@ -384,7 +378,9 @@ describe('inventory questions (REAL_LIFE_FIXES_2 §9.2)', () => {
     );
     const out = await runAskPreFlightRetrieval(plan, {
       vaultSearch: async () => [],
-      recent: async (persona) => [{ id: 'r1', content_l0: 'pickup moves to 2:15 on Wednesdays', persona }],
+      recent: async (persona) => [
+        { id: 'r1', content_l0: 'pickup moves to 2:15 on Wednesdays', persona },
+      ],
     });
     expect(out.block).toContain('pickup moves to 2:15 on Wednesdays');
   });

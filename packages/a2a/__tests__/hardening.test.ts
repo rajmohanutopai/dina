@@ -217,17 +217,26 @@ describe('card projection', () => {
   it('leaves out a skill id that a capability and its alias would both claim', () => {
     const both = listing([cap(), cap({ capability: 'bus_eta' })]);
     expect(projectSkills([both])).toEqual([]);
-    expect(both.capabilities.map((c) => exclusionReason(both, c))).toEqual(['ambiguous_skill', 'ambiguous_skill']);
+    expect(both.capabilities.map((c) => exclusionReason(both, c))).toEqual([
+      'ambiguous_skill',
+      'ambiguous_skill',
+    ]);
     // The extended card's granted skills follow the same rule.
     const granted = { ...both, discoverability: 'known_only' as const };
-    const audience = { scope: [], grants: [{ grantId: 'g1', rkey: 'self', capability: 'eta_query' }] };
+    const audience = {
+      scope: [],
+      grants: [{ grantId: 'g1', rkey: 'self', capability: 'eta_query' }],
+    };
     expect(projectSkills([granted], audience)).toEqual([]);
   });
 
   it('is ambiguous whatever else is true of either entry: one with no executor still takes the other off', () => {
     // Invocation could not tell which entry a call means; the card shows neither.
     const both = listing([cap(), cap({ capability: 'bus_eta', executor: null })]);
-    expect(both.capabilities.map((c) => exclusionReason(both, c))).toEqual(['ambiguous_skill', 'ambiguous_skill']);
+    expect(both.capabilities.map((c) => exclusionReason(both, c))).toEqual([
+      'ambiguous_skill',
+      'ambiguous_skill',
+    ]);
     expect(projectSkills([listing([cap()])]).map((s) => s.skill.id)).toEqual(['eta_query@self']);
   });
 

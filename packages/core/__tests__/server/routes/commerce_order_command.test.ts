@@ -525,7 +525,12 @@ describe('resend', () => {
     buyerOrders.create(SUPPLIER, record({ state: 'never_received', resubmissionAuthorized: true }));
     const approvalId = await prepare();
     const first = await router.handle(
-      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend', approval_id: approvalId }),
+      owner({
+        supplier_did: SUPPLIER,
+        purchase_order_id: PO,
+        action: 'resend',
+        approval_id: approvalId,
+      }),
     );
     expect(first.status).toBe(200);
     expect(sent).toEqual([PO]);
@@ -544,7 +549,12 @@ describe('resend', () => {
     });
     expect(restored).toBe(true);
     const second = await router.handle(
-      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend', approval_id: approvalId }),
+      owner({
+        supplier_did: SUPPLIER,
+        purchase_order_id: PO,
+        action: 'resend',
+        approval_id: approvalId,
+      }),
     );
     expect(second.status).toBe(409);
     expect((second.body as { error: string }).error).toBe('approval_already_used');
@@ -562,7 +572,12 @@ describe('resend', () => {
     tamperWithRetainedApproval(approvalId);
 
     const resp = await router.handle(
-      owner({ supplier_did: SUPPLIER, purchase_order_id: PO, action: 'resend', approval_id: approvalId }),
+      owner({
+        supplier_did: SUPPLIER,
+        purchase_order_id: PO,
+        action: 'resend',
+        approval_id: approvalId,
+      }),
     );
     expect(resp.status).toBe(404);
     expect((resp.body as { error: string }).error).toBe('unknown_approval');

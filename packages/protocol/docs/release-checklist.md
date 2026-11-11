@@ -33,11 +33,13 @@ npm test              # includes publish_ready.test.ts — 10 tests
 ```
 
 Expected:
+
 - `dist/index.js` + `dist/index.d.ts` + per-module artefacts under `dist/types/`.
 - `npm test` shows 175+ tests passing (165 protocol tests + 10 publish-readiness).
 - `npm run conformance` (optional) runs the 9 conformance vectors.
 
 Failure modes:
+
 - TSC errors → source drifted from `tsconfig.build.json` constraints
   (e.g. `composite: false` vs importing a composite-mode type).
   Fix source; re-run.
@@ -50,10 +52,10 @@ Failure modes:
 npm is append-only — a version string can never be re-used once
 published. Decide between:
 
-| Track | When | Version |
-|-------|------|---------|
-| Beta  | First publish; want feedback before semver commitments | `0.1.0-beta.1` with `--tag beta` |
-| Public v0.1.0 | Stable enough for third-party implementers | `0.1.0` as `--tag latest` |
+| Track         | When                                                   | Version                          |
+| ------------- | ------------------------------------------------------ | -------------------------------- |
+| Beta          | First publish; want feedback before semver commitments | `0.1.0-beta.1` with `--tag beta` |
+| Public v0.1.0 | Stable enough for third-party implementers             | `0.1.0` as `--tag latest`        |
 
 ```bash
 # Beta (reversible if the next beta rev fixes a mistake)
@@ -144,7 +146,7 @@ If a broken version ships:
 2. **After 72h** or if already consumed: bump patch version
    (`0.1.0` → `0.1.1`), fix, re-publish. Mark the broken version as
    deprecated: `npm deprecate @dina/protocol@0.1.0 "use 0.1.1 for
-   the <reason> fix"`.
+the <reason> fix"`.
 3. **If the bug is in the wire format itself**: that's a protocol
    break. Document in `packages/protocol/docs/conformance.md` §14
    (changelog), bump the major (`0.x.x` → `1.0.0` or `1.x.x` → `2.0.0`),

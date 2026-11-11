@@ -10,13 +10,7 @@
  * Source: core/test/signature_test.go, auth_test.go
  */
 
-import {
-  TEST_ED25519_SEED,
-  stringToBytes,
-  hasFixture,
-  loadVectors,
-  bytesToHex,
-} from '@dina/test-harness';
+import { TEST_ED25519_SEED, stringToBytes, hasFixture, loadVectors } from '@dina/test-harness';
 
 import {
   buildCanonicalPayload,

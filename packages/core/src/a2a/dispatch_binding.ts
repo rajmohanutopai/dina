@@ -84,7 +84,10 @@ const VERSION_PARAM = /^A2A-Version=([0-9.]{1,16})$/;
 
 export function bindSignedDispatch(input: SignedDispatchInput): DispatchBinding {
   // The endpoint's path as the client sent it: with or without a trailing slash (`isA2ARpcPath`).
-  if (input.signedMethod !== 'POST' || (input.signedPath !== input.rpcPath && input.signedPath !== `${input.rpcPath}/`)) {
+  if (
+    input.signedMethod !== 'POST' ||
+    (input.signedPath !== input.rpcPath && input.signedPath !== `${input.rpcPath}/`)
+  ) {
     return { ok: false, reason: 'external_mismatch' };
   }
   let versionParameter: string | undefined;
@@ -140,13 +143,15 @@ function bindToRoute(
 export const REST_REQUEST_ID = 'rest';
 
 /** `bindSignedDispatch` for the REST binding (see the module comment). */
-export function bindRestDispatch(
-  input: Omit<SignedDispatchInput, 'rpcPath'>,
-): DispatchBinding {
+export function bindRestDispatch(input: Omit<SignedDispatchInput, 'rpcPath'>): DispatchBinding {
   const match = matchRestRequest(input.signedMethod, input.signedPath);
   if (match === null) return { ok: false, reason: 'external_mismatch' };
   const params = restParams(match, input.signedQuery, input.rawBody);
   if (!params.ok) return { ok: false, reason: params.reason };
-  const request: JsonRpcRequest = { id: REST_REQUEST_ID, method: match.operation as A2AMethod, params: params.params as JsonObject };
+  const request: JsonRpcRequest = {
+    id: REST_REQUEST_ID,
+    method: match.operation as A2AMethod,
+    params: params.params as JsonObject,
+  };
   return bindToRoute(request, input, params.versionParameter);
 }

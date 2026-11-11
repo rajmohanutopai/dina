@@ -199,9 +199,7 @@ export function vaultFilesMayExist(): boolean {
  */
 export async function localVaultExists(): Promise<boolean> {
   try {
-    return (
-      new File(Paths.document, 'identity.sqlite').exists && (await loadVaultSalt()) !== null
-    );
+    return new File(Paths.document, 'identity.sqlite').exists && (await loadVaultSalt()) !== null;
   } catch {
     return false;
   }

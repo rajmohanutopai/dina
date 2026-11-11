@@ -43,7 +43,11 @@ import { pluginLane, type PluginCapabilityDecl } from '@dina/protocol';
 
 import { appendAudit } from '../audit/service';
 import { servedByCore } from '../commerce/first_party_packs';
-import { evaluatePluginIntent, type PluginPublisherRing, type RiskLevel } from '../gatekeeper/intent';
+import {
+  evaluatePluginIntent,
+  type PluginPublisherRing,
+  type RiskLevel,
+} from '../gatekeeper/intent';
 import { getPersona } from '../persona/service';
 import { WorkflowTaskState, type WorkflowTask } from '../workflow/domain';
 import {
@@ -51,7 +55,6 @@ import {
   PLUGIN_INVOCATION_PAYLOAD_TYPE,
   parsePluginEnvelope,
 } from '../workflow/plugin_envelope';
-
 
 import {
   projectInvocationContext,
@@ -192,7 +195,9 @@ export interface InvocationCardPolicy {
 }
 
 /** Read the Core-owned card facts off a task, or null when it carries none. */
-export function readInvocationCardPolicy(task: Pick<WorkflowTask, 'policy'>): InvocationCardPolicy | null {
+export function readInvocationCardPolicy(
+  task: Pick<WorkflowTask, 'policy'>,
+): InvocationCardPolicy | null {
   try {
     const parsed = JSON.parse(task.policy) as Partial<InvocationCardPolicy> | null;
     if (
@@ -221,8 +226,13 @@ export function readInvocationCardPolicy(task: Pick<WorkflowTask, 'policy'>): In
 function readContextSummary(raw: unknown): InvocationContextSummary | null {
   if (raw === null || typeof raw !== 'object') return null;
   const value = raw as { categories?: unknown; item_count?: unknown };
-  if (!Array.isArray(value.categories) || !value.categories.every((c) => typeof c === 'string')) return null;
-  if (typeof value.item_count !== 'number' || !Number.isInteger(value.item_count) || value.item_count < 0) {
+  if (!Array.isArray(value.categories) || !value.categories.every((c) => typeof c === 'string'))
+    return null;
+  if (
+    typeof value.item_count !== 'number' ||
+    !Number.isInteger(value.item_count) ||
+    value.item_count < 0
+  ) {
     return null;
   }
   return { categories: value.categories as string[], item_count: value.item_count };
@@ -303,10 +313,18 @@ export function invokeToolCapability(
   // any grant use is charged — a task terminalized `stale_authority` at claim
   // has nothing to give the use back.
   if (args.idempotencyKey !== undefined && !isBoundedIdentityString(args.idempotencyKey)) {
-    return { ok: false, code: 'params_invalid', message: 'idempotency_key must be a bounded, non-empty, plain string' };
+    return {
+      ok: false,
+      code: 'params_invalid',
+      message: 'idempotency_key must be a bounded, non-empty, plain string',
+    };
   }
   if (args.resource !== undefined && !isBoundedIdentityString(args.resource)) {
-    return { ok: false, code: 'params_invalid', message: 'resource must be a bounded, non-empty, plain string' };
+    return {
+      ok: false,
+      code: 'params_invalid',
+      message: 'resource must be a bounded, non-empty, plain string',
+    };
   }
   if (args.value !== undefined && !Number.isFinite(args.value)) {
     return { ok: false, code: 'params_invalid', message: 'value must be a finite number' };
@@ -318,10 +336,18 @@ export function invokeToolCapability(
   // no way to tell.
   const subject = args.subject ?? {};
   if (subject.contactDid !== undefined && !isBoundedIdentityString(subject.contactDid)) {
-    return { ok: false, code: 'params_invalid', message: 'subject.contact_did must be a bounded, non-empty, plain string' };
+    return {
+      ok: false,
+      code: 'params_invalid',
+      message: 'subject.contact_did must be a bounded, non-empty, plain string',
+    };
   }
   if (subject.documentDigest !== undefined && !isBoundedIdentityString(subject.documentDigest)) {
-    return { ok: false, code: 'params_invalid', message: 'subject.document_digest must be a bounded, non-empty, plain string' };
+    return {
+      ok: false,
+      code: 'params_invalid',
+      message: 'subject.document_digest must be a bounded, non-empty, plain string',
+    };
   }
 
   const executionId = `plgx_${bytesToHex(randomBytes(12))}`;
@@ -347,7 +373,8 @@ export function invokeToolCapability(
   // `false` on every invocation — a gate wired to a constant. A root may still
   // override, but forgetting to now fails toward the clamp, not past it.
   const ring = declaredPersonaRing(capability);
-  const touchesSensitivePersona = policy.touchesSensitivePersona?.(install, capability) ?? ring.sensitive;
+  const touchesSensitivePersona =
+    policy.touchesSensitivePersona?.(install, capability) ?? ring.sensitive;
   const touchesLockedPersona = policy.touchesLockedPersona?.(install, capability) ?? ring.locked;
   const intent = evaluatePluginIntent({
     actionClass: capability.action_class,
@@ -435,8 +462,13 @@ export function invokeToolCapability(
     });
   } catch (err) {
     // The use was reserved for an execution that will never exist.
-    if (authorization?.kind === 'grant') grants?.releaseUse(authorization.grantId ?? '', executionId);
-    return { ok: false, code: 'params_invalid', message: err instanceof Error ? err.message : String(err) };
+    if (authorization?.kind === 'grant')
+      grants?.releaseUse(authorization.grantId ?? '', executionId);
+    return {
+      ok: false,
+      code: 'params_invalid',
+      message: err instanceof Error ? err.message : String(err),
+    };
   }
 
   const card = authorization?.kind === 'card';
@@ -477,7 +509,8 @@ export function invokeToolCapability(
     });
   } catch (err) {
     const releaseReservedUse = (): void => {
-      if (authorization?.kind === 'grant') grants?.releaseUse(authorization.grantId ?? '', executionId);
+      if (authorization?.kind === 'grant')
+        grants?.releaseUse(authorization.grantId ?? '', executionId);
     };
     // Anything but a dedup conflict is a fault. If the row never landed, the
     // use reserved for it is given back first; a row that did land (the
@@ -512,7 +545,13 @@ export function invokeToolCapability(
         deduplicated: true,
       };
     }
-    return { ok: true, mode: 'dispatched', taskId: existing.id, executionId: existingExecution, deduplicated: true };
+    return {
+      ok: true,
+      mode: 'dispatched',
+      taskId: existing.id,
+      executionId: existingExecution,
+      deduplicated: true,
+    };
   }
 
   auditProjection(install, capability.id, executionId, projection);
@@ -523,7 +562,12 @@ export function invokeToolCapability(
       mode: 'approval_required',
       taskId: task.id,
       executionId,
-      card: { riskLevel: intent.riskLevel, reasons: cardReasons, paramsText: egress.cardParamsText, context: contextSummary },
+      card: {
+        riskLevel: intent.riskLevel,
+        reasons: cardReasons,
+        paramsText: egress.cardParamsText,
+        context: contextSummary,
+      },
     };
   }
   return {
@@ -546,7 +590,10 @@ export function invokeToolCapability(
  * does not recognise counts as LOCKED — the strictest reading of a name we
  * cannot resolve, and the same direction the projector takes.
  */
-function declaredPersonaRing(capability: PluginCapabilityDecl): { sensitive: boolean; locked: boolean } {
+function declaredPersonaRing(capability: PluginCapabilityDecl): {
+  sensitive: boolean;
+  locked: boolean;
+} {
   const declared = capability.data_scope?.personas;
   if (declared === undefined) return { sensitive: false, locked: false };
   let sensitive = false;
@@ -659,10 +706,20 @@ export const MAX_APPROVAL_WINDOW_HOURS = 24;
 export function parseApprovalGrantRequest(raw: unknown): ApprovalGrantRequest | null | 'invalid' {
   if (raw === undefined || raw === null) return null;
   if (typeof raw !== 'object') return 'invalid';
-  const r = raw as { type?: unknown; hours?: unknown; constraints?: unknown; expires_in_hours?: unknown };
+  const r = raw as {
+    type?: unknown;
+    hours?: unknown;
+    constraints?: unknown;
+    expires_in_hours?: unknown;
+  };
   if (r.type === 'window') {
     if (r.hours === undefined) return { type: 'window' };
-    if (typeof r.hours !== 'number' || !Number.isFinite(r.hours) || r.hours <= 0 || r.hours > MAX_APPROVAL_WINDOW_HOURS) {
+    if (
+      typeof r.hours !== 'number' ||
+      !Number.isFinite(r.hours) ||
+      r.hours <= 0 ||
+      r.hours > MAX_APPROVAL_WINDOW_HOURS
+    ) {
       return 'invalid';
     }
     return { type: 'window', hours: r.hours };
@@ -672,7 +729,9 @@ export function parseApprovalGrantRequest(raw: unknown): ApprovalGrantRequest | 
     if (r.constraints !== undefined && constraints === null) return 'invalid';
     if (
       r.expires_in_hours !== undefined &&
-      (typeof r.expires_in_hours !== 'number' || !Number.isFinite(r.expires_in_hours) || r.expires_in_hours <= 0)
+      (typeof r.expires_in_hours !== 'number' ||
+        !Number.isFinite(r.expires_in_hours) ||
+        r.expires_in_hours <= 0)
     ) {
       return 'invalid';
     }
@@ -686,9 +745,12 @@ export function parseApprovalGrantRequest(raw: unknown): ApprovalGrantRequest | 
 }
 
 /** The envelope's identity fields, or null when the task is not a plugin invocation. */
-export function invocationIdentity(
-  task: Pick<WorkflowTask, 'payload'>,
-): { installId: string; capabilityId: string; approvedScopeHash: string; actionClass: string } | null {
+export function invocationIdentity(task: Pick<WorkflowTask, 'payload'>): {
+  installId: string;
+  capabilityId: string;
+  approvedScopeHash: string;
+  actionClass: string;
+} | null {
   const envelope = parsePluginEnvelope(task.payload);
   if (envelope === null) return null;
   return {
@@ -754,12 +816,18 @@ export function recordInvocationDecision(
   reason: string,
   nowMs: number,
 ): void {
-  const oneLine = reason.replace(/[\r\n\t]+/g, ' ').replace(/\s{2,}/g, ' ').trim();
+  const oneLine = reason
+    .replace(/[\r\n\t]+/g, ' ')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
   recordDecisionSafe({
     installId: identity.installId,
     capability: identity.capabilityId,
     decision,
-    reason: oneLine.length > MAX_DECISION_REASON ? `${oneLine.slice(0, MAX_DECISION_REASON - 1)}…` : oneLine,
+    reason:
+      oneLine.length > MAX_DECISION_REASON
+        ? `${oneLine.slice(0, MAX_DECISION_REASON - 1)}…`
+        : oneLine,
     nowSec: Math.floor(nowMs / 1000),
   });
 }

@@ -107,7 +107,8 @@ export class AdmissionService {
     this.counts = opts.counts ?? { enqueuedUndecided: () => 0 };
     this.personaOpen = opts.isPersonaOpen ?? (() => true);
     this.now = opts.nowMsFn ?? (() => Date.now());
-    this.nextId = opts.idFn ?? (() => `res-${(++this.seq).toString(36)}-${this.now().toString(36)}`);
+    this.nextId =
+      opts.idFn ?? (() => `res-${(++this.seq).toString(36)}-${this.now().toString(36)}`);
     this.leaseMs = opts.leaseMs ?? 120_000;
     this.onBarrier = opts.onBarrier;
   }
@@ -249,7 +250,14 @@ export class AdmissionService {
         // In-order commit CAS on the reservation's own cursor (§7): a fetch-ahead
         // reservation may only commit when the run cursor has reached its position,
         // so each position advances exactly once and none is skipped/doubled.
-        if (!this.runRepo.incrementProducedAndAdvance(res.run_id, nowMs, run.interval_ms ?? 0, res.cursor)) {
+        if (
+          !this.runRepo.incrementProducedAndAdvance(
+            res.run_id,
+            nowMs,
+            run.interval_ms ?? 0,
+            res.cursor,
+          )
+        ) {
           throw ABORT;
         }
         if (!this.resRepo.commit(reservationId, input, nowMs, from)) throw ABORT;
@@ -355,7 +363,11 @@ export class AdmissionService {
     return this.resRepo.invalidateOpen(runId, this.now());
   }
 
-  private withinCountBudget(run: RunRecord, openReservations: number, outstanding: number): boolean {
+  private withinCountBudget(
+    run: RunRecord,
+    openReservations: number,
+    outstanding: number,
+  ): boolean {
     if (run.max_count === null) return true;
     if (run.max_count_basis === 'produced') {
       // produced_count + uncommitted_produced_reservations < max_count (§7.1).

@@ -6,10 +6,7 @@
 
 import { generateKeyPairSync, verify as cryptoVerify } from 'node:crypto';
 
-import {
-  GoogleAccessTokenMinter,
-  buildServiceAccountAssertion,
-} from '../src/google_oauth';
+import { GoogleAccessTokenMinter, buildServiceAccountAssertion } from '../src/google_oauth';
 
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const PEM = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString();
@@ -49,10 +46,7 @@ describe('buildServiceAccountAssertion', () => {
   });
 });
 
-function minter(
-  fetchImpl: typeof fetch,
-  now: () => number,
-): GoogleAccessTokenMinter {
+function minter(fetchImpl: typeof fetch, now: () => number): GoogleAccessTokenMinter {
   return new GoogleAccessTokenMinter({
     serviceAccount: { clientEmail: 'sa@proj.iam.gserviceaccount.com', privateKeyPem: PEM },
     scope: SCOPE,
@@ -119,7 +113,9 @@ describe('GoogleAccessTokenMinter', () => {
 
   it('throws when the exchange omits an access_token', async () => {
     const fetchImpl = (async () =>
-      new Response(JSON.stringify({ expires_in: 3600 }), { status: 200 })) as unknown as typeof fetch;
+      new Response(JSON.stringify({ expires_in: 3600 }), {
+        status: 200,
+      })) as unknown as typeof fetch;
     await expect(minter(fetchImpl, () => 1).getAccessToken()).rejects.toThrow(/no access_token/);
   });
 });

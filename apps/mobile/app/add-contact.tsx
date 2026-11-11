@@ -47,9 +47,7 @@ export default function AddContactScreen() {
   // Pre-fill when navigated from a non-contact chat ("Add" banner passes
   // the peer DID), so the user doesn't have to re-type/paste it.
   const { did: prefillDid } = useLocalSearchParams<{ did?: string }>();
-  const [didOrHandle, setDidOrHandle] = useState(
-    typeof prefillDid === 'string' ? prefillDid : '',
-  );
+  const [didOrHandle, setDidOrHandle] = useState(typeof prefillDid === 'string' ? prefillDid : '');
   const [displayName, setDisplayName] = useState('');
   const [status, setStatus] = useState<'idle' | 'resolving' | 'saving' | 'error'>('idle');
   const [errorText, setErrorText] = useState('');
@@ -136,19 +134,15 @@ export default function AddContactScreen() {
   const busy = status === 'resolving' || status === 'saving';
 
   return (
-    <KeyboardAvoidingView
-      behavior="padding"
-      style={styles.container}
-    >
+    <KeyboardAvoidingView behavior="padding" style={styles.container}>
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         {/* The Stack header already shows "Add Contact" — repeating it
             as a serif H1 here doubled the title for no benefit. The
             helper line carries the actual instruction the user reads
             first. */}
         <Text style={styles.sub}>
-          Paste a contact card someone shared, or a handle
-          (alice.test-pds.dinakernel.com) or DID (did:plc:…). Just the handle
-          is enough. The host is the PDS.
+          Paste a contact card someone shared, or a handle (alice.test-pds.dinakernel.com) or DID
+          (did:plc:…). Just the handle is enough. The host is the PDS.
         </Text>
 
         <Text style={styles.label}>Handle, DID, or pasted card</Text>

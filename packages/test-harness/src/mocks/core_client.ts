@@ -377,8 +377,16 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('vaultQuery', [persona, query], () => this.vaultQueryResult);
   }
 
-  async vaultGet(persona: string, itemId: string, opts?: VaultReleaseOptions): Promise<VaultQueryItem | null> {
-    return this.dispatch('vaultGet', [persona, itemId, ...(opts !== undefined ? [opts] : [])], () => this.vaultGetResult);
+  async vaultGet(
+    persona: string,
+    itemId: string,
+    opts?: VaultReleaseOptions,
+  ): Promise<VaultQueryItem | null> {
+    return this.dispatch(
+      'vaultGet',
+      [persona, itemId, ...(opts !== undefined ? [opts] : [])],
+      () => this.vaultGetResult,
+    );
   }
 
   async vaultItemsForPerson(
@@ -500,7 +508,11 @@ export class MockCoreClient implements CoreClient {
   ejectedProviders = new Set<string>();
 
   async serviceProviderStanding(dids: string[]): Promise<Set<string>> {
-    return this.dispatch('serviceProviderStanding', [dids], () => new Set(dids.filter((d) => this.ejectedProviders.has(d))));
+    return this.dispatch(
+      'serviceProviderStanding',
+      [dids],
+      () => new Set(dids.filter((d) => this.ejectedProviders.has(d))),
+    );
   }
 
   async sendServiceQuery(req: ServiceQueryClientRequest): Promise<ServiceQueryResult> {
@@ -528,7 +540,9 @@ export class MockCoreClient implements CoreClient {
   }
 
   async chatThreadIds(): Promise<string[]> {
-    return this.dispatch('chatThreadIds', [], () => [...new Set(this.chatMessages.map((m) => m.threadId))]);
+    return this.dispatch('chatThreadIds', [], () => [
+      ...new Set(this.chatMessages.map((m) => m.threadId)),
+    ]);
   }
 
   async chatDeleteThread(threadId: string): Promise<boolean> {
@@ -578,13 +592,21 @@ export class MockCoreClient implements CoreClient {
   }
 
   /** Canned forget proposal (REAL_LIFE_FIXES_2 §4). */
-  forgetProposeResult: { status: 'confirm_pending'; task_id: string; summary: string } | { status: 'refused'; reason: string } = {
+  forgetProposeResult:
+    | { status: 'confirm_pending'; task_id: string; summary: string }
+    | { status: 'refused'; reason: string } = {
     status: 'confirm_pending',
     task_id: 'forget-1',
     summary: 'Forget everything about X',
   };
 
-  async forgetPropose(input: { proof: OwnerWordsProof; request: unknown }): Promise<{ status: 'confirm_pending'; task_id: string; summary: string } | { status: 'refused'; reason: string }> {
+  async forgetPropose(input: {
+    proof: OwnerWordsProof;
+    request: unknown;
+  }): Promise<
+    | { status: 'confirm_pending'; task_id: string; summary: string }
+    | { status: 'refused'; reason: string }
+  > {
     return this.dispatch('forgetPropose', [input], () => ({ ...this.forgetProposeResult }));
   }
 
@@ -597,7 +619,9 @@ export class MockCoreClient implements CoreClient {
   };
 
   async commitmentBrainView(kind: string): Promise<typeof this.commitmentBrainViewResult> {
-    return this.dispatch('commitmentBrainView', [kind], () => ({ ...this.commitmentBrainViewResult }));
+    return this.dispatch('commitmentBrainView', [kind], () => ({
+      ...this.commitmentBrainViewResult,
+    }));
   }
 
   commitmentProposeChangesResult:
@@ -612,7 +636,9 @@ export class MockCoreClient implements CoreClient {
     proof: OwnerWordsProof;
     changes: readonly Record<string, unknown>[];
   }): Promise<typeof this.commitmentProposeChangesResult> {
-    return this.dispatch('commitmentProposeChanges', [input], () => ({ ...this.commitmentProposeChangesResult }));
+    return this.dispatch('commitmentProposeChanges', [input], () => ({
+      ...this.commitmentProposeChangesResult,
+    }));
   }
   commitmentSetSavingShareResult: { ok: true; share_bps: number } = { ok: true, share_bps: 5000 };
 
@@ -623,18 +649,40 @@ export class MockCoreClient implements CoreClient {
     }));
   }
 
+  ownerExportPrepareResult = {
+    id: 'exp-1',
+    manifest: { personas: [], people: 0, contacts: 0, reminders: 0 },
+  };
 
-  ownerExportPrepareResult = { id: 'exp-1', manifest: { personas: [], people: 0, contacts: 0, reminders: 0 } };
-
-  async ownerExportPrepare(): Promise<{ id: string; manifest: { personas: { persona: string; tier: string; included: boolean; why?: string; items: number }[]; people: number; contacts: number; reminders: number } }> {
+  async ownerExportPrepare(): Promise<{
+    id: string;
+    manifest: {
+      personas: { persona: string; tier: string; included: boolean; why?: string; items: number }[];
+      people: number;
+      contacts: number;
+      reminders: number;
+    };
+  }> {
     return this.dispatch('ownerExportPrepare', [], () => this.ownerExportPrepareResult);
   }
 
   async standingReplyPropose(input: unknown): Promise<Record<string, unknown>> {
-    return this.dispatch('standingReplyPropose', [input], () => ({ status: 'confirm_pending', task_id: 'standing-1', summary: '' }));
+    return this.dispatch('standingReplyPropose', [input], () => ({
+      status: 'confirm_pending',
+      task_id: 'standing-1',
+      summary: '',
+    }));
   }
 
-  async standingReplyList(): Promise<{ rules: { id: string; state: string; reply_text: string; contacts: string[]; expires_at: string }[] }> {
+  async standingReplyList(): Promise<{
+    rules: {
+      id: string;
+      state: string;
+      reply_text: string;
+      contacts: string[];
+      expires_at: string;
+    }[];
+  }> {
     return this.dispatch('standingReplyList', [], () => ({ rules: [] }));
   }
 
@@ -643,7 +691,11 @@ export class MockCoreClient implements CoreClient {
   }
 
   async spendAllowancePropose(input: unknown): Promise<Record<string, unknown>> {
-    return this.dispatch('spendAllowancePropose', [input], () => ({ status: 'confirm_pending', task_id: 'allow-1', summary: '' }));
+    return this.dispatch('spendAllowancePropose', [input], () => ({
+      status: 'confirm_pending',
+      task_id: 'allow-1',
+      summary: '',
+    }));
   }
 
   async spendAllowanceList(): Promise<{ allowances: Record<string, unknown>[] }> {
@@ -666,12 +718,18 @@ export class MockCoreClient implements CoreClient {
     regulated: 'enforce',
   };
 
-  async getGuardModes(): Promise<{ action_claims: 'report' | 'enforce'; regulated: 'report' | 'enforce' }> {
+  async getGuardModes(): Promise<{
+    action_claims: 'report' | 'enforce';
+    regulated: 'report' | 'enforce';
+  }> {
     return this.dispatch('getGuardModes', [], () => ({ ...this.guardModesResult }));
   }
 
   /** Canned owner time zone. */
-  ownerTimeZoneResult: { timezone: string; source: 'owner' | 'host' } = { timezone: 'UTC', source: 'host' };
+  ownerTimeZoneResult: { timezone: string; source: 'owner' | 'host' } = {
+    timezone: 'UTC',
+    source: 'host',
+  };
 
   async getOwnerTimeZone(): Promise<{ timezone: string; source: 'owner' | 'host' }> {
     return this.dispatch('getOwnerTimeZone', [], () => ({ ...this.ownerTimeZoneResult }));
@@ -680,7 +738,11 @@ export class MockCoreClient implements CoreClient {
   /** Canned `talkSend` answer. */
   talkSendResult: TalkSendResult = { status: 'sent' };
 
-  async talkSend(input: { proof: OwnerWordsProof; contact: string; proposedText: string }): Promise<TalkSendResult> {
+  async talkSend(input: {
+    proof: OwnerWordsProof;
+    contact: string;
+    proposedText: string;
+  }): Promise<TalkSendResult> {
     return this.dispatch('talkSend', [input], () => ({ ...this.talkSendResult }));
   }
 
@@ -957,7 +1019,11 @@ export class MockCoreClient implements CoreClient {
   /** What `getUcpSearch` answers; default: not found. */
   ucpSearchView: UcpSearchView | null = null;
   /** What `raiseUcpSearchReview` answers; default: UCP not installed. */
-  ucpSearchReviewResult: UcpSearchReviewResult = { ok: false, status: 503, reason: 'ucp_unavailable' };
+  ucpSearchReviewResult: UcpSearchReviewResult = {
+    ok: false,
+    status: 503,
+    reason: 'ucp_unavailable',
+  };
   /** What `claimUcpGuardJob` answers; default: no work. */
   ucpGuardWork: UcpGuardWork | null = null;
   /** What `submitUcpGuardVerdict` answers; default: accepted as passed. */
@@ -978,7 +1044,9 @@ export class MockCoreClient implements CoreClient {
     return this.dispatch('fetchUcpProducts', [input], () => this.ucpFetchResult);
   }
 
-  async raiseUcpSearchReview(input: Omit<UcpSearchInput, 'reviewId'>): Promise<UcpSearchReviewResult> {
+  async raiseUcpSearchReview(
+    input: Omit<UcpSearchInput, 'reviewId'>,
+  ): Promise<UcpSearchReviewResult> {
     return this.dispatch('raiseUcpSearchReview', [input], () => this.ucpSearchReviewResult);
   }
 
@@ -1010,7 +1078,11 @@ export class MockCoreClient implements CoreClient {
   }
 
   /** GROUP_COORDINATION §11 — what `openGroupPlan` answers; default: a refusal (no plan store). */
-  openGroupPlanResult: OpenGroupPlanClientResult = { ok: false, refusal: 'not_wired', detail: 'group plan store' };
+  openGroupPlanResult: OpenGroupPlanClientResult = {
+    ok: false,
+    refusal: 'not_wired',
+    detail: 'group plan store',
+  };
   /** What `getGroupPlan` answers; default: not found. */
   getGroupPlanResult: GroupPlanWire | null = null;
 
@@ -1256,8 +1328,7 @@ export class MockCoreClient implements CoreClient {
       const groups = this.piiNamesResult.map((g) => ({ ...g, names: [...g.names] }));
       const version = piiNamesVersion(groups);
       return known === version ? { version, unchanged: true } : { version, groups };
-    }
-    );
+    });
   }
 
   async peopleFindByName(surface: string): Promise<Person[]> {

@@ -32,7 +32,6 @@ import {
   InMemoryCommerceReceiptRepository,
   QuoteFamilyStore,
 } from '../../src/commerce';
-
 import { applyMigrations } from '../../src/storage/migration';
 import { IDENTITY_MIGRATIONS } from '../../src/storage/schemas';
 

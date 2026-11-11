@@ -131,11 +131,7 @@ export type EnrichmentStatus = (typeof ENRICHMENT_STATUS_VALUES)[number];
 export const VALID_ENRICHMENT_STATUS = new Set<string>(ENRICHMENT_STATUS_VALUES);
 
 /** Retrieval policies included in default search results. */
-export const SEARCHABLE_RETRIEVAL_POLICIES = new Set<string>([
-  'normal',
-  'caveated',
-  '',
-]);
+export const SEARCHABLE_RETRIEVAL_POLICIES = new Set<string>(['normal', 'caveated', '']);
 
 /** Maximum vault item body size in bytes (10 MiB). */
 export const MAX_VAULT_ITEM_SIZE = 10 * 1024 * 1024;

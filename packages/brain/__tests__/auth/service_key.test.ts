@@ -4,7 +4,7 @@
  * Source: brain/tests/test_auth.py
  */
 
-import { signRequest , getPublicKey } from '@dina/core';
+import { signRequest, getPublicKey } from '@dina/core';
 import { TEST_ED25519_SEED, stringToBytes } from '@dina/test-harness';
 
 import {

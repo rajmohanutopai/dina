@@ -39,17 +39,13 @@ import { NodeSQLiteAdapter } from './adapter';
 
 import type { DBProvider, DatabaseAdapter } from '@dina/core';
 
-
 const PERSONA_NAME_REGEX = /^[a-z0-9][a-z0-9_-]{0,62}$/;
 const IDENTITY_FILENAME = 'identity.sqlite';
 const VAULT_SUBDIR = 'vault';
 
 export class NodeDBProviderError extends Error {
   constructor(
-    public readonly code:
-      | 'invalid_vault_dir'
-      | 'invalid_identity_key'
-      | 'invalid_persona',
+    public readonly code: 'invalid_vault_dir' | 'invalid_identity_key' | 'invalid_persona',
     message: string,
   ) {
     super(`[${code}] ${message}`);
@@ -85,7 +81,10 @@ export class NodeDBProvider implements DBProvider {
       throw new NodeDBProviderError('invalid_identity_key', 'identityDekHex must be 64 hex chars');
     }
     if (typeof opts.resolvePersonaDekHex !== 'function') {
-      throw new NodeDBProviderError('invalid_identity_key', 'resolvePersonaDekHex must be a function');
+      throw new NodeDBProviderError(
+        'invalid_identity_key',
+        'resolvePersonaDekHex must be a function',
+      );
     }
     this.vaultDir = path.resolve(opts.vaultDir);
     this.identityDekHex = opts.identityDekHex;

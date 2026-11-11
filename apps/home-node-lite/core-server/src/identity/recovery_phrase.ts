@@ -37,11 +37,9 @@
  * Source: docs/HOME_NODE_LITE_TASKS.md Phase 4g task 4.61.
  */
 
-import {
-  mnemonicToEntropy,
-  mnemonicToSeed,
-  validateMnemonic,
-} from '@dina/core';
+import { wordlist } from '@scure/bip39/wordlists/english.js';
+
+import { mnemonicToEntropy, mnemonicToSeed, validateMnemonic } from '@dina/core';
 
 /** BIP-39 accepts 12/15/18/21/24 words; Dina generates 24 (256-bit). */
 export type MnemonicWordCount = 12 | 15 | 18 | 21 | 24;
@@ -206,13 +204,6 @@ function hasUnknownWord(words: string[]): boolean {
   return false;
 }
 
-// Lazy-load the BIP-39 English wordlist from @dina/core's source. The
-// wordlist is a 2048-entry Set; we construct it once + memoise.
-let BIP39_ENGLISH_WORDS: ReadonlySet<string> = new Set();
-(function () {
-   
-  const { wordlist } = require('@scure/bip39/wordlists/english.js') as {
-    wordlist: string[];
-  };
-  BIP39_ENGLISH_WORDS = new Set(wordlist);
-})();
+// The BIP-39 English wordlist (from @dina/core's transitive deps) as a
+// 2048-entry Set, built once at module load.
+const BIP39_ENGLISH_WORDS: ReadonlySet<string> = new Set(wordlist);

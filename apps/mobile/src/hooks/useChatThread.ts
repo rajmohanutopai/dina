@@ -21,7 +21,6 @@ import {
   addSystemMessage,
   threadLength,
   listThreads,
-  deleteThread,
   clearThreadMessages,
   resetThreads,
   subscribeToThread,

@@ -11,13 +11,11 @@ import { makeEvent } from '@dina/test-harness';
 
 import {
   classifyPriority,
-  classifyDeterministic,
   enableDND,
   disableDND,
   resetDNDState,
   isDNDEnabled,
   isStaleContent,
-  recordEngagementEvent,
   isEscalated,
   resetEscalationState,
   setUserOverride,

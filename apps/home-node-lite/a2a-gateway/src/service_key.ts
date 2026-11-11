@@ -20,18 +20,26 @@ export type ServiceKeyLoad =
   | { ok: true; key: GatewayServiceKey }
   | { ok: false; reason: 'key_missing' | 'key_unreadable' | 'key_invalid' | 'did_mismatch' };
 
-export async function loadServiceKey(dir: string, file: string, expectedDid?: string): Promise<ServiceKeyLoad> {
+export async function loadServiceKey(
+  dir: string,
+  file: string,
+  expectedDid?: string,
+): Promise<ServiceKeyLoad> {
   if (dir === '') return { ok: false, reason: 'key_missing' };
   let bytes: Uint8Array;
   try {
     bytes = await readFile(join(dir, file));
   } catch (err) {
     const code = (err as { code?: unknown } | null)?.code;
-    return { ok: false, reason: code === 'ENOENT' || code === 'ENOTDIR' ? 'key_missing' : 'key_unreadable' };
+    return {
+      ok: false,
+      reason: code === 'ENOENT' || code === 'ENOTDIR' ? 'key_missing' : 'key_unreadable',
+    };
   }
   if (bytes.byteLength !== 32) return { ok: false, reason: 'key_invalid' };
   const seed = new Uint8Array(bytes);
   const did = deriveDIDKey(getPublicKey(seed));
-  if (expectedDid !== undefined && expectedDid !== did) return { ok: false, reason: 'did_mismatch' };
+  if (expectedDid !== undefined && expectedDid !== did)
+    return { ok: false, reason: 'did_mismatch' };
   return { ok: true, key: { seed, did } };
 }

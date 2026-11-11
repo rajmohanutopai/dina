@@ -4,7 +4,7 @@
  * Source: ARCHITECTURE.md Task 8.6
  */
 
-import { HNSWIndex, type SearchResult } from '../../src/embedding/hnsw';
+import { HNSWIndex } from '../../src/embedding/hnsw';
 
 /** Create a random unit vector of given dimensions. */
 function randomVector(dims: number): Float32Array {

@@ -26,7 +26,9 @@ describe('loadScriptedRules', () => {
       JSON.stringify({ rules: [{ match: 'route 42', content: '{"eta_minutes":7}' }] }),
     );
     try {
-      expect(loadScriptedRules(path)).toEqual([{ match: 'route 42', content: '{"eta_minutes":7}' }]);
+      expect(loadScriptedRules(path)).toEqual([
+        { match: 'route 42', content: '{"eta_minutes":7}' },
+      ]);
     } finally {
       rmSync(path, { force: true });
     }

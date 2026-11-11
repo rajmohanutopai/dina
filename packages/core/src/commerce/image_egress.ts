@@ -35,10 +35,7 @@
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, randomBytes } from '@noble/hashes/utils.js';
 
-import {
-  EXTRACTION_SCHEMA_CATALOG,
-  EXTRACTION_SCHEMA_ORDER,
-} from '@dina/commerce-protocol';
+import { EXTRACTION_SCHEMA_CATALOG, EXTRACTION_SCHEMA_ORDER } from '@dina/commerce-protocol';
 
 import type { DatabaseAdapter } from '../storage/db_adapter';
 
@@ -263,9 +260,7 @@ function hydrate(row: AuthorizationRow): ImageEgressAuthorization | null {
   };
 }
 
-export class SQLiteImageEgressAuthorizationRepository
-  implements ImageEgressAuthorizationRepository
-{
+export class SQLiteImageEgressAuthorizationRepository implements ImageEgressAuthorizationRepository {
   constructor(private readonly db: DatabaseAdapter) {}
 
   put(record: ImageEgressAuthorization): void {
@@ -319,9 +314,7 @@ export class SQLiteImageEgressAuthorizationRepository
   }
 }
 
-export class InMemoryImageEgressAuthorizationRepository
-  implements ImageEgressAuthorizationRepository
-{
+export class InMemoryImageEgressAuthorizationRepository implements ImageEgressAuthorizationRepository {
   private readonly rows = new Map<string, ImageEgressAuthorization>();
 
   put(record: ImageEgressAuthorization): void {

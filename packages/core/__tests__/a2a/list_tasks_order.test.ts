@@ -8,10 +8,7 @@
  * with the times the client reads.
  */
 
-import {
-  issueA2AGrant,
-  ingressListTasks,
-} from '../../src/a2a';
+import { issueA2AGrant, ingressListTasks } from '../../src/a2a';
 import { clearServiceConfigDurable } from '../../src/service/service_config';
 import { WorkflowTaskState } from '../../src/workflow/domain';
 
@@ -29,7 +26,11 @@ interface Listed {
   status: { state: string; timestamp: string };
 }
 
-function list(params: Record<string, unknown> = {}): { tasks: Listed[]; totalSize: number; nextPageToken: string } {
+function list(params: Record<string, unknown> = {}): {
+  tasks: Listed[];
+  totalSize: number;
+  nextPageToken: string;
+} {
   return resultOf(ingressListTasks(iw.rt, iw.request('ListTasks', params))) as unknown as {
     tasks: Listed[];
     totalSize: number;
@@ -92,7 +93,17 @@ describe('changes a view would make are made before the list (§3.1.4 order)', (
     await save(listing({ discoverability: 'known_only', isDiscoverable: false }), 'private');
     const T = iw.world.clock;
     const expiresAt = Math.floor(T / 1000) + 60;
-    const issued = issueA2AGrant(iw.world.store, iw.grants, { client_id: iw.clientId, service_rkey: 'private', capability: 'eta_query', expires_at: expiresAt }, T);
+    const issued = issueA2AGrant(
+      iw.world.store,
+      iw.grants,
+      {
+        client_id: iw.clientId,
+        service_rkey: 'private',
+        capability: 'eta_query',
+        expires_at: expiresAt,
+      },
+      T,
+    );
     if (!issued.ok) throw new Error(issued.reason);
     const granted = finished('eta_query@private', '1', { grant_id: issued.grant.grantId });
     iw.world.clock = T + 1_000;
@@ -108,9 +119,13 @@ describe('changes a view would make are made before the list (§3.1.4 order)', (
 
   it('a round that ended with nothing noticing is settled before the list, and listed at the time it settled', () => {
     const T = iw.world.clock;
-    const quiet = sentTask(iw.call({ skill: 'eta_query@bus', params: { route_id: '1' } })).id as string;
+    const quiet = sentTask(iw.call({ skill: 'eta_query@bus', params: { route_id: '1' } }))
+      .id as string;
     // The round ends in the store alone: no hook ran, nothing settled it.
-    iw.world.store.db.run(`UPDATE workflow_tasks SET state = ? WHERE id = ?`, [WorkflowTaskState.Failed, iw.childOf(quiet).id]);
+    iw.world.store.db.run(`UPDATE workflow_tasks SET state = ? WHERE id = ?`, [
+      WorkflowTaskState.Failed,
+      iw.childOf(quiet).id,
+    ]);
     iw.world.clock = T + 1_000;
     const done = finished('eta_query@tram', '2');
     iw.world.clock = T + 2_000;
@@ -129,7 +144,17 @@ describe('one time for the whole list, while the clock moves (round 6, CX-9)', (
     await save(listing({ discoverability: 'known_only', isDiscoverable: false }), 'private');
     const T = iw.world.clock;
     const expiresAt = Math.floor(T / 1000) + 60;
-    const issued = issueA2AGrant(iw.world.store, iw.grants, { client_id: iw.clientId, service_rkey: 'private', capability: 'eta_query', expires_at: expiresAt }, T);
+    const issued = issueA2AGrant(
+      iw.world.store,
+      iw.grants,
+      {
+        client_id: iw.clientId,
+        service_rkey: 'private',
+        capability: 'eta_query',
+        expires_at: expiresAt,
+      },
+      T,
+    );
     if (!issued.ok) throw new Error(issued.reason);
     finished('eta_query@private', '1', { grant_id: issued.grant.grantId });
     iw.world.clock = T + 1_000;
@@ -137,24 +162,28 @@ describe('one time for the whole list, while the clock moves (round 6, CX-9)', (
     return { expiresAt };
   }
 
-  const cursorOf = (token: string) => JSON.parse(Buffer.from(token, 'base64url').toString('utf8')) as [number, string];
+  const cursorOf = (token: string) =>
+    JSON.parse(Buffer.from(token, 'base64url').toString('utf8')) as [number, string];
 
   // The clock moves 1 ms at every reading, from `lead` ms before a second boundary
   // around the grant's expiry, so the grant runs out at a different point of the request each time.
   it.each(
     [0, 1].flatMap((second) => [1, 2, 3, 4, 5, 8, 13].map((lead) => [second, lead] as const)),
-  )('the grant’s second +%i, %i ms before it: ordered by the times shown, and the cursor is the last task shown', async (second, lead) => {
-    const { expiresAt } = await grantAndPlain();
-    let t = (expiresAt + second) * 1000 - lead;
-    iw.rt.a2a.nowMs = () => t++;
-    const whole = list();
-    expect(times(whole.tasks)).toEqual([...times(whole.tasks)].sort((a, b) => b - a));
-    const first = list({ pageSize: 1 });
-    expect(first.tasks).toHaveLength(1);
-    const shown = first.tasks[0];
-    if (shown === undefined) throw new Error('no task');
-    expect(cursorOf(first.nextPageToken)).toEqual([Date.parse(shown.status.timestamp), shown.id]);
-  });
+  )(
+    'the grant’s second +%i, %i ms before it: ordered by the times shown, and the cursor is the last task shown',
+    async (second, lead) => {
+      const { expiresAt } = await grantAndPlain();
+      let t = (expiresAt + second) * 1000 - lead;
+      iw.rt.a2a.nowMs = () => t++;
+      const whole = list();
+      expect(times(whole.tasks)).toEqual([...times(whole.tasks)].sort((a, b) => b - a));
+      const first = list({ pageSize: 1 });
+      expect(first.tasks).toHaveLength(1);
+      const shown = first.tasks[0];
+      if (shown === undefined) throw new Error('no task');
+      expect(cursorOf(first.nextPageToken)).toEqual([Date.parse(shown.status.timestamp), shown.id]);
+    },
+  );
 });
 
 describe('statusTimestampAfter is inclusive (a2a.proto v1.0.1)', () => {
@@ -171,6 +200,10 @@ describe('statusTimestampAfter is inclusive (a2a.proto v1.0.1)', () => {
     expect(at.tasks.map((t) => t.id).sort()).toEqual([after, atA, atB].sort());
     expect(at.totalSize).toBe(3);
     expect(from(T + 1_001).tasks.map((t) => t.id)).toEqual([after]);
-    expect(from(T).tasks.map((t) => t.id).sort()).toEqual([after, atA, atB, before].sort());
+    expect(
+      from(T)
+        .tasks.map((t) => t.id)
+        .sort(),
+    ).toEqual([after, atA, atB, before].sort());
   });
 });

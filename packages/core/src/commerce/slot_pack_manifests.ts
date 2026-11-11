@@ -215,7 +215,10 @@ export interface TermPackVocabulary {
 export interface TermPackPromise {
   by: 'buyer' | 'seller';
   dimensions: Readonly<
-    Record<string, { order: 'higher_better' | 'lower_better' } | { order: 'exact'; values: readonly string[] }>
+    Record<
+      string,
+      { order: 'higher_better' | 'lower_better' } | { order: 'exact'; values: readonly string[] }
+    >
   >;
 }
 

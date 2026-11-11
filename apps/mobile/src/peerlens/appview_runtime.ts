@@ -210,7 +210,13 @@ export interface SubjectGetResponse {
     homepage: string | null;
     market: string | null;
     count: number;
-    latest: { uri: string; text: string | null; sentiment: string; createdAt: string; url: string }[];
+    latest: {
+      uri: string;
+      text: string | null;
+      sentiment: string;
+      createdAt: string;
+      url: string;
+    }[];
   }[];
   /** **D4.** The total across `imported`, when the AppView reports it. */
   importedReviewCount?: number;
@@ -392,20 +398,17 @@ async function postJSON<T>(path: string, body: unknown): Promise<T> {
 export async function injectAttestation(
   body: InjectAttestationRequest,
 ): Promise<InjectAttestationResponse> {
-  return postJSON<InjectAttestationResponse>(
-    '/xrpc/com.dinakernel.test.injectAttestation',
-    body,
-  );
+  return postJSON<InjectAttestationResponse>('/xrpc/com.dinakernel.test.injectAttestation', body);
 }
 
 export async function deleteAttestation(
   authorDid: string,
   uri: string,
 ): Promise<DeleteAttestationResponse> {
-  return postJSON<DeleteAttestationResponse>(
-    '/xrpc/com.dinakernel.test.deleteAttestation',
-    { authorDid, uri },
-  );
+  return postJSON<DeleteAttestationResponse>('/xrpc/com.dinakernel.test.deleteAttestation', {
+    authorDid,
+    uri,
+  });
 }
 
 export function isTestPublishConfigured(): boolean {

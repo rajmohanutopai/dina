@@ -82,7 +82,14 @@ describe('a plain object is judged by shape, not by realm', () => {
     class Shape {
       x = 1;
     }
-    for (const value of [new Date(0), new Map(), new Shape(), Object.create({ a: 1 }), foreign('new Date(0)'), foreign('new Map()')]) {
+    for (const value of [
+      new Date(0),
+      new Map(),
+      new Shape(),
+      Object.create({ a: 1 }),
+      foreign('new Date(0)'),
+      foreign('new Map()'),
+    ]) {
       expect(isPlainObject(value)).toBe(false);
     }
     expect(() => canonicalize({ when: new Date(0) })).toThrow(JcsError);

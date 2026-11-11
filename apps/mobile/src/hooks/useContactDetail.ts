@@ -17,13 +17,13 @@ import {
   updateContact,
   addAlias,
   removeAlias,
-  type Contact,
   type TrustLevel,
   type SharingTier,
-
   getSharingTier,
   setSharingPolicy,
-  type SharingTier as PolicyTier} from '@dina/core';
+  type SharingTier as PolicyTier,
+  SHARING_CATEGORIES,
+} from '@dina/core';
 
 export interface ContactDetailState {
   did: string;
@@ -35,8 +35,6 @@ export interface ContactDetailState {
   sharingPolicy: Record<string, string>;
   scenarioDeny: string[];
 }
-
-import { SHARING_CATEGORIES } from '@dina/core';
 
 /** Standard data categories for sharing policy editor (from canonical names). */
 const CATEGORIES = [...SHARING_CATEGORIES];

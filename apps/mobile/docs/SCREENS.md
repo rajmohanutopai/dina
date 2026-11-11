@@ -9,6 +9,7 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
 `☐ unreviewed · ◐ in progress · ☑ reviewed · screenshots in /tmp/dina-review/`
 
 ### Onboarding (§1)
+
 - ☑ welcome
 - ☑ choose (mode_choice)
 - ☑ create_name (owner_name)
@@ -25,11 +26,13 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
 - ☑ onboarding error panel — source-review (rendered by shell.tsx with `retry` callback)
 
 ### Unlock gate (§2)
+
 - ☑ passphrase prompt — source-review (unlock_gate.tsx lines 273-323; same passphrase input pattern, no show-password peek, no hard-coded colors)
 - ☑ auto-unlock spinner — source-review (silent `ActivityIndicator`; no announced status text for VoiceOver — see cross-cutting)
 - ☑ forgot-passphrase escape — source-review (uses same recovery_entry mounted inside unlock_gate)
 
 ### Tabs (§3)
+
 - ☑ Chat (`/`) — empty state
 - ☑ Vaults list (`/vault`) + add-vault inline form
 - ☑ Vault detail (`/vault/[name]`)
@@ -47,9 +50,11 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
 - ☑ Approvals (`/approvals`) — source-review (hard-coded warning/error palette — see §22 above)
 
 ### Hamburger menu (§4)
+
 - ☑ menu modal itself
 
 ### Secondary routes (§5)
+
 - ☑ Reminders (`/reminders`)
 - ☑ Settings (`/settings`)
 - ☑ Help (`/help`) — source-review (dev-gear blocks tap)
@@ -64,6 +69,7 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
 - ☑ PeerLens prefs (6 sub-pages: region, budget, devices, languages, dietary, accessibility) — source-review (all use canonical `multi_select_screen.tsx` view + canonical tokens; budget uses 3-step segmented control)
 
 ### Modals (§7)
+
 - ☑ Identity modal — source-review (handle + DID + PLC services + namespace fragments + copy buttons; canonical tokens)
 - ☑ Mode-switch popover — visible on Chat, source-reviewed in §9
 - ☑ PeerLens first-run — source-review (one-time onboarding explainer; canonical tokens)
@@ -71,6 +77,7 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
 - ☑ Settings add-key form — visible on Settings (§20)
 
 ### Inline cards (§6)
+
 - ☑ Approval, Briefing, Nudge, Reminder, Review draft, Service approval, Service query — all source-reviewed during canonical-token migration; each uses `textStyles.*` tokens correctly. Per-card notes:
   - **InlineApprovalCard** — approve/deny pair, no destructive-red on Deny. Consider tinting Deny red for security.
   - **InlineBriefingCard** — section-headed list, fine.
@@ -81,6 +88,7 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
   - **InlineServiceQueryCard** — uses `textStyles.h2` for the primary ETA value (e.g., "6 min"). Override `fontSize: 28` had been removed — now snaps to canonical 24pt.
 
 ### Cross-cutting (§10)
+
 - ☑ Navigation chrome (header, tab bar, back chevron) — see Cross-cutting findings above; key gaps: back-chevron inconsistency, 23-tab AX leak, dev-gear overlap.
 
 ---
@@ -89,24 +97,25 @@ Complete catalogue of every screen, modal, popup, and inline card in the mobile 
 
 Stateful wizard rendered by `OnboardingFlow` (`src/components/onboarding/onboarding_flow.tsx`). State machine lives in `src/onboarding/state.ts`. Steps are not Expo routes — they swap inside the same flow.
 
-| # | Step kind | Screen file | Purpose |
-|---|-----------|-------------|---------|
-| 1 | `welcome` | `welcome.tsx` | Brand hero. Cormorant-italic display. Six feature pills (Vault / Tasks / Reminders / Talk / Services / PeerLens). "Begin" CTA. |
-| 2 | `choose` | `mode_choice.tsx` | Two cards: "Create a new Dina" / "Restore your identity on this device". Back button returns to `welcome`. |
-| 3 | `create_name` | `owner_name.tsx` | "Who is this Dina for?" — user's display name. |
-| 4 | `create_handle` | `handle_pick.tsx` | Pick a `@handle.dinakernel.com` username. Availability check against PLC directory. |
-| 5 | `create_passphrase` | `passphrase_set.tsx` | Set passphrase (8+ chars) that wraps the master seed. |
-| 6 | `create_mnemonic_reveal` | `mnemonic_reveal.tsx` | Reveal 24-word BIP-39 recovery phrase. "I've saved it" continues. |
-| 7 | `create_mnemonic_verify` | `mnemonic_verify.tsx` | Quiz: pick 3 random positions from the phrase. |
-| 8 | `provisioning_create` | `provisioning.tsx` | Spinner: derives keys, creates PDS account, publishes PLC document. |
-| 9 | `infra_setup` | `infra_setup.tsx` | Configure infra endpoints (mailbox, PLC, AppView). Shown when defaults need overriding. |
-| 10 | `recover_mnemonic` | `recovery_entry.tsx` | Enter 24-word recovery phrase. |
-| 11 | `recover_handle` | `recovery_handle.tsx` | Confirm handle that maps to the recovered seed (rotation-key check). |
-| 12 | `recover_passphrase` | `passphrase_set.tsx` (reused) | Set passphrase on the recovered device. |
-| 13 | `provisioning_recover` | `provisioning.tsx` (reused) | Spinner: re-derives keys, fetches PDS account. |
-| 14 | `error` | (rendered by `shell.tsx`) | Error panel with retry button — surfaces fatal errors from any provisioning step. |
+| #   | Step kind                | Screen file                   | Purpose                                                                                                                        |
+| --- | ------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `welcome`                | `welcome.tsx`                 | Brand hero. Cormorant-italic display. Six feature pills (Vault / Tasks / Reminders / Talk / Services / PeerLens). "Begin" CTA. |
+| 2   | `choose`                 | `mode_choice.tsx`             | Two cards: "Create a new Dina" / "Restore your identity on this device". Back button returns to `welcome`.                     |
+| 3   | `create_name`            | `owner_name.tsx`              | "Who is this Dina for?" — user's display name.                                                                                 |
+| 4   | `create_handle`          | `handle_pick.tsx`             | Pick a `@handle.dinakernel.com` username. Availability check against PLC directory.                                            |
+| 5   | `create_passphrase`      | `passphrase_set.tsx`          | Set passphrase (8+ chars) that wraps the master seed.                                                                          |
+| 6   | `create_mnemonic_reveal` | `mnemonic_reveal.tsx`         | Reveal 24-word BIP-39 recovery phrase. "I've saved it" continues.                                                              |
+| 7   | `create_mnemonic_verify` | `mnemonic_verify.tsx`         | Quiz: pick 3 random positions from the phrase.                                                                                 |
+| 8   | `provisioning_create`    | `provisioning.tsx`            | Spinner: derives keys, creates PDS account, publishes PLC document.                                                            |
+| 9   | `infra_setup`            | `infra_setup.tsx`             | Configure infra endpoints (mailbox, PLC, AppView). Shown when defaults need overriding.                                        |
+| 10  | `recover_mnemonic`       | `recovery_entry.tsx`          | Enter 24-word recovery phrase.                                                                                                 |
+| 11  | `recover_handle`         | `recovery_handle.tsx`         | Confirm handle that maps to the recovered seed (rotation-key check).                                                           |
+| 12  | `recover_passphrase`     | `passphrase_set.tsx` (reused) | Set passphrase on the recovered device.                                                                                        |
+| 13  | `provisioning_recover`   | `provisioning.tsx` (reused)   | Spinner: re-derives keys, fetches PDS account.                                                                                 |
+| 14  | `error`                  | (rendered by `shell.tsx`)     | Error panel with retry button — surfaces fatal errors from any provisioning step.                                              |
 
 Shared chrome:
+
 - `shell.tsx` — outer scaffold: eyebrow + title + body + footer button. All steps render inside it.
 
 ---
@@ -172,7 +181,7 @@ Two sub-views switched via an in-page `SubTabBar`:
 
 > Bottom-tab + header label is **Network** (the external discovery/trust surface).
 > The route folder stays `/peerlens` and `FEATURE_NAMES.peerlens` is unchanged —
-> PeerLens is the trust subsystem *inside* Network. The screen now leads with a
+> PeerLens is the trust subsystem _inside_ Network. The screen now leads with a
 > **Services** module (`NetworkServicesCard`: Find a service → Chat; Publish/My
 > services → `/service-settings`) above the PeerLens self-profile + feed.
 
@@ -259,34 +268,34 @@ Trust-network surface. Heavy stack.
 
 ## 5. Secondary stack screens (reached from menu / settings / cards)
 
-| Route | File | Purpose |
-|-------|------|---------|
-| `/reminders` | `reminders.tsx` | Grouped reminder list (sections by due band: overdue, today, later, recurring). Per-row done/snooze actions + delete `Alert`. Empty state when no reminders. |
-| `/settings` | `settings.tsx` | In-page `<SettingsSection>` blocks: (1) **AI Provider Keys** — per-provider row (Anthropic / OpenAI / Gemini / OpenRouter) with active badge, **add-key inline form** (paste API key input + Cancel/Save), and **configured-actions strip** (Use / Remove buttons), (2) **Service Sharing** (links to `/service-settings`), (3) **PeerLens Preferences** (6 sub-pages — region/budget/devices/languages/dietary/accessibility), (4) **More** (display-name override row + other misc rows), (5) **Security** (passphrase, auto-lock timeout picker with preset chips, sign out). |
-| `/help` | `help.tsx` | Scrollable help shell. Six `CardSection` blocks: **Your vault**, **Reminders**, **Talk** (D2D messaging), **Agent tasks**, **Services & PeerLens**, **Privacy and control**. Each card lists capabilities with an example panel. Tapping a card deep-links to the relevant feature route. |
-| `/add-contact` | `add-contact.tsx` | Add a DID-based contact. Inputs: handle + DID + name. Validation errors inline. |
-| `/chat/[did]` | `chat/[did].tsx` | 1:1 chat with another Dina (D2D over MsgBox). Bubble stream (peer-left / me-right), delivery-status indicators (sending / delivered / failed), error rows on failed messages, composer with send button. Empty state when no messages yet. Failed-send `Alert`. |
-| `/admin` | `admin.tsx` | Sections (each is an in-page `<Section>` block): **Identity** (DID row, handle row, recovery-key row, `DisplayNameRow` with inline edit/save/cancel), **Policies**, **Dev self-test** (dev builds only — `DevSendTestRow`), **Diagnostics** (groups + diag items + Copy-all button), **Danger zone** (Sign out, Erase vault). Includes "Re-publish PLC document" placeholder row + sign-out / erase-vault `Alert`s. |
-| `/recovery-phrase` | `recovery-phrase.tsx` | **3-mode state machine inside one route**: (1) `gate` — passphrase prompt blocking reveal, (2) `unlocking` — spinner while decrypting seed, (3) `revealed` — 24-word grid in 2 columns with copy. Warning banner before reveal. |
-| `/confirm-recovery-phrase` | `confirm-recovery-phrase.tsx` | **3-mode state machine inside one route**: (1) `gate` — passphrase prompt, (2) `unlocking` — spinner, (3) `verify` — 3-position quiz of mnemonic words. Cancel link + completion hint. |
-| `/paired-devices` | `paired-devices.tsx` | Two sections rendered as in-page `<Section>` blocks: **Devices** (list of paired devices with role + last-seen, per-row unpair) and **Generate pairing code** (device-name input + role chips + Generate button → reveals live code card with mono display, countdown timer, copy button). Per-device unpair `Alert`. Code-generation error `Alert`. |
-| `/service-settings` | `service-settings.tsx` | Service-sharing role config (requester / provider / both / off), capabilities (skills) list, policy chips, save button. **Add-capability modal** (`<Modal>`) — capability name input + add/cancel. Save/validation `Alert`s. |
-| `/policy` | `policy.tsx` | Agent action policies — list of action names with risk dots + tier toggles, grouped by risk. **Add-action modal** (`<Modal>`) — action-name input + confirm. Remove confirmation + error `Alert`s. |
-| `/notifications` | `notifications.tsx` | (the Activity bottom tab) |
-| `/approvals` | `approvals.tsx` | (hidden — notification tap / `dina://approvals/<id>` deep link) |
+| Route                      | File                          | Purpose                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| -------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/reminders`               | `reminders.tsx`               | Grouped reminder list (sections by due band: overdue, today, later, recurring). Per-row done/snooze actions + delete `Alert`. Empty state when no reminders.                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `/settings`                | `settings.tsx`                | In-page `<SettingsSection>` blocks: (1) **AI Provider Keys** — per-provider row (Anthropic / OpenAI / Gemini / OpenRouter) with active badge, **add-key inline form** (paste API key input + Cancel/Save), and **configured-actions strip** (Use / Remove buttons), (2) **Service Sharing** (links to `/service-settings`), (3) **PeerLens Preferences** (6 sub-pages — region/budget/devices/languages/dietary/accessibility), (4) **More** (display-name override row + other misc rows), (5) **Security** (passphrase, auto-lock timeout picker with preset chips, sign out). |
+| `/help`                    | `help.tsx`                    | Scrollable help shell. Six `CardSection` blocks: **Your vault**, **Reminders**, **Talk** (D2D messaging), **Agent tasks**, **Services & PeerLens**, **Privacy and control**. Each card lists capabilities with an example panel. Tapping a card deep-links to the relevant feature route.                                                                                                                                                                                                                                                                                        |
+| `/add-contact`             | `add-contact.tsx`             | Add a DID-based contact. Inputs: handle + DID + name. Validation errors inline.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `/chat/[did]`              | `chat/[did].tsx`              | 1:1 chat with another Dina (D2D over MsgBox). Bubble stream (peer-left / me-right), delivery-status indicators (sending / delivered / failed), error rows on failed messages, composer with send button. Empty state when no messages yet. Failed-send `Alert`.                                                                                                                                                                                                                                                                                                                  |
+| `/admin`                   | `admin.tsx`                   | Sections (each is an in-page `<Section>` block): **Identity** (DID row, handle row, recovery-key row, `DisplayNameRow` with inline edit/save/cancel), **Policies**, **Dev self-test** (dev builds only — `DevSendTestRow`), **Diagnostics** (groups + diag items + Copy-all button), **Danger zone** (Sign out, Erase vault). Includes "Re-publish PLC document" placeholder row + sign-out / erase-vault `Alert`s.                                                                                                                                                              |
+| `/recovery-phrase`         | `recovery-phrase.tsx`         | **3-mode state machine inside one route**: (1) `gate` — passphrase prompt blocking reveal, (2) `unlocking` — spinner while decrypting seed, (3) `revealed` — 24-word grid in 2 columns with copy. Warning banner before reveal.                                                                                                                                                                                                                                                                                                                                                  |
+| `/confirm-recovery-phrase` | `confirm-recovery-phrase.tsx` | **3-mode state machine inside one route**: (1) `gate` — passphrase prompt, (2) `unlocking` — spinner, (3) `verify` — 3-position quiz of mnemonic words. Cancel link + completion hint.                                                                                                                                                                                                                                                                                                                                                                                           |
+| `/paired-devices`          | `paired-devices.tsx`          | Two sections rendered as in-page `<Section>` blocks: **Devices** (list of paired devices with role + last-seen, per-row unpair) and **Generate pairing code** (device-name input + role chips + Generate button → reveals live code card with mono display, countdown timer, copy button). Per-device unpair `Alert`. Code-generation error `Alert`.                                                                                                                                                                                                                             |
+| `/service-settings`        | `service-settings.tsx`        | Service-sharing role config (requester / provider / both / off), capabilities (skills) list, policy chips, save button. **Add-capability modal** (`<Modal>`) — capability name input + add/cancel. Save/validation `Alert`s.                                                                                                                                                                                                                                                                                                                                                     |
+| `/policy`                  | `policy.tsx`                  | Agent action policies — list of action names with risk dots + tier toggles, grouped by risk. **Add-action modal** (`<Modal>`) — action-name input + confirm. Remove confirmation + error `Alert`s.                                                                                                                                                                                                                                                                                                                                                                               |
+| `/notifications`           | `notifications.tsx`           | (the Activity bottom tab)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `/approvals`               | `approvals.tsx`               | (hidden — notification tap / `dina://approvals/<id>` deep link)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 
 ### 5.1 PeerLens preference sub-pages (linked from `/settings`)
 
 All under `app/peerlens-preferences/`:
 
-| Route | File | Purpose |
-|-------|------|---------|
-| `/peerlens-preferences/region` | `region.tsx` | Search + select primary region (auto-detect row + searchable list with mono sub-labels for ISO codes). |
-| `/peerlens-preferences/budget` | `budget.tsx` | Per-category budget segmented controls (low / mid / high). |
-| `/peerlens-preferences/devices` | `devices.tsx` | Multi-select device categories (renders `multi_select_screen` view). |
-| `/peerlens-preferences/languages` | `languages.tsx` | Multi-select languages. |
-| `/peerlens-preferences/dietary` | `dietary.tsx` | Multi-select dietary preferences. |
-| `/peerlens-preferences/accessibility` | `accessibility.tsx` | Multi-select accessibility needs. |
+| Route                                 | File                | Purpose                                                                                                |
+| ------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------ |
+| `/peerlens-preferences/region`        | `region.tsx`        | Search + select primary region (auto-detect row + searchable list with mono sub-labels for ISO codes). |
+| `/peerlens-preferences/budget`        | `budget.tsx`        | Per-category budget segmented controls (low / mid / high).                                             |
+| `/peerlens-preferences/devices`       | `devices.tsx`       | Multi-select device categories (renders `multi_select_screen` view).                                   |
+| `/peerlens-preferences/languages`     | `languages.tsx`     | Multi-select languages.                                                                                |
+| `/peerlens-preferences/dietary`       | `dietary.tsx`       | Multi-select dietary preferences.                                                                      |
+| `/peerlens-preferences/accessibility` | `accessibility.tsx` | Multi-select accessibility needs.                                                                      |
 
 Shared view: `src/peerlens/preferences/multi_select_screen.tsx` (description, search, row list with descriptions, empty placeholder).
 
@@ -296,15 +305,15 @@ Shared view: `src/peerlens/preferences/multi_select_screen.tsx` (description, se
 
 `src/components/Inline*Card.tsx` — every card mounts inline as a chat-bubble-sized element on `/` (Chat). They are not routes — they are message-stream content.
 
-| Card | File | Surface |
-|------|------|---------|
-| **Approval card** | `InlineApprovalCard.tsx` | Approve / Deny agent intent. Status line after action. |
-| **Briefing card** | `InlineBriefingCard.tsx` | Daily / weekly briefing. Period label, summary, preview, sectioned bullet list, empty state. |
-| **Nudge card** | `InlineNudgeCard.tsx` | Sancho-Moment nudge: title, body, contact line, action / dismiss buttons. |
-| **Reminder card** | `InlineReminderCard.tsx` | Reminder due now. Body + persona pill + done / snooze buttons. |
-| **Review draft card** | `InlineReviewDraftCard.tsx` | Pre-filled PeerLens review draft (kind, subject, sentiment pills, headline / body inputs, secondary + primary actions). |
-| **Service approval card** | `InlineServiceApprovalCard.tsx` | Approve a service-sharing session. Requester + capability inline emphasis. |
-| **Service query card** | `InlineServiceQueryCard.tsx` | Response from a remote service (e.g., ETA query). Title, subtitle, primary value, secondary line, map button, error text. |
+| Card                      | File                            | Surface                                                                                                                   |
+| ------------------------- | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| **Approval card**         | `InlineApprovalCard.tsx`        | Approve / Deny agent intent. Status line after action.                                                                    |
+| **Briefing card**         | `InlineBriefingCard.tsx`        | Daily / weekly briefing. Period label, summary, preview, sectioned bullet list, empty state.                              |
+| **Nudge card**            | `InlineNudgeCard.tsx`           | Sancho-Moment nudge: title, body, contact line, action / dismiss buttons.                                                 |
+| **Reminder card**         | `InlineReminderCard.tsx`        | Reminder due now. Body + persona pill + done / snooze buttons.                                                            |
+| **Review draft card**     | `InlineReviewDraftCard.tsx`     | Pre-filled PeerLens review draft (kind, subject, sentiment pills, headline / body inputs, secondary + primary actions).   |
+| **Service approval card** | `InlineServiceApprovalCard.tsx` | Approve a service-sharing session. Requester + capability inline emphasis.                                                |
+| **Service query card**    | `InlineServiceQueryCard.tsx`    | Response from a remote service (e.g., ETA query). Title, subtitle, primary value, secondary line, map button, error text. |
 
 Supporting micro-component: `src/components/MessageTimestamp.tsx` — sub-bubble timestamp.
 
@@ -312,17 +321,17 @@ Supporting micro-component: `src/components/MessageTimestamp.tsx` — sub-bubble
 
 ## 7. Identity / pairing modals (full-screen overlays)
 
-| Modal | File | Trigger |
-|-------|------|---------|
-| **Identity modal** | `src/components/identity/identity_modal.tsx` | Tapping a contact in `/people` or a DID anywhere. Full screen: handle headline, DID caption, grouped field cards (handle, DID, PLC services, namespaces), copy buttons. Loading + error panels. |
-| **Hamburger menu** | inline in `app/_layout.tsx` | Header-left button on every tab. |
-| **Mode-switch popover** | inline in `app/index.tsx` | Tap mode pill in chat composer. |
-| **PeerLens first-run modal** | `src/peerlens/components/first_run_modal_view.tsx` | First time the user opens `/peerlens`. |
-| **PeerLens write wizard** | inline in `app/peerlens/write.tsx` | "+ Add additional details" pill on the write form. |
-| **Service-settings capability modal** | inline in `app/service-settings.tsx` | "Add capability" button. |
-| **Policy-add modal** | inline in `app/policy.tsx` | "+" button in the header. |
-| **Vault add form** | inline in `app/vault/index.tsx` | "+ New vault" pill (not a Modal — toggled inline form). |
-| **Settings add-key form** | inline in `app/settings.tsx` | "Add Key" link under AI Provider Keys (inline form, not Modal). |
+| Modal                                 | File                                               | Trigger                                                                                                                                                                                         |
+| ------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Identity modal**                    | `src/components/identity/identity_modal.tsx`       | Tapping a contact in `/people` or a DID anywhere. Full screen: handle headline, DID caption, grouped field cards (handle, DID, PLC services, namespaces), copy buttons. Loading + error panels. |
+| **Hamburger menu**                    | inline in `app/_layout.tsx`                        | Header-left button on every tab.                                                                                                                                                                |
+| **Mode-switch popover**               | inline in `app/index.tsx`                          | Tap mode pill in chat composer.                                                                                                                                                                 |
+| **PeerLens first-run modal**          | `src/peerlens/components/first_run_modal_view.tsx` | First time the user opens `/peerlens`.                                                                                                                                                          |
+| **PeerLens write wizard**             | inline in `app/peerlens/write.tsx`                 | "+ Add additional details" pill on the write form.                                                                                                                                              |
+| **Service-settings capability modal** | inline in `app/service-settings.tsx`               | "Add capability" button.                                                                                                                                                                        |
+| **Policy-add modal**                  | inline in `app/policy.tsx`                         | "+" button in the header.                                                                                                                                                                       |
+| **Vault add form**                    | inline in `app/vault/index.tsx`                    | "+ New vault" pill (not a Modal — toggled inline form).                                                                                                                                         |
+| **Settings add-key form**             | inline in `app/settings.tsx`                       | "Add Key" link under AI Provider Keys (inline form, not Modal).                                                                                                                                 |
 
 ---
 
@@ -347,14 +356,14 @@ These are OS-level confirmation popups, not full screens. Locations and triggers
 
 Not routable — used as building blocks inside `/peerlens/*` pages.
 
-| View | File | Used by |
-|------|------|---------|
-| `subject_card_view.tsx` | Subject card | Feed (`/peerlens`), search results, alternatives strip. |
-| `subject_anchor_view.tsx` | Compact subject reference | Reviewer detail, sub-headers. |
-| `facet_bar_view.tsx` | Filter chip row | Feed, search. |
-| `viewer_filter_chips_view.tsx` | Viewer-only filter chips | Feed. |
-| `cosig_inbox_row_view.tsx` | Co-sign request row | Feed, notifications. |
-| `first_run_modal_view.tsx` | First-run welcome modal | PeerLens feed (one-time). |
+| View                           | File                      | Used by                                                 |
+| ------------------------------ | ------------------------- | ------------------------------------------------------- |
+| `subject_card_view.tsx`        | Subject card              | Feed (`/peerlens`), search results, alternatives strip. |
+| `subject_anchor_view.tsx`      | Compact subject reference | Reviewer detail, sub-headers.                           |
+| `facet_bar_view.tsx`           | Filter chip row           | Feed, search.                                           |
+| `viewer_filter_chips_view.tsx` | Viewer-only filter chips  | Feed.                                                   |
+| `cosig_inbox_row_view.tsx`     | Co-sign request row       | Feed, notifications.                                    |
+| `first_run_modal_view.tsx`     | First-run welcome modal   | PeerLens feed (one-time).                               |
 
 ---
 
@@ -391,6 +400,7 @@ Not routable — used as building blocks inside `/peerlens/*` pages.
 ## UI/UX Review Findings
 
 Per-screen review notes, captured live via idb on iOS simulator (iPhone 17 Pro, iOS 26). Each finding is tagged:
+
 - `copy` — wording / grammar / clarity
 - `style` — non-canonical token, layout drift, hard-coded value
 - `info-arch` — surface / hierarchy / discoverability
@@ -401,6 +411,7 @@ Per-screen review notes, captured live via idb on iOS simulator (iPhone 17 Pro, 
 A leading **✅** marks findings already addressed in the cross-cutting-fix pass (2026-05-21). **🚧** marks blockers that can't be fixed inline (logged with the reason).
 
 ### 1. Welcome (`src/components/onboarding/welcome.tsx`)
+
 Screenshots: `01-welcome-fresh.png`, `01-welcome-bottom.png`.
 
 - **copy** · "All data encrypted **and in** your device, signed by your identity." — preposition is wrong; should read "encrypted **on** your device". The "and" forces a clause that doesn't belong.
@@ -417,27 +428,29 @@ Screenshots: `01-welcome-fresh.png`, `01-welcome-bottom.png`.
 - **a11y** · Pill text is 12pt (`caption`) — that's below the iOS HIG minimum recommendation (13pt) for non-incidental text. Consider 13pt (`bodySmall`).
 
 ### 2. Choose / Mode-choice (`src/components/onboarding/mode_choice.tsx`)
+
 Screenshot: `02-choose-actual.png`.
 
 - **copy** · "Restore your identity on this device. Saved memories stay **on** your old device's vault." — preposition error; memories live **in** a vault, not on it. Fix to "in your old device's vault".
 - **copy** · Subtitle "New to Dina? Start fresh. Coming back? Restore from your 24-word recovery phrase." has four short sentences in one line — feels choppy. Consider two lines or "New here? Start fresh. Returning? Restore from your 24-word recovery phrase." for better symmetry.
 - **copy** · Card 2 subtitle repeats the verb "Restore" inside itself ("Restore from recovery phrase" → "Restore your identity on this device"). Tighten to "Bring your identity to this device. Memories saved on your old device stay there."
-- **info-arch** · Bottom half of the screen is empty space — there's room for a trust-anchor line ("Local-first. No server. No cloud account.") or a reassurance ("You can switch later" — *if* that's true; if not, omit).
+- **info-arch** · Bottom half of the screen is empty space — there's room for a trust-anchor line ("Local-first. No server. No cloud account.") or a reassurance ("You can switch later" — _if_ that's true; if not, omit).
 - **info-arch** · Headline "Welcome to Dina" is the same as on Welcome. Two consecutive screens with identical hero copy reads like the user got bounced back. Differentiate the choose headline (e.g., "Begin or restore?" or "Pick your path").
 - **info-arch** · No progress pill ("1 of 7 · Choose"). Same gap as on Welcome — see Welcome findings.
 - **polish** · The circular glyphs are visually identical (44 × 44 muted circle, `colors.bgTertiary`). Subtle differentiation (e.g., accent border on Create, neutral on Restore) would tilt the user toward the primary action.
-- ✅ **a11y** · `accessibilityLabel={title}` — drops the body text. VoiceOver users hear "Create a new Dina, button" with no context. Append the body: `accessibilityLabel={`${title}. ${body}`}`. **Fixed**: now uses `${title}. ${body}` + `accessibilityRole="button"`.
+- ✅ **a11y** · `accessibilityLabel={title}` — drops the body text. VoiceOver users hear "Create a new Dina, button" with no context. Append the body: `accessibilityLabel={`${title}. ${body}`}`. **Fixed**: now uses `${title}. ${body}`+`accessibilityRole="button"`.
 - **style** · ✓ All styles compose canonical tokens (`textStyles.display`, `textStyles.body`, `textStyles.bodyStrong`, `textStyles.bodySmall`, `textStyles.h3`). `minHeight: 132` is a hard pixel value — fine since it's expressing "card pair must match heights" not typography.
 - **a11y** · Tap targets (cards) are ~132 px tall — comfortably above the 44pt iOS minimum. ✓
 - **a11y** · Glyph `⟳` (U+21BA, "anticlockwise open circle arrow") for "Restore" is fine visually but VoiceOver reads it literally as "anticlockwise open circle arrow". Wrap glyph in `accessibilityElementsHidden` so it's not announced.
 
 ### 3. Owner name / Display name (`src/components/onboarding/owner_name.tsx`)
+
 Screenshots: `03-owner-name.png`, `03-typed.png`.
 
 - **copy** · "Just a display name — we use it as **the base** of your Dina handle on the community directory." — "the base" sounds odd; "the **basis** of" or "the starting point for" reads more naturally.
 - **copy** · "the community directory" is undefined jargon for a first-time user — they have no mental model of what a community directory is. Either define it or substitute with concrete language ("your public handle on Dina's network").
 - **bug/env** · Suggested handle preview reads "sancho.**test-pds**.dinakernel.com" — the "test-pds" subdomain leak is fine for staging but in production builds this should read like a polished handle (e.g. "sancho.dinakernel.com" or "@sancho"). Verify `resolveMobileHostedDinaEndpoints()` swaps the host for production bundles.
-- **info-arch** · "SUGGESTED HANDLE" label is uppercase mini-eyebrow (`textStyles.eyebrow` + letterSpacing 1.5) — consistent with `DISPLAY NAME` above. ✓ But the two labels styled identically may flatten the hierarchy; the suggestion card is meant to feel like *output* of what you typed, not a *second input*. A different framing — e.g. soft italic "Your handle would be …" — would read better.
+- **info-arch** · "SUGGESTED HANDLE" label is uppercase mini-eyebrow (`textStyles.eyebrow` + letterSpacing 1.5) — consistent with `DISPLAY NAME` above. ✓ But the two labels styled identically may flatten the hierarchy; the suggestion card is meant to feel like _output_ of what you typed, not a _second input_. A different framing — e.g. soft italic "Your handle would be …" — would read better.
 - **info-arch** · The card around the suggestion uses `colors.bgTertiary` background — visually similar enough to the input that it can read as a second editable field. Consider a hairline border or a "preview" label icon.
 - **a11y** · `maxLength={40}` is enforced silently — no character counter or error. If a user pastes 50 chars, the 41–50 are dropped without feedback. Add a tiny inline counter or trim-warning.
 - **a11y** · Continue button disabled state uses `opacity: 0.35` (per shell.tsx). At that opacity the white "Continue" label on grey button has very low contrast (~2.3:1). WCAG AA requires 4.5:1. Either darken the disabled background or keep the label at full opacity.
@@ -445,24 +458,26 @@ Screenshots: `03-owner-name.png`, `03-typed.png`.
 - **bug** · Buildtime check — owner_name uses `pdsHostForEndpoints(resolveMobileHostedDinaEndpoints())`. If `loadInfraPreferences()` hasn't resolved yet (cold start), this will read defaults — confirm the preview updates if the user later overrides the PDS in InfraSetup.
 
 ### 4. Handle picker (`src/components/onboarding/handle_pick.tsx`)
+
 Screenshot: `04-handle.png`.
 
 - **bug/env** · Subtitle: "We'll add `.test-pds.dinakernel.com` automatically." — `.test-pds` host string is exposed in plaintext to the end user. Test-mode leak. Production should display only the canonical handle suffix.
 - **info-arch** · Suggestion rows display the **full** handle (`sancho40.test-pds.dinakernel.com`) — 33 monospace characters per row. Three of those stacked feels noisy and hard to scan. Show just the prefix (`sancho40`) in mono and the suffix in a smaller muted style underneath (or to the right).
 - **copy** · "✗ Taken — try one of these:" — concise. ✓
 - **copy** · "Directory unreachable — you can keep going at your own risk." — "at your own risk" implies danger; the actual fallback is benign (server will reject true collisions at commit). Suggest "Directory unreachable — you can keep going; we'll verify on commit."
-- **info-arch** · The suffix "TAP TO USE" sits to the right of the row in eyebrow uppercase — feels disconnected from the row's affordance. The whole row is already pressable; "TAP TO USE" suggests *that* element is the button. Either drop the label (the whole row is implied tappable) or move it to a small chevron `›`.
+- **info-arch** · The suffix "TAP TO USE" sits to the right of the row in eyebrow uppercase — feels disconnected from the row's affordance. The whole row is already pressable; "TAP TO USE" suggests _that_ element is the button. Either drop the label (the whole row is implied tappable) or move it to a small chevron `›`.
 - **a11y** · Status copy "✓ Available" / "✗ Taken" uses red/green color as the only differentiator. Add an icon (already present) but ensure screen reader announces the status — wrap with `accessibilityRole="alert"` so VoiceOver picks up the change immediately.
 - **a11y** · The input row's suffix label (`.test-pds.dinakernel.com`) is muted — contrast vs cream background looks ~3.5:1, possibly below WCAG AA for normal text. Check with a contrast tool.
 - **style** · ✓ All styles compose canonical tokens. `inputRow` flexbox custom layout is fine.
 - **bug** · `void pdsHost; // accepted for API symmetry` — the prop is accepted but unused, deliberately. Confirm this doesn't cause lint/unused warnings on strict builds.
 
 ### 5. Passphrase set (`src/components/onboarding/passphrase_set.tsx`)
+
 Screenshot: `05-passphrase.png`.
 
 - **copy** · Mode-card titles aren't parallel: "**Start automatically**" (instruction to system) vs "**Ask for my passphrase each time**" (instruction with first-person POV). Rewrite either pair so they match — e.g. "Unlock automatically" / "Require passphrase on every launch", or "Start automatically" / "Ask me each time".
 - **copy** · "Convenient for daily use; less resilient if your phone is stolen." — "less resilient" is a CS-flavoured word. Rewrite for a layperson: "Convenient for daily use. Less secure if your phone is stolen."
-- **copy** · Subtitle "it's the only way into your data" — softer than it could be. The recovery phrase is *also* a way in. The phrasing accidentally suggests there's no fallback. Consider: "Keep it safe — Dina can't reset it for you. Your 24-word recovery phrase is the only backup."
+- **copy** · Subtitle "it's the only way into your data" — softer than it could be. The recovery phrase is _also_ a way in. The phrasing accidentally suggests there's no fallback. Consider: "Keep it safe — Dina can't reset it for you. Your 24-word recovery phrase is the only backup."
 - **info-arch** · No "Show password" toggle. Most modern apps expose a peek eye-icon so users can verify what they typed before committing. With `secureTextEntry` masking everything, a typo on the passphrase is unrecoverable.
 - **info-arch** · The strength bar (3-pixel tall pips) is too thin to read at a glance — easy to miss. Bump to 6 px and add a short label ("Weak" / "Okay" / "Strong" / "Excellent") so the score is interpretable.
 - **info-arch** · No paste guidance. Password managers often inject extra whitespace; `trim()` happens nowhere. Confirm `pp` is trimmed before stored as the KDF input, or add a paste-paste-paste guard.
@@ -473,6 +488,7 @@ Screenshot: `05-passphrase.png`.
 - **polish** · Selected mode card uses `bgTertiary` background + accent border. Visually subtle on cream background. A larger contrast bump on the selected card (e.g. accent at 10% opacity background) would make the current selection more obvious at a glance.
 
 ### 6. Mnemonic reveal (`src/components/onboarding/mnemonic_reveal.tsx`)
+
 Screenshots: `06-mnemonic-reveal.png`, `06-mnemonic-scrolled.png`.
 
 - ✅ **style** · **Non-canonical hard-coded colors**: `backgroundColor: '#FFF4DB'` and `color: '#8A5A00'` in `warningBanner` / `warningText`. These should be promoted to theme tokens (e.g., `colors.warningBgSoft`, `colors.warningTextDeep`) so the warning palette is reusable across the app. Same pattern appears in `recovery-phrase.tsx` (`warningBanner` / `warningText` lines 319-331). **Fixed**: both files now use `colors.warningBgSoft` + `colors.warningTextDeep`.
@@ -487,13 +503,14 @@ Screenshots: `06-mnemonic-reveal.png`, `06-mnemonic-scrolled.png`.
 - **style** · ✓ Mnemonic cells use `textStyles.monoSmall` (index) and `textStyles.mono` (word) — canonical. `letterSpacing: 0.2` on word is a per-instance override but small enough to ignore.
 
 ### 7. Mnemonic verify (`src/components/onboarding/mnemonic_verify.tsx`)
+
 Screenshot: `07-mnemonic-verify.png`.
 
 - **copy** · "Just a few words from what you wrote down — to make sure your copy is good." — "your copy is good" reads slightly odd. Consider "to make sure you've got them right."
 - **copy** · "I'll do this later" — clear ✓, but contextually risky for a security-critical step. Consider amending to "Skip for now (I'll verify in Settings)" so the user knows it'll come back as a banner.
 - **bug** · Mismatch handler clears **all three inputs** on a single wrong word: `setAnswers(challenge.indices.map(() => ''))`. This is harsh — if the user got 2/3 right, retyping all of them feels punitive. Recommend keeping correct answers and only clearing/highlighting the mismatched word.
 - **info-arch** · No indication of which word was wrong. Add per-input error state so the user knows which row to recheck.
-- **info-arch** · The challenge picks 3 random positions but doesn't explain *why* those positions. Maybe a tiny line "Random sampling — three positions to confirm the phrase isn't a typo." would help.
+- **info-arch** · The challenge picks 3 random positions but doesn't explain _why_ those positions. Maybe a tiny line "Random sampling — three positions to confirm the phrase isn't a typo." would help.
 - **a11y** · The "View my recovery phrase again" link has `accessibilityRole="link"` and explicit label ✓.
 - **a11y** · Inputs have no `accessibilityLabel` — VoiceOver reads "Word #8" from the visual label. That's OK because the label is announced when the field is reached. ✓
 - **style** · ✓ All canonical tokens (`textStyles.label`, `textStyles.mono`, `textStyles.bodySmall`, `textStyles.link`).
@@ -501,6 +518,7 @@ Screenshot: `07-mnemonic-verify.png`.
 - **polish** · "WORD #8" prefix uses `#` symbol — in mono context can read as "hash". Consider "8th word" or "Word 8".
 
 ### 8. Provisioning + Infra setup (`provisioning.tsx`, `infra_setup.tsx`)
+
 Not directly captured live in this session — provisioning is brief; infra_setup only shows when no PDS URL is persisted yet. Source review:
 
 - **provisioning.tsx** — full-screen ActivityIndicator + step label ("Creating account on PDS…", "Generating did:plc…", etc.). No navigation chrome. Reasonable for a 5–10s gate. **Recommend**: add a fallback if any step takes > 10s — current code may hang silently.
@@ -508,6 +526,7 @@ Not directly captured live in this session — provisioning is brief; infra_setu
 - **a11y** · Provisioning spinner has no announced status text — VoiceOver users won't know what's happening or for how long.
 
 ### 9. Chat (`app/index.tsx`) — empty state (signed in, no thread)
+
 Screenshot: `08-provisioning.png` (showed the post-onboarding chat tab).
 
 - ✅ **style** · **Non-canonical hard-coded colors** for the recovery-phrase banner — now all 4 hexes migrated to canonical tokens (`colors.warningBgSoft`, `colors.warningTextDeepest`, `colors.warningTextDeep`).
@@ -526,6 +545,7 @@ Screenshot: `08-provisioning.png` (showed the post-onboarding chat tab).
 - **bug** · The doc previously asserted chat modes are "Ask / Remember / Task / Talk" — the actual ACTIONS array has 3 entries (`ask`, `remember`, `task`). Talk lives elsewhere (`/chat/[did]`). The SCREENS doc is now corrected above.
 
 ### 10. Hamburger menu (`app/_layout.tsx`, modal in `NavMenu`)
+
 Screenshot: `10-menu.png`.
 
 - **info-arch** · Five items: Vault, Reminders, Settings, Help, Sign out. Currently no separator between functional items and "Sign out" — Sign out is destructive (locks vault) and should be visually separated (e.g., a hairline divider above it or red text color).
@@ -538,6 +558,7 @@ Screenshot: `10-menu.png`.
 - **polish** · No visual chevron / "› navigate" on each row — most menu UIs imply navigation with a small right-side chevron or color cue.
 
 ### 11. Vaults list (`app/vault/index.tsx`)
+
 Screenshots: `11-vault.png`, `11-vault-bottom.png`.
 
 - **info-arch** · "Vaults" header has no back arrow. Vault is reached via the hamburger menu but not from a tab — so the only way back is the bottom tab bar. A user who entered Vault from the menu may expect a back chevron. Either add a back chevron in the header or rely on tab-bar navigation but ensure it's consistent across all menu-driven routes.
@@ -552,14 +573,16 @@ Screenshots: `11-vault.png`, `11-vault-bottom.png`.
 - **bug** · `safeCount(persona)` swallows the strict-mode `requireRepo` throw and returns 0 — that's intentional for sensitive vaults that haven't been opened. But the user sees "0" for a vault that might actually have items. Consider rendering an em-dash `—` instead of `0` for vaults that are sealed (DEK not in RAM).
 
 ### 12. Vault detail (`app/vault/[name].tsx`)
+
 Screenshot: `12-vault-general.png`.
 
 - **copy** · Empty state: "No items yet. Use `/remember` in chat or send Dina a message to populate this vault." — surfaces a slash command (`/remember`) without explaining it's the same as the Remember mode pill the user already saw on the chat tab. Consider: "No items yet. In chat, switch to Remember mode and tell Dina what to keep." (Drops the magic-string `/remember` and aligns with the chat-pill mental model.)
 - **copy** · Description card body double-stacks instruction + content:
   - Line 1 (muted): "Used by Dina's classifier to route new memories into this vault."
   - Line 2 (primary): "Personal facts, preferences, family, relationships, hobbies, recipes, pets, birthdays, daily life, opinions"
-  
+
   Splitting the card visually (label + value) or moving the instruction outside the card would tighten this.
+
 - **info-arch** · Tier indicator at top is a full-width card with only the lock + "Default (always open)" text — wastes vertical space. Inline it as a small badge next to the header title.
 - **info-arch** · Header back chevron is rendered in a **white circle background** (custom in `vault/_layout.tsx`). Other screens use a bare arrow. Pick one convention.
 - **info-arch** · No "Delete vault" or "Edit name" affordance visible on the detail page for non-default vaults. Users can't manage their own additions from here.
@@ -567,6 +590,7 @@ Screenshot: `12-vault-general.png`.
 - **style** · ✓ Per earlier audit; canonical tokens throughout.
 
 ### 13. People — Contacts + Relations sub-tabs (`app/people.tsx`)
+
 Screenshots: `13-people.png`, `13b-relations.png`.
 
 - **bug** · Own-handle line wraps **mid-token**: "sancho40.test-" / "pds.dinakernel.com" — the dash inside "test-pds" is a soft-break candidate but the result reads broken. Either truncate with middle ellipsis (`sancho40…dinakernel.com`) or constrain to a single line and let user tap to view full handle.
@@ -581,6 +605,7 @@ Screenshots: `13-people.png`, `13b-relations.png`.
 - **polish** · The big "👥 No contacts yet" empty illustration is bare (just an icon). Consider adding a stronger affordance ("Tap + to add" with arrow) so first-time users find the entry point.
 
 ### 14. Add contact (`app/add-contact.tsx`)
+
 Reviewed via source (the dev gear overlaps the "+" trigger on People tab, so couldn't reach the page interactively in this dev build).
 
 - **bug/env** · Subtitle: "Paste a handle (`alice.test-pds.dinakernel.com`) or a DID (`did:plc:…`). Just the handle is enough — the host is the PDS." — example handle hard-coded with `.test-pds.` subdomain. In production this needs to read the canonical host (no `test-pds`).
@@ -592,6 +617,7 @@ Reviewed via source (the dev gear overlaps the "+" trigger on People tab, so cou
 - **bug** · `resolveHandle` order is xrpc → well-known. Note in the docstring mentions iOS RN fetch bug with NXDOMAIN → blob error. Confirm this still works post-`expo/fetch` swap.
 
 ### 15. PeerLens feed (`app/peerlens/index.tsx`)
+
 Screenshot: `15-peerlens.png`.
 
 - **info-arch** · Empty state is reached with no Self-card / no contextual entry. A first-time user lands here and sees an empty page — should surface "Add a review" or "Browse popular subjects" entry points.
@@ -603,16 +629,18 @@ Screenshot: `15-peerlens.png`.
 - **style** · ✓ Migrated to canonical tokens earlier.
 
 ### 16. PeerLens search (`app/peerlens/search.tsx`)
+
 Screenshots: `16-pl-search-typed.png`, `16b-pl-search-result.png`.
 
 - **info-arch** · Back chevron rendered in **white circle background**. Inconsistent with the bare arrow used everywhere else (only Vault detail uses the same custom circle). Pick one convention.
-- **info-arch** · "In my languages" filter chip is pre-applied without telling the user *why*. If results are zero, the user doesn't know whether to disable the language filter to broaden. Add an explainer tooltip or hint.
+- **info-arch** · "In my languages" filter chip is pre-applied without telling the user _why_. If results are zero, the user doesn't know whether to disable the language filter to broaden. Add an explainer tooltip or hint.
 - **copy** · Query echo wraps the term in curly quotes — typographically nice ✓. "Nothing found for "coffee". Try a different search or write the first review." — clear ✓.
 - **info-arch** · "Review 'coffee'" filled-black button is high-affordance ✓ — but contextually one tap routes straight to a 6-step write form, which is overwhelming for a one-shot query. Consider a confirmation step or a much-reduced "Quick review" mode.
 - **a11y** · Search field has explicit `accessibilityLabel="Search PeerLens"` ✓ (per describe-all).
 - **style** · ✓ Canonical tokens.
 
 ### 17. PeerLens write review (`app/peerlens/write.tsx`)
+
 Screenshots: `17-pl-write.png`, `17b-pl-write-scroll.png`.
 
 - ✅ **info-arch** · **Title duplication**: native header shows "Write a review" AND an in-page H1 also reads "Write a review". The add-contact file explicitly avoided this pattern (line 114 comment). Same fix applies: drop the in-page H1 or move it inside the first card. **Fixed**: removed the in-page H1; tests updated to assert via the publish-button accessibilityLabel instead.
@@ -627,6 +655,7 @@ Screenshots: `17-pl-write.png`, `17b-pl-write-scroll.png`.
 - **polish** · "Add additional details (optional)" pill at the bottom of card stack opens the modal wizard. The "+" + chevron + label is intuitive ✓.
 
 ### 18. Notifications (`app/notifications.tsx`)
+
 Screenshot: `18-notifications.png`.
 
 - **info-arch** · Filter chips: All / Unread / Reminders / Approvals. Missing: **PeerLens** category (co-signature requests, attestation activity) — currently those would only show under "All" with no targeted filter.
@@ -637,6 +666,7 @@ Screenshot: `18-notifications.png`.
 - **style** · ✓ Migrated to canonical tokens earlier.
 
 ### 19. Reminders (`app/reminders.tsx`)
+
 Screenshot: `20-settings.png` (landed on Reminders by mis-tap).
 
 - **copy** · "Tell Dina about an event in Chat — pick `Remember` and any dates inside will turn into reminders here." — inline pill highlighting the word "Remember" with a mono pill style is a clever interactive callback to chat. ✓
@@ -646,6 +676,7 @@ Screenshot: `20-settings.png` (landed on Reminders by mis-tap).
 - **style** · ✓ Canonical tokens.
 
 ### 20. Settings (`app/settings.tsx`)
+
 Screenshots: `20b-settings.png`, `20c-settings-scroll.png`.
 
 - **bug** · Section reads "**Encryption: AES-256-GCM**" but per CLAUDE.md the vault is SQLCipher with **AES-256-CBC** per page. GCM applies to the wrapped seed in keychain. Either fix the label to "Seed wrap: AES-256-GCM · Vault: AES-256-CBC", or split into two rows.
@@ -662,6 +693,7 @@ Screenshots: `20b-settings.png`, `20c-settings-scroll.png`.
 - **polish** · "AIza...yYdE" obfuscated key — good security UX. Verify the ellipsis is U+2026 (not three dots) for clean rendering.
 
 ### 21. Help (`app/help.tsx`)
+
 Source review only (dev gear blocks the help-button tap in dev builds).
 
 - **info-arch** · 6 card sections grouped by feature — well-organised ✓.
@@ -676,39 +708,51 @@ Source review only (dev gear blocks the help-button tap in dev builds).
 The remaining screens were reviewed from source. The high-frequency findings are aggregated into the **Cross-cutting findings** section below; per-screen specifics noted here:
 
 #### Approvals (`app/approvals.tsx`)
+
 - ✅ **style** · **Hard-coded warning/error palette** at lines 374-379, 457. **Fixed**: migrated to `colors.warningBgSoft`/`colors.warningTextMid`/`colors.errorBgSoft`/`colors.errorTextDeep`/`colors.error`.
 
 #### Policy (`app/policy.tsx`)
+
 - ✅ **style** · **Hard-coded risk colors** `#059669`/`#D97706`/`#DC2626`/`#7C3AED`. **Fixed**: now uses `colors.riskLow`/`colors.riskMed`/`colors.riskHigh`/`colors.riskAdmin`. Error banner also migrated.
 
 #### People (`app/people.tsx`) — additional badges
+
 - ✅ **style** · **Hard-coded badge colors at lines 267-273** — paired (`#E6F0FE`/`#1F5BB8`) and suggested (`#FFF4D6`/`#8A6300`). **Fixed**: now uses `colors.badgePairedBg/Text` + `colors.badgeSuggestedBg/Text`.
 
 #### Admin (`app/admin.tsx`)
+
 - ✅ **style** · `color: '#FFFFFF'` at lines 326, 498. **Fixed**: now `colors.white`.
 
 #### Provisioning (`src/components/onboarding/provisioning.tsx`)
+
 - ✅ **style** · Error panel hard-codes (`#FDE8E8`, `#7A1F1F`). **Fixed**: now `colors.errorBgSofter` + `colors.errorTextDeepest`.
 
 #### Recovery-phrase (`app/recovery-phrase.tsx`)
+
 - ✅ **style** · Warning banner duplicates the colors from `mnemonic_reveal.tsx`. **Fixed** (same migration).
 
 #### Chat (`app/index.tsx`) verify-banner
+
 - ✅ **style** · 4 separate warning hex literals. **Fixed** — see §9.
 
 #### Add-contact (`app/add-contact.tsx`)
+
 - ✅ **style** · `color: '#FFFFFF'` at line 348. **Fixed**: now `colors.white`.
 
 #### Service-settings (`app/service-settings.tsx`)
+
 - ✅ **style** · `errorBanner` used `#FEF2F2` + `#FCA5A5`. **Fixed**: now `colors.errorBgSoft` + `colors.error`.
 
 #### Chat detail (`app/chat/[did].tsx`)
+
 - ✅ **style** · `warningBanner` used `#FFF4DB` + `#D97706` literally. **Fixed**: now uses canonical `colors.warningBgSoft` + `colors.warning`.
 
 #### Vault detail (`app/vault/[name].tsx`)
+
 - ✅ **style** · Unverified-sender chip used `#FFF7ED` + `#FED7AA`. **Fixed**: now `colors.warningBgSoft` + `colors.warning`.
 
 #### Notifications (`app/notifications.tsx`)
+
 - ✅ **style** · `iconWrapUnread` used `#F0EAE0` (matched bgTertiary). **Fixed**: now `colors.bgTertiary`.
 
 ---
@@ -722,7 +766,7 @@ These issues recur across many surfaces and are worth a single fix-it pass rathe
 3. **Back-chevron inconsistency** — most screens use a bare `‹` arrow; vault/[name] and peerlens/search use a `‹` in a **white-circle background**. **Resolution (no code change)**: all code paths already use bare `chevron-back` Ionicons. The "white circle" was iOS 26 native back-button rendering, not Dina code.
 4. ✅ **Title duplication (header + body)** — write-review showed the same title in both the native header and the in-page body. **Fixed**: in-page H1 removed from `peerlens/write.tsx`. Tests updated to assert mode via the publish-button accessibilityLabel.
 5. **Dev-only Expo "Tools" gear overlap** — the floating dev gear at top-right intercepts taps on the help/+ buttons during dev builds. In production this disappears, but during QA it causes false misses. Documented for reviewers.
-6. 🚧 **Bottom-tab `1 of 23` AX bug** — every hidden `Tabs.Screen` with `href: null` still counts toward iOS's "tab N of M" announcement. VoiceOver users hear "Chat, tab, 1 of 23". **Cannot be fixed inline** — Expo Router throws `Cannot use `href` and `tabBarButton` together`, and `tabBarItemStyle: { display: 'none' }` hides visually but doesn't remove from AX tree. The real fix requires lifting all 18 hidden routes out of `Tabs.Screen` into a sibling `Stack` registration — deferred to a follow-up.
+6. 🚧 **Bottom-tab `1 of 23` AX bug** — every hidden `Tabs.Screen` with `href: null` still counts toward iOS's "tab N of M" announcement. VoiceOver users hear "Chat, tab, 1 of 23". **Cannot be fixed inline** — Expo Router throws `Cannot use `href`and`tabBarButton` together`, and `tabBarItemStyle: { display: 'none' }` hides visually but doesn't remove from AX tree. The real fix requires lifting all 18 hidden routes out of `Tabs.Screen` into a sibling `Stack` registration — deferred to a follow-up.
 7. ✅ **`accessibilityLabel={title}` drops body context** — **Fixed in two key surfaces** (mode_choice `ChoiceCard`, passphrase_set `ModeCard`): now `${title}. ${body}` + `accessibilityRole="button"` / `accessibilityRole="radio"` with `accessibilityState={{ selected }}`. Other surfaces (mnemonic_verify, etc.) still pending — same pattern applies.
 8. ✅ **Gendered "she" for Dina** — used in welcome.tsx pillar copy. **Fixed**: "she delegates" → "it gets delegated". Grep across `apps/mobile/` confirms no other `she/her` references to Dina.
 9. ✅ **Strength-bar / strength-pip thinness** — **Fixed**: pips now 6px (was 3); added text label "Weak / Okay / Strong / Excellent" below the bar with strength-coloured tint.
@@ -736,7 +780,7 @@ These issues recur across many surfaces and are worth a single fix-it pass rathe
 14. ✅ **Welcome 8 pillars vs 6 pills mismatch** — pills now match pillars (8 entries: identity, vault, reminders, talk, agentTasks, security, peerlens, services).
 15. ✅ **Mnemonic-verify wipe-on-mismatch** — now keeps correct answers and only clears the wrong one(s); focuses the first wrong row.
 16. ✅ **Mnemonic-reveal cell index `01` VoiceOver** — cells now have a unified `accessibilityLabel="Word 1: dynamic"`; raw index + word are hidden from AX so VO doesn't read "zero one".
-17. ✅ **Help "Dina applies what *she* knows about you"** — rewritten to "what it knows" / "it has seen" (parity with welcome.tsx fix).
+17. ✅ **Help "Dina applies what _she_ knows about you"** — rewritten to "what it knows" / "it has seen" (parity with welcome.tsx fix).
 18. ✅ **Vault list sealed-persona "0"** — `safeCount()` now returns `null` when DEK isn't in RAM; row shows `—` placeholder instead of misleading 0.
 19. ✅ **People sub-tab pill contrast** — selected tab now filled accent (black) with white label; unselected pale, easy to read at a glance.
 20. ✅ **Reminders / Notifications / People empty-state CTAs** — Reminders + People (Contacts) now have a clear "Go to Chat" / "Add a contact" pill button below the empty illustration. (Notifications "mark all read" deferred — needs a new `@dina/brain/notifications` API.)

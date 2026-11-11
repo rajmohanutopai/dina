@@ -148,7 +148,10 @@ describe('@dina/core dependency hygiene (CA-31)', () => {
       { spec: 'path', snippet: `import * as path from 'path';` },
       { spec: 'node:fs', snippet: `import { readFileSync } from 'node:fs';` },
       { spec: 'node:path', snippet: `import { join } from 'node:path';` },
-      { spec: 'node:async_hooks', snippet: `import { AsyncLocalStorage } from 'node:async_hooks';` },
+      {
+        spec: 'node:async_hooks',
+        snippet: `import { AsyncLocalStorage } from 'node:async_hooks';`,
+      },
       { spec: 'node:crypto', snippet: `import { randomBytes } from 'node:crypto';` },
       { spec: 'fastify', snippet: `import Fastify from 'fastify';` },
       { spec: '@fastify/cors', snippet: `import cors from '@fastify/cors';` },

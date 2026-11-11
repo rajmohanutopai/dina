@@ -57,9 +57,11 @@ const order = makeOrder(quote, pricedProjection);
  * of the record, computable by anyone. These tests only exercise the
  * wire SHAPE; the signature itself is verified by compiled Core.
  */
-function signedEvidence<T>(
-  record: T,
-): { record: T; envelope: RetainedEnvelope; signature: string } {
+function signedEvidence<T>(record: T): {
+  record: T;
+  envelope: RetainedEnvelope;
+  signature: string;
+} {
   // A well-formed envelope, not a signed one. This package is zero-dependency
   // and holds no crypto: it checks SHAPE, and compiled Core checks the
   // signature against the supplier's key. The envelope is required here
@@ -745,7 +747,10 @@ describe('reconcile (§12.7)', () => {
         validateOrderReconcileRequest(
           {
             ...bare,
-            held_acknowledgement: { ...evidence, envelope: { ...evidence.envelope, [field]: value } },
+            held_acknowledgement: {
+              ...evidence,
+              envelope: { ...evidence.envelope, [field]: value },
+            },
           },
           hash,
         ),

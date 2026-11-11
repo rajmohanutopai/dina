@@ -86,9 +86,10 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
         onEvent: (e) => events.push(e),
       });
       await pub.publish(validProfile());
-      const pubEvt = events.find(
-        (e) => e.kind === 'publishing',
-      ) as Extract<ServiceProfilePublisherEvent, { kind: 'publishing' }>;
+      const pubEvt = events.find((e) => e.kind === 'publishing') as Extract<
+        ServiceProfilePublisherEvent,
+        { kind: 'publishing' }
+      >;
       expect(pubEvt.schemaHashSet).toHaveLength(1);
       expect(pubEvt.schemaHashSet[0]).toMatch(/^[0-9a-f]{64}$/);
     });
@@ -185,7 +186,7 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
 
     it('putRecordFn returns malformed result → rejected_by_pds', async () => {
       const putRecordFn: PutRecordFn = async () =>
-        ({ cid: null } as unknown as { cid: string; uri: string });
+        ({ cid: null }) as unknown as { cid: string; uri: string };
       const pub = new ServiceProfilePublisher({ putRecordFn });
       const out = await pub.publish(validProfile());
       expect(out.ok).toBe(false);
@@ -216,9 +217,10 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
         onEvent: (e) => events.push(e),
       });
       await pub.publish(validProfile());
-      const rejected = events.find(
-        (e) => e.kind === 'rejected',
-      ) as Extract<ServiceProfilePublisherEvent, { kind: 'rejected' }>;
+      const rejected = events.find((e) => e.kind === 'rejected') as Extract<
+        ServiceProfilePublisherEvent,
+        { kind: 'rejected' }
+      >;
       expect(rejected.reason).toBe('network_error');
     });
   });
@@ -249,9 +251,7 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
       });
       const out = (await pub.publish(profile)) as Extract<PublishOutcome, { ok: true }>;
       expect(out.ok).toBe(true);
-      expect(out.uri).toBe(
-        'at://did:plc:sftransit/com.dinakernel.service.profile/self',
-      );
+      expect(out.uri).toBe('at://did:plc:sftransit/com.dinakernel.service.profile/self');
     });
   });
 
@@ -310,7 +310,10 @@ describe('ServiceProfilePublisher (task 6.19)', () => {
 
     it('rejects a path-traversal rkey', async () => {
       const { fn, calls } = capture();
-      const out = await new ServiceProfilePublisher({ putRecordFn: fn }).publish(validProfile(), '..');
+      const out = await new ServiceProfilePublisher({ putRecordFn: fn }).publish(
+        validProfile(),
+        '..',
+      );
       expect(out.ok).toBe(false);
       expect(calls).toHaveLength(0);
     });

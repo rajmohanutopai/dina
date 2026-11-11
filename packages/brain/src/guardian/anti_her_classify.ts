@@ -207,7 +207,13 @@ export function classifyDeterministic(text: string): PreScreenResult {
   for (const pattern of ACUTE_RISK_PATTERNS) {
     const match = pattern.exec(text);
     if (match) {
-      return { category: 'acute_risk', confidence: 0.95, signals: [match[0]], method: 'deterministic', shouldRedirect: true };
+      return {
+        category: 'acute_risk',
+        confidence: 0.95,
+        signals: [match[0]],
+        method: 'deterministic',
+        shouldRedirect: true,
+      };
     }
   }
   for (const [category, patterns] of [
@@ -217,7 +223,13 @@ export function classifyDeterministic(text: string): PreScreenResult {
     for (const pattern of patterns) {
       const match = pattern.exec(text);
       if (match) {
-        return { category, confidence: 0.85, signals: [match[0]], method: 'deterministic', shouldRedirect: true };
+        return {
+          category,
+          confidence: 0.85,
+          signals: [match[0]],
+          method: 'deterministic',
+          shouldRedirect: true,
+        };
       }
     }
   }
@@ -263,7 +275,13 @@ export function classifyDeterministic(text: string): PreScreenResult {
   for (const pattern of ISOLATION_PATTERNS) {
     const match = pattern.exec(text);
     if (match) {
-      return { category: 'isolation', confidence: 0.85, signals: [match[0]], method: 'deterministic', shouldRedirect: true };
+      return {
+        category: 'isolation',
+        confidence: 0.85,
+        signals: [match[0]],
+        method: 'deterministic',
+        shouldRedirect: true,
+      };
     }
   }
 

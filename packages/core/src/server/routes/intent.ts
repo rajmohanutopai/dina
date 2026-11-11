@@ -51,13 +51,13 @@
  *   CAPABILITIES.md "She Guards Your Agents"
  */
 
-import { formatMoney } from '../../commerce/money_display';
-import { evaluateSpend } from '../../spend/allowance';
 import { randomBytes } from '@noble/ciphers/utils.js';
 import { bytesToHex } from '@noble/hashes/utils.js';
 
+import { formatMoney } from '../../commerce/money_display';
 import { evaluateIntent } from '../../gatekeeper/intent';
 import { getSessionRegistry } from '../../session/registry';
+import { evaluateSpend } from '../../spend/allowance';
 import { getWorkflowRepository } from '../../workflow/repository';
 
 import type { WorkflowTask } from '../../workflow/domain';
@@ -302,14 +302,11 @@ export function registerIntentRoutes(router: CoreRouter): void {
     // X-DID, fall back to whatever the body shipped.
     const xDID = req.headers['x-did'];
     const agentDID =
-      req.callerDID ??
-      (typeof xDID === 'string' && xDID !== '' ? xDID : agentDIDFromBody);
+      req.callerDID ?? (typeof xDID === 'string' && xDID !== '' ? xDID : agentDIDFromBody);
 
     if (
       req.callerType === 'agent' &&
-      (sessionRaw === '' ||
-        agentDID === '' ||
-        !getSessionRegistry().renew(sessionRaw, agentDID).ok)
+      (sessionRaw === '' || agentDID === '' || !getSessionRegistry().renew(sessionRaw, agentDID).ok)
     ) {
       return { status: 401, body: { error: 'invalid_session' } };
     }
@@ -320,8 +317,7 @@ export function registerIntentRoutes(router: CoreRouter): void {
     // narrower (untrusted/unknown) and the request still got here
     // (e.g. test wiring without full middleware) — but in production
     // the X-DID branch dominates.
-    const trustLevel =
-      trustLevelRaw !== '' ? trustLevelRaw : agentDID !== '' ? 'verified' : '';
+    const trustLevel = trustLevelRaw !== '' ? trustLevelRaw : agentDID !== '' ? 'verified' : '';
 
     const decision = evaluateIntent(action, agentDID || undefined, trustLevel || undefined);
 
@@ -342,14 +338,30 @@ export function registerIntentRoutes(router: CoreRouter): void {
     // REAL_LIFE_FIXES_2 §15: a declared purchase may be covered by an
     // allowance the owner set for this agent. The amount, merchant and
     // category are the agent's claim; Dina never moves money.
-    let spendClaim: { value_minor: number; currency: string; merchant: string; category: string; request_key: string } | undefined;
+    let spendClaim:
+      | {
+          value_minor: number;
+          currency: string;
+          merchant: string;
+          category: string;
+          request_key: string;
+        }
+      | undefined;
     let spendProposalId: string | undefined;
     // Only a signed agent spends its own allowance: any other caller (the
     // phone's in-process Brain, a device) gets the owner's card as before.
-    const agentSpend = req.callerType === 'agent' && typeof req.callerDID === 'string' && req.callerDID !== '';
-    if (agentSpend && action === 'purchase' && decision.riskLevel === 'HIGH' && body.amount !== undefined) {
+    const agentSpendDid =
+      req.callerType === 'agent' && typeof req.callerDID === 'string' && req.callerDID !== ''
+        ? req.callerDID
+        : null;
+    if (
+      agentSpendDid !== null &&
+      action === 'purchase' &&
+      decision.riskLevel === 'HIGH' &&
+      body.amount !== undefined
+    ) {
       const spend = await evaluateSpend({
-        agentDid: req.callerDID!,
+        agentDid: agentSpendDid,
         amount: body.amount,
         merchant: body.merchant,
         category: body.category,
@@ -365,7 +377,8 @@ export function registerIntentRoutes(router: CoreRouter): void {
           body: {
             action: 'auto_approve',
             risk: decision.riskLevel,
-            reason: "Within the owner's allowance for this agent (the agent pays at the merchant; Dina moves no money)",
+            reason:
+              "Within the owner's allowance for this agent (the agent pays at the merchant; Dina moves no money)",
             approved: true,
             requires_approval: false,
             proposal_id: spend.proposalId,
@@ -486,16 +499,13 @@ export function registerIntentRoutes(router: CoreRouter): void {
   });
 
   router.get('/v1/intent/proposals/:proposalId/status', async (req) => {
-    const proposalId =
-      typeof req.params.proposalId === 'string' ? req.params.proposalId : '';
+    const proposalId = typeof req.params.proposalId === 'string' ? req.params.proposalId : '';
     if (proposalId === '') {
       return { status: 400, body: { error: 'proposal_id required' } };
     }
     const xDID = req.headers['x-did'];
-    const requesterDid =
-      req.callerDID ?? (typeof xDID === 'string' && xDID !== '' ? xDID : '');
-    const requesterSession =
-      typeof req.query.session_id === 'string' ? req.query.session_id : '';
+    const requesterDid = req.callerDID ?? (typeof xDID === 'string' && xDID !== '' ? xDID : '');
+    const requesterSession = typeof req.query.session_id === 'string' ? req.query.session_id : '';
     if (
       req.callerType === 'agent' &&
       (requesterDid === '' ||
@@ -525,9 +535,8 @@ export function registerIntentRoutes(router: CoreRouter): void {
     const action = typeof payload.action === 'string' ? payload.action : '';
     const target = typeof payload.target === 'string' ? payload.target : '';
     const agentDID =
-      typeof payload.agent_did === 'string' ? payload.agent_did : task.agent_did ?? '';
-    const proposalSession =
-      typeof payload.session === 'string' ? payload.session : '';
+      typeof payload.agent_did === 'string' ? payload.agent_did : (task.agent_did ?? '');
+    const proposalSession = typeof payload.session === 'string' ? payload.session : '';
     if (
       req.callerType === 'agent' &&
       (agentDID !== requesterDid || proposalSession !== requesterSession)
@@ -570,7 +579,9 @@ function shapeSyncResponse(
     return {
       action,
       risk,
-      reason: `Safe action: ${reason}`.startsWith('Safe action:') ? reason : `Safe action: ${reason}`,
+      reason: `Safe action: ${reason}`.startsWith('Safe action:')
+        ? reason
+        : `Safe action: ${reason}`,
       approved: true,
       requires_approval: false,
     };
@@ -589,9 +600,7 @@ function riskAdjective(risk: RiskLabel): string {
   return risk === 'HIGH' ? 'High' : 'Moderate';
 }
 
-function mapTaskStatusToProposalStatus(
-  task: WorkflowTask,
-): IntentProposalStatusResponse['status'] {
+function mapTaskStatusToProposalStatus(task: WorkflowTask): IntentProposalStatusResponse['status'] {
   switch (task.status) {
     case 'pending_approval':
       if (
@@ -623,9 +632,7 @@ function mapTaskStatusToProposalStatus(
 function safeParse(raw: string): Record<string, unknown> {
   try {
     const parsed = JSON.parse(raw);
-    return parsed !== null && typeof parsed === 'object'
-      ? (parsed as Record<string, unknown>)
-      : {};
+    return parsed !== null && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
   } catch {
     return {};
   }

@@ -12,9 +12,7 @@ import { TEST_ED25519_SEED } from '@dina/test-harness';
 import { CoreHTTPClient, CoreHTTPError } from '../../src/brain_client/http';
 
 /** Create a mock fetch that returns a sequence of responses. */
-function mockFetch(
-  ...responses: { status: number; body?: unknown; delay?: number }[]
-): jest.Mock {
+function mockFetch(...responses: { status: number; body?: unknown; delay?: number }[]): jest.Mock {
   let callIndex = 0;
   return jest.fn(async (_url: string, _opts?: RequestInit) => {
     const resp = responses[Math.min(callIndex++, responses.length - 1)];
@@ -110,9 +108,9 @@ describe('Brain→Core HTTP Client', () => {
       await client.request('GET', '/a');
       await client.request('GET', '/b');
       await client.request('GET', '/c');
-      const ids = fetch.mock.calls.map(
-        (call) => (call[1] as RequestInit).headers as Record<string, string>,
-      ).map((h) => h['X-Request-ID']);
+      const ids = fetch.mock.calls
+        .map((call) => (call[1] as RequestInit).headers as Record<string, string>)
+        .map((h) => h['X-Request-ID']);
       expect(new Set(ids).size).toBe(3);
       ids.forEach((id) => expect(id).toMatch(/^req-/));
     });

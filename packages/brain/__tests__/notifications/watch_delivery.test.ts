@@ -4,12 +4,8 @@
  * over the process-global silence/DND/inbox state (reset per test).
  */
 
+import { InMemoryNotificationLogRepository, setNotificationLogRepository } from '@dina/core';
 import { type CardSpec } from '@dina/protocol';
-
-import {
-  InMemoryNotificationLogRepository,
-  setNotificationLogRepository,
-} from '@dina/core';
 
 import { resetUserOverrides } from '../../src/guardian/silence';
 import { resetDND, setDND } from '../../src/notifications/dnd';
@@ -47,7 +43,9 @@ beforeEach(() => {
 
 describe('deliverWatchResult (R2-05)', () => {
   it('skips a non-resolved poll (no inbox entry)', async () => {
-    expect(await deliverWatchResult({ ...base, status: 'failed', card: null }, NOON)).toBe('skipped');
+    expect(await deliverWatchResult({ ...base, status: 'failed', card: null }, NOON)).toBe(
+      'skipped',
+    );
     expect(listNotifications()).toHaveLength(0);
   });
 
@@ -92,7 +90,10 @@ describe('deliverWatchResult (R2-05)', () => {
   });
 
   it('routes a Tier-3 (ceiling 3) watch to a RETAINED briefing item (R3-05)', async () => {
-    const out = await deliverWatchResult({ ...base, card: card('FYI', 'nothing urgent'), ceilingTier: 3 }, NOON);
+    const out = await deliverWatchResult(
+      { ...base, card: card('FYI', 'nothing urgent'), ceilingTier: 3 },
+      NOON,
+    );
     expect(out).toBe('briefing');
     // R3-05 — a Tier-3 result is retained as a `briefing` item for the daily digest.
     const items = listNotifications();
@@ -131,7 +132,11 @@ describe('deliverWatchResult (R2-05)', () => {
   });
 
   it('is idempotent on sourceId (a re-delivered event does not double-notify)', async () => {
-    const input = { ...base, card: card('Flight delayed', 'BA117 +40m'), filter: { contains: 'delayed' } };
+    const input = {
+      ...base,
+      card: card('Flight delayed', 'BA117 +40m'),
+      filter: { contains: 'delayed' },
+    };
     expect(await deliverWatchResult(input, NOON)).toBe('delivered');
     await deliverWatchResult(input, NOON);
     expect(listNotifications()).toHaveLength(1);
@@ -150,7 +155,11 @@ describe('deliverWatchResult (R2-05)', () => {
     }
     const repo = new FailOnceRepo();
     setNotificationLogRepository(repo);
-    const input = { ...base, card: card('Flight delayed', 'BA117 +40m'), filter: { contains: 'delayed' } };
+    const input = {
+      ...base,
+      card: card('Flight delayed', 'BA117 +40m'),
+      filter: { contains: 'delayed' },
+    };
 
     // First delivery: the durable write fails → the delivery REJECTS, so a
     // caller (split-server route / workflow consumer) will not ack the event.

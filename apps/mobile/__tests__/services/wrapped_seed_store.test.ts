@@ -16,7 +16,6 @@ import {
 
 import type { WrappedSeed } from '../../../core/src/crypto/aesgcm';
 
-
 function makeSeed(): WrappedSeed {
   return {
     salt: new Uint8Array(16).fill(0x11),

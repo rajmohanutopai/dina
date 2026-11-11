@@ -53,12 +53,7 @@
 
 import { roundRationalHalfEven, validateCharge, type Charge } from './arithmetic';
 import { moneyMinorUnits, minorUnitsToString, validateMoney, type Money } from './money';
-import {
-  compareQuantities,
-  quantityToRational,
-  validateQuantity,
-  type Quantity,
-} from './quantity';
+import { compareQuantities, quantityToRational, validateQuantity, type Quantity } from './quantity';
 
 // ---------------------------------------------------------------------------
 // Input shapes (distilled by the caller from verified stores)
@@ -152,7 +147,9 @@ export function computeTradeFold(input: TradeFoldInput): TradeFoldResult {
     for (const entry of order.receipted) {
       const line = order.lines.find((l) => l.line_id === entry.line_id);
       if (line === undefined) {
-        return refuse(`fold: order ${order.purchase_order_id} receipted unknown line "${entry.line_id}"`);
+        return refuse(
+          `fold: order ${order.purchase_order_id} receipted unknown line "${entry.line_id}"`,
+        );
       }
       for (const [quantity, sums] of [
         [entry.accepted_quantity, acceptedByLine],
@@ -166,7 +163,10 @@ export function computeTradeFold(input: TradeFoldInput): TradeFoldResult {
         if (typeof comparable === 'string') return refuse(`fold: ${comparable}`);
         const r = quantityToRational(quantity);
         const prior = sums.get(entry.line_id) ?? { n: 0n, d: 1n };
-        sums.set(entry.line_id, { n: prior.n * r.denominator + r.numerator * prior.d, d: prior.d * r.denominator });
+        sums.set(entry.line_id, {
+          n: prior.n * r.denominator + r.numerator * prior.d,
+          d: prior.d * r.denominator,
+        });
       }
     }
 
@@ -190,7 +190,11 @@ export function computeTradeFold(input: TradeFoldInput): TradeFoldResult {
       const basisRational: Rational = { n: basis.numerator, d: basis.denominator };
 
       const ordered = quantityToRational(line.ordered_quantity);
-      const fullValue = lineValueRational(price, { n: ordered.numerator, d: ordered.denominator }, basisRational);
+      const fullValue = lineValueRational(
+        price,
+        { n: ordered.numerator, d: ordered.denominator },
+        basisRational,
+      );
       fullSubtotal += roundRationalHalfEven(fullValue.n, fullValue.d);
 
       const accepted = acceptedByLine.get(line.line_id);
@@ -202,7 +206,11 @@ export function computeTradeFold(input: TradeFoldInput): TradeFoldResult {
         // disputed qty = max(0, delivered − accepted), exact.
         const diffN = delivered.n * accepted.d - accepted.n * delivered.d;
         if (diffN > 0n) {
-          const disputedValue = lineValueRational(price, { n: diffN, d: delivered.d * accepted.d }, basisRational);
+          const disputedValue = lineValueRational(
+            price,
+            { n: diffN, d: delivered.d * accepted.d },
+            basisRational,
+          );
           orderDisputed += roundRationalHalfEven(disputedValue.n, disputedValue.d);
         }
       }
@@ -245,7 +253,8 @@ export function computeTradeFold(input: TradeFoldInput): TradeFoldResult {
     perOrder.push({
       purchase_order_id: order.purchase_order_id,
       goods_minor: goodsOut.value as string,
-      charges_minor: orderCharges < 0n ? `-${(-orderCharges).toString(10)}` : orderCharges.toString(10),
+      charges_minor:
+        orderCharges < 0n ? `-${(-orderCharges).toString(10)}` : orderCharges.toString(10),
       disputed_minor: disputedOut.value as string,
     });
   }
@@ -255,7 +264,9 @@ export function computeTradeFold(input: TradeFoldInput): TradeFoldResult {
     const paymentError = validateMoney(payment);
     if (paymentError) return refuse(`fold: ${paymentError}`);
     if (payment.currency !== currency) {
-      return refuse(`fold: payment in ${payment.currency}; this fold is ${currency} (one currency per ledger)`);
+      return refuse(
+        `fold: payment in ${payment.currency}; this fold is ${currency} (one currency per ledger)`,
+      );
     }
     paymentsTotal += moneyMinorUnits(payment);
   }

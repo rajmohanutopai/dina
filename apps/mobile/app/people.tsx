@@ -17,21 +17,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Link, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  FlatList,
-  Pressable,
-  Platform,
-  Share,
-} from 'react-native';
+import { View, Text, StyleSheet, FlatList, Pressable, Platform, Share } from 'react-native';
 
-import {
-  getPeopleRepository,
-  type Contact,
-  type Person,
-} from '@dina/core';
+import { getPeopleRepository, type Contact, type Person } from '@dina/core';
 
 import { IdentityModal } from '../src/components/identity/identity_modal';
 import { getBootedNode } from '../src/hooks/useNodeBootstrap';
@@ -135,16 +123,16 @@ export default function PeopleScreen() {
           return;
         }
         if (action !== 'remove') return;
-      // `confirmDecision` is platform-split: native → Alert.alert, web →
-      // window.confirm (RN-Web's Alert.alert is a no-op, so a bare Alert would
-      // never show the dialog on the web thin-client — the delete could never
-      // be triggered there). `deleteContact` is likewise split: native removes
-      // from the authoritative in-process directory, web hits the Core-backed
-      // DELETE proxy. Refresh only when Core/the store confirms the removal, so
-      // we never claim a removal that won't stick.
+        // `confirmDecision` is platform-split: native → Alert.alert, web →
+        // window.confirm (RN-Web's Alert.alert is a no-op, so a bare Alert would
+        // never show the dialog on the web thin-client — the delete could never
+        // be triggered there). `deleteContact` is likewise split: native removes
+        // from the authoritative in-process directory, web hits the Core-backed
+        // DELETE proxy. Refresh only when Core/the store confirms the removal, so
+        // we never claim a removal that won't stick.
         void confirmDecision(
           `Remove ${contact.displayName || 'contact'}?`,
-          "You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your contact list.",
+          'You’ll need to add them again to talk with them. Their DID stays on PLC; this only removes them from your contact list.',
           'Remove',
           true,
         ).then((confirmed) => {
@@ -224,7 +212,9 @@ function ContactsView({
           color={colors.textMuted}
           style={{ marginBottom: spacing.md }}
         />
-        <Text style={styles.emptyTitle}>{failed ? "Couldn't load contacts" : 'No contacts yet'}</Text>
+        <Text style={styles.emptyTitle}>
+          {failed ? "Couldn't load contacts" : 'No contacts yet'}
+        </Text>
         <Text style={styles.emptyBody}>
           {failed
             ? 'We couldn’t reach your directory. Check your connection and try again.'
@@ -270,8 +260,8 @@ function RelationsView({ people: allPeople }: { people: Person[] }) {
         />
         <Text style={styles.emptyTitle}>No relations yet</Text>
         <Text style={styles.emptyBody}>
-          As you tell Dina about people in your life (for example, "Emma is my daughter" or
-          "Sancho is my brother"), they’ll show up here.
+          As you tell Dina about people in your life (for example, "Emma is my daughter" or "Sancho
+          is my brother"), they’ll show up here.
         </Text>
       </View>
     );
@@ -288,13 +278,7 @@ function RelationsView({ people: allPeople }: { people: Person[] }) {
   );
 }
 
-function SubTabBar({
-  value,
-  onChange,
-}: {
-  value: SubTab;
-  onChange: (v: SubTab) => void;
-}) {
+function SubTabBar({ value, onChange }: { value: SubTab; onChange: (v: SubTab) => void }) {
   return (
     <View style={styles.subTabBar}>
       <Pressable
@@ -304,12 +288,7 @@ function SubTabBar({
         accessibilityState={{ selected: value === 'contacts' }}
         style={[styles.subTab, value === 'contacts' && styles.subTabActive]}
       >
-        <Text
-          style={[
-            styles.subTabLabel,
-            value === 'contacts' && styles.subTabLabelActive,
-          ]}
-        >
+        <Text style={[styles.subTabLabel, value === 'contacts' && styles.subTabLabelActive]}>
           Contacts
         </Text>
       </Pressable>
@@ -320,12 +299,7 @@ function SubTabBar({
         accessibilityState={{ selected: value === 'relations' }}
         style={[styles.subTab, value === 'relations' && styles.subTabActive]}
       >
-        <Text
-          style={[
-            styles.subTabLabel,
-            value === 'relations' && styles.subTabLabelActive,
-          ]}
-        >
+        <Text style={[styles.subTabLabel, value === 'relations' && styles.subTabLabelActive]}>
           Relations
         </Text>
       </Pressable>

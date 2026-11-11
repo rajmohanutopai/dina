@@ -73,9 +73,9 @@ describe('the documents', () => {
   it('a well-formed chain validates; tampering breaks each digest', () => {
     const proposal = makeProposal();
     expect(validateAgreementProposal(proposal, hash)).toBeNull();
-    expect(
-      validateAgreementProposal({ ...proposal, share_bps: 900 }, hash),
-    ).toContain('does not match');
+    expect(validateAgreementProposal({ ...proposal, share_bps: 900 }, hash)).toContain(
+      'does not match',
+    );
 
     const decisionDraft = {
       protocol_version: '1.0',
@@ -108,7 +108,10 @@ describe('the documents', () => {
     const retro = { ...terminationDraft, effective_at: '2026-09-01T00:00:00.000Z' };
     expect(
       validateAgreementTermination(
-        { ...retro, termination_digest: revshareRecordDigest('agreement_termination', retro, hash) },
+        {
+          ...retro,
+          termination_digest: revshareRecordDigest('agreement_termination', retro, hash),
+        },
         hash,
       ),
     ).toContain('never precedes');
@@ -174,9 +177,7 @@ describe('the share arithmetic (§9.1: ONE half-even rounding)', () => {
       settlement_ack_digest: revshareRecordDigest('settlement_ack', ackDraft, hash),
     };
     expect(validateSettlementAcknowledgement(ack, hash)).toBeNull();
-    expect(
-      validateSettlementAcknowledgement({ ...ack, kind: 'maybe' }, hash),
-    ).toContain('kind');
+    expect(validateSettlementAcknowledgement({ ...ack, kind: 'maybe' }, hash)).toContain('kind');
   });
 });
 
@@ -188,7 +189,11 @@ describe('the fold, both directions — the golden vectors', () => {
 
   it("cash_handler 'vendor': the vendor holds the takings and owes the SHARE", () => {
     expect(
-      computeRevenueShareFold({ cash_handler: 'vendor', currency: 'INR', settlements: SETTLEMENTS }),
+      computeRevenueShareFold({
+        cash_handler: 'vendor',
+        currency: 'INR',
+        settlements: SETTLEMENTS,
+      }),
     ).toEqual({
       ok: true,
       direction: 'vendor_owes_host',

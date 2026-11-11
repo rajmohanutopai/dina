@@ -20,7 +20,10 @@ export function isA2ATaskNamespace(value: string | undefined): boolean {
   return value !== undefined && value.startsWith(A2A_TASK_NAMESPACE);
 }
 
-export const a2aConsentTaskId = (operationId: string): string => `${A2A_TASK_NAMESPACE}consent-${operationId}`;
-export const a2aConsentKey = (operationId: string): string => `${A2A_TASK_NAMESPACE}consent:${operationId}`;
+export const a2aConsentTaskId = (operationId: string): string =>
+  `${A2A_TASK_NAMESPACE}consent-${operationId}`;
+export const a2aConsentKey = (operationId: string): string =>
+  `${A2A_TASK_NAMESPACE}consent:${operationId}`;
 export const a2aDispatchTaskId = (): string => `${A2A_TASK_NAMESPACE}dispatch-${newA2AId()}`;
-export const a2aDispatchKey = (operationId: string): string => `${A2A_TASK_NAMESPACE}dispatch:${operationId}`;
+export const a2aDispatchKey = (operationId: string): string =>
+  `${A2A_TASK_NAMESPACE}dispatch:${operationId}`;

@@ -23,7 +23,7 @@ interface MockEntry {
 
 let entries: MockEntry[] = [];
 let deleted: string[] = [];
-let renamed: Array<{ from: string; to: string }> = [];
+let renamed: { from: string; to: string }[] = [];
 let exists = true;
 let throwOnList = false;
 let throwOnDelete = new Set<string>();
@@ -94,7 +94,10 @@ export class File {
     return fileContents.get(this.name) ?? '';
   }
 }
-export const Directory = class {};
+// Stand-in class: the marker field keeps it a real (non-empty) class.
+export const Directory = class {
+  readonly mockName = 'Directory';
+};
 
 // ── Test helpers (prefixed `__` so production code can't reach them) ──
 
@@ -110,7 +113,7 @@ export function __getDeletedEntries(): string[] {
   return [...deleted];
 }
 
-export function __getRenamedEntries(): Array<{ from: string; to: string }> {
+export function __getRenamedEntries(): { from: string; to: string }[] {
   return [...renamed];
 }
 

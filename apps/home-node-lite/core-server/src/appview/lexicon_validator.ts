@@ -98,9 +98,7 @@ export type ValidationErrorKind =
   | 'invalid_number'
   | 'unknown_collection';
 
-export type ValidationResult =
-  | { ok: true }
-  | { ok: false; errors: ValidationError[] };
+export type ValidationResult = { ok: true } | { ok: false; errors: ValidationError[] };
 
 export interface ValidatorOptions {
   /** Max errors reported before short-circuiting. Defaults to 10. */
@@ -118,24 +116,17 @@ export class LexiconValidator {
   private readonly schemas: ReadonlyMap<string, LexiconSchema>;
   private readonly maxErrors: number;
 
-  constructor(
-    schemas: Record<string, LexiconSchema>,
-    opts: ValidatorOptions = {},
-  ) {
+  constructor(schemas: Record<string, LexiconSchema>, opts: ValidatorOptions = {}) {
     if (!schemas || typeof schemas !== 'object') {
       throw new TypeError('LexiconValidator: schemas must be an object');
     }
     const map = new Map<string, LexiconSchema>();
     for (const [collection, schema] of Object.entries(schemas)) {
       if (typeof collection !== 'string' || collection === '') {
-        throw new TypeError(
-          'LexiconValidator: collection names must be non-empty strings',
-        );
+        throw new TypeError('LexiconValidator: collection names must be non-empty strings');
       }
       if (!schema || typeof schema !== 'object') {
-        throw new TypeError(
-          `LexiconValidator: schema for "${collection}" must be an object`,
-        );
+        throw new TypeError(`LexiconValidator: schema for "${collection}" must be an object`);
       }
       map.set(collection, schema);
     }
@@ -172,8 +163,7 @@ export class LexiconValidator {
           {
             path: '',
             kind: 'unknown_collection',
-            message:
-              'no collection provided and record has no $type field',
+            message: 'no collection provided and record has no $type field',
           },
         ],
       };
@@ -306,9 +296,7 @@ function validateNumber(
     });
     return;
   }
-  const isInt = Array.isArray(s.type)
-    ? s.type.includes('integer')
-    : s.type === 'integer';
+  const isInt = Array.isArray(s.type) ? s.type.includes('integer') : s.type === 'integer';
   if (isInt && !Number.isInteger(v)) {
     pushError(errors, maxErrors, {
       path,
@@ -385,13 +373,7 @@ function validateObject(
     if (errors.length >= maxErrors) return;
     const subSchema = props[key];
     if (subSchema) {
-      validateValue(
-        val,
-        subSchema,
-        `${path}/${escapePointer(key)}`,
-        errors,
-        maxErrors,
-      );
+      validateValue(val, subSchema, `${path}/${escapePointer(key)}`, errors, maxErrors);
     } else if (s.additionalProperties === false) {
       pushError(errors, maxErrors, {
         path: `${path}/${escapePointer(key)}`,
@@ -410,9 +392,7 @@ function matchesType(value: unknown, type: JsonSchemaType): boolean {
     case 'number':
       return typeof value === 'number' && Number.isFinite(value);
     case 'integer':
-      return (
-        typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value)
-      );
+      return typeof value === 'number' && Number.isInteger(value) && Number.isFinite(value);
     case 'boolean':
       return typeof value === 'boolean';
     case 'null':
@@ -420,9 +400,7 @@ function matchesType(value: unknown, type: JsonSchemaType): boolean {
     case 'array':
       return Array.isArray(value);
     case 'object':
-      return (
-        value !== null && typeof value === 'object' && !Array.isArray(value)
-      );
+      return value !== null && typeof value === 'object' && !Array.isArray(value);
   }
 }
 
@@ -461,11 +439,7 @@ function escapePointer(key: string): string {
   return key.replace(/~/g, '~0').replace(/\//g, '~1');
 }
 
-function pushError(
-  errors: ValidationError[],
-  maxErrors: number,
-  err: ValidationError,
-): void {
+function pushError(errors: ValidationError[], maxErrors: number, err: ValidationError): void {
   if (errors.length >= maxErrors) return;
   errors.push(err);
 }

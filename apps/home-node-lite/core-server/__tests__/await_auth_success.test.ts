@@ -198,9 +198,7 @@ describe('awaitAuthSuccess (task 4.43)', () => {
     it('rejects NaN / Infinity timeoutMs', () => {
       const s = makeSource();
       expect(() => awaitAuthSuccess({ source: s.source, timeoutMs: NaN })).toThrow();
-      expect(() =>
-        awaitAuthSuccess({ source: s.source, timeoutMs: Infinity }),
-      ).toThrow();
+      expect(() => awaitAuthSuccess({ source: s.source, timeoutMs: Infinity })).toThrow();
     });
   });
 });

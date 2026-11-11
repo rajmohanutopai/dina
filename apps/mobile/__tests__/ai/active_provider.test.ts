@@ -55,7 +55,7 @@ describe('loadActiveProvider — ignores stale / corrupt keychain rows', () => {
   it('returns null when the stored value is not a known provider', async () => {
     // Poison the keychain directly with an unknown id — simulates a
     // downgrade or a partially-migrated install.
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+
     const keychain = require('../../__mocks__/react-native-keychain');
     await keychain.setGenericPassword('x', 'stale-row', { service: 'dina.active_provider' });
     const got = await loadActiveProvider();

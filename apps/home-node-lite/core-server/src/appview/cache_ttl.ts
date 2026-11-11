@@ -90,9 +90,7 @@ export const PLC_DEFAULT_TTL_MS = 60 * 60 * 1000; // Task spec: 1h PLC default.
  * any string — invalid tokens are preserved in `unknownDirectives`
  * so callers can audit. Case-insensitive per RFC 7234.
  */
-export function parseCacheControl(
-  header: string | null | undefined,
-): CacheControlDirectives {
+export function parseCacheControl(header: string | null | undefined): CacheControlDirectives {
   const base: CacheControlDirectives = {
     maxAgeSeconds: null,
     sMaxAgeSeconds: null,
@@ -137,7 +135,10 @@ export function parseCacheControl(
     const eq = lower.indexOf('=');
     if (eq !== -1) {
       const key = lower.slice(0, eq).trim();
-      const val = lower.slice(eq + 1).trim().replace(/^"|"$/g, '');
+      const val = lower
+        .slice(eq + 1)
+        .trim()
+        .replace(/^"|"$/g, '');
       if (key === 'max-age') {
         const n = parseNonNegInt(val);
         if (n !== null) {

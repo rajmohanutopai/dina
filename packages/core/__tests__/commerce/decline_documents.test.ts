@@ -13,7 +13,12 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 
-import { tradeRecordDigest, type QuoteDecline, type QuoteRequest, type Sha256Fn } from '@dina/commerce-protocol';
+import {
+  tradeRecordDigest,
+  type QuoteDecline,
+  type QuoteRequest,
+  type Sha256Fn,
+} from '@dina/commerce-protocol';
 import { NodeSQLiteAdapter } from '@dina/storage-node';
 
 import {
@@ -46,7 +51,10 @@ function sealedDecline(overrides: Partial<QuoteDecline> = {}): QuoteDecline {
     issued_at: '2026-08-17T10:00:00.000Z',
     ...overrides,
   };
-  return { ...draft, decline_digest: tradeRecordDigest('quote_decline', draft, hash) } as QuoteDecline;
+  return {
+    ...draft,
+    decline_digest: tradeRecordDigest('quote_decline', draft, hash),
+  } as QuoteDecline;
 }
 
 const retainedRequest = {

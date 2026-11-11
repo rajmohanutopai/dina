@@ -12,16 +12,27 @@
 import {
   AppointmentAvailabilityResultSchema,
   AppointmentBookResultSchema,
+  clearVaults,
+  storeItem,
+  createPersona,
+  resetPersonaState,
 } from '@dina/core';
+
 import { getVaultFactBuilder } from '../../src/service/capabilities/vault_facts';
 import {
   buildCapabilityRuntime,
   renderInstructionAge,
   extractJSONObject,
- defaultTier1PersonaScope } from '../../src/service/capability_runtime';
+  defaultTier1PersonaScope,
+} from '../../src/service/capability_runtime';
 import { setAccessiblePersonas, resetReasoningProvider } from '../../src/vault_context/assembly';
 
-import type { ChatOptions, ChatResponse, LLMProvider , ToolCall } from '../../src/llm/adapters/provider';
+import type {
+  ChatOptions,
+  ChatResponse,
+  LLMProvider,
+  ToolCall,
+} from '../../src/llm/adapters/provider';
 
 interface RecordedCall {
   system: string;
@@ -238,10 +249,6 @@ describe('extractJSONObject', () => {
 // "accessible" is not a privacy boundary for stranger-driven executions.
 // ---------------------------------------------------------------------------
 
-
-import { clearVaults, storeItem, createPersona, resetPersonaState } from '@dina/core';
-
-
 function vaultScriptedProvider(script: { content: string; toolCalls?: ToolCall[] }[]): {
   provider: LLMProvider;
   allMessages: string[][];
@@ -305,7 +312,10 @@ describe('Tier 1 vault scope — the runtime never reads sensitive personas', ()
   it('a vault_search issued during a Tier 1 run returns ONLY in-scope rows — even when the (attacker-steerable) model searches for the sensitive content by name', async () => {
     const { provider, allMessages } = vaultScriptedProvider([
       // The model — steered by hostile params — asks for the health data.
-      { content: '', toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'HbA1c salon' } }] },
+      {
+        content: '',
+        toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'HbA1c salon' } }],
+      },
       { content: JSON.stringify(VALID_AVAILABILITY) },
     ]);
     const runtime = buildCapabilityRuntime({ getLLM: () => provider, nowMsFn: () => NOW });
@@ -329,7 +339,12 @@ describe('Tier 1 vault scope — the runtime never reads sensitive personas', ()
 
   it('a NAMED sensitive persona is silently refused inside the run', async () => {
     const { provider, allMessages } = vaultScriptedProvider([
-      { content: '', toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'HbA1c', persona: 'health' } }] },
+      {
+        content: '',
+        toolCalls: [
+          { id: 't1', name: 'vault_search', arguments: { query: 'HbA1c', persona: 'health' } },
+        ],
+      },
       { content: JSON.stringify(VALID_AVAILABILITY) },
     ]);
     const runtime = buildCapabilityRuntime({ getLLM: () => provider, nowMsFn: () => NOW });
@@ -347,7 +362,10 @@ describe('Tier 1 vault scope — the runtime never reads sensitive personas', ()
     // returns nothing, even though `general` is accessible. A stranger can
     // never fan out across the provider's vaults via an unpinned listing.
     const { provider, allMessages } = vaultScriptedProvider([
-      { content: '', toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'salon' } }] },
+      {
+        content: '',
+        toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'salon' } }],
+      },
       { content: JSON.stringify(VALID_AVAILABILITY) },
     ]);
     const runtime = buildCapabilityRuntime({ getLLM: () => provider, nowMsFn: () => NOW });
@@ -384,7 +402,10 @@ describe('Tier 1 vault scope — per-listing persona pin (narrowing only)', () =
 
   it('a pinned listing reads ONLY its designated persona', async () => {
     const { provider, allMessages } = vaultScriptedProvider([
-      { content: '', toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'salon ferrets' } }] },
+      {
+        content: '',
+        toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'salon ferrets' } }],
+      },
       { content: JSON.stringify(VALID_AVAILABILITY) },
     ]);
     const runtime = buildCapabilityRuntime({ getLLM: () => provider, nowMsFn: () => NOW });
@@ -408,7 +429,10 @@ describe('Tier 1 vault scope — per-listing persona pin (narrowing only)', () =
       body: 'HbA1c clinic note',
     });
     const { provider, allMessages } = vaultScriptedProvider([
-      { content: '', toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'clinic' } }] },
+      {
+        content: '',
+        toolCalls: [{ id: 't1', name: 'vault_search', arguments: { query: 'clinic' } }],
+      },
       { content: JSON.stringify(VALID_AVAILABILITY) },
     ]);
     const runtime = buildCapabilityRuntime({ getLLM: () => provider, nowMsFn: () => NOW });
@@ -850,7 +874,10 @@ describe('buildCapabilityRuntime — record_to_vault write tool', () => {
   it('does NOT expose the tool for a READ capability even when approved (mutationAllowed=false)', async () => {
     const writes: unknown[] = [];
     const provider = vaultScriptedProvider([
-      { content: '', toolCalls: [{ id: 'w1', name: 'record_to_vault', arguments: { summary: 'x' } }] },
+      {
+        content: '',
+        toolCalls: [{ id: 'w1', name: 'record_to_vault', arguments: { summary: 'x' } }],
+      },
       { content: JSON.stringify(VALID_AVAILABILITY) },
     ]).provider;
     const runtime = buildCapabilityRuntime({
@@ -1006,7 +1033,10 @@ describe('getVaultFactBuilder — appointment_book deterministic fact', () => {
   });
 
   it('omits the requester clause when no authenticated DID is supplied', () => {
-    const fact = build({ params: { service: 'haircut', time: '16:00' }, result: { status: 'confirmed' } });
+    const fact = build({
+      params: { service: 'haircut', time: '16:00' },
+      result: { status: 'confirmed' },
+    });
     expect(fact).not.toBeNull();
     expect(fact!.body).not.toContain(' for ');
   });

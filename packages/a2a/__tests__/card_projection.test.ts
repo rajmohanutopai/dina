@@ -195,8 +195,10 @@ describe('call contract on the card (design §7.6)', () => {
       // How a DID-bound client signs (§5.1, M4), stated where clients read the contract.
       requestSigning: {
         headers: ['X-DID', 'X-Timestamp', 'X-Nonce', 'X-Signature'],
-        canonical: 'dina-a2a-request:v1\n{NODE_DID}\n{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}',
-        audience: 'NODE_DID is the did this card’s Dina extension names: a request signed for one node verifies at no other',
+        canonical:
+          'dina-a2a-request:v1\n{NODE_DID}\n{METHOD}\n{PATH}\n{QUERY}\n{TIMESTAMP}\n{NONCE}\n{SHA256_HEX(BODY)}',
+        audience:
+          'NODE_DID is the did this card’s Dina extension names: a request signed for one node verifies at no other',
         signature: 'Ed25519, lower-case hex',
         timestamp: 'RFC 3339 UTC, within five minutes',
         nonce: '16 to 128 characters of [A-Za-z0-9_-], never reused',
@@ -230,11 +232,18 @@ describe('call contract on the card (design §7.6)', () => {
 
 describe('the interfaces, in preference order', () => {
   it('lists REST after JSON-RPC when the node serves it', () => {
-    const both = projectAgentCard({ ...input([listing()]), restInterfaceUrl: 'https://a2a.example.org/a2a/rest' });
+    const both = projectAgentCard({
+      ...input([listing()]),
+      restInterfaceUrl: 'https://a2a.example.org/a2a/rest',
+    });
     if (!both.ok) throw new Error(both.reason);
     expect(both.card.supportedInterfaces).toEqual([
       { url: 'https://a2a.example.org/rpc', protocolBinding: 'JSONRPC', protocolVersion: '1.0' },
-      { url: 'https://a2a.example.org/a2a/rest', protocolBinding: 'HTTP+JSON', protocolVersion: '1.0' },
+      {
+        url: 'https://a2a.example.org/a2a/rest',
+        protocolBinding: 'HTTP+JSON',
+        protocolVersion: '1.0',
+      },
     ]);
   });
 });
@@ -261,9 +270,19 @@ describe('sample values from a schema', () => {
     [{ type: 'string', enum: [5, 'five'] }, 'five'],
     [{ type: 'integer', enum: [1.5, 2] }, 2],
     // At the value budget: the array and its items are 256 values in all.
-    [{ type: 'array', const: Array(SAMPLE_MAX_VALUES - 1).fill(0) }, Array(SAMPLE_MAX_VALUES - 1).fill(0)],
+    [
+      { type: 'array', const: Array(SAMPLE_MAX_VALUES - 1).fill(0) },
+      Array(SAMPLE_MAX_VALUES - 1).fill(0),
+    ],
     // Within the value budget: 16 × 15 = 240 leaves, 256 values in all.
-    [{ type: 'array', minItems: 15, items: { type: 'array', minItems: 16, items: { type: 'null' } } }, Array(15).fill(Array(16).fill(null))],
+    [
+      {
+        type: 'array',
+        minItems: 15,
+        items: { type: 'array', minItems: 16, items: { type: 'null' } },
+      },
+      Array(15).fill(Array(16).fill(null)),
+    ],
   ])('%p → %p', (schema, value) => expect(sampleFromSchema(schema)).toEqual(value));
 
   it.each([
@@ -287,7 +306,12 @@ describe('sample values from a schema', () => {
     // A const or enum member far past the value budget: no example, and no throw
     // (200,000 items spread into one call would overflow the stack).
     [{ type: 'array', const: Array(200_000).fill(0) }],
-    [{ type: 'object', const: Object.fromEntries(Array.from({ length: 200_000 }, (_, i) => [`k${i}`, i])) }],
+    [
+      {
+        type: 'object',
+        const: Object.fromEntries(Array.from({ length: 200_000 }, (_, i) => [`k${i}`, i])),
+      },
+    ],
     [{ type: 'array', enum: [Array(200_000).fill(0)] }],
     [{ type: 'array', const: Array(SAMPLE_MAX_VALUES).fill(0) }],
     [{ type: 'integer', minimum: 5, maximum: 3 }],
@@ -297,7 +321,10 @@ describe('sample values from a schema', () => {
 
   it('the validator invocation uses has the last word: an example it refuses is left off, the skill kept', () => {
     const seen: unknown[] = [];
-    const refused = projectAgentCard({ ...input([listing()]), acceptsExample: (params) => (seen.push(params), false) });
+    const refused = projectAgentCard({
+      ...input([listing()]),
+      acceptsExample: (params) => (seen.push(params), false),
+    });
     expect(seen.length).toBeGreaterThan(0);
     expect(refused.ok && refused.card.skills[0]).not.toHaveProperty('examples');
     const accepted = projectAgentCard({ ...input([listing()]), acceptsExample: () => true });
@@ -305,12 +332,24 @@ describe('sample values from a schema', () => {
   });
 
   it('a long const leaves only the example off: an example is at most SAMPLE_MAX_EXAMPLE_BYTES', () => {
-    const big = cap({ paramsSchema: { type: 'object', required: ['n'], properties: { n: { type: 'string', const: 'c'.repeat(8_000) } } } });
+    const big = cap({
+      paramsSchema: {
+        type: 'object',
+        required: ['n'],
+        properties: { n: { type: 'string', const: 'c'.repeat(8_000) } },
+      },
+    });
     expect(skillShareFits('self', big)).toBe(true);
     const out = projectAgentCard(input([listing({ capabilities: [big] })]));
     expect(out.ok && out.card.skills[0]?.id).toBe('eta_query@self');
     expect(out.ok && out.card.skills[0]).not.toHaveProperty('examples');
-    const fits = cap({ paramsSchema: { type: 'object', required: ['n'], properties: { n: { type: 'string', const: 'c'.repeat(1_000) } } } });
+    const fits = cap({
+      paramsSchema: {
+        type: 'object',
+        required: ['n'],
+        properties: { n: { type: 'string', const: 'c'.repeat(1_000) } },
+      },
+    });
     const shown = projectAgentCard(input([listing({ capabilities: [fits] })]));
     const example = shown.ok ? shown.card.skills[0]?.examples?.[0] : undefined;
     expect(utf8Bytes(example ?? '').length).toBeGreaterThan(1_000);
@@ -319,17 +358,34 @@ describe('sample values from a schema', () => {
 
   it('a skill past its share of a card, or one no card could carry, is left off with its reason', () => {
     const sized = (n: number) =>
-      cap({ paramsSchema: { type: 'object', required: ['n'], properties: { n: { type: 'string', const: 'c'.repeat(n) } } } });
-    expect(exclusionReason(listing(), sized(A2A_LIMITS.maxSkillShareBytes))).toBe('skill_too_large');
+      cap({
+        paramsSchema: {
+          type: 'object',
+          required: ['n'],
+          properties: { n: { type: 'string', const: 'c'.repeat(n) } },
+        },
+      });
+    expect(exclusionReason(listing(), sized(A2A_LIMITS.maxSkillShareBytes))).toBe(
+      'skill_too_large',
+    );
     expect(exclusionReason(listing(), sized(A2A_LIMITS.maxSkillShareBytes / 2))).toBeNull();
     // The description counts: it is on the card.
-    expect(skillShareFits('self', cap({ description: 'd'.repeat(A2A_LIMITS.maxSkillShareBytes) }))).toBe(false);
+    expect(
+      skillShareFits('self', cap({ description: 'd'.repeat(A2A_LIMITS.maxSkillShareBytes) })),
+    ).toBe(false);
     // Past JCS's nesting bound, or a lone surrogate: no card could carry it.
     let deep: unknown = 0;
     for (let i = 0; i < 40; i += 1) deep = [deep];
-    expect(skillShareFits('self', cap({ paramsSchema: { type: 'array', const: deep } as never }))).toBe(false);
+    expect(
+      skillShareFits('self', cap({ paramsSchema: { type: 'array', const: deep } as never })),
+    ).toBe(false);
     expect(skillShareFits('self', cap({ description: '\ud800' }))).toBe(false);
-    const out = projectAgentCard(input([listing({ capabilities: [sized(A2A_LIMITS.maxSkillShareBytes)] }), listing({ rkey: 'other' })]));
+    const out = projectAgentCard(
+      input([
+        listing({ capabilities: [sized(A2A_LIMITS.maxSkillShareBytes)] }),
+        listing({ rkey: 'other' }),
+      ]),
+    );
     expect(out.ok && out.card.skills.map((sk) => sk.id)).toEqual(['eta_query@other']);
   });
 
@@ -344,13 +400,23 @@ describe('sample values from a schema', () => {
       else hi = mid - 1;
     }
     const largest = sized(lo);
-    const audience: CardAudience = { scope: [], grants: [{ grantId: 'g'.repeat(MAX_ID_LENGTH), rkey: 'self', capability: 'eta_query' }] };
-    const extended = projectSkills([listing({ discoverability: 'unlisted', capabilities: [largest] })], audience);
+    const audience: CardAudience = {
+      scope: [],
+      grants: [{ grantId: 'g'.repeat(MAX_ID_LENGTH), rkey: 'self', capability: 'eta_query' }],
+    };
+    const extended = projectSkills(
+      [listing({ discoverability: 'unlisted', capabilities: [largest] })],
+      audience,
+    );
     expect(extended).toHaveLength(1);
     const entry = extended[0];
     const share = canonicalize({
       skill: entry?.skill as never,
-      contract: { paramsSchema: entry?.paramsSchema ?? {}, schemaHash: entry?.schemaHash ?? '', grantId: entry?.grantId ?? '' },
+      contract: {
+        paramsSchema: entry?.paramsSchema ?? {},
+        schemaHash: entry?.schemaHash ?? '',
+        grantId: entry?.grantId ?? '',
+      },
     });
     expect(utf8Bytes(share).length).toBeLessThanOrEqual(A2A_LIMITS.maxSkillShareBytes);
   });
